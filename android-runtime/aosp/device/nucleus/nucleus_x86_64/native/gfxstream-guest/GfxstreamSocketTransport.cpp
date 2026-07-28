@@ -8,7 +8,7 @@
 #include <unistd.h>
 
 #include "NucleusAndroidGfxstreamSocketProtocol.h"
-#include "NucleusAndroidIPCC.h"
+#include "NucleusIPCTransportC.h"
 
 namespace {
 
@@ -30,7 +30,7 @@ int provideSocketEndpoint(
     void *context,
     nucleus_android_gfxstream_endpoint_descriptors *output) {
     auto *transport = static_cast<SocketTransport *>(context);
-    int socket = nucleus_android_ipc_connect(transport->path.c_str());
+    int socket = nucleus_ipc_connect(transport->path.c_str());
     if (socket < 0) {
         return -1;
     }
@@ -41,7 +41,7 @@ int provideSocketEndpoint(
         .status = 0,
         .reserved = 0,
     };
-    if (nucleus_android_ipc_send(
+    if (nucleus_ipc_send(
             socket, &request, sizeof(request), nullptr, 0) < 0) {
         const int savedErrno = errno;
         close(socket);
@@ -54,7 +54,7 @@ int provideSocketEndpoint(
         -1, -1, -1, -1, -1, -1,
     };
     size_t descriptorCount = 0;
-    const int received = nucleus_android_ipc_receive(
+    const int received = nucleus_ipc_receive(
         socket,
         &response,
         sizeof(response),
@@ -97,7 +97,7 @@ int mapSocketMemory(
         return -1;
     }
     auto *transport = static_cast<SocketTransport *>(context);
-    const int socket = nucleus_android_ipc_connect(transport->path.c_str());
+    const int socket = nucleus_ipc_connect(transport->path.c_str());
     if (socket < 0) {
         return -1;
     }
@@ -110,7 +110,7 @@ int mapSocketMemory(
         .allocation_size = size,
         .reserved = 0,
     };
-    if (nucleus_android_ipc_send(
+    if (nucleus_ipc_send(
             socket, &request, sizeof(request), nullptr, 0) < 0) {
         const int savedErrno = errno;
         close(socket);
@@ -121,7 +121,7 @@ int mapSocketMemory(
     nucleus_android_gfxstream_socket_message response = {};
     int descriptor = -1;
     size_t descriptorCount = 0;
-    const int received = nucleus_android_ipc_receive(
+    const int received = nucleus_ipc_receive(
         socket,
         &response,
         sizeof(response),
@@ -188,7 +188,7 @@ int exportSocketVulkanSync(
         return -1;
     }
     auto *transport = static_cast<SocketTransport *>(context);
-    const int socket = nucleus_android_ipc_connect(transport->path.c_str());
+    const int socket = nucleus_ipc_connect(transport->path.c_str());
     if (socket < 0) {
         return -1;
     }
@@ -209,7 +209,7 @@ int exportSocketVulkanSync(
                 : 0,
         .vulkan_image_handle = qsri ? syncHandle : 0,
     };
-    if (nucleus_android_ipc_send(
+    if (nucleus_ipc_send(
             socket, &request, sizeof(request), nullptr, 0) < 0) {
         const int savedErrno = errno;
         close(socket);
@@ -220,7 +220,7 @@ int exportSocketVulkanSync(
     nucleus_android_gfxstream_socket_message response = {};
     int descriptor = -1;
     size_t descriptorCount = 0;
-    const int received = nucleus_android_ipc_receive(
+    const int received = nucleus_ipc_receive(
         socket,
         &response,
         sizeof(response),

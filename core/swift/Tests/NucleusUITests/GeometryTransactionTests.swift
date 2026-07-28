@@ -1,5 +1,5 @@
 import NucleusTypes
-@_spi(NucleusCompositor) @testable import NucleusUI
+@_spi(NucleusRenderServer) @testable import NucleusUI
 import Testing
 
 @MainActor

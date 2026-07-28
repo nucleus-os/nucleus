@@ -68,7 +68,6 @@ struct AndroidFrameworkBootCommand {
         let brokerLaunch = try await buildBrokerLaunch()
         let swiftPM = try context.swiftPMInvocation()
         let installation = try await RuntimeInstaller(context: context).install(
-            .session,
             prefix: context.layout.installPrefix)
         let layout = AndroidFrameworkBootLayout(
             context: context,

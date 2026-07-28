@@ -152,9 +152,15 @@ public final class WaylandRuntime {
     /// executor, so a command and a chord perform the same work — including
     /// the parts that depend on keyboard focus, which is why this cannot be a
     /// pure function over the action alone.
-    public func executeDeferredAction(kind: UInt8, value: UInt32) {
+    public func executeDeferredAction(
+        kind: UInt8,
+        configurationIndex: UInt32 = .max,
+        value: UInt32
+    ) {
         host.inputHost?.dispatch.executeDeferredAction(
-            action: kind, value: value)
+            action: kind,
+            configurationIndex: configurationIndex,
+            value: value)
     }
 
     /// The next protocol idle deadline in the monotonic clock domain. A nil

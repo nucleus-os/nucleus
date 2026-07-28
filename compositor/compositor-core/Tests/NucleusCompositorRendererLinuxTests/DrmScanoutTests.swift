@@ -72,6 +72,12 @@ import Testing
                                       primaryPlaneFormats: Self.planeFormats()) == .blocked(.viewportTransform),
                 "block-viewport")
 
+        // An alpha multiplier requires composition.
+        var alpha = Self.surface(); alpha.hasAlphaModifier = true
+        #expect(evaluateDirectScanout(candidate: Self.candidate(), surface: alpha,
+                                      primaryPlaneFormats: Self.planeFormats()) == .blocked(.alphaModifier),
+                "block-alpha")
+
         // Layout not filling the output (logical mismatch).
         var layoutMismatch = Self.candidate(); layoutMismatch.layoutWidth = 1280
         #expect(evaluateDirectScanout(candidate: layoutMismatch, surface: Self.surface(),

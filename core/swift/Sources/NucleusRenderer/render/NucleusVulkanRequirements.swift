@@ -5,15 +5,16 @@ import VulkanC
 import Vulkan
 
 public enum VkRequirements {
-    /// How the render core presents. Selects the Vulkan WSI vs. DRM/dmabuf extension set at
-    /// device creation. `platformDefault` keeps the built-in behavior (Android WSI / Linux
-    /// DRM); `waylandClientWSI` is an out-of-process Wayland client (nucleus-shell) that
-    /// presents onto a client wl_surface via a swapchain — same Linux OS, but WSI not DRM.
+    /// How the render core presents. Selects the process-local presentation
+    /// contract at device creation. `platformDefault` is Android WSI or Linux
+    /// DRM import/scanout. `waylandClientBackingStore` is an out-of-process
+    /// Wayland client that exports DMA-BUF images and syncobj timeline points;
+    /// it never creates a Vulkan WSI surface or swapchain.
     /// `headless` creates Graphite without any presentation or external-memory contract and
     /// is the mandatory software-device test architecture.
     public enum PresentationMode: Sendable, Equatable {
         case platformDefault
-        case waylandClientWSI
+        case waylandClientBackingStore
         case headless
     }
 
@@ -35,10 +36,14 @@ public enum VkRequirements {
     public static func contract(for mode: PresentationMode = .platformDefault) -> Contract {
         let presentationEntryPoints: [String]
         switch mode {
-        case .waylandClientWSI:
+        case .waylandClientBackingStore:
             presentationEntryPoints = [
-                "vkAcquireNextImageKHR", "vkCreateSwapchainKHR", "vkDestroySwapchainKHR",
-                "vkGetSwapchainImagesKHR", "vkQueuePresentKHR", "vkReleaseSwapchainImagesKHR",
+                "vkGetImageDrmFormatModifierPropertiesEXT",
+                "vkGetImageSubresourceLayout",
+                "vkGetMemoryFdKHR",
+                "vkGetSemaphoreCounterValue",
+                "vkGetSemaphoreFdKHR",
+                "vkQueueSubmit2",
             ]
         case .platformDefault:
             #if os(Android)
@@ -78,8 +83,8 @@ public enum VkRequirements {
         ]
         let requiresWSI: Bool
         switch mode {
-        case .waylandClientWSI:
-            requiresWSI = true
+        case .waylandClientBackingStore:
+            requiresWSI = false
         case .platformDefault:
             #if os(Android)
             requiresWSI = true
@@ -104,8 +109,8 @@ public enum VkRequirements {
 
     /// Instance extensions required to create the Nucleus instance. Android adds the WSI
     /// surface pair so the swapchain presenter can create an `ANativeWindow` surface; the
-    /// Wayland client mode adds `VK_KHR_surface` + `VK_KHR_wayland_surface`; the Linux
-    /// compositor presents through DRM/KMS and needs no instance WSI extension.
+    /// Wayland backing-store and Linux compositor modes use no instance WSI
+    /// extension.
     public static func instanceExtensions(for mode: PresentationMode = .platformDefault) -> [String] {
         var exts = [
             VK.Ext.khrGetPhysicalDeviceProperties2,
@@ -113,13 +118,8 @@ public enum VkRequirements {
             VK.Ext.khrExternalSemaphoreCapabilities,
         ]
         switch mode {
-        case .waylandClientWSI:
-            exts += [
-                VK.Ext.khrSurface,
-                VK.Ext.khrGetSurfaceCapabilities2,
-                VK.Ext.khrSurfaceMaintenance1,
-                VK.Ext.khrWaylandSurface,
-            ]
+        case .waylandClientBackingStore:
+            break
         case .platformDefault:
             #if os(Android)
             exts += [
@@ -136,9 +136,9 @@ public enum VkRequirements {
     }
 
     /// Device extensions required for presentation + GPU resource sharing. The Linux
-    /// compositor imports client DMA-BUFs with explicit sync into DRM-modifier scanout
-    /// images; the Android and Wayland-client swapchain paths have neither dmabuf import nor
-    /// DRM modifiers, so they require only the swapchain + the portable memory/sync set.
+    /// compositor imports client DMA-BUFs with explicit sync. A Wayland client
+    /// allocates and exports the same image and timeline primitives. Android is
+    /// the only swapchain path.
     public static func deviceExtensions(for mode: PresentationMode = .platformDefault) -> [String] {
         let swapchainSet: [String] = [
             VK.Ext.khrSwapchain,
@@ -151,8 +151,19 @@ public enum VkRequirements {
             VK.Ext.khrMaintenance3,
         ]
         switch mode {
-        case .waylandClientWSI:
-            return swapchainSet
+        case .waylandClientBackingStore:
+            return [
+                VK.Ext.khrExternalMemoryFd,
+                VK.Ext.extExternalMemoryDmaBuf,
+                VK.Ext.extImageDrmFormatModifier,
+                VK.Ext.khrExternalSemaphoreFd,
+                VK.Ext.khrTimelineSemaphore,
+                VK.Ext.khrGetMemoryRequirements2,
+                VK.Ext.khrSamplerYcbcrConversion,
+                VK.Ext.khrBindMemory2,
+                VK.Ext.khrMaintenance1,
+                VK.Ext.khrMaintenance3,
+            ]
         case .platformDefault:
             #if os(Android)
             return swapchainSet

@@ -1,4 +1,4 @@
-@_spi(NucleusCompositor) internal import NucleusLayers
+@_spi(NucleusRenderServer) internal import NucleusLayers
 internal import enum NucleusTypes.AnimationKeyPath
 internal import struct NucleusTypes.Rect
 

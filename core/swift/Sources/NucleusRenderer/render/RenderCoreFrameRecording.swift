@@ -57,6 +57,8 @@ extension RenderCore {
         // never degrade into an ordinary or CPU-synchronous submit.
         let submissionMode: FrameDriver.SubmissionMode
         switch target.kind {
+        case .clientBackingStore:
+            submissionMode = .offscreen
         case .swapchainColor:
             submissionMode = unsafe .swapchain(FrameDriver.PresentSubmit(
                 waitSemaphore: target.waitSemaphore,

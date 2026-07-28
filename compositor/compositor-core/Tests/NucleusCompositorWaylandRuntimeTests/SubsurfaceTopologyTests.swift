@@ -56,4 +56,42 @@ import Testing
         child.setSubsurfaceSync(false)
         #expect(!grandchild.isEffectivelySync)
     }
+
+    @Test func alphaAndTopologyLatchWithTheSynchronizedChildCommit() {
+        let graph = WaylandTestGraph()
+        let compositor = graph.compositor()
+        let parent = surface(compositor, graph: graph)
+        let child = surface(compositor, graph: graph)
+        #expect(child.claimSubsurfaceRole())
+        child.attachAsSubsurface(to: parent)
+        child.setSubsurfacePosition(x: 41, y: 17)
+        child.setPendingAlphaMultiplier(UInt32.max / 2)
+
+        child.commit()
+        #expect(child.subsurfaceX == 0)
+        #expect(child.subsurfaceY == 0)
+        #expect(child.aux.alphaMultiplier == UInt32.max)
+
+        parent.commit()
+        #expect(child.subsurfaceX == 41)
+        #expect(child.subsurfaceY == 17)
+        #expect(child.aux.alphaMultiplier == UInt32.max / 2)
+    }
+
+    @Test func stateOnlyChildCommitAccumulatesOnEarlierCachedState() {
+        let graph = WaylandTestGraph()
+        let compositor = graph.compositor()
+        let parent = surface(compositor, graph: graph)
+        let child = surface(compositor, graph: graph)
+        #expect(child.claimSubsurfaceRole())
+        child.attachAsSubsurface(to: parent)
+
+        child.setPendingAlphaMultiplier(UInt32.max / 4)
+        child.commit()
+        child.commit()
+        #expect(child.aux.alphaMultiplier == UInt32.max)
+
+        parent.commit()
+        #expect(child.aux.alphaMultiplier == UInt32.max / 4)
+    }
 }

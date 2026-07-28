@@ -4,7 +4,7 @@
 // Two pieces: the compositor-level block-reason classification consumed by
 // fullscreen-VRR eligibility, and the single-surface fullscreen-candidate checks
 // (viewport, geometry, dmabuf, opaque-format, modifier). The live Wayland scene
-// supplies these value inputs and RendererRuntime consumes the result before
+// supplies these value inputs and DRMScanoutPresenter consumes the result before
 // substituting an eligible client framebuffer onto the primary plane.
 
 // MARK: - fourcc (2101010 opaque variants; 8-bit ones live in DrmFormats.swift)
@@ -106,6 +106,7 @@ func scanoutBlocked(_ inputs: ScanoutInputs) -> Bool {
 /// `DirectScanoutBlock` (the subset the single-surface evaluation produces).
 enum DirectScanoutBlock: Sendable, Equatable {
     case viewportTransform
+    case alphaModifier
     case layoutRectMismatch
     case surfaceOriginMismatch
     case surfaceSizeMismatch
@@ -132,17 +133,20 @@ public struct ScanoutDmabufInfo: Sendable, Equatable {
 /// feeds these each frame).
 public struct ScanoutSurfaceInfo: Sendable, Equatable {
     public var hasViewportTransform = false
+    public var hasAlphaModifier = false
     public var currentWidth: UInt32 = 0
     public var currentHeight: UInt32 = 0
     public var dmabuf: ScanoutDmabufInfo?
 
     public init(
         hasViewportTransform: Bool = false,
+        hasAlphaModifier: Bool = false,
         currentWidth: UInt32 = 0,
         currentHeight: UInt32 = 0,
         dmabuf: ScanoutDmabufInfo? = nil
     ) {
         self.hasViewportTransform = hasViewportTransform
+        self.hasAlphaModifier = hasAlphaModifier
         self.currentWidth = currentWidth
         self.currentHeight = currentHeight
         self.dmabuf = dmabuf
@@ -212,6 +216,7 @@ func evaluateDirectScanout(
     guard let surface else { return .blocked(.missingDmabuf) }
 
     if surface.hasViewportTransform { return .blocked(.viewportTransform) }
+    if surface.hasAlphaModifier { return .blocked(.alphaModifier) }
 
     if !approxEqual(candidate.layoutX, candidate.outputLogicalX) ||
         !approxEqual(candidate.layoutY, candidate.outputLogicalY) ||
@@ -252,7 +257,7 @@ func evaluateDirectScanout(
 /// root surface's scanout attributes (nil when there is no single fullscreen root),
 /// and that root surface's IOSurface id (the buffer that would scan out). Public:
 /// the composition root builds it from the live window model and hands it down
-/// through `RendererRuntime.setScanoutCandidates`, mirroring the lock-composition
+/// through `DRMScanoutPresenter.setScanoutCandidates`, mirroring the lock-composition
 /// push. The backend runs `evaluate` against the output's cached primary-plane
 /// formats.
 public struct ScanoutCandidate: Sendable, Equatable {

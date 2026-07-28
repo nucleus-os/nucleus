@@ -7,7 +7,6 @@ let package = Package(
     products: [
         .library(name: "ColliderCore", targets: ["ColliderCore"]),
         .library(name: "ColliderRuntime", targets: ["ColliderRuntime"]),
-        .library(name: "NucleusSessionProtocol", targets: ["NucleusSessionProtocol"]),
     ],
     dependencies: [
         .package(path: "../../third-party/swift-system"),
@@ -48,7 +47,6 @@ let package = Package(
             resources: [
                 .copy("Resources/ToolchainValidationFixtures"),
             ]),
-        .target(name: "NucleusSessionProtocol"),
         .testTarget(
             name: "ColliderCoreTests",
             dependencies: [

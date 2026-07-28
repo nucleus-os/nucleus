@@ -98,6 +98,12 @@ struct WorkspaceLayout: Sendable {
     var platformLinux: URL {
         root.appendingPathComponent("platform-linux", isDirectory: true)
     }
+    var platformLinuxDesktop: URL {
+        platformLinux.appendingPathComponent("desktop", isDirectory: true)
+    }
+    var platformLinuxSession: URL {
+        platformLinux.appendingPathComponent("session", isDirectory: true)
+    }
     var compositor: URL {
         root.appendingPathComponent("compositor", isDirectory: true)
     }
@@ -123,12 +129,6 @@ struct WorkspaceLayout: Sendable {
         root.appendingPathComponent("tools", isDirectory: true)
     }
 
-    var compositorInstallPrefix: URL {
-        compositorApp.appendingPathComponent(".install", isDirectory: true)
-    }
-    var shellInstallPrefix: URL {
-        shell.appendingPathComponent(".install", isDirectory: true)
-    }
     var tracyBuild: URL {
         compositor.appendingPathComponent(".tracy-build", isDirectory: true)
     }

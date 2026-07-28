@@ -31,23 +31,23 @@ and concrete next steps.
 - **Region crop works** in both SHM and dma-buf paths.
 
 ### Screenshot request model (shell)
-- `ScreenshotService` (`NucleusCompositorShell/ScreenshotService.swift`) — a request/state
-  machine that already models `region` and `clipboard` (in its mode/destination enums),
-  save-path generation (`makeSavePath`, `defaultSaveDirectory`), preview/thumbnail handles,
-  portal consent (`beginPortalPicker` / `grantPortalConsent`), and lifecycle states
-  (`readbackComplete`, `saveComplete`). Execution is behind a `ScreenshotHost` seam
-  (`nucleus_compositor_screenshot_host_install`, `ShellServiceHost.swift`).
-- Caveat: `request(...)` takes `mode`/`targetOutput`, **not a rect** — the region isn't
-  plumbed through yet.
+
+The old in-process `NucleusCompositorShell/ScreenshotService` was deleted.
+Screenshot orchestration, selection UI, encoding, saving, and clipboard
+publication belong in `NucleusShellKit`. Capture remains the render server's
+standard `zwlr_screencopy_manager_v1` mechanism negotiated through the
+ordinary Wayland registry.
 
 ### UI + input foundation for a region picker
-- `NucleusCompositorOverlay` + `ShellOverlayScene` — the compositor-drawn overlay system
-  (notifications, hotkey display, bezel, menu views). Input is already routed:
-  `ShellPolicyHost.overlayPointer(...)` / `overlayKey(...)`. A rubber-band selector is new
-  UI, but built on this existing foundation, not from scratch.
+
+The shell owns transient NucleusUI layer surfaces for feedback, menus, and
+notifications. A region picker belongs in the same shell surface graph and
+uses ordinary window-client input routing; the compositor never draws or
+routes picker UI.
 
 ### Triggering, clipboard, external-tool support
-- Keybinds: `KeybindService` / `ShellPolicyHost.dispatchKeybind` (the ⌘⇧4/⌘⇧5 analog).
+- Keybinds: server `GlobalBindingResolver` acceptance followed by a typed
+  `NucleusSessionProtocol` publication to the shell (the ⌘⇧4/⌘⇧5 analog).
 - Clipboard: `DataDevice` (`NucleusCompositorWaylandRuntime/DataDevice.swift`) — an
   `image/png` data source needs wiring for "copy screenshot to clipboard".
 - Layer-shell: `ZwlrLayerSurface` exists — so external selector/capture tools (below) can run.
@@ -55,9 +55,9 @@ and concrete next steps.
 ## What's missing
 
 ### For built-in region screenshots (small, tractable)
-1. **Interactive region-selection overlay** — draw the selection rectangle, dimmed backdrop,
-   live dimensions readout; capture pointer drag + Esc/Enter via the overlay input seam;
-   report the chosen rect. New UI on `NucleusCompositorOverlay`.
+1. **Interactive region-selection surface** — draw the selection rectangle,
+   dimmed backdrop, and live dimensions in `NucleusShellKit`; capture pointer
+   drag plus Esc/Enter through `NucleusWindowClient`.
 2. **PNG-encode facade** — Skia has `SkPngEncoder`, but it isn't exposed through the Graphite
    bridge (`NucleusSkiaGraphite`). Add an encode-to-PNG-bytes method. (Small.)
 3. **Plumb the rect** into `ScreenshotService.request` + the `ScreenshotHost` executor
@@ -84,8 +84,9 @@ tools should work against it once validated on hardware:
   validation* (the capture is un-headless-tested). This does not give a macOS-*integrated*
   feel (separate apps), but it's the fastest path to the capability.
 
-### Path B — built-in, macOS-integrated (⌘⇧4/⌘⇧5 in the compositor)
-Compositor owns the region picker overlay + capture + encode + save/clipboard.
+### Path B — built-in, macOS-integrated (⌘⇧4/⌘⇧5 in the shell)
+The shell owns the region picker, encode, save, and clipboard workflow; the
+render server owns only capture validation and pixel production.
 - **Screenshots:** feasible now — region overlay + PNG facade + wire the rect. A focused,
   mostly-built-in feature.
 - **Recording:** still requires building or embedding the encode/mux pipeline (the real

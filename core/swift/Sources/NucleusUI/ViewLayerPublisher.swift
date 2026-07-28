@@ -1,4 +1,4 @@
-@_spi(NucleusCompositor) package import NucleusLayers
+@_spi(NucleusRenderServer) package import NucleusLayers
 internal import enum NucleusTypes.LayerKind
 import Tracy
 

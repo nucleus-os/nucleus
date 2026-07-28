@@ -18,7 +18,7 @@
 import WaylandServerC
 import NucleusRenderModel
 import NucleusTypes
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusRenderServer) import NucleusLayers
 internal import NucleusCompositorServer
 internal import NucleusCompositorWindowManager
 import WaylandServer
@@ -357,6 +357,7 @@ final class RouterSurfaceSceneDriver {
             height: height,
             iosurfaceID: surface.renderIosurfaceId,
             sample: contentSample(for: surface))
+        publishAlpha(surface)
         // The role callback publishes this root after the commit import's redraw
         // request. Arm the intersecting physical output from the completed
         // first-map state so the retained root and its content land together.
@@ -382,6 +383,7 @@ final class RouterSurfaceSceneDriver {
     /// the backing layer from its scene map and no-ops until the scene exists — so
     /// this is safe to call on every commit.
     private func publishContent(_ surface: WlSurface, commit: SurfaceCommit) {
+        defer { publishAlpha(surface) }
         let bufferWidth = commit.bufferPixelSize.width
         let bufferHeight = commit.bufferPixelSize.height
         // Stash the surface's own content extent (surface-local logical px) so the
@@ -433,6 +435,14 @@ final class RouterSurfaceSceneDriver {
             surfaceID: surface.objectId,
             iosurfaceID: surface.renderIosurfaceId,
             sample: contentSample(for: surface))
+    }
+
+    private func publishAlpha(_ surface: WlSurface) {
+        feeder?.surfaceContentOpacity(
+            surfaceID: surface.objectId,
+            opacity:
+                Double(surface.aux.alphaMultiplier)
+                / Double(UInt32.max))
     }
 
     /// Author a layer surface's content: ensure its model window + scene exist at the

@@ -114,9 +114,8 @@ struct RunCommand {
         let installation =
             if options.build {
                 try await installer.install(
-                .session,
-                prefix: prefix,
-                options: options.buildOptions)
+                    prefix: prefix,
+                    options: options.buildOptions)
             } else {
                 try installer.existingSession(
                 prefix: prefix,

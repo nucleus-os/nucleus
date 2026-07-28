@@ -4,7 +4,8 @@ import NucleusAndroidGraphicsContract
 import NucleusAndroidGraphicsPlatform
 import NucleusAndroidGpuBrokerCore
 import NucleusAndroidIPC
-import NucleusAndroidIPCC
+import NucleusAndroidProcessLifecycleC
+import NucleusIPCTransportC
 import NucleusLinuxReactor
 
 private struct BrokerArguments {
@@ -377,7 +378,7 @@ do {
             executablePath: guestWorkload)
     } else {
         if let parentPID = arguments.parentPID,
-           nucleus_android_ipc_require_parent_lifetime(
+           nucleus_android_require_parent_lifetime(
                SIGTERM,
                parentPID) != 0
         {

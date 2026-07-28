@@ -243,8 +243,7 @@ extension ColliderRuntime {
                 "current AOSP project revisions do not match signed-build "
                     + "source provenance")
         }
-        let productDigest = try ArtifactHasher.digest(
-            tree: build.productSource)
+        let productDigest = try aospProductSourceDigest(build)
         try stageAOSPProduct(build, digest: productDigest)
 
         let output = build.buildRoot.appending("out")
@@ -572,8 +571,7 @@ extension ColliderRuntime {
             AOSPBuildSourceProvenance.self,
             from: Data(contentsOf: URL(
                 fileURLWithPath: build.sourceProvenance.string)))
-        let productDigest = try ArtifactHasher.digest(
-            tree: build.productSource)
+        let productDigest = try aospProductSourceDigest(build)
         let output = build.buildRoot.appending("out")
         let staged = build.buildRoot.appending("staged")
         let hostTools = output.appending("host/linux-x86/bin")
@@ -874,27 +872,47 @@ extension ColliderRuntime {
         }
         let stageMetadata = destination.appending(
             ".nucleus-product-stage.json")
-        if let staged = try? JSONDecoder().decode(
-            AOSPProductStage.self,
-            from: Data(contentsOf: URL(
-                fileURLWithPath: stageMetadata.string))),
-            staged.source == build.productSource.string,
-            staged.sha256 == digest.sha256Hex,
-            try ArtifactHasher.digest(
-                tree: destination,
-                excluding: [".nucleus-product-stage.json"]) == digest
-        {
-            return
-        }
         try synchronizeAOSPProductTree(
             from: build.productSource,
             to: destination,
             preservingAtRoot: [".nucleus-product-stage.json"])
+        for overlay in build.sourceOverlays {
+            guard !overlay.relativeDestination.isEmpty,
+                !overlay.relativeDestination.hasPrefix("/"),
+                !overlay.relativeDestination.split(separator: "/")
+                    .contains("..")
+            else {
+                throw RuntimeFailure.invalidOutput(
+                    "invalid AOSP product overlay destination "
+                        + "'\(overlay.relativeDestination)'")
+            }
+            try synchronizeAOSPProductTree(
+                from: overlay.source,
+                to: destination.appending(overlay.relativeDestination),
+                preservingAtRoot: [])
+        }
         try DurableFile.writeJSON(
             AOSPProductStage(
                 source: build.productSource.string,
                 sha256: digest.sha256Hex),
             to: stageMetadata)
+    }
+
+    private func aospProductSourceDigest(
+        _ build: AOSPProductBuild
+    ) throws -> ArtifactDigest {
+        var framing = Data()
+        framing.append(contentsOf: try ArtifactHasher.digest(
+            tree: build.productSource).bytes)
+        for overlay in build.sourceOverlays.sorted(by: {
+            $0.relativeDestination < $1.relativeDestination
+        }) {
+            framing.append(contentsOf: overlay.relativeDestination.utf8)
+            framing.append(0)
+            framing.append(contentsOf: try ArtifactHasher.digest(
+                tree: overlay.source).bytes)
+        }
+        return ArtifactHasher.digest(bytes: framing)
     }
 
     private func requireAOSPReleaseSigning(

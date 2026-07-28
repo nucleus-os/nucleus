@@ -18,7 +18,10 @@ public enum CompositorAppColliderRecipe {
         swiftPM: SwiftPMInvocation
     ) -> TaskDeclaration {
         task(
-            "compositor.test", root, environment, ["test"],
+            // The launch-only package intentionally has no test targets. Its
+            // test task verifies that the executable still builds after the
+            // compositor-core test authority has passed.
+            "compositor.test", root, environment, ["build"],
             [
                 TaskID(rawValue: "compositor.build"),
                 TaskID(rawValue: "compositor-core.test"),

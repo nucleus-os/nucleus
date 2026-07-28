@@ -28,12 +28,10 @@ let package = Package(
         .library(name: "WaylandClientC", targets: ["WaylandClientC"]),
         // The mode-independent wl_interface marshalling (wayland-scanner private-code). Consumed
         // alongside WaylandServerC or WaylandClientC (both reference these interface symbols).
-        .library(name: "WaylandProtocolsC", targets: ["WaylandProtocolsC"]),
         // Ergonomic Swift server layer over WaylandServerC: safe wl_resource ownership, wl_global
         // RAII, and the wl_display / event-loop / socket owner. Policy-free — the plumbing every
         // Swift Wayland server reimplements.
         .library(name: "WaylandServer", targets: ["WaylandServer"]),
-        .library(name: "WaylandProtocolTypes", targets: ["WaylandProtocolTypes"]),
         // Generated typed request dispatch over WaylandServer(C): per-interface handler
         // protocols + typed handles + trampolines. Consumers implement the protocol (pure policy).
         .library(name: "WaylandServerDispatch", targets: ["WaylandServerDispatch"]),
@@ -51,6 +49,9 @@ let package = Package(
     dependencies: [
         .package(path: "../collider/engine"),
         .package(path: "../third-party/swift-syntax"),
+        .package(
+            name: "SwiftWaylandProtocolRuntime",
+            path: "protocol-runtime"),
     ],
     targets: [
         .target(
@@ -78,25 +79,32 @@ let package = Package(
         .systemLibrary(name: "WaylandClientC", path: "Sources/WaylandClientC", pkgConfig: "wayland-client"),
         // The wl_interface definitions — one <name>-protocol.c per protocol, compiled once and
         // linked by whichever mode module the consumer uses.
-        .target(name: "WaylandProtocolsC", path: "Sources/WaylandProtocolsC"),
         // The ergonomic Swift server layer. Builds under C++ interop (matching how consumers import
         // WaylandServerC) so the wl_* pointer types it exposes are identical to the consumer's.
         .target(
             name: "WaylandServer",
-            dependencies: ["WaylandServerC", "WaylandProtocolTypes"],
+            dependencies: [
+                "WaylandServerC",
+                .product(
+                    name: "SwiftWaylandProtocolRuntime",
+                    package: "SwiftWaylandProtocolRuntime"),
+            ],
             path: "Sources/WaylandServer",
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
                 .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
             ]
         ),
-        .target(
-            name: "WaylandProtocolTypes",
-            path: "Sources/WaylandProtocolTypes"),
         // The typed request-dispatch layer (currently: wl_surface; the generator will emit the rest).
         .target(
             name: "WaylandServerDispatch",
-            dependencies: ["WaylandServerC", "WaylandServer", "WaylandProtocolTypes"],
+            dependencies: [
+                "WaylandServerC",
+                "WaylandServer",
+                .product(
+                    name: "SwiftWaylandProtocolRuntime",
+                    package: "SwiftWaylandProtocolRuntime"),
+            ],
             path: "Sources/WaylandServerDispatch",
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
@@ -108,8 +116,10 @@ let package = Package(
         .target(
             name: "WaylandClientDispatch",
             dependencies: [
-                "WaylandClientC", "WaylandProtocolTypes",
-                "WaylandProtocolsC",
+                "WaylandClientC",
+                .product(
+                    name: "SwiftWaylandProtocolRuntime",
+                    package: "SwiftWaylandProtocolRuntime"),
             ],
             path: "Sources/WaylandClientDispatch",
             swiftSettings: [
@@ -134,7 +144,12 @@ let package = Package(
         // (the compositor build exercises the server side; the client's consumer can't build here).
         .testTarget(
             name: "WaylandClientCTests",
-            dependencies: ["WaylandClientC", "WaylandProtocolsC"],
+            dependencies: [
+                "WaylandClientC",
+                .product(
+                    name: "SwiftWaylandProtocolRuntime",
+                    package: "SwiftWaylandProtocolRuntime"),
+            ],
             swiftSettings: [.interoperabilityMode(.Cxx)]
         ),
         .testTarget(
@@ -147,7 +162,12 @@ let package = Package(
         // read the loop fd, dispatch/flush with no clients — no socket or client needed.
         .testTarget(
             name: "WaylandServerTests",
-            dependencies: ["WaylandServer", "WaylandProtocolTypes"],
+            dependencies: [
+                "WaylandServer",
+                .product(
+                    name: "SwiftWaylandProtocolRuntime",
+                    package: "SwiftWaylandProtocolRuntime"),
+            ],
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
                 .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
@@ -169,9 +189,13 @@ let package = Package(
         // the client listener trampolines + arg marshalling. Links both libwayland-server and -client.
         .testTarget(
             name: "WaylandLoopbackTests",
-            dependencies: ["WaylandServer", "WaylandServerDispatch",
-                           "WaylandProtocolTypes", "WaylandClient",
-                           "WaylandClientDispatch", "WaylandProtocolsC"],
+            dependencies: [
+                "WaylandServer", "WaylandServerDispatch",
+                "WaylandClient", "WaylandClientDispatch",
+                .product(
+                    name: "SwiftWaylandProtocolRuntime",
+                    package: "SwiftWaylandProtocolRuntime"),
+            ],
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
                 .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),

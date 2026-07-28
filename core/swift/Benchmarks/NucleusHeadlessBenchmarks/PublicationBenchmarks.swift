@@ -1,4 +1,4 @@
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusRenderServer) import NucleusLayers
 import NucleusBenchmarkSupport
 import NucleusUI
 

@@ -12,7 +12,7 @@ Environment=XDG_SESSION_TYPE=wayland
 Environment=XDG_CURRENT_DESKTOP=Nucleus:Wayland
 Environment=XDG_SESSION_DESKTOP=Nucleus
 Environment=DESKTOP_SESSION=Nucleus
-ExecStart=@bindir@/nucleus-session @bindir@/nucleus-compositor
+ExecStart=@bindir@/nucleus-session @bindir@/NucleusCompositor
 Restart=no
 
 [Install]

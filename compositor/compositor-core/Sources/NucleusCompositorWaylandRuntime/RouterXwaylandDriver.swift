@@ -20,7 +20,7 @@
 
 import WaylandServerC
 import NucleusCompositorXcbC
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusRenderServer) import NucleusLayers
 internal import NucleusCompositorServer
 internal import NucleusCompositorWindowManager
 

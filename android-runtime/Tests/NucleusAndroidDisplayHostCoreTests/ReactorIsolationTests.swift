@@ -1,7 +1,7 @@
 import Foundation
 import Glibc
 @testable import NucleusAndroidDisplayHostCore
-import NucleusAndroidIPCC
+import NucleusIPCTransportC
 import NucleusLinuxReactor
 import Testing
 
@@ -45,7 +45,7 @@ func displayHostSocketWaitsUseIndependentReactors() async throws {
 func topologyHandshakeProgressesPastAnIdlePresentationConnection() async throws {
     let socketPath = "/tmp/ndh-\(UUID().uuidString)"
     let listener = socketPath.withCString {
-        unsafe nucleus_android_ipc_listen($0, 0o600)
+        unsafe nucleus_ipc_listen($0, 0o600)
     }
     #expect(listener >= 0)
     guard listener >= 0 else { return }
@@ -60,7 +60,7 @@ func topologyHandshakeProgressesPastAnIdlePresentationConnection() async throws 
 
     let acceptReactor = try LinuxHostReactor()
     let presentationClient = socketPath.withCString {
-        unsafe nucleus_android_ipc_connect($0)
+        unsafe nucleus_ipc_connect($0)
     }
     #expect(presentationClient >= 0)
     guard presentationClient >= 0 else { return }
@@ -69,7 +69,7 @@ func topologyHandshakeProgressesPastAnIdlePresentationConnection() async throws 
     try await waitForDisplayHostReadable(
         listener,
         reactor: acceptReactor)
-    let presentationHost = nucleus_android_ipc_accept(listener)
+    let presentationHost = nucleus_ipc_accept(listener)
     #expect(presentationHost >= 0)
     guard presentationHost >= 0 else { return }
     descriptors.append(presentationHost)
@@ -80,7 +80,7 @@ func topologyHandshakeProgressesPastAnIdlePresentationConnection() async throws 
         reactor: presentationReactor)
 
     let topologyClient = socketPath.withCString {
-        unsafe nucleus_android_ipc_connect($0)
+        unsafe nucleus_ipc_connect($0)
     }
     #expect(topologyClient >= 0)
     guard topologyClient >= 0 else { return }
@@ -89,7 +89,7 @@ func topologyHandshakeProgressesPastAnIdlePresentationConnection() async throws 
     try await waitForDisplayHostReadable(
         listener,
         reactor: acceptReactor)
-    let topologyHost = nucleus_android_ipc_accept(listener)
+    let topologyHost = nucleus_ipc_accept(listener)
     #expect(topologyHost >= 0)
     guard topologyHost >= 0 else { return }
     descriptors.append(topologyHost)

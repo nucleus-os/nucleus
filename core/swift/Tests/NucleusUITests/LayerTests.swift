@@ -1,5 +1,5 @@
 import NucleusTypes
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusRenderServer) import NucleusLayers
 import Testing
 
 @MainActor

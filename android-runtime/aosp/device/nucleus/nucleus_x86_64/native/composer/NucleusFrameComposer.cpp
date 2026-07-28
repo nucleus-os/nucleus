@@ -13,7 +13,7 @@
 
 #include "Display.h"
 #include "Layer.h"
-#include "NucleusAndroidIPCC.h"
+#include "NucleusIPCTransportC.h"
 #include "NucleusComposerProtocol.h"
 #include "NucleusGrallocHandle.h"
 
@@ -54,7 +54,7 @@ HWC3::Error NucleusFrameComposer::init() {
             return HWC3::Error::NoResources;
         }
     }
-    socket_.reset(nucleus_android_ipc_connect(socket_path_.c_str()));
+    socket_.reset(nucleus_ipc_connect(socket_path_.c_str()));
     if (!socket_.ok()) {
         ALOGE("Nucleus Composer3 presentation cannot connect to %s: %s",
               socket_path_.c_str(), strerror(errno));
@@ -66,7 +66,7 @@ HWC3::Error NucleusFrameComposer::init() {
 
 bool NucleusFrameComposer::connectTopologySubscriber() {
     ::android::base::unique_fd subscriber(
-        nucleus_android_ipc_connect(socket_path_.c_str()));
+        nucleus_ipc_connect(socket_path_.c_str()));
     if (!subscriber.ok()) {
         ALOGE("Nucleus Composer3 topology cannot connect to %s: %s",
               socket_path_.c_str(), strerror(errno));
@@ -85,7 +85,7 @@ bool NucleusFrameComposer::connectTopologySubscriber() {
         .fd_count = 0,
         .last_generation = last_generation,
     };
-    if (nucleus_android_ipc_send(
+    if (nucleus_ipc_send(
             subscriber.get(), &subscribe, sizeof(subscribe), nullptr, 0) != 0) {
         ALOGE("Nucleus Composer3 topology subscription failed: %s", strerror(errno));
         return false;
@@ -183,7 +183,7 @@ bool NucleusFrameComposer::receiveTopologyEvent(
     bool* initial_snapshot_complete) {
     nucleus_composer_topology_event event = {};
     size_t fd_count = 0;
-    const int received = nucleus_android_ipc_receive(
+    const int received = nucleus_ipc_receive(
         topology_fd, &event, sizeof(event), nullptr, 0, &fd_count);
     if (received < 0) {
         if (!stopping_.load()) {
@@ -425,7 +425,7 @@ HWC3::Error NucleusFrameComposer::presentDisplay(
         .reserved = 0,
     };
     int descriptors[3] = {handle->dmabuf_fd, handle->lifetime_fd, acquire.get()};
-    if (nucleus_android_ipc_send(
+    if (nucleus_ipc_send(
             socket_.get(), &request, sizeof(request), descriptors, request.fd_count) != 0) {
         ALOGE("Nucleus Composer3 present send failed: %s", strerror(errno));
         socket_.reset();
@@ -435,7 +435,7 @@ HWC3::Error NucleusFrameComposer::presentDisplay(
     nucleus_composer_present_reply reply = {};
     int reply_descriptors[1] = {-1};
     size_t reply_fd_count = 0;
-    const int received = nucleus_android_ipc_receive(
+    const int received = nucleus_ipc_receive(
         socket_.get(),
         &reply,
         sizeof(reply),

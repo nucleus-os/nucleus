@@ -21,6 +21,7 @@ final class XwaylandProcess {
     private(set) var displayPipeRd: Int32 = -1
     private(set) var tracePipeRd: Int32 = -1
     private var traceSink: XwaylandTraceSink?
+    private var waylandClient: WaylandManagedClient?
 
     private var sockType: Int32 { Int32(SOCK_STREAM.rawValue) }
     private var cloexec: Int32 { Int32(SOCK_CLOEXEC.rawValue) }
@@ -204,10 +205,14 @@ final class XwaylandProcess {
         // Adopt only after spawn succeeds. This keeps every file-action failure
         // descriptor-only and prevents a failed launch from leaving a live
         // server-side Wayland client behind.
-        guard unsafe host.runtime?.router.display.createClient(fd: wlPair[0]) != nil else {
+        guard let waylandClient = host.runtime?.router.display.createManagedClient(
+            fd: wlPair[0])
+        else {
             terminateFailedSpawn(child)
             return false
         }
+        self.waylandClient = waylandClient
+        host.xwaylandClientID = waylandClient.identity
         ownedDescriptors.relinquish(wlPair[0])
 
         // Parent: close child-only ends, keep the WM parent + readiness read.
@@ -261,6 +266,9 @@ final class XwaylandProcess {
     }
 
     func shutdown() {
+        host.xwaylandClientID = nil
+        waylandClient?.destroy()
+        waylandClient = nil
         if displayPipeRd >= 0 { close(displayPipeRd); displayPipeRd = -1 }
         if wmFd >= 0 { close(wmFd); wmFd = -1 }
         if tracePipeRd >= 0 { close(tracePipeRd); tracePipeRd = -1 }

@@ -1,6 +1,6 @@
 import Testing
 @testable import NucleusUI
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusRenderServer) import NucleusLayers
 
 @MainActor
 @Suite(.uiContext) struct CollectionSnapshotTests {

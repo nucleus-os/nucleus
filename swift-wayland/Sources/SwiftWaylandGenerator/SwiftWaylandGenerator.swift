@@ -202,6 +202,12 @@ if mode == .server {
         wl_resource_add_destroy_listener(resource, &box->listener);
     }
 
+    static inline void swift_wayland_client_lifetime_listener_attach(
+        struct swift_wayland_resource_lifetime_listener *box,
+        struct wl_client *client) {
+        wl_client_add_destroy_listener(client, &box->listener);
+    }
+
     static inline void *swift_wayland_resource_lifetime_listener_owner(
         struct wl_listener *listener) {
         struct swift_wayland_resource_lifetime_listener *box =

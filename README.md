@@ -22,13 +22,13 @@ Nucleus is one monorepo containing independently buildable Swift packages:
      │                                    │
      │  (socket)                          │
 ┌────▼───────────────┐        ┌───────────▼──────────────┐
-│  nucleus-compositor │        │       nucleus-shell       │
+│  NucleusCompositor  │        │       NucleusShell        │
 │                     │        │                           │
 │  Wayland server     │        │  Wayland client           │
-│  DRM/KMS scanout    │        │  VK_WSI wl_surface        │
+│  DRM/KMS scanout    │        │  DMA-BUF wl_surface       │
 │  Window policy      │        │  Native Swift product    │
-│  Shell overlay      │        │  NucleusUI bar + lock    │
-│  (NucleusUI)        │        │                           │
+│  Desktop-global     │        │  NucleusUI bar + lock    │
+│  window policy      │        │                           │
 └────┬────────────────┘        └────────────┬──────────────┘
      │                                      │
      │             (relative SwiftPM paths) │
@@ -46,8 +46,8 @@ Nucleus is one monorepo containing independently buildable Swift packages:
 ### Key design principles
 
 - **`core/` is the single source of truth** for rendering, layout, and the UI framework. Other packages consume it through relative SwiftPM paths.
-- **The compositor links zero React.** It provides the Wayland server, DRM/KMS scanout, window management, and a shell overlay built with NucleusUI — but React Native is not part of it.
-- **The shell is out-of-process.** `nucleus-shell` is a normal Wayland client connected over `WAYLAND_DISPLAY`. The compositor and shell meet only at runtime over standard protocols — each is swappable independently.
+- **The compositor links zero React.** It provides the Wayland server, DRM/KMS scanout, and desktop-global window policy. Application and shell UI remain in client processes.
+- **The shell is out-of-process.** `NucleusShell` is a normal Wayland client connected over `WAYLAND_DISPLAY`. The compositor does not track a privileged shell client identity.
 - **The React Native platform is independent of the shell.** `react-native/` owns Fabric, Hermes, folly, and its Swift runtime bridge for RN applications; `shell/` does not depend on that package or SDK.
 - **Native SDK ownership is explicit.** Render consumers use the `render` SDK (Skia Graphite + native Vulkan), while only `react-native/` consumes the `rn` SDK (Hermes + ReactCommon + folly). The root bootstrap provisions both under `~/.cache/nucleus/nucleus-native-sdk/`.
 

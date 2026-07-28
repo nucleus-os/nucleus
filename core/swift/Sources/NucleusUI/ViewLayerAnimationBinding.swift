@@ -1,4 +1,4 @@
-@_spi(NucleusCompositor) internal import NucleusLayers
+@_spi(NucleusRenderServer) internal import NucleusLayers
 
 extension ViewLayerPublisher {
     func publishAnimations(

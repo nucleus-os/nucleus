@@ -546,22 +546,22 @@ import NucleusTypes
 
         if isEffectivelySync {
             var next = latch
-            // A superseded cached commit is dropped: release its never-applied new
-            // buffer, and roll its frame callbacks into the new latch so none leak.
             if let prev = subsurfaceTopology.cachedCommit {
-                if prev.bufferAttached, let buffer = prev.buffer {
-                    buffer.handle.sendRelease()
+                // Only a later buffer attachment supersedes a previously cached
+                // attachment. State-only commits accumulate on the cached state.
+                if latch.bufferAttached, prev.bufferAttached {
+                    prev.buffer?.handle.sendRelease()
                     if let callback = prev.releaseCallback {
                         callback.handle.sendDone(callback_data: 0)
                         callback.destroy()
                     }
+                    // The replaced cached buffer was never presented.
+                    for feedback in prev.presentationFeedbacks {
+                        feedback.handle.sendDiscarded()
+                        feedback.destroy()
+                    }
                 }
-                next.frameCallbacks = prev.frameCallbacks + next.frameCallbacks
-                // A superseded content update is never presented: discard its feedbacks.
-                for fb in prev.presentationFeedbacks {
-                    fb.handle.sendDiscarded()
-                    fb.destroy()
-                }
+                next = latch.mergingCachedState(from: prev)
             }
             subsurfaceTopology.cachedCommit = next
         } else {
@@ -653,6 +653,9 @@ import NucleusTypes
         // commit.
         if latch.auxViewportSourceSet { aux.viewportSource = latch.auxViewportSource }
         if latch.auxViewportDestinationSet { aux.viewportDestination = latch.auxViewportDestination }
+        if latch.auxAlphaMultiplierSet {
+            aux.alphaMultiplier = latch.auxAlphaMultiplier
+        }
         aux.syncAcquire = latch.syncAcquire
         aux.syncRelease = latch.syncRelease
 
@@ -747,6 +750,11 @@ import NucleusTypes
             return false
         }
         return true
+    }
+
+    func setPendingAlphaMultiplier(_ factor: UInt32) {
+        pending.alphaMultiplier = factor
+        pending.alphaMultiplierSet = true
     }
 
     private func committedBufferPixelSize() -> BufferPixelSize {

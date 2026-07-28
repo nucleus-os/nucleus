@@ -1,6 +1,6 @@
 import Testing
 import NucleusTextBackend
-@_spi(NucleusCompositor) @testable import NucleusUI
+@_spi(NucleusRenderServer) @testable import NucleusUI
 
 @MainActor
 @Suite(.uiContext, .serialized)

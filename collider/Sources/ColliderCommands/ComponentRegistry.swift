@@ -72,14 +72,6 @@ struct ComponentRegistry {
                 root: FilePath(layout.config.path),
                 environment: environment,
                 swiftPM: swiftPM),
-            IPCColliderRecipe.build(
-                root: FilePath(layout.ipc.path),
-                environment: environment,
-                swiftPM: swiftPM),
-            LinuxColliderRecipe.build(
-                root: FilePath(layout.platformLinux.path),
-                environment: environment,
-                swiftPM: swiftPM),
             ReactNativeColliderRecipe.build(
                 root: FilePath(layout.reactNative.path),
                 environment: environment,
@@ -96,7 +88,15 @@ struct ComponentRegistry {
                 root: FilePath(layout.shell.path),
                 environment: environment,
                 swiftPM: swiftPM),
-        ] + (try AndroidRuntimeColliderRecipe.tasks(
+        ] + IPCColliderRecipe.builds(
+            root: FilePath(layout.ipc.path),
+            environment: environment,
+            swiftPM: swiftPM
+        ) + LinuxColliderRecipe.builds(
+            root: FilePath(layout.platformLinux.path),
+            environment: environment,
+            swiftPM: swiftPM
+        ) + (try AndroidRuntimeColliderRecipe.tasks(
             root: FilePath(layout.androidRuntime.path),
             repositoryRoot: layout.rootPath,
             environment: environment,
@@ -130,14 +130,6 @@ struct ComponentRegistry {
                 root: FilePath(layout.config.path),
                 environment: environment,
                 swiftPM: swiftPM),
-            IPCColliderRecipe.test(
-                root: FilePath(layout.ipc.path),
-                environment: environment,
-                swiftPM: swiftPM),
-            LinuxColliderRecipe.test(
-                root: FilePath(layout.platformLinux.path),
-                environment: environment,
-                swiftPM: swiftPM),
             ReactNativeColliderRecipe.test(
                 root: FilePath(layout.reactNative.path),
                 environment: environment,
@@ -158,7 +150,14 @@ struct ComponentRegistry {
                 root: FilePath(layout.androidRuntime.path),
                 environment: environment,
                 swiftPM: swiftPM),
-        ]
+        ] + IPCColliderRecipe.tests(
+            root: FilePath(layout.ipc.path),
+            environment: environment,
+            swiftPM: swiftPM
+        ) + LinuxColliderRecipe.tests(
+            root: FilePath(layout.platformLinux.path),
+            environment: environment,
+            swiftPM: swiftPM)
         let effectiveSelection = selection ?? .all
         if [.all, .runtime, .compositor, .loader].contains(
             effectiveSelection)

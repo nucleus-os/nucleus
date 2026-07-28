@@ -1,6 +1,8 @@
-# nucleus-compositor
+# NucleusCompositor
 
-The Nucleus **Wayland/DRM compositor** — the Linux OS substrate, DRM renderer backend, window/seat policy, shell overlay, and the `NucleusCompositor` executable.
+The Nucleus **Wayland/DRM render server** — the Linux OS substrate, DRM
+presenter, window/seat policy, and the launch-only `NucleusCompositor`
+executable.
 
 It consumes the monorepo's [`core/`](../core) and
 [`platform-linux/`](../platform-linux) packages plus the provisioned render
@@ -19,13 +21,10 @@ The Linux OS substrate and compositor policy modules. Tested via `swift test` (n
 | Target | Description |
 |---|---|
 | `NucleusCompositorServerTypes` | Shared value types for the compositor server. |
-| `NucleusCompositorOverlayTypes` | Shared value types for the shell overlay. |
 | `NucleusCompositorServer` | Wayland server logic — connection handling, resource lifecycle. |
 | `NucleusCompositorWindowManager` | Window/seat policy — surface ordering, focus, stacking. |
 | `NucleusCompositorWindowScene` | Per-window render scene — ties Wayland surfaces to the Nucleus render tree. |
-| `NucleusCompositorOverlay` | Shell overlay UI — built with the NucleusUI design system. |
-| `NucleusCompositorOverlayScene` | Overlay render scene — composites overlay + managed windows. |
-| `NucleusCompositorShell` | Shell integration — desktop application index, systemd, overlay routing. |
+| `NucleusCompositorPolicy` | Server-only input arbitration, binding resolution, cursor mechanism, and the typed publication seam to the shell. |
 | `NucleusCompositorWaylandRuntime` | Wayland substrate runtime — server dispatch, xcb property handling, input (libinput/udev/seat). |
 | `NucleusCompositorRendererLinux` | DRM/KMS renderer backend — GBM buffers, page-flip, CRTC/connector/encoder setup. |
 | `NucleusCompositorRenderRuntime` | Render runtime facade — ties the DRM backend to the Nucleus renderer. |
@@ -33,19 +32,18 @@ The Linux OS substrate and compositor policy modules. Tested via `swift test` (n
 | `NucleusCompositorXcbC` | xcb C façade (systemLibrary). |
 | `NucleusCompositorInputC` | libinput/udev C façade (systemLibrary). |
 
-Linux D-Bus transport and AT-SPI export are shared with the out-of-process
-shell through `NucleusLinuxDBus` and `NucleusLinuxAccessibility`; compositor
-targets do not import libsystemd directly.
+Linux D-Bus, AT-SPI, application discovery, notifications, bars, menus,
+hotkey feedback, and lock-screen UI belong to the out-of-process shell. The
+render server does not link those shell services.
 
 ### `compositor/` — The executable package
 
-The `NucleusCompositor` binary and composition root. Lives in a separate package because `swift-system` is C-interop-only and cannot tolerate the global C++-interop flag that `swift test` applies.
+The `NucleusCompositor` launch stub. All server implementation and tests live
+in `compositor-core`.
 
 | Target | Description |
 |---|---|
-| `NucleusCompositorRuntime` | Main-actor composition root — awaitable shared Linux reactor, readiness dispatch, `CompositorBringup`, and ordered teardown. |
-| `NucleusCompositorRenderSession` | DRM primary-node device session — owns the DRM primary fd, seat open/close injection, session generation for page-flip poll tokens. |
-| `NucleusCompositor` | The executable — links the full Swift graph + text backend + Skia + libdrm/gbm + wayland-server + xcb/input/seat/udev/xkb + vulkan + fontconfig/freetype. |
+| `NucleusCompositor` | Parses inherited session capabilities and calls the `NucleusRenderServer` framework entry point. |
 
 ## Build
 
@@ -98,7 +96,7 @@ bash -c 'swift test --package-path compositor-core \
 Notable test targets:
 - `NucleusCompositorRendererLinuxTests` — Links the full renderer closure end to end.
 - `NucleusCompositorWaylandRuntimeTests` — Wire-level protocol conformance over the in-process WaylandTestClient harness.
-- `NucleusCompositorOverlayTests` — Shell overlay runtime behavior (covers `NucleusCompositorOverlay`, links NucleusUI + text backend + Skia).
+- `NucleusCompositorPolicyTests` — server input, binding, cursor-loader, and policy behavior.
 - `NucleusCompositorWindowSceneTests` — Compositor-root self-hosting topology.
 
 ## Run
@@ -116,9 +114,12 @@ helper, and session launcher before starting the complete private-bus session.
 Valgrind run after the requested duration.
 `--scale N` sets the positive fractional output scale for every connected
 display and applies to every run mode.
-The compositor serves the standard Wayland compositor protocols plus extension
-protocols (`wlr-layer-shell`, `wlr-foreign-toplevel-management`,
-`ext-session-lock`, `wlr-screencopy`). Any layer-shell client can connect.
+The compositor serves standard Wayland compositor protocols. The supervisor
+selects the session `WAYLAND_DISPLAY` before launch, and the shell connects
+through that normal listener. The compositor does not identify or retain a
+shell `wl_client`. Standard desktop globals use the ordinary registry; only
+component-specific protocols whose specifications require exact identity,
+such as `xwayland_shell_v1`, are filtered to their component connection.
 
 On multi-GPU hosts, startup selects the unique GPU driving a connected display,
 then uses the PCI boot-VGA hint as a tie-breaker. Use

@@ -9,13 +9,16 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "engine"),
+        .package(
+            name: "NucleusSessionProtocolPackage",
+            path: "../session/protocol"),
         .package(path: "../third-party/swift-argument-parser"),
         .package(name: "NucleusSwiftPlatform", path: "../swift-toolchain"),
         .package(name: "swift-tracy", path: "../swift-tracy"),
         .package(name: "swift-vulkan", path: "../swift-vulkan"),
         .package(name: "swift-wayland", path: "../swift-wayland"),
         .package(name: "Nucleus", path: "../core"),
-        .package(name: "NucleusConfigPackage", path: "../config"),
+        .package(name: "NucleusConfigIOPackage", path: "../config"),
         .package(name: "NucleusIPCPackage", path: "../ipc"),
         .package(name: "NucleusLinuxPlatform", path: "../platform-linux"),
         .package(name: "android-runtime", path: "../android-runtime"),
@@ -35,7 +38,9 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "ColliderCore", package: "engine"),
                 .product(name: "ColliderRuntime", package: "engine"),
-                .product(name: "NucleusSessionProtocol", package: "engine"),
+                .product(
+                    name: "NucleusSessionProtocol",
+                    package: "NucleusSessionProtocolPackage"),
                 .product(
                     name: "SwiftPlatformColliderRecipe",
                     package: "NucleusSwiftPlatform"),
@@ -45,7 +50,7 @@ let package = Package(
                 .product(name: "CoreColliderRecipe", package: "Nucleus"),
                 .product(
                     name: "ConfigColliderRecipe",
-                    package: "NucleusConfigPackage"),
+                    package: "NucleusConfigIOPackage"),
                 .product(
                     name: "IPCColliderRecipe",
                     package: "NucleusIPCPackage"),
@@ -66,7 +71,9 @@ let package = Package(
                 .product(name: "ChromiumColliderRecipe", package: "NucleusBrowser"),
                 .product(name: "ColliderCore", package: "engine"),
                 .product(name: "CoreColliderRecipe", package: "Nucleus"),
-                .product(name: "NucleusSessionProtocol", package: "engine"),
+                .product(
+                    name: "NucleusSessionProtocol",
+                    package: "NucleusSessionProtocolPackage"),
                 .product(name: "ReactNativeColliderRecipe", package: "NucleusReactNative"),
                 .product(name: "TracyColliderRecipe", package: "swift-tracy"),
                 .product(name: "VulkanColliderRecipe", package: "swift-vulkan"),

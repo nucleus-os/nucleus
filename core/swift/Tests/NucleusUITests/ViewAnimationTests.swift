@@ -1,6 +1,6 @@
 import Testing
-@_spi(NucleusCompositor) @testable import NucleusUI
-@_spi(NucleusCompositor) @testable import NucleusLayers
+@_spi(NucleusRenderServer) @testable import NucleusUI
+@_spi(NucleusRenderServer) @testable import NucleusLayers
 
 @MainActor
 @Suite(.uiContext) struct ViewAnimationTests {

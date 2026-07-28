@@ -127,14 +127,19 @@ let package = Package(
         .package(path: "../collider/engine"),
         .package(name: "NucleusLinuxPlatform", path: "../platform-linux"),
         .package(path: "../swift-wayland"),
+        .package(
+            name: "SwiftWaylandProtocolRuntime",
+            path: "../swift-wayland/protocol-runtime"),
+        .package(
+            name: "NucleusIPCTransportPackage",
+            path: "../ipc/transport"),
     ],
     targets: [
         .target(
             name: "AndroidRuntimeColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
         .target(
-            name: "NucleusAndroidIPCC",
-            path: "aosp/device/nucleus/nucleus_x86_64/native/ipc",
+            name: "NucleusAndroidProcessLifecycleC",
             publicHeadersPath: "include"),
         .target(
             name: "NucleusAndroidComposerProtocolC",
@@ -151,7 +156,9 @@ let package = Package(
         .target(
             name: "NucleusAndroidGfxstreamGuestTransportCxx",
             dependencies: [
-                "NucleusAndroidIPCC",
+                .product(
+                    name: "NucleusIPCTransport",
+                    package: "NucleusIPCTransportPackage"),
                 "NucleusAndroidSharedRingC",
             ],
             path: "aosp/device/nucleus/nucleus_x86_64/native/gfxstream-guest",
@@ -217,7 +224,12 @@ let package = Package(
         .target(name: "NucleusAndroidGraphicsContract"),
         .target(
             name: "NucleusAndroidIPC",
-            dependencies: ["NucleusAndroidGraphicsContract", "NucleusAndroidIPCC"]),
+            dependencies: [
+                "NucleusAndroidGraphicsContract",
+                .product(
+                    name: "NucleusIPCTransport",
+                    package: "NucleusIPCTransportPackage"),
+            ]),
         .target(
             name: "NucleusAndroidGfxstreamTransport",
             dependencies: ["NucleusAndroidSharedRingC"]),
@@ -239,10 +251,13 @@ let package = Package(
                 "NucleusAndroidGraphicsPlatform",
                 "NucleusAndroidGpuBrokerCore",
                 "NucleusAndroidIPC",
-                "NucleusAndroidIPCC",
+                "NucleusAndroidProcessLifecycleC",
+                .product(
+                    name: "NucleusIPCTransport",
+                    package: "NucleusIPCTransportPackage"),
                 "NucleusAndroidGfxstreamWorkerProtocolC",
                 .product(
-                    name: "NucleusLinuxReactor",
+                    name: "NucleusLinux",
                     package: "NucleusLinuxPlatform"),
             ]),
         .executableTarget(
@@ -257,7 +272,10 @@ let package = Package(
                 "NucleusAndroidDrmC",
                 "NucleusAndroidGfxstreamAdaptersCxx",
                 "NucleusAndroidGfxstreamHostC",
-                "NucleusAndroidIPCC",
+                "NucleusAndroidProcessLifecycleC",
+                .product(
+                    name: "NucleusIPCTransport",
+                    package: "NucleusIPCTransportPackage"),
                 "NucleusAndroidSharedRingC",
                 "NucleusAndroidGfxstreamWorkerProtocolC",
             ],
@@ -277,7 +295,10 @@ let package = Package(
                 "NucleusAndroidDrmC",
                 "NucleusAndroidGfxstreamGuestTransportCxx",
                 "NucleusAndroidGfxstreamHostC",
-                "NucleusAndroidIPCC",
+                "NucleusAndroidProcessLifecycleC",
+                .product(
+                    name: "NucleusIPCTransport",
+                    package: "NucleusIPCTransportPackage"),
                 "NucleusAndroidSharedRingC",
             ],
             path: "Sources/NucleusAndroidGfxstreamBroker",
@@ -296,17 +317,19 @@ let package = Package(
                 "NucleusAndroidDrmC",
                 "NucleusAndroidGraphicsContract",
                 "NucleusAndroidGraphicsPlatform",
-                "NucleusAndroidIPCC",
+                "NucleusAndroidProcessLifecycleC",
                 .product(
-                    name: "NucleusLinuxReactor",
-                    package: "NucleusLinuxPlatform"),
+                    name: "NucleusIPCTransport",
+                    package: "NucleusIPCTransportPackage"),
                 .product(
-                    name: "NucleusLinuxPrimitives",
+                    name: "NucleusLinux",
                     package: "NucleusLinuxPlatform"),
                 .product(name: "WaylandClient", package: "swift-wayland"),
                 .product(name: "WaylandClientC", package: "swift-wayland"),
                 .product(name: "WaylandClientDispatch", package: "swift-wayland"),
-                .product(name: "WaylandProtocolsC", package: "swift-wayland"),
+                .product(
+                    name: "SwiftWaylandProtocolRuntime",
+                    package: "SwiftWaylandProtocolRuntime"),
             ],
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
@@ -337,16 +360,14 @@ let package = Package(
                 "NucleusAndroidIPC",
                 "NucleusAndroidDrmC",
                 .product(
-                    name: "NucleusLinuxReactor",
-                    package: "NucleusLinuxPlatform"),
-                .product(
-                    name: "NucleusLinuxPrimitives",
+                    name: "NucleusLinux",
                     package: "NucleusLinuxPlatform"),
                 .product(name: "WaylandClient", package: "swift-wayland"),
                 .product(name: "WaylandClientC", package: "swift-wayland"),
                 .product(name: "WaylandClientDispatch", package: "swift-wayland"),
-                .product(name: "WaylandProtocolTypes", package: "swift-wayland"),
-                .product(name: "WaylandProtocolsC", package: "swift-wayland"),
+                .product(
+                    name: "SwiftWaylandProtocolRuntime",
+                    package: "SwiftWaylandProtocolRuntime"),
             ],
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
@@ -409,9 +430,11 @@ let package = Package(
             name: "NucleusAndroidDisplayHostCoreTests",
             dependencies: [
                 "NucleusAndroidDisplayHostCore",
-                "NucleusAndroidIPCC",
                 .product(
-                    name: "NucleusLinuxReactor",
+                    name: "NucleusIPCTransport",
+                    package: "NucleusIPCTransportPackage"),
+                .product(
+                    name: "NucleusLinux",
                     package: "NucleusLinuxPlatform"),
             ],
             swiftSettings: [.interoperabilityMode(.Cxx)]),

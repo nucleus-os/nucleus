@@ -70,7 +70,7 @@ import Testing
         #expect(observer.applied == [1, 2])
     }
 
-    @Test func supersededCachedTransactionDiscardsItsEffects() {
+    @Test func repeatedCachedCommitsAccumulateTheirEffects() {
         let pair = synchronizedPair()
         let observer = Observer()
         pair.child.addCommitObserver(observer)
@@ -81,7 +81,7 @@ import Testing
         pair.child.commit()
         pair.parent.commit()
 
-        #expect(observer.applied == [2])
+        #expect(observer.applied == [1, 2])
     }
 
     @Test func appliedEffectCanReenterCommittedAuxiliaryState() {

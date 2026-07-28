@@ -6,7 +6,7 @@
 
 import Testing
 import NucleusTypes
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusRenderServer) import NucleusLayers
 import NucleusRenderModel
 @testable import NucleusRenderHost
 

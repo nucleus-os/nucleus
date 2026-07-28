@@ -30,7 +30,8 @@
 #include "NucleusAndroidGfxstreamAdapters/GuestRingFactory.h"
 #include "NucleusAndroidGfxstreamWorkerProtocolC.h"
 #include "NucleusAndroidGfxstreamHostC.h"
-#include "NucleusAndroidIPCC.h"
+#include "NucleusIPCTransportC.h"
+#include "NucleusAndroidProcessLifecycleC.h"
 #include "NucleusAndroidSharedRingC.h"
 
 #ifndef NUCLEUS_ANDROID_GFXSTREAM_GUEST_ICD
@@ -1990,7 +1991,7 @@ bool sendWorkerResponse(
             "%s",
             error);
     }
-    return nucleus_android_ipc_send(
+    return nucleus_ipc_send(
                controlDescriptor,
                &response,
                sizeof(response),
@@ -2024,7 +2025,7 @@ int runBrokerWorker(int controlDescriptor) {
             {};
         std::size_t descriptorCount = 0;
         const int received =
-            nucleus_android_ipc_receive(
+            nucleus_ipc_receive(
                 controlDescriptor,
                 &initialization,
                 sizeof(initialization),
@@ -2172,7 +2173,7 @@ int runBrokerWorker(int controlDescriptor) {
                 unexpectedDescriptors.fill(-1);
                 std::size_t unexpectedDescriptorCount = 0;
                 const int requestBytes =
-                    nucleus_android_ipc_receive(
+                    nucleus_ipc_receive(
                         controlDescriptor,
                         &request,
                         sizeof(request),
@@ -2348,7 +2349,7 @@ int main(int argc, char **argv) {
                 "requires --parent-pid PID\n");
             return 1;
         }
-        if (nucleus_android_ipc_require_parent_lifetime(
+        if (nucleus_android_require_parent_lifetime(
                 SIGTERM,
                 static_cast<int32_t>(parentPID)) != 0) {
             std::fprintf(

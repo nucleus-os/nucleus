@@ -4,7 +4,7 @@ import NucleusResourceTestSupport
 import NucleusRetainedSceneTestSupport
 import NucleusUI
 import NucleusUIEmbedder
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusRenderServer) import NucleusLayers
 import Testing
 
 @MainActor

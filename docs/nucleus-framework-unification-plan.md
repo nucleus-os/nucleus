@@ -43,20 +43,45 @@ The resulting system obeys these rules:
 - Wayland display traffic, internal session traffic, public operator control, and Android
   broker traffic retain separate protocol vocabularies. Sharing transport does not merge
   their object models or authority.
-- Applications rasterize their own backing content. They submit buffers and atomic
-  composition transactions to the window server. The window server composes those
-  buffers, executes server-owned animations, and presents the final desktop image.
+- Applications rasterize their own backing content. They submit buffers through
+  standard `wl_surface` state and group independently backed content with synchronized
+  `wl_subsurface` trees. The window server composes those surfaces, executes
+  window-manager animations, and presents the final desktop image.
 - No Swift object, Skia object, Graphite context, Vulkan instance, or `VkDevice` crosses a
   process boundary. Cross-process contracts carry values, opaque IDs, file descriptors,
   shared buffers, and explicit synchronization primitives.
 - The portable framework never imports a Linux client or server module. Linux host
   adapters depend on the portable framework, never the reverse.
-- The shell is an ordinary privileged Nucleus application. No shell UI or shell service
+- The shell is an ordinary Nucleus desktop application. The compositor does not identify,
+  retain, authenticate, or authorize a shell `wl_client`. No shell UI or shell service
   executes in the window-server process.
+- Standard desktop globals are advertised through the normal Wayland registry. Sensitive
+  operations are accepted or denied by their protocol mechanism and compositor policy;
+  future sandbox mediation uses standard security contexts and portals rather than shell
+  process identity. Component-private protocols such as `xwayland_shell_v1` remain limited
+  to the exact component connection required by their specification.
 
 This is the Apple model at the ownership boundary: frameworks share implementation pages,
 applications own local UI and backing-content state, and a render server owns the global
 composition tree and display.
+
+## Implementation progress
+
+Updated 2026-07-28. A phase becomes complete only after every listed landing gate passes.
+
+| Phase | Status | Current evidence |
+| --- | --- | --- |
+| 1 — Role-neutral contracts | Complete | `NucleusTypes` owns the stable host values and `NucleusAppHostProtocols` owns the five cross-platform application-host seams. `NucleusShellWayland` emits `ApplicationInputEvent`; `ShellInputRouter` is the desktop `ApplicationEventSink`, and its 23 behavioral tests pass. The privileged group is `NucleusRenderServer`. Linux, Android, loader, headless-GPU, production stress, and the complete `collider test all` graph pass. Collider’s shared SwiftPM invocation preserves executable arguments for lane probes. |
+| 2 — Dynamic framework artifacts | Complete | The lower runtime graph is split into dynamic `NucleusFoundation`, `Nucleus`, `NucleusLinux`, `NucleusLinuxDesktop`, `NucleusConfig`, `NucleusConfigIO`, `NucleusIPCTransport`, `NucleusControlProtocol`, `NucleusControlClient`, `NucleusSessionProtocol`, `SwiftWaylandProtocolRuntime`, `SwiftVulkan`, and `SwiftTracy` products with real ELF dependency edges. Session launch and configuration-subscription traffic use the shared packet transport. Linux base, desktop, and session code live in disjoint packages. Every Linux runtime consumer requests the single `Nucleus` product; downstream Skia archive lists are gone. Collider emits a normalized dynamic-symbol ownership manifest and enforces SONAME, `$ORIGIN`, `NEEDED`, headless-isolation, sole Skia ownership, and sole packet-transport ownership on every shell build. Config, IPC, Linux, session, compositor, shell, and complete lower-runtime gates pass. |
+| 3 — Desktop client framework | Complete | `window-client/` produces `libNucleusWindowClient.so` with disjoint contracts, reactor integration, ordinary toplevel/popup and desktop Wayland roles, input, pasteboard, presentation, and a capability-only `NucleusDesktop` umbrella. `NucleusDesktopHost` owns the process-local connection, reactor, retained store, application host, text system, and renderer. Generated Wayland layer-policy values and native proxies are confined to the implementation SPI. The shell contains no generic client implementation and has no direct swift-wayland, swift-vulkan, or compositor-core dependency. The dedicated client/server conformance package passes 56 input, lifecycle, output-removal, reconnect, pasteboard, drag/drop, and window-role tests; deterministic server fixtures cover buffer replacement/release, and all 123 shell product/service/runtime tests pass. The dynamic artifact gate enforces the forbidden server-native dependency set. |
+| 4 — Render-server framework | Complete | `libNucleusRenderServer.so` owns the narrow server module closure, process bring-up, render session, signal façade, and the Wayland-server, DRM/GBM, input, seat, udev, XCB, and XKB dependency set. `NucleusCompositor` is a launch-only stub over `runRenderServer`. Collider normalizes SwiftPM-propagated native linker entries, then the ELF ownership gate, complete compositor-core suite, 56 client/server conformance tests, and 123 shell tests pass. Collider's complete ThreadSanitizer lane passes all six core, Linux, Android, render-server, shell, and React Native harnesses; the relocated render-server harness executes against the real framework runtime. |
+| 5 — Process-local presenters | Complete | Server KMS ownership is consolidated in `DRMScanoutPresenter`; the former `RendererRuntime` and `GbmScanoutBuffer` identities are gone. The client WSI path, raw native-surface escape, `WaylandVulkanSurface`, `VK_KHR_wayland_surface`, and client swapchain state are gone. `WaylandBackingStorePresenter` owns a three-image DMA-BUF generation, typed `wl_buffer` commits, one exported Vulkan/DRM-syncobj timeline, acquire/release points, frame callbacks, presentation feedback, release-gated reuse, resize retirement, and client-local device-loss termination. Vulkan requirements hard-require the backing-store export/sync entry points and no client WSI extension. Both presenters pass the same acquire/submit/completion/replacement/pause/removal contract suite. Allocation, feedback parsing, explicit sync, resize, pacing/occlusion, output removal, server device loss, and direct-scanout replacement release have behavioral coverage. All 168 renderer-linux tests, `collider test compositor`, and `collider test shell` pass. Collider treats the launch-only compositor package as build-only after compositor-core tests instead of invoking an empty test package. |
+| 6 — Configuration authority | Complete | `NucleusConfigService` is the sole active-file reader, watcher, writer, generation owner, and projection publisher. The supervisor starts it first, authenticates capability-scoped render-server and shell subscribers, and gates both consumers on their typed initial projections. Invalid startup, invalid reload, removal, directory recreation, atomic replacement, duplicate-event coalescing, service epoch changes, stale-message rejection, shell absence, and connected/future input-device application have behavioral coverage. The compositor and shell no longer depend on `NucleusConfigIO`; the runtime ELF gate proves the service's direct dynamic model/IO/Linux/session edges and forbidden UI, Skia, Wayland, DRM, render-server, window-client, and shell edges. Config, session, compositor, shell, and runtime ownership gates pass. |
+| 7 — Session control service | Complete | `NucleusControlService` is a standalone broker composition root over `libNucleusControlService.so`; the compositor owns only its private typed owner endpoint and has no public listener, JSON codec, control-client dependency, or socket path. The configuration service and render server publish version/readiness, owner identity, configured/applied generations, outputs, bindings, and typed results over supervisor capability channels. The supervisor preserves one mode-`0600` public socket across configuration-service, compositor, and shell restarts, returns typed owner-unavailable responses during owner absence, reattaches replacements without stale-HUP races, and revokes public access before stopping the broker. Same-owner socket replacement is inode-safe; peer credentials, packet bounds, descriptor cardinality, protocol versions, and elevated one-shot capabilities are enforced before routing. The CLI is presentation-only over the dynamic control client and obtains canonical configuration from the service. `collider test ipc` owns and passes transport, protocol, client, routing, authorization, CLI, hostile-packet, generation, and all 16 restart/session fixtures; `collider test compositor`, `collider test shell`, and runtime ELF ownership pass. |
+| 8 — Out-of-process shell | Complete | `NucleusShellKit` is a real dynamic product and the executable is launch-only. The in-process compositor overlay modules and shell service graph are deleted; server mechanisms live in `NucleusCompositorPolicy`, while application discovery, launching, and accepted-action dispatch live in ShellKit. The shell connects through the normal session `WAYLAND_DISPLAY`; the compositor stores no shell client identity or client object. Each shell generation receives only a supervisor-created typed `NucleusSessionProtocol` policy channel for accepted actions and Nucleus policy without a standard Wayland vocabulary. Standard desktop globals remain available to ordinary clients, with only the specification-mandated `xwayland_shell_v1` connection filter retained. No custom shell-authentication Wayland protocol exists. Policy descriptor-cardinality, codec, version, restart, shell-surface, cursor/idle, public pasteboard/drag-drop, managed-client lifetime, configuration, compositor-policy, supervisor-acceptance, runtime ELF, and full `collider test ipc`, `collider test compositor`, and `collider test shell` gates pass. |
+| 9 — Standard atomic surface trees | Complete | Standard `wl_surface` and synchronized `wl_subsurface` state is the sole application-composition boundary. Repeated child commits accumulate cached buffer and adjacent state until the parent commit. The public desktop client constructs nested surface trees and uses `wp_alpha_modifier_v1`; the server latches alpha with core state and excludes modified surfaces from direct scanout. Raw-wire alpha uniqueness/reset, cached-buffer preservation, topology, registry, hostile protocol, direct-scanout, client/server lifecycle, full SwiftWayland, compositor-core, `collider test compositor`, and `collider test shell` gates pass. |
+| 10 — Public umbrellas | Complete | `Nucleus` re-exports only `NucleusApp`, `NucleusDiagnostics`, and `NucleusUI`; lower-level host, layer, render-model, and embedder modules remain explicit integrator imports. `NucleusDesktop` adds only the public window-client contracts and host. Dedicated umbrella tests prove unambiguous application names and public host construction. Portable core, Android production/AAR/APK verification, compositor, shell, runtime ELF ownership, and public client/server integration gates pass. |
+| 11 — Install and validation | Complete | `collider install session` builds and publishes one content-addressed runtime generation containing the exact executable, libexec, first-party shared-library, Swift/Foundation/Dispatch, libc++, and unwind closure. Every executable and helper uses `$ORIGIN/../lib`; every shared library uses `$ORIGIN`. Staging validates exact contents, SONAMEs, ownership, forbidden dependency edges, Skia and IPC symbol ownership, unresolved relocations, and absence of development paths, then moves the candidate to a different directory and repeats validation before publication. The final generation is `sha256:cfeb4b1fa502753e3ad1d3ef9775b3692824deb8a5daf556dbceaaadfd08f05f`. Runtime doctor, the complete `collider test all` graph, release publication/lifecycle/editor/collection/Wayland transport/compositor stress suites, and the relocated install gate pass. |
 
 ## Target process architecture
 
@@ -70,7 +95,8 @@ An application owns:
   logical device;
 - its Wayland connection, surface roles, input state, pasteboard adapters, and client
   presentation objects;
-- the exportable buffers containing its rasterized composition-node content.
+- the exportable buffers containing its rasterized surface content;
+- its internal layer graph and application-content animation timelines.
 
 An application does not own:
 
@@ -92,7 +118,7 @@ An application does not own:
 - the DRM primary-node session, GBM allocations, KMS objects, atomic commits, page flips,
   and scanout policy;
 - imported client buffers and their release synchronization;
-- the authoritative composition tree and server-executable animation timeline;
+- the authoritative desktop surface tree and window-manager animation timeline;
 - XWayland and the mapping between X11 windows and Nucleus surfaces;
 - shadows and other composition effects that depend on the global scene;
 - the final compositor `RendererDevice` and `DRMScanoutPresenter`.
@@ -112,15 +138,22 @@ the shell, render menus or notifications, or authenticate users.
   the underlying input;
 - cursor-theme preference and other persistent user policy submitted through the
   configuration service;
-- privileged layer-shell, session-lock, foreign-toplevel, screencopy, and data-control
-  client capabilities.
+- layer-shell, session-lock, foreign-toplevel, screencopy, workspace, data-control, and
+  idle-notification capability objects negotiated through the standard registry.
 
-The session supervisor creates an unforgeable shell capability as a kernel object and
-passes one endpoint to the compositor and the other to the shell. The shell presents the
-capability FD through the Wayland privilege protocol. The server verifies the capability
-and the connection's `SO_PEERCRED`, binds the resulting privileges to that exact Wayland
-client, consumes the one-shot capability, and revokes access on disconnect. Merely
-importing a module, sharing a UID, or knowing a token string never grants a capability.
+The session supervisor selects the session `WAYLAND_DISPLAY` name before it starts the
+render server. The shell connects to that ordinary listener exactly like another desktop
+client. The compositor does not record which `wl_client` belongs to the shell and performs
+no shell authentication during registry enumeration or global binding. Every shell
+generation receives a fresh typed shell-policy channel for accepted shortcuts, window-menu
+selection, and other Nucleus semantics that have no standard protocol. Replacing the shell
+closes that policy channel; libwayland performs ordinary resource teardown when the shell's
+Wayland connection closes.
+
+Session lock remains exclusive and request-time policy decides whether a lock request is
+accepted. Data control and capture follow the session's current same-user trust model.
+When application sandboxing lands, standard Wayland security contexts and portal-mediated
+consent become the authorization boundary. Shell identity never becomes that boundary.
 
 ### Helper processes
 
@@ -320,6 +353,7 @@ Nucleus separates transport from protocol and protocol from runtime ownership.
 | --- | --- | --- |
 | Application display and shell surfaces | `swift-wayland` plus Nucleus Wayland extensions | window client and render server |
 | Session lifecycle and inherited capabilities | `NucleusSessionProtocol` | session supervisor and child services |
+| Private shell policy and accepted-action events | `NucleusSessionProtocol` | shell and render server |
 | Configuration publication | `NucleusSessionProtocol` plus `NucleusConfig` projections | configuration service and subscribers |
 | Operator and CLI control | `NucleusControlProtocol` | control service |
 | Android GPU and container brokering | Android graphics contracts | Android host and broker |
@@ -405,8 +439,8 @@ routes:
 - output, focus, active-binding, tiling, workspace, and window actions to
   `NucleusRenderServer`;
 - shell-owned actions to the render server, which performs the single action-owner
-  classification and forwards accepted shell actions over the authenticated shell
-  protocol.
+  classification and forwards accepted shell actions over the private shell policy
+  channel.
 
 The broker translates public control DTOs into internal owner operations. The
 configuration service and render server do not import or decode the public control
@@ -467,8 +501,8 @@ the shell never performs a second raw-key match.
 
 The server is the sole global binding resolver. It executes server-owned actions such as
 close, tile, workspace activation, and composition changes. It sends an accepted typed
-action over the authenticated shell protocol for launcher, menu, notification, and other
-shell-owned behavior.
+action over the supervisor-provisioned shell policy channel for launcher, menu,
+notification, and other shell-owned behavior.
 
 ### Configuration modules
 
@@ -571,33 +605,39 @@ to each `wl_surface`.
 The server imports and composites these buffers. It never dereferences a client pointer or
 assumes that a client Vulkan device is related to the server Vulkan device.
 
-### Composition-transaction stream
+### Atomic surface-tree stream
 
-A generated `nucleus_composition_v1` Wayland protocol carries the retained composition
-state that belongs in the render server rather than in an application's raster backing.
-One transaction atomically describes:
+Nucleus uses the standard Wayland surface model as its cross-process composition
+contract. A root `wl_surface` owns window identity and its ordinary role. Content that
+benefits from independent backing, placement, or scanout becomes a child `wl_surface`
+with a `wl_subsurface` role. Nucleus does not mirror its application-local
+`NucleusLayers` graph into the compositor.
 
-- stable surface and composition-node IDs;
-- parent/child relationships and z-order;
-- position, transform, clip, opacity, corner geometry, and visibility;
-- attached `wl_buffer`, backing-store generation, and damage;
-- input and opaque regions;
-- server-executable animation curves, start values, target values, and presentation
-  deadlines;
-- transaction sequence and acknowledgement IDs.
+Every surface accumulates pending buffer, damage, input region, opaque region, buffer
+scale, buffer transform, viewport, alpha modifier, and explicit synchronization state.
+`wl_surface.commit` captures those fields into one immutable latch. A synchronized
+subsurface caches its latch; committing the root or nearest desynchronized ancestor
+applies the complete synchronized subtree. Position and stacking requests follow the
+same parent-commit boundary.
 
-The protocol contains composition primitives, not `NucleusUI` view types and not Swift
-memory layouts. `NucleusLayers` lowers its retained model into versioned wire values
-through a protocol seam in `NucleusAppHostProtocols`. The Linux desktop host implements
-that seam in `libNucleusWindowClient.so`.
+The standard protocol set is:
 
-The server validates every object ID, enum, range, buffer reference, and parent
-relationship before mutating the scene. Disconnect destroys all state owned by that
-client. Protocol errors cannot leave partially applied transactions.
+- `wl_compositor`, `wl_subcompositor`, and `wl_surface` for identity, hierarchy,
+  ordering, state, and atomic subtree commits;
+- `zwp_linux_dmabuf_v1` and `wp_linux_drm_syncobj_manager_v1` for backing stores and
+  explicit acquire/release synchronization;
+- `wp_viewporter`, `wp_fractional_scale_manager_v1`, `wl_surface.set_buffer_scale`,
+  and `wl_surface.set_buffer_transform` for projection;
+- `wp_alpha_modifier_v1` for compositor-side surface opacity;
+- `wp_presentation` and frame callbacks for acknowledgement, pacing, and retirement.
 
-Ordinary Wayland clients continue to work through `wl_surface` without the Nucleus
-extension. They receive correct window management and composition but do not get the
-Nucleus-specific atomic layer-tree and server-animation path.
+Clip paths, corner geometry, shadows inside application content, and application
+animations remain in the client renderer. The compositor owns only desktop-global and
+window-manager animations. Destroying a client destroys its Wayland resource graph and
+retires its imported buffers without a second identity or cleanup protocol.
+
+There is no Nucleus composition protocol and no generic IPC side channel for application
+scene state. Ordinary Wayland clients use the same surface machinery as Nucleus clients.
 
 ## Presenter model
 
@@ -607,7 +647,7 @@ It does not imply shared runtime state.
 - `WaylandBackingStorePresenter` lives in `libNucleusWindowClient.so`. It owns
   client-local exportable Vulkan images, Linux DMA-BUF and DRM syncobj timeline FDs,
   `wl_buffer` creation, backing-store reuse, submission synchronization, and
-  composition-node buffer attachment. It does not create a Vulkan Wayland surface or WSI
+  standard `wl_surface` buffer attachment. It does not create a Vulkan Wayland surface or WSI
   swapchain.
 - `DRMScanoutPresenter` lives in `libNucleusRenderServer.so`. It owns GBM buffers, DRM
   framebuffers, atomic KMS state, page flips, direct-scanout decisions, and output
@@ -633,7 +673,7 @@ Add the value types needed by every host to `NucleusTypes`:
 - output identity, logical geometry, scale, transform, refresh information, and color
   description;
 - pointer, keyboard, touch, tablet, focus, and text-input event values;
-- surface, seat, device, buffer, and transaction IDs;
+- surface, seat, device, buffer, and presentation IDs;
 - presentation timestamps, damage regions, synchronization descriptors, and capability
   sets.
 
@@ -641,7 +681,6 @@ Move host-facing protocols into `NucleusAppHostProtocols`:
 
 - `ApplicationEventSink`;
 - `WindowLifecycleSink`;
-- `CompositionTransactionSink`;
 - `RenderUploadSink`;
 - `PasteboardHost`;
 - `OutputTopologyProvider`.
@@ -841,8 +880,8 @@ Add `NucleusDesktopHost`, the adapter that composes:
 - the portable app and render host protocols;
 - the Wayland connection and registry;
 - ordinary toplevel and popup roles;
-- privileged layer-shell, session-lock, foreign-toplevel, screencopy, and data-control
-  roles when the server grants them;
+- layer-shell, session-lock, foreign-toplevel, screencopy, workspace, and data-control
+  roles negotiated from the standard registry;
 - input delivery, pasteboard, output topology, frame callbacks, and presentation.
 
 The public API exposes capability objects returned by registry negotiation. It does not
@@ -1208,17 +1247,30 @@ Keep authoritative mechanism in the server:
 - `XCursor` loading, cursor image validation, cursor-plane state, and cursor rendering;
 - window shadows and global composition effects.
 
-The shell sends transient policy actions through authenticated protocol requests and
-persists configuration changes through the configuration service. The server emits
-privileged events such as an accepted global shortcut or idle-state transition. Accepted
-shell actions carry the typed action and active configuration generation; the shell does
-not repeat chord matching. Neither side imports the other's implementation module.
+The shell sends transient policy actions through its supervisor-provisioned typed IPC
+channel and persists configuration changes through the configuration service. The server
+emits accepted global shortcuts through that channel. Idle state uses the standard
+`ext_idle_notifier_v1` global: the shell submits its configured timeout through the
+standard request, while the server remains the authoritative input clock and inhibitor
+mechanism. Accepted shell actions carry the typed action and active configuration
+generation; the shell does not repeat chord matching. Neither side imports the other's
+implementation module.
 
-Add the shell privilege protocol before moving the first privileged surface. The session
-supervisor issues a new one-shot capability for every shell launch. The server grants
-layer-shell control, session lock, foreign-toplevel control, screencopy, data control, and
-shell-policy requests only after capability verification. Authentication failure is a
-protocol error and creates no privileged object.
+Establish the ordinary session connection and private policy channel before moving the
+first shell surface. The supervisor selects `WAYLAND_DISPLAY` before launching the render
+server, and the shell connects to the normal listener through `NucleusWindowClient`.
+For every shell launch, the supervisor creates a `NucleusSessionProtocol` shell-policy
+channel, transfers the server endpoint to the compositor, and inherits the client endpoint
+into the shell. The compositor records only the policy endpoint. It never records,
+authenticates, or authorizes the shell's `wl_client`.
+
+Advertise standard desktop globals through the ordinary registry. Enforce session-lock
+exclusivity and other semantic constraints when requests execute. Keep data-control and
+capture consistent with the current same-user session trust model. Introduce standard
+Wayland security contexts and portal mediation when application sandboxing lands; do not
+invent a Nucleus authentication protocol and do not use shell identity as a substitute
+for system security policy. Restrict only component-specific protocols whose specification
+requires an exact client, including `xwayland_shell_v1`.
 
 Delete the in-process overlay UI:
 
@@ -1245,7 +1297,8 @@ Phase 8 lands when:
 - the compositor links neither `libNucleusShellKit.so` nor a shell product module;
 - no shell view is created in the compositor process;
 - shell restart does not restart the compositor or destroy ordinary application surfaces;
-- shell disconnect removes its privileged surfaces and revokes its capabilities;
+- shell disconnect removes all of its Wayland resources through normal client teardown
+  and closes its policy generation;
 - a shell configuration update changes shell-owned behavior without rebuilding server
   input state;
 - accepted shell actions preserve the server's configuration generation and are never
@@ -1254,42 +1307,50 @@ Phase 8 lands when:
   deterministic integration tests;
 - shell service and product tests pass through Collider.
 
-## Phase 9 — Add atomic composition transactions
+## Phase 9 — Finish standard Wayland atomic surface trees
 
-Generate `nucleus_composition_v1` client and server bindings through
-`swift-wayland`. Keep the XML and generated Swift/C bindings in the protocol package with
-the other committed Wayland protocol artifacts.
+Keep `NucleusLayers`, view identity, application layout, paint recordings, and
+application animation timelines inside the client process. Do not generate a Nucleus
+composition protocol and do not add an application scene channel to
+`NucleusSessionProtocol` or `NucleusIPCTransport`.
 
-Add a `NucleusLayers` encoder that converts committed retained-layer state into immutable
-composition transaction values. Add the Linux transport implementation in
-`libNucleusWindowClient.so` and the validated scene-application implementation in
-`libNucleusRenderServer.so`.
+Complete the standard surface path in this fixed order:
 
-Migrate one semantic at a time in this fixed order:
+1. Make `wl_surface.commit` capture all core and adjacent pending state into one immutable
+   latch. A synchronized subsurface caches that latch, and the parent commit applies every
+   cached descendant together with pending position and stacking changes.
+2. Bind `wl_subcompositor` in `libNucleusWindowClient.so` and expose typed synchronized
+   subsurface construction, positioning, ordering, commit, and teardown through
+   `NucleusDesktopHost`.
+3. Apply damage, input and opaque regions, viewport, fractional scale, buffer scale,
+   buffer transform, and `wp_alpha_modifier_v1` state through the same surface commit.
+   Alpha modifies the client backing layer, while window-manager opacity remains on the
+   server-owned window root so the two values compose.
+4. Keep DMA-BUF import, DRM syncobj acquire/release points, frame callbacks,
+   `wp_presentation` feedback, buffer-generation replacement, and renderer/KMS retirement
+   correlated with the exact committed surface state.
+5. Keep compositor animation authority limited to window placement, workspaces,
+   minimize/close transitions, focus effects, and other desktop-global policy.
+   Application-content animation remains client-driven and publishes new buffers.
 
-1. surface identity, parentage, geometry, visibility, and atomic commit;
-2. damage, clip, opacity, transform, and content scale;
-3. input and opaque regions;
-4. server-owned animation timelines;
-5. presentation acknowledgements and retirement.
-
-The client continues rasterizing visual content. The transaction protocol never sends
-view objects, arbitrary Swift values, closures, Skia display lists, or GPU command
-buffers.
-
-Server-side animation operates only on composition properties. An animation that changes
-the raster content remains client-driven and produces new backing buffers.
+Keep the portable host contracts free of composition-transaction placeholders. The
+standard Wayland resource graph is the only cross-process
+application-composition contract.
 
 Phase 9 lands when:
 
-- a transaction becomes visible entirely or not at all;
-- malformed graphs, stale IDs, cycles, invalid buffer generations, and oversized
-  transactions are rejected before scene mutation;
-- client death reclaims all nodes and buffers without disturbing another client;
-- server-side transform and opacity animations continue when the client main thread is
-  blocked;
+- synchronized child commits, position changes, and stacking changes remain invisible
+  until the parent commit and then appear as one subtree update;
+- invalid roles, parent cycles, sibling references, viewport values, buffer scales,
+  buffer transforms, and explicit-sync combinations fail without partial scene mutation;
+- alpha, damage, input regions, opaque regions, scale, transform, and viewport state are
+  latched with the matching buffer generation;
+- client death reclaims all surfaces and buffers without disturbing another client;
+- application animations continue locally while server-owned window transitions continue
+  when the client main thread is blocked;
 - ordinary non-Nucleus Wayland clients remain fully functional;
-- transaction conformance and fuzz fixtures pass through Collider.
+- standard surface-tree conformance, lifecycle, and hostile-wire fixtures pass through
+  Collider.
 
 ## Phase 10 — Collapse public imports without collapsing ownership
 
@@ -1297,16 +1358,19 @@ Finish the two umbrella modules after the runtime boundaries are stable.
 
 `Nucleus` re-exports:
 
-- `NucleusTypes`;
 - `NucleusDiagnostics`;
-- `NucleusAppHostProtocols`;
-- `NucleusLayers`;
 - `NucleusUI`;
 - `NucleusApp`;
-- public render and text model APIs required by applications.
+- the developer-facing text, render-description, and resource APIs already owned by
+  `NucleusUI` and `NucleusApp`.
 
-It does not re-export C++ bridge modules, renderer internals, test support, Android host
-internals, Linux modules, or server SPI.
+It does not re-export `NucleusTypes`, `NucleusAppHostProtocols`, `NucleusLayers`,
+`NucleusAppHostBundle`, `NucleusRenderHost`, `NucleusRenderModel`, or
+`NucleusUIEmbedder`. Those modules remain directly importable by framework integrators
+but do not inject their lower-level `Rect`, `Color`, `Transaction`, `LayerRole`, and
+`ActionPolicy` names into ordinary application source. It also does not re-export C++
+bridge modules, renderer internals, test support, Android host internals, Linux modules,
+or server SPI.
 
 `NucleusDesktop` re-exports:
 
@@ -1373,6 +1437,11 @@ Executables in `bin/` and `libexec/` use `$ORIGIN/../lib`. Shared libraries use
 directory, the source checkout, `NUCLEUS_NATIVE_SDK_ROOT`, or an absolute development
 path.
 
+The `lib/` directory also contains the transitive Swift, Foundation, Dispatch, libc++,
+and unwind runtime closure selected by the repository toolchain. Collider discovers that
+closure from the staged ELF graph; it does not rely on a compatible Swift installation
+being present on the target host.
+
 Collider's install validation checks:
 
 - every `NEEDED` entry resolves inside the staged tree or to an approved host system
@@ -1432,7 +1501,8 @@ The work is complete when all of the following are simultaneously true:
   without merging their wire vocabularies.
 - The compositor never performs public control-client I/O on its actor or event loop.
 - Global binding resolution has one server-side runtime owner.
-- Cross-process rendering uses buffers, value transactions, and explicit synchronization.
+- Cross-process rendering uses standard Wayland surface commits, shared buffers, and
+  explicit synchronization.
 - The staged dependency graph and symbol tables mechanically enforce the ownership rules.
 - Linux desktop, Android, IPC, configuration, compositor, shell, helper, integration, and
   sanitizer gates all pass through Collider.

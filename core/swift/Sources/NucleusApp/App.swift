@@ -5,7 +5,7 @@
 //
 // `Application.withContext` is the one first-party privileged seam used here (pushing the
 // host's rendering context while the scene tree materializes), reached through the
-// `@_spi(NucleusCompositor)` group — the SPI is used internally and never re-exported.
+// `@_spi(NucleusRenderServer)` group — the SPI is used internally and never re-exported.
 
 import NucleusUI
 

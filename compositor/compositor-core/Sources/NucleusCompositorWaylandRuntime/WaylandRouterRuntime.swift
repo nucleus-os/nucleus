@@ -59,6 +59,11 @@ public final class WaylandRouterRuntime {
 
     package init?(author: WindowSceneAuthor, host: RouterHost) {
         guard let router = NucleusWaylandRouter() else { return nil }
+        router.display.setGlobalFilter { [weak host] client, interface in
+            host?.allowsGlobal(
+                client: client,
+                interfaceName: interface) ?? false
+        }
         let feeder = SceneFeeder(author: author, host: host)
 
         // Protocol impls.
@@ -74,6 +79,7 @@ public final class WaylandRouterRuntime {
         let xdgForeign = XdgForeign()
         let viewporter = WpViewporter()
         let fractionalScale = WpFractionalScaleManager()
+        let alphaModifier = WpAlphaModifierManager()
         let idle = IdleManager()
         let blur = OrgKdeKwinBlurManager()
         let backgroundEffect = ExtBackgroundEffectManager()
@@ -198,6 +204,8 @@ public final class WaylandRouterRuntime {
             implementation: viewporter))
         router.addGlobal(WpFractionalScaleManagerV1Server.global(
             implementation: fractionalScale))
+        router.addGlobal(WpAlphaModifierV1Server.global(
+            implementation: alphaModifier))
         router.addGlobal(ZwpIdleInhibitManagerV1Server.global(
             implementation: idle))
         router.addGlobal(ExtIdleNotifierV1Server.global(

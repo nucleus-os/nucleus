@@ -1,4 +1,4 @@
-@_spi(NucleusCompositor) internal import NucleusLayers
+@_spi(NucleusRenderServer) internal import NucleusLayers
 internal import enum NucleusTypes.LayerKind
 internal import struct NucleusTypes.Point
 internal import struct NucleusTypes.Rect

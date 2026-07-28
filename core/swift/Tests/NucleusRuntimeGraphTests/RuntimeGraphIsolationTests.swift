@@ -2,7 +2,7 @@ import NucleusAppHostBundle
 import NucleusAppHostProtocols
 import NucleusRenderHost
 import NucleusRenderModel
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusRenderServer) import NucleusLayers
 import Testing
 @testable import NucleusUI
 

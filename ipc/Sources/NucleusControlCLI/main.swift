@@ -2,7 +2,8 @@ import ArgumentParser
 import FoundationEssentials
 import Glibc
 import NucleusConfig
-import NucleusIPC
+import NucleusControlClient
+import NucleusControlProtocol
 
 // The `nucleus` command: a thin client over the control protocol.
 //
@@ -51,32 +52,37 @@ private func perform(
     } catch {
         throw ValidationError(error.message)
     }
-    if case .error(let message) = response {
-        throw ValidationError("compositor: \(message)")
+    if case .error(let failure) = response {
+        throw ValidationError(
+            "compositor [\(failure.code.rawValue)]: \(failure.message)")
     }
     try render(response)
 }
 
 private func defaultRender(_ response: ControlResponse) {
     switch response {
-    case .ok:
+    case .accepted, .completed:
         // Silence on success is the scriptable default; the exit code carries
         // the outcome.
         break
     case .version(let value):
-        print(value)
+        let renderVersion = value.renderServer.version ?? "unavailable"
+        print("control \(value.controlProtocolVersion); render \(renderVersion)")
     case .configuration(let configuration):
-        if let json = try? ConfigExport.json(configuration) { print(json) }
-    case .outputs(let outputs):
-        for output in outputs { print(describe(output)) }
-    case .binds(let binds):
-        for bind in binds {
+        print(configuration.canonicalSource)
+    case .validation(let diagnostics):
+        for diagnostic in diagnostics { print(diagnostic) }
+    case .outputs(let snapshot):
+        for output in snapshot.outputs { print(describe(output)) }
+    case .binds(let snapshot):
+        for bind in snapshot.binds {
             print("\(bind.keys.text)\t\(bind.action.name)")
         }
-    case .error(let message):
+    case .error(let failure):
         // `perform` turns an error response into a thrown ValidationError
         // before reaching here, so this is only a backstop for other callers.
-        writeStandardError("error: \(message)\n")
+        writeStandardError(
+            "error [\(failure.code.rawValue)]: \(failure.message)\n")
     }
 }
 

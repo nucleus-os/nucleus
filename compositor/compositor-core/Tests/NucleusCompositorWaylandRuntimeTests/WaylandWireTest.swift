@@ -149,6 +149,7 @@ struct WireMessage {
     }
 }
 
+@MainActor
 final class WaylandTestClient {
     let display: WaylandDisplay
     private let testFd: Int32  // our end; the server end (sv[0]) is owned by wl_client
@@ -231,7 +232,7 @@ final class WaylandTestClient {
         return WireMessage.parse(all)
     }
 
-    deinit {
+    isolated deinit {
         close(testFd)
         display.dispatch()
     }

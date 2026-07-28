@@ -2,7 +2,8 @@ import Foundation
 import Glibc
 import NucleusAndroidComposerProtocolC
 import NucleusAndroidDrmC
-import NucleusAndroidIPCC
+import NucleusAndroidProcessLifecycleC
+import NucleusIPCTransportC
 import NucleusLinuxReactor
 import NucleusLinuxPrimitives
 import WaylandClient
@@ -170,11 +171,11 @@ func waitForDisplayHostReadable(
         parentProcessID: Int32,
         waylandSocket: String
     ) throws {
-        guard nucleus_android_ipc_require_parent_lifetime(
+        guard nucleus_android_require_parent_lifetime(
             SIGTERM, parentProcessID) == 0
         else { throw systemError("prctl(PR_SET_PDEATHSIG)") }
         let listener = socketPath.withCString {
-            unsafe nucleus_android_ipc_listen($0, 0o666)
+            unsafe nucleus_ipc_listen($0, 0o666)
         }
         guard listener >= 0 else { throw systemError("bind/listen") }
         self.socketPath = socketPath
@@ -209,7 +210,7 @@ func waitForDisplayHostReadable(
             try await waitForDisplayHostReadable(
                 listener,
                 reactor: acceptReactor)
-            let connection = nucleus_android_ipc_accept(listener)
+            let connection = nucleus_ipc_accept(listener)
             guard connection >= 0 else {
                 if errno == EINTR { continue }
                 throw systemError("accept")
@@ -244,8 +245,8 @@ func waitForDisplayHostReadable(
     }
 
     private func requirePeer(_ connection: Int32) throws {
-        var credentials = nucleus_android_peer_credentials()
-        guard unsafe nucleus_android_ipc_peer_credentials(
+        var credentials = nucleus_ipc_peer_credentials()
+        guard unsafe nucleus_ipc_peer_credentials(
             connection, &credentials) == 0
         else { throw systemError("getsockopt(SO_PEERCRED)") }
         guard credentials.uid == expectedUserID else {
@@ -269,7 +270,7 @@ func waitForDisplayHostReadable(
         var descriptorCount = 0
         let received = bytes.withUnsafeMutableBytes { message in
             descriptors.withUnsafeMutableBufferPointer { fds in
-                unsafe nucleus_android_ipc_receive(
+                unsafe nucleus_ipc_receive(
                     connection,
                     message.baseAddress,
                     message.count,
@@ -328,7 +329,7 @@ func waitForDisplayHostReadable(
                 let requestSize = MemoryLayout.size(ofValue: request)
                 let received = descriptors.withUnsafeMutableBufferPointer { fds in
                     withUnsafeMutablePointer(to: &request) { bytes in
-                        unsafe nucleus_android_ipc_receive(
+                        unsafe nucleus_ipc_receive(
                             connection,
                             bytes,
                             requestSize,
@@ -363,7 +364,7 @@ func waitForDisplayHostReadable(
                 let sent = withUnsafePointer(to: &reply) { bytes in
                     var descriptor = releaseFence
                     return withUnsafePointer(to: &descriptor) { fd in
-                        unsafe nucleus_android_ipc_send(
+                        unsafe nucleus_ipc_send(
                             connection,
                             bytes,
                             replySize,
@@ -480,7 +481,7 @@ func waitForDisplayHostReadable(
         event.connected = 1
         let eventSize = MemoryLayout.size(ofValue: event)
         let sent = withUnsafePointer(to: &event) {
-            unsafe nucleus_android_ipc_send(
+            unsafe nucleus_ipc_send(
                 subscriber, $0, eventSize, nil, 0)
         }
         if sent != 0 {
@@ -514,7 +515,7 @@ func waitForDisplayHostReadable(
         }
         let eventSize = MemoryLayout.size(ofValue: event)
         let sent = withUnsafePointer(to: &event) {
-            unsafe nucleus_android_ipc_send(
+            unsafe nucleus_ipc_send(
                 connection,
                 $0,
                 eventSize,
@@ -538,7 +539,7 @@ func waitForDisplayHostReadable(
         event.status = UInt32(status.rawValue)
         let eventSize = MemoryLayout.size(ofValue: event)
         let sent = withUnsafePointer(to: &event) {
-            unsafe nucleus_android_ipc_send(
+            unsafe nucleus_ipc_send(
                 connection,
                 $0,
                 eventSize,

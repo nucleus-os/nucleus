@@ -1,5 +1,6 @@
 import Testing
 @testable import NucleusConfig
+@testable import NucleusConfigIO
 
 @Suite struct KeyChordTests {
     // MARK: parsing

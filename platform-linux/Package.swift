@@ -7,33 +7,22 @@ let package = Package(
     products: [
         .library(name: "LinuxColliderRecipe", targets: ["LinuxColliderRecipe"]),
         .library(
-            name: "NucleusLinuxPrimitives",
-            targets: ["NucleusLinuxPrimitives"]),
-        .library(
-            name: "NucleusLinuxReactor",
-            targets: ["NucleusLinuxReactor"]),
-        .library(name: "NucleusLinuxDBus", targets: ["NucleusLinuxDBus"]),
-        .library(
-            name: "NucleusLinuxEnvironment",
-            targets: ["NucleusLinuxEnvironment"]),
-        .library(
-            name: "NucleusLinuxAccessibility",
-            targets: ["NucleusLinuxAccessibility"]),
-        .library(
-            name: "NucleusThemeAssetIO",
-            targets: ["NucleusThemeAssetIO"]),
-        .executable(
-            name: "NucleusSessionSupervisor",
-            targets: ["NucleusSessionSupervisor"]),
-        .executable(
-            name: "NucleusLinuxBenchmarks",
-            targets: ["NucleusLinuxBenchmarks"]),
+            name: "NucleusLinux",
+            type: .dynamic,
+            targets: [
+                "NucleusLinuxPrimitives",
+                "NucleusLinuxPrimitivesC",
+                "NucleusLinuxReactor",
+                "NucleusLinuxReactorC",
+                "NucleusLinuxDBus",
+                "NucleusLinuxSessionC",
+                "NucleusThemeAssetIO",
+            ]),
         .executable(
             name: "NucleusLinuxThreadSanitizerHarness",
             targets: ["NucleusLinuxThreadSanitizerHarness"]),
     ],
     dependencies: [
-        .package(name: "Nucleus", path: "../core"),
         .package(path: "../collider/engine"),
         .package(path: "../third-party/swift-system"),
     ],
@@ -46,9 +35,7 @@ let package = Package(
             dependencies: ["NucleusLinuxPrimitivesC"],
             path: "Sources/NucleusLinuxPrimitives",
             swiftSettings: [
-                .unsafeFlags([
-                    "-enable-experimental-feature", "Lifetimes",
-                ]),
+                .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
             ]),
         .target(
             name: "NucleusLinuxPrimitivesC",
@@ -63,26 +50,12 @@ let package = Package(
             ],
             path: "Sources/NucleusLinuxReactor",
             swiftSettings: [
-                .unsafeFlags([
-                    "-enable-experimental-feature", "Lifetimes",
-                ]),
+                .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
             ]),
         .target(
             name: "NucleusLinuxReactorC",
             path: "Sources/NucleusLinuxReactorC",
             publicHeadersPath: "include"),
-        .executableTarget(
-            name: "NucleusLinuxThreadSanitizerHarness",
-            dependencies: [
-                "NucleusLinuxReactor",
-                "NucleusLinuxReactorC",
-            ],
-            path: "SanitizerHarnesses/NucleusLinuxThreadSanitizerHarness",
-            swiftSettings: [
-                .unsafeFlags([
-                    "-enable-experimental-feature", "Lifetimes",
-                ]),
-            ]),
         .systemLibrary(
             name: "NucleusLinuxDBusC",
             path: "Sources/NucleusLinuxDBusC",
@@ -92,72 +65,22 @@ let package = Package(
             dependencies: ["NucleusLinuxDBusC", "NucleusLinuxReactor"],
             path: "Sources/NucleusLinuxDBus"),
         .target(
-            name: "NucleusLinuxAccessibility",
-            dependencies: [
-                "NucleusLinuxDBus",
-                "NucleusLinuxReactor",
-                .product(name: "NucleusUI", package: "Nucleus"),
-            ],
-            path: "Sources/NucleusLinuxAccessibility",
-            swiftSettings: [
-                .interoperabilityMode(.Cxx),
-                .strictMemorySafety(),
-            ]),
-        .target(
-            name: "NucleusLinuxEnvironment",
-            dependencies: [
-                "NucleusLinuxDBus",
-                "NucleusLinuxReactor",
-                .product(name: "NucleusUI", package: "Nucleus"),
-            ],
-            path: "Sources/NucleusLinuxEnvironment",
-            swiftSettings: [
-                .interoperabilityMode(.Cxx),
-                .strictMemorySafety(),
-            ]),
+            name: "NucleusLinuxSessionC",
+            path: "Sources/NucleusLinuxSessionC",
+            publicHeadersPath: "include"),
         .target(
             name: "NucleusThemeAssetIO",
             path: "Sources/NucleusThemeAssetIO",
             swiftSettings: [.strictMemorySafety()]),
-        .testTarget(
-            name: "NucleusThemeAssetIOTests",
-            dependencies: ["NucleusThemeAssetIO"],
-            path: "Tests/NucleusThemeAssetIOTests"),
-        .target(
-            name: "NucleusLinuxSessionC",
-            path: "Sources/NucleusLinuxSessionC",
-            publicHeadersPath: "include"),
         .executableTarget(
-            name: "NucleusSessionSupervisor",
+            name: "NucleusLinuxThreadSanitizerHarness",
             dependencies: [
-                "NucleusLinuxSessionC",
-                .product(name: "NucleusDiagnostics", package: "Nucleus"),
-                .product(name: "NucleusSessionProtocol", package: "engine"),
-            ],
-            path: "Sources/NucleusSessionSupervisor"),
-        .executableTarget(
-            name: "NucleusSessionFixture",
-            dependencies: [
-                .product(name: "NucleusSessionProtocol", package: "engine"),
-            ],
-            path: "Tests/Fixtures/NucleusSessionFixture"),
-        .executableTarget(
-            name: "NucleusLinuxBenchmarks",
-            dependencies: [
-                "NucleusLinuxAccessibility",
                 "NucleusLinuxReactor",
                 "NucleusLinuxReactorC",
-                .product(
-                    name: "NucleusBenchmarkSupport",
-                    package: "Nucleus"),
-                .product(name: "NucleusUI", package: "Nucleus"),
             ],
-            path: "Benchmarks/NucleusLinuxBenchmarks",
+            path: "SanitizerHarnesses/NucleusLinuxThreadSanitizerHarness",
             swiftSettings: [
-                .interoperabilityMode(.Cxx),
-                .unsafeFlags([
-                    "-enable-experimental-feature", "Lifetimes",
-                ]),
+                .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
             ]),
         .testTarget(
             name: "NucleusLinuxPrimitivesTests",
@@ -167,50 +90,25 @@ let package = Package(
             ],
             path: "Tests/NucleusLinuxPrimitivesTests",
             swiftSettings: [
-                .unsafeFlags([
-                    "-enable-experimental-feature", "Lifetimes",
-                ]),
+                .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
             ]),
         .testTarget(
             name: "NucleusLinuxReactorTests",
             dependencies: ["NucleusLinuxReactor"],
             path: "Tests/NucleusLinuxReactorTests",
             swiftSettings: [
-                .unsafeFlags([
-                    "-enable-experimental-feature", "Lifetimes",
-                ]),
+                .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
             ]),
         .testTarget(
             name: "NucleusLinuxDBusTests",
             dependencies: ["NucleusLinuxDBus"],
             path: "Tests/NucleusLinuxDBusTests"),
         .testTarget(
-            name: "NucleusLinuxAccessibilityTests",
-            dependencies: [
-                "NucleusLinuxAccessibility",
-                .product(name: "NucleusUI", package: "Nucleus"),
-            ],
-            path: "Tests/NucleusLinuxAccessibilityTests",
-            swiftSettings: [.interoperabilityMode(.Cxx)]),
-        .testTarget(
-            name: "NucleusLinuxEnvironmentTests",
-            dependencies: [
-                "NucleusLinuxEnvironment",
-                .product(name: "NucleusUI", package: "Nucleus"),
-            ],
-            path: "Tests/NucleusLinuxEnvironmentTests",
-            swiftSettings: [.interoperabilityMode(.Cxx)]),
-        .testTarget(
-            name: "NucleusLinuxSessionTests",
-            dependencies: [
-                "NucleusSessionSupervisor",
-                "NucleusSessionFixture",
-                .product(name: "NucleusSessionProtocol", package: "engine"),
-            ],
-            path: "Tests/NucleusLinuxSessionTests"),
+            name: "NucleusThemeAssetIOTests",
+            dependencies: ["NucleusThemeAssetIO"],
+            path: "Tests/NucleusThemeAssetIOTests"),
     ]
 )
-
 
 for target in package.targets {
     switch target.type {

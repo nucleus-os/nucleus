@@ -1,4 +1,4 @@
-@_spi(NucleusCompositor) public import NucleusLayers
+@_spi(NucleusRenderServer) public import NucleusLayers
 
 public struct WindowScene: Sendable, Equatable {
     public var surfaceID: UInt64

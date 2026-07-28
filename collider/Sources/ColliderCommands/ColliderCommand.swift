@@ -382,24 +382,14 @@ struct Install: AsyncParsableCommand {
         abstract: "Install Nucleus runtime and browser products.",
         subcommands: [
             Session.self,
-            Compositor.self,
-            Shell.self,
             Browser.self,
         ])
 
-    struct Session: RuntimeInstallLeaf {
-        static let component = RuntimeInstaller.Component.session
+    struct Session: AsyncParsableCommand {
         @Option var prefix: String?
-    }
-
-    struct Compositor: RuntimeInstallLeaf {
-        static let component = RuntimeInstaller.Component.compositor
-        @Option var prefix: String?
-    }
-
-    struct Shell: RuntimeInstallLeaf {
-        static let component = RuntimeInstaller.Component.shell
-        @Option var prefix: String?
+        mutating func run() async throws {
+            try await InstallCommand(context: context()).run(prefix: prefix)
+        }
     }
 
     struct Browser: TaskControlledCommand {
@@ -412,19 +402,6 @@ struct Install: AsyncParsableCommand {
                 controls: taskOptions.controls,
                 installPrefix: prefix)
         }
-    }
-}
-
-protocol RuntimeInstallLeaf: AsyncParsableCommand {
-    static var component: RuntimeInstaller.Component { get }
-    var prefix: String? { get set }
-}
-
-extension RuntimeInstallLeaf {
-    mutating func run() async throws {
-        try await InstallCommand(context: context()).run(
-            Self.component,
-            prefix: prefix)
     }
 }
 

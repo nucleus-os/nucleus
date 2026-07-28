@@ -107,12 +107,12 @@ cc_library_static {
         "native/gfxstream-guest/GfxstreamSocketTransport.cpp",
         "native/gfxstream-guest/GuestRingFactory.cpp",
         "native/gfxstream-guest/GuestRingStream.cpp",
-        "native/ipc/NucleusAndroidIPCC.c",
+        "native/ipc-transport/NucleusIPCTransportC.c",
         "native/shared-ring/NucleusAndroidSharedRingC.c",
     ],
     export_include_dirs: [
         "native/gfxstream-guest/include",
-        "native/ipc/include",
+        "native/ipc-transport/include",
         "native/shared-ring/include",
     ],
     include_dirs: [
@@ -132,12 +132,12 @@ cc_library_static {
     vendor: true,
     srcs: [
         "native/gralloc/NucleusGrallocBrokerClient.cpp",
-        "native/ipc/NucleusAndroidIPCC.c",
+        "native/ipc-transport/NucleusIPCTransportC.c",
     ],
     export_include_dirs: [
         "native/gfxstream-guest/include",
         "native/gralloc/include",
-        "native/ipc/include",
+        "native/ipc-transport/include",
     ],
     shared_libs: [
         "android.hardware.graphics.allocator-V3-ndk",
@@ -224,7 +224,7 @@ cc_binary {
         "native/composer/DisplayFinder.cpp",
         "native/composer/Main.cpp",
         "native/composer/NucleusFrameComposer.cpp",
-        "native/ipc/NucleusAndroidIPCC.c",
+        "native/ipc-transport/NucleusIPCTransportC.c",
     ],
     init_rc: ["native/composer/composer.nucleus.rc"],
     vintf_fragments: ["native/composer/composer.nucleus.xml"],
@@ -235,7 +235,7 @@ cc_binary {
         "native/composer",
         "native/composer-protocol/include",
         "native/gralloc/include",
-        "native/ipc/include",
+        "native/ipc-transport/include",
     ],
     static_libs: [
         "libaidlcommonsupport",

@@ -57,24 +57,16 @@ extension InputDispatch {
             // Pointer focus left the client: drop its set_cursor binding so its later
             // surface commits no longer control the cursor, then restore the default.
             host.pointerCursorSurface.clear()
-            host.server.shellPolicy?.cursorApplyDefault()
+            host.server.policy?.cursorApplyDefault()
             requestCursorFrame()
             cursorFromXwayland = false
             appliedCursorIntent = .named("default")
         }
         pointerFocusWasXwayland = decision.rememberPointerXwayland
 
-        // Compositor-policy cursor/overlay hints are suppressed while locked — no
-        // shell overlay and no window chrome may react to the pointer behind the lock.
+        // Compositor-policy cursor/chrome hints are suppressed while locked.
         if !lockActive() {
-            // Shell overlay arbitration: while a shell control is up, route motion into
-            // the overlay and flip the cursor to the pointer hand over a clickable control.
-            var shellControl = false
-            if host.server.shellPolicy?.overlayActive() ?? false {
-                let bits = dispatchOverlayPointer(kind: 1, button: 0, timestampNs: event.timestampNs)
-                shellControl = bits & 2 != 0
-            }
-            cursorOverShellControl = shellControl
+            cursorOverShellControl = false
 
             // Resolve the cursor afresh from the same presented-scene hit on every
             // motion. No sticky resize flag survives a changed target.
@@ -83,7 +75,7 @@ extension InputDispatch {
             applyCursorIntent(resolveCursorIntent(
                 resizeName: resizeName,
                 clientOwnsCursor: host.pointerCursorSurface.surfaceId != 0 || cursorFromXwayland,
-                shellControl: shellControl))
+                shellControl: false))
             updateChromeButtonVisual(windowID: chromeIsChrome ? hit.windowId : 0, region: chromeRegion)
         }
 
@@ -119,13 +111,6 @@ extension InputDispatch {
                 _ = host.runtime?.dataDevice.dropActiveDrag()
             }
             return
-        }
-
-        // Shell-overlay arbitration: a button up, or any button while the overlay is
-        // active, routes into the overlay first; a consumed event stops here.
-        if !down || (host.server.shellPolicy?.overlayActive() ?? false) {
-            let bits = dispatchOverlayPointer(kind: down ? 2 : 3, button: button, timestampNs: event.timestampNs)
-            if bits & 1 != 0 { return }
         }
 
         // An active interactive grab consumes the button; the last release finishes it.

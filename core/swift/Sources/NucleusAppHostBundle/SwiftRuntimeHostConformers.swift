@@ -7,7 +7,15 @@
 
 import NucleusTypes
 import NucleusAppHostProtocols
+
+#if canImport(Glibc)
 import Glibc
+#elseif canImport(Android)
+import Android
+#elseif canImport(Darwin)
+import Darwin
+#endif
+
 import Synchronization
 
 // MARK: - Context-id allocation

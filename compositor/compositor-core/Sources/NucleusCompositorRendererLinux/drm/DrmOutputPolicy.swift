@@ -1,7 +1,7 @@
 // Swift DrmOutput policy state machines: VRR, recovery, telemetry.
 //
 // These are the self-contained per-output policy/state cores for VRR, recovery,
-// and telemetry. DrmOutput owns them while RendererRuntime drives their live
+// and telemetry. DrmOutput owns them while DRMScanoutPresenter drives their live
 // transitions around atomic commits, pause/resume, and modesets.
 
 // `DRM_MODE_ATOMIC_ALLOW_MODESET` (drm_mode.h) — mirrored so this stays pure Swift.

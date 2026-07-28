@@ -100,7 +100,6 @@ struct AndroidPresentationQualificationCommand {
                 selection: .androidRuntime,
                 controls: TaskControls())
             installation = try await RuntimeInstaller(context: context).install(
-                .session,
                 prefix: context.layout.installPrefix,
                 options: runtimeOptions)
         } else {

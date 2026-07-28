@@ -439,6 +439,126 @@ private func drainWaylandMessages(
 
 @MainActor
 @Suite struct WaylandLoopbackTests {
+  @Test
+  func managedClientObservesPeerDisconnectBeforeExplicitTeardown()
+    throws
+  {
+    let server = try #require(WaylandDisplay(), "wl_display_create")
+    var sockets: [Int32] = [0, 0]
+    try #require(
+      unsafe socketpair(
+        AF_UNIX,
+        Int32(SOCK_STREAM.rawValue) | sockNonblock,
+        0,
+        &sockets) == 0)
+    let managed = try #require(
+      server.createManagedClient(fd: sockets[0]))
+    var peer = WaylandConnection(fd: sockets[1])
+    #expect(peer != nil)
+
+    peer = nil
+    server.dispatch()
+    managed.destroy()
+    #expect(peer == nil)
+  }
+
+  @Test
+  func globalFilterRestrictsAStandardGlobalToTheManagedClient()
+    throws
+  {
+    let server = try #require(WaylandDisplay(), "wl_display_create")
+    let output = try #require(WaylandGlobalRegistration(
+      display: server,
+      specification: WlOutputServer.global(
+        implementation: OutputGlobalImplementation(),
+        advertisedVersion: 4)))
+    let compositorTracker = GeneratedClientRequestTracker()
+    let compositor = try #require(WaylandGlobalRegistration(
+      display: server,
+      specification: WlCompositorServer.global(
+        implementation: compositorTracker,
+        advertisedVersion: 1,
+        owner: { tracker, _ in
+          CompositorRequestOwner(tracker: tracker)
+        })))
+    var privilegedClientID: WaylandClientID?
+    server.setGlobalFilter { client, interfaceName in
+      interfaceName != WlOutputClient.descriptor.wireName
+        || client == privilegedClientID
+    }
+
+    var privilegedSockets: [Int32] = [0, 0]
+    try #require(
+      unsafe socketpair(
+        AF_UNIX,
+        Int32(SOCK_STREAM.rawValue) | sockNonblock,
+        0,
+        &privilegedSockets) == 0)
+    let managed = try #require(
+      server.createManagedClient(fd: privilegedSockets[0]))
+    privilegedClientID = managed.identity
+    let privileged = try #require(
+      WaylandConnection(fd: privilegedSockets[1]))
+    let privilegedRegistry = try #require(WaylandRegistry(
+      privileged,
+      wanting: [
+        DesiredGlobal<WlOutputClient>(),
+        DesiredGlobal<WlCompositorClient>(),
+      ]))
+
+    var ordinarySockets: [Int32] = [0, 0]
+    try #require(
+      unsafe socketpair(
+        AF_UNIX,
+        Int32(SOCK_STREAM.rawValue) | sockNonblock,
+        0,
+        &ordinarySockets) == 0)
+    try #require(
+      unsafe server.createClient(fd: ordinarySockets[0]) != nil)
+    let ordinary = try #require(
+      WaylandConnection(fd: ordinarySockets[1]))
+    let ordinaryRegistry = try #require(WaylandRegistry(
+      ordinary,
+      wanting: [
+        DesiredGlobal<WlOutputClient>(),
+        DesiredGlobal<WlCompositorClient>(),
+      ]))
+
+    for _ in 0..<50 {
+      _ = pumpClient(privileged)
+      _ = pumpClient(ordinary)
+      server.dispatch()
+      server.flushClients()
+      if privilegedRegistry.singleton(WlOutputClient.self) != nil,
+        ordinaryRegistry.singleton(WlCompositorClient.self) != nil
+      {
+        break
+      }
+    }
+
+    #expect(
+      privilegedRegistry.singleton(WlOutputClient.self) != nil)
+    #expect(
+      privilegedRegistry.singleton(WlCompositorClient.self) != nil)
+    #expect(ordinaryRegistry.singleton(WlOutputClient.self) == nil)
+    let ordinaryCompositor = try #require(
+      ordinaryRegistry.singleton(WlCompositorClient.self))
+
+    privilegedClientID = nil
+    managed.destroy()
+    let ordinarySurface = try ordinaryCompositor.createSurface()
+    for _ in 0..<50 where compositorTracker.createdSurfaceCount == 0 {
+      _ = pumpClient(ordinary)
+      server.dispatch()
+      server.flushClients()
+    }
+    #expect(compositorTracker.createdSurfaceCount == 1)
+    #expect(ordinaryCompositor.isLive)
+    try ordinarySurface.destroyLocally()
+    _ = output
+    _ = compositor
+  }
+
   @Test func outputEventsRoundTripThroughGeneratedDispatch() throws {
     // ── Server: a display + one wl_output global. ──
     let server = try #require(WaylandDisplay(), "wl_display_create")

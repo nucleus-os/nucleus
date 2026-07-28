@@ -6,7 +6,7 @@ import NucleusRenderModel
 import Glibc
 
 @MainActor
-extension RendererRuntime {
+extension DRMScanoutPresenter {
     /// Attach one globally allocated KMS pipeline. A replacement is retired before
     /// its new scanout owners become visible, so no framebuffer is destroyed while
     /// the kernel can still reference it.
@@ -128,7 +128,7 @@ extension RendererRuntime {
         height: UInt32,
         drmFormat: UInt32
     ) -> ScanoutSlot? {
-        guard let buffer = unsafe GbmScanoutBuffer.allocate(
+        guard let buffer = unsafe DRMScanoutBufferAllocation.allocate(
             gbmDevice: gbmHandle,
             drmFormat: drmFormat,
             width: width,

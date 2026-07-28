@@ -117,7 +117,7 @@ extension InputDispatch {
     /// Open the per-window menu at the cursor (right-click titlebar / menu keybind).
     package func showWindowMenuForWindow(_ windowID: UInt64) {
         guard windowID != 0 else { return }
-        host.server.shellPolicy?.overlaySceneShowWindowMenu(
+        host.server.policy?.showWindowMenu(
             windowID: windowID,
             x: cursorX,
             y: cursorY,
@@ -150,7 +150,7 @@ extension InputDispatch {
     }
 
     package func applyNamedCursor(_ name: String) {
-        host.server.shellPolicy?.cursorApplyNamed(name)
+        host.server.policy?.cursorApplyNamed(name)
         requestCursorFrame()
     }
 

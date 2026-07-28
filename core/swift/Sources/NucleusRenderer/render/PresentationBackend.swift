@@ -20,6 +20,10 @@ public import Vulkan
 public enum FrameTargetKind {
     /// A DRM/KMS scanout buffer object imported as a Vulkan image (Linux).
     case drmScanout
+    /// A client-owned DMA-BUF backing store committed to a Wayland surface.
+    /// Graphite leaves it in a general render-complete state; the presenter
+    /// publishes completion through a DRM syncobj timeline.
+    case clientBackingStore
     /// A Vulkan swapchain image (Android `VK_KHR_android_surface`).
     case swapchainColor
 }
@@ -53,7 +57,8 @@ public enum FrameTargetKind {
     /// GPU work waits on before rendering, and the semaphore signaled when it
     /// completes (the one `vkQueuePresentKHR` waits on). DRM scanout requires
     /// `signalSemaphore` as the exportable render-complete semaphore KMS consumes;
-    /// only `waitSemaphore` is nil on that path.
+    /// only `waitSemaphore` is nil on that path. Client backing stores publish
+    /// their completion in `didSubmitTarget`, so both fields are nil.
     public var waitSemaphore: VkSemaphore?
     public var signalSemaphore: VkSemaphore?
 

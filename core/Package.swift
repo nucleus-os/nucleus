@@ -88,6 +88,28 @@ let skiaLinkFlags: [String] = [
     "-lvulkan", "-lfontconfig", "-lfreetype", "-lz", "-ldl", "-lpthread", "-lm",
 ]
 
+let swiftPMSanitizer = environment["NUCLEUS_SWIFTPM_SANITIZER"]
+let nucleusFrameworkLinuxLinkFlags: [String] =
+    skiaLinkFlags + (swiftPMSanitizer == nil ? [
+        // Hide static Skia implementation symbols from the framework ABI and
+        // require the production DSO to resolve its complete symbol graph.
+        // SwiftPM propagates these target flags to final executables, so they
+        // cannot be used for sanitizer builds: --exclude-libs=ALL would also
+        // hide the executable's static sanitizer runtime from instrumented
+        // dependency DSOs.
+        "-Xlinker", "--exclude-libs=ALL",
+        // Production shared libraries resolve their complete symbol graph at
+        // link time. Sanitizer runtimes are supplied by the final instrumented
+        // executable, so an instrumented shared library must retain those
+        // compiler-generated __{a,t,ub}san references until final linkage.
+        "-Xlinker", "--no-undefined",
+    ] : []) + [
+        "-Xlinker", "-z",
+        "-Xlinker", "relro",
+        "-Xlinker", "-z",
+        "-Xlinker", "now",
+    ]
+
 let skiaAndroidLinkFlags: [String] = [
     "-L", skiaAndroidLibDir,
     "-Xlinker", "--start-group",
@@ -110,34 +132,37 @@ let package = Package(
     // dependencies so `swift test` (which builds the whole package under a global
     // C++-interop flag) is unaffected.
     products: [
+        .library(
+            name: "Nucleus",
+            type: .dynamic,
+            targets: [
+                "Nucleus",
+                "NucleusApp",
+                "NucleusAppHostBundle",
+                "NucleusLayers",
+                "NucleusRenderHost",
+                "NucleusRenderModel",
+                "NucleusRenderer",
+                "NucleusSkiaGraphiteBridge",
+                "NucleusTextBackend",
+                "NucleusTextRenderingBridge",
+                "NucleusUI",
+                "NucleusUIEmbedder",
+            ]),
         .library(name: "CoreColliderRecipe", targets: ["CoreColliderRecipe"]),
-        .library(name: "NucleusAppHostBundle", targets: ["NucleusAppHostBundle"]),
         .library(
             name: "NucleusAndroidHostLifecycle",
             targets: ["NucleusAndroidHostLifecycle"]),
-        .library(name: "NucleusDiagnostics", targets: ["NucleusDiagnostics"]),
-        .library(name: "NucleusRenderModel", targets: ["NucleusRenderModel"]),
-        .library(name: "NucleusRenderer", targets: ["NucleusRenderer"]),
         .library(name: "NucleusTextCxxBridge", targets: ["NucleusTextCxxBridge"]),
-        .library(name: "NucleusTextBackend", targets: ["NucleusTextBackend"]),
-        .library(
-            name: "NucleusTextRenderingBridge",
-            targets: ["NucleusTextRenderingBridge"]),
-        // Core + app-framework products the compositor-core library package consumes.
-        // The compositor's shell is itself a Nucleus app, so it consumes the
-        // NucleusUI design system — that dependency direction (compositor → app
-        // framework → core) is correct.
-        .library(name: "NucleusTypes", targets: ["NucleusTypes"]),
-        .library(name: "NucleusLayers", targets: ["NucleusLayers"]),
-        .library(name: "NucleusAppHostProtocols", targets: ["NucleusAppHostProtocols"]),
-        .library(name: "NucleusRenderHost", targets: ["NucleusRenderHost"]),
-        .library(name: "NucleusUI", targets: ["NucleusUI"]),
-        .library(name: "NucleusUIEmbedder", targets: ["NucleusUIEmbedder"]),
-        .library(name: "NucleusApp", targets: ["NucleusApp"]),
         .library(
             name: "NucleusBenchmarkSupport",
             targets: ["NucleusBenchmarkSupport"]),
-        .library(name: "NucleusSkiaGraphiteBridge", targets: ["NucleusSkiaGraphiteBridge"]),
+        .library(
+            name: "NucleusPresentationBackendContractTestSupport",
+            type: .dynamic,
+            targets: [
+                "NucleusPresentationBackendContractTestSupport",
+            ]),
         .executable(
             name: "NucleusHeadlessBenchmarks",
             targets: ["NucleusHeadlessBenchmarks"]),
@@ -146,6 +171,7 @@ let package = Package(
             targets: ["NucleusCoreThreadSanitizerHarness"]),
     ],
     dependencies: [
+        .package(name: "NucleusFoundation", path: "../foundation"),
         .package(path: "../collider/engine"),
         // The Vulkan bindings (VulkanGen generator + generated typed API + the raw-C
         // façade with vendored Khronos headers) were extracted to their own package.
@@ -162,37 +188,38 @@ let package = Package(
             name: "CoreColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
         .target(
+            name: "Nucleus",
+            dependencies: [
+                "NucleusApp",
+                "NucleusUI",
+                .product(
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
+            ],
+            path: "swift/Sources/Nucleus",
+            swiftSettings: [.strictMemorySafety()],
+            linkerSettings: [
+                .unsafeFlags(
+                    nucleusFrameworkLinuxLinkFlags,
+                    .when(platforms: [.linux])),
+            ]
+        ),
+        .target(
             name: "NucleusAndroidHostLifecycle",
             path: "swift/Sources/NucleusAndroidHostLifecycle",
             swiftSettings: [.strictMemorySafety()]
         ),
-        .target(
-            name: "NucleusDiagnostics",
-            path: "swift/Sources/NucleusDiagnostics",
-            swiftSettings: [.strictMemorySafety()]
-        ),
-        // ── Shared-type leaves: public value structs + enums + constants, no deps. ─
-        .target(
-            name: "NucleusTypes",
-            path: "swift/Sources/NucleusTypes",
-            swiftSettings: [.strictMemorySafety()]
-        ),
-
-        // ── First edge: the host-protocol surface imports NucleusTypes ───────────
-        .target(
-            name: "NucleusAppHostProtocols",
-            dependencies: ["NucleusTypes"],
-            path: "swift/Sources/NucleusAppHostProtocols",
-            swiftSettings: [.strictMemorySafety()]
-        ),
-
         // ── Mid graph: tracing/types-only modules (no prebuilt C/C++ link yet). ──
         // The layers core. The tracing C-module-map is unused by
         // these sources (they import only NucleusTypes/NucleusAppHostProtocols), so no
         // tracing dep / cxx interop is needed here — only the public-names define.
         .target(
             name: "NucleusLayers",
-            dependencies: ["NucleusTypes", "NucleusAppHostProtocols"],
+            dependencies: [
+                .product(
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
+            ],
             path: "swift/Sources/NucleusLayers",
             swiftSettings: [
                 .define("NUCLEUS_LAYERS_PUBLIC_NAMES"),
@@ -238,7 +265,7 @@ let package = Package(
                 "NucleusTextCxxBridge",
                 "NucleusTextBackendNative",
                 "NucleusTextRenderingBridge",
-                .product(name: "Tracy", package: "swift-tracy"),
+                .product(name: "SwiftTracy", package: "swift-tracy"),
             ],
             path: "swift/Sources/NucleusTextBackend",
             swiftSettings: [.interoperabilityMode(.Cxx)]
@@ -247,9 +274,21 @@ let package = Package(
         // contract; native backends are installed by hosts.
         .target(
             name: "NucleusUI",
-            dependencies: ["NucleusTypes", "NucleusLayers", "NucleusAppHostProtocols", .product(name: "Tracy", package: "swift-tracy")],
+            dependencies: [
+                "NucleusLayers",
+                "NucleusSecureMemoryC",
+                .product(
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
+                .product(name: "SwiftTracy", package: "swift-tracy"),
+            ],
             path: "swift/Sources/NucleusUI",
             swiftSettings: [.strictMemorySafety()]
+        ),
+        .target(
+            name: "NucleusSecureMemoryC",
+            path: "swift/Sources/NucleusSecureMemoryC",
+            publicHeadersPath: "include"
         ),
         // NucleusUIEmbedder — the API for code that *embeds* a NucleusUI scene into a
         // platform and feeds it a surface, input, and a frame clock: the compositor, the
@@ -259,16 +298,28 @@ let package = Package(
         // could simply write. Product code depends on NucleusUI and never on this.
         .target(
             name: "NucleusUIEmbedder",
-            dependencies: ["NucleusUI", "NucleusLayers", "NucleusTypes"],
+            dependencies: [
+                "NucleusUI",
+                "NucleusLayers",
+                .product(
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
+            ],
             path: "swift/Sources/NucleusUIEmbedder",
             swiftSettings: [.strictMemorySafety()]
         ),
-        // NucleusApp — the SwiftUI-shaped App/Scene entry vocabulary and the single-import
-        // front door (`@_exported import NucleusUI`). Depends on NucleusUI (re-exported)
-        // and NucleusLayers (the host rendering context).
+        // NucleusApp — the SwiftUI-shaped App/Scene entry vocabulary. The Nucleus
+        // umbrella re-exports it alongside NucleusUI; this implementation target
+        // retains an explicit dependency on NucleusUI and NucleusLayers.
         .target(
             name: "NucleusApp",
-            dependencies: ["NucleusUI", "NucleusLayers", "NucleusDiagnostics"],
+            dependencies: [
+                "NucleusUI",
+                "NucleusLayers",
+                .product(
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
+            ],
             path: "swift/Sources/NucleusApp",
             swiftSettings: [.strictMemorySafety()]
         ),
@@ -277,7 +328,11 @@ let package = Package(
         // only module sources and globs cleanly (no explicit source list).
         .target(
             name: "NucleusRenderModel",
-            dependencies: ["NucleusTypes", "NucleusAppHostProtocols"],
+            dependencies: [
+                .product(
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
+            ],
             path: "swift/Sources/NucleusRenderModel",
             swiftSettings: [.strictMemorySafety()]
         ),
@@ -285,7 +340,13 @@ let package = Package(
         // model. A clean leaf (no cxx interop) once its deps are migrated.
         .target(
             name: "NucleusAppHostBundle",
-            dependencies: ["NucleusTypes", "NucleusAppHostProtocols", "NucleusLayers", "NucleusRenderModel"],
+            dependencies: [
+                "NucleusLayers",
+                "NucleusRenderModel",
+                .product(
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
+            ],
             path: "swift/Sources/NucleusAppHostBundle",
             swiftSettings: [.strictMemorySafety()]
         ),
@@ -347,14 +408,27 @@ let package = Package(
         // NucleusAppHostProtocols comes transitively through NucleusLayers.
         .target(
             name: "NucleusRenderHost",
-            dependencies: ["NucleusTypes", "NucleusLayers", "NucleusRenderModel"],
+            dependencies: [
+                "NucleusLayers",
+                "NucleusRenderModel",
+                .product(
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
+            ],
             path: "swift/Sources/NucleusRenderHost",
             swiftSettings: [.strictMemorySafety()]
         ),
         // The layers→render producer feed.
         .testTarget(
             name: "NucleusRenderHostTests",
-            dependencies: ["NucleusRenderHost", "NucleusTypes", "NucleusLayers", "NucleusRenderModel"],
+            dependencies: [
+                "NucleusRenderHost",
+                "NucleusLayers",
+                "NucleusRenderModel",
+                .product(
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
+            ],
             path: "swift/Tests/NucleusRenderHostTests"
         ),
         .testTarget(
@@ -362,7 +436,9 @@ let package = Package(
             dependencies: [
                 "NucleusAppHostBundle", "NucleusRenderHost",
                 "NucleusRenderModel", "NucleusLayers", "NucleusUI",
-                "NucleusAppHostProtocols", "NucleusTypes",
+                .product(
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
             ],
             path: "swift/Tests/NucleusRuntimeGraphTests"
         ),
@@ -389,14 +465,15 @@ let package = Package(
         .target(
             name: "NucleusRenderer",
             dependencies: [
-                "NucleusDiagnostics",
-                "NucleusTypes",
                 "NucleusRenderModel",
                 "NucleusBlockingSynchronizationC",
+                .product(
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
                 .product(name: "VulkanC", package: "swift-vulkan"),
-                .product(name: "Vulkan", package: "swift-vulkan"),
+                .product(name: "SwiftVulkan", package: "swift-vulkan"),
                 "NucleusSkiaGraphiteBridge",
-                .product(name: "Tracy", package: "swift-tracy"),
+                .product(name: "SwiftTracy", package: "swift-tracy"),
             ],
             path: "swift/Sources/NucleusRenderer",
             swiftSettings: [
@@ -409,14 +486,23 @@ let package = Package(
         ),
         .testTarget(
             name: "NucleusRendererTests",
-            dependencies: ["NucleusRenderer", "NucleusTypes"],
+            dependencies: [
+                "NucleusRenderer",
+                .product(
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
+            ],
             path: "swift/Tests/NucleusRendererTests",
             swiftSettings: [.interoperabilityMode(.Cxx)],
             linkerSettings: [.unsafeFlags(skiaLinkFlags)]
         ),
         .testTarget(
             name: "NucleusDiagnosticsTests",
-            dependencies: ["NucleusDiagnostics"],
+            dependencies: [
+                .product(
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
+            ],
             path: "swift/Tests/NucleusDiagnosticsTests"
         ),
         // The DRM/KMS presentation backend and its tests live in compositor-core.
@@ -425,7 +511,12 @@ let package = Package(
         // compile fixtures did). `swift test` runs them.
         .testTarget(
             name: "NucleusRenderModelTests",
-            dependencies: ["NucleusRenderModel", "NucleusTypes"],
+            dependencies: [
+                "NucleusRenderModel",
+                .product(
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
+            ],
             path: "swift/Tests/NucleusRenderModelTests"
         ),
         .target(
@@ -440,6 +531,11 @@ let package = Package(
         .target(
             name: "NucleusRendererTestSupport",
             path: "swift/Tests/Support/Renderer"
+        ),
+        .target(
+            name: "NucleusPresentationBackendContractTestSupport",
+            path:
+                "swift/Tests/Support/PresentationBackendContract"
         ),
         .target(
             name: "NucleusResourceTestSupport",
@@ -457,6 +553,11 @@ let package = Package(
         // (VulkanTests moved to the extracted swift-vulkan package.)
         // The Wayland C, compositor server, and window-manager test targets live in
         // compositor-core.
+        .testTarget(
+            name: "NucleusUmbrellaTests",
+            dependencies: ["Nucleus"],
+            path: "swift/Tests/NucleusUmbrellaTests"
+        ),
         // The NucleusUI behavioral suite (View/layout/control/publisher fixtures).
         // The embedder suite deliberately remains pure Swift and exercises the
         // recoverable no-backend path. The compositor-coupled fixtures that used to live alongside
@@ -465,7 +566,14 @@ let package = Package(
         // live — this React/compositor-agnostic core package cannot depend on them.
         .testTarget(
             name: "NucleusUIEmbedderTests",
-            dependencies: ["NucleusUIEmbedder", "NucleusUI", "NucleusLayers", "NucleusTypes"],
+            dependencies: [
+                "NucleusUIEmbedder",
+                "NucleusUI",
+                "NucleusLayers",
+                .product(
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
+            ],
             path: "swift/Tests/NucleusUIEmbedderTests"
         ),
         .testTarget(
@@ -479,7 +587,6 @@ let package = Package(
                 "NucleusUI",
                 "NucleusUIEmbedder",
                 "NucleusLayers",
-                "NucleusTypes",
                 "NucleusTextBackend",
                 "NucleusSkiaGraphiteBridge",
                 "NucleusRenderHost",
@@ -489,6 +596,9 @@ let package = Package(
                 "NucleusRendererTestSupport",
                 "NucleusResourceTestSupport",
                 "NucleusTextRenderingTestSupport",
+                .product(
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
             ],
             path: "swift/Tests/NucleusUITests",
             swiftSettings: [.interoperabilityMode(.Cxx)],
@@ -501,10 +611,12 @@ let package = Package(
             name: "NucleusHeadlessBenchmarks",
             dependencies: [
                 "NucleusBenchmarkSupport",
-                "NucleusTypes",
                 "NucleusLayers",
                 "NucleusUI",
                 "NucleusRenderModel",
+                .product(
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
             ],
             path: "swift/Benchmarks/NucleusHeadlessBenchmarks"
         ),
@@ -526,9 +638,11 @@ let package = Package(
         .executableTarget(
             name: "NucleusCoreThreadSanitizerHarness",
             dependencies: [
-                "NucleusAppHostProtocols",
                 "NucleusRenderModel",
                 "NucleusRenderer",
+                .product(
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
             ],
             path: "swift/SanitizerHarnesses/NucleusCoreThreadSanitizerHarness",
             swiftSettings: [.interoperabilityMode(.Cxx)],

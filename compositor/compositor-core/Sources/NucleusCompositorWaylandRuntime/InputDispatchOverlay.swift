@@ -4,59 +4,6 @@ internal import NucleusCompositorWindowManager
 import Glibc
 @MainActor
 extension InputDispatch {
-    package func overlayScaleAtCursor() -> Double {
-        for display in host.server.layout.displays {
-            let r = display.logicalRect
-            if cursorX >= r.x && cursorX < r.maxX && cursorY >= r.y && cursorY < r.maxY {
-                return display.fractionalScale
-            }
-        }
-        return 1
-    }
-
-    package func dispatchOverlayPointer(kind: UInt32, button: UInt32, timestampNs: UInt64) -> UInt32 {
-        let scale = overlayScaleAtCursor()
-        let result = host.server.shellPolicy?.overlayPointer(
-            x: Float(cursorX * scale),
-            y: Float(cursorY * scale),
-            kind: kind,
-            button: button,
-            timestampNs: timestampNs) ?? 0
-        let bits = UInt32(truncatingIfNeeded: result)
-        applyOverlayResult(bits: bits)
-        return bits
-    }
-
-    package func dispatchOverlayKey(
-        keycode: UInt32, modifiers: UInt32, text: String?, kind: UInt32, timestampNs: UInt64
-    ) -> UInt32 {
-        let result = host.server.shellPolicy?.overlayKey(
-            keycode: keycode, modifiers: modifiers, text: text,
-            kind: kind, timestampNs: timestampNs) ?? 0
-        let bits = UInt32(truncatingIfNeeded: result)
-        applyOverlayResult(bits: bits)
-        return bits
-    }
-
-    package func applyOverlayResult(bits: UInt32) {
-        if bits & 4 != 0 {
-            requestOverlayFrame()
-        }
-    }
-
-    package func requestOverlayFrame() {
-        let server = host.server
-        guard let outputID = server.spaces.overlayDisplayID(
-            layout: server.layout
-        ) else {
-            return
-        }
-        RenderBridge.requestFrame(
-            server: server,
-            outputId: outputID,
-            reason: .shellOverlay)
-    }
-
     package func workspaceTargetOutput() -> UInt64 {
         let surface = keyboardFocusID()
         if surface != 0 {

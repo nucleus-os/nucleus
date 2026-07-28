@@ -7,7 +7,7 @@ import Tracy
 import Glibc
 
 @MainActor
-extension RendererRuntime {
+extension DRMScanoutPresenter {
     /// Keep an explicit-sync semaphore alive until Graphite observes completion of
     /// the submission that borrowed it. A KMS page flip proves scanout accepted the
     /// rendered image, but it does not update Vulkan validation's queue-lifetime

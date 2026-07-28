@@ -1,6 +1,6 @@
 import Observation
-@_spi(NucleusCompositor) @testable import NucleusLayers
-@_spi(NucleusCompositor) @testable import NucleusUI
+@_spi(NucleusRenderServer) @testable import NucleusLayers
+@_spi(NucleusRenderServer) @testable import NucleusUI
 import Testing
 
 @MainActor

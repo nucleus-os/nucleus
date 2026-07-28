@@ -31,7 +31,8 @@
 #include "NucleusAndroidGfxstreamAdapters/GuestRingFactory.h"
 #include "NucleusAndroidGfxstreamHostC.h"
 #include "NucleusAndroidGfxstreamSocketProtocol.h"
-#include "NucleusAndroidIPCC.h"
+#include "NucleusIPCTransportC.h"
+#include "NucleusAndroidProcessLifecycleC.h"
 #include "NucleusAndroidSharedRingC.h"
 
 namespace {
@@ -933,7 +934,7 @@ int sendResponse(
         descriptors.response_data_notification_fd,
         descriptors.response_space_notification_fd,
     };
-    return nucleus_android_ipc_send(
+    return nucleus_ipc_send(
         socket,
         &response,
         sizeof(response),
@@ -1025,7 +1026,7 @@ int sendControlResponse(
     const nucleus_android_gfxstream_socket_message &response,
     const int *descriptors = nullptr,
     size_t descriptorCount = 0) {
-    return nucleus_android_ipc_send(
+    return nucleus_ipc_send(
         socket,
         &response,
         sizeof(response),
@@ -1074,7 +1075,7 @@ int main(int argc, char **argv) {
     if (socketPath == nullptr || uidRangeStart == 0 || uidRangeCount == 0 ||
         uidRangeEnd > static_cast<uint64_t>(UINT32_MAX) + 1 ||
         parentPID == 0 ||
-        nucleus_android_ipc_require_parent_lifetime(SIGTERM, parentPID) < 0) {
+        nucleus_android_require_parent_lifetime(SIGTERM, parentPID) < 0) {
         trace("invocation.invalid");
         return 2;
     }
@@ -1128,7 +1129,7 @@ int main(int argc, char **argv) {
         trace("gfxstream.renderer-failed", error);
         return 1;
     }
-    const int listener = nucleus_android_ipc_listen(socketPath, 0666);
+    const int listener = nucleus_ipc_listen(socketPath, 0666);
     if (listener < 0) {
         trace("listener.failed", std::strerror(errno));
         return 1;
@@ -1207,7 +1208,7 @@ int main(int argc, char **argv) {
         if ((pollDescriptors.front().revents & POLLIN) == 0) {
             continue;
         }
-        const int peer = nucleus_android_ipc_accept(listener);
+        const int peer = nucleus_ipc_accept(listener);
         if (peer < 0) {
             if (stopping.load(std::memory_order_acquire)) {
                 break;
@@ -1218,10 +1219,10 @@ int main(int argc, char **argv) {
             trace("accept.failed", std::strerror(errno));
             return 1;
         }
-        nucleus_android_peer_credentials credentials = {};
+        struct nucleus_ipc_peer_credentials credentials = {};
         nucleus_android_gfxstream_socket_message request = {};
         size_t receivedDescriptors = 0;
-        const int received = nucleus_android_ipc_receive(
+        const int received = nucleus_ipc_receive(
             peer,
             &request,
             sizeof(request),
@@ -1229,7 +1230,7 @@ int main(int argc, char **argv) {
             0,
             &receivedDescriptors);
         const int credentialsResult =
-            nucleus_android_ipc_peer_credentials(peer, &credentials);
+            nucleus_ipc_peer_credentials(peer, &credentials);
         const bool peerUIDAuthorized =
             credentialsResult == 0 &&
             credentials.pid > 0 &&

@@ -367,6 +367,60 @@ private enum FakeDmaBufImporter {
         #expect(fcntl(pipes[1][0], F_GETFD) == -1)
     }
 
+    @Test func exportedBackingStoreTransfersDescriptorExactlyOnce() {
+        let descriptor = descriptorWithPipe()
+        defer { _ = close(descriptor.writeFD) }
+        let image = unsafe VkOwned(
+            adopting: FakeDmaBufImporter.image,
+            device: fakeDevice,
+            destroy: { _, _ in })
+        let backingStore = unsafe ExportedDmaBufImage(
+            image: image,
+            fileDescriptor: descriptor.readFD,
+            width: 64,
+            height: 32,
+            drmFormat: DrmFourcc.argb8888,
+            modifier: 7,
+            offset: 16,
+            rowPitch: 256)
+
+        let retainsExpectedImage =
+            unsafe backingStore.imageHandle == FakeDmaBufImporter.image
+        #expect(retainsExpectedImage)
+        #expect(backingStore.width == 64)
+        #expect(backingStore.height == 32)
+        #expect(backingStore.drmFormat == DrmFourcc.argb8888)
+        #expect(backingStore.modifier == 7)
+        #expect(backingStore.offset == 16)
+        #expect(backingStore.rowPitch == 256)
+        #expect(backingStore.takeFileDescriptor() == descriptor.readFD)
+        #expect(backingStore.takeFileDescriptor() == nil)
+        #expect(fcntl(descriptor.readFD, F_GETFD) >= 0)
+        _ = close(descriptor.readFD)
+    }
+
+    @Test func untransferredBackingStoreDescriptorClosesWithOwner() {
+        let descriptor = descriptorWithPipe()
+        defer { _ = close(descriptor.writeFD) }
+        do {
+            let image = unsafe VkOwned(
+                adopting: FakeDmaBufImporter.image,
+                device: fakeDevice,
+                destroy: { _, _ in })
+            _ = unsafe ExportedDmaBufImage(
+                image: image,
+                fileDescriptor: descriptor.readFD,
+                width: 1,
+                height: 1,
+                drmFormat: DrmFourcc.argb8888,
+                modifier: 0,
+                offset: 0,
+                rowPitch: 4)
+        }
+        #expect(fcntl(descriptor.readFD, F_GETFD) == -1)
+        #expect(errno == EBADF)
+    }
+
     private var fakeDevice: VkDevice {
         unsafe OpaquePointer(bitPattern: 0x3333)!
     }

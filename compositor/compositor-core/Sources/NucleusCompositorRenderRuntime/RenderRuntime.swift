@@ -18,7 +18,7 @@ public import NucleusRenderModel
 import NucleusRenderHost
 public import NucleusCompositorServer
 import Tracy
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusRenderServer) import NucleusLayers
 
 @MainActor
 public final class RenderRuntime {
@@ -39,7 +39,7 @@ public final class RenderRuntime {
         public let outputs: [OutputInfo]
     }
     private unowned let server: NucleusCompositorServer
-    private var renderer: RendererRuntime?
+    private var renderer: DRMScanoutPresenter?
     private weak var retainedStore: RetainedTreeStore?
     private var telemetryCorrelator = PresentationTelemetryCorrelator()
 
@@ -69,7 +69,7 @@ public final class RenderRuntime {
             server.renderService = renderer
             return true
         }
-        guard let runtime = RendererRuntime.create(
+        guard let runtime = DRMScanoutPresenter.create(
                 drmDeviceFd: drmDeviceFd,
                 enableValidation: enableValidation,
                 presentPolicy: presentPolicy,

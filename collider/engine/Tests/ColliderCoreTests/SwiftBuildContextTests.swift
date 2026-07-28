@@ -66,6 +66,7 @@ import Testing
             "-Xcxx", "-DCXX_FEATURE",
             "-Xlinker", "-lfixture",
         ])
+    #expect(command.environment["NUCLEUS_SWIFTPM_SANITIZER"] == "address")
     #expect(
         invocation.postcondition
             == PathPostcondition(
@@ -94,6 +95,23 @@ import Testing
             == .value(
                 name: "swift-build-context",
                 bytes: context.identityBytes))
+
+    #expect(
+        invocation.commandArguments(
+            ["run", "FixtureProbe", "loader"])
+            == [
+                "run",
+                "--configuration", "release",
+                "--scratch-path", scratch.string,
+                "--triple", "aarch64-unknown-linux-gnu",
+                "--sanitize", "address",
+                "--traits", "diagnostics,renderer",
+                "-Xswiftc", "-enable-a",
+                "-Xcc", "-DC_FEATURE",
+                "-Xcxx", "-DCXX_FEATURE",
+                "-Xlinker", "-lfixture",
+                "FixtureProbe", "loader",
+            ])
 }
 
 @Test func swiftSDKContextOwnsCrossCompilationArgumentsAndProducts() {

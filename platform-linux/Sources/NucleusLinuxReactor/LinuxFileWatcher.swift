@@ -21,8 +21,13 @@ import Glibc
         public var contentChanged = false
         /// The file was removed or renamed away.
         public var removed = false
+        /// The watched directory itself moved or disappeared. The owner must
+        /// discard this source and periodically attempt to create a new one.
+        public var watchInvalidated = false
 
-        public var isEmpty: Bool { !contentChanged && !removed }
+        public var isEmpty: Bool {
+            !contentChanged && !removed && !watchInvalidated
+        }
     }
 
     /// inotify's header is fixed-size; the name follows it inline.
@@ -59,6 +64,7 @@ import Glibc
         // settings that no file supports any more.
         let mask = UInt32(IN_CLOSE_WRITE) | UInt32(IN_MOVED_TO)
             | UInt32(IN_CREATE) | UInt32(IN_DELETE) | UInt32(IN_MOVED_FROM)
+            | UInt32(IN_DELETE_SELF) | UInt32(IN_MOVE_SELF)
         // The String → const char* bridge is the unsafe part, not the call.
         let wd = unsafe inotify_add_watch(fd, directory, mask)
         guard wd >= 0 else {
@@ -130,6 +136,13 @@ import Glibc
             let nameStart = offset + Self.headerSize
             guard nameStart + nameLength <= byteCount else { break }
 
+            if mask & (UInt32(IN_DELETE_SELF) | UInt32(IN_MOVE_SELF)
+                | UInt32(IN_IGNORED)) != 0
+            {
+                change.watchInvalidated = true
+                change.removed = true
+                change.contentChanged = false
+            }
             if unsafe matchesFileName(
                 in: raw, start: nameStart, length: nameLength)
             {

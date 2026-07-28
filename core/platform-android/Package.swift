@@ -100,17 +100,13 @@ let package = Package(
                     name: "NucleusAndroidHostLifecycle",
                     package: "Nucleus"),
                 "NucleusAndroidC",
-                .product(name: "Vulkan", package: "swift-vulkan"),
+                .product(name: "SwiftVulkan", package: "swift-vulkan"),
                 .product(name: "VulkanC", package: "swift-vulkan"),
                 // The platform-agnostic render core, cross-compiled for Android. It
                 // pulls the Android Skia bridge (Vulkan Graphite) transitively via its
                 // `.when(platforms: [.android])` dependency. The host drives it through
                 // the `PresentationBackend` the Vulkan swapchain presenter implements.
-                .product(name: "NucleusRenderer", package: "Nucleus"),
-                .product(name: "NucleusRenderModel", package: "Nucleus"),
-                .product(
-                    name: "NucleusTextRenderingBridge",
-                    package: "Nucleus"),
+                .product(name: "Nucleus", package: "Nucleus"),
             ],
             path: "swift-core",
             swiftSettings: [

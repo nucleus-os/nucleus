@@ -6,7 +6,7 @@
 // selection, newest-ready selection, backlog trimming), and the rendered-frame
 // commit ordering (close in submission order, supersede the rest). The Vulkan
 // texture allocation, fd lifecycle, DisplayLink prediction, and presentation
-// correlation are owned by DrmOutput and RendererRuntime. Here a frame is keyed on
+// correlation are owned by DrmOutput and DRMScanoutPresenter. Here a frame is keyed on
 // its render-slot index and renderReadyFd, and removed frames are returned to the
 // caller so it can close their fds.
 

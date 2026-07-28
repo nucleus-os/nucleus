@@ -108,6 +108,7 @@ private func bind(
         "zxdg_importer_v2": 1,
         "zxdg_output_manager_v1": 3,
         "wp_cursor_shape_manager_v1": 1,
+        "wp_alpha_modifier_v1": 1,
         "wp_fractional_scale_manager_v1": 1,
         "wp_linux_drm_syncobj_manager_v1": 1,
         "wp_presentation": 2,
@@ -118,7 +119,6 @@ private func bind(
         "ext_session_lock_manager_v1": 1,
         "ext_workspace_manager_v1": 1,
         "org_kde_kwin_blur_manager": 1,
-        "xwayland_shell_v1": 1,
         "zwlr_foreign_toplevel_manager_v1": 3,
         "zwlr_gamma_control_manager_v1": 1,
         "zwlr_layer_shell_v1": 4,
@@ -135,9 +135,205 @@ private func bind(
     #expect(actual["wp_commit_timing_manager_v1"] == nil)
     #expect(actual["wp_fifo_manager_v1"] == nil)
     #expect(actual["wp_tearing_control_manager_v1"] == nil)
+    #expect(actual["xwayland_shell_v1"] == nil)
 }
 
 // MARK: - core surface and XDG construction
+
+@Test func alphaModifierIsDoubleBufferedAndUniquePerSurface() throws {
+    let sink = InMemoryCommitSink()
+    let author = WindowSceneAuthor(commitSinkFactory: { sink })
+    let runtime = try #require(graph.routerRuntime(author: author))
+    let client = try #require(
+        WaylandTestClient(display: runtime.router.display))
+    let globals = client.globals()
+    let compositorID: UInt32 = 3
+    let alphaManagerID: UInt32 = 4
+    let surfaceID: UInt32 = 5
+    let alphaSurfaceID: UInt32 = 6
+    let multiplier = UInt32.max / 3
+
+    var setup = WireBuilder()
+    try bind(
+        &setup, "wl_compositor", compositorID, globals)
+    try bind(
+        &setup, "wp_alpha_modifier_v1", alphaManagerID, globals)
+    setup.request(
+        object: compositorID,
+        opcode: WlCompositorRequestOpcode.createSurface
+    ) {
+        $0.newId(surfaceID)
+    }
+    setup.request(
+        object: alphaManagerID,
+        opcode: WpAlphaModifierV1RequestOpcode.getSurface
+    ) {
+        $0.newId(alphaSurfaceID)
+        $0.object(surfaceID)
+    }
+    setup.request(
+        object: alphaSurfaceID,
+        opcode: WpAlphaModifierSurfaceV1RequestOpcode.setMultiplier
+    ) {
+        $0.uint(multiplier)
+    }
+    #expect(client.send(setup))
+    client.pump()
+
+    let serverSurface = try #require(surface(
+        in: runtime.compositor,
+        withWireObjectID: surfaceID))
+    #expect(serverSurface.aux.alphaMultiplier == UInt32.max)
+
+    var commit = WireBuilder()
+    commit.request(
+        object: surfaceID,
+        opcode: WlSurfaceRequestOpcode.commit
+    ) { _ in }
+    #expect(client.send(commit))
+    client.pump()
+    #expect(serverSurface.aux.alphaMultiplier == multiplier)
+
+    var destroy = WireBuilder()
+    destroy.request(
+        object: alphaSurfaceID,
+        opcode: WpAlphaModifierSurfaceV1RequestOpcode.destroy
+    ) { _ in }
+    #expect(client.send(destroy))
+    client.pump()
+    #expect(serverSurface.aux.alphaMultiplier == multiplier)
+
+    #expect(client.send(commit))
+    client.pump()
+    #expect(serverSurface.aux.alphaMultiplier == UInt32.max)
+}
+
+@Test func alphaModifierRejectsASecondObjectForTheSameSurface() throws {
+    let sink = InMemoryCommitSink()
+    let author = WindowSceneAuthor(commitSinkFactory: { sink })
+    let runtime = try #require(graph.routerRuntime(author: author))
+    let client = try #require(
+        WaylandTestClient(display: runtime.router.display))
+    let globals = client.globals()
+    let compositorID: UInt32 = 3
+    let alphaManagerID: UInt32 = 4
+    let surfaceID: UInt32 = 5
+
+    var request = WireBuilder()
+    try bind(
+        &request, "wl_compositor", compositorID, globals)
+    try bind(
+        &request, "wp_alpha_modifier_v1", alphaManagerID, globals)
+    request.request(
+        object: compositorID,
+        opcode: WlCompositorRequestOpcode.createSurface
+    ) {
+        $0.newId(surfaceID)
+    }
+    request.request(
+        object: alphaManagerID,
+        opcode: WpAlphaModifierV1RequestOpcode.getSurface
+    ) {
+        $0.newId(6)
+        $0.object(surfaceID)
+    }
+    request.request(
+        object: alphaManagerID,
+        opcode: WpAlphaModifierV1RequestOpcode.getSurface
+    ) {
+        $0.newId(7)
+        $0.object(surfaceID)
+    }
+    #expect(client.send(request))
+    client.pump()
+
+    let error = try #require(
+        WireError.first(client.drainEvents()))
+    #expect(error.objectID == alphaManagerID)
+    #expect(
+        error.code
+            == WpAlphaModifierV1Error.alreadyConstructed.rawValue)
+}
+
+@Test func stateOnlyChildCommitPreservesEarlierCachedBuffer() throws {
+    let sink = InMemoryCommitSink()
+    let author = WindowSceneAuthor(commitSinkFactory: { sink })
+    let runtime = try #require(graph.routerRuntime(author: author))
+    let client = try #require(
+        WaylandTestClient(display: runtime.router.display))
+    let globals = client.globals()
+    let compositorID: UInt32 = 3
+    let subcompositorID: UInt32 = 4
+    let shmID: UInt32 = 5
+    let parentID: UInt32 = 6
+    let childID: UInt32 = 7
+    let subsurfaceID: UInt32 = 8
+    let poolID: UInt32 = 9
+    let bufferID: UInt32 = 10
+
+    var request = WireBuilder()
+    try bind(
+        &request, "wl_compositor", compositorID, globals)
+    try bind(
+        &request, "wl_subcompositor", subcompositorID, globals)
+    try bind(&request, "wl_shm", shmID, globals)
+    request.request(
+        object: compositorID,
+        opcode: WlCompositorRequestOpcode.createSurface
+    ) {
+        $0.newId(parentID)
+    }
+    request.request(
+        object: compositorID,
+        opcode: WlCompositorRequestOpcode.createSurface
+    ) {
+        $0.newId(childID)
+    }
+    request.request(
+        object: subcompositorID,
+        opcode: WlSubcompositorRequestOpcode.getSubsurface
+    ) {
+        $0.newId(subsurfaceID)
+        $0.object(childID)
+        $0.object(parentID)
+    }
+    let fd = try appendShmBuffer(
+        &request,
+        shmId: shmID,
+        poolId: poolID,
+        bufId: bufferID,
+        width: 16,
+        height: 16,
+        stride: 64,
+        format: 0)
+    request.request(
+        object: childID,
+        opcode: WlSurfaceRequestOpcode.attach
+    ) {
+        $0.object(bufferID)
+        $0.int(0)
+        $0.int(0)
+    }
+    request.request(
+        object: childID,
+        opcode: WlSurfaceRequestOpcode.commit
+    ) { _ in }
+    request.request(
+        object: childID,
+        opcode: WlSurfaceRequestOpcode.commit
+    ) { _ in }
+    request.request(
+        object: parentID,
+        opcode: WlSurfaceRequestOpcode.commit
+    ) { _ in }
+    try client.send(request, fd: fd)
+    client.pump()
+
+    let child = try #require(surface(
+        in: runtime.compositor,
+        withWireObjectID: childID))
+    #expect(child.hasCurrentBuffer)
+}
 
 @Test func surfaceRejectsInvalidScaleAndTransform() throws {
     func run(

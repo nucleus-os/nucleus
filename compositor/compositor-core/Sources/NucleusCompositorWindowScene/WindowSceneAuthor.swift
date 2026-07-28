@@ -1,4 +1,4 @@
-@_spi(NucleusCompositor) public import NucleusLayers
+@_spi(NucleusRenderServer) public import NucleusLayers
 import NucleusRenderHost
 public import struct NucleusTypes.Rect
 
@@ -612,6 +612,28 @@ public final class WindowSceneAuthor {
         }
         try context.transaction { transaction in
             try transaction.setProperties(LayerPropertyUpdate(opacity: opacity), for: root)
+        }
+    }
+
+    /// Apply client-authored `wp_alpha_modifier_v1` state to the surface
+    /// backing only. Window-manager opacity continues to live on the scene
+    /// root, so server-owned transitions multiply with client content alpha
+    /// instead of overwriting it.
+    public func setContentOpacity(
+        surfaceID: UInt64,
+        opacity: Double
+    ) throws {
+        guard let context = contexts[surfaceID],
+              let scene = scenes[surfaceID],
+              let target = context.layers[
+                scene.backingLayer ?? scene.contentLayer]
+        else {
+            return
+        }
+        try context.transaction { transaction in
+            try transaction.setProperties(
+                LayerPropertyUpdate(opacity: opacity),
+                for: target)
         }
     }
 

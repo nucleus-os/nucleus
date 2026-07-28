@@ -33,14 +33,16 @@ public enum WaylandColliderRecipe {
         let records = try protocolRecords(under: protocolsRoot)
         let server = root.appending("Sources/WaylandServerC")
         let client = root.appending("Sources/WaylandClientC")
-        let protocols = root.appending("Sources/WaylandProtocolsC")
+        let protocols = root.appending(
+            "protocol-runtime/Sources/WaylandProtocolsC")
         let serverDispatchRoot = root.appending(
             "Sources/WaylandServerDispatch")
         let serverDispatch = serverDispatchRoot.appending("Generated")
         let clientDispatchRoot = root.appending(
             "Sources/WaylandClientDispatch")
         let clientDispatch = clientDispatchRoot.appending("Generated")
-        let protocolTypesRoot = root.appending("Sources/WaylandProtocolTypes")
+        let protocolTypesRoot = root.appending(
+            "protocol-runtime/Sources/WaylandProtocolTypes")
         let protocolTypes = protocolTypesRoot.appending("Generated")
         let generatedDirectories = [
             server, client, protocols, protocolTypes, serverDispatch, clientDispatch,
@@ -106,7 +108,7 @@ public enum WaylandColliderRecipe {
                     root: root,
                     environment: environment),
                 scanner(
-                    "private-code",
+                    "public-code",
                     record: record,
                     output: protocols.appending(
                         "\(record.name)-protocol.c"),
@@ -132,11 +134,11 @@ public enum WaylandColliderRecipe {
                 .tool(.named("wayland-scanner")),
             ],
             outputs: [
-                "WaylandServerC", "WaylandClientC", "WaylandProtocolsC",
-                "WaylandProtocolTypes", "WaylandServerDispatch", "WaylandClientDispatch",
+                server, client, protocols, protocolTypes,
+                serverDispatch, clientDispatch,
             ].map {
                 OutputDeclaration(
-                    path: root.appending("Sources").appending($0),
+                    path: $0,
                     validation: .nonEmptyDirectory)
             },
             locks: [.checkout("wayland"), swiftPM.lock],

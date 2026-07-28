@@ -29,7 +29,6 @@ else {
 }
 let renderSDK = nativeSDKRoot + "/render"
 let skiaRoot = renderSDK + "/include/skia"
-let skiaLibDir = renderSDK + "/lib/skia-graphite"
 
 // Resolve host system-library flags through pkg-config at manifest-evaluation time.
 func pkgConfig(_ args: [String]) -> [String] {
@@ -77,19 +76,6 @@ let waylandRuntimeLinkFlags = pkgConfig(["--libs"] + waylandRuntimeLinkPkgs)
         .compactMap { $0.hasPrefix("-L") ? String($0.dropFirst(2)) : nil }
         .flatMap { ["-Xlinker", "-rpath", "-Xlinker", $0] }
 
-// Link flags for the GN/Ninja-built Skia archive set (in .skia-build/graphite) —
-// the NucleusCompositorRendererLinux test links the full renderer closure end to end.
-let skiaLinkFlags: [String] = [
-    "-L", skiaLibDir,
-    "-Xlinker", "--start-group",
-    "-lskia", "-lskshaper", "-lskparagraph", "-lskunicode_core", "-lskunicode_icu",
-    "-lsvg", "-lskcms", "-lskresources", "-lfreetype2", "-lharfbuzz", "-licu",
-    "-lpng", "-ljpeg", "-ljpeg12", "-ljpeg16", "-lwebp", "-lwebp_sse41", "-lexpat",
-    "-lzlib", "-lwuffs", "-ldng_sdk", "-lpiex",
-    "-Xlinker", "--end-group",
-    "-lvulkan", "-lfontconfig", "-lfreetype", "-lz", "-ldl", "-lpthread", "-lm",
-]
-
 let vulkanHeadersInclude: [String] = [
     "-Xcc", "-I", "-Xcc",
     skiaRoot + "/third_party/externals/vulkan-headers/include",
@@ -100,22 +86,27 @@ let package = Package(
     // Products consumed by the sibling compositor executable package (compositor/).
     products: [
         .library(name: "CompositorColliderRecipe", targets: ["CompositorColliderRecipe"]),
+        .library(
+            name: "NucleusRenderServer",
+            type: .dynamic,
+            targets: ["NucleusRenderServer"]),
         .executable(
             name: "NucleusVulkanLaneProbe",
             targets: ["NucleusVulkanLaneProbe"]),
+        .executable(
+            name: "NucleusRenderServerThreadSanitizerHarness",
+            targets: ["NucleusRenderServerThreadSanitizerHarness"]),
         .library(name: "NucleusCompositorRendererLinux", targets: ["NucleusCompositorRendererLinux"]),
         .library(name: "NucleusCompositorRenderRuntime", targets: ["NucleusCompositorRenderRuntime"]),
         .library(name: "NucleusCompositorWaylandRuntime", targets: ["NucleusCompositorWaylandRuntime"]),
         .library(
-            name: "NucleusCompositorWaylandTestSupport",
-            targets: ["NucleusCompositorWaylandTestSupport"]),
+            name: "NucleusRenderServerTestSupport",
+            targets: ["NucleusRenderServerTestSupport"]),
         .library(name: "NucleusCompositorWindowScene", targets: ["NucleusCompositorWindowScene"]),
-        .library(name: "NucleusCompositorOverlayTypes", targets: ["NucleusCompositorOverlayTypes"]),
-        .library(name: "NucleusCompositorOverlayScene", targets: ["NucleusCompositorOverlayScene"]),
         .library(name: "NucleusCompositorServerTypes", targets: ["NucleusCompositorServerTypes"]),
         .library(name: "NucleusCompositorServer", targets: ["NucleusCompositorServer"]),
         .library(name: "NucleusCompositorWindowManager", targets: ["NucleusCompositorWindowManager"]),
-        .library(name: "NucleusCompositorShell", targets: ["NucleusCompositorShell"]),
+        .library(name: "NucleusCompositorPolicy", targets: ["NucleusCompositorPolicy"]),
     ],
     dependencies: [
         .package(path: "../../collider/engine"),
@@ -123,6 +114,7 @@ let package = Package(
         // NucleusUI design system this compositor's shell is built with). This is
         // the compositor's only Nucleus dependency: it links zero React.
         .package(name: "Nucleus", path: "../../core"),
+        .package(name: "NucleusFoundation", path: "../../foundation"),
         // The Vulkan bindings, extracted from Nucleus into their own package. Consumed
         // directly (a package cannot re-vend a dependency's product); the renderer and
         // the Graphite bridge import Vulkan / VulkanC.
@@ -131,13 +123,25 @@ let package = Package(
         // Wayland runtime imports WaylandServerC (server-side) + links WaylandProtocolsC (the
         // shared marshalling); this package no longer generates a Wayland module of its own.
         .package(name: "swift-wayland", path: "../../swift-wayland"),
+        .package(
+            name: "SwiftWaylandProtocolRuntime",
+            path: "../../swift-wayland/protocol-runtime"),
         .package(name: "swift-tracy", path: "../../swift-tracy"),
         // The session configuration model. Shared with the shell and the control
         // CLI, and dependent on none of them.
-        .package(name: "NucleusConfigPackage", path: "../../config"),
+        .package(name: "NucleusConfigModel", path: "../../config/model"),
+        .package(
+            name: "NucleusSessionProtocolPackage",
+            path: "../../session/protocol"),
+        .package(
+            name: "NucleusIPCTransportPackage",
+            path: "../../ipc/transport"),
         .package(
             name: "NucleusLinuxPlatform",
             path: "../../platform-linux"),
+        .package(
+            name: "NucleusLinuxDesktopPackage",
+            path: "../../platform-linux/desktop"),
     ],
     targets: [
         .target(
@@ -149,12 +153,6 @@ let package = Package(
             path: "Sources/NucleusCompositorServerTypes",
             swiftSettings: [.strictMemorySafety()]
         ),
-        .target(
-            name: "NucleusCompositorOverlayTypes",
-            path: "Sources/NucleusCompositorOverlayTypes",
-            swiftSettings: [.strictMemorySafety()]
-        ),
-
         // ── OS-substrate C façades (the pkg-config that used to force into root) ──
         .systemLibrary(
             name: "NucleusCompositorDrmC",
@@ -171,17 +169,26 @@ let package = Package(
             path: "Sources/NucleusCompositorInputC"
         ),
         .target(
+            name: "NucleusCompositorSignalC",
+            path: "Sources/NucleusCompositorSignalC",
+            publicHeadersPath: "include"
+        ),
+        .target(
+            name: "NucleusCompositorRenderSession",
+            path: "Sources/NucleusCompositorRenderSession"
+        ),
+        .target(
             name: "WaylandWireTestC",
             path: "Tests/WaylandWireTestC",
             publicHeadersPath: "include"
         ),
 
-        // ── Window/seat policy + shell overlay (built with the NucleusUI design system) ──
+        // ── Window/seat policy ─────────────────────────────────────────────
         .target(
             name: "NucleusCompositorServer",
             dependencies: [
-                .product(name: "NucleusTypes", package: "Nucleus"),
-                .product(name: "NucleusLayers", package: "Nucleus"),
+                .product(name: "NucleusFoundation", package: "NucleusFoundation"),
+                .product(name: "Nucleus", package: "Nucleus"),
                 "NucleusCompositorServerTypes",
             ],
             path: "Sources/NucleusCompositorServer",
@@ -190,10 +197,10 @@ let package = Package(
         .target(
             name: "NucleusCompositorWindowManager",
             dependencies: [
-                .product(name: "NucleusTypes", package: "Nucleus"),
-                .product(name: "NucleusLayers", package: "Nucleus"),
+                .product(name: "NucleusFoundation", package: "NucleusFoundation"),
+                .product(name: "Nucleus", package: "Nucleus"),
                 "NucleusCompositorServerTypes", "NucleusCompositorServer",
-                .product(name: "Tracy", package: "swift-tracy"),
+                .product(name: "SwiftTracy", package: "swift-tracy"),
             ],
             path: "Sources/NucleusCompositorWindowManager",
             swiftSettings: [.interoperabilityMode(.Cxx)]
@@ -201,98 +208,29 @@ let package = Package(
         .target(
             name: "NucleusCompositorWindowScene",
             dependencies: [
-                .product(name: "NucleusTypes", package: "Nucleus"),
-                .product(name: "NucleusLayers", package: "Nucleus"),
+                .product(name: "NucleusFoundation", package: "NucleusFoundation"),
+                .product(name: "Nucleus", package: "Nucleus"),
                 "NucleusCompositorServerTypes",
-                .product(name: "NucleusRenderHost", package: "Nucleus"),
-                .product(name: "NucleusAppHostProtocols", package: "Nucleus"),
-                .product(name: "NucleusAppHostBundle", package: "Nucleus"),
-                .product(name: "NucleusRenderModel", package: "Nucleus"),
             ],
             path: "Sources/NucleusCompositorWindowScene",
             swiftSettings: [.strictMemorySafety()]
         ),
         .target(
-            name: "NucleusCompositorOverlay",
+            name: "NucleusCompositorPolicy",
             dependencies: [
-                .product(name: "NucleusDiagnostics", package: "Nucleus"),
-                .product(name: "NucleusUI", package: "Nucleus"),
-                .product(name: "NucleusUIEmbedder", package: "Nucleus"),
-                .product(name: "NucleusLayers", package: "Nucleus"),
-                .product(name: "NucleusTypes", package: "Nucleus"),
-                "NucleusCompositorOverlayTypes",
-                .product(name: "NucleusAppHostProtocols", package: "Nucleus"),
-                .product(name: "Tracy", package: "swift-tracy"),
-            ],
-            path: "Sources/NucleusCompositorOverlay",
-            swiftSettings: [.interoperabilityMode(.Cxx), .strictMemorySafety()]
-        ),
-        // The desktop-application index — a cxx-free leaf carved out of the
-        // NucleusCompositorShell directory (the rest of that dir is the NucleusCompositorShell module).
-        .target(
-            name: "NucleusCompositorShellSurface",
-            path: "Sources/NucleusCompositorShell",
-            exclude: [
-                "BezelService.swift", "CursorTheme.swift",
-                "CursorThemeHost.swift", "IdlePolicy.swift",
-                "KeybindService.swift", "LauncherService.swift", "NotificationService.swift",
-                "ShellOverlayPublicationHost.swift", "ShellPolicyService.swift", "ShellServices.swift",
-                "XCursor.swift",
-            ],
-            sources: ["DesktopApplicationIndex.swift"],
-            swiftSettings: [.strictMemorySafety()]
-        ),
-        .target(
-            name: "NucleusCompositorOverlayScene",
-            dependencies: [
-                .product(name: "NucleusDiagnostics", package: "Nucleus"),
-                .product(name: "NucleusLayers", package: "Nucleus"),
-                .product(name: "NucleusTypes", package: "Nucleus"),
-                "NucleusCompositorOverlayTypes",
-                .product(name: "NucleusUI", package: "Nucleus"),
-                .product(name: "NucleusUIEmbedder", package: "Nucleus"),
-                "NucleusCompositorOverlay", "NucleusCompositorWindowManager", "NucleusCompositorServer", "NucleusCompositorServerTypes",
-                .product(name: "NucleusRenderHost", package: "Nucleus"),
-                .product(name: "NucleusAppHostProtocols", package: "Nucleus"),
-                .product(name: "NucleusAppHostBundle", package: "Nucleus"),
-                .product(name: "NucleusRenderModel", package: "Nucleus"),
-                .product(name: "Tracy", package: "swift-tracy"),
-            ],
-            path: "Sources/NucleusCompositorOverlayScene",
-            swiftSettings: [.interoperabilityMode(.Cxx), .strictMemorySafety()]
-        ),
-        .target(
-            name: "NucleusCompositorShell",
-            dependencies: [
-                "NucleusCompositorShellSurface", "NucleusCompositorServer", "NucleusCompositorWindowManager", "NucleusCompositorServerTypes",
-                .product(name: "NucleusLayers", package: "Nucleus"),
-                .product(name: "NucleusTypes", package: "Nucleus"),
-                "NucleusCompositorOverlayTypes",
-                .product(name: "NucleusUI", package: "Nucleus"),
-                .product(name: "NucleusUIEmbedder", package: "Nucleus"),
-                "NucleusCompositorOverlay",
-                .product(name: "NucleusRenderHost", package: "Nucleus"),
-                .product(name: "NucleusAppHostProtocols", package: "Nucleus"),
-                .product(name: "NucleusAppHostBundle", package: "Nucleus"),
-                .product(name: "NucleusRenderModel", package: "Nucleus"),
-                "NucleusCompositorOverlayScene",
-                .product(name: "NucleusConfig", package: "NucleusConfigPackage"),
-                .product(name: "Tracy", package: "swift-tracy"),
+                "NucleusCompositorServer",
+                "NucleusCompositorWindowManager",
+                .product(name: "Nucleus", package: "Nucleus"),
+                .product(name: "NucleusFoundation", package: "NucleusFoundation"),
+                .product(name: "NucleusConfig", package: "NucleusConfigModel"),
                 .product(
-                    name: "NucleusLinuxDBus",
+                    name: "NucleusLinux",
                     package: "NucleusLinuxPlatform"),
                 .product(
-                    name: "NucleusLinuxAccessibility",
-                    package: "NucleusLinuxPlatform"),
-                .product(
-                    name: "NucleusLinuxEnvironment",
-                    package: "NucleusLinuxPlatform"),
-                .product(
-                    name: "NucleusThemeAssetIO",
-                    package: "NucleusLinuxPlatform"),
+                    name: "NucleusSessionProtocol",
+                    package: "NucleusSessionProtocolPackage"),
             ],
-            path: "Sources/NucleusCompositorShell",
-            exclude: ["DesktopApplicationIndex.swift"],
+            path: "Sources/NucleusCompositorPolicy",
             swiftSettings: [.interoperabilityMode(.Cxx), .strictMemorySafety()]
         ),
 
@@ -300,24 +238,23 @@ let package = Package(
         .target(
             name: "NucleusCompositorWaylandRuntime",
             dependencies: [
-                .product(name: "NucleusDiagnostics", package: "Nucleus"),
+                .product(name: "NucleusFoundation", package: "NucleusFoundation"),
                 .product(name: "WaylandServerC", package: "swift-wayland"),
-                .product(name: "WaylandProtocolsC", package: "swift-wayland"),
                 .product(name: "WaylandServer", package: "swift-wayland"),
-                .product(name: "WaylandProtocolTypes", package: "swift-wayland"),
                 .product(name: "WaylandServerDispatch", package: "swift-wayland"),
+                .product(
+                    name: "SwiftWaylandProtocolRuntime",
+                    package: "SwiftWaylandProtocolRuntime"),
                 "NucleusCompositorXcbC", "NucleusCompositorInputC",
                 "NucleusCompositorServer", "NucleusCompositorWindowManager", "NucleusCompositorServerTypes", "NucleusCompositorWindowScene",
-                .product(name: "NucleusTypes", package: "Nucleus"),
-                .product(name: "NucleusLayers", package: "Nucleus"),
-                .product(name: "NucleusRenderModel", package: "Nucleus"),
+                .product(name: "Nucleus", package: "Nucleus"),
                 .product(
-                    name: "NucleusLinuxPrimitives",
+                    name: "NucleusLinux",
                     package: "NucleusLinuxPlatform"),
                 .product(
                     name: "NucleusConfig",
-                    package: "NucleusConfigPackage"),
-                .product(name: "Tracy", package: "swift-tracy"),
+                    package: "NucleusConfigModel"),
+                .product(name: "SwiftTracy", package: "swift-tracy"),
             ],
             path: "Sources/NucleusCompositorWaylandRuntime",
             exclude: ["README.md"],
@@ -328,15 +265,15 @@ let package = Package(
             ]
         ),
         .target(
-            name: "NucleusCompositorWaylandTestSupport",
+            name: "NucleusRenderServerTestSupport",
             dependencies: [
                 "NucleusCompositorWaylandRuntime",
                 "NucleusCompositorServer",
                 "NucleusCompositorWindowManager",
                 "NucleusCompositorWindowScene",
-                .product(name: "NucleusLayers", package: "Nucleus"),
+                .product(name: "Nucleus", package: "Nucleus"),
             ],
-            path: "Sources/NucleusCompositorWaylandTestSupport",
+            path: "Sources/NucleusRenderServerTestSupport",
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
                 .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
@@ -347,12 +284,11 @@ let package = Package(
         .target(
             name: "NucleusCompositorRendererLinux",
             dependencies: [
-                .product(name: "NucleusDiagnostics", package: "Nucleus"),
-                .product(name: "NucleusRenderer", package: "Nucleus"),
-                .product(name: "NucleusRenderModel", package: "Nucleus"),
+                .product(name: "NucleusFoundation", package: "NucleusFoundation"),
+                .product(name: "Nucleus", package: "Nucleus"),
                 .product(name: "VulkanC", package: "swift-vulkan"),
-                .product(name: "Vulkan", package: "swift-vulkan"),
-                .product(name: "Tracy", package: "swift-tracy"),
+                .product(name: "SwiftVulkan", package: "swift-vulkan"),
+                .product(name: "SwiftTracy", package: "swift-tracy"),
                 "NucleusCompositorDrmC",
             ],
             path: "Sources/NucleusCompositorRendererLinux",
@@ -365,15 +301,11 @@ let package = Package(
         .target(
             name: "NucleusCompositorRenderRuntime",
             dependencies: [
-                .product(name: "NucleusRenderer", package: "Nucleus"),
+                .product(name: "Nucleus", package: "Nucleus"),
                 "NucleusCompositorRendererLinux",
-                .product(name: "NucleusRenderModel", package: "Nucleus"),
-                .product(name: "NucleusRenderHost", package: "Nucleus"),
-                .product(name: "NucleusLayers", package: "Nucleus"),
                 .product(name: "VulkanC", package: "swift-vulkan"),
                 "NucleusCompositorDrmC",
-                .product(name: "NucleusSkiaGraphiteBridge", package: "Nucleus"),
-                .product(name: "Tracy", package: "swift-tracy"),
+                .product(name: "SwiftTracy", package: "swift-tracy"),
                 "NucleusCompositorServer",
             ],
             path: "Sources/NucleusCompositorRenderRuntime",
@@ -382,14 +314,78 @@ let package = Package(
                 .unsafeFlags(vulkanHeadersInclude + drmGbmCcFlags),
             ]
         ),
+        .target(
+            name: "NucleusRenderServerRuntime",
+            dependencies: [
+                .product(
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
+                .product(name: "Nucleus", package: "Nucleus"),
+                "NucleusCompositorServerTypes",
+                "NucleusCompositorServer",
+                "NucleusCompositorWindowManager",
+                "NucleusCompositorWindowScene",
+                "NucleusCompositorPolicy",
+                "NucleusCompositorRendererLinux",
+                "NucleusCompositorRenderRuntime",
+                "NucleusCompositorRenderSession",
+                "NucleusCompositorWaylandRuntime",
+                "NucleusCompositorSignalC",
+                .product(name: "NucleusConfig", package: "NucleusConfigModel"),
+                .product(
+                    name: "NucleusLinux",
+                    package: "NucleusLinuxPlatform"),
+                .product(
+                    name: "NucleusSessionProtocol",
+                    package: "NucleusSessionProtocolPackage"),
+                .product(
+                    name: "NucleusIPCTransport",
+                    package: "NucleusIPCTransportPackage"),
+                .product(name: "SwiftTracy", package: "swift-tracy"),
+            ],
+            path: "Sources/NucleusRenderServerRuntime",
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .unsafeFlags([
+                    "-enable-experimental-feature", "Lifetimes",
+                    "-Xcc", "-I", "-Xcc",
+                    skiaRoot + "/third_party/externals/vulkan-headers/include",
+                ] + drmGbmCcFlags + waylandRuntimeCcFlags),
+            ]),
+        .target(
+            name: "NucleusRenderServer",
+            dependencies: [
+                "NucleusRenderServerRuntime",
+                .product(
+                    name: "NucleusSessionProtocol",
+                    package: "NucleusSessionProtocolPackage"),
+            ],
+            swiftSettings: [.interoperabilityMode(.Cxx)],
+            linkerSettings: [
+                .unsafeFlags(
+                    drmGbmLinkFlags + waylandRuntimeLinkFlags
+                        + ["-lfontconfig", "-lfreetype", "-lz"]),
+            ]),
+        .executableTarget(
+            name: "NucleusRenderServerThreadSanitizerHarness",
+            dependencies: [
+                "NucleusRenderServerRuntime",
+                "NucleusCompositorSignalC",
+                "NucleusCompositorWaylandRuntime",
+                "NucleusRenderServerTestSupport",
+            ],
+            path:
+                "SanitizerHarnesses/NucleusRenderServerThreadSanitizerHarness",
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .unsafeFlags(waylandRuntimeCcFlags),
+            ],
+            linkerSettings: [.unsafeFlags(waylandRuntimeLinkFlags)]),
         .executableTarget(
             name: "NucleusVulkanLaneProbe",
             dependencies: [
-                .product(name: "NucleusRenderer", package: "Nucleus"),
-                .product(
-                    name: "NucleusSkiaGraphiteBridge",
-                    package: "Nucleus"),
-                .product(name: "Vulkan", package: "swift-vulkan"),
+                .product(name: "Nucleus", package: "Nucleus"),
+                .product(name: "SwiftVulkan", package: "swift-vulkan"),
                 .product(name: "VulkanC", package: "swift-vulkan"),
                 "NucleusCompositorDrmC",
             ],
@@ -398,28 +394,54 @@ let package = Package(
                 .interoperabilityMode(.Cxx),
                 .unsafeFlags(vulkanHeadersInclude + drmGbmCcFlags),
             ],
-            linkerSettings: [.unsafeFlags(drmGbmLinkFlags + skiaLinkFlags)]
+            linkerSettings: [.unsafeFlags(drmGbmLinkFlags)]
         ),
 
         // ── Tests (relocated with the modules they cover). ───────────────────────
         .testTarget(
+            name: "NucleusCompositorRenderSessionTests",
+            dependencies: ["NucleusCompositorRenderSession"],
+            path: "Tests/NucleusCompositorRenderSessionTests"
+        ),
+        .testTarget(
+            name: "NucleusRenderServerRuntimeTests",
+            dependencies: [
+                "NucleusRenderServerRuntime",
+                .product(name: "NucleusConfig", package: "NucleusConfigModel"),
+            ],
+            path: "Tests/NucleusRenderServerRuntimeTests",
+            swiftSettings: [
+                .interoperabilityMode(.Cxx),
+                .unsafeFlags([
+                    "-enable-experimental-feature", "Lifetimes",
+                    "-Xcc", "-I", "-Xcc",
+                    skiaRoot + "/third_party/externals/vulkan-headers/include",
+                ] + drmGbmCcFlags + waylandRuntimeCcFlags),
+            ],
+            linkerSettings: [
+                .unsafeFlags(
+                    drmGbmLinkFlags + waylandRuntimeLinkFlags
+                        + ["-lfontconfig", "-lfreetype", "-lz"]),
+            ]
+        ),
+        .testTarget(
             name: "NucleusCompositorRendererLinuxTests",
             dependencies: [
                 "NucleusCompositorRendererLinux",
-                .product(name: "NucleusRenderer", package: "Nucleus"),
-                .product(name: "NucleusRenderModel", package: "Nucleus"),
-                .product(name: "NucleusTypes", package: "Nucleus"),
+                .product(name: "Nucleus", package: "Nucleus"),
                 .product(
-                    name: "NucleusSkiaGraphiteBridge",
+                    name:
+                        "NucleusPresentationBackendContractTestSupport",
                     package: "Nucleus"),
-                .product(name: "Vulkan", package: "swift-vulkan"),
+                .product(name: "NucleusFoundation", package: "NucleusFoundation"),
+                .product(name: "SwiftVulkan", package: "swift-vulkan"),
             ],
             path: "Tests/NucleusCompositorRendererLinuxTests",
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
                 .unsafeFlags(vulkanHeadersInclude + drmGbmCcFlags),
             ],
-            linkerSettings: [.unsafeFlags(drmGbmLinkFlags + skiaLinkFlags)]
+            linkerSettings: [.unsafeFlags(drmGbmLinkFlags)]
         ),
         .testTarget(
             name: "NucleusCompositorRenderRuntimeTests",
@@ -427,21 +449,22 @@ let package = Package(
                 "NucleusCompositorRenderRuntime",
                 "NucleusCompositorRendererLinux",
                 "NucleusCompositorServer",
-                .product(name: "NucleusRenderModel", package: "Nucleus"),
-                .product(name: "NucleusRenderer", package: "Nucleus"),
+                .product(name: "Nucleus", package: "Nucleus"),
             ],
             path: "Tests/NucleusCompositorRenderRuntimeTests",
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
                 .unsafeFlags(vulkanHeadersInclude + drmGbmCcFlags),
             ],
-            linkerSettings: [.unsafeFlags(drmGbmLinkFlags + skiaLinkFlags)]
+            linkerSettings: [.unsafeFlags(drmGbmLinkFlags)]
         ),
         .testTarget(
             name: "NucleusCompositorWaylandCTests",
             dependencies: [
                 .product(name: "WaylandServerC", package: "swift-wayland"),
-                .product(name: "WaylandProtocolsC", package: "swift-wayland"),
+                .product(
+                    name: "SwiftWaylandProtocolRuntime",
+                    package: "SwiftWaylandProtocolRuntime"),
             ],
             path: "Tests/NucleusCompositorWaylandCTests",
             swiftSettings: [.interoperabilityMode(.Cxx)]
@@ -466,15 +489,16 @@ let package = Package(
             dependencies: [
                 "NucleusCompositorWaylandRuntime", "NucleusCompositorServer",
                 "NucleusCompositorWindowManager", "NucleusCompositorWindowScene",
-                .product(name: "NucleusConfig", package: "NucleusConfigPackage"),
-                .product(name: "NucleusLayers", package: "Nucleus"),
+                .product(name: "NucleusConfig", package: "NucleusConfigModel"),
+                .product(name: "Nucleus", package: "Nucleus"),
                 // Direct deps on the C façades so their systemLibrary pkgConfig cflags
                 // (xcb/libinput include dirs) reach this target's @testable recompile.
                 "NucleusCompositorXcbC", "NucleusCompositorInputC",
                 .product(name: "WaylandServerC", package: "swift-wayland"),
-                .product(name: "WaylandProtocolsC", package: "swift-wayland"),
                 .product(name: "WaylandServer", package: "swift-wayland"),
-                .product(name: "WaylandProtocolTypes", package: "swift-wayland"),
+                .product(
+                    name: "SwiftWaylandProtocolRuntime",
+                    package: "SwiftWaylandProtocolRuntime"),
                 "WaylandWireTestC",
             ],
             path: "Tests/NucleusCompositorWaylandRuntimeTests",
@@ -519,52 +543,17 @@ let package = Package(
                 .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
                 .unsafeFlags(waylandRuntimeCcFlags),
             ],
-            linkerSettings: [.unsafeFlags(skiaLinkFlags + waylandRuntimeLinkFlags)]
+            linkerSettings: [.unsafeFlags(waylandRuntimeLinkFlags)]
         ),
-        // Shell-overlay runtime behavior (rewritten from the core repo's stale
-        // orphaned fixture against the current overlay API; covers
-        // NucleusCompositorOverlay). Links NucleusUI's text backend + Skia archives
-        // + the SkiaGraphite resolver slot the backend registers into, same as the
-        // core NucleusUITests runner.
         .testTarget(
-            name: "NucleusCompositorOverlayTests",
+            name: "NucleusCompositorPolicyTests",
             dependencies: [
-                "NucleusCompositorOverlay",
-                "NucleusCompositorOverlayTypes",
-                .product(name: "NucleusUI", package: "Nucleus"),
-                .product(name: "NucleusUIEmbedder", package: "Nucleus"),
-                .product(name: "NucleusLayers", package: "Nucleus"),
-                .product(name: "NucleusTextBackend", package: "Nucleus"),
-                .product(name: "NucleusSkiaGraphiteBridge", package: "Nucleus"),
+                "NucleusCompositorPolicy",
+                .product(name: "NucleusConfig", package: "NucleusConfigModel"),
+                .product(name: "Nucleus", package: "Nucleus"),
             ],
-            path: "Tests/NucleusCompositorOverlayTests",
-            swiftSettings: [.interoperabilityMode(.Cxx)],
-            linkerSettings: [.unsafeFlags(skiaLinkFlags)]
-        ),
-        .testTarget(
-            name: "NucleusCompositorShellTests",
-            dependencies: [
-                "NucleusCompositorShell",
-                "NucleusCompositorOverlayScene",
-                .product(name: "NucleusConfig", package: "NucleusConfigPackage"),
-                .product(
-                    name: "NucleusLinuxAccessibility",
-                    package: "NucleusLinuxPlatform"),
-                .product(name: "NucleusUI", package: "Nucleus"),
-                .product(name: "NucleusLayers", package: "Nucleus"),
-                .product(name: "NucleusTextBackend", package: "Nucleus"),
-                .product(
-                    name: "NucleusSkiaGraphiteBridge",
-                    package: "Nucleus"),
-            ],
-            path: "Tests/NucleusCompositorShellTests",
-            swiftSettings: [.interoperabilityMode(.Cxx)],
-            linkerSettings: [.unsafeFlags(skiaLinkFlags)]
-        ),
-        .testTarget(
-            name: "NucleusCompositorShellSurfaceTests",
-            dependencies: ["NucleusCompositorShellSurface"],
-            path: "Tests/NucleusCompositorShellSurfaceTests"
+            path: "Tests/NucleusCompositorPolicyTests",
+            swiftSettings: [.interoperabilityMode(.Cxx)]
         ),
         // Compositor-root self-hosting topology the scene feeder drives (relocated
         // from the core repo's test tree; covers NucleusCompositorWindowScene).
@@ -572,7 +561,7 @@ let package = Package(
             name: "NucleusCompositorWindowSceneTests",
             dependencies: [
                 "NucleusCompositorWindowScene",
-                .product(name: "NucleusLayers", package: "Nucleus"),
+                .product(name: "Nucleus", package: "Nucleus"),
             ],
             path: "Tests/NucleusCompositorWindowSceneTests"
         ),

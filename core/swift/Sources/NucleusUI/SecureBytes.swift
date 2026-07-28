@@ -1,10 +1,4 @@
-#if canImport(Glibc)
-import Glibc
-#elseif canImport(Android)
-import Android
-#elseif canImport(Darwin)
-import Darwin
-#endif
+import NucleusSecureMemoryC
 
 /// A uniquely owned heap buffer that is zeroed before its allocation is released.
 ///
@@ -105,16 +99,13 @@ public struct SecureBytes: ~Copyable {
         scrubStorage()
     }
 
-    /// `explicit_bzero` and `memset_s` are the audited libc boundary: both promise
-    /// that the store cannot be removed even when the allocation is freed next.
+    /// The C volatile-store loop is the audited cross-platform boundary. It is
+    /// available identically on Linux and Android and cannot be optimized away
+    /// when the allocation is freed next.
     private borrowing func scrubStorage() {
         guard byteCount > 0 else { return }
         let base = unsafe storage.baseAddress!
-        #if canImport(Glibc) || canImport(Android)
-        unsafe explicit_bzero(base, byteCount)
-        #else
-        unsafe memset_s(base, byteCount, 0, byteCount)
-        #endif
+        unsafe nucleus_secure_zero(base, byteCount)
 
         if let lifecycleObserver {
             var snapshot: [UInt8] = []

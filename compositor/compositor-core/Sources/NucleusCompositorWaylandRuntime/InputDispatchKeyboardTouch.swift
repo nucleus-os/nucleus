@@ -85,51 +85,60 @@ extension InputDispatch {
             return .pass
         }
 
-        // Session-policy layer (the shell, via the inverted seam).
-        guard let shell = host.server.shellPolicy else { return .pass }
-        let outcome = shell.dispatchKeybind(keycode: keycode, modifiers: record.flags, pressed: pressed)
+        guard let policy = host.server.policy else { return .pass }
+        let outcome = policy.dispatchKeybind(
+            keycode: keycode,
+            modifiers: record.flags,
+            pressed: pressed)
         switch outcome.kind {
         case .consume:
             return .suppress
         case .deferred:
-            executeDeferredAction(action: outcome.action, value: outcome.value)
+            executeDeferredAction(
+                action: outcome.action,
+                configurationIndex: outcome.configurationIndex,
+                value: outcome.value)
             return .suppress
         case .pass:
             return .pass
         }
     }
 
-    /// Run the window verb a deferred keybind named. Swift-owned window/workspace
-    /// actions run directly; shell/overlay actions still cross to their owners.
-    package func executeDeferredAction(action: UInt8, value: UInt32) {
+    /// Run server mechanism directly and publish shell-owned effects as an
+    /// accepted typed action carrying the exact configuration binding index.
+    package func executeDeferredAction(
+        action: UInt8,
+        configurationIndex: UInt32 = .max,
+        value: UInt32
+    ) {
         switch action {
-        case 1:  // close_focused
+        case 1, 2, 3:  // launch / toggle_hotkey / dismiss_hotkey
+            host.server.policy?.acceptedShellAction(
+                action: action,
+                configurationIndex: configurationIndex,
+                value: value)
+        case 4:  // window_menu (for the focused window)
             let surface = keyboardFocusID()
-            if surface != 0 { windowDriver?.close(surfaceId: UInt32(truncatingIfNeeded: surface)) }
-        case 3:  // toggle_hotkey
-            host.server.shellPolicy?.toggleHotkey()
-            requestOverlayFrame()
-        case 4:  // dismiss_hotkey
-            host.server.shellPolicy?.dismissHotkey()
-            requestOverlayFrame()
-        // case 5: RESERVED (formerly wallpaper cycle; wallpaper is now a
-        // background-layer wlr-layer-shell client, not compositor-owned).
-        case 6:  // window_menu (for the focused window)
-            let surface = keyboardFocusID()
-            if surface != 0, let windowID = windowDriver?.windowId(forSurfaceId: UInt32(truncatingIfNeeded: surface)),
-                windowID != 0 {
+            if surface != 0,
+               let windowID = windowDriver?.windowId(
+                    forSurfaceId: UInt32(truncatingIfNeeded: surface)),
+               windowID != 0
+            {
                 showWindowMenuForWindow(windowID)
             }
-        case 7:  // tile (value carries the TileCommand raw)
+        case 5:  // close_focused
+            let surface = keyboardFocusID()
+            if surface != 0 { windowDriver?.close(surfaceId: UInt32(truncatingIfNeeded: surface)) }
+        case 6:  // tile (value carries the TileCommand raw)
             let surface = keyboardFocusID()
             if surface != 0 {
                 _ = windowDriver?.tile(surfaceId: UInt32(truncatingIfNeeded: surface), command: value)
             }
-        case 8:  // backdrop_changed (Swift already mutated the model; schedule a frame)
+        case 7:  // backdrop_changed
             RenderBridge.requestFrame(server: host.server, outputId: 0)
-        case 9:  // activate_workspace (value: 1-based index)
+        case 8:  // activate_workspace (value: 1-based index)
             activateWorkspace(index: value)
-        case 10:  // move_window_to_workspace (value: 1-based index)
+        case 9:  // move_window_to_workspace (value: 1-based index)
             moveFocusedWindowToWorkspace(index: value)
         default:
             break
@@ -141,25 +150,6 @@ extension InputDispatch {
     package func handleKey(_ event: WireEventRecord) -> Result {
         let keycode = UInt32(truncatingIfNeeded: event.data0)
         let pressed = event.kind == .keyDown
-
-        // The overlay holds the keyboard grab whenever it wants keys — an open
-        // window menu, or a focused text field in its own scene. Every key is
-        // consumed so the client below stays frozen. Suppressed while locked:
-        // the lock screen owns the keyboard, and overlay UI must not be drivable
-        // behind it.
-        if !lockActive(), host.server.shellPolicy?.overlaySceneWantsKeyboard() ?? false {
-            // Composed text, not a keycode-derived guess: XKB accounts for the
-            // layout, dead keys, and compose sequences that a keycode cannot.
-            // Press only — a release commits nothing.
-            let text = pressed ? xkb.keyGetText(xkbKeycode: keycode + XkbKeyboard.evdevKeycodeOffset) : nil
-            _ = dispatchOverlayKey(
-                keycode: keycode,
-                modifiers: UInt32(truncatingIfNeeded: event.flags),
-                text: text,
-                kind: pressed ? 5 : 6,
-                timestampNs: event.timestampNs)
-            return .consumed
-        }
 
         let target = keyboardFocusID()
         if target == 0 { return .delivered }

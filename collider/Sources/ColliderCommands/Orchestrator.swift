@@ -56,7 +56,8 @@ struct Orchestrator {
                 component: .core, packagePath: nil,
                 name: "NucleusCollectionStressTests"),
             ReleaseStructuralSuite(
-                component: .shell, packagePath: nil,
+                component: .shell,
+                packagePath: "../integration-tests/window-client-conformance",
                 name: "NucleusPlatformTransportStressTests"),
             ReleaseStructuralSuite(
                 component: .compositor, packagePath: "compositor-core",

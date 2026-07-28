@@ -2,7 +2,7 @@ public import NucleusCompositorServer
 @_spi(NucleusPlatform) public import NucleusCompositorRendererLinux
 @_spi(NucleusPlatform) import NucleusRenderer
 
-extension RendererRuntime: CompositorRenderService {
+extension DRMScanoutPresenter: CompositorRenderService {
     public func importShm(
         previousIOSurfaceID: UInt32,
         width: UInt32,

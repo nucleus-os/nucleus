@@ -21,7 +21,7 @@ import NucleusRenderModel
     @Test @MainActor func bringUpFailsClosed() {
         let resourceHost = SwiftResourceHost()
         let store = RetainedTreeStore(resourceHost: resourceHost)
-        #expect(RendererRuntime.create(
+        #expect(DRMScanoutPresenter.create(
             drmDeviceFd: -1,
             enableValidation: false,
             presentPolicy: .vsync,

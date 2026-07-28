@@ -117,7 +117,10 @@ struct WorkspaceDoctor {
             + executables(
                 [
                     "swift", "swiftc", "git", "cmake", "ninja", "pkg-config",
-                    "corepack", "bun", "tar", "python3", "ccache",
+                    "corepack", "bun", "tar", "python3", "ccache", "readelf",
+                    "nm", "ldd", "patchelf", "strip", "install", "readlink",
+                    "bash", "systemd-analyze", "find", "awk", "sed", "grep",
+                    "sort", "cut", "uniq",
                 ],
                 scope: "runtime")
             + paths(
@@ -128,6 +131,8 @@ struct WorkspaceDoctor {
                     "react-native/Package.swift",
                     "compositor/compositor-core/Package.swift",
                     "compositor/compositor/Package.swift", "shell/Package.swift",
+                    "tools/stage-runtime-elf.sh",
+                    "tools/validate-runtime-elf.sh",
                     "third-party/swift-java-jni-core/Package.swift",
                 ],
                 under: context.root,

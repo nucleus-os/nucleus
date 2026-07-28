@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [ "${1:-}" = "--help" ]; then
   cat <<'USAGE'
-usage: nucleus-session [--status-file PATH] [--configuration HEX] [--] [nucleus-compositor [args...]]
+usage: nucleus-session [--status-file PATH] [--configuration HEX] [--] [NucleusCompositor [args...]]
 
 Construct the Nucleus Linux session environment and run the compositor inside a
 private session bus. The compositor consumes the resulting environment; it does
@@ -13,7 +13,7 @@ USAGE
 fi
 
 # An installed session keeps the compositor and its default shell in the same
-# prefix. Prepend this launcher's directory so `nucleus-shell` resolves even
+# prefix. Prepend this launcher's directory so `NucleusShell` resolves even
 # when the prefix is not globally present in the login environment's PATH.
 session_bin_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 export PATH="$session_bin_dir:$PATH"
@@ -122,7 +122,7 @@ while [ "$state_root" != "/" ] && [ "${state_root%/}" != "$state_root" ]; do
 done
 parent_pipewire_remote="${PIPEWIRE_REMOTE:-pipewire-0}"
 parent_pulse_server="${PULSE_SERVER:-unix:$parent_runtime_dir/pulse/native}"
-compositor="${1:-nucleus-compositor}"
+compositor="${1:-NucleusCompositor}"
 if [ "$#" -gt 0 ]; then
   shift
 fi
@@ -332,12 +332,17 @@ if [ -n "${NUCLEUS_DBUS_SESSION_CONFIG:-}" ]; then
   dbus_run_session+=("--config-file=$NUCLEUS_DBUS_SESSION_CONFIG")
 fi
 
-session_supervisor="$session_bin_dir/nucleus-session-supervisor"
+session_libexec_dir="$session_bin_dir/../libexec"
+session_supervisor="$session_libexec_dir/NucleusSessionSupervisor"
 if [ ! -x "$session_supervisor" ]; then
   echo "nucleus-session: native supervisor is missing: $session_supervisor" >&2
   exit 127
 fi
-supervisor_arguments=(--shell "$session_bin_dir/nucleus-shell")
+supervisor_arguments=(
+  --config-service "$session_libexec_dir/NucleusConfigService"
+  --control-service "$session_libexec_dir/NucleusControlService"
+  --shell "$session_bin_dir/NucleusShell"
+)
 if [ -n "$status_file" ]; then
   supervisor_arguments+=(--status-file "$status_file")
 fi

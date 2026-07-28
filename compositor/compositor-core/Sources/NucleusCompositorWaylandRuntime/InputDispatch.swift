@@ -22,11 +22,8 @@ import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowManager
 import Glibc
 
-// Cursor + shell/overlay reach-up runs through the inverted `shellPolicy` seam
-// (CompositorShellPolicy, defined in `.server`; the shell conforms + installs it).
-// The area DAG forbids the input dispatch from importing `.shell`, so these are not
-// direct calls — they go through the runtime server's `shellPolicy`. A nil seam
-// (before the shell installs it) yields the inert default (no overlay, 0, false).
+// Cursor mechanism and accepted shell-action publication run through the
+// server-owned `CompositorPolicy` seam. No shell module is loaded here.
 
 /// Left/right evdev pointer button codes the chrome path keys on.
 package let btnLeft: UInt32 = 0x110

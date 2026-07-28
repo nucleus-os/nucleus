@@ -64,6 +64,7 @@ struct SanitizerCommand {
         let id: String
         let package: String
         let packagePath: String?
+        let prerequisiteTargets: [String]
         let workload: Workload
 
         init(
@@ -75,6 +76,7 @@ struct SanitizerCommand {
             self.id = id
             self.package = package
             self.packagePath = packagePath
+            self.prerequisiteTargets = []
             self.workload = .test(suite: suite)
         }
 
@@ -82,11 +84,13 @@ struct SanitizerCommand {
             id: String,
             package: String,
             packagePath: String? = nil,
+            prerequisiteTargets: [String] = [],
             executable: String
         ) {
             self.id = id
             self.package = package
             self.packagePath = packagePath
+            self.prerequisiteTargets = prerequisiteTargets
             self.workload = .executable(product: executable)
         }
     }
@@ -122,7 +126,7 @@ struct SanitizerCommand {
                     suite: "DBusConnectionTests"),
                 Invocation(
                     id: "linux-accessibility-wire", package: "platform-linux",
-                    packagePath: nil, suite: "AtSPIWireBoundaryTests"),
+                    packagePath: "desktop", suite: "AtSPIWireBoundaryTests"),
                 Invocation(
                     id: "compositor-wayland-lifetime", package: "compositor",
                     packagePath: "compositor-core",
@@ -136,7 +140,9 @@ struct SanitizerCommand {
                     packagePath: "compositor-core",
                     suite: "RendererRetirementCoordinatorTests"),
                 Invocation(
-                    id: "shell-transfer-lifetime", package: "shell", packagePath: nil,
+                    id: "shell-transfer-lifetime",
+                    package: "integration-tests/window-client-conformance",
+                    packagePath: nil,
                     suite: "NucleusPlatformTransportStressTests"),
                 Invocation(
                     id: "rn-host-lifecycle", package: "react-native", packagePath: nil,
@@ -152,15 +158,17 @@ struct SanitizerCommand {
                     suite: "RawPixelBufferTests"),
                 Invocation(
                     id: "linux-accessibility-numeric-boundaries",
-                    package: "platform-linux", packagePath: nil,
+                    package: "platform-linux", packagePath: "desktop",
                     suite: "AtSPIWireBoundaryTests"),
                 Invocation(
                     id: "compositor-layout-boundaries", package: "compositor",
                     packagePath: "compositor-core",
                     suite: "DmabufLayoutValidatorTests"),
                 Invocation(
-                    id: "shell-wire-boundaries", package: "shell", packagePath: nil,
-                    suite: "ShellTextInputWireTests"),
+                    id: "shell-wire-boundaries",
+                    package: "integration-tests/window-client-conformance",
+                    packagePath: nil,
+                    suite: "NucleusDesktopTextInputWireTests"),
             ]
         case .thread:
             [
@@ -180,13 +188,15 @@ struct SanitizerCommand {
                 // under TSan before the selected suite can be evaluated.
                 Invocation(
                     id: "compositor-callbacks", package: "compositor",
-                    packagePath: "compositor",
-                    executable: "NucleusCompositorThreadSanitizerHarness"),
+                    packagePath: "compositor-core",
+                    executable:
+                        "NucleusRenderServerThreadSanitizerHarness"),
                 Invocation(
                     id: "shell-callbacks", package: "shell",
                     executable: "NucleusShellThreadSanitizerHarness"),
                 Invocation(
                     id: "rn-runtime-workers", package: "react-native",
+                    prerequisiteTargets: ["NucleusReactRuntimeCxx"],
                     executable: "NucleusReactThreadSanitizerHarness"),
             ]
         }
@@ -242,6 +252,19 @@ struct SanitizerCommand {
                     directory: packageDirectory,
                     environmentOverrides: swiftPM.commandEnvironment(environment))
             case .executable(let product):
+                // Some C++ targets consume a Swift-generated C++ header
+                // textually and therefore cannot declare the producing Swift
+                // target as a module dependency. Materialize those headers in
+                // this exact sanitized build context before compiling consumers.
+                for target in invocation.prerequisiteTargets {
+                    let prerequisiteArguments = swiftPM.commandArguments(
+                        ["build"] + commonArguments + ["--target", target])
+                    try await instrumentedContext.run(
+                        "swift", prerequisiteArguments,
+                        directory: packageDirectory,
+                        environmentOverrides:
+                            swiftPM.commandEnvironment(environment))
+                }
                 let buildArguments = swiftPM.commandArguments(
                     ["build"] + commonArguments + ["--product", product])
                 try await instrumentedContext.run(

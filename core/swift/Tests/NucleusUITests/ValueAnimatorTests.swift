@@ -1,5 +1,5 @@
 import Testing
-@_spi(NucleusCompositor) @testable import NucleusUI
+@_spi(NucleusRenderServer) @testable import NucleusUI
 
 @MainActor
 @Suite(.uiContext) struct ValueAnimatorTests {

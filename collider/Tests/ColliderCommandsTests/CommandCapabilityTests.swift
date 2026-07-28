@@ -54,8 +54,6 @@ private let controlFreeLeaves: [[String]] = [
     ],
     ["android-runtime", "framework-boot"],
     ["install", "session"],
-    ["install", "compositor"],
-    ["install", "shell"],
 ]
 
 @Test

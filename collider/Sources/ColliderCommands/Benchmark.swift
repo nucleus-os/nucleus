@@ -28,7 +28,7 @@ struct BenchmarkCommand {
                 product: "NucleusHeadlessBenchmarks",
                 outputDirectory: "core"),
             Suite(
-                package: "platform-linux",
+                package: "platform-linux/desktop",
                 product: "NucleusLinuxBenchmarks",
                 outputDirectory: "linux"),
             Suite(

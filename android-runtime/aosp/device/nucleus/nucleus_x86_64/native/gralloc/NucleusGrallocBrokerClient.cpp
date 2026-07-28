@@ -6,7 +6,7 @@
 #include <unistd.h>
 
 #include "NucleusAndroidGfxstreamSocketProtocol.h"
-#include "NucleusAndroidIPCC.h"
+#include "NucleusIPCTransportC.h"
 #include "NucleusGrallocHandle.h"
 
 namespace {
@@ -18,18 +18,18 @@ int transact(
     nucleus_android_gfxstream_socket_message *response,
     int *descriptors,
     size_t descriptorCapacity) {
-    const int socket = nucleus_android_ipc_connect(kBrokerSocket);
+    const int socket = nucleus_ipc_connect(kBrokerSocket);
     if (socket < 0) {
         return -errno;
     }
-    if (nucleus_android_ipc_send(
+    if (nucleus_ipc_send(
             socket, &request, sizeof(request), nullptr, 0) < 0) {
         const int result = -errno;
         close(socket);
         return result;
     }
     size_t descriptorCount = 0;
-    const int received = nucleus_android_ipc_receive(
+    const int received = nucleus_ipc_receive(
         socket,
         response,
         sizeof(*response),

@@ -44,6 +44,7 @@ public struct FullscreenRootFacts: Sendable, Equatable {
     public var animatedX: Double
     public var animatedY: Double
     public var hasViewportTransform: Bool
+    public var hasAlphaModifier: Bool
     public var currentWidth: UInt32
     public var currentHeight: UInt32
     public var dmabuf: DmabufFacts?
@@ -52,7 +53,9 @@ public struct FullscreenRootFacts: Sendable, Equatable {
         rootIOSurfaceID: UInt64,
         layoutX: Double, layoutY: Double, layoutWidth: UInt32, layoutHeight: UInt32,
         animatedX: Double, animatedY: Double,
-        hasViewportTransform: Bool, currentWidth: UInt32, currentHeight: UInt32,
+        hasViewportTransform: Bool,
+        hasAlphaModifier: Bool = false,
+        currentWidth: UInt32, currentHeight: UInt32,
         dmabuf: DmabufFacts?
     ) {
         self.rootIOSurfaceID = rootIOSurfaceID
@@ -63,6 +66,7 @@ public struct FullscreenRootFacts: Sendable, Equatable {
         self.animatedX = animatedX
         self.animatedY = animatedY
         self.hasViewportTransform = hasViewportTransform
+        self.hasAlphaModifier = hasAlphaModifier
         self.currentWidth = currentWidth
         self.currentHeight = currentHeight
         self.dmabuf = dmabuf
@@ -167,6 +171,8 @@ public extension WaylandRuntime {
             layoutWidth: layout.width, layoutHeight: layout.height,
             animatedX: presented.x, animatedY: presented.y,
             hasViewportTransform: hasViewport,
+            hasAlphaModifier:
+                surface.aux.alphaMultiplier != .max,
             currentWidth: UInt32(surface.committedLogicalWidth.rounded()),
             currentHeight: UInt32(surface.committedLogicalHeight.rounded()),
             dmabuf: dmabuf)

@@ -118,17 +118,32 @@ func runtimeInstallationNormalizesTheTypedLeafPrefix() throws {
 
     #expect(
         command.resolvedPrefix(
-            for: .session,
             explicit: "out/runtime").path
             == "/workspace/out/runtime")
     #expect(
         command.resolvedPrefix(
-            for: .compositor,
             explicit: nil).path
-            == "/workspace/compositor/compositor/.install")
+            == "/workspace/.install")
+}
+
+@Test
+func runtimeInstallationUsesTheRelocatableFrameworkLayout() {
+    let installation = RuntimeInstallation(
+        prefix: URL(fileURLWithPath: "/runtime", isDirectory: true))
+
+    #expect(installation.compositor.path == "/runtime/bin/NucleusCompositor")
+    #expect(installation.shell.path == "/runtime/bin/NucleusShell")
+    #expect(installation.controlCLI.path == "/runtime/bin/nucleus")
     #expect(
-        command.resolvedPrefix(
-            for: .shell,
-            explicit: nil).path
-            == "/workspace/shell/.install")
+        installation.configService.path
+            == "/runtime/libexec/NucleusConfigService")
+    #expect(
+        installation.controlService.path
+            == "/runtime/libexec/NucleusControlService")
+    #expect(
+        installation.sessionSupervisor.path
+            == "/runtime/libexec/NucleusSessionSupervisor")
+    #expect(
+        installation.pamHelper.path
+            == "/runtime/libexec/NucleusShellPamHelper")
 }

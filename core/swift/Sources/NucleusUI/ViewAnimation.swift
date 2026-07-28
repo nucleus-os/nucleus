@@ -1,4 +1,4 @@
-@_spi(NucleusCompositor) public import NucleusLayers
+@_spi(NucleusRenderServer) public import NucleusLayers
 public import struct NucleusTypes.AnimationCurve
 import Tracy
 

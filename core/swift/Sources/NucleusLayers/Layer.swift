@@ -353,7 +353,7 @@ open class Layer: ~Sendable {
         try setProperties(.decomposedFrame(rect))
     }
 
-    @_spi(NucleusCompositor) public func apply(_ properties: LayerPropertyUpdate) {
+    @_spi(NucleusRenderServer) public func apply(_ properties: LayerPropertyUpdate) {
         // Decomposed position+bounds writes mirror back into the
         // descriptor's `frame` so `Layer.frame` reads still report the
         // producer-authored geometry.

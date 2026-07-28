@@ -201,7 +201,7 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
     /// is only responsible for journaling the mutation so the FFI layer
     /// learns about it on the next commit / flush.
     @MainActor
-    @_spi(NucleusCompositor) public static func appendAmbient(_ mutation: LayerMutation, in context: Context) {
+    @_spi(NucleusRenderServer) public static func appendAmbient(_ mutation: LayerMutation, in context: Context) {
         context.transactionStack.append(mutation)
     }
 

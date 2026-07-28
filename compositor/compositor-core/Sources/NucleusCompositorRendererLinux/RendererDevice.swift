@@ -107,7 +107,7 @@ func logScanout(_ message: String) {
 }
 
 @MainActor
-extension RendererRuntime {
+extension DRMScanoutPresenter {
     public static func create(
         drmDeviceFd: Int32,
         enableValidation: Bool,
@@ -115,7 +115,7 @@ extension RendererRuntime {
         store: RetainedTreeStore,
         resourceHost: SwiftResourceHost,
         asyncRenderWakeSink: any AsyncRenderWakeSink
-    ) -> RendererRuntime? {
+    ) -> DRMScanoutPresenter? {
         var deviceStat = stat()
         guard unsafe fstat(drmDeviceFd, &deviceStat) == 0
         else { return nil }
@@ -204,7 +204,7 @@ extension RendererRuntime {
             "kernel_timestamp_monotonic=\(caps.timestampMonotonic)")
         let drmDevice = DrmDeviceLifetime(
             fileDescriptor: drmDeviceFd)
-        return unsafe RendererRuntime(
+        return unsafe DRMScanoutPresenter(
             core: core,
             gbm: consume gbm,
             gbmHandle: gbmHandle,

@@ -3,7 +3,7 @@ import NucleusCompositorDrmC
 import Glibc
 
 @MainActor
-extension RendererRuntime {
+extension DRMScanoutPresenter {
     @discardableResult
     public func registerSurfaceDmabuf(
         iosurfaceID: UInt64,

@@ -1,9 +1,9 @@
-# nucleus-shell
+# NucleusShell
 
 The first-party Nucleus desktop shell: an out-of-process Wayland layer-shell
 client written in Swift against `NucleusUI`.
 
-`nucleus-shell` owns native bar and lock-screen windows, presents them through
+`NucleusShell` owns native bar and lock-screen windows, presents them through
 the shared Skia Graphite/Vulkan renderer, and drives compositor state over
 standard protocols including `wlr-layer-shell`,
 `wlr-foreign-toplevel-management`, `ext-session-lock`, and
@@ -15,9 +15,9 @@ React Native, Hermes, Fabric, Yoga, or JavaScript runtime dependency.
 | Target | Responsibility |
 |---|---|
 | `NucleusShellProduct` | Native Swift views, typed product state, and product composition using public `NucleusUI`. |
-| `NucleusShellWayland` | Wayland connection and shell protocol clients. |
-| `NucleusShellRender` | `VK_KHR_wayland_surface` presenters backed by the shared render core. |
-| `NucleusShellInput` | Wayland input and text-input translation into NucleusUI events. |
+| `NucleusWindowClientWayland` | Public desktop Wayland connection and surface protocol implementation. |
+| `NucleusWindowClientRender` | DMA-BUF backing-store presenters backed by the shared render core. |
+| `NucleusWindowClientInput` | Wayland input and text-input translation into NucleusUI events. |
 | `NucleusShellServices` | Typed Linux service projections such as UPower. |
 | `NucleusShellRuntime` | Native surface registry, application lifecycle, services, and demand-driven reactor. |
 | `NucleusShell` | Thin executable composition entry point. |
@@ -45,17 +45,20 @@ Install the complete compositor session into one shared prefix:
 collider install session
 ```
 
-This writes the compositor, session launchers, native shell, and
-`nucleus-pam-helper` to `.install/`. Use `--prefix DIR` to choose another
-location. `collider install shell` installs only the two shell executables.
+This publishes one relocatable runtime generation under `.install/`: public
+executables in `bin/`, first-party frameworks and the Swift runtime closure in
+`lib/`, and session services plus `NucleusShellPamHelper` in `libexec/`. Use
+`--prefix DIR` to choose another location.
 
 ## Run
 
-`nucleus-shell` connects to the compositor named by `WAYLAND_DISPLAY`. The
-Nucleus compositor starts the installed shell automatically; a development
-binary is launched and supervised as a required peer by `nucleus-session`.
+In a Nucleus session, `NucleusShell` connects through the ordinary
+`WAYLAND_DISPLAY` selected by `nucleus-session`. The compositor does not track
+or authenticate a shell client identity. The supervisor gives each shell
+generation a private typed policy channel for accepted shortcuts and Nucleus
+semantics without a standard Wayland vocabulary.
 
-Against any already-running conformant compositor:
+For development against another conformant compositor:
 
 ```sh
 WAYLAND_DISPLAY=wayland-1 \
@@ -69,11 +72,10 @@ input, animation, service data, or a presentation deadline requires a frame.
 ## Directory layout
 
 ```text
-Sources/NucleusShellProduct/   Native product views and typed state
-Sources/NucleusShellWayland/   Wayland client and shell protocols
-Sources/NucleusShellRender/    Vulkan WSI presentation
-Sources/NucleusShellInput/     NucleusUI input adapters
-Sources/NucleusShellServices/  Linux service projections
-Sources/NucleusShellRuntime/   Native application/surface host
-Sources/NucleusShell/          Executable entry point
+Package.swift                  Launch-only executable and PAM helper
+auth-wire/                     PAM helper wire contract
+shell-kit/
+  Sources/NucleusShellProduct/ Native product views and typed state
+  Sources/NucleusShellServices/Discovery, launcher, notifications, policy
+  Sources/NucleusShellRuntime/ Process composition and shell-owned surfaces
 ```

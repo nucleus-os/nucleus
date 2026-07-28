@@ -14,8 +14,8 @@ let package = Package(
     name: "swift-tracy",
     products: [
         .library(name: "TracyColliderRecipe", targets: ["TracyColliderRecipe"]),
-        // The Swift Trace API; transitively links the C++ bridge + pinned Tracy client.
-        .library(name: "Tracy", targets: ["Tracy"]),
+        // The sole Tracy runtime image: Swift API, C++ bridge, and one Tracy client.
+        .library(name: "SwiftTracy", type: .dynamic, targets: ["Tracy"]),
     ],
     dependencies: [.package(path: "../collider/engine")],
     targets: [

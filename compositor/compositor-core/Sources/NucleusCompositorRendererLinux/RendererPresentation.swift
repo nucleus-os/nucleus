@@ -2,7 +2,7 @@ import NucleusCompositorDrmC
 @_spi(NucleusPlatform) import NucleusRenderer
 
 @MainActor
-extension RendererRuntime {
+extension DRMScanoutPresenter {
     func allocatePresentationSubmissionID() -> UInt64 {
         let id = nextPresentationSubmissionID
         nextPresentationSubmissionID &+= 1

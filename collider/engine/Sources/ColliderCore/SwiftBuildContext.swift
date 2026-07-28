@@ -141,7 +141,10 @@ public struct SwiftPMInvocation: Hashable, Sendable {
     }
 
     public func commandArguments(_ arguments: [String]) -> [String] {
-        arguments + contextArguments
+        guard let subcommand = arguments.first else {
+            return contextArguments
+        }
+        return [subcommand] + contextArguments + arguments.dropFirst()
     }
 
     public func commandEnvironment(
@@ -151,6 +154,11 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         environment["NUCLEUS_SWIFTPM_SCRATCH_PATH"] = scratchPath.string
         environment["NUCLEUS_SWIFTPM_GENERATED_MODULE_MAPS_PATH"] =
             generatedModuleMaps.string
+        if let sanitizer = context.sanitizer {
+            environment["NUCLEUS_SWIFTPM_SANITIZER"] = sanitizer
+        } else {
+            environment.removeValue(forKey: "NUCLEUS_SWIFTPM_SANITIZER")
+        }
         return environment
     }
 

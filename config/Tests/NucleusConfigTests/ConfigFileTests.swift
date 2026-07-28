@@ -1,6 +1,7 @@
 import FoundationEssentials
 import Testing
 @testable import NucleusConfig
+@testable import NucleusConfigIO
 
 @Suite struct ConfigFileTests {
     // MARK: path resolution

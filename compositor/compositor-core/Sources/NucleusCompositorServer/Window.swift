@@ -5,7 +5,7 @@ import Android
 #elseif canImport(Darwin)
 import Darwin
 #endif
-@_spi(NucleusCompositor) public import NucleusLayers
+@_spi(NucleusRenderServer) public import NucleusLayers
 public import struct NucleusCompositorServerTypes.WireChromeInsets
 
 public enum WindowSource: UInt32, Sendable {

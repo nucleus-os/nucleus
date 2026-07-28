@@ -327,7 +327,13 @@ public enum AndroidRuntimeColliderRecipe {
             buildJobs: lock.buildJobs,
             expectedPlatformSDK: lock.platformSDK,
             expectedVendorAPILevel: lock.vendorAPILevel,
-            environment: environment)
+            environment: environment,
+            sourceOverlays: [
+                AOSPProductSourceOverlay(
+                    source: root.removingLastComponent().appending(
+                        "ipc/transport/Sources/NucleusIPCTransportC"),
+                    relativeDestination: "native/ipc-transport"),
+            ])
         let requiredImages = [
             "system.img",
             "system_ext.img",
@@ -350,6 +356,8 @@ public enum AndroidRuntimeColliderRecipe {
                     bytes: productIdentity),
                 .tree(root.appending(
                     "aosp/device/nucleus/nucleus_x86_64")),
+                .tree(root.removingLastComponent().appending(
+                    "ipc/transport/Sources/NucleusIPCTransportC")),
                 .dependencyOutput(launcher),
                 .dependencyOutput(sourceProvenance),
                 .dependencyOutput(containerImageID),
@@ -450,6 +458,8 @@ public enum AndroidRuntimeColliderRecipe {
                 .dependencyOutput(containerImageID),
                 .tree(root.appending(
                     "aosp/device/nucleus/nucleus_x86_64")),
+                .tree(root.removingLastComponent().appending(
+                    "ipc/transport/Sources/NucleusIPCTransportC")),
                 .tool(.named("openssl")),
                 .tool(.named("unzip")),
                 .tool(.named("podman")),

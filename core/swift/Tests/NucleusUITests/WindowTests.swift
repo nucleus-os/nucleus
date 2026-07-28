@@ -1,4 +1,4 @@
-@_spi(NucleusCompositor) @testable import NucleusUI
+@_spi(NucleusRenderServer) @testable import NucleusUI
 import class NucleusLayers.Context
 import struct NucleusLayers.ContextID
 import class NucleusLayers.InMemoryCommitSink

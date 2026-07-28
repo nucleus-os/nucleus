@@ -1,19 +1,8 @@
-import Foundation
-import Glibc
+import FoundationEssentials
 import NucleusAndroidGraphicsContract
-import NucleusAndroidIPCC
+import NucleusIPCTransport
 
-public struct PeerCredentials: Equatable, Sendable {
-    public var processID: Int32
-    public var userID: UInt32
-    public var groupID: UInt32
-
-    public init(processID: Int32, userID: UInt32, groupID: UInt32) {
-        self.processID = processID
-        self.userID = userID
-        self.groupID = groupID
-    }
-}
+public typealias PeerCredentials = IPCPeerCredentials
 
 public enum PacketTransportError: Error, Equatable {
     case systemCall(operation: String, errno: Int32)
@@ -24,9 +13,9 @@ public enum PacketTransportError: Error, Equatable {
 
 public final class ReceivedBrokerPacket {
     public let envelope: BrokerEnvelope
-    private var descriptors: [Int32]
+    private var descriptors: [OwnedFileDescriptor]
 
-    init(envelope: BrokerEnvelope, descriptors: [Int32]) {
+    init(envelope: BrokerEnvelope, descriptors: [OwnedFileDescriptor]) {
         self.envelope = envelope
         self.descriptors = descriptors
     }
@@ -34,159 +23,145 @@ public final class ReceivedBrokerPacket {
     public var descriptorCount: Int { descriptors.count }
 
     public func takeDescriptors() -> [Int32] {
-        let taken = descriptors
+        let taken = descriptors.map { $0.take() }
         descriptors.removeAll(keepingCapacity: false)
         return taken
-    }
-
-    deinit {
-        for descriptor in descriptors where descriptor >= 0 { _ = Glibc.close(descriptor) }
     }
 }
 
 public final class BrokerPacketConnection: @unchecked Sendable {
-    public let fileDescriptor: Int32
-    private let ownsDescriptor: Bool
+    private let connection: PacketConnection
+
+    public var fileDescriptor: Int32 { connection.fileDescriptor }
+
+    fileprivate init(_ connection: PacketConnection) {
+        self.connection = connection
+    }
 
     public init(owning fileDescriptor: Int32) {
-        self.fileDescriptor = fileDescriptor
-        ownsDescriptor = true
+        connection = PacketConnection(owning: fileDescriptor)
     }
 
     init(borrowing fileDescriptor: Int32) {
-        self.fileDescriptor = fileDescriptor
-        ownsDescriptor = false
+        connection = PacketConnection(borrowing: fileDescriptor)
     }
 
     public static func connect(path: String) throws -> BrokerPacketConnection {
-        let descriptor = path.withCString {
-            unsafe nucleus_android_ipc_connect($0)
+        do {
+            return BrokerPacketConnection(
+                try PacketConnection.connect(path: path))
+        } catch {
+            throw Self.mapTransportError(error)
         }
-        guard descriptor >= 0 else { throw systemError("connect") }
-        return BrokerPacketConnection(owning: descriptor)
     }
 
-    public static func socketPair() throws -> (BrokerPacketConnection, BrokerPacketConnection) {
-        var pair = [Int32](repeating: -1, count: 2)
-        guard unsafe nucleus_android_ipc_socket_pair(&pair) == 0 else {
-            throw systemError("socketpair")
+    public static func socketPair() throws
+        -> (BrokerPacketConnection, BrokerPacketConnection)
+    {
+        do {
+            let pair = try PacketConnection.socketPair()
+            return (
+                BrokerPacketConnection(pair.0),
+                BrokerPacketConnection(pair.1))
+        } catch {
+            throw Self.mapTransportError(error)
         }
-        return (
-            BrokerPacketConnection(owning: pair[0]),
-            BrokerPacketConnection(owning: pair[1]))
     }
 
     public var peerCredentials: PeerCredentials? {
-        var credentials = nucleus_android_peer_credentials()
-        guard unsafe nucleus_android_ipc_peer_credentials(
-            fileDescriptor,
-            &credentials) == 0
-        else {
-            return nil
-        }
-        return PeerCredentials(
-            processID: credentials.pid,
-            userID: credentials.uid,
-            groupID: credentials.gid)
+        connection.peerCredentials
     }
 
     public func requirePeer(userID: UInt32) throws {
-        guard let peer = peerCredentials else { throw Self.systemError("getsockopt(SO_PEERCRED)") }
-        guard peer.userID == userID else {
-            throw PacketTransportError.unauthorizedPeer(
-                expectedUserID: userID,
-                actualUserID: peer.userID)
+        do {
+            try connection.requirePeer(userID: userID)
+        } catch {
+            throw Self.mapTransportError(error)
         }
     }
 
-    public func send(_ envelope: BrokerEnvelope, descriptors: [Int32] = []) throws {
-        try envelope.validate(receivedFileDescriptorCount: descriptors.count)
+    public func send(
+        _ envelope: BrokerEnvelope,
+        descriptors: [Int32] = []
+    ) throws {
+        try envelope.validate(
+            receivedFileDescriptorCount: descriptors.count)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let bytes = try encoder.encode(envelope)
         guard bytes.count <= AndroidGraphicsProtocol.maximumPacketBytes else {
             throw PacketTransportError.packetTooLarge(bytes.count)
         }
-        let result = unsafe bytes.withUnsafeBytes { rawBytes in
-            descriptors.withUnsafeBufferPointer { rawDescriptors in
-                unsafe nucleus_android_ipc_send(
-                    fileDescriptor,
-                    rawBytes.baseAddress,
-                    rawBytes.count,
-                    rawDescriptors.baseAddress,
-                    rawDescriptors.count)
-            }
+        do {
+            try connection.send(bytes, descriptors: descriptors)
+        } catch {
+            throw Self.mapTransportError(error)
         }
-        guard result == 0 else { throw Self.systemError("sendmsg") }
     }
 
     public func receive() throws -> ReceivedBrokerPacket {
-        var bytes = [UInt8](repeating: 0, count: AndroidGraphicsProtocol.maximumPacketBytes)
-        var descriptors = [Int32](
-            repeating: -1,
-            count: AndroidGraphicsProtocol.maximumFileDescriptors)
-        var descriptorCount = 0
-        let byteCount = bytes.withUnsafeMutableBytes { rawBytes in
-            descriptors.withUnsafeMutableBufferPointer { rawDescriptors in
-                unsafe nucleus_android_ipc_receive(
-                    fileDescriptor,
-                    rawBytes.baseAddress,
-                    rawBytes.count,
-                    rawDescriptors.baseAddress,
-                    rawDescriptors.count,
-                    &descriptorCount)
-            }
-        }
-        guard byteCount > 0 else { throw Self.systemError("recvmsg") }
-        descriptors.removeSubrange(descriptorCount..<descriptors.count)
+        let packet: ReceivedPacket
         do {
-            let envelope = try JSONDecoder().decode(
-                BrokerEnvelope.self,
-                from: Data(bytes.prefix(Int(byteCount))))
-            try envelope.validate(receivedFileDescriptorCount: descriptorCount)
-            return ReceivedBrokerPacket(envelope: envelope, descriptors: descriptors)
+            packet = try connection.receive(
+                maximumBytes: AndroidGraphicsProtocol.maximumPacketBytes,
+                maximumDescriptors:
+                    AndroidGraphicsProtocol.maximumFileDescriptors)
         } catch {
-            for descriptor in descriptors where descriptor >= 0 { _ = Glibc.close(descriptor) }
-            throw error
+            throw Self.mapTransportError(error)
         }
+        let envelope = try JSONDecoder().decode(
+            BrokerEnvelope.self,
+            from: Data(packet.bytes))
+        try envelope.validate(
+            receivedFileDescriptorCount: packet.descriptors.count)
+        return ReceivedBrokerPacket(
+            envelope: envelope,
+            descriptors: packet.descriptors)
     }
 
-    deinit {
-        if ownsDescriptor && fileDescriptor >= 0 { _ = Glibc.close(fileDescriptor) }
-    }
-
-    fileprivate static func systemError(_ operation: String) -> PacketTransportError {
-        PacketTransportError.systemCall(operation: operation, errno: errno)
+    fileprivate static func mapTransportError(
+        _ error: any Error
+    ) -> PacketTransportError {
+        guard let transport = error as? IPCTransportError else {
+            return .invalidPacket
+        }
+        switch transport {
+        case .systemCall(let operation, let code):
+            return .systemCall(operation: operation, errno: code)
+        case .packetTooLarge(let actual, _):
+            return .packetTooLarge(actual)
+        case .descriptorCountTooLarge:
+            return .invalidPacket
+        case .unauthorizedPeer(let expected, let actual):
+            return .unauthorizedPeer(
+                expectedUserID: expected,
+                actualUserID: actual)
+        }
     }
 }
 
 public final class BrokerPacketListener: @unchecked Sendable {
-    public let fileDescriptor: Int32
-    public let path: String
+    private let listener: PacketListener
+
+    public var fileDescriptor: Int32 { listener.fileDescriptor }
+    public var path: String { listener.path }
 
     public init(path: String, mode: UInt32 = 0o600) throws {
-        let descriptor = path.withCString {
-            unsafe nucleus_android_ipc_listen($0, mode)
-        }
-        guard descriptor >= 0 else { throw BrokerPacketConnection.systemError("bind/listen") }
-        self.fileDescriptor = descriptor
-        self.path = path
-    }
-
-    public func accept(expectedUserID: UInt32) throws -> BrokerPacketConnection {
-        let descriptor = nucleus_android_ipc_accept(fileDescriptor)
-        guard descriptor >= 0 else { throw BrokerPacketConnection.systemError("accept") }
-        let connection = BrokerPacketConnection(owning: descriptor)
         do {
-            try connection.requirePeer(userID: expectedUserID)
-            return connection
+            listener = try PacketListener(path: path, mode: mode)
         } catch {
-            throw error
+            throw BrokerPacketConnection.mapTransportError(error)
         }
     }
 
-    deinit {
-        if fileDescriptor >= 0 { _ = Glibc.close(fileDescriptor) }
-        _ = path.withCString { unsafe Glibc.unlink($0) }
+    public func accept(expectedUserID: UInt32) throws
+        -> BrokerPacketConnection
+    {
+        do {
+            return BrokerPacketConnection(
+                try listener.accept(expectedUserID: expectedUserID))
+        } catch {
+            throw BrokerPacketConnection.mapTransportError(error)
+        }
     }
 }

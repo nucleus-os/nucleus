@@ -621,6 +621,16 @@ public struct AOSPSigningIdentityPreparation: Hashable, Sendable {
     }
 }
 
+public struct AOSPProductSourceOverlay: Hashable, Sendable {
+    public let source: FilePath
+    public let relativeDestination: String
+
+    public init(source: FilePath, relativeDestination: String) {
+        self.source = source
+        self.relativeDestination = relativeDestination
+    }
+}
+
 public struct AOSPProductBuild: Hashable, Sendable {
     public let productSource: FilePath
     public let source: FilePath
@@ -639,6 +649,7 @@ public struct AOSPProductBuild: Hashable, Sendable {
     public let expectedPlatformSDK: UInt32
     public let expectedVendorAPILevel: UInt32
     public let environment: [String: String]
+    public let sourceOverlays: [AOSPProductSourceOverlay]
 
     public init(
         productSource: FilePath,
@@ -657,7 +668,8 @@ public struct AOSPProductBuild: Hashable, Sendable {
         buildJobs: UInt32,
         expectedPlatformSDK: UInt32,
         expectedVendorAPILevel: UInt32,
-        environment: [String: String]
+        environment: [String: String],
+        sourceOverlays: [AOSPProductSourceOverlay] = []
     ) {
         self.productSource = productSource
         self.source = source
@@ -676,6 +688,7 @@ public struct AOSPProductBuild: Hashable, Sendable {
         self.expectedPlatformSDK = expectedPlatformSDK
         self.expectedVendorAPILevel = expectedVendorAPILevel
         self.environment = environment
+        self.sourceOverlays = sourceOverlays
     }
 }
 

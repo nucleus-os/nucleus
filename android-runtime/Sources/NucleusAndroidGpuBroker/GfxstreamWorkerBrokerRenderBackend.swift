@@ -3,7 +3,7 @@ import Glibc
 import NucleusAndroidGfxstreamWorkerProtocolC
 import NucleusAndroidGraphicsPlatform
 import NucleusAndroidGpuBrokerCore
-import NucleusAndroidIPCC
+import NucleusIPCTransportC
 
 private enum GfxstreamWorkerBackendError: Error, CustomStringConvertible {
     case invalidRing(String)
@@ -55,7 +55,7 @@ final class GfxstreamWorkerBrokerRenderBackend: BrokerRenderBackend {
         }
 
         var socketPair = [Int32](repeating: -1, count: 2)
-        guard unsafe nucleus_android_ipc_socket_pair(&socketPair) == 0 else {
+        guard unsafe nucleus_ipc_socket_pair(&socketPair) == 0 else {
             throw systemError("socketpair")
         }
         let parentDescriptor = socketPair[0]
@@ -205,7 +205,7 @@ final class GfxstreamWorkerBrokerRenderBackend: BrokerRenderBackend {
         }
         let result = withUnsafeBytes(of: message) { bytes in
             descriptors.withUnsafeBufferPointer { descriptorBuffer in
-                unsafe nucleus_android_ipc_send(
+                unsafe nucleus_ipc_send(
                     controlDescriptor,
                     bytes.baseAddress,
                     bytes.count,
@@ -222,7 +222,7 @@ final class GfxstreamWorkerBrokerRenderBackend: BrokerRenderBackend {
         var response = nucleus_android_gfxstream_worker_response()
         var descriptorCount = 0
         let result = withUnsafeMutableBytes(of: &response) { bytes in
-            unsafe nucleus_android_ipc_receive(
+            unsafe nucleus_ipc_receive(
                 controlDescriptor,
                 bytes.baseAddress,
                 bytes.count,

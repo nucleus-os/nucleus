@@ -95,6 +95,16 @@ import Testing
         }
     }
 
+    @Test func removingTheWatchedDirectoryInvalidatesAndRemoves() throws {
+        try withWatchedFile { watcher, _, directory in
+            try FileManager.default.removeItem(at: URL(filePath: directory))
+            let change = watcher.drain()
+            #expect(change.watchInvalidated)
+            #expect(change.removed)
+            #expect(!change.contentChanged)
+        }
+    }
+
     // MARK: filtering and coalescing
 
     @Test func ignoresSiblingFilesInTheSameDirectory() throws {

@@ -82,7 +82,7 @@ public final class Context: ~Sendable {
     package var nextLayerOrdinal: UInt32
     package var nextTransactionIDValue: UInt64
     package var revision: UInt32
-    @_spi(NucleusCompositor) public var layers: [LayerID: Layer]
+    @_spi(NucleusRenderServer) public var layers: [LayerID: Layer]
     package let transactionStack: TransactionStack
     package var activeGroup: ActiveGroup?
 

@@ -1,6 +1,6 @@
 public import NucleusTypes
 import NucleusCompositorServerTypes
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusRenderServer) import NucleusLayers
 
 /// Swift-owned policy that turns per-layer `BackdropMaterial` intent
 /// plus current frame state into the per-frame `BackdropDraw` list consumed by

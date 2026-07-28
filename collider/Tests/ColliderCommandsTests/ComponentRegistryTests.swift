@@ -196,8 +196,11 @@ import WaylandColliderRecipe
         Issue.record("RN build must build the Swift façade before the package")
         return
     }
-    #expect(facade.arguments.prefix(3) == [
-        "build", "--target", "NucleusReactRuntimeCxx",
+    #expect(facade.arguments == [
+        "build",
+        "--configuration", "debug",
+        "--scratch-path", "/workspace/.nucleus/swiftpm/fixture",
+        "--target", "NucleusReactRuntimeCxx",
     ])
     #expect(package.arguments.first == "build")
     #expect(facade.environment["NUCLEUS_SWIFTPM_SCRATCH_PATH"]
@@ -277,12 +280,13 @@ import WaylandColliderRecipe
     }
     #expect(vulkanCommand.executable == .named("swift"))
     #expect(vulkanCommand.arguments == [
-        "run", "VulkanGen",
+        "run",
+        "--configuration", "debug",
+        "--scratch-path", "/workspace/.nucleus/swiftpm/fixture",
+        "VulkanGen",
         "/workspace/swift-vulkan/third-party/vk.xml",
         "/workspace/swift-vulkan/Sources/Vulkan/Vulkan.swift",
         "1",
-        "--configuration", "debug",
-        "--scratch-path", "/workspace/.nucleus/swiftpm/fixture",
     ])
 
     let reactNative = ReactNativeColliderRecipe.generate(

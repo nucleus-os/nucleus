@@ -1,24 +1,22 @@
 // swift-tools-version:6.4
 //
-// The Nucleus configuration model.
-//
-// This package depends on no other first-party component — not the compositor,
-// not the shell, not the render core. That is the point: the compositor, the
-// shell, and the control CLI all read the same configuration, so the model that
-// defines it cannot belong to any one of them. It also keeps the package
-// testable on its own, with no Wayland, DRM, or Vulkan link requirement.
+// Privileged configuration source I/O. The resolved model lives in model/ so
+// ordinary runtime consumers cannot acquire parsing or filesystem authority.
 
 import PackageDescription
 
 let package = Package(
-    name: "NucleusConfigPackage",
+    name: "NucleusConfigIOPackage",
     products: [
         .library(name: "ConfigColliderRecipe", targets: ["ConfigColliderRecipe"]),
-        .library(name: "NucleusConfigSyntax", targets: ["NucleusConfigSyntax"]),
-        .library(name: "NucleusConfig", targets: ["NucleusConfig"]),
+        .library(
+            name: "NucleusConfigIO",
+            type: .dynamic,
+            targets: ["NucleusConfigIO", "NucleusConfigSyntax"]),
     ],
     dependencies: [
         .package(path: "../collider/engine"),
+        .package(name: "NucleusConfigModel", path: "model"),
     ],
     targets: [
         .target(
@@ -36,15 +34,23 @@ let package = Package(
             dependencies: ["NucleusConfigSyntax"],
             path: "Tests/NucleusConfigSyntaxTests"),
 
-        // The configuration model: all-optional `*Part` decode targets, the
-        // resolved values the runtime reads, and the layering between them.
         .target(
-            name: "NucleusConfig",
-            dependencies: ["NucleusConfigSyntax"],
-            path: "Sources/NucleusConfig"),
+            name: "NucleusConfigIO",
+            dependencies: [
+                "NucleusConfigSyntax",
+                .product(
+                    name: "NucleusConfig",
+                    package: "NucleusConfigModel"),
+            ]),
         .testTarget(
             name: "NucleusConfigTests",
-            dependencies: ["NucleusConfig", "NucleusConfigSyntax"],
+            dependencies: [
+                "NucleusConfigIO",
+                "NucleusConfigSyntax",
+                .product(
+                    name: "NucleusConfig",
+                    package: "NucleusConfigModel"),
+            ],
             path: "Tests/NucleusConfigTests"),
     ]
 )

@@ -42,6 +42,7 @@ func resolveSurfaceLogicalSize(
 struct SurfaceAuxState: Equatable, Sendable {
     var viewportSource: WlFRect?
     var viewportDestination: WlSize?
+    var alphaMultiplier: UInt32 = .max
     var syncAcquire: SyncPoint?
     var syncRelease: SyncPoint?
 }
@@ -49,6 +50,7 @@ struct SurfaceAuxState: Equatable, Sendable {
 enum SurfaceAuxKind: Hashable {
     case viewport
     case fractionalScale
+    case alphaModifier
     case kdeBlur
     case backgroundEffect
     case syncobj
@@ -118,6 +120,8 @@ struct SurfacePendingState {
     var viewportSourceSet = false
     var viewportDestination: WlSize?
     var viewportDestinationSet = false
+    var alphaMultiplier: UInt32 = .max
+    var alphaMultiplierSet = false
 
     mutating func capture(
         commitID: UInt64,
@@ -146,6 +150,8 @@ struct SurfacePendingState {
             auxViewportSourceSet: viewportSourceSet,
             auxViewportDestination: viewportDestination,
             auxViewportDestinationSet: viewportDestinationSet,
+            auxAlphaMultiplier: alphaMultiplier,
+            auxAlphaMultiplierSet: alphaMultiplierSet,
             syncAcquire: syncAcquire,
             syncRelease: syncRelease,
             effects: effects)
@@ -163,6 +169,7 @@ struct SurfacePendingState {
         presentationFeedbacks.removeAll(keepingCapacity: true)
         viewportSourceSet = false
         viewportDestinationSet = false
+        alphaMultiplierSet = false
         return transaction
     }
 }

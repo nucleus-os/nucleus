@@ -18,7 +18,7 @@
 // clock (`Display.predictedPresentNs`), and the committed buffer geometry
 // (`Window.committedBufferSize`/`contentOffsetInSlot`).
 
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusRenderServer) import NucleusLayers
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowScene
@@ -434,6 +434,20 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
             try author.setContent(
                 surfaceID: UInt64(surfaceID), content: .none,
                 contentSample: ContentSample())
+        }
+    }
+
+    func surfaceContentOpacity(
+        surfaceID: UInt32,
+        opacity: Double
+    ) {
+        authoring(
+            "publish content opacity",
+            surfaceID: UInt64(surfaceID)
+        ) {
+            try author.setContentOpacity(
+                surfaceID: UInt64(surfaceID),
+                opacity: opacity)
         }
     }
 

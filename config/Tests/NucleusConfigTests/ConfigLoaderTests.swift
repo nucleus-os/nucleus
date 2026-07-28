@@ -1,5 +1,6 @@
 import Testing
 @testable import NucleusConfig
+@testable import NucleusConfigIO
 import NucleusConfigSyntax
 
 @Suite struct ConfigLoaderTests {

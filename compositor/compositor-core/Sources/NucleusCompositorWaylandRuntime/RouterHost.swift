@@ -5,9 +5,11 @@ package import NucleusCompositorServer
 package import NucleusCompositorWindowManager
 import NucleusDiagnostics
 import Glibc
+import WaylandServer
 
 @MainActor
 package final class RouterHost {
+    private static let xwaylandOnlyGlobal = "xwayland_shell_v1"
     unowned let server: NucleusCompositorServer
     unowned let windowManager: WindowManager
     let diagnostics: WaylandRuntimeDiagnostics
@@ -33,6 +35,7 @@ package final class RouterHost {
     /// nil before input bring-up constructs it; the loop's seat/libinput FD
     /// handlers drive it and the DRM bring-up borrows its seat for device opens.
     var inputHost: InputHost?
+    var xwaylandClientID: WaylandClientID?
 
     lazy var sessionLockGate = SessionLockGate(host: self)
     lazy var pointerCursorSurface = PointerCursorSurface(server: server)
@@ -63,6 +66,16 @@ package final class RouterHost {
     func nextPresentationSequence() -> UInt64 {
         presentationSequence &+= 1
         return presentationSequence
+    }
+
+    func allowsGlobal(
+        client: WaylandClientID,
+        interfaceName: String
+    ) -> Bool {
+        guard interfaceName == Self.xwaylandOnlyGlobal else {
+            return true
+        }
+        return client == xwaylandClientID
     }
 }
 

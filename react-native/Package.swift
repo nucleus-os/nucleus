@@ -264,6 +264,7 @@ let package = Package(
     dependencies: [
         .package(path: "../collider/engine"),
         .package(name: "Nucleus", path: "../core"),
+        .package(name: "NucleusFoundation", path: "../foundation"),
         .package(name: "swift-tracy", path: "../swift-tracy"),
     ],
     targets: [
@@ -321,8 +322,7 @@ let package = Package(
                 // The Skia paragraph registry + text backend, compiled once in the core.
                 // The RN host C++ references the registry; this resolves it at the test's
                 // final link (the compositor resolves it the same way via this product).
-                .product(name: "NucleusTextBackend", package: "Nucleus"),
-                .product(name: "NucleusSkiaGraphiteBridge", package: "Nucleus"),
+                .product(name: "Nucleus", package: "Nucleus"),
             ],
             path: "swift/Tests/NucleusReactRuntimeFabricTests",
             swiftSettings: [
@@ -339,10 +339,7 @@ let package = Package(
             dependencies: [
                 "NucleusReactFabricSmokeC", "NucleusReactRuntimeHostCxx",
                 "NucleusReactRuntimeCxx",
-                .product(name: "NucleusTextBackend", package: "Nucleus"),
-                .product(
-                    name: "NucleusSkiaGraphiteBridge",
-                    package: "Nucleus"),
+                .product(name: "Nucleus", package: "Nucleus"),
             ],
             path: "swift/SanitizerHarnesses/NucleusReactThreadSanitizerHarness",
             linkerSettings: [
@@ -358,11 +355,7 @@ let package = Package(
                 .product(
                     name: "NucleusBenchmarkSupport",
                     package: "Nucleus"),
-                .product(name: "NucleusUI", package: "Nucleus"),
-                .product(name: "NucleusTextBackend", package: "Nucleus"),
-                .product(
-                    name: "NucleusSkiaGraphiteBridge",
-                    package: "Nucleus"),
+                .product(name: "Nucleus", package: "Nucleus"),
             ],
             path: "swift/Benchmarks/NucleusReactBenchmarks",
             swiftSettings: [
@@ -385,15 +378,11 @@ let package = Package(
         .target(
             name: "NucleusReactRuntimeCxx",
             dependencies: [
-                .product(name: "NucleusUI", package: "Nucleus"),
-                .product(name: "NucleusUIEmbedder", package: "Nucleus"),
-                .product(name: "NucleusLayers", package: "Nucleus"),
-                .product(name: "Tracy", package: "swift-tracy"),
-                .product(name: "NucleusTextCxxBridge", package: "Nucleus"),
+                .product(name: "Nucleus", package: "Nucleus"),
+                .product(name: "SwiftTracy", package: "swift-tracy"),
                 .product(
-                    name: "NucleusTextRenderingBridge",
-                    package: "Nucleus"),
-                .product(name: "NucleusAppHostProtocols", package: "Nucleus"),
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
                 // The C header declaring the test-only smoke entries — imported so
                 // `nucleus_rn_fabric_full_smoke` is implemented via `@c @implementation`
                 // (type-checked against smoke.h) rather than a free-standing `@_cdecl`.
@@ -441,12 +430,11 @@ let package = Package(
             name: "NucleusReactRuntime",
             dependencies: [
                 "NucleusReactRuntimeCxx",
-                .product(name: "NucleusUI", package: "Nucleus"),
-                .product(name: "NucleusUIEmbedder", package: "Nucleus"),
-                .product(name: "NucleusLayers", package: "Nucleus"),
-                .product(name: "NucleusTypes", package: "Nucleus"),
-                .product(name: "NucleusAppHostProtocols", package: "Nucleus"),
-                .product(name: "Tracy", package: "swift-tracy"),
+                .product(name: "Nucleus", package: "Nucleus"),
+                .product(
+                    name: "NucleusFoundation",
+                    package: "NucleusFoundation"),
+                .product(name: "SwiftTracy", package: "swift-tracy"),
             ],
             path: "swift/Sources/NucleusReactRuntime",
             exclude: ["cxx"],

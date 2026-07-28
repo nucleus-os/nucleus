@@ -223,7 +223,8 @@ struct ProfileCapture {
                     throw WorkspaceFailure.message(
                         "native session supervisor reported startup failure "
                             + "(\(reason)); see \(log.path)")
-                case .compositorReady, .terminating:
+                case .configServiceReady, .controlServiceReady,
+                     .compositorReady, .terminating:
                     break
                 }
             }

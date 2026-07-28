@@ -1,14 +1,7 @@
 // swift-tools-version:6.4
 //
-// The Nucleus control protocol and its command-line client.
-//
-// Separate from `config/` because the two answer different questions — what a
-// session is configured to be, versus what it is being asked to do right now —
-// but it depends on the configuration model, since a control request names the
-// same operations a key binding names.
-//
-// Like `config/`, this package depends on no other first-party component. The
-// compositor serves the protocol and the CLI speaks it; neither owns it.
+// Build tooling and the public control executable. Runtime protocol, transport,
+// and client implementations live in role-specific nested packages.
 
 import PackageDescription
 
@@ -16,12 +9,17 @@ let package = Package(
     name: "NucleusIPCPackage",
     products: [
         .library(name: "IPCColliderRecipe", targets: ["IPCColliderRecipe"]),
-        .library(name: "NucleusIPC", targets: ["NucleusIPC"]),
         .executable(name: "nucleus", targets: ["NucleusControlCLI"]),
     ],
     dependencies: [
         .package(path: "../collider/engine"),
-        .package(name: "NucleusConfigPackage", path: "../config"),
+        .package(name: "NucleusConfigModel", path: "../config/model"),
+        .package(
+            name: "NucleusControlProtocolPackage",
+            path: "control-protocol"),
+        .package(
+            name: "NucleusControlClientPackage",
+            path: "control-client"),
         .package(path: "../third-party/swift-argument-parser"),
     ],
     targets: [
@@ -29,22 +27,18 @@ let package = Package(
             name: "IPCColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
 
-        .target(
-            name: "NucleusIPC",
-            dependencies: [
-                .product(name: "NucleusConfig", package: "NucleusConfigPackage"),
-            ],
-            path: "Sources/NucleusIPC"),
-        .testTarget(
-            name: "NucleusIPCTests",
-            dependencies: ["NucleusIPC"],
-            path: "Tests/NucleusIPCTests"),
-
         .executableTarget(
             name: "NucleusControlCLI",
             dependencies: [
-                "NucleusIPC",
-                .product(name: "NucleusConfig", package: "NucleusConfigPackage"),
+                .product(
+                    name: "NucleusControlClient",
+                    package: "NucleusControlClientPackage"),
+                .product(
+                    name: "NucleusControlProtocol",
+                    package: "NucleusControlProtocolPackage"),
+                .product(
+                    name: "NucleusConfig",
+                    package: "NucleusConfigModel"),
                 .product(
                     name: "ArgumentParser",
                     package: "swift-argument-parser"),

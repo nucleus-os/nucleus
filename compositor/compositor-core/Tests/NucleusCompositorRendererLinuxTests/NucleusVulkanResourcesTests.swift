@@ -43,7 +43,8 @@ import Vulkan
 
     @Test func featureChain() {
         // Feature chain: FEATURES_2 -> VULKAN_1_2 -> VULKAN_1_1 (dynamic last link).
-        let contract = VkRequirements.contract(for: .waylandClientWSI)
+        let contract = VkRequirements.contract(
+            for: .waylandClientBackingStore)
         unsafe withRequiredFeatureEnableChain(contract: contract) { head in
             let headSType = unsafe head.pointee.sType
             #expect(
@@ -67,16 +68,7 @@ import Vulkan
             #expect(
                 link2SType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
                 "chain-link2-stype")
-            guard let link3 = unsafe link2.pointee.pNext else {
-                #expect(Bool(false), "chain-link3")
-                return
-            }
-            let link3SType = unsafe link3.pointee.sType
-            #expect(
-                link3SType
-                    == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_KHR,
-                "chain-link3-stype")
-            let tailIsNil = unsafe link3.pointee.pNext == nil
+            let tailIsNil = unsafe link2.pointee.pNext == nil
             #expect(tailIsNil, "chain-tail-nil")
         }
     }

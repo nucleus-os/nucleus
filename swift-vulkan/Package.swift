@@ -11,9 +11,9 @@ let package = Package(
     name: "swift-vulkan",
     products: [
         .library(name: "VulkanColliderRecipe", targets: ["VulkanColliderRecipe"]),
-        // The generated typed API (VK.* dispatch tables, scoped enums /
-        // option sets / typed handles) over the raw C module.
-        .library(name: "Vulkan", targets: ["Vulkan"]),
+        // The single compiled Vulkan runtime image. VulkanC remains an import-only
+        // system-library module over the loader and is part of this product's closure.
+        .library(name: "SwiftVulkan", type: .dynamic, targets: ["Vulkan"]),
         // The raw C module, vended separately because consumers import it directly
         // for the C structs / handles (VkImage, VkImportMemoryFdInfoKHR, …).
         .library(name: "VulkanC", targets: ["VulkanC"]),

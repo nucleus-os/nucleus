@@ -1,5 +1,5 @@
 public import NucleusCompositorServerTypes
-@_spi(NucleusCompositor) public import NucleusLayers
+@_spi(NucleusRenderServer) public import NucleusLayers
 
 /// A change to the observable desktop model — the typed stream the external-shell
 /// management protocols (and any other consumer) project. Identity is by id;
@@ -361,42 +361,40 @@ public struct KeybindOutcome: Sendable {
     public enum Kind: UInt8, Sendable { case pass = 0, consume = 1, deferred = 2 }
     public var kind: Kind
     public var action: UInt8
+    public var configurationIndex: UInt32
     public var value: UInt32
-    public init(kind: Kind, action: UInt8, value: UInt32) {
+    public init(
+        kind: Kind,
+        action: UInt8,
+        configurationIndex: UInt32 = .max,
+        value: UInt32
+    ) {
         self.kind = kind
         self.action = action
+        self.configurationIndex = configurationIndex
         self.value = value
     }
 }
 
-/// The seam the compositor input dispatch uses to reach the Swift shell policy
-/// services that live in the `.shell` layer above it. The import-audit area DAG
-/// forbids the compositor from importing `NucleusCompositorShell`/`NucleusCompositorOverlay` directly,
-/// so the dependency is inverted: this protocol is defined here in `.server`, the
-/// shell conforms to it, and injects the instance into its runtime-owned server
-/// at startup. Input dispatch calls through that server's `shellPolicy` seam.
+/// The authoritative server-policy seam used by physical input dispatch.
+///
+/// It owns chord matching and cursor image mechanism. Shell-owned effects leave
+/// the process through `acceptedShellAction`; no shell implementation module is
+/// loaded into the compositor.
 @MainActor
-public protocol CompositorShellPolicy: AnyObject {
-    /// Session keybind policy (Super-prefixed combos, the launcher table, hotkey
-    /// overlay toggles, the reserved-modifier rule).
+public protocol CompositorPolicy: AnyObject {
     func dispatchKeybind(keycode: UInt32, modifiers: UInt64, pressed: Bool) -> KeybindOutcome
-
-    // Cursor + shell/overlay reach-up the input dispatch makes during routing. The
-    // owners live in `.shell` (`NucleusCompositorShell` cursor/bezel services and
-    // `NucleusCompositorOverlayScene`); the dispatch reaches them through this seam instead of
-    // importing those modules (the area DAG forbids `.nucleus_compositor_substrate → .shell`).
     func cursorApplyDefault()
     func cursorApplyNamed(_ name: String)
-    func toggleHotkey()
-    func dismissHotkey()
-    func overlayActive() -> Bool
-    func overlaySceneMenuVisible() -> Bool
-    /// Whether the overlay wants keyboard input routed to it — an open menu, or
-    /// a focused text field in the overlay's own scene.
-    func overlaySceneWantsKeyboard() -> Bool
-    func overlayPointer(x: Float, y: Float, kind: UInt32, button: UInt32, timestampNs: UInt64) -> UInt64
-    func overlayKey(keycode: UInt32, modifiers: UInt32, text: String?, kind: UInt32, timestampNs: UInt64) -> UInt64
-    func overlaySceneShowWindowMenu(windowID: UInt64, x: Double, y: Double, capabilities: UInt32)
+    func acceptedShellAction(
+        action: UInt8,
+        configurationIndex: UInt32,
+        value: UInt32)
+    func showWindowMenu(
+        windowID: UInt64,
+        x: Double,
+        y: Double,
+        capabilities: UInt32)
 }
 
 /// The compositor session-control seam: the input host (`.nucleus_compositor_substrate`)
@@ -432,9 +430,7 @@ public protocol CompositorInputControl: AnyObject {
 
 @MainActor
 public final class NucleusCompositorServer {
-    /// The shell-policy seam, injected by the shell layer at startup (nil until
-    /// then; the dispatch treats a nil seam as "no compositor keybind matched").
-    public weak var shellPolicy: (any CompositorShellPolicy)?
+    public weak var policy: (any CompositorPolicy)?
     public weak var inputControl: (any CompositorInputControl)?
     /// The composition root's session lifecycle, injected at bring-up (the input
     /// host's VT enable/disable + exit reach it through here).

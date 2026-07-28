@@ -17,7 +17,7 @@
 
 import WaylandServer
 import WaylandProtocolTypes
-@_spi(NucleusCompositor) import NucleusLayers
+@_spi(NucleusRenderServer) import NucleusLayers
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowManager
@@ -878,7 +878,7 @@ extension RouterWindowDriver: CursorShapeDelegate {
     /// shape, which the router reports as `invalid_shape`.
     func applyCursorShape(_ shape: WpCursorShapeDeviceV1Shape) -> Bool {
         guard let name = cursorShapeName(shape) else { return false }
-        server.shellPolicy?.cursorApplyNamed(name)
+        server.policy?.cursorApplyNamed(name)
         RenderBridge.requestCursorFrame(server: server)
         return true
     }

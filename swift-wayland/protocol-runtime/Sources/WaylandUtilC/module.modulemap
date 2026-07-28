@@ -1,0 +1,5 @@
+module WaylandUtilC [system] {
+    header "shim.h"
+    link "wayland-client"
+    export *
+}
