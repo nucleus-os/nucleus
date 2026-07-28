@@ -55,6 +55,28 @@ public enum DisplayHostError: Error, CustomStringConvertible {
 }
 
 @MainActor
+func waitForDisplayHostReadable(
+    _ descriptor: Int32,
+    reactor: LinuxHostReactor
+) async throws {
+    while true {
+        let batch = try await reactor.wait(
+            interests: [LinuxReactorInterest(
+                token: 1,
+                fileDescriptor: descriptor,
+                events: Int16(POLLIN))],
+            timeoutNanoseconds: nil)
+        guard let event = batch.events.first else { continue }
+        if let failure = event.failureCode {
+            throw DisplayHostError.systemCall("io_uring poll", failure)
+        }
+        let result = LinuxPollResult(returnedEvents: event.returnedEvents)
+        if result.isReadable { return }
+        if result.isTerminal { throw DisplayHostError.invalidRequest }
+    }
+}
+
+@MainActor
 @safe private final class SyncobjBridge {
     @unsafe private let native: OpaquePointer
 
@@ -137,7 +159,7 @@ public enum DisplayHostError: Error, CustomStringConvertible {
     private let expectedUserID: UInt32
     private let parentProcessID: Int32
     private let listener: Int32
-    private let reactor: LinuxHostReactor
+    private let acceptReactor: LinuxHostReactor
     private let presenter: AndroidDisplayPresenter
     private var topologySubscriber: Int32?
 
@@ -159,12 +181,12 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         self.expectedUserID = expectedUserID
         self.parentProcessID = parentProcessID
         self.listener = listener
-        self.reactor = try LinuxHostReactor()
+        self.acceptReactor = try LinuxHostReactor()
         do {
             self.presenter = try AndroidDisplayPresenter(
                 waylandSocket: waylandSocket,
                 renderDevice: renderDevice,
-                reactor: reactor)
+                reactor: LinuxHostReactor())
         } catch {
             _ = close(listener)
             _ = socketPath.withCString { unsafe unlink($0) }
@@ -184,7 +206,9 @@ public enum DisplayHostError: Error, CustomStringConvertible {
             _ = socketPath.withCString { unsafe unlink($0) }
         }
         while true {
-            try await waitForReadable(listener)
+            try await waitForDisplayHostReadable(
+                listener,
+                reactor: acceptReactor)
             let connection = nucleus_android_ipc_accept(listener)
             guard connection >= 0 else {
                 if errno == EINTR { continue }
@@ -228,7 +252,10 @@ public enum DisplayHostError: Error, CustomStringConvertible {
     }
 
     private func serve(_ connection: Int32) async throws {
-        try await waitForReadable(connection)
+        let handshakeReactor = try LinuxHostReactor()
+        try await waitForDisplayHostReadable(
+            connection,
+            reactor: handshakeReactor)
         var bytes = [UInt8](
             repeating: 0,
             count: Int(NUCLEUS_COMPOSER_MAX_MESSAGE_BYTES))
@@ -525,23 +552,6 @@ public enum DisplayHostError: Error, CustomStringConvertible {
         else { throw DisplayHostError.invalidRequest }
     }
 
-    private func waitForReadable(_ descriptor: Int32) async throws {
-        while true {
-            let batch = try await reactor.wait(
-                interests: [LinuxReactorInterest(
-                    token: 1,
-                    fileDescriptor: descriptor,
-                    events: Int16(POLLIN))],
-                timeoutNanoseconds: nil)
-            guard let event = batch.events.first else { continue }
-            if let failure = event.failureCode {
-                throw DisplayHostError.systemCall("io_uring poll", failure)
-            }
-            let result = LinuxPollResult(returnedEvents: event.returnedEvents)
-            if result.isReadable { return }
-            if result.isTerminal { throw DisplayHostError.invalidRequest }
-        }
-    }
 }
 
 @MainActor

@@ -33,6 +33,7 @@ PRODUCT_PACKAGES += \
     Settings \
     SettingsIntelligence \
     frameworks-base-overlays \
+    librs_jni \
     preinstalled-packages-nucleus.xml
 
 # Container-owned vendor surface.

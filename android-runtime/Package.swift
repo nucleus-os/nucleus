@@ -407,7 +407,12 @@ let package = Package(
             swiftSettings: [.interoperabilityMode(.Cxx)]),
         .testTarget(
             name: "NucleusAndroidDisplayHostCoreTests",
-            dependencies: ["NucleusAndroidDisplayHostCore"],
+            dependencies: [
+                "NucleusAndroidDisplayHostCore",
+                .product(
+                    name: "NucleusLinuxReactor",
+                    package: "NucleusLinuxPlatform"),
+            ],
             swiftSettings: [.interoperabilityMode(.Cxx)]),
     ],
     cxxLanguageStandard: .cxx20)

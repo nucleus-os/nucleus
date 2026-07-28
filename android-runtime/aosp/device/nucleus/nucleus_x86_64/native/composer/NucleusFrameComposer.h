@@ -41,6 +41,7 @@ class NucleusFrameComposer final : public FrameComposer {
     };
 
     bool connectTopologySubscriber();
+    bool receiveTopologyEvent(int topology_fd, bool* initial_snapshot_complete);
     void topologyLoop();
     void handleTopologyEvent(const nucleus_composer_topology_event& event);
 

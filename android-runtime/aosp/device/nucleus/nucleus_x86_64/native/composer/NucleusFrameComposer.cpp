@@ -67,6 +67,13 @@ bool NucleusFrameComposer::connectTopologySubscriber() {
         ALOGE("Nucleus Composer3 topology subscription failed: %s", strerror(errno));
         return false;
     }
+    bool initial_snapshot_complete = false;
+    while (!initial_snapshot_complete) {
+        if (!receiveTopologyEvent(
+                subscriber.get(), &initial_snapshot_complete)) {
+            return false;
+        }
+    }
     {
         std::lock_guard<std::mutex> lock(topology_connection_mutex_);
         topology_socket_ = std::move(subscriber);
@@ -133,6 +140,42 @@ std::vector<DisplayCapability> NucleusFrameComposer::getDisplayCapabilities(
     return {};
 }
 
+bool NucleusFrameComposer::receiveTopologyEvent(
+    int topology_fd,
+    bool* initial_snapshot_complete) {
+    nucleus_composer_topology_event event = {};
+    size_t fd_count = 0;
+    const int received = nucleus_android_ipc_receive(
+        topology_fd, &event, sizeof(event), nullptr, 0, &fd_count);
+    if (received < 0) {
+        if (!stopping_.load()) {
+            ALOGW("Nucleus Composer3 topology disconnected: %s", strerror(errno));
+        }
+        return false;
+    }
+    if (received != sizeof(event) ||
+        event.magic != NUCLEUS_COMPOSER_PROTOCOL_MAGIC ||
+        event.version != NUCLEUS_COMPOSER_PROTOCOL_VERSION ||
+        event.byte_count != sizeof(event) ||
+        event.fd_count != 0 ||
+        fd_count != 0) {
+        ALOGE("Nucleus Composer3 received an invalid topology event");
+        return false;
+    }
+    if (event.status != NUCLEUS_COMPOSER_STATUS_OK) {
+        ALOGE("Nucleus Composer3 topology subscription rejected: status=%" PRIu32,
+              event.status);
+        return false;
+    }
+    handleTopologyEvent(event);
+    if (initial_snapshot_complete != nullptr &&
+        event.operation == NUCLEUS_COMPOSER_TOPOLOGY_SNAPSHOT &&
+        event.display_id == std::numeric_limits<uint64_t>::max()) {
+        *initial_snapshot_complete = true;
+    }
+    return true;
+}
+
 void NucleusFrameComposer::topologyLoop() {
     while (!stopping_.load()) {
         int topology_fd = -1;
@@ -150,14 +193,7 @@ void NucleusFrameComposer::topologyLoop() {
                 [this] { return stopping_.load(); });
             continue;
         }
-        nucleus_composer_topology_event event = {};
-        size_t fd_count = 0;
-        const int received = nucleus_android_ipc_receive(
-            topology_fd, &event, sizeof(event), nullptr, 0, &fd_count);
-        if (received < 0) {
-            if (!stopping_.load()) {
-                ALOGW("Nucleus Composer3 topology disconnected: %s", strerror(errno));
-            }
+        if (!receiveTopologyEvent(topology_fd, nullptr)) {
             {
                 std::lock_guard<std::mutex> lock(topology_connection_mutex_);
                 if (topology_socket_.get() == topology_fd) {
@@ -166,33 +202,6 @@ void NucleusFrameComposer::topologyLoop() {
             }
             continue;
         }
-        if (received != sizeof(event) ||
-            event.magic != NUCLEUS_COMPOSER_PROTOCOL_MAGIC ||
-            event.version != NUCLEUS_COMPOSER_PROTOCOL_VERSION ||
-            event.byte_count != sizeof(event) ||
-            event.fd_count != 0 ||
-            fd_count != 0) {
-            ALOGE("Nucleus Composer3 received an invalid topology event");
-            {
-                std::lock_guard<std::mutex> lock(topology_connection_mutex_);
-                if (topology_socket_.get() == topology_fd) {
-                    topology_socket_.reset();
-                }
-            }
-            continue;
-        }
-        if (event.status != NUCLEUS_COMPOSER_STATUS_OK) {
-            ALOGE("Nucleus Composer3 topology subscription rejected: status=%" PRIu32,
-                  event.status);
-            {
-                std::lock_guard<std::mutex> lock(topology_connection_mutex_);
-                if (topology_socket_.get() == topology_fd) {
-                    topology_socket_.reset();
-                }
-            }
-            continue;
-        }
-        handleTopologyEvent(event);
     }
 }
 
