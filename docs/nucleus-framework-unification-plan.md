@@ -28,6 +28,12 @@ The resulting system obeys these rules:
   presenter. Only `NucleusCompositor` loads it.
 - `libNucleusShellKit.so` contains desktop-shell policy and services. Only
   `NucleusShell` loads it.
+- `NucleusConfigService` is the sole reader, writer, watcher, and publisher of session
+  configuration. The compositor, shell, and control CLI never maintain independent
+  interpretations of the configuration file.
+- `libNucleusConfig.so` contains resolved configuration values and their stable snapshot
+  codec. `libNucleusConfigIO.so` contains source parsing and filesystem I/O and is not
+  loaded by the compositor or shell.
 - Applications rasterize their own backing content. They submit buffers and atomic
   composition transactions to the window server. The window server composes those
   buffers, executes server-owned animations, and presents the final desktop image.
@@ -93,9 +99,10 @@ the shell, render menus or notifications, or authenticate users.
   transient feedback surfaces;
 - application indexing, icon-theme lookup, UPower state, shell formatting, and
   notification policy;
-- keybinding configuration and action dispatch after the server has arbitrated the
-  underlying input;
-- cursor-theme preference and other user policy submitted to the server;
+- displayed keybinding state and accepted-action dispatch after the server has arbitrated
+  the underlying input;
+- cursor-theme preference and other persistent user policy submitted through the
+  configuration service;
 - privileged layer-shell, session-lock, foreign-toplevel, screencopy, and data-control
   client capabilities.
 
@@ -109,9 +116,15 @@ importing a module, sharing a UID, or knowing a token string never grants a capa
 ### Helper processes
 
 `NucleusShellPamHelper` remains the only process that loads PAM modules.
-`NucleusSessionSupervisor` remains the session-lifecycle owner. Helpers link only their
-wire types and required system libraries; they do not load the UI, graphics, window-client,
-or render-server frameworks.
+`NucleusSessionSupervisor` remains the session-lifecycle owner.
+
+`NucleusConfigService` owns the active configuration snapshot. It starts before the
+compositor, watches and atomically persists the configuration file, and publishes
+owner-specific resolved projections over supervisor-provided capability channels. It
+loads no UI, graphics, Wayland, DRM, shell, or render-server framework.
+
+Other helpers link only their wire types and required system libraries; they do not load
+the UI, graphics, window-client, render-server, shell, or configuration-I/O frameworks.
 
 ## Target artifact graph
 
@@ -127,10 +140,29 @@ libNucleus.so
     └── libNucleusFoundation.so
 
 libNucleusLinux.so
-    Linux primitives, reactor, D-Bus, environment, accessibility,
-    theme asset I/O
+    Linux primitives, reactor, D-Bus, file watching, theme asset I/O
+
+libNucleusLinuxDesktop.so
+    Linux environment and accessibility adapters
     ├── libNucleusFoundation.so
-    └── libNucleus.so
+    ├── libNucleus.so
+    └── libNucleusLinux.so
+
+libNucleusConfig.so
+    resolved configuration model, defaults, validation,
+    owner projections, stable snapshot codec
+
+libNucleusConfigIO.so
+    JSON syntax preparation, source diagnostics, load, export,
+    file discovery and atomic persistence
+    └── libNucleusConfig.so
+
+libNucleusConfigService.so
+    active snapshot authority, file watching, generation publication,
+    subscriber lifecycle
+    ├── libNucleusConfigIO.so
+    ├── libNucleusLinux.so
+    └── libNucleusSessionProtocol.so
 
 libNucleusWindowClient.so
     Wayland client connection and dispatch, surface roles, input,
@@ -142,12 +174,17 @@ libNucleusRenderServer.so
     Wayland server, window policy, input devices, XWayland,
     global composition, DRM/GBM/KMS presentation
     ├── libNucleus.so
-    └── libNucleusLinux.so
+    ├── libNucleusConfig.so
+    ├── libNucleusLinux.so
+    └── libNucleusSessionProtocol.so
 
 libNucleusShellKit.so
     shell policy, desktop services, shell product controller and views
     ├── libNucleus.so
     ├── libNucleusLinux.so
+    ├── libNucleusLinuxDesktop.so
+    ├── libNucleusConfig.so
+    ├── libNucleusSessionProtocol.so
     └── libNucleusWindowClient.so
 
 NucleusCompositor
@@ -156,12 +193,15 @@ NucleusCompositor
 NucleusShell
     └── libNucleusShellKit.so
 
+NucleusConfigService
+    └── libNucleusConfigService.so
+
 NucleusShellPamHelper
     └── NucleusShellAuthWire only
 
 NucleusSessionSupervisor
     ├── libNucleusFoundation.so
-    └── NucleusSessionProtocol
+    └── libNucleusSessionProtocol.so
 ```
 
 `swift-wayland`, `swift-vulkan`, `swift-tracy`, and the session protocol remain
@@ -177,7 +217,8 @@ code:
 - `libSwiftTracy.so` owns the Tracy Swift/C++ bridge and the single compiled Tracy client
   implementation used by Nucleus libraries in a process.
 - `libNucleusSessionProtocol.so` owns the installed supervisor/compositor session wire
-  implementation.
+  implementation, including configuration subscription envelopes. It depends dynamically
+  on `libNucleusConfig.so` for resolved projection values and snapshot decoding.
 
 Role-specific Wayland client dispatch is absorbed only by
 `libNucleusWindowClient.so`. Role-specific server dispatch is absorbed only by
@@ -192,6 +233,8 @@ The public import surface is separate from the ELF artifact boundary:
 - `@_exported import` is confined to the two umbrella targets. Internal implementation
   targets use explicit imports.
 - `NucleusRenderServer` is not re-exported by either public umbrella.
+- `NucleusConfig`, `NucleusConfigIO`, and configuration service APIs are not re-exported
+  by either public umbrella. They are internal system frameworks.
 
 Android continues to consume the portable modules through its existing Android host
 product. The Android host shared object becomes a thin JNI and platform composition root
@@ -213,7 +256,100 @@ the Android graph.
 | Physical input devices and global focus | `libNucleusRenderServer.so` | window-server process |
 | UI event dispatch | `libNucleus.so` plus desktop host adapter | destination application |
 | Desktop shell policy and services | `libNucleusShellKit.so` | shell process |
+| Resolved configuration vocabulary | `libNucleusConfig.so` | each subscribing process |
+| Configuration source parsing and persistence | `libNucleusConfigIO.so` | config-service process |
+| Active configuration and reload generation | `libNucleusConfigService.so` | config-service process |
 | Authentication | `NucleusShellAuthWire` and PAM helper | PAM helper process |
+
+## Configuration contract
+
+`NucleusConfiguration` is the complete resolved session model. The source file remains a
+human-authored partial overlay over built-in defaults. Parsing, layering, migration, and
+source diagnostics occur once in `NucleusConfigService`, never independently in each
+consumer.
+
+The configuration model produces explicit owner projections:
+
+- `RenderServerConfiguration` contains libinput settings, XKB rules, key repeat, global
+  binding chords, window-management actions, output and workspace policy, cursor
+  mechanism, idle enforcement, and render policy.
+- `ShellConfiguration` contains application-launch actions, displayed binding
+  descriptions, notifications, overlays, bars, launcher, lock-screen, theme, and
+  cursor-preference policy.
+
+Every configuration field has exactly one runtime owner. A setting that appears in more
+than one projection has one authoritative owner and read-only descriptive copies
+elsewhere. The shell's displayed binding list is a copy of server-owned binding policy;
+the shell never performs a second raw-key match.
+
+The server is the sole global binding resolver. It executes server-owned actions such as
+close, tile, workspace activation, and composition changes. It sends an accepted typed
+action over the authenticated shell protocol for launcher, menu, notification, and other
+shell-owned behavior.
+
+### Configuration modules
+
+`NucleusConfig` contains:
+
+- `NucleusConfiguration` and partial overlay value types;
+- input, binding, and future resolved policy values;
+- built-in defaults;
+- source-independent semantic issues;
+- the authoritative server-versus-shell owner classification for every `BindAction`;
+- `RenderServerConfiguration` and `ShellConfiguration` projection functions;
+- the stable binary codec for resolved snapshots.
+
+`NucleusConfigIO` contains:
+
+- `NucleusConfigSyntax`;
+- JSON decoding and unknown-key auditing;
+- schema migration;
+- source-located diagnostics;
+- XDG path resolution;
+- load and export;
+- atomic persistence.
+
+`ConfigDiagnostic` splits into a source-independent `ConfigurationIssue` in
+`NucleusConfig` and a source-located `ConfigDiagnostic` in `NucleusConfigIO`. Runtime
+consumers can reject an invalid resolved snapshot without loading source parsing or file
+I/O.
+
+`NucleusConfigSyntax` remains a narrow compilation target but is not an installed public
+product. It is absorbed only by `libNucleusConfigIO.so`.
+
+### Snapshot publication
+
+Every published projection carries:
+
+- a service epoch generated at config-service startup;
+- a monotonically increasing generation within that epoch;
+- the configuration schema version;
+- the projection kind;
+- the encoded resolved projection;
+- diagnostics relevant to that publication.
+
+Consumers reject an older generation from the same epoch. A new epoch invalidates the
+old generation space and causes the current projection to be adopted. Repeated delivery
+of the same epoch and generation is idempotent.
+
+The config service publishes projections independently. A stopped shell never prevents
+the server from adopting input or window-policy changes. A reconnecting consumer receives
+the current projection before it becomes ready.
+
+A malformed file costs only the attempted update. The service retains the last valid
+snapshot and generation and publishes diagnostics. Removing the file resolves built-in
+defaults and publishes them as a new generation.
+
+### Persistence and control
+
+The config service is the only process that writes the active file. It writes a temporary
+file in the destination directory, flushes file contents, atomically renames it, and
+flushes the directory before publishing the resulting snapshot.
+
+The control CLI submits validate, replace, and export requests to the config service. It
+does not modify the active file directly. An offline validation command may load
+`libNucleusConfigIO.so`, but it has no authority to publish or persist a live session
+configuration.
 
 ## Cross-process rendering contract
 
@@ -383,6 +519,35 @@ Add a thin `Nucleus` umbrella target that re-exports the public modules. Keep th
 underlying targets as compilation units, but stop vending them as independent installed
 libraries.
 
+Split the Linux platform package by dependency level:
+
+- `platform-linux/Package.swift` vends dynamic `NucleusLinux` containing primitives,
+  reactor, D-Bus, file watching, and theme asset I/O. It has no dependency on
+  `libNucleus.so`.
+- `platform-linux/desktop/Package.swift` vends dynamic `NucleusLinuxDesktop` containing
+  environment and accessibility adapters and depending on the base Linux and Nucleus
+  products.
+- `platform-linux/session/Package.swift` owns the session supervisor executable and
+  depends on the base Linux and session-protocol products through cross-package dynamic
+  edges.
+
+Move the existing targets and callers directly. Do not leave forwarding products in the
+old package graph.
+
+Split configuration by runtime privilege:
+
+- `config/model/Package.swift` vends dynamic `NucleusConfig`. Move
+  `NucleusConfiguration`, input and binding values, defaults, semantic validation,
+  projection functions, and the resolved snapshot codec into it.
+- `config/Package.swift` vends dynamic `NucleusConfigIO` and depends on the model package.
+  Move syntax preparation, JSON loading, source diagnostics, migrations, file discovery,
+  atomic persistence, and export into it.
+- `NucleusConfigSyntax` remains an internal target in the IO product and is no longer a
+  separately installed product.
+
+Move `ConfigColliderRecipe` alongside `NucleusConfigIO`; it is build tooling and is not
+part of the installed runtime.
+
 Add dynamic runtime products to `swift-wayland`, `swift-vulkan`, and `swift-tracy` for the
 compiled target closures named in the artifact graph. Update higher packages to consume
 those products. Header-only system-library targets remain import-only and do not create
@@ -416,8 +581,8 @@ Do not use `-Bsymbolic-functions` as a substitute for correct symbol ownership. 
 ELF interposition semantics and is unnecessary once archive symbols are hidden and
 defined exactly once.
 
-Create equivalent disjoint dynamic products for `NucleusLinux`,
-`NucleusWindowClient`, `NucleusRenderServer`, and `NucleusShellKit` as their phases land.
+Create equivalent disjoint dynamic products for `NucleusWindowClient`,
+`NucleusRenderServer`, `NucleusConfigService`, and `NucleusShellKit` as their phases land.
 A higher library depends on a lower dynamic product; it does not absorb a second copy of
 the lower product's target objects.
 
@@ -434,6 +599,8 @@ Phase 2 adds artifact checks that fail when:
 - a shipped executable contains first-party Swift implementation sections that belong in
   a framework;
 - two installed shared objects contain the same first-party target object;
+- a headless session or configuration process resolves `libNucleus.so`, Skia, or a
+  desktop-UI library;
 - an installed dependency cannot be resolved from the staged rpath.
 
 Collider emits a linker map for every installed ELF object and records a normalized
@@ -442,9 +609,10 @@ The validation intersects those manifests to detect duplicate ownership. Dynamic
 dependencies appear only as `NEEDED` edges and never as copied members in the consuming
 artifact's ownership set.
 
-Phase 2 lands when the existing compositor and shell use `libNucleus.so`, both render
-successfully in automated fixtures, and their ELF dependency and symbol tables satisfy
-the checks above.
+Phase 2 lands when the existing compositor and shell use `libNucleus.so`, configuration
+model and IO tests pass through their new package boundary, headless Linux consumers use
+only the base Linux artifact, both render successfully in automated fixtures, and their
+ELF dependency and symbol tables satisfy the checks above.
 
 ## Phase 3 — Extract the public desktop client framework
 
@@ -514,7 +682,7 @@ absorbs the server-owned targets and sources:
 - `NucleusCompositorXcbC`;
 - server-owned cursor, shadow, idle, and global-input policy;
 - the existing `NucleusCompositorShell`, compositor overlay, and hosted-surface targets as
-  explicitly transitional inputs removed in phase 6.
+  explicitly transitional inputs removed in phase 7.
 
 The Swift targets remain narrow compilation units inside the product. The product exports
 one server entry point:
@@ -522,13 +690,15 @@ one server entry point:
 ```swift
 @_spi(NucleusRenderServer)
 public func runRenderServer(
-    configuration: RenderServerConfiguration
+    configuration: RenderServerLaunchConfiguration
 ) async throws
 ```
 
-`NucleusCompositor` constructs configuration from the session supervisor, signal source,
-diagnostics, and environment, then calls this entry point. It contains no renderer,
-Wayland, DRM, input, window-manager, or shell policy.
+`NucleusCompositor` constructs launch configuration from the session supervisor,
+configuration-service channel, signal source, diagnostics, and environment, then calls
+this entry point. It contains no renderer, Wayland, DRM, input, window-manager, or shell
+policy. `RenderServerLaunchConfiguration` is process bring-up state;
+`NucleusConfig.RenderServerConfiguration` is the resolved live policy projection.
 
 Delete the server-side duplicates of client responsibilities. The server keeps data-device
 and input protocol resource management and policy; it does not keep a client pasteboard
@@ -600,7 +770,109 @@ Phase 5 lands when:
   transitions have behavioral coverage;
 - no cross-process contract contains a Vulkan handle or pointer.
 
-## Phase 6 — Move all desktop shell UI and policy out of the server
+## Phase 6 — Establish one configuration authority
+
+Create `config/config-service-core/Package.swift` with the dynamic
+`NucleusConfigService` product. Create `config/config-service/Package.swift` with only
+the `NucleusConfigService` executable entry point and a product dependency on the service
+core. The service library depends on `NucleusConfigIO`, base `NucleusLinux`, and
+`NucleusSessionProtocol`. It does not depend on `Nucleus`, `NucleusLinuxDesktop`,
+`NucleusWindowClient`, `NucleusRenderServer`, or `NucleusShellKit`.
+
+Extend `NucleusSessionProtocol` with:
+
+- config-service readiness and epoch identity;
+- role-authenticated subscriber registration;
+- current-snapshot request and response;
+- projection publication;
+- generation acknowledgement and rejection;
+- diagnostic publication;
+- validate, replace, and export control requests.
+
+The session supervisor creates connected capability channels for the configuration
+service, compositor, shell, and control endpoint. Subscriber capabilities permit only
+projection reads and acknowledgements. Shell-settings and control capabilities enumerate
+the mutation operations they permit. The service rejects operations not granted by the
+presented channel; sharing a UID does not grant write authority.
+
+The supervisor starts the configuration service first and waits for an initial resolved
+snapshot before starting the compositor. The compositor receives its channel at launch
+and adopts `RenderServerConfiguration` before opening the seat. The shell receives its
+channel at launch and adopts `ShellConfiguration` before publishing shell surfaces.
+
+Move `ConfigReloadCoordinator` out of `NucleusCompositorRuntime`. Rebuild its behavior as
+the config service's state machine:
+
+1. locate and load the active file;
+2. prepare syntax while preserving source offsets;
+3. decode the partial overlay;
+4. migrate the declared schema version;
+5. resolve defaults and layers;
+6. validate the complete model;
+7. derive owner projections;
+8. assign the next generation;
+9. publish each projection independently;
+10. retain the snapshot and diagnostics for reconnecting subscribers.
+
+Watch the configuration directory rather than one file inode so atomic replacement,
+creation after startup, deletion, and directory recreation are observable. Rearm watches
+after move and invalidation events. Treat only `ENOENT` as an absent configuration;
+permission, decoding, and other I/O failures produce diagnostics and preserve the last
+valid snapshot.
+
+Delete the compositor coordinator and every direct `ConfigFile` or `ConfigLoader` use
+from compositor and shell targets. Remove `NucleusConfigIO` from their package
+dependencies. They depend only on `NucleusConfig`, normally through the dynamic session
+protocol edge.
+
+Split the current compositor `KeybindService`:
+
+- `GlobalBindingResolver` moves under `NucleusRenderServer`, owns chord capture and
+  key-up balancing, receives the server projection, and remains the only raw global-key
+  matcher.
+- the existing action executor remains a transitional in-process sink until phase 7.
+  Server-owned actions execute directly; shell-owned actions already cross a typed
+  `ShellActionSink` seam.
+
+Keep `InputDeviceSettings` in `NucleusRenderServer`. It translates the resolved input
+projection into libinput and XKB operations. A new projection replaces the active
+settings atomically, reapplies settings to connected devices, and becomes the initial
+settings for devices added later.
+
+The shell stores its current projection and generation even before phase 7 moves the
+remaining services out of the compositor. This proves startup, reconnect, and update
+delivery without adding an interim compositor-to-shell configuration path.
+
+Implement persistence only in the service. A replace request validates the proposed
+source before touching the active file, writes a same-directory temporary file, flushes
+it, renames it over the destination, flushes the directory, and publishes exactly one
+new generation. File-watcher events caused by the service's own rename coalesce with that
+publication and do not produce a duplicate generation.
+
+Phase 6 lands when:
+
+- `NucleusConfigService` is a small composition root over
+  `libNucleusConfigService.so`;
+- only the config service opens, watches, or writes the active configuration file;
+- the compositor and shell load `libNucleusConfig.so` but not
+  `libNucleusConfigIO.so`;
+- the config service loads no UI, Skia, Wayland, DRM, render-server, window-client, or
+  shell library;
+- invalid startup input resolves to defaults with diagnostics;
+- invalid reloads retain the last valid epoch and generation;
+- file removal publishes defaults as a new generation;
+- service-originated atomic writes publish one generation;
+- reconnecting consumers receive the current projection before readiness;
+- shell absence does not block server configuration updates;
+- a service restart creates a new epoch and stale messages from the previous epoch are
+  rejected;
+- input changes affect connected and subsequently added devices;
+- global binding resolution has one runtime owner;
+- every built-in and decoded binding action resolves to exactly one execution owner;
+- configuration service, session distribution, compositor application, shell
+  subscription, and control-request tests pass through Collider.
+
+## Phase 7 — Move all desktop shell UI and policy out of the server
 
 Create `shell/shell-kit/Package.swift` with the dynamic `NucleusShellKit` product. Keep
 the `NucleusShell` executable target in `shell/Package.swift` and make it depend on the
@@ -612,7 +884,7 @@ Move shell-owned services into the shell-kit package:
 - `BezelService`;
 - `DesktopApplicationIndex`;
 - `IdlePolicy` preferences and timeout configuration;
-- `KeybindService` configuration and accepted-action dispatch;
+- `ShellActionDispatcher`, replacing the shell-owned half of `KeybindService`;
 - `LauncherService`;
 - `NotificationService`;
 - `ShellPolicyService`;
@@ -627,14 +899,16 @@ Move shell-owned services into the shell-kit package:
 Keep authoritative mechanism in the server:
 
 - physical key and pointer processing;
-- focus and shortcut arbitration;
+- focus and shortcut arbitration through `GlobalBindingResolver`;
 - the idle clock and session-lock enforcement;
 - `XCursor` loading, cursor image validation, cursor-plane state, and cursor rendering;
 - window shadows and global composition effects.
 
-The shell sends policy through authenticated protocol requests. The server emits
-privileged events such as an accepted global shortcut or idle-state transition. Neither
-side imports the other's implementation module.
+The shell sends transient policy actions through authenticated protocol requests and
+persists configuration changes through the configuration service. The server emits
+privileged events such as an accepted global shortcut or idle-state transition. Accepted
+shell actions carry the typed action and active configuration generation; the shell does
+not repeat chord matching. Neither side imports the other's implementation module.
 
 Add the shell privilege protocol before moving the first privileged surface. The session
 supervisor issues a new one-shot capability for every shell launch. The server grants
@@ -662,17 +936,21 @@ Keep `NucleusShellAuth`, `NucleusShellAuthWire`, and `NucleusShellPamHelper` sep
 The lock-screen view runs in the shell; PAM conversation and module loading remain in the
 helper.
 
-Phase 6 lands when:
+Phase 7 lands when:
 
 - the compositor links neither `libNucleusShellKit.so` nor a shell product module;
 - no shell view is created in the compositor process;
 - shell restart does not restart the compositor or destroy ordinary application surfaces;
 - shell disconnect removes its privileged surfaces and revokes its capabilities;
+- a shell configuration update changes shell-owned behavior without rebuilding server
+  input state;
+- accepted shell actions preserve the server's configuration generation and are never
+  rematched from raw keys in the shell;
 - lock, unlock, notification, launcher, global-shortcut, cursor-theme, and idle flows pass
   deterministic integration tests;
 - shell service and product tests pass through Collider.
 
-## Phase 7 — Add atomic composition transactions
+## Phase 8 — Add atomic composition transactions
 
 Generate `nucleus_composition_v1` client and server bindings through
 `swift-wayland`. Keep the XML and generated Swift/C bindings in the protocol package with
@@ -698,7 +976,7 @@ buffers.
 Server-side animation operates only on composition properties. An animation that changes
 the raster content remains client-driven and produces new backing buffers.
 
-Phase 7 lands when:
+Phase 8 lands when:
 
 - a transaction becomes visible entirely or not at all;
 - malformed graphs, stale IDs, cycles, invalid buffer generations, and oversized
@@ -709,7 +987,7 @@ Phase 7 lands when:
 - ordinary non-Nucleus Wayland clients remain fully functional;
 - transaction conformance and fuzz fixtures pass through Collider.
 
-## Phase 8 — Collapse public imports without collapsing ownership
+## Phase 9 — Collapse public imports without collapsing ownership
 
 Finish the two umbrella modules after the runtime boundaries are stable.
 
@@ -733,13 +1011,13 @@ internals, Linux modules, or server SPI.
 - the Linux desktop application host.
 
 It does not re-export raw Wayland modules, Linux implementation modules, shell services,
-or render-server modules.
+render-server modules, configuration modules, or configuration service APIs.
 
 Remove the old flat public library products after all callers use the umbrellas or an
 explicit internal product. Delete replaced imports and compatibility wrappers in the same
 phase.
 
-Phase 8 lands when:
+Phase 9 lands when:
 
 - a normal desktop application imports only `NucleusDesktop`;
 - a portable library imports only `Nucleus`;
@@ -748,7 +1026,7 @@ Phase 8 lands when:
 - API documentation exposes no server SPI, raw Wayland pointer, Skia C++ type, or Vulkan
   handle.
 
-## Phase 9 — Install, relocate, and validate the runtime
+## Phase 10 — Install, relocate, and validate the runtime
 
 Collider stages:
 
@@ -761,6 +1039,10 @@ lib/
     libNucleusFoundation.so
     libNucleus.so
     libNucleusLinux.so
+    libNucleusLinuxDesktop.so
+    libNucleusConfig.so
+    libNucleusConfigIO.so
+    libNucleusConfigService.so
     libNucleusWindowClient.so
     libNucleusRenderServer.so
     libNucleusShellKit.so
@@ -770,6 +1052,7 @@ lib/
     libNucleusSessionProtocol.so
 
 libexec/
+    NucleusConfigService
     NucleusShellPamHelper
     NucleusSessionSupervisor
 ```
@@ -786,6 +1069,11 @@ Collider's install validation checks:
 - SONAMEs and rpaths match the staged layout;
 - `NucleusShell` does not load the render-server library or server-only native libraries;
 - `NucleusCompositor` does not load the window-client or shell library;
+- compositor and shell load `libNucleusConfig.so` without loading
+  `libNucleusConfigIO.so` or `libNucleusConfigService.so`;
+- `NucleusConfigService` loads the configuration model, configuration IO, base Linux, and
+  session-protocol libraries without loading Nucleus UI/graphics, Linux desktop,
+  Wayland, DRM, window-client, render-server, or shell libraries;
 - helpers load none of the UI, graphics, client, server, or shell libraries;
 - a helper that needs diagnostics loads `libNucleusFoundation.so` without pulling in
   `libNucleus.so`;
@@ -803,7 +1091,8 @@ private shared objects.
 
 The work is complete when all of the following are simultaneously true:
 
-- `NucleusCompositor` and `NucleusShell` are small composition roots.
+- `NucleusCompositor`, `NucleusShell`, and `NucleusConfigService` are small composition
+  roots.
 - Applications share one installed Nucleus implementation but retain isolated mutable
   graphics state.
 - The compositor is the only owner of global scene state, physical input, DRM/KMS, and
@@ -813,7 +1102,11 @@ The work is complete when all of the following are simultaneously true:
   implementations.
 - The client library has no server or hardware dependency.
 - The server library has no shell UI or shell-service dependency.
+- The configuration service is the sole authority for the active configuration file and
+  publishes resolved owner projections by epoch and generation.
+- The compositor and shell never parse or watch the active configuration file.
+- Global binding resolution has one server-side runtime owner.
 - Cross-process rendering uses buffers, value transactions, and explicit synchronization.
 - The staged dependency graph and symbol tables mechanically enforce the ownership rules.
-- Linux desktop, Android, compositor, shell, helper, integration, and sanitizer gates all
-  pass through Collider.
+- Linux desktop, Android, configuration, compositor, shell, helper, integration, and
+  sanitizer gates all pass through Collider.
