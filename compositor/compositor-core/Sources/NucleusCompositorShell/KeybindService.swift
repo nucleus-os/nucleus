@@ -130,6 +130,14 @@ public final class KeybindService {
         }
     }
 
+    /// Run an action that did not arrive from a keypress.
+    ///
+    /// The control socket reaches the same executor a binding does, so a
+    /// command and a chord cannot diverge in what they actually perform.
+    public func perform(_ action: BindAction) -> Dispatch {
+        run(action)
+    }
+
     private func run(_ action: BindAction) -> Dispatch {
         switch action {
         case .launch(let appIDs, let command):

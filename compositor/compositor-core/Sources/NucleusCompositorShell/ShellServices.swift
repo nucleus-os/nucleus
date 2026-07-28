@@ -71,7 +71,7 @@ public final class ShellServices {
     /// disagrees with what the keys actually do is worse than no overlay.
     public func updateBinds(_ binds: [KeyBind]) {
         keybinds.updateBinds(binds)
-        overlayScene.hotkeyEntriesSet(HotkeyOverlayEntries.rows(for: binds))
+        overlayScene.hotkeyContentSet(HotkeyOverlayEntries.content(for: binds))
     }
 
     /// Begin portal discovery only after the compositor has published its

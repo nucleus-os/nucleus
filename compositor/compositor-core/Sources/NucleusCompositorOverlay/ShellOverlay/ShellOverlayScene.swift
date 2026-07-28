@@ -181,8 +181,8 @@ public final class ShellOverlayScene: ~Sendable {
             return dismissNotification(id, reason: reason)
         case let .hotkeyVisibility(visible):
             return setHotkeyVisible(visible)
-        case let .hotkeyEntries(entries):
-            return setHotkeyEntries(entries)
+        case let .hotkeyContent(content):
+            return setHotkeyContent(content)
         }
     }
 
@@ -304,15 +304,15 @@ public final class ShellOverlayScene: ~Sendable {
     /// Re-frames only while the overlay is on screen; a hidden overlay picks up
     /// the new geometry when it is next shown, since `setHotkeyVisible` frames
     /// it on the way up.
-    package func setHotkeyEntries(
-        _ entries: [ShellOverlayHotkeyEntry]
+    package func setHotkeyContent(
+        _ content: ShellOverlayHotkeyContent
     ) -> Bool {
-        guard hotkeyView.entries != entries else { return false }
+        guard hotkeyView.content != content else { return false }
         // Row views are built here, so they must be created in the same
         // UIContext that owns the overlay — a view cannot adopt a child from
         // another one.
         publicationContext.withSemanticContext {
-            hotkeyView.update(entries: entries)
+            hotkeyView.update(content: content)
         }
         guard hotkeyVisible, let frame else { return hotkeyVisible }
         do {

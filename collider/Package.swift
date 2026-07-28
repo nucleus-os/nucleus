@@ -16,6 +16,7 @@ let package = Package(
         .package(name: "swift-wayland", path: "../swift-wayland"),
         .package(name: "Nucleus", path: "../core"),
         .package(name: "NucleusConfigPackage", path: "../config"),
+        .package(name: "NucleusIPCPackage", path: "../ipc"),
         .package(name: "NucleusLinuxPlatform", path: "../platform-linux"),
         .package(name: "android-runtime", path: "../android-runtime"),
         .package(name: "NucleusReactNative", path: "../react-native"),
@@ -45,6 +46,9 @@ let package = Package(
                 .product(
                     name: "ConfigColliderRecipe",
                     package: "NucleusConfigPackage"),
+                .product(
+                    name: "IPCColliderRecipe",
+                    package: "NucleusIPCPackage"),
                 .product(name: "LinuxColliderRecipe", package: "NucleusLinuxPlatform"),
                 .product(name: "AndroidRuntimeColliderRecipe", package: "android-runtime"),
                 .product(name: "NucleusAndroidContainerContract", package: "android-runtime"),

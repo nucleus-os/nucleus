@@ -6,6 +6,7 @@ import CompositorAppColliderRecipe
 import CompositorColliderRecipe
 import ConfigColliderRecipe
 import CoreColliderRecipe
+import IPCColliderRecipe
 import Foundation
 import LinuxColliderRecipe
 import ReactNativeColliderRecipe
@@ -26,6 +27,7 @@ enum ComponentSelection: String, CaseIterable, ExpressibleByArgument {
     case wayland
     case core
     case config
+    case ipc
     case linux
     case reactNative = "rn"
     case compositor
@@ -68,6 +70,10 @@ struct ComponentRegistry {
                 swiftPM: swiftPM),
             ConfigColliderRecipe.build(
                 root: FilePath(layout.config.path),
+                environment: environment,
+                swiftPM: swiftPM),
+            IPCColliderRecipe.build(
+                root: FilePath(layout.ipc.path),
                 environment: environment,
                 swiftPM: swiftPM),
             LinuxColliderRecipe.build(
@@ -122,6 +128,10 @@ struct ComponentRegistry {
                 swiftPM: swiftPM),
             ConfigColliderRecipe.test(
                 root: FilePath(layout.config.path),
+                environment: environment,
+                swiftPM: swiftPM),
+            IPCColliderRecipe.test(
+                root: FilePath(layout.ipc.path),
                 environment: environment,
                 swiftPM: swiftPM),
             LinuxColliderRecipe.test(
@@ -517,7 +527,7 @@ struct ComponentRegistry {
         if selection == .all || selection == .runtime {
             return [
                 "tracy.test", "vulkan.test", "wayland.test", "core.test",
-                "config.test",
+                "config.test", "ipc.test",
                 "linux.test", "rn.test", "compositor-core.test",
                 "compositor-core.test-loader",
                 "compositor-core.test-gpu-headless",
@@ -531,6 +541,7 @@ struct ComponentRegistry {
             .wayland: ["wayland.test"],
             .core: ["core.test"],
             .config: ["config.test"],
+            .ipc: ["ipc.test"],
             .linux: ["linux.test"],
             .reactNative: ["rn.test"],
             .compositor: [

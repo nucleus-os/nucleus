@@ -144,7 +144,7 @@ public enum ConfigLoader {
         encoder.keyEncodingStrategy = .convertToSnakeCase
         let decoder = JSONDecoder()
         guard let referenceData = try? encoder.encode(
-            NucleusConfiguration.defaults),
+            NucleusConfiguration.auditReference),
             let reference = try? decoder.decode(
                 JSONValue.self, from: referenceData),
             let actual = try? decoder.decode(JSONValue.self, from: data)

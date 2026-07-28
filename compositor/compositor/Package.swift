@@ -112,6 +112,7 @@ let package = Package(
         // policy, the shell overlay). Consumes core via the @_spi(NucleusCompositor)
         .package(path: "../compositor-core"),
         .package(name: "NucleusConfigPackage", path: "../../config"),
+        .package(name: "NucleusIPCPackage", path: "../../ipc"),
         .package(
             name: "NucleusLinuxPlatform",
             path: "../../platform-linux"),
@@ -166,6 +167,7 @@ let package = Package(
                 .product(name: "NucleusCompositorWindowManager", package: "compositor-core"),
                 .product(name: "NucleusCompositorShell", package: "compositor-core"),
                 .product(name: "NucleusConfig", package: "NucleusConfigPackage"),
+                .product(name: "NucleusIPC", package: "NucleusIPCPackage"),
                 .product(
                     name: "NucleusLinuxDBus",
                     package: "NucleusLinuxPlatform"),
@@ -197,6 +199,7 @@ let package = Package(
             dependencies: [
                 "NucleusCompositorRuntime",
                 .product(name: "NucleusConfig", package: "NucleusConfigPackage"),
+                .product(name: "NucleusIPC", package: "NucleusIPCPackage"),
             ],
             path: "Tests/NucleusCompositorRuntimeTests",
             swiftSettings: [

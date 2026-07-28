@@ -3,6 +3,7 @@ import NucleusCompositorRendererLinux
 import NucleusCompositorOverlayScene
 import NucleusCompositorOverlayTypes
 import NucleusCompositorServer
+import NucleusConfig
 import NucleusCompositorServerTypes
 import NucleusCompositorWaylandRuntime
 import NucleusCompositorWindowManager
@@ -80,6 +81,10 @@ final class OutputTopologyReconciler {
     private var applied: [DisplayID: AppliedOutput] = [:]
     private var rememberedPlacements: [DisplayID: (x: Double, y: Double)] = [:]
     private let defaultScale: Double
+    /// Per-output overrides, replaced wholesale on configuration reload.
+    /// Looked up by connector name, which is the only identity a user can
+    /// write down and the same one `nucleus msg outputs` reports.
+    var outputOverrides: [OutputConfig] = []
     private unowned let server: NucleusCompositorServer
     private unowned let windowManager: WindowManager
     private unowned let renderRuntime: RenderRuntime
@@ -220,10 +225,19 @@ final class OutputTopologyReconciler {
         name: String? = nil,
         description: String? = nil
     ) -> AppliedOutput? {
-        let scale = previous?.fractionalScale ?? defaultScale
-        let integerScale = previous?.scale
-            ?? UInt32(max(1.0, scale.rounded(.up)))
-        let placement = previous.map { ($0.logicalX, $0.logicalY) }
+        // Resolve the name first: it is what a configuration entry is keyed
+        // by, so nothing below can be decided without it.
+        let outputName = name ?? "DRM-\(planned.id)"
+        let override = outputOverrides.entry(named: outputName)
+
+        // A configured scale outranks the remembered one — a reload that left
+        // the old value in place would look like it had silently failed.
+        let scale = override?.scale ?? previous?.fractionalScale ?? defaultScale
+        let integerScale = override?.scale.map {
+            UInt32(max(1.0, $0.rounded(.up)))
+        } ?? previous?.scale ?? UInt32(max(1.0, scale.rounded(.up)))
+        let placement = override?.position.map { ($0.x, $0.y) }
+            ?? previous.map { ($0.logicalX, $0.logicalY) }
             ?? rememberedPlacements[planned.id].map { ($0.x, $0.y) }
             ?? nextPlacement()
         let mode = DisplayMode(
@@ -255,7 +269,6 @@ final class OutputTopologyReconciler {
             return nil
         }
 
-        let outputName = name ?? "DRM-\(planned.id)"
         let outputDescription = description ?? "Nucleus DRM output"
         if let display = server.layout.display(id: planned.id) {
             display.apply(configuration)

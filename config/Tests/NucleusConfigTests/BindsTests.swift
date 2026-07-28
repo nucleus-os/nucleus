@@ -308,3 +308,73 @@ import Testing
         #expect(try binds(exported) == DefaultBinds.table)
     }
 }
+
+@Suite struct OutputConfigTests {
+    private func outputs(_ json: String) throws -> [OutputConfig] {
+        switch ConfigLoader.load(text: json) {
+        case .loaded(let configuration, _): return configuration.outputs
+        case .failed(let diagnostics):
+            Issue.record("load failed: \(diagnostics.map(\.summary))")
+            throw CancellationError()
+        }
+    }
+
+    @Test func noOutputsSectionMeansNoOverrides() throws {
+        #expect(try outputs("{}").isEmpty)
+    }
+
+    @Test func anEntryCarriesScaleAndPosition() throws {
+        let table = try outputs(#"""
+        { "outputs": [
+            { "name": "DP-1", "scale": 1.5,
+              "position": { "x": 0, "y": 0 } },
+            { "name": "HDMI-A-1", "scale": 1.0,
+              "position": { "x": 2560, "y": 0 } }
+        ] }
+        """#)
+        #expect(table.count == 2)
+        #expect(table.entry(named: "DP-1")?.scale == 1.5)
+        #expect(table.entry(named: "HDMI-A-1")?.position?.x == 2560)
+    }
+
+    @Test func absentFieldsStayAbsentRatherThanDefaulting() throws {
+        // A missing scale means "session default" and a missing position means
+        // "place automatically" — both are real states, not missing values.
+        let table = try outputs(#"{ "outputs": [ { "name": "DP-1" } ] }"#)
+        #expect(table.first?.scale == nil)
+        #expect(table.first?.position == nil)
+    }
+
+    @Test func lookupIsByConnectorName() throws {
+        let table = try outputs(#"""
+        { "outputs": [ { "name": "DP-2", "scale": 2.0 } ] }
+        """#)
+        #expect(table.entry(named: "DP-2")?.scale == 2.0)
+        #expect(table.entry(named: "DP-1") == nil)
+    }
+
+    @Test func aMisspelledOutputKeyWarnsDespiteTheEmptyDefault() throws {
+        // The audit reference carries one exemplar output precisely so an
+        // array that ships empty still has its element keys checked.
+        switch ConfigLoader.load(text: #"""
+        { "outputs": [ { "name": "DP-1", "scail": 1.5 } ] }
+        """#) {
+        case .loaded(_, let warnings):
+            #expect(warnings.count == 1)
+            #expect(warnings.first?.keyPath == ["outputs", "[0]", "scail"])
+        case .failed(let diagnostics):
+            Issue.record("load failed: \(diagnostics.map(\.summary))")
+        }
+    }
+
+    @Test func aWronglyTypedScaleNamesTheOutputEntry() {
+        switch ConfigLoader.load(text: #"""
+        { "outputs": [ { "name": "DP-1", "scale": "big" } ] }
+        """#) {
+        case .loaded:
+            Issue.record("expected a failure")
+        case .failed(let diagnostics):
+            #expect(diagnostics.first?.keyPath == ["outputs", "[0]", "scale"])
+        }
+    }
+}

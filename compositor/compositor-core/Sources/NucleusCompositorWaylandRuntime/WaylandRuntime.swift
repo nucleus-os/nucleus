@@ -146,6 +146,17 @@ public final class WaylandRuntime {
         host.router?.flushClients()
     }
 
+    /// Run a deferred keybind action that arrived from outside the input path.
+    ///
+    /// The control socket routes through here rather than duplicating the
+    /// executor, so a command and a chord perform the same work — including
+    /// the parts that depend on keyboard focus, which is why this cannot be a
+    /// pure function over the action alone.
+    public func executeDeferredAction(kind: UInt8, value: UInt32) {
+        host.inputHost?.dispatch.executeDeferredAction(
+            action: kind, value: value)
+    }
+
     /// The next protocol idle deadline in the monotonic clock domain. A nil
     /// deadline contributes no wakeup to the compositor loop.
     public func nextIdleDeadlineNs() -> UInt64? {

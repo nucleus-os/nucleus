@@ -266,7 +266,16 @@ extension CompositorRuntime {
         // Binds arrive here rather than at ShellServices construction, which
         // runs before any configuration has been read.
         shellServices.updateBinds(sessionConfiguration.binds)
+        outputTopology.outputOverrides = sessionConfiguration.outputs
         installConfigReload(initial: sessionConfiguration)
+
+        // ── Control socket ────────────────────────────────────────────────
+        if let server = ControlServer(handler: self) {
+            controlServer = server
+            logRuntime("control: listening on \(server.socketPath)")
+        } else {
+            logRuntime("control: no control socket; remote control disabled")
+        }
 
         // ── XWayland (lazy spawn) ─────────────────────────────────────────
         if let xwaylandExecutablePath =
@@ -306,6 +315,14 @@ extension CompositorRuntime {
                 },
                 binds: { [shellServices] binds in
                     shellServices.updateBinds(binds)
+                },
+                outputs: { [weak self] outputs in
+                    guard let self else { return }
+                    self.outputTopology.outputOverrides = outputs
+                    // Re-attaching is what makes a scale or placement change
+                    // visible; storing it alone would defer the effect to the
+                    // next hotplug.
+                    _ = self.outputTopology.reconcile(forceReattach: true)
                 }))
         else {
             logRuntime("config: no configuration location; reload disabled")
@@ -325,7 +342,7 @@ extension CompositorRuntime {
         }
     }
 
-    private func reportConfigReload(
+    func reportConfigReload(
         _ outcome: ConfigReloadCoordinator.Outcome
     ) {
         for diagnostic in outcome.diagnostics {

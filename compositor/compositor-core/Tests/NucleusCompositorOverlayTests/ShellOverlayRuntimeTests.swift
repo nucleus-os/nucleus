@@ -145,11 +145,17 @@ import Testing
         #expect(scene.hotkeyView.rowViews.isEmpty)
 
         // One row per non-empty entry; separators occupy no row view.
-        _ = scene.setHotkeyEntries([
-            ShellOverlayHotkeyEntry(key: "Super+T", description: "Launch Kitty"),
-            .separator,
-            ShellOverlayHotkeyEntry(key: "Super+Q", description: "Close window"),
-        ])
+        _ = scene.setHotkeyContent(ShellOverlayHotkeyContent(
+            entries: [
+                ShellOverlayHotkeyEntry(
+                    key: "Super+T", description: "Launch Kitty"),
+                .separator,
+                ShellOverlayHotkeyEntry(
+                    key: "Super+Q", description: "Close window"),
+            ],
+            footer: "Press Escape or click outside controls to dismiss"))
+        #expect(scene.hotkeyView.footerLabel.text
+            == "Press Escape or click outside controls to dismiss")
         #expect(scene.hotkeyView.rowViews.count == 2)
         #expect(scene.hotkeyView.rowViews.first?.keyLabel.text == "Super+T")
         #expect(scene.hotkeyView.rowViews.first?.descriptionLabel.text
@@ -158,9 +164,9 @@ import Testing
 
         // A replacement table rebuilds the rows rather than appending, since
         // the box height is derived from the entry count.
-        _ = scene.setHotkeyEntries([
+        _ = scene.setHotkeyContent(ShellOverlayHotkeyContent(entries: [
             ShellOverlayHotkeyEntry(key: "Ctrl+W", description: "Close window"),
-        ])
+        ]))
         #expect(scene.hotkeyView.rowViews.count == 1)
         #expect(scene.hotkeyView.rowViews.first?.keyLabel.text == "Ctrl+W")
 
@@ -279,9 +285,9 @@ import Testing
 
         // Rows come from the live binding table, so the view has none until
         // one is pushed.
-        _ = scene.setHotkeyEntries([
+        _ = scene.setHotkeyContent(ShellOverlayHotkeyContent(entries: [
             ShellOverlayHotkeyEntry(key: "Super+T", description: "Launch Kitty"),
-        ])
+        ]))
         scene.hotkeyView.layoutIfNeeded()
         scene.hotkeyView.displayIfNeeded()
 
@@ -404,9 +410,9 @@ import Testing
             commitSink: sink,
             services: testHostServices())
         let controller = ShellOverlayController(scene: scene) { _ in }
-        _ = scene.setHotkeyEntries([
+        _ = scene.setHotkeyContent(ShellOverlayHotkeyContent(entries: [
             ShellOverlayHotkeyEntry(key: "Super+T", description: "Launch Kitty"),
-        ])
+        ]))
         controller.beginFrame(Self.frame(backingScale: 1.5))
 
         // A backing-pixel pointer sample over a hotkey row converts to points and

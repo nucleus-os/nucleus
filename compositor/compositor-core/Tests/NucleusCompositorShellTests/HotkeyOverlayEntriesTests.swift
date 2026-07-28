@@ -123,6 +123,46 @@ import Testing
         #expect(entries.allSatisfy { !$0.key.isEmpty })
     }
 
+    // MARK: footer
+
+    @Test func theFooterNamesWhateverChordDismissesTheOverlay() throws {
+        // It used to say "Press Esc" unconditionally — correct only by
+        // coincidence, and wrong the moment anyone rebound it.
+        let footer = HotkeyOverlayEntries.footer(for: [
+            try bind("Ctrl+Shift+Escape", .dismissHotkeyOverlay),
+        ])
+        #expect(footer.contains("Ctrl+Shift+Escape"))
+        #expect(!footer.contains("Esc or"))
+    }
+
+    @Test func theFooterFallsBackWhenNothingDismissesTheOverlay() throws {
+        // Now that the table is data, unbinding dismissal is possible, and
+        // naming a key that does nothing is the failure being avoided.
+        let footer = HotkeyOverlayEntries.footer(for: [
+            try bind("Super+Q", .closeWindow),
+        ])
+        #expect(footer == "Click outside controls to dismiss")
+    }
+
+    @Test func theDefaultTableFooterMatchesItsDismissBind() throws {
+        let footer = HotkeyOverlayEntries.footer(for: DefaultBinds.table)
+        let dismiss = DefaultBinds.table.first {
+            if case .dismissHotkeyOverlay = $0.action { return true }
+            return false
+        }
+        let chord = try #require(dismiss).keys.text
+        #expect(footer.contains(chord))
+    }
+
+    @Test func contentCarriesRowsAndFooterTogether() throws {
+        let content = HotkeyOverlayEntries.content(for: [
+            try bind("Super+Q", .closeWindow),
+            try bind("F1", .dismissHotkeyOverlay),
+        ])
+        #expect(content.entries.contains { $0.key == "Super+Q" })
+        #expect(content.footer.contains("F1"))
+    }
+
     // MARK: the default table
 
     @Test func theDefaultTableRendersEveryBindPlusSeparators() {

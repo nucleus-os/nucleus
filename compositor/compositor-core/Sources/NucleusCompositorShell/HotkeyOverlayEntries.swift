@@ -29,6 +29,30 @@ public enum HotkeyOverlayEntries {
         }
     }
 
+    /// Everything the overlay shows for a binding table.
+    public static func content(
+        for binds: [KeyBind]
+    ) -> ShellOverlayHotkeyContent {
+        ShellOverlayHotkeyContent(
+            entries: rows(for: binds), footer: footer(for: binds))
+    }
+
+    /// The dismissal hint, naming whatever chord is actually bound to it.
+    ///
+    /// Falls back to click-to-dismiss when nothing is bound, which is a real
+    /// possibility now that the table is data — and naming a key that does
+    /// nothing is exactly the failure this path exists to prevent.
+    static func footer(for binds: [KeyBind]) -> String {
+        let dismiss = binds.first { bind in
+            if case .dismissHotkeyOverlay = bind.action { return true }
+            return false
+        }
+        guard let dismiss else {
+            return "Click outside controls to dismiss"
+        }
+        return "Press \(dismiss.keys.text) or click outside controls to dismiss"
+    }
+
     public static func rows(for binds: [KeyBind]) -> [ShellOverlayHotkeyEntry] {
         var grouped: [Group: [ShellOverlayHotkeyEntry]] = [:]
         for bind in binds {

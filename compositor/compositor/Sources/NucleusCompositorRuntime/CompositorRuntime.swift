@@ -48,6 +48,7 @@ final class CompositorRuntime {
         case renderWake = 23
         case accessibility = 24
         case configFile = 25
+        case controlSocket = 26
     }
 
     private let reactor: LinuxHostReactor
@@ -72,6 +73,10 @@ final class CompositorRuntime {
     /// The on-screen configuration-error notice, so successive failed saves
     /// replace one notice instead of stacking, and a later success clears it.
     var configNoticeID: UInt32 = 0
+    /// Serves the control socket. Absent when no path is resolvable or the
+    /// socket could not be bound; the session runs without remote control
+    /// rather than refusing to start.
+    var controlServer: ControlServer?
     private var exitRequested = false
     private var paused = false
     private var retirement = RendererRetirementCoordinator(
@@ -350,6 +355,8 @@ final class CompositorRuntime {
             .configFile,
             source: configReload?.reactorSource,
             to: &interests)
+        appendLinuxSource(
+            .controlSocket, source: controlServer, to: &interests)
         appendInterest(
             .udev,
             fileDescriptor: waylandRuntime.drmHotplugFileDescriptor,
@@ -670,6 +677,11 @@ final class CompositorRuntime {
                 configReload?.reactorSource,
                 pollResult: result,
                 failureOperation: "configuration watch descriptor closed")
+        case .controlSocket:
+            processLinuxSource(
+                controlServer,
+                pollResult: result,
+                failureOperation: "control socket descriptor closed")
         case .udev:
             if result.isReadable {
                 if waylandRuntime.drainDrmHotplug(),

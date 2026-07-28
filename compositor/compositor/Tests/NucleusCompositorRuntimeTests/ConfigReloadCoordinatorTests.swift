@@ -12,12 +12,14 @@ import Testing
     private final class Recorder {
         var applied: [InputConfig] = []
         var appliedBinds: [[KeyBind]] = []
+        var appliedOutputs: [[OutputConfig]] = []
     }
 
     private func seams(_ recorder: Recorder) -> ConfigReloadCoordinator.ApplySeams {
         ConfigReloadCoordinator.ApplySeams(
             input: { recorder.applied.append($0) },
-            binds: { recorder.appliedBinds.append($0) })
+            binds: { recorder.appliedBinds.append($0) },
+            outputs: { recorder.appliedOutputs.append($0) })
     }
 
     private func withCoordinator(
@@ -167,6 +169,30 @@ import Testing
             #expect(recorder.applied.count == 1)
             #expect(recorder.appliedBinds.count == 1)
             #expect(recorder.appliedBinds.first?.isEmpty == true)
+        }
+    }
+
+    @Test func anOutputOnlyChangeTouchesNeitherInputNorBinds() throws {
+        try withCoordinator { coordinator, recorder in
+            var changed = NucleusConfiguration.defaults
+            changed.outputs = [OutputConfig(name: "DP-1", scale: 1.5)]
+            #expect(coordinator.apply(.loaded(changed, warnings: [])).applied)
+
+            // Re-attaching outputs is disruptive; it must not be triggered by
+            // an unrelated edit, nor trigger unrelated work itself.
+            #expect(recorder.appliedOutputs.count == 1)
+            #expect(recorder.appliedOutputs.first?.first?.scale == 1.5)
+            #expect(recorder.applied.isEmpty)
+            #expect(recorder.appliedBinds.isEmpty)
+        }
+    }
+
+    @Test func anInputChangeDoesNotReattachOutputs() throws {
+        try withCoordinator { coordinator, recorder in
+            var changed = NucleusConfiguration.defaults
+            changed.input.touchpad.tap = false
+            #expect(coordinator.apply(.loaded(changed, warnings: [])).applied)
+            #expect(recorder.appliedOutputs.isEmpty)
         }
     }
 

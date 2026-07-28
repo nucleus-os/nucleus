@@ -20,6 +20,21 @@ public struct ShellOverlayHotkeyEntry: Sendable, Equatable {
         key: "", description: "")
 }
 
+/// Everything the shortcut overlay displays, pushed as one payload.
+///
+/// The footer travels with the rows because it names a shortcut too — the one
+/// that dismisses the overlay — and splitting them would let the two disagree,
+/// which is the exact failure this whole path exists to prevent.
+public struct ShellOverlayHotkeyContent: Sendable, Equatable {
+    public var entries: [ShellOverlayHotkeyEntry]
+    public var footer: String
+
+    public init(entries: [ShellOverlayHotkeyEntry] = [], footer: String = "") {
+        self.entries = entries
+        self.footer = footer
+    }
+}
+
 struct ShellOverlayHotkeyMetrics: Sendable, Equatable {
     var backingScaleFactor: BackingScaleFactor
     var fontSize: Float
@@ -153,6 +168,12 @@ final class ShellOverlayHotkeyView: View, ~Sendable {
     private let textSystem: TextSystem
     private var lastFrameInfo: ShellOverlayFrameInfo?
 
+    /// What the view is currently showing, for change detection.
+    var content: ShellOverlayHotkeyContent {
+        ShellOverlayHotkeyContent(
+            entries: entries, footer: footerLabel.text)
+    }
+
     init(
         entries: [ShellOverlayHotkeyEntry] = [],
         textSystem: TextSystem
@@ -163,7 +184,9 @@ final class ShellOverlayHotkeyView: View, ~Sendable {
         self.backgroundEffectView = VisualEffectView(material: .hudWindow, state: .active, cornerRadius: 18)
         self.separatorView = View()
         self.titleLabel = Label("Nucleus Keybindings")
-        self.footerLabel = Label("Press Esc or click outside controls to dismiss")
+        // Neutral until content arrives: naming a specific key here is how the
+        // old hardcoded footer came to advertise a shortcut nobody was bound to.
+        self.footerLabel = Label("Click outside controls to dismiss")
         self.rowViews = []
         super.init()
         backgroundEffectView.layerPresentation = ViewLayerPresentation(
@@ -193,13 +216,15 @@ final class ShellOverlayHotkeyView: View, ~Sendable {
         setNeedsDisplay()
     }
 
-    /// Adopt a new row set, as a configuration reload produces.
+    /// Adopt new content, as a configuration reload produces.
     ///
     /// Rebuilds the row views because the count is part of the layout: the box
     /// height is derived from the entries, so keeping stale views would leave
     /// rows drawn outside it.
-    func update(entries: [ShellOverlayHotkeyEntry]) {
-        guard entries != self.entries else { return }
+    func update(content: ShellOverlayHotkeyContent) {
+        guard content != self.content else { return }
+        footerLabel.text = content.footer
+        let entries = content.entries
         self.entries = entries
         for row in rowViews { row.removeFromSuperview() }
         rowViews = entries
