@@ -34,6 +34,15 @@ The resulting system obeys these rules:
 - `libNucleusConfig.so` contains resolved configuration values and their stable snapshot
   codec. `libNucleusConfigIO.so` contains source parsing and filesystem I/O and is not
   loaded by the compositor or shell.
+- `libNucleusIPCTransport.so` is the sole first-party Unix packet transport. Session,
+  configuration, control, and Android broker protocols use it instead of defining their
+  own socket, credential, descriptor-transfer, or packet-lifetime implementations.
+- `NucleusControlService` owns the user-facing control socket and routes typed requests to
+  the process that owns the requested state. The compositor never accepts or blocks on a
+  control client connection.
+- Wayland display traffic, internal session traffic, public operator control, and Android
+  broker traffic retain separate protocol vocabularies. Sharing transport does not merge
+  their object models or authority.
 - Applications rasterize their own backing content. They submit buffers and atomic
   composition transactions to the window server. The window server composes those
   buffers, executes server-owned animations, and presents the final desktop image.
@@ -123,6 +132,12 @@ compositor, watches and atomically persists the configuration file, and publishe
 owner-specific resolved projections over supervisor-provided capability channels. It
 loads no UI, graphics, Wayland, DRM, shell, or render-server framework.
 
+`NucleusControlService` owns the session's operator-control endpoint. It authenticates
+local peers, decodes the public control protocol, and forwards typed operations over
+supervisor-provided channels to the configuration service or render server. It retains no
+configuration, window, output, focus, or shell state of its own and survives compositor
+and shell restarts.
+
 Other helpers link only their wire types and required system libraries; they do not load
 the UI, graphics, window-client, render-server, shell, or configuration-I/O frameworks.
 
@@ -161,6 +176,30 @@ libNucleusConfigService.so
     active snapshot authority, file watching, generation publication,
     subscriber lifecycle
     ├── libNucleusConfigIO.so
+    ├── libNucleusIPCTransport.so
+    ├── libNucleusLinux.so
+    └── libNucleusSessionProtocol.so
+
+libNucleusIPCTransport.so
+    Unix SOCK_SEQPACKET, socket pairs, peer credentials,
+    SCM_RIGHTS, owned descriptors, bounded packet send/receive
+
+libNucleusControlProtocol.so
+    versioned public control requests, responses, DTOs,
+    JSON packet payload codec
+    ├── libNucleusFoundation.so
+    └── libNucleusConfig.so
+
+libNucleusControlClient.so
+    control endpoint discovery, one-shot request client,
+    response and request-ID validation
+    ├── libNucleusIPCTransport.so
+    └── libNucleusControlProtocol.so
+
+libNucleusControlService.so
+    authenticated public control endpoint and owner routing
+    ├── libNucleusIPCTransport.so
+    ├── libNucleusControlProtocol.so
     ├── libNucleusLinux.so
     └── libNucleusSessionProtocol.so
 
@@ -196,6 +235,12 @@ NucleusShell
 NucleusConfigService
     └── libNucleusConfigService.so
 
+NucleusControlService
+    └── libNucleusControlService.so
+
+nucleus
+    └── libNucleusControlClient.so
+
 NucleusShellPamHelper
     └── NucleusShellAuthWire only
 
@@ -204,9 +249,9 @@ NucleusSessionSupervisor
     └── libNucleusSessionProtocol.so
 ```
 
-`swift-wayland`, `swift-vulkan`, `swift-tracy`, and the session protocol remain
-lower-level packages and produce disjoint runtime artifacts where they contain compiled
-code:
+`swift-wayland`, `swift-vulkan`, `swift-tracy`, the IPC transport, and the session
+protocol remain lower-level packages and produce disjoint runtime artifacts where they
+contain compiled code:
 
 - `libSwiftWaylandProtocolRuntime.so` owns `WaylandProtocolTypes`,
   `WaylandProtocolsC`, and the shared generated interface descriptors. These targets move
@@ -218,7 +263,8 @@ code:
   implementation used by Nucleus libraries in a process.
 - `libNucleusSessionProtocol.so` owns the installed supervisor/compositor session wire
   implementation, including configuration subscription envelopes. It depends dynamically
-  on `libNucleusConfig.so` for resolved projection values and snapshot decoding.
+  on `libNucleusConfig.so` for resolved projection values and snapshot decoding, and on
+  `libNucleusIPCTransport.so` for packet and descriptor transport.
 
 Role-specific Wayland client dispatch is absorbed only by
 `libNucleusWindowClient.so`. Role-specific server dispatch is absorbed only by
@@ -235,6 +281,8 @@ The public import surface is separate from the ELF artifact boundary:
 - `NucleusRenderServer` is not re-exported by either public umbrella.
 - `NucleusConfig`, `NucleusConfigIO`, and configuration service APIs are not re-exported
   by either public umbrella. They are internal system frameworks.
+- IPC transport, control protocol, control client, and control service modules are not
+  re-exported by either application umbrella.
 
 Android continues to consume the portable modules through its existing Android host
 product. The Android host shared object becomes a thin JNI and platform composition root
@@ -259,7 +307,142 @@ the Android graph.
 | Resolved configuration vocabulary | `libNucleusConfig.so` | each subscribing process |
 | Configuration source parsing and persistence | `libNucleusConfigIO.so` | config-service process |
 | Active configuration and reload generation | `libNucleusConfigService.so` | config-service process |
+| Unix packet and descriptor transport | `libNucleusIPCTransport.so` | each channel endpoint |
+| Public control vocabulary | `libNucleusControlProtocol.so` | control client and broker processes |
+| Public control socket and request routing | `libNucleusControlService.so` | control-service process |
 | Authentication | `NucleusShellAuthWire` and PAM helper | PAM helper process |
+
+## IPC architecture
+
+Nucleus separates transport from protocol and protocol from runtime ownership.
+
+| Domain | Protocol owner | Endpoint owner |
+| --- | --- | --- |
+| Application display and shell surfaces | `swift-wayland` plus Nucleus Wayland extensions | window client and render server |
+| Session lifecycle and inherited capabilities | `NucleusSessionProtocol` | session supervisor and child services |
+| Configuration publication | `NucleusSessionProtocol` plus `NucleusConfig` projections | configuration service and subscribers |
+| Operator and CLI control | `NucleusControlProtocol` | control service |
+| Android GPU and container brokering | Android graphics contracts | Android host and broker |
+
+Wayland remains independent of the first-party packet transport. Its generated object
+lifecycle, event-loop integration, and protocol semantics are not wrapped in
+`NucleusIPCTransport`.
+
+### Packet transport
+
+`NucleusIPCTransport` provides:
+
+- `AF_UNIX` `SOCK_SEQPACKET` listeners, connections, and socket pairs;
+- close-on-exec and nonblocking creation;
+- `SO_PEERCRED` peer identity;
+- `SCM_RIGHTS` descriptor transfer;
+- `MSG_CMSG_CLOEXEC`, payload truncation, and control truncation handling;
+- configured maximum payload and descriptor counts;
+- automatic closure of every received descriptor that is not explicitly taken;
+- explicit EOF, peer-reset, authorization, oversize, and system-call failures;
+- reactor-ready descriptors without embedding a concurrency or actor policy.
+
+One packet is one protocol message. Stream delimiters and partial-line state machines do
+not exist in internal or control transports.
+
+`NucleusIPCTransportC` owns the unsafe POSIX operations. The Swift layer owns descriptor
+lifetime, peer validation, packet limits, and typed errors. Platform-specific socket paths,
+SELinux labels, message codecs, and authorization policy remain in the consuming
+protocol.
+
+The generic implementation currently under `NucleusAndroidIPCC` moves into this package.
+`NucleusAndroidIPC` retains Android graphics envelopes, descriptor-count validation,
+broker authorization, and platform path policy. Its duplicated connect, listen,
+socket-pair, credential, `sendmsg`, and `recvmsg` implementations are deleted.
+Parent-death signaling moves to the Linux/Android process-lifecycle layer because it is
+not a transport responsibility.
+
+### Public control protocol
+
+The public control payload remains deterministic JSON, but each JSON document occupies
+one `SOCK_SEQPACKET` packet. Every request contains:
+
+- protocol version;
+- request ID;
+- request kind;
+- declared capability-descriptor count and role;
+- request payload.
+
+Every response contains:
+
+- protocol version;
+- matching request ID;
+- `completed`, `accepted`, or `rejected` disposition;
+- typed error code and optional human-readable detail;
+- response payload.
+
+`accepted` means that the authoritative owner accepted asynchronous work.
+`completed` means the requested state transition or query finished before the response.
+The CLI does not equate transport success with operation completion.
+
+The protocol declares a maximum packet size below the transport maximum. Unknown protocol
+versions, request kinds, fields that change semantics, invalid enum values, and excess
+descriptors produce typed rejection responses. The service closes the connection after a
+malformed or unauthorized request.
+
+Control DTOs are wire contracts, not serialized render-server or shell object layouts.
+The broker maps owner values into `ControlOutput`, configuration status, and other
+versioned DTOs. `BindAction` remains the shared configured/action intent vocabulary from
+`NucleusConfig`; the control protocol does not define a second action enum.
+
+Configuration export responses carry canonical UTF-8 source produced by the configuration
+service. The CLI prints that source and does not link `NucleusConfigIO` or run a second
+exporter.
+
+### Control endpoint and routing
+
+The session supervisor launches `NucleusControlService` and passes it authenticated
+internal channels to the configuration service and render server. The control service
+routes:
+
+- configuration query, reload, validate, replace, and export to
+  `NucleusConfigService`;
+- output, focus, active-binding, tiling, workspace, and window actions to
+  `NucleusRenderServer`;
+- shell-owned actions to the render server, which performs the single action-owner
+  classification and forwards accepted shell actions over the authenticated shell
+  protocol.
+
+The broker translates public control DTOs into internal owner operations. The
+configuration service and render server do not import or decode the public control
+protocol. The broker never caches an authoritative answer.
+
+Configuration queries report the config-service epoch and configured generation plus the
+applied generation of each runtime owner. Active-binding queries report the render
+server's applied generation. This distinguishes desired configuration from policy
+actually in force.
+
+### Control socket and authorization
+
+The control endpoint is:
+
+```text
+$XDG_RUNTIME_DIR/nucleus/<session-id>/control.sock
+```
+
+The supervisor exports its exact path as `NUCLEUS_CONTROL_SOCKET`. Display names are not
+used as authority or as the sole session identity.
+
+The control service:
+
+- verifies that the runtime directory belongs to the session UID;
+- creates the session directory with mode `0700` and the socket with mode `0600`;
+- uses `lstat` before removing a stale entry and refuses to replace a non-socket or an
+  entry owned by another UID;
+- validates every accepted peer with `SO_PEERCRED`;
+- applies connection, packet, descriptor, and request-rate limits;
+- applies the supervisor-provided peer authorization policy before routing;
+- keeps listener, accepted, and received descriptors close-on-exec.
+
+The session UID receives read, ordinary-action, and user-configuration authority because
+it already owns the session and configuration file. Future session-administration or
+security-sensitive operations require a one-shot capability FD transferred in the
+control packet. Sharing a UID alone never grants those elevated operations.
 
 ## Configuration contract
 
@@ -346,10 +529,10 @@ The config service is the only process that writes the active file. It writes a 
 file in the destination directory, flushes file contents, atomically renames it, and
 flushes the directory before publishing the resulting snapshot.
 
-The control CLI submits validate, replace, and export requests to the config service. It
-does not modify the active file directly. An offline validation command may load
-`libNucleusConfigIO.so`, but it has no authority to publish or persist a live session
-configuration.
+The control CLI submits validate, replace, and export requests to the control service,
+which routes them to the config service. It does not modify the active file directly. An
+offline validation command may load `libNucleusConfigIO.so`, but it has no authority to
+publish or persist a live session configuration.
 
 ## Cross-process rendering contract
 
@@ -548,6 +731,27 @@ Split configuration by runtime privilege:
 Move `ConfigColliderRecipe` alongside `NucleusConfigIO`; it is build tooling and is not
 part of the installed runtime.
 
+Split IPC by transport and control role:
+
+- `ipc/transport/Package.swift` vends dynamic `NucleusIPCTransport` and owns
+  `NucleusIPCTransportC`.
+- `ipc/control-protocol/Package.swift` vends dynamic `NucleusControlProtocol`. Move
+  `ControlRequest`, `ControlResponse`, control DTOs, versioned envelopes, typed control
+  errors, and deterministic JSON payload coding into it.
+- `ipc/control-client/Package.swift` vends dynamic `NucleusControlClient`. Move control
+  endpoint discovery, connection, one-shot exchange, and response correlation into it.
+- `ipc/Package.swift` keeps `IPCColliderRecipe` and the `nucleus` executable, which
+  depends on the control-client product through a cross-package dynamic edge.
+
+Delete the generic `NucleusIPC` module name after moving all callers to the role-specific
+products. Do not add a compatibility wrapper.
+
+Move the POSIX transport implementation from `NucleusAndroidIPCC` into
+`NucleusIPCTransportC`. Migrate `NucleusAndroidIPC`, `NucleusSessionProtocol`, and the
+temporary compositor-hosted control server to the shared packet transport. Delete the
+Android transport duplicate and move parent-death signaling into the platform
+process-lifecycle module.
+
 Add dynamic runtime products to `swift-wayland`, `swift-vulkan`, and `swift-tracy` for the
 compiled target closures named in the artifact graph. Update higher packages to consume
 those products. Header-only system-library targets remain import-only and do not create
@@ -555,8 +759,9 @@ empty ELF artifacts.
 
 Move the shared Wayland protocol runtime to its own nested package before creating its
 dynamic product. Convert `NucleusSessionProtocol` into a dynamic product consumed by the
-installed session endpoints. These package boundaries prevent SwiftPM from absorbing a
-lower runtime target into multiple higher dynamic products.
+installed session endpoints and make it depend on `NucleusIPCTransport`. These package
+boundaries prevent SwiftPM from absorbing a lower runtime target into multiple higher
+dynamic products.
 
 `NucleusSkiaGraphiteBridge` becomes the sole owner of the Linux Skia archive list.
 `libNucleus.so` is the only installed ELF object that links those archives. Remove
@@ -582,9 +787,9 @@ ELF interposition semantics and is unnecessary once archive symbols are hidden a
 defined exactly once.
 
 Create equivalent disjoint dynamic products for `NucleusWindowClient`,
-`NucleusRenderServer`, `NucleusConfigService`, and `NucleusShellKit` as their phases land.
-A higher library depends on a lower dynamic product; it does not absorb a second copy of
-the lower product's target objects.
+`NucleusRenderServer`, `NucleusConfigService`, `NucleusControlService`, and
+`NucleusShellKit` as their phases land. A higher library depends on a lower dynamic
+product; it does not absorb a second copy of the lower product's target objects.
 
 Tests inside an implementation package may continue to link testable target code into
 ephemeral test binaries. Installed binaries and end-to-end linkage fixtures must consume
@@ -599,8 +804,9 @@ Phase 2 adds artifact checks that fail when:
 - a shipped executable contains first-party Swift implementation sections that belong in
   a framework;
 - two installed shared objects contain the same first-party target object;
-- a headless session or configuration process resolves `libNucleus.so`, Skia, or a
-  desktop-UI library;
+- a headless session, configuration, or control process resolves `libNucleus.so`, Skia,
+  or a desktop-UI library;
+- an installed process contains a private copy of the Unix packet transport;
 - an installed dependency cannot be resolved from the staged rpath.
 
 Collider emits a linker map for every installed ELF object and records a normalized
@@ -611,8 +817,9 @@ artifact's ownership set.
 
 Phase 2 lands when the existing compositor and shell use `libNucleus.so`, configuration
 model and IO tests pass through their new package boundary, headless Linux consumers use
-only the base Linux artifact, both render successfully in automated fixtures, and their
-ELF dependency and symbol tables satisfy the checks above.
+only the base Linux artifact, Linux session/control and Android broker fixtures use the
+shared packet transport, both render successfully in automated fixtures, and their ELF
+dependency and symbol tables satisfy the checks above.
 
 ## Phase 3 — Extract the public desktop client framework
 
@@ -682,7 +889,7 @@ absorbs the server-owned targets and sources:
 - `NucleusCompositorXcbC`;
 - server-owned cursor, shadow, idle, and global-input policy;
 - the existing `NucleusCompositorShell`, compositor overlay, and hosted-surface targets as
-  explicitly transitional inputs removed in phase 7.
+  explicitly transitional inputs removed in phase 8.
 
 The Swift targets remain narrow compilation units inside the product. The product exports
 one server entry point:
@@ -790,10 +997,11 @@ Extend `NucleusSessionProtocol` with:
 - validate, replace, and export control requests.
 
 The session supervisor creates connected capability channels for the configuration
-service, compositor, shell, and control endpoint. Subscriber capabilities permit only
-projection reads and acknowledgements. Shell-settings and control capabilities enumerate
-the mutation operations they permit. The service rejects operations not granted by the
-presented channel; sharing a UID does not grant write authority.
+service, compositor, and shell over `NucleusIPCTransport`. Subscriber capabilities permit
+only projection reads and acknowledgements. Shell-settings capabilities enumerate the
+mutation operations they permit. The service rejects operations not granted by the
+presented channel; sharing a UID does not grant write authority. Phase 7 adds the
+control-service mutation channel without changing the configuration protocol.
 
 The supervisor starts the configuration service first and waits for an initial resolved
 snapshot before starting the compositor. The compositor receives its channel at launch
@@ -830,7 +1038,7 @@ Split the current compositor `KeybindService`:
 - `GlobalBindingResolver` moves under `NucleusRenderServer`, owns chord capture and
   key-up balancing, receives the server projection, and remains the only raw global-key
   matcher.
-- the existing action executor remains a transitional in-process sink until phase 7.
+- the existing action executor remains a transitional in-process sink until phase 8.
   Server-owned actions execute directly; shell-owned actions already cross a typed
   `ShellActionSink` seam.
 
@@ -839,7 +1047,7 @@ projection into libinput and XKB operations. A new projection replaces the activ
 settings atomically, reapplies settings to connected devices, and becomes the initial
 settings for devices added later.
 
-The shell stores its current projection and generation even before phase 7 moves the
+The shell stores its current projection and generation even before phase 8 moves the
 remaining services out of the compositor. This proves startup, reconnect, and update
 delivery without adding an interim compositor-to-shell configuration path.
 
@@ -872,7 +1080,103 @@ Phase 6 lands when:
 - configuration service, session distribution, compositor application, shell
   subscription, and control-request tests pass through Collider.
 
-## Phase 7 — Move all desktop shell UI and policy out of the server
+## Phase 7 — Establish the session control service
+
+Create `ipc/control-service-core/Package.swift` with the dynamic
+`NucleusControlService` product. Create `ipc/control-service/Package.swift` with only
+the `NucleusControlService` executable entry point and a product dependency on the
+service core.
+
+The service core depends on `NucleusIPCTransport`, `NucleusControlProtocol`, base
+`NucleusLinux`, and `NucleusSessionProtocol`. It does not depend on `Nucleus`,
+`NucleusLinuxDesktop`, `NucleusWindowClient`, `NucleusRenderServer`,
+`NucleusConfigIO`, or `NucleusShellKit`.
+
+Extend the internal session protocol with owner-facing control operations:
+
+- render-server version and readiness;
+- output and active-binding snapshots;
+- focused-window, tiling, workspace, and typed action requests;
+- accepted, completed, unavailable, and rejected results;
+- owner epoch and applied-configuration generation.
+
+Reuse the phase 6 configuration-control messages for configuration query, reload,
+validation, replacement, and export. These internal messages are binary session
+protocol values over `NucleusIPCTransport`; they are not public JSON control packets.
+
+The session supervisor:
+
+1. creates the control service's private configuration and render-server channels;
+2. assigns the public peer authorization policy and the broker's internal owner-channel
+   capabilities;
+3. starts the control service after the configuration service has published its initial
+   snapshot;
+4. passes the stable public socket directory and session identity;
+5. attaches each restarted configuration service or render server to the existing
+   control service;
+6. stops the control service during session teardown after public access is revoked.
+
+Move the public socket listener, peer handling, payload decoding, request limits, and
+response encoding out of `NucleusCompositorRuntime` and into
+`libNucleusControlService.so`. Delete `ControlServer`,
+`CompositorRuntime+Control`, their direct reactor integration, and the compositor's
+dependency on the public control protocol.
+
+The control service routes without owning state:
+
+- `.version` reports control-protocol version and availability/version information
+  obtained from current owners;
+- `.configuration`, `.reloadConfiguration`, validate, replace, and export requests go to
+  the configuration service;
+- `.outputs`, `.binds`, and focus-dependent actions go to the render server;
+- shell-owned actions still enter through the render server and its single
+  `BindAction` owner classification.
+
+Map owner-unavailable, stale-generation, unauthorized, invalid-request, and internal
+transport failures to stable `ControlErrorCode` values. Do not expose raw errno values,
+Swift error descriptions, or internal type names as the protocol contract.
+
+Replace newline stream framing with one deterministic JSON envelope per packet. The
+listener drains nonblocking `SOCK_SEQPACKET` connections through `NucleusLinuxReactor`;
+no accepted peer can block the service reactor or any compositor actor. Reject truncated,
+oversized, multi-message, version-incompatible, and unexpectedly descriptor-bearing
+control packets before dispatch. A request kind that requires elevation accepts exactly
+the declared one-shot capability descriptor and consumes it during authorization.
+
+Replace `NUCLEUS_SOCKET` with `NUCLEUS_CONTROL_SOCKET`. The supervisor creates
+`$XDG_RUNTIME_DIR/nucleus/<session-id>` with mode `0700`. The service safely replaces
+only a same-owner socket entry, binds `control.sock` with mode `0600`, and verifies
+`SO_PEERCRED` before decoding a request.
+
+Move the `nucleus` CLI onto `libNucleusControlClient.so`. The executable contains argument
+parsing and presentation only. It sends one versioned request, validates the response
+version and request ID, treats `accepted` separately from `completed`, renders typed
+errors, and exits. Replace its direct `ConfigExport` use with the configuration service's
+canonical export response.
+
+Phase 7 lands when:
+
+- `NucleusControlService` is a small composition root over
+  `libNucleusControlService.so`;
+- the compositor has no public listener, socket path, control JSON codec, or control-client
+  dependency;
+- configuration and render-server processes do not import the public control protocol;
+- the control service owns no authoritative configuration, output, focus, binding, or
+  shell state;
+- the public socket persists across configuration-service, compositor, and shell restart
+  and returns a typed owner-unavailable response while an owner is absent;
+- peer policy and elevated capability FDs enforce distinct request sets;
+- peer credentials are checked before request decoding and routing;
+- malformed, oversized, truncated, unexpectedly descriptor-bearing, and unauthorized
+  packets are rejected without blocking or terminating the service;
+- configuration queries report configured and per-owner applied generations;
+- active-binding queries report the render server's applied generation;
+- the CLI links the dynamic control client and contains no copied protocol or transport
+  objects;
+- control protocol, client, service, routing, restart, authorization, and CLI fixtures pass
+  through Collider.
+
+## Phase 8 — Move all desktop shell UI and policy out of the server
 
 Create `shell/shell-kit/Package.swift` with the dynamic `NucleusShellKit` product. Keep
 the `NucleusShell` executable target in `shell/Package.swift` and make it depend on the
@@ -936,7 +1240,7 @@ Keep `NucleusShellAuth`, `NucleusShellAuthWire`, and `NucleusShellPamHelper` sep
 The lock-screen view runs in the shell; PAM conversation and module loading remain in the
 helper.
 
-Phase 7 lands when:
+Phase 8 lands when:
 
 - the compositor links neither `libNucleusShellKit.so` nor a shell product module;
 - no shell view is created in the compositor process;
@@ -950,7 +1254,7 @@ Phase 7 lands when:
   deterministic integration tests;
 - shell service and product tests pass through Collider.
 
-## Phase 8 — Add atomic composition transactions
+## Phase 9 — Add atomic composition transactions
 
 Generate `nucleus_composition_v1` client and server bindings through
 `swift-wayland`. Keep the XML and generated Swift/C bindings in the protocol package with
@@ -976,7 +1280,7 @@ buffers.
 Server-side animation operates only on composition properties. An animation that changes
 the raster content remains client-driven and produces new backing buffers.
 
-Phase 8 lands when:
+Phase 9 lands when:
 
 - a transaction becomes visible entirely or not at all;
 - malformed graphs, stale IDs, cycles, invalid buffer generations, and oversized
@@ -987,7 +1291,7 @@ Phase 8 lands when:
 - ordinary non-Nucleus Wayland clients remain fully functional;
 - transaction conformance and fuzz fixtures pass through Collider.
 
-## Phase 9 — Collapse public imports without collapsing ownership
+## Phase 10 — Collapse public imports without collapsing ownership
 
 Finish the two umbrella modules after the runtime boundaries are stable.
 
@@ -1011,13 +1315,14 @@ internals, Linux modules, or server SPI.
 - the Linux desktop application host.
 
 It does not re-export raw Wayland modules, Linux implementation modules, shell services,
-render-server modules, configuration modules, or configuration service APIs.
+render-server modules, configuration modules, configuration service APIs, IPC transport,
+control protocol, or control service APIs.
 
 Remove the old flat public library products after all callers use the umbrellas or an
 explicit internal product. Delete replaced imports and compatibility wrappers in the same
 phase.
 
-Phase 9 lands when:
+Phase 10 lands when:
 
 - a normal desktop application imports only `NucleusDesktop`;
 - a portable library imports only `Nucleus`;
@@ -1026,7 +1331,7 @@ Phase 9 lands when:
 - API documentation exposes no server SPI, raw Wayland pointer, Skia C++ type, or Vulkan
   handle.
 
-## Phase 10 — Install, relocate, and validate the runtime
+## Phase 11 — Install, relocate, and validate the runtime
 
 Collider stages:
 
@@ -1034,6 +1339,7 @@ Collider stages:
 bin/
     NucleusCompositor
     NucleusShell
+    nucleus
 
 lib/
     libNucleusFoundation.so
@@ -1043,6 +1349,10 @@ lib/
     libNucleusConfig.so
     libNucleusConfigIO.so
     libNucleusConfigService.so
+    libNucleusIPCTransport.so
+    libNucleusControlProtocol.so
+    libNucleusControlClient.so
+    libNucleusControlService.so
     libNucleusWindowClient.so
     libNucleusRenderServer.so
     libNucleusShellKit.so
@@ -1053,6 +1363,7 @@ lib/
 
 libexec/
     NucleusConfigService
+    NucleusControlService
     NucleusShellPamHelper
     NucleusSessionSupervisor
 ```
@@ -1069,11 +1380,20 @@ Collider's install validation checks:
 - SONAMEs and rpaths match the staged layout;
 - `NucleusShell` does not load the render-server library or server-only native libraries;
 - `NucleusCompositor` does not load the window-client or shell library;
+- `NucleusCompositor` does not load the public control protocol or own a public socket;
 - compositor and shell load `libNucleusConfig.so` without loading
   `libNucleusConfigIO.so` or `libNucleusConfigService.so`;
 - `NucleusConfigService` loads the configuration model, configuration IO, base Linux, and
   session-protocol libraries without loading Nucleus UI/graphics, Linux desktop,
+  Wayland, DRM, window-client, render-server, shell, or public control libraries;
+- `NucleusControlService` loads IPC transport, control protocol, session protocol, and
+  base Linux without loading Nucleus UI/graphics, configuration IO, Linux desktop,
   Wayland, DRM, window-client, render-server, or shell libraries;
+- `nucleus` loads the dynamic control client and protocol without containing copied
+  transport or protocol target objects;
+- Linux session/config/control and Android broker artifacts use
+  `libNucleusIPCTransport.so` for Unix packet transport and contain no duplicate
+  sendmsg/recvmsg/credential implementation;
 - helpers load none of the UI, graphics, client, server, or shell libraries;
 - a helper that needs diagnostics loads `libNucleusFoundation.so` without pulling in
   `libNucleus.so`;
@@ -1081,7 +1401,8 @@ Collider's install validation checks:
   exports;
 - no first-party target implementation appears in two installed objects;
 - stripping preserves the required Swift runtime metadata and public entry points;
-- the complete staged tree relocates and passes headless client/server smoke fixtures.
+- the complete staged tree relocates and passes headless client/server,
+  configuration-service, and control-service smoke fixtures.
 
 The installed artifacts are rebuilt and upgraded as one unit. Nucleus does not enable
 library evolution and does not promise independent ABI compatibility between these
@@ -1091,8 +1412,8 @@ private shared objects.
 
 The work is complete when all of the following are simultaneously true:
 
-- `NucleusCompositor`, `NucleusShell`, and `NucleusConfigService` are small composition
-  roots.
+- `NucleusCompositor`, `NucleusShell`, `NucleusConfigService`, and
+  `NucleusControlService` are small composition roots.
 - Applications share one installed Nucleus implementation but retain isolated mutable
   graphics state.
 - The compositor is the only owner of global scene state, physical input, DRM/KMS, and
@@ -1105,8 +1426,13 @@ The work is complete when all of the following are simultaneously true:
 - The configuration service is the sole authority for the active configuration file and
   publishes resolved owner projections by epoch and generation.
 - The compositor and shell never parse or watch the active configuration file.
+- The control service is the sole owner of the public control socket and routes every
+  request to its authoritative runtime owner.
+- Session, control, configuration, and Android protocols share one packet transport
+  without merging their wire vocabularies.
+- The compositor never performs public control-client I/O on its actor or event loop.
 - Global binding resolution has one server-side runtime owner.
 - Cross-process rendering uses buffers, value transactions, and explicit synchronization.
 - The staged dependency graph and symbol tables mechanically enforce the ownership rules.
-- Linux desktop, Android, configuration, compositor, shell, helper, integration, and
+- Linux desktop, Android, IPC, configuration, compositor, shell, helper, integration, and
   sanitizer gates all pass through Collider.
