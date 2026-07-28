@@ -276,6 +276,7 @@ let package = Package(
                 .product(name: "NucleusAppHostBundle", package: "Nucleus"),
                 .product(name: "NucleusRenderModel", package: "Nucleus"),
                 "NucleusCompositorOverlayScene",
+                .product(name: "NucleusConfig", package: "NucleusConfigPackage"),
                 .product(name: "Tracy", package: "swift-tracy"),
                 .product(
                     name: "NucleusLinuxDBus",
@@ -545,6 +546,7 @@ let package = Package(
             dependencies: [
                 "NucleusCompositorShell",
                 "NucleusCompositorOverlayScene",
+                .product(name: "NucleusConfig", package: "NucleusConfigPackage"),
                 .product(
                     name: "NucleusLinuxAccessibility",
                     package: "NucleusLinuxPlatform"),

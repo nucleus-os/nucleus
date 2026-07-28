@@ -3,6 +3,7 @@ import NucleusCompositorOverlay
 public import NucleusCompositorOverlayScene
 public import NucleusCompositorServer
 public import NucleusCompositorWindowManager
+public import NucleusConfig
 public import NucleusLayers
 public import NucleusLinuxAccessibility
 public import NucleusLinuxEnvironment
@@ -29,7 +30,8 @@ public final class ShellServices {
 
     public init(
         server: NucleusCompositorServer,
-        windowManager: WindowManager
+        windowManager: WindowManager,
+        binds: [KeyBind] = DefaultBinds.table
     ) {
         self.server = server
 
@@ -43,7 +45,8 @@ public final class ShellServices {
             notifications: notifications)
         let keybinds = KeybindService(
             launcher: launcher,
-            windowManager: windowManager)
+            windowManager: windowManager,
+            binds: binds)
 
         self.overlayScene = overlayScene
         self.notifications = notifications
@@ -59,6 +62,16 @@ public final class ShellServices {
             notifications: notifications,
             overlayScene: overlayScene)
         self.environmentAdapter = PortalEnvironmentAdapter()
+    }
+
+    /// Adopt a binding table.
+    ///
+    /// The dispatch table and the shortcut overlay move together here, rather
+    /// than being updated by separate callers, because an overlay that
+    /// disagrees with what the keys actually do is worse than no overlay.
+    public func updateBinds(_ binds: [KeyBind]) {
+        keybinds.updateBinds(binds)
+        overlayScene.hotkeyEntriesSet(HotkeyOverlayEntries.rows(for: binds))
     }
 
     /// Begin portal discovery only after the compositor has published its

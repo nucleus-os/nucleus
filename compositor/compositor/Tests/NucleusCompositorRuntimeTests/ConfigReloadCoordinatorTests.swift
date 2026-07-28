@@ -11,6 +11,13 @@ import Testing
     /// A coordinator over a real (empty) directory, recording what it applies.
     private final class Recorder {
         var applied: [InputConfig] = []
+        var appliedBinds: [[KeyBind]] = []
+    }
+
+    private func seams(_ recorder: Recorder) -> ConfigReloadCoordinator.ApplySeams {
+        ConfigReloadCoordinator.ApplySeams(
+            input: { recorder.applied.append($0) },
+            binds: { recorder.appliedBinds.append($0) })
     }
 
     private func withCoordinator(
@@ -27,7 +34,7 @@ import Testing
         let built: ConfigReloadCoordinator? = ConfigReloadCoordinator(
             initial: initial,
             path: directory.appending(path: "config.json").path,
-            applyInput: { recorder.applied.append($0) })
+            apply: seams(recorder))
         let coordinator = try #require(built)
         try body(coordinator, recorder)
     }
@@ -122,11 +129,52 @@ import Testing
         }
     }
 
+    // MARK: per-section application
+
+    @Test func aBindsOnlyChangeDoesNotTouchInputDevices() throws {
+        try withCoordinator { coordinator, recorder in
+            var changed = NucleusConfiguration.defaults
+            changed.binds = [KeyBind(
+                keys: KeyChord(modifiers: .superKey, keyCode: 16),
+                action: .closeWindow)]
+            #expect(coordinator.apply(.loaded(changed, warnings: [])).applied)
+
+            // Rebinding a key has no business resetting a touchpad.
+            #expect(recorder.applied.isEmpty)
+            #expect(recorder.appliedBinds.count == 1)
+        }
+    }
+
+    @Test func anInputOnlyChangeDoesNotRebuildTheBindTable() throws {
+        try withCoordinator { coordinator, recorder in
+            var changed = NucleusConfiguration.defaults
+            changed.input.touchpad.accelSpeed = 0.4
+            #expect(coordinator.apply(.loaded(changed, warnings: [])).applied)
+
+            // Rebuilding the table would drop its captured keys, so a chord
+            // held at that moment would never see its key-up.
+            #expect(recorder.applied.count == 1)
+            #expect(recorder.appliedBinds.isEmpty)
+        }
+    }
+
+    @Test func aChangeToBothSectionsAppliesBoth() throws {
+        try withCoordinator { coordinator, recorder in
+            var changed = NucleusConfiguration.defaults
+            changed.input.touchpad.tap = false
+            changed.binds = []
+            #expect(coordinator.apply(.loaded(changed, warnings: [])).applied)
+            #expect(recorder.applied.count == 1)
+            #expect(recorder.appliedBinds.count == 1)
+            #expect(recorder.appliedBinds.first?.isEmpty == true)
+        }
+    }
+
     // MARK: construction
 
     @Test func noResolvableLocationYieldsNoCoordinator() {
         #expect(ConfigReloadCoordinator(
-            initial: .defaults, path: nil, applyInput: { _ in }) == nil)
+            initial: .defaults, path: nil, apply: .init()) == nil)
     }
 
     @Test func aMissingDirectoryStillCoordinatesButDoesNotWatch() {
@@ -135,7 +183,7 @@ import Testing
         let coordinator = ConfigReloadCoordinator(
             initial: .defaults,
             path: "/nonexistent-nucleus-tree/nucleus/config.json",
-            applyInput: { _ in })
+            apply: .init())
         #expect(coordinator != nil)
         #expect(coordinator?.isWatching == false)
         #expect(coordinator?.reactorSource == nil)
@@ -167,7 +215,7 @@ import Testing
         let built: ConfigReloadCoordinator? = ConfigReloadCoordinator(
             initial: .defaults,
             path: path,
-            applyInput: { recorder.applied.append($0) })
+            apply: seams(recorder))
         let coordinator = try #require(built)
         try body(coordinator, recorder, path)
     }

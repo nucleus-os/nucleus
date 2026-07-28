@@ -18,12 +18,29 @@ final class ConfigReloadCoordinator {
         var diagnostics: [ConfigDiagnostic]
     }
 
+    /// Where a resolved configuration goes.
+    ///
+    /// One seam per section, applied only when that section changed. Editing a
+    /// keybind should not reset every connected input device, and a touchpad
+    /// tweak should not rebuild the bind table and drop its captured keys.
+    /// Closures rather than runtime references so the reload decision is
+    /// testable without bringing up a compositor.
+    struct ApplySeams {
+        var input: @MainActor (InputConfig) -> Void
+        var binds: @MainActor ([KeyBind]) -> Void
+
+        init(
+            input: @escaping @MainActor (InputConfig) -> Void = { _ in },
+            binds: @escaping @MainActor ([KeyBind]) -> Void = { _ in }
+        ) {
+            self.input = input
+            self.binds = binds
+        }
+    }
+
     private let path: String
     private let watcher: LinuxFileWatcher?
-    /// Where a resolved configuration goes. A closure rather than a runtime
-    /// reference so the reload decision — what a given load result does to
-    /// live state — is testable without bringing up a compositor.
-    private let applyInput: @MainActor (InputConfig) -> Void
+    private let apply: ApplySeams
     /// The configuration currently in force. Only replaced by a reload that
     /// resolved cleanly, so a failed attempt leaves it untouched.
     private(set) var current: NucleusConfiguration
@@ -37,12 +54,12 @@ final class ConfigReloadCoordinator {
     init?(
         initial: NucleusConfiguration,
         path: String? = ConfigFile.defaultPath(),
-        applyInput: @escaping @MainActor (InputConfig) -> Void
+        apply: ApplySeams
     ) {
         guard let path else { return nil }
         self.path = path
         self.current = initial
-        self.applyInput = applyInput
+        self.apply = apply
         self.watcher = LinuxFileWatcher(path: path)
         watcher?.onChange = { [weak self] change in
             self?.handle(change)
@@ -68,13 +85,16 @@ final class ConfigReloadCoordinator {
         case .failed(let diagnostics):
             return Outcome(applied: false, diagnostics: diagnostics)
         case .loaded(let resolved, let warnings):
-            guard resolved != current else {
-                // A save that changed nothing semantically — reformatting, an
-                // edited comment — should not disturb connected hardware.
+            // A save that changed nothing semantically — reformatting, an
+            // edited comment — should disturb nothing.
+            let inputChanged = resolved.input != current.input
+            let bindsChanged = resolved.binds != current.binds
+            guard inputChanged || bindsChanged else {
                 return Outcome(applied: false, diagnostics: warnings)
             }
             current = resolved
-            applyInput(resolved.input)
+            if inputChanged { apply.input(resolved.input) }
+            if bindsChanged { apply.binds(resolved.binds) }
             return Outcome(applied: true, diagnostics: warnings)
         }
     }

@@ -181,6 +181,8 @@ public final class ShellOverlayScene: ~Sendable {
             return dismissNotification(id, reason: reason)
         case let .hotkeyVisibility(visible):
             return setHotkeyVisible(visible)
+        case let .hotkeyEntries(entries):
+            return setHotkeyEntries(entries)
         }
     }
 
@@ -292,6 +294,31 @@ public final class ShellOverlayScene: ~Sendable {
             }
         } catch {
             logShellOverlayError("hotkey visibility update failed: \(error)")
+            return false
+        }
+        return true
+    }
+
+    /// Adopt a new shortcut list, derived from the live binding table.
+    ///
+    /// Re-frames only while the overlay is on screen; a hidden overlay picks up
+    /// the new geometry when it is next shown, since `setHotkeyVisible` frames
+    /// it on the way up.
+    package func setHotkeyEntries(
+        _ entries: [ShellOverlayHotkeyEntry]
+    ) -> Bool {
+        guard hotkeyView.entries != entries else { return false }
+        // Row views are built here, so they must be created in the same
+        // UIContext that owns the overlay — a view cannot adopt a child from
+        // another one.
+        publicationContext.withSemanticContext {
+            hotkeyView.update(entries: entries)
+        }
+        guard hotkeyVisible, let frame else { return hotkeyVisible }
+        do {
+            try updateHotkeyFrame(frame)
+        } catch {
+            logShellOverlayError("hotkey entry update failed: \(error)")
             return false
         }
         return true

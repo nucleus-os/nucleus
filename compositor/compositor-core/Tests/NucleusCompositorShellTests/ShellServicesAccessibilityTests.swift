@@ -4,6 +4,7 @@ import Glibc
 import NucleusCompositorOverlayScene
 import NucleusCompositorServer
 import NucleusCompositorWindowManager
+import NucleusConfig
 import NucleusTextBackend
 import NucleusUI
 import Testing
@@ -303,18 +304,19 @@ struct ShellServicesAccessibilityTests {
             server: serverB,
             windowManager: WindowManager(server: serverB))
 
-        let shortcut = KeybindService.Shortcut(
-            key: .e,
-            modifiers: .command)
-        servicesA.keybinds.register(shortcut, action: .closeFocusedWindow)
+        // evdev KEY_E; bound only in runtime A's table.
+        let keyE: UInt32 = 18
+        servicesA.keybinds.updateBinds([KeyBind(
+            keys: KeyChord(modifiers: .superKey, keyCode: keyE),
+            action: .closeWindow)])
 
         let dispatchA = servicesA.keybinds.dispatch(
-            keycode: KeybindService.KeyCode.e.rawValue,
-            modifiers: .command,
+            keycode: keyE,
+            modifiers: .superKey,
             phase: .down)
         let dispatchB = servicesB.keybinds.dispatch(
-            keycode: KeybindService.KeyCode.e.rawValue,
-            modifiers: .command,
+            keycode: keyE,
+            modifiers: .superKey,
             phase: .down)
         if case .deferred = dispatchA {} else {
             Issue.record("runtime A did not observe its custom keybind")
@@ -325,7 +327,7 @@ struct ShellServicesAccessibilityTests {
 
         let formerShellPanelShortcut = servicesA.keybinds.dispatch(
             keycode: 57,
-            modifiers: .command,
+            modifiers: .superKey,
             phase: .down)
         if case .pass = formerShellPanelShortcut {} else {
             Issue.record("obsolete shell-specific panel shortcut was captured")

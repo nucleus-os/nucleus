@@ -17,23 +17,29 @@ public struct NucleusConfiguration: Codable, Equatable, Sendable {
     /// exporter so a future reader knows which migrations to run.
     public var configVersion: Int
     public var input: InputConfig
+    /// The complete binding table. A file's `binds` replaces this outright
+    /// rather than merging, so the file is the whole truth about what is bound.
+    public var binds: [KeyBind]
 
     public static let currentVersion = 1
 
     public static let defaults = NucleusConfiguration(
         configVersion: currentVersion,
-        input: .defaults)
+        input: .defaults,
+        binds: DefaultBinds.table)
 
     public func applying(_ part: NucleusConfigurationPart) -> NucleusConfiguration {
         NucleusConfiguration(
             configVersion: part.configVersion ?? configVersion,
-            input: input.applying(part.input ?? InputConfigPart()))
+            input: input.applying(part.input ?? InputConfigPart()),
+            binds: part.binds ?? binds)
     }
 }
 
 public struct NucleusConfigurationPart: Decodable, Equatable, Sendable {
     public var configVersion: Int?
     public var input: InputConfigPart?
+    public var binds: [KeyBind]?
 
     public init() {}
 }

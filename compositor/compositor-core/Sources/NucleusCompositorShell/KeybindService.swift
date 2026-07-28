@@ -1,103 +1,27 @@
 import NucleusCompositorOverlayTypes
 public import NucleusCompositorWindowManager
+public import NucleusConfig
 
 /// Compositor session-policy keybind table.
 ///
 /// Apple-shape analog: loginwindow/SkyLight's global hotkey policy layered on
 /// top of WindowServer event taps. The reactor's event tap forwards every
 /// keyboard event to its runtime-owned `KeybindService` and acts on the
-/// returned `Dispatch`. Window-management keybinds (tile, VT switch, exit)
-/// stay in the reactor — those are not session policy.
+/// returned `Dispatch`.
+///
+/// The table comes from configuration. Chords and actions are the shared
+/// `NucleusConfig` vocabulary rather than types private to this service,
+/// because the control socket has to name the same operations a binding names —
+/// defining "close the focused window" twice would guarantee the two drift.
 @MainActor
 public final class KeybindService {
-    public struct ModifierFlags: OptionSet, Hashable, Sendable {
-        public let rawValue: UInt32
-        public init(rawValue: UInt32) { self.rawValue = rawValue }
-
-        public static let shift   = ModifierFlags(rawValue: 1 << 0)
-        public static let control = ModifierFlags(rawValue: 1 << 1)
-        public static let option  = ModifierFlags(rawValue: 1 << 2)
-        public static let command = ModifierFlags(rawValue: 1 << 3)
-    }
-
-    /// Evdev keycodes used by the default table. Bare-name PascalCase per
-    /// project convention (no `kVK_` prefix; that's a Carbon shape we
-    /// shouldn't replicate verbatim).
-    public enum KeyCode: UInt32, Hashable, Sendable {
-        case escape    = 1
-        case backspace = 14
-        // Number row (evdev KEY_1=2 … KEY_9=10) — workspace switch/move binds.
-        case one = 2, two = 3, three = 4, four = 5, five = 6
-        case six = 7, seven = 8, eight = 9, nine = 10
-        case q = 16, e = 18
-        case c = 46, m = 50
-        case t = 20, p = 25, s = 31, f = 33
-        case k = 37, l = 38, v = 47
-        case slash = 53
-        // Tiling: arrow keys for half-tiles, u/i/j/k for the four corners (a
-        // positional 2×2 cluster), Return to maximize. These are evdev
-        // (physical) codes, like every bind here.
-        case u = 22, i = 23, j = 36
-        case enter = 28
-        case leftBracket = 26, rightBracket = 27
-        case up = 103, left = 105, right = 106, down = 108
-    }
-
     public enum Phase: Sendable {
         case down
         case up
     }
 
-    public struct Shortcut: Hashable, Sendable {
-        public let key: KeyCode
-        public let modifiers: ModifierFlags
-        public init(key: KeyCode, modifiers: ModifierFlags) {
-            self.key = key
-            self.modifiers = modifiers
-        }
-    }
-
-    /// What a shortcut does. Swift-resolvable cases run inline during
-    /// `dispatch` and return `.consume`. Cases that need reactor-side state
-    /// (focused window, frame request, render invalidation) come back to
-    /// the caller as `.deferred(action)`.
-    public enum Action: Sendable {
-        case launchApp(ids: [String], fallback: [String])
-        // Deferred — executed reactor-side.
-        case closeFocusedWindow
-        case showWindowMenu
-        case toggleHotkeyOverlay
-        case dismissHotkeyOverlay
-        case tile(TileDirection)
-        case adjustBackdropIntensity(Float)
-        /// Switch the focused output to the 1-based workspace index (created on
-        /// demand). The executor resolves the output and runs the switch.
-        case activateWorkspace(UInt32)
-        /// Move the focused window to the 1-based workspace index on its output.
-        case moveWindowToWorkspace(UInt32)
-    }
-
-    /// Mirrors `NucleusCompositorWindowManager.TileCommand`.
-    /// Crossed as the deferred action's `value`; the executor drives the
-    /// focused window's Swift role with it.
-    public enum TileDirection: UInt32, Sendable {
-        case left        = 1
-        case right       = 2
-        case top         = 3
-        case bottom      = 4
-        case topLeft     = 5
-        case topRight    = 6
-        case bottomLeft  = 7
-        case bottomRight = 8
-        case maximize    = 9
-    }
-
-    private enum KeybindKind: UInt8 {
-        case pass = 0
-        case consume = 1
-        case deferred = 2
-    }
-
+    /// Wire ABI crossed to the overlay. Values are stable; a retired case
+    /// keeps its slot rather than letting a later case reuse the number.
     private enum KeybindAction: UInt8 {
         case none = 0
         case closeFocused = 1
@@ -120,7 +44,7 @@ public final class KeybindService {
     enum Resolution: Sendable {
         case pass
         case consume
-        case action(Action)
+        case action(BindAction)
     }
 
     public struct DeferredAction: Sendable {
@@ -128,79 +52,42 @@ public final class KeybindService {
         public let value: UInt32
     }
 
-    private var bindings: [Shortcut: Action]
-    private var globallyCapturedKeys: Set<KeyCode> = []
+    private var bindings: [KeyChord: BindAction]
+    private var globallyCapturedKeys: Set<UInt32> = []
     private let launcher: LauncherService
     private unowned let windowManager: WindowManager
 
     public init(
         launcher: LauncherService,
-        windowManager: WindowManager
+        windowManager: WindowManager,
+        binds: [KeyBind] = DefaultBinds.table
     ) {
         self.launcher = launcher
         self.windowManager = windowManager
-        bindings = [
-            // App launchers
-            .init(key: .t, modifiers: .command):
-                .launchApp(ids: ["kitty.desktop", "org.wezfurlong.wezterm.desktop", "foot.desktop"],
-                           fallback: ["kitty"]),
-            .init(key: .f, modifiers: .command):
-                .launchApp(ids: ["foot.desktop", "kitty.desktop"],
-                           fallback: ["foot"]),
-            .init(key: .s, modifiers: .command):
-                .launchApp(ids: ["sublime_text.desktop", "com.sublimetext.three.desktop", "code.desktop"],
-                           fallback: ["subl"]),
-            .init(key: .c, modifiers: .command):
-                .launchApp(ids: ["google-chrome.desktop", "chromium.desktop"],
-                           fallback: ["google-chrome"]),
-            // Session actions
-            .init(key: .q, modifiers: .command): .closeFocusedWindow,
-            .init(key: .m, modifiers: [.command, .shift]): .showWindowMenu,
-            // Screenshots are owned by the shell via wlr-screencopy; the
-            // compositor no longer binds a screenshot key.
-            .init(key: .slash, modifiers: .command): .toggleHotkeyOverlay,
-            .init(key: .escape, modifiers: []): .dismissHotkeyOverlay,
-
-            // Backdrop intensity is Swift state. The reactor receives only the frame
-            // invalidation after this direct mutation, never the setting.
-            .init(key: .leftBracket, modifiers: [.command, .option]): .adjustBackdropIntensity(-0.2),
-            .init(key: .rightBracket, modifiers: [.command, .option]): .adjustBackdropIntensity(0.2),
-
-            // Window tiling (Ctrl+Alt). Arrows half-tile; u/i/j/k corner-tile;
-            // Return maximizes. Only Swift-role (xdg) windows tile; the
-            // executor no-ops for xwayland/layer-shell.
-            .init(key: .left, modifiers: [.control, .option]): .tile(.left),
-            .init(key: .right, modifiers: [.control, .option]): .tile(.right),
-            .init(key: .up, modifiers: [.control, .option]): .tile(.top),
-            .init(key: .down, modifiers: [.control, .option]): .tile(.bottom),
-            .init(key: .u, modifiers: [.control, .option]): .tile(.topLeft),
-            .init(key: .i, modifiers: [.control, .option]): .tile(.topRight),
-            .init(key: .j, modifiers: [.control, .option]): .tile(.bottomLeft),
-            .init(key: .k, modifiers: [.control, .option]): .tile(.bottomRight),
-            .init(key: .enter, modifiers: [.control, .option]): .tile(.maximize),
-        ]
-
-        // Workspaces (per-output, niri-like). Super+N switches to the N-th
-        // workspace on the focused output (created on demand); Super+Shift+N moves
-        // the focused window there. Registered programmatically so the 1..9 table
-        // stays a single source of truth.
-        let workspaceKeys: [KeyCode] = [.one, .two, .three, .four, .five, .six, .seven, .eight, .nine]
-        for (offset, key) in workspaceKeys.enumerated() {
-            let index = UInt32(offset + 1)
-            bindings[.init(key: key, modifiers: .command)] = .activateWorkspace(index)
-            bindings[.init(key: key, modifiers: [.command, .shift])] = .moveWindowToWorkspace(index)
-        }
+        self.bindings = Self.table(from: binds)
     }
 
-    public func register(_ shortcut: Shortcut, action: Action) {
-        bindings[shortcut] = action
+    /// Adopt a new table wholesale, as a configuration reload produces.
+    ///
+    /// Keys captured by the outgoing table are released: a chord that is no
+    /// longer bound must not swallow its own key-up and leave the client that
+    /// now owns it holding a key down forever.
+    public func updateBinds(_ binds: [KeyBind]) {
+        bindings = Self.table(from: binds)
+        globallyCapturedKeys.removeAll(keepingCapacity: true)
     }
 
-    public func unregister(_ shortcut: Shortcut) {
-        bindings.removeValue(forKey: shortcut)
+    /// Later entries win, so a file that binds the same chord twice takes its
+    /// last word rather than an arbitrary one.
+    private static func table(from binds: [KeyBind]) -> [KeyChord: BindAction] {
+        var table: [KeyChord: BindAction] = [:]
+        for bind in binds { table[bind.keys] = bind.action }
+        return table
     }
 
-    public func dispatch(keycode: UInt32, modifiers: ModifierFlags, phase: Phase) -> Dispatch {
+    public func dispatch(
+        keycode: UInt32, modifiers: KeyModifiers, phase: Phase
+    ) -> Dispatch {
         switch resolve(keycode: keycode, modifiers: modifiers, phase: phase) {
         case .pass:
             return .pass
@@ -211,25 +98,23 @@ public final class KeybindService {
         }
     }
 
-    func resolve(keycode: UInt32, modifiers: ModifierFlags, phase: Phase) -> Resolution {
+    func resolve(
+        keycode: UInt32, modifiers: KeyModifiers, phase: Phase
+    ) -> Resolution {
         if Self.isModifierKey(keycode) {
             return .pass
         }
 
-        guard let key = KeyCode(rawValue: keycode) else {
-            return .pass
-        }
-
         guard phase == .down else {
-            if globallyCapturedKeys.remove(key) != nil {
+            if globallyCapturedKeys.remove(keycode) != nil {
                 return .consume
             }
             return .pass
         }
 
-        let shortcut = Shortcut(key: key, modifiers: modifiers)
-        if let action = bindings[shortcut] {
-            globallyCapturedKeys.insert(key)
+        let chord = KeyChord(modifiers: modifiers, keyCode: keycode)
+        if let action = bindings[chord] {
+            globallyCapturedKeys.insert(keycode)
             return .action(action)
         }
 
@@ -245,13 +130,13 @@ public final class KeybindService {
         }
     }
 
-    private func run(_ action: Action) -> Dispatch {
+    private func run(_ action: BindAction) -> Dispatch {
         switch action {
-        case .launchApp(let ids, let fallback):
-            _ = launcher.launchPreferred(ids: ids, fallback: fallback)
+        case .launch(let appIDs, let command):
+            _ = launcher.launchPreferred(ids: appIDs, fallback: command)
             return .consume
 
-        case .closeFocusedWindow:
+        case .closeWindow:
             return .deferred(DeferredAction(
                 kind: KeybindAction.closeFocused.rawValue, value: 0))
         case .showWindowMenu:
@@ -265,10 +150,11 @@ public final class KeybindService {
                 kind: KeybindAction.dismissHotkey.rawValue, value: 0))
         case .tile(let direction):
             return .deferred(DeferredAction(
-                kind: KeybindAction.tile.rawValue, value: direction.rawValue))
+                kind: KeybindAction.tile.rawValue,
+                value: Self.wireValue(direction)))
         case .adjustBackdropIntensity(let delta):
             let next = windowManager.backdropResolver.dynamics
-                .target.resolvedIntensity + delta
+                .target.resolvedIntensity + Float(delta)
             _ = windowManager.backdropResolver.dynamics.setIntensity(next)
             return .deferred(DeferredAction(
                 kind: KeybindAction.backdropChanged.rawValue, value: 0))
@@ -277,7 +163,24 @@ public final class KeybindService {
                 kind: KeybindAction.activateWorkspace.rawValue, value: index))
         case .moveWindowToWorkspace(let index):
             return .deferred(DeferredAction(
-                kind: KeybindAction.moveWindowToWorkspace.rawValue, value: index))
+                kind: KeybindAction.moveWindowToWorkspace.rawValue,
+                value: index))
+        }
+    }
+
+    /// Mirrors `NucleusCompositorWindowManager.TileCommand`. The executor
+    /// drives the focused window's Swift role with this scalar.
+    static func wireValue(_ direction: TileDirection) -> UInt32 {
+        switch direction {
+        case .left: 1
+        case .right: 2
+        case .top: 3
+        case .bottom: 4
+        case .topLeft: 5
+        case .topRight: 6
+        case .bottomLeft: 7
+        case .bottomRight: 8
+        case .maximize: 9
         }
     }
 }
@@ -292,7 +195,8 @@ extension KeybindService {
     ) -> NucleusCompositorOverlayTypes.KeybindDecision {
         let modifiers = Self.decode(modifierBits: modifierBits)
         let phase: Phase = pressed ? .down : .up
-        let decision = dispatch(keycode: keycode, modifiers: modifiers, phase: phase)
+        let decision = dispatch(
+            keycode: keycode, modifiers: modifiers, phase: phase)
 
         switch decision {
         case .pass:
@@ -304,19 +208,22 @@ extension KeybindService {
         case .deferred(let action):
             return NucleusCompositorOverlayTypes.KeybindDecision(
                 kind: .deferred,
-                action: NucleusCompositorOverlayTypes.KeybindAction(rawValue: action.kind) ?? .none, reserved: 0, value: action.value)
+                action: NucleusCompositorOverlayTypes.KeybindAction(
+                    rawValue: action.kind) ?? .none,
+                reserved: 0,
+                value: action.value)
         }
     }
 
     /// The reactor's `EventFlags` is a packed u64 mirroring `CGEventFlags`:
     /// shift=bit17, control=bit18, alternate=bit19, command=bit20. Decode
-    /// to the Swift `ModifierFlags` option set.
-    private static func decode(modifierBits: UInt64) -> ModifierFlags {
-        var flags: ModifierFlags = []
+    /// to the shared `KeyModifiers` option set.
+    static func decode(modifierBits: UInt64) -> KeyModifiers {
+        var flags: KeyModifiers = []
         if (modifierBits & (1 << 17)) != 0 { flags.insert(.shift) }
         if (modifierBits & (1 << 18)) != 0 { flags.insert(.control) }
-        if (modifierBits & (1 << 19)) != 0 { flags.insert(.option) }
-        if (modifierBits & (1 << 20)) != 0 { flags.insert(.command) }
+        if (modifierBits & (1 << 19)) != 0 { flags.insert(.alt) }
+        if (modifierBits & (1 << 20)) != 0 { flags.insert(.superKey) }
         return flags
     }
 }

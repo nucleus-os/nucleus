@@ -263,6 +263,9 @@ extension CompositorRuntime {
         shellServices.activateEnvironment()
 
         // ── Configuration reload ──────────────────────────────────────────
+        // Binds arrive here rather than at ShellServices construction, which
+        // runs before any configuration has been read.
+        shellServices.updateBinds(sessionConfiguration.binds)
         installConfigReload(initial: sessionConfiguration)
 
         // ── XWayland (lazy spawn) ─────────────────────────────────────────
@@ -297,9 +300,13 @@ extension CompositorRuntime {
     private func installConfigReload(initial: NucleusConfiguration) {
         guard let coordinator = ConfigReloadCoordinator(
             initial: initial,
-            applyInput: { [waylandRuntime] input in
-                waylandRuntime.updateInputConfiguration(input)
-            })
+            apply: ConfigReloadCoordinator.ApplySeams(
+                input: { [waylandRuntime] input in
+                    waylandRuntime.updateInputConfiguration(input)
+                },
+                binds: { [shellServices] binds in
+                    shellServices.updateBinds(binds)
+                }))
         else {
             logRuntime("config: no configuration location; reload disabled")
             return

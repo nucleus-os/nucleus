@@ -135,14 +135,34 @@ import Testing
         #expect(scene.hotkeyWindow.isVisible)
         #expect(scene.hotkeyView.nextResponder === scene.hotkeyViewController)
 
-        // Hotkey overlay: visible by default, one row per non-empty keybinding.
+        // Hotkey overlay: visible by default, and empty until the binding
+        // table is pushed — rows are derived from live binds rather than
+        // written into the view.
         #expect(scene.hotkeyVisible)
         #expect(scene.hotkeyView.visible)
         #expect(scene.hotkeyView.backgroundEffectView.material == .hudWindow)
         #expect(scene.hotkeyView.isHidden == false)
-        #expect(scene.hotkeyView.rowViews.count == 11)
-        #expect(scene.hotkeyView.rowViews.first?.keyLabel.text == "Super + T")
-        #expect(scene.hotkeyView.rowViews.first?.descriptionLabel.text == "Launch Kitty")
+        #expect(scene.hotkeyView.rowViews.isEmpty)
+
+        // One row per non-empty entry; separators occupy no row view.
+        _ = scene.setHotkeyEntries([
+            ShellOverlayHotkeyEntry(key: "Super+T", description: "Launch Kitty"),
+            .separator,
+            ShellOverlayHotkeyEntry(key: "Super+Q", description: "Close window"),
+        ])
+        #expect(scene.hotkeyView.rowViews.count == 2)
+        #expect(scene.hotkeyView.rowViews.first?.keyLabel.text == "Super+T")
+        #expect(scene.hotkeyView.rowViews.first?.descriptionLabel.text
+            == "Launch Kitty")
+        #expect(scene.hotkeyView.rowViews.last?.keyLabel.text == "Super+Q")
+
+        // A replacement table rebuilds the rows rather than appending, since
+        // the box height is derived from the entry count.
+        _ = scene.setHotkeyEntries([
+            ShellOverlayHotkeyEntry(key: "Ctrl+W", description: "Close window"),
+        ])
+        #expect(scene.hotkeyView.rowViews.count == 1)
+        #expect(scene.hotkeyView.rowViews.first?.keyLabel.text == "Ctrl+W")
 
         let publication = scene.publishVisuals()
         #expect(!(publication?.scene.visualContent.isEmpty ?? true))
@@ -257,6 +277,11 @@ import Testing
         commitSink: sink,
         services: testHostServices())
 
+        // Rows come from the live binding table, so the view has none until
+        // one is pushed.
+        _ = scene.setHotkeyEntries([
+            ShellOverlayHotkeyEntry(key: "Super+T", description: "Launch Kitty"),
+        ])
         scene.hotkeyView.layoutIfNeeded()
         scene.hotkeyView.displayIfNeeded()
 
@@ -379,6 +404,9 @@ import Testing
             commitSink: sink,
             services: testHostServices())
         let controller = ShellOverlayController(scene: scene) { _ in }
+        _ = scene.setHotkeyEntries([
+            ShellOverlayHotkeyEntry(key: "Super+T", description: "Launch Kitty"),
+        ])
         controller.beginFrame(Self.frame(backingScale: 1.5))
 
         // A backing-pixel pointer sample over a hotkey row converts to points and

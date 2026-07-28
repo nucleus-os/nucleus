@@ -64,9 +64,20 @@ public enum ConfigLoader {
         for error: DecodingError, in source: ConfigSource
     ) -> ConfigDiagnostic {
         switch error {
+        case .keyNotFound(let key, let context):
+            // The absent key is not in the coding path — it is the thing that
+            // was missing — so append it, or the diagnostic points at the
+            // enclosing object and leaves the user to guess.
+            return ConfigDiagnostic(
+                severity: .error,
+                message: "missing required setting",
+                keyPath: displayPath(context.codingPath + [key]))
+        case .valueNotFound(_, let context):
+            return ConfigDiagnostic(
+                severity: .error,
+                message: "value is null",
+                keyPath: displayPath(context.codingPath))
         case .typeMismatch(_, let context),
-            .valueNotFound(_, let context),
-            .keyNotFound(_, let context),
             .dataCorrupted(let context):
             return ConfigDiagnostic(
                 severity: .error,
@@ -166,11 +177,18 @@ public enum ConfigLoader {
                     path: path + [key], into: &diagnostics)
             }
         case (.array(let actualArray), .array(let referenceArray)):
-            // Element keys can only be audited against an exemplar. A defaults
-            // value whose array is empty yields no warnings for its elements —
-            // any array-valued setting added later should ship one default
-            // element so this stays useful.
-            guard let exemplar = referenceArray.first else { return }
+            // Element keys are audited against the *union* of every default
+            // element, not against the first. An array of tagged unions — binds
+            // being the case in point — has elements whose valid keys differ by
+            // tag, so a single exemplar would flag `direction` as unknown just
+            // because the first default happens to be a `launch`. The defaults
+            // exercise every case, so their union is the complete key set.
+            //
+            // An empty defaults array yields no warnings for its elements; any
+            // array-valued setting added later should ship default elements
+            // covering each shape so this stays useful.
+            guard !referenceArray.isEmpty else { return }
+            let exemplar = Self.unioned(referenceArray)
             for (index, element) in actualArray.enumerated() {
                 walk(
                     element, against: exemplar,
@@ -179,5 +197,26 @@ public enum ConfigLoader {
         default:
             return
         }
+    }
+
+    /// Merge a reference array's elements into one value carrying every key any
+    /// of them has, recursing so nested objects union too.
+    private static func unioned(_ values: [JSONValue]) -> JSONValue {
+        var merged: [String: JSONValue] = [:]
+        var sawObject = false
+        for value in values {
+            guard case .object(let object) = value else { continue }
+            sawObject = true
+            for (key, child) in object {
+                if let existing = merged[key] {
+                    merged[key] = unioned([existing, child])
+                } else {
+                    merged[key] = child
+                }
+            }
+        }
+        // Non-object elements have no keys to audit; hand back the first so the
+        // walk's type match still behaves.
+        return sawObject ? .object(merged) : (values.first ?? .null)
     }
 }

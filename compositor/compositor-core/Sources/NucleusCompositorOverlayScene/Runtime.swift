@@ -22,6 +22,7 @@ public protocol OverlaySceneHost: AnyObject {
     func notificationAdded(_ notification: ShellOverlayNotificationInfo)
     func notificationDismissed(id: UInt32, reason: UInt32)
     func hotkeyVisibilitySet(visible: Bool)
+    func hotkeyEntriesSet(_ entries: [ShellOverlayHotkeyEntry])
     func inputDispatched(_ event: InputEvent) -> InputResult
     func notificationFrameActive() -> Bool
     func notificationDeadlineNs() -> UInt64
@@ -135,6 +136,10 @@ public final class OverlaySceneRuntime: OverlaySceneHost {
         submit(.hotkeyVisibility(visible))
     }
 
+    public func hotkeyEntriesSet(_ entries: [ShellOverlayHotkeyEntry]) {
+        submit(.hotkeyEntries(entries))
+    }
+
     public func inputDispatched(_ event: InputEvent) -> InputResult {
         guard let controller else { return ShellOverlayInputResult.passThrough.abiValue }
         return controller.dispatchInput(ShellOverlayInputEvent(event)).abiValue
@@ -210,6 +215,7 @@ private extension ShellOverlayEvent {
         case .notification: 2
         case .dismissNotification: 3
         case .hotkeyVisibility: 5
+        case .hotkeyEntries: 6
         }
     }
 }

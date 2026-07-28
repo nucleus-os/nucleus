@@ -1,31 +1,24 @@
 import NucleusUI
 import NucleusUIEmbedder
 
-struct ShellOverlayHotkeyEntry: Sendable, Equatable {
-    var key: String
-    var description: String
+/// One row of the shortcut overlay. An empty `key` renders as a spacer.
+///
+/// Rows are derived from the live binding table rather than written here: a
+/// hand-maintained list drifts the moment anything is rebound, and an overlay
+/// that confidently shows the wrong shortcut is worse than no overlay.
+public struct ShellOverlayHotkeyEntry: Sendable, Equatable {
+    public var key: String
+    public var description: String
 
-    init(key: String, description: String) {
+    public init(key: String, description: String) {
         self.key = key
         self.description = description
     }
-}
 
-let shellOverlayHotkeyEntries: [ShellOverlayHotkeyEntry] = [
-    .init(key: "Super + T", description: "Launch Kitty"),
-    .init(key: "Super + F", description: "Launch Foot"),
-    .init(key: "Super + S", description: "Launch Sublime Text"),
-    .init(key: "Super + C", description: "Launch Chrome"),
-    .init(key: "Super + Q", description: "Close Window"),
-    .init(key: "", description: ""),
-    .init(key: "Ctrl+Alt + Arrow", description: "Tile Half"),
-    .init(key: "Ctrl+Alt + U/I/J/K", description: "Tile Quarter"),
-    .init(key: "Ctrl+Alt + Return", description: "Maximize"),
-    .init(key: "", description: ""),
-    .init(key: "Super + P", description: "Screenshot to ~/Pictures"),
-    .init(key: "Super + /", description: "Toggle This Overlay"),
-    .init(key: "Ctrl+Alt + Backspace", description: "Exit Compositor"),
-]
+    /// A spacer between groups.
+    public static let separator = ShellOverlayHotkeyEntry(
+        key: "", description: "")
+}
 
 struct ShellOverlayHotkeyMetrics: Sendable, Equatable {
     var backingScaleFactor: BackingScaleFactor
@@ -156,12 +149,12 @@ final class ShellOverlayHotkeyView: View, ~Sendable {
     private(set) var rowViews: [ShellOverlayHotkeyRowView]
     private(set) var metrics: ShellOverlayHotkeyMetrics
     private(set) var visible: Bool = true
-    private let entries: [ShellOverlayHotkeyEntry]
+    private(set) var entries: [ShellOverlayHotkeyEntry]
     private let textSystem: TextSystem
     private var lastFrameInfo: ShellOverlayFrameInfo?
 
     init(
-        entries: [ShellOverlayHotkeyEntry] = shellOverlayHotkeyEntries,
+        entries: [ShellOverlayHotkeyEntry] = [],
         textSystem: TextSystem
     ) {
         self.entries = entries
@@ -196,6 +189,31 @@ final class ShellOverlayHotkeyView: View, ~Sendable {
     func update(visible: Bool) {
         self.visible = visible
         isHidden = (!visible)
+        setNeedsLayout()
+        setNeedsDisplay()
+    }
+
+    /// Adopt a new row set, as a configuration reload produces.
+    ///
+    /// Rebuilds the row views because the count is part of the layout: the box
+    /// height is derived from the entries, so keeping stale views would leave
+    /// rows drawn outside it.
+    func update(entries: [ShellOverlayHotkeyEntry]) {
+        guard entries != self.entries else { return }
+        self.entries = entries
+        for row in rowViews { row.removeFromSuperview() }
+        rowViews = entries
+            .filter { !$0.key.isEmpty }
+            .map { entry in
+                let row = ShellOverlayHotkeyRowView(
+                    entry: entry, metrics: metrics)
+                addSubview(row)
+                return row
+            }
+        accessibilityChildren = [titleLabel] + rowViews + [footerLabel]
+        // The box is sized from the entry count, so the cached frame no longer
+        // describes this content.
+        lastFrameInfo = nil
         setNeedsLayout()
         setNeedsDisplay()
     }

@@ -249,7 +249,7 @@ public enum ShellOverlayEvent: Sendable, Equatable {
     case notification(ShellOverlayNotificationInfo)
     case dismissNotification(id: UInt32, reason: UInt32)
     case hotkeyVisibility(Bool)
-
+    case hotkeyEntries([ShellOverlayHotkeyEntry])
 }
 
 public struct HostedSurfaceID: Sendable, Hashable, ExpressibleByStringLiteral {
