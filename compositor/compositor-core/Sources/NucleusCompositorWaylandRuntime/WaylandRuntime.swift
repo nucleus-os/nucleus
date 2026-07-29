@@ -152,6 +152,34 @@ public final class WaylandRuntime {
     /// executor, so a command and a chord perform the same work — including
     /// the parts that depend on keyboard focus, which is why this cannot be a
     /// pure function over the action alone.
+    /// Install the owner that applies display configurations arriving over
+    /// wlr-output-management.
+    package func installOutputManagementDelegate(
+        _ delegate: any OutputManagementDelegate
+    ) {
+        host.runtime?.outputManagement.delegate = delegate
+    }
+
+    /// Re-advertise every head. Called when output topology or geometry
+    /// changes, which is also what invalidates outstanding configurations.
+    package func outputManagementOutputsChanged() {
+        host.runtime?.outputManagement.outputsChanged()
+    }
+
+    /// Listening sockets committed by sandbox managers. Each is registered as
+    /// its own reactor interest so a confined application's first connection is
+    /// accepted on arrival rather than on the next unrelated wake.
+    public var securityContextListenerFileDescriptors: [Int32] {
+        host.runtime?.securityContext.listeners.map(\.listenFD) ?? []
+    }
+
+    /// Accept every queued connection on every committed listener, tagging each
+    /// new client with the identity of the socket it arrived on.
+    @discardableResult
+    public func acceptSecurityContextClients() -> Bool {
+        host.runtime?.securityContext.acceptPendingClients() ?? false
+    }
+
     public func executeDeferredAction(
         kind: UInt8,
         configurationIndex: UInt32 = .max,

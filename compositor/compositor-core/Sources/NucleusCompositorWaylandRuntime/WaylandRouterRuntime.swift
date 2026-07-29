@@ -56,6 +56,10 @@ public final class WaylandRouterRuntime {
     /// The input feed queries this by surface id to clamp/freeze the cursor under an
     /// active pointer constraint (the seat owns the relative/locked motion delivery).
     let pointerConstraints: PointerConstraintsManager
+    /// Display configuration for wlr-randr, kanshi, and settings panels.
+    let outputManagement: OutputManagement
+    /// Sandbox identities. Consulted by the host's single display filter.
+    let securityContext: SecurityContextManager
 
     package init?(author: WindowSceneAuthor, host: RouterHost) {
         guard let router = NucleusWaylandRouter() else { return nil }
@@ -277,6 +281,20 @@ public final class WaylandRouterRuntime {
         dataDevice.addSelectionObserver(extDataControl)
         router.addGlobal(ZwpTextInputManagerV3Server.global(
             implementation: textInputManager, advertisedVersion: 2))
+        let outputManagement = OutputManagement(compositor: compositor)
+        router.addGlobal(ZwlrOutputManagerV1Server.global(
+            implementation: outputManagement,
+            advertisedVersion: 4,
+            owner: { manager, handle in
+                OutputManagementClient(resource: handle, manager: manager)
+            },
+            installed: { manager, client, _ in manager.register(client) }))
+        // Sandbox identity. The display filter itself is installed once by
+        // RouterHost, which consults this manager — a second installation here
+        // would silently replace the Xwayland rule rather than compose with it.
+        let securityContext = SecurityContextManager(display: router.display)
+        router.addGlobal(WpSecurityContextManagerV1Server.global(
+            implementation: securityContext))
 
         // The compositor impl owns the live-surface registry the frame/presentation
         // completion crossings iterate.
@@ -301,6 +319,8 @@ public final class WaylandRouterRuntime {
         self.screencopy = screencopy
         self.gamma = gamma
         self.pointerConstraints = pointerConstraints
+        self.securityContext = securityContext
+        self.outputManagement = outputManagement
     }
 
     /// Adopt one already-connected Wayland client endpoint.

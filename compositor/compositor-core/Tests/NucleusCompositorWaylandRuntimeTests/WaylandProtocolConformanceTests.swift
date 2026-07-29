@@ -129,12 +129,16 @@ private func bind(
         "zwp_pointer_constraints_v1": 1,
         "zwp_relative_pointer_manager_v1": 1,
         "zwp_text_input_manager_v3": 2,
+        "wp_security_context_manager_v1": 1,
+        "zwlr_output_manager_v1": 4,
     ]
 
     #expect(actual == expected)
     #expect(actual["wp_commit_timing_manager_v1"] == nil)
     #expect(actual["wp_fifo_manager_v1"] == nil)
     #expect(actual["wp_tearing_control_manager_v1"] == nil)
+    // Xwayland's protocol is registered but filtered to the Xwayland client;
+    // an ordinary client must never see it, or it could claim X11 windows.
     #expect(actual["xwayland_shell_v1"] == nil)
 }
 

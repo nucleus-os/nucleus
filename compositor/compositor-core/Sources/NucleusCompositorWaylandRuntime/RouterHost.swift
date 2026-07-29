@@ -72,8 +72,12 @@ package final class RouterHost {
         client: WaylandClientID,
         interfaceName: String
     ) -> Bool {
+        // Two rules, and this is the only place either is enforced. Xwayland's
+        // protocol is scoped to one client; everything else is visible unless
+        // the client connected through a security context.
         guard interfaceName == Self.xwaylandOnlyGlobal else {
-            return true
+            return runtime?.securityContext.allows(
+                client: client, interface: interfaceName) ?? true
         }
         return client == xwaylandClientID
     }

@@ -50,6 +50,7 @@ final class CompositorRuntime {
         case controlService = 26
         case shellPolicyAttachment = 27
         case shellPolicy = 28
+        case securityContextListen = 29
     }
 
     private let reactor: LinuxHostReactor
@@ -321,6 +322,16 @@ final class CompositorRuntime {
             instance: drmSession.generation,
             mode: .multishot,
             to: &interests)
+        // One interest per committed sandbox listener, keyed by descriptor so
+        // adding or retiring a listener re-registers only that one.
+        for listener in waylandRuntime.securityContextListenerFileDescriptors {
+            appendInterest(
+                .securityContextListen,
+                fileDescriptor: listener,
+                instance: instOf(listener),
+                mode: .multishot,
+                to: &interests)
+        }
         let abstractFD = waylandRuntime.xwaylandAbstractFileDescriptor
         appendInterest(
             .xwaylandListen,
@@ -715,6 +726,14 @@ final class CompositorRuntime {
                 }
             } else if result.isTerminal {
                 descriptorFailure(kind: kind, result: event.result)
+            }
+        case .securityContextListen:
+            if result.isReadable {
+                // The manager drains every listener, not just this one; the
+                // descriptor only tells us a wake was warranted.
+                waylandRuntime.acceptSecurityContextClients()
+            } else if result.isTerminal {
+                logRuntime("security context listen descriptor closed")
             }
         case .xwaylandListen:
             if result.isReadable {

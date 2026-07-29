@@ -208,6 +208,7 @@ extension CompositorRuntime {
             epoch: configurationEpoch,
             generation: configurationGeneration)
         outputTopology.outputOverrides = sessionConfiguration.outputs
+        waylandRuntime.installOutputManagementDelegate(self)
 
         publishControlReadiness()
 

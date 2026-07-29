@@ -79,6 +79,11 @@ final class OutputTopologyReconciler {
     private var applied: [DisplayID: AppliedOutput] = [:]
     private var rememberedPlacements: [DisplayID: (x: Double, y: Double)] = [:]
     private let defaultScale: Double
+    /// Overrides applied at runtime through wlr-output-management, keyed by
+    /// output. These outrank the configuration file within a session, and a
+    /// file reload clears them — persistence is the client's job, which is why
+    /// kanshi re-applies on hotplug.
+    var protocolOverrides: [UInt64: OutputConfig] = [:]
     /// Per-output overrides, replaced wholesale on configuration reload.
     /// Looked up by connector name, which is the only identity a user can
     /// write down and the same one `nucleus msg outputs` reports.
@@ -194,6 +199,11 @@ final class OutputTopologyReconciler {
             generation: proposal.generation,
             appliedOutputIDs: Set(applied.keys))
         refreshDerivedOutputState()
+        // Re-advertise heads from the one place every reconcile ends, so a
+        // display tool cannot be left reasoning about a layout that changed —
+        // and so its outstanding configurations are cancelled rather than
+        // applied against stale geometry.
+        waylandRuntime.outputManagementOutputsChanged()
         return true
     }
 
@@ -223,7 +233,8 @@ final class OutputTopologyReconciler {
         // Resolve the name first: it is what a configuration entry is keyed
         // by, so nothing below can be decided without it.
         let outputName = name ?? "DRM-\(planned.id)"
-        let override = outputOverrides.entry(named: outputName)
+        let override = protocolOverrides[planned.id]
+            ?? outputOverrides.entry(named: outputName)
 
         // A configured scale outranks the remembered one — a reload that left
         // the old value in place would look like it had silently failed.
