@@ -1,10 +1,13 @@
-import ColliderRuntime
+import NucleusAndroidRuntimeCore
 import Testing
 @testable import ColliderCommands
 
 @Test
 func frameworkBootUsesTheDedicatedAndroidApexMountHelper() throws {
-    let request = try AndroidApexMountRequest(
+    let invocation = AndroidApexMountInvocation(
+        helperExecutable:
+            "/workspace/.build/release/"
+            + "nucleus-android-runtime-privileged",
         rootFileSystem:
             "/run/nucleus/android/nucleus-framework-3970820/rootfs",
         source: "/system/apex/com.android.runtime.apex",
@@ -12,16 +15,10 @@ func frameworkBootUsesTheDedicatedAndroidApexMountHelper() throws {
         payloadFileSystem: .erofs,
         payloadOffset: 4_096)
 
-    let invocation = AndroidApexMountInvocation(
-        helperExecutable:
-            "/workspace/collider/.build/release/"
-            + "collider-android-privileged",
-        request: request)
-
     #expect(invocation.executable == "sudo")
     #expect(invocation.arguments == [
         "--non-interactive",
-        "/workspace/collider/.build/release/collider-android-privileged",
+        "/workspace/.build/release/nucleus-android-runtime-privileged",
         "__android-apex-mount",
         "--root-file-system",
         "/run/nucleus/android/nucleus-framework-3970820/rootfs",

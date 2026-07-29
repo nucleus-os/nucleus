@@ -1,6 +1,6 @@
 import Testing
 
-@testable import ColliderRuntime
+@testable import NucleusAndroidRuntimeCore
 
 @Test
 func androidCgroupDelegationResolvesTheOwnedPayloadRoot() throws {
@@ -14,7 +14,6 @@ func androidCgroupDelegationResolvesTheOwnedPayloadRoot() throws {
             == "/sys/fs/cgroup/system.slice/"
             + "nucleus-framework-3970820.scope/payload/android")
 }
-
 @Test
 func androidCgroupDelegationRejectsPathsOutsideItsPrivilegeBoundary() {
     for name in [

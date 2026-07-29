@@ -67,3 +67,6 @@ DEVICE_MANIFEST_FILE := \
 
 BOARD_VENDOR_SEPOLICY_DIRS += \
     device/nucleus/nucleus_x86_64/sepolicy/vendor
+
+SYSTEM_EXT_PRIVATE_SEPOLICY_DIRS += \
+    device/nucleus/nucleus_x86_64/sepolicy/system_ext/private

@@ -19,10 +19,12 @@ public struct StageRuntimeELFAction: ColliderAction {
   public struct Identity: ColliderActionIdentity {
     public let products: FilePath
     public let prefix: FilePath
+    public let includeAndroid: Bool
 
     public func encode(into encoder: inout CanonicalDigestEncoder) {
       encoder.append(tag: 1, string: products.string)
       encoder.append(tag: 2, string: prefix.string)
+      encoder.append(tag: 3, integer: includeAndroid ? 1 : 0)
     }
   }
 
@@ -31,19 +33,25 @@ public struct StageRuntimeELFAction: ColliderAction {
   public let products: FilePath
   public let prefix: FilePath
   public let environment: [String: String]
+  public let includeAndroid: Bool
 
   public var identity: Identity {
-    Identity(products: products, prefix: prefix)
+    Identity(
+      products: products,
+      prefix: prefix,
+      includeAndroid: includeAndroid)
   }
 
   public init(
     products: FilePath,
     prefix: FilePath,
-    environment: [String: String]
+    environment: [String: String],
+    includeAndroid: Bool = false
   ) {
     self.products = products
     self.prefix = prefix
     self.environment = environment
+    self.includeAndroid = includeAndroid
   }
 
   public func execute(in context: ActionContext) async throws {
@@ -52,7 +60,9 @@ public struct StageRuntimeELFAction: ColliderAction {
     }
 
     var queue: [FilePath] = []
-    for executable in RuntimeELFLayout.executables {
+    let executables = RuntimeELFLayout.executables(
+      includeAndroid: includeAndroid)
+    for executable in executables {
       let source = products.appending(executable.name)
       let destination = RuntimeELFLayout.path(
         for: executable,
@@ -113,7 +123,7 @@ public struct StageRuntimeELFAction: ColliderAction {
         environment: environment,
         context: context)
     }
-    for executable in RuntimeELFLayout.executables {
+    for executable in executables {
       let path = RuntimeELFLayout.path(
         for: executable,
         under: prefix,
@@ -140,10 +150,12 @@ public struct ValidateRuntimeELFAction: ColliderAction {
   public struct Identity: ColliderActionIdentity {
     public let root: FilePath
     public let report: FilePath
+    public let includeAndroid: Bool
 
     public func encode(into encoder: inout CanonicalDigestEncoder) {
       encoder.append(tag: 1, string: root.string)
       encoder.append(tag: 2, string: report.string)
+      encoder.append(tag: 3, integer: includeAndroid ? 1 : 0)
     }
   }
 
@@ -152,19 +164,25 @@ public struct ValidateRuntimeELFAction: ColliderAction {
   public let root: FilePath
   public let report: FilePath
   public let environment: [String: String]
+  public let includeAndroid: Bool
 
   public var identity: Identity {
-    Identity(root: root, report: report)
+    Identity(
+      root: root,
+      report: report,
+      includeAndroid: includeAndroid)
   }
 
   public init(
     root: FilePath,
     report: FilePath,
-    environment: [String: String]
+    environment: [String: String],
+    includeAndroid: Bool = false
   ) {
     self.root = root
     self.report = report
     self.environment = environment
+    self.includeAndroid = includeAndroid
   }
 
   public func execute(in context: ActionContext) async throws {
@@ -178,7 +196,9 @@ public struct ValidateRuntimeELFAction: ColliderAction {
     var inspections: [String: RuntimeELFInspection] = [:]
     var reportExecutables: [RuntimeELFReport.Executable] = []
 
-    for executable in RuntimeELFLayout.executables {
+    for executable in RuntimeELFLayout.executables(
+      includeAndroid: includeAndroid)
+    {
       let path = RuntimeELFLayout.path(
         for: executable,
         under: root,
@@ -290,7 +310,7 @@ private enum RuntimeELFLayout {
     let location: Location
   }
 
-  static let executables = [
+  static let coreExecutables = [
     Executable(name: "NucleusCompositor", location: .bin),
     Executable(name: "NucleusShell", location: .bin),
     Executable(name: "NucleusSessionSupervisor", location: .libexec),
@@ -299,6 +319,23 @@ private enum RuntimeELFLayout {
     Executable(name: "NucleusShellPamHelper", location: .libexec),
     Executable(name: "nucleus", location: .bin),
   ]
+
+  static let androidExecutables = [
+    Executable(name: "nucleus-android-runtime", location: .libexec),
+    Executable(
+      name: "nucleus-android-runtime-privileged",
+      location: .libexec),
+    Executable(
+      name: "nucleus-android-gfxstream-broker",
+      location: .libexec),
+    Executable(
+      name: "nucleus-android-display-host",
+      location: .libexec),
+  ]
+
+  static func executables(includeAndroid: Bool) -> [Executable] {
+    coreExecutables + (includeAndroid ? androidExecutables : [])
+  }
 
   static let requiredDependencies: [String: Set<String>] = [
     "NucleusCompositor": [

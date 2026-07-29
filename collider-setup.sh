@@ -27,7 +27,6 @@ export NUCLEUS_NATIVE_SDK_ROOT
 host_env="$root/tools/host-env.sh"
 pkg="$root/collider"
 bin="$pkg/.build/release/collider"
-android_helper="$pkg/.build/release/collider-android-privileged"
 
 # Collider builds a complete monorepo checkout. Initialize only absent
 # submodules before compiling Collider itself. Existing checkouts are user
@@ -108,7 +107,6 @@ source "$host_env"
 
 pkg="$root/collider"
 bin="$pkg/.build/release/collider"
-android_helper="$pkg/.build/release/collider-android-privileged"
 
 # Build inputs: the collider package and every *ColliderRecipe target. The
 # binary's mtime is the fingerprint; rebuild only when an input is newer.
@@ -124,10 +122,9 @@ done
 
 collider_is_current() {
   [[ -x "$bin" ]] || return 1
-  [[ -x "$android_helper" ]] || return 1
   local newer
   newer="$(find -L "${existing[@]}" -type f \
-    \( -newer "$bin" -o -newer "$android_helper" \) \
+    -newer "$bin" \
     -not -path '*/.build/*' -print -quit 2>/dev/null)"
   [[ -z "$newer" ]]
 }

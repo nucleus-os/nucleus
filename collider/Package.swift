@@ -6,9 +6,6 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [
         .executable(name: "collider", targets: ["Collider"]),
-        .executable(
-            name: "collider-android-privileged",
-            targets: ["ColliderAndroidPrivilegedExecutable"]),
     ],
     dependencies: [
         .package(path: "engine"),
@@ -19,20 +16,10 @@ let package = Package(
         .executableTarget(
             name: "Collider",
             dependencies: ["ColliderCommands"]),
-        .executableTarget(
-            name: "ColliderAndroidPrivilegedExecutable",
-            dependencies: ["ColliderAndroidPrivileged"]),
-        .target(
-            name: "ColliderAndroidPrivileged",
-            dependencies: [
-                .product(name: "ArgumentParser", package: "swift-argument-parser"),
-                .product(name: "ColliderRuntime", package: "engine"),
-            ]),
         .target(
             name: "ColliderCommands",
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
-                "ColliderAndroidPrivileged",
                 .product(name: "ColliderCore", package: "engine"),
                 .product(name: "ColliderRuntime", package: "engine"),
                 .product(
@@ -40,6 +27,9 @@ let package = Package(
                     package: "Nucleus"),
                 .product(
                     name: "NucleusAndroidContainerContract",
+                    package: "Nucleus"),
+                .product(
+                    name: "NucleusAndroidRuntimeCore",
                     package: "Nucleus"),
                 "AndroidRuntimeColliderRecipe",
                 "ChromiumColliderRecipe",
@@ -102,13 +92,15 @@ let package = Package(
             name: "ColliderCommandsTests",
             dependencies: [
                 "ColliderCommands",
-                "ColliderAndroidPrivileged",
                 "AndroidRuntimeColliderRecipe",
                 "ChromiumColliderRecipe",
                 .product(name: "ColliderCore", package: "engine"),
                 "CoreColliderRecipe",
                 .product(
                     name: "NucleusSessionProtocol",
+                    package: "Nucleus"),
+                .product(
+                    name: "NucleusAndroidRuntimeCore",
                     package: "Nucleus"),
                 "ReactNativeColliderRecipe",
                 "TracyColliderRecipe",

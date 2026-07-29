@@ -1,0 +1,12 @@
+type nucleus_runtime_bridge, domain, coredomain;
+
+app_domain(nucleus_runtime_bridge)
+binder_use(nucleus_runtime_bridge)
+
+allow nucleus_runtime_bridge nucleus_runtime_socket:dir search;
+allow nucleus_runtime_bridge nucleus_runtime_socket:sock_file {
+    getattr
+    open
+    read
+    write
+};

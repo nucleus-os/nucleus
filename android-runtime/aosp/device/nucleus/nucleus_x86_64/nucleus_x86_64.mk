@@ -48,6 +48,7 @@ PRODUCT_PACKAGES += \
     FusedLocation \
     LatinIME \
     Launcher3QuickStep \
+    NucleusRuntimeBridge \
     Settings \
     SettingsIntelligence \
     SystemUI \

@@ -12,7 +12,12 @@ public enum AndroidRuntimeColliderRecipe {
             AOSPProductSourceOverlay(
                 source: root.removingLastComponent().appending(
                     "ipc/transport/Sources/NucleusIPCTransportC"),
-                relativeDestination: "native/ipc-transport")
+                relativeDestination: "native/ipc-transport"),
+            AOSPProductSourceOverlay(
+                source: root.appending(
+                    "aosp/packages/apps/NucleusRuntimeBridge"),
+                relativeDestination:
+                    "packages/apps/NucleusRuntimeBridge"),
         ]
     }
 

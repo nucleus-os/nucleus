@@ -1,0 +1,1 @@
+user=system seinfo=platform name=org.nucleus.android.runtimebridge domain=nucleus_runtime_bridge type=system_app_data_file levelFrom=user

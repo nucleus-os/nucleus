@@ -2,6 +2,7 @@ import ArgumentParser
 import ColliderCore
 import ColliderRuntime
 import FoundationEssentials
+import NucleusSessionProtocol
 import ShellColliderRecipe
 import SystemPackage
 
@@ -54,6 +55,21 @@ struct RuntimeInstallation {
     var pamHelper: URL {
         prefix.appendingPathComponent("libexec/NucleusShellPamHelper")
     }
+    var androidRuntime: URL {
+        prefix.appendingPathComponent("libexec/nucleus-android-runtime")
+    }
+    var androidPrivilegedHelper: URL {
+        prefix.appendingPathComponent(
+            "libexec/nucleus-android-runtime-privileged")
+    }
+    var androidGfxstreamBroker: URL {
+        prefix.appendingPathComponent(
+            "libexec/nucleus-android-gfxstream-broker")
+    }
+    var androidDisplayHost: URL {
+        prefix.appendingPathComponent(
+            "libexec/nucleus-android-display-host")
+    }
 }
 
 struct RuntimeInstaller {
@@ -95,14 +111,31 @@ struct RuntimeInstaller {
             if !published { try? FileManager.default.removeItem(at: candidate) }
         }
 
+        let includeAndroid = FileManager.default.fileExists(
+            atPath: context.layout.androidRuntime
+                .appendingPathComponent(
+                    ".aosp-build/current/signed/image-provenance.json"
+                ).path)
         _ = try await installRuntime(
             into: installation,
             publishedPrefix: prefix,
-            options: options)
+            options: options,
+            includeAndroid: includeAndroid)
         try writeMetadata(options, into: installation)
-        try validateStructure(installation)
-        try await validateELF(installation)
-        try await validateRelocation(installation)
+        if includeAndroid {
+            try writeAndroidCapability(
+                into: installation,
+                publishedPrefix: prefix)
+        }
+        try validateStructure(
+            installation,
+            includeAndroid: includeAndroid)
+        try await validateELF(
+            installation,
+            includeAndroid: includeAndroid)
+        try await validateRelocation(
+            installation,
+            includeAndroid: includeAndroid)
         let identity = try ArtifactHasher.digest(tree: FilePath(candidate.path))
         let generation = generationsRoot.appendingPathComponent(
             hex(identity.bytes.prefix(12)), isDirectory: true)
@@ -206,7 +239,8 @@ struct RuntimeInstaller {
     private func installRuntime(
         into installation: RuntimeInstallation,
         publishedPrefix: URL,
-        options: RuntimeBuildOptions
+        options: RuntimeBuildOptions,
+        includeAndroid: Bool
     ) async throws -> URL {
         let swiftPM = try context.swiftPMInvocation(
             configuration: options.optimization == .debug ? .debug : .release,
@@ -222,7 +256,7 @@ struct RuntimeInstaller {
         let products = URL(
             fileURLWithPath: swiftPM.configurationProducts.string,
             isDirectory: true)
-        for product in [
+        var requiredProducts = [
             "NucleusCompositor",
             "NucleusSessionSupervisor",
             "NucleusConfigService",
@@ -230,7 +264,16 @@ struct RuntimeInstaller {
             "NucleusShell",
             "NucleusShellPamHelper",
             "nucleus",
-        ] {
+        ]
+        if includeAndroid {
+            requiredProducts += [
+                "nucleus-android-runtime",
+                "nucleus-android-runtime-privileged",
+                "nucleus-android-gfxstream-broker",
+                "nucleus-android-display-host",
+            ]
+        }
+        for product in requiredProducts {
             let executable = products.appendingPathComponent(product)
             guard FileManager.default.isExecutableFile(atPath: executable.path)
             else {
@@ -243,7 +286,8 @@ struct RuntimeInstaller {
             StageRuntimeELFAction(
                 products: FilePath(products.path),
                 prefix: FilePath(installation.prefix.path),
-                environment: context.taskEnvironment))
+                environment: context.taskEnvironment,
+                includeAndroid: includeAndroid))
 
         let sessionPackage = context.layout.compositorSessionPackage
         for name in ["nucleus-session", "nucleus-session-validate"] {
@@ -311,10 +355,40 @@ struct RuntimeInstaller {
             options: .atomic)
     }
 
-    private func validateStructure(
-        _ installation: RuntimeInstallation
+    private func writeAndroidCapability(
+        into installation: RuntimeInstallation,
+        publishedPrefix: URL
     ) throws {
-        let executables = [
+        let directory = installation.prefix.appendingPathComponent(
+            "share/nucleus/session-capabilities",
+            isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true)
+        let declaration = try SessionCapabilityDeclaration(
+            identifier: "android",
+            executable: publishedPrefix.appendingPathComponent(
+                "libexec/nucleus-android-runtime").path,
+            arguments: [
+                "--android-root",
+                context.layout.androidRuntime.path,
+            ],
+            restartPolicy: .onFailure,
+            maximumRestarts: 3)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        var bytes = Array(try encoder.encode(declaration))
+        bytes.append(0x0a)
+        try Data(bytes).write(
+            to: directory.appendingPathComponent("android.json"),
+            options: .atomic)
+    }
+
+    private func validateStructure(
+        _ installation: RuntimeInstallation,
+        includeAndroid: Bool
+    ) throws {
+        var executables = [
             installation.session,
             installation.sessionSupervisor,
             installation.configService,
@@ -324,6 +398,14 @@ struct RuntimeInstaller {
             installation.controlCLI,
             installation.pamHelper,
         ]
+        if includeAndroid {
+            executables += [
+                installation.androidRuntime,
+                installation.androidPrivilegedHelper,
+                installation.androidGfxstreamBroker,
+                installation.androidDisplayHost,
+            ]
+        }
         for executable in executables
         where
             !FileManager.default.isExecutableFile(atPath: executable.path)
@@ -340,7 +422,8 @@ struct RuntimeInstaller {
     }
 
     private func validateELF(
-        _ installation: RuntimeInstallation
+        _ installation: RuntimeInstallation,
+        includeAndroid: Bool
     ) async throws {
         let stagedManifest = installation.prefix.appendingPathComponent(
             "share/nucleus/runtime-elf-report.json")
@@ -348,11 +431,13 @@ struct RuntimeInstaller {
             ValidateRuntimeELFAction(
                 root: FilePath(installation.prefix.path),
                 report: FilePath(stagedManifest.path),
-                environment: context.taskEnvironment))
+                environment: context.taskEnvironment,
+                includeAndroid: includeAndroid))
     }
 
     private func validateRelocation(
-        _ installation: RuntimeInstallation
+        _ installation: RuntimeInstallation,
+        includeAndroid: Bool
     ) async throws {
         let original = installation.prefix
         let relocated = original.deletingLastPathComponent()
@@ -367,7 +452,8 @@ struct RuntimeInstaller {
                 ValidateRuntimeELFAction(
                     root: FilePath(relocated.path),
                     report: FilePath(manifest.path),
-                    environment: context.taskEnvironment))
+                    environment: context.taskEnvironment,
+                    includeAndroid: includeAndroid))
             try FileManager.default.moveItem(at: relocated, to: original)
         } catch {
             try? FileManager.default.moveItem(at: relocated, to: original)

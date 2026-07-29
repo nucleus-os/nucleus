@@ -1,6 +1,6 @@
 import Foundation
 
-struct AndroidFrameworkProgressRecorder {
+public struct AndroidFrameworkProgressRecorder {
     private struct Event: Encodable {
         let elapsedMilliseconds: Int64
         let stage: String
@@ -11,7 +11,7 @@ struct AndroidFrameworkProgressRecorder {
     private let origin = ContinuousClock.now
     private let encoder = JSONEncoder()
 
-    init(output: URL) throws {
+    public init(output: URL) throws {
         self.output = output
         try Data().write(to: output, options: .atomic)
         try FileManager.default.setAttributes(
@@ -19,7 +19,7 @@ struct AndroidFrameworkProgressRecorder {
             ofItemAtPath: output.path)
     }
 
-    func record(
+    public func record(
         _ stage: String,
         fields: [String: String] = [:]
     ) throws {
@@ -35,7 +35,7 @@ struct AndroidFrameworkProgressRecorder {
         try handle.write(contentsOf: data)
     }
 
-    func recordHostSample(
+    public func recordHostSample(
         cgroup: URL,
         processIdentifiers: [String: Int32]
     ) throws {
@@ -75,7 +75,7 @@ struct AndroidFrameworkProgressRecorder {
         try record("host.sample", fields: fields)
     }
 
-    static func milliseconds(_ duration: Duration) -> Int64 {
+    public static func milliseconds(_ duration: Duration) -> Int64 {
         let components = duration.components
         let seconds = components.seconds.multipliedReportingOverflow(
             by: 1_000)

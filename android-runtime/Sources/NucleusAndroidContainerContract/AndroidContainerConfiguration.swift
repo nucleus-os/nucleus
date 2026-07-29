@@ -42,6 +42,7 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
     public let tombstones: String
     public let persistentData: String
     public let gfxstreamSocketDirectory: String
+    public let runtimeBridgeSocketDirectory: String
     public let hostKernelConfigurationDirectory: String
     public let hostUIDStart: UInt32
     public let hostGIDStart: UInt32
@@ -59,6 +60,7 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
         tombstones: String,
         persistentData: String,
         gfxstreamSocketDirectory: String,
+        runtimeBridgeSocketDirectory: String,
         hostKernelConfigurationDirectory: String,
         hostUIDStart: UInt32,
         hostGIDStart: UInt32,
@@ -75,6 +77,7 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
         self.tombstones = tombstones
         self.persistentData = persistentData
         self.gfxstreamSocketDirectory = gfxstreamSocketDirectory
+        self.runtimeBridgeSocketDirectory = runtimeBridgeSocketDirectory
         self.hostKernelConfigurationDirectory =
             hostKernelConfigurationDirectory
         self.hostUIDStart = hostUIDStart
@@ -154,6 +157,7 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
             "lxc.mount.entry = \(kernelLogDevice) dev/kmsg none bind,create=file 0 0",
             "lxc.mount.entry = \(kernelLogDevice) dev/kmsg_debug none bind,create=file 0 0",
             "lxc.mount.entry = \(gfxstreamSocketDirectory) dev/nucleus none bind,ro,create=dir 0 0",
+            "lxc.mount.entry = \(runtimeBridgeSocketDirectory) dev/nucleus-runtime none bind,ro,create=dir 0 0",
             "lxc.mount.entry = \(persistentData) data none bind,rw,nosuid,nodev,create=dir 0 0",
             "lxc.mount.entry = \(tombstones) data/tombstones none bind,create=dir 0 0",
             "lxc.mount.entry = tmpfs metadata tmpfs rw,nosuid,nodev,noexec,mode=0755,create=dir 0 0",
@@ -186,6 +190,9 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
         try validateAbsolutePath(
             gfxstreamSocketDirectory,
             field: "gfxstreamSocketDirectory")
+        try validateAbsolutePath(
+            runtimeBridgeSocketDirectory,
+            field: "runtimeBridgeSocketDirectory")
         try validateAbsolutePath(
             hostKernelConfigurationDirectory,
             field: "hostKernelConfigurationDirectory")

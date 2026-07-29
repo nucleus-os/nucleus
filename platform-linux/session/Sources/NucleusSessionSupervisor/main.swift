@@ -42,6 +42,7 @@ private struct SupervisorArguments {
     var controlService: String
     var shell: String
     var compositor: [String]
+    var capabilities: [SessionCapabilityDeclaration]
     var startupTimeoutMilliseconds: Int32 = 30_000
 
     static func parse(_ arguments: [String]) throws -> SupervisorArguments {
@@ -50,6 +51,7 @@ private struct SupervisorArguments {
         var configService: String?
         var controlService: String?
         var shell: String?
+        var capabilities: [SessionCapabilityDeclaration] = []
         var startupTimeoutMilliseconds: Int32 = 30_000
         var index = 1
         while index < arguments.count {
@@ -90,6 +92,24 @@ private struct SupervisorArguments {
                     throw SupervisorFailure.usage(
                         "invalid session configuration: \(error)")
                 }
+            case "--capability-manifest":
+                guard index + 1 < arguments.count else {
+                    throw SupervisorFailure.usage(Self.usage)
+                }
+                index += 1
+                do {
+                    let data = try Data(
+                        contentsOf: URL(fileURLWithPath: arguments[index]))
+                    let decoder = JSONDecoder()
+                    decoder.keyDecodingStrategy = .convertFromSnakeCase
+                    capabilities.append(try decoder.decode(
+                        SessionCapabilityDeclaration.self,
+                        from: data))
+                } catch {
+                    throw SupervisorFailure.usage(
+                        "invalid session capability manifest "
+                            + "\(arguments[index]): \(error)")
+                }
             case "--startup-timeout-seconds":
                 guard index + 1 < arguments.count,
                       let seconds = Int32(arguments[index + 1]),
@@ -105,7 +125,9 @@ private struct SupervisorArguments {
                 let compositor = Array(arguments.dropFirst(index + 1))
                 guard let configService, !configService.isEmpty,
                       let controlService, !controlService.isEmpty,
-                      let shell, !shell.isEmpty, !compositor.isEmpty
+                      let shell, !shell.isEmpty, !compositor.isEmpty,
+                      Set(capabilities.map(\.identifier)).count
+                        == capabilities.count
                 else {
                     throw SupervisorFailure.usage(Self.usage)
                 }
@@ -116,6 +138,7 @@ private struct SupervisorArguments {
                     controlService: controlService,
                     shell: shell,
                     compositor: compositor,
+                    capabilities: capabilities,
                     startupTimeoutMilliseconds: startupTimeoutMilliseconds)
             case "-h", "--help":
                 throw SupervisorFailure.usage(Self.usage)
@@ -128,7 +151,7 @@ private struct SupervisorArguments {
     }
 
     static let usage = """
-    usage: nucleus-session-supervisor [--status-file PATH] [--configuration HEX] [--startup-timeout-seconds N] --config-service PATH --control-service PATH --shell PATH -- COMMAND [ARGS...]
+    usage: nucleus-session-supervisor [--status-file PATH] [--configuration HEX] [--startup-timeout-seconds N] [--capability-manifest PATH]... --config-service PATH --control-service PATH --shell PATH -- COMMAND [ARGS...]
     """
 }
 
@@ -141,6 +164,17 @@ private struct SupervisedChild {
 private struct UnexpectedSessionExit {
     let role: SessionProcessRole
     let status: Int32
+}
+
+private struct SupervisedCapability {
+    let declaration: SessionCapabilityDeclaration
+    let processID: pid_t
+    let restartCount: UInt8
+}
+
+private enum UnexpectedProcessExit {
+    case session(UnexpectedSessionExit)
+    case capability(identifier: String, status: Int32)
 }
 
 private struct SessionStatusPublisher {
@@ -242,6 +276,7 @@ private final class SessionSupervisor {
 
     func run() -> Int32 {
         var children: [SupervisedChild] = []
+        var capabilities: [SupervisedCapability] = []
         do {
             let sessionRuntime = try SupervisorSessionRuntime.prepare()
             defer { sessionRuntime.removeOwnedDirectory() }
@@ -384,10 +419,58 @@ private final class SessionSupervisor {
                 monitoring: children)
             try statusPublisher.publish(shellReady)
             log("shell ready pid=\(shell.processID)")
+            for declaration in arguments.capabilities {
+                do {
+                    capabilities.append(try spawnCapability(
+                        declaration,
+                        restartCount: 0))
+                } catch {
+                    log(
+                        "capability \(declaration.identifier) failed to "
+                            + "start: \(error)")
+                }
+            }
 
             while true {
                 children = [configService, controlService, compositor, shell]
-                let unexpectedExit = try waitForSessionExit(children)
+                let processExit = try waitForSessionExit(
+                    children,
+                    capabilities: capabilities)
+                if case .capability(let identifier, let status) = processExit {
+                    guard let index = capabilities.firstIndex(where: {
+                        $0.declaration.identifier == identifier
+                    }) else {
+                        throw SupervisorFailure.channel(
+                            "unknown capability process exited: \(identifier)")
+                    }
+                    let exited = capabilities.remove(at: index)
+                    let shouldRestart =
+                        exited.restartCount
+                            < exited.declaration.maximumRestarts
+                        && (exited.declaration.restartPolicy == .always
+                            || exited.declaration.restartPolicy == .onFailure
+                                && status != 0)
+                    if shouldRestart {
+                        do {
+                            capabilities.append(try spawnCapability(
+                                exited.declaration,
+                                restartCount: exited.restartCount + 1))
+                        } catch {
+                            log(
+                                "capability \(identifier) failed to restart: "
+                                    + "\(error)")
+                        }
+                    } else {
+                        log(
+                            "capability \(identifier) exited status=\(status) "
+                                + "restarts=\(exited.restartCount)")
+                    }
+                    continue
+                }
+                guard case .session(let unexpectedExit) = processExit else {
+                    throw SupervisorFailure.channel(
+                        "invalid supervised process exit")
+                }
                 switch unexpectedExit.role {
                 case .controlService:
                     try statusPublisher.publish(SessionReadinessMessage(
@@ -396,6 +479,8 @@ private final class SessionSupervisor {
                         detail: SessionFailureReason
                             .controlServiceExitedAfterReady.rawValue))
                     revokePublicControlAccess()
+                    terminateCapabilities(capabilities)
+                    capabilities.removeAll()
                     terminate([configService, compositor, shell])
                     return unexpectedExit.status == 0
                         ? 1 : unexpectedExit.status
@@ -620,6 +705,7 @@ private final class SessionSupervisor {
                 role: .supervisor,
                 milestone: .terminating,
                 detail: signal))
+            terminateCapabilities(capabilities)
             terminateSession(children)
             return 128 + signal
         } catch {
@@ -628,6 +714,7 @@ private final class SessionSupervisor {
                 role: .supervisor,
                 milestone: .failed,
                 detail: failureReason(error).rawValue))
+            terminateCapabilities(capabilities)
             terminateSession(children)
             return 1
         }
@@ -764,6 +851,72 @@ private final class SessionSupervisor {
         let source: Int32
         let target: Int32
         let argument: String
+    }
+
+    private func spawnCapability(
+        _ declaration: SessionCapabilityDeclaration,
+        restartCount: UInt8
+    ) throws -> SupervisedCapability {
+        var attributes = posix_spawnattr_t()
+        guard unsafe posix_spawnattr_init(&attributes) == 0 else {
+            throw SupervisorFailure.system(
+                "initializing capability process attributes", errno)
+        }
+        defer { unsafe posix_spawnattr_destroy(&attributes) }
+
+        var defaultSignals = sigset_t()
+        var emptyMask = sigset_t()
+        unsafe sigemptyset(&defaultSignals)
+        unsafe sigemptyset(&emptyMask)
+        for signal in [SIGCHLD, SIGINT, SIGQUIT, SIGTERM, SIGHUP, SIGPIPE] {
+            unsafe sigaddset(&defaultSignals, signal)
+        }
+        guard unsafe posix_spawnattr_setsigdefault(
+            &attributes,
+            &defaultSignals) == 0,
+              unsafe posix_spawnattr_setsigmask(&attributes, &emptyMask) == 0,
+              unsafe posix_spawnattr_setflags(
+                &attributes,
+                Int16(
+                    POSIX_SPAWN_SETSIGDEF
+                        | POSIX_SPAWN_SETSIGMASK
+                        | POSIX_SPAWN_SETPGROUP)) == 0,
+              unsafe posix_spawnattr_setpgroup(&attributes, 0) == 0
+        else {
+            throw SupervisorFailure.system(
+                "configuring capability process attributes", errno)
+        }
+
+        let childArguments = [
+            declaration.executable,
+            SessionCapabilityProcess.identifierArgument,
+            declaration.identifier,
+        ] + declaration.arguments
+        let storage: [UnsafeMutablePointer<CChar>?] =
+            unsafe childArguments.map { unsafe strdup($0) } + [nil]
+        defer { unsafe storage.forEach { unsafe free($0) } }
+        var processID = pid_t()
+        let result = storage.withUnsafeBufferPointer { buffer in
+            unsafe posix_spawnp(
+                &processID,
+                buffer[0]!,
+                nil,
+                &attributes,
+                UnsafeMutablePointer(mutating: buffer.baseAddress!),
+                environ)
+        }
+        guard result == 0 else {
+            throw SupervisorFailure.system(
+                "launching capability \(declaration.identifier)",
+                Int32(result))
+        }
+        log(
+            "spawned capability \(declaration.identifier) pid=\(processID) "
+                + "restart=\(restartCount)")
+        return SupervisedCapability(
+            declaration: declaration,
+            processID: processID,
+            restartCount: restartCount)
     }
 
     private func spawn(
@@ -1023,10 +1176,18 @@ private final class SessionSupervisor {
         }
     }
 
-    private func waitForSessionExit(_ children: [SupervisedChild]) throws
-        -> UnexpectedSessionExit
+    private func waitForSessionExit(
+        _ children: [SupervisedChild],
+        capabilities: [SupervisedCapability]
+    ) throws -> UnexpectedProcessExit
     {
         while true {
+            if let exit = reapExitedProcess(
+                children,
+                capabilities: capabilities)
+            {
+                return exit
+            }
             var descriptor = pollfd(
                 fd: signalDescriptor,
                 events: Int16(POLLIN),
@@ -1043,17 +1204,32 @@ private final class SessionSupervisor {
             }) {
                 throw SupervisorFailure.interrupted(signal)
             }
-            for child in children {
-                var waitStatus: Int32 = 0
-                let waited = unsafe waitpid(
-                    child.processID, &waitStatus, WNOHANG)
-                guard waited == child.processID else { continue }
-                let status = Self.exitStatus(waitStatus)
-                return UnexpectedSessionExit(
-                    role: child.role,
-                    status: status)
-            }
         }
+    }
+
+    private func reapExitedProcess(
+        _ children: [SupervisedChild],
+        capabilities: [SupervisedCapability]
+    ) -> UnexpectedProcessExit? {
+        for child in children {
+            var waitStatus: Int32 = 0
+            let waited = unsafe waitpid(
+                child.processID, &waitStatus, WNOHANG)
+            guard waited == child.processID else { continue }
+            return .session(UnexpectedSessionExit(
+                role: child.role,
+                status: Self.exitStatus(waitStatus)))
+        }
+        for capability in capabilities {
+            var waitStatus: Int32 = 0
+            let waited = unsafe waitpid(
+                capability.processID, &waitStatus, WNOHANG)
+            guard waited == capability.processID else { continue }
+            return .capability(
+                identifier: capability.declaration.identifier,
+                status: Self.exitStatus(waitStatus))
+        }
+        return nil
     }
 
     private func processSignals(monitoring children: [SupervisedChild]) throws {
@@ -1120,6 +1296,17 @@ private final class SessionSupervisor {
         for processID in remaining {
             while waitpid(processID, nil, 0) < 0, errno == EINTR {}
         }
+    }
+
+    private func terminateCapabilities(
+        _ capabilities: [SupervisedCapability]
+    ) {
+        terminate(capabilities.map {
+            SupervisedChild(
+                role: .supervisor,
+                processID: $0.processID,
+                readinessDescriptor: -1)
+        })
     }
 
     private func terminateSession(_ children: [SupervisedChild]) {

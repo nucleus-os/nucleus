@@ -1,5 +1,6 @@
 import ArgumentParser
 import ColliderCore
+import NucleusAndroidRuntimeCore
 import Testing
 @testable import ColliderCommands
 
@@ -164,10 +165,14 @@ func installationAndBrowserHelpExposeOneBrowserInstallLeaf() throws {
 @Test
 func privilegedAndroidOperationsStayOutOfColliderRootHelp() {
     let rootHelp = ColliderCommand.message(for: CleanExit.helpRequest())
-    #expect(!rootHelp.contains(androidApexMountCommandName))
-    #expect(!rootHelp.contains(androidBPFBrokerCommandName))
-    #expect(!rootHelp.contains(androidBPFMountCommandName))
-    #expect(!rootHelp.contains(androidCgroupDelegateCommandName))
+    #expect(!rootHelp.contains(
+        AndroidRuntimePrivilegedOperation.apexMountCommandName))
+    #expect(!rootHelp.contains(
+        AndroidRuntimePrivilegedOperation.bpfBrokerCommandName))
+    #expect(!rootHelp.contains(
+        AndroidRuntimePrivilegedOperation.bpfMountCommandName))
+    #expect(!rootHelp.contains(
+        AndroidRuntimePrivilegedOperation.cgroupDelegateCommandName))
 }
 
 private func awaitRejects(_ path: [String], options: [String]) {

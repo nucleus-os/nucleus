@@ -15,6 +15,8 @@ func containerConfigurationRunsDelegationBeforeAndroidInit() throws {
             "/run/nucleus/android/nucleus-framework-3970820/persistent-data",
         gfxstreamSocketDirectory:
             "/run/nucleus/android/nucleus-framework-3970820/gfxstream-broker",
+        runtimeBridgeSocketDirectory:
+            "/run/nucleus/android/nucleus-framework-3970820/runtime-bridge",
         hostKernelConfigurationDirectory:
             "/run/nucleus/android/nucleus-framework-3970820/kernel-configuration",
         hostUIDStart: 165_536,
@@ -70,4 +72,8 @@ func containerConfigurationRunsDelegationBeforeAndroidInit() throws {
     #expect(
         text.contains(
             "lxc.mount.entry = /dev/fuse dev/fuse none bind,create=file 0 0"))
+    #expect(
+        text.contains(
+            "nucleus-framework-3970820/runtime-bridge "
+                + "dev/nucleus-runtime none bind,ro,create=dir 0 0"))
 }

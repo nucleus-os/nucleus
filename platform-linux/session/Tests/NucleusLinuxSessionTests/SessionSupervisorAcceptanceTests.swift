@@ -59,23 +59,39 @@ private struct SupervisorFixture {
     func launch(
         compositorMode: String = "ready-wait",
         shellMode: String = "ready-wait",
+        capability: SessionCapabilityDeclaration? = nil,
+        capabilityMode: String = "ready-wait",
         startupTimeoutSeconds: Int = 3
     ) throws -> Process {
         let process = Process()
         process.executableURL = supervisor
-        process.arguments = [
+        var arguments = [
             "--status-file", statusFile.path,
             "--configuration", configuration.hexEncoded,
             "--startup-timeout-seconds", String(startupTimeoutSeconds),
             "--config-service", configService.path,
             "--control-service", controlService.path,
             "--shell", child.path,
-            "--", child.path,
         ]
+        if let capability {
+            let manifest = directory.appendingPathComponent(
+                "capability.json")
+            let encoder = JSONEncoder()
+            encoder.keyEncodingStrategy = .convertToSnakeCase
+            encoder.outputFormatting = [.sortedKeys]
+            try encoder.encode(capability).write(
+                to: manifest,
+                options: .atomic)
+            arguments += ["--capability-manifest", manifest.path]
+        }
+        arguments += ["--", child.path]
+        process.arguments = arguments
         var environment = ProcessInfo.processInfo.environment
         environment["NUCLEUS_SESSION_FIXTURE_DIRECTORY"] = directory.path
         environment["NUCLEUS_SESSION_FIXTURE_COMPOSITOR_MODE"] = compositorMode
         environment["NUCLEUS_SESSION_FIXTURE_SHELL_MODE"] = shellMode
+        environment["NUCLEUS_SESSION_FIXTURE_CAPABILITY_MODE"] =
+            capabilityMode
         environment["XDG_RUNTIME_DIR"] = directory.path
         environment["NUCLEUS_SESSION_ID"] = sessionID
         process.environment = environment
@@ -216,6 +232,103 @@ private func processIsGone(_ processID: pid_t) -> Bool {
 }
 
 @Suite struct SessionSupervisorAcceptanceTests {
+    @Test func optionalCapabilityStartsAfterCoreReadinessAndSharesLifetime()
+        throws
+    {
+        let fixture = try SupervisorFixture()
+        defer { fixture.remove() }
+        let declaration = try SessionCapabilityDeclaration(
+            identifier: "fixture.optional",
+            executable: fixture.child.path,
+            restartPolicy: .never,
+            maximumRestarts: 0)
+        let process = try fixture.launch(capability: declaration)
+        #expect(fixture.waitForFile("capability-pid"))
+        #expect(fixture.status() == SessionReadinessMessage(
+            role: .shell,
+            milestone: .shellReady))
+        let identifier = try String(
+            contentsOf: fixture.path("capability-identifier"),
+            encoding: .utf8)
+        #expect(identifier == declaration.identifier)
+        let capabilityPID = try #require(pid_t(String(
+            contentsOf: fixture.path("capability-pid"),
+            encoding: .utf8)))
+
+        _ = kill(process.processIdentifier, SIGTERM)
+        #expect(waitForExit(process))
+        #expect(process.terminationStatus == 128 + SIGTERM)
+        #expect(processIsGone(capabilityPID))
+    }
+
+    @Test func failedCapabilityRestartsWithoutFailingCoreSession() throws {
+        let fixture = try SupervisorFixture()
+        defer { fixture.remove() }
+        let declaration = try SessionCapabilityDeclaration(
+            identifier: "fixture.restart",
+            executable: fixture.child.path,
+            restartPolicy: .onFailure,
+            maximumRestarts: 1)
+        let process = try fixture.launch(
+            capability: declaration,
+            capabilityMode: "exit-once-nonzero")
+        defer { stop(process) }
+        #expect(fixture.waitForFile("capability-restarted"))
+        let firstPID = try #require(pid_t(String(
+            contentsOf: fixture.path("capability-first-pid"),
+            encoding: .utf8)))
+        let activePID = try #require(pid_t(String(
+            contentsOf: fixture.path("capability-pid"),
+            encoding: .utf8)))
+        #expect(firstPID != activePID)
+        #expect(processIsGone(firstPID))
+        #expect(!processIsGone(activePID))
+        #expect(process.isRunning)
+        #expect(fixture.waitForFile("shell-ready"))
+    }
+
+    @Test func cleanCapabilityExitIsNotRestartedByOnFailurePolicy()
+        throws
+    {
+        let fixture = try SupervisorFixture()
+        defer { fixture.remove() }
+        let declaration = try SessionCapabilityDeclaration(
+            identifier: "fixture.clean-exit",
+            executable: fixture.child.path,
+            restartPolicy: .onFailure,
+            maximumRestarts: 3)
+        let process = try fixture.launch(
+            capability: declaration,
+            capabilityMode: "exit-zero")
+        defer { stop(process) }
+        #expect(fixture.waitForFile("capability-exited-zero"))
+        usleep(100_000)
+        #expect(!FileManager.default.fileExists(
+            atPath: fixture.path("capability-restarted").path))
+        #expect(process.isRunning)
+        #expect(fixture.waitForFile("shell-ready"))
+    }
+
+    @Test func unavailableOptionalCapabilityDoesNotFailCoreSession()
+        throws
+    {
+        let fixture = try SupervisorFixture()
+        defer { fixture.remove() }
+        let declaration = try SessionCapabilityDeclaration(
+            identifier: "fixture.unavailable",
+            executable: "/does/not/exist/nucleus-capability",
+            restartPolicy: .onFailure,
+            maximumRestarts: 3)
+        let process = try fixture.launch(capability: declaration)
+        defer { stop(process) }
+        #expect(fixture.waitForFile("shell-ready"))
+        usleep(100_000)
+        #expect(process.isRunning)
+        #expect(fixture.status() == SessionReadinessMessage(
+            role: .shell,
+            milestone: .shellReady))
+    }
+
     @Test func compositorReadinessGatesShellAndBothReceiveOneConfiguration()
         throws
     {

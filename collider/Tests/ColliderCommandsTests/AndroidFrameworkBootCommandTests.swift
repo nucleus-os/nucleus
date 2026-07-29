@@ -1,4 +1,5 @@
 import Foundation
+import NucleusAndroidRuntimeCore
 import Testing
 @testable import ColliderCommands
 
@@ -177,7 +178,8 @@ func frameworkBootPrioritizesMountHookLoaderFailure() throws {
     let log = directory.appendingPathComponent("lxc.log")
     let loaderFailure =
         "lxc-start nucleus DEBUG utils - Script produced output: "
-        + "/run/nucleus/collider-android-privileged: error while loading "
+        + "/run/nucleus/nucleus-android-runtime-privileged: "
+        + "error while loading "
         + "shared libraries: libExample.so: cannot open shared object file"
     try Data((
         "lxc-start nucleus ERROR cgfsng - Device or resource busy\n"
@@ -216,7 +218,7 @@ func frameworkBootFailsOnARepeatedSurfaceFlingerCrash() throws {
         "<6>init: Service 'surfaceflinger' (pid 2) received SIGABRT\n"
     ).utf8))
     try handle.close()
-    #expect(throws: WorkspaceFailure.self) {
+    #expect(throws: AndroidRuntimeFailure.self) {
         try monitor.check(
             kernelLog: kernelLog,
             frameworkLog: frameworkLog,
@@ -241,7 +243,7 @@ func frameworkBootFailsWhenNativeFenceExportFails() throws {
     ).utf8).write(to: frameworkLog)
 
     var monitor = AndroidFrameworkHealthMonitor()
-    #expect(throws: WorkspaceFailure.self) {
+    #expect(throws: AndroidRuntimeFailure.self) {
         try monitor.check(
             kernelLog: kernelLog,
             frameworkLog: frameworkLog,
@@ -277,7 +279,7 @@ func frameworkBootFailsOnARepeatedZygoteKill() throws {
         "<6>init: Service 'zygote' (pid 4575) received SIGKILL\n"
     ).utf8))
     try handle.close()
-    #expect(throws: WorkspaceFailure.self) {
+    #expect(throws: AndroidRuntimeFailure.self) {
         try monitor.check(
             kernelLog: kernelLog,
             frameworkLog: frameworkLog,
@@ -346,7 +348,7 @@ func frameworkBootFailsOnARepeatedSystemServerCrash() throws {
             + "AndroidRuntime: *** FATAL EXCEPTION IN SYSTEM PROCESS: main\n"
     ).utf8))
     try handle.close()
-    #expect(throws: WorkspaceFailure.self) {
+    #expect(throws: AndroidRuntimeFailure.self) {
         try monitor.check(
             kernelLog: kernelLog,
             frameworkLog: frameworkLog,
@@ -419,7 +421,7 @@ func frameworkBootFailsOnARepeatedNativeSystemServerCrash() throws {
             + "(system_server), pid 4254 (system_server)\n"
     ).utf8))
     try handle.close()
-    #expect(throws: WorkspaceFailure.self) {
+    #expect(throws: AndroidRuntimeFailure.self) {
         try monitor.check(
             kernelLog: kernelLog,
             frameworkLog: frameworkLog,
@@ -510,7 +512,7 @@ func frameworkBootFailsOnARepeatedHomeLauncherCrash() throws {
     try handle.seekToEnd()
     try handle.write(contentsOf: Data(crash.utf8))
     try handle.close()
-    #expect(throws: WorkspaceFailure.self) {
+    #expect(throws: AndroidRuntimeFailure.self) {
         try monitor.check(
             kernelLog: kernelLog,
             frameworkLog: frameworkLog,
@@ -549,7 +551,7 @@ func frameworkBootFailsOnSecurityBoundaryHealthSignals() throws {
         try Data((signal + "\n").utf8).write(to: frameworkLog)
 
         var monitor = AndroidFrameworkHealthMonitor()
-        #expect(throws: WorkspaceFailure.self) {
+        #expect(throws: AndroidRuntimeFailure.self) {
             try monitor.check(
                 kernelLog: kernelLog,
                 frameworkLog: frameworkLog,

@@ -343,6 +343,23 @@ supervisor_arguments=(
   --control-service "$session_libexec_dir/NucleusControlService"
   --shell "$session_bin_dir/NucleusShell"
 )
+session_capability_dir="$session_bin_dir/../share/nucleus/session-capabilities"
+if [ -e "$session_capability_dir" ]; then
+  if [ -L "$session_capability_dir" ] || [ ! -d "$session_capability_dir" ]; then
+    echo "nucleus-session: capability path must be a directory, not a symlink: $session_capability_dir" >&2
+    exit 64
+  fi
+  while IFS= read -r -d '' capability_manifest; do
+    if [ -L "$capability_manifest" ] || [ ! -f "$capability_manifest" ]; then
+      echo "nucleus-session: capability manifest must be a regular file, not a symlink: $capability_manifest" >&2
+      exit 64
+    fi
+    supervisor_arguments+=(--capability-manifest "$capability_manifest")
+  done < <(
+    find "$session_capability_dir" -mindepth 1 -maxdepth 1 \
+      -name '*.json' -print0 | sort -z
+  )
+fi
 if [ -n "$status_file" ]; then
   supervisor_arguments+=(--status-file "$status_file")
 fi

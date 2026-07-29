@@ -1,4 +1,4 @@
-import ColliderRuntime
+import NucleusAndroidRuntimeCore
 import Testing
 
 @Test
@@ -19,7 +19,6 @@ func androidApexMountRequestAcceptsTheContainedFrameworkLayout() throws {
     #expect(request.payloadFileSystem == .erofs)
     #expect(request.payloadOffset == 4_096)
 }
-
 @Test
 func androidApexMountRequestRejectsPathsOutsideItsPrivilegeBoundary() {
     #expect(throws: AndroidApexMountFailure.self) {

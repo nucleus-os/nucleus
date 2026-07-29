@@ -1,5 +1,4 @@
-import ColliderPlatformC
-import SystemPackage
+import NucleusAndroidRuntimePlatformC
 
 #if canImport(Glibc)
 import Glibc
@@ -7,21 +6,13 @@ import Glibc
 import Darwin
 #endif
 
-public enum AndroidApexPayloadFileSystem:
-    String,
-    CaseIterable,
-    Equatable,
-    Sendable
-{
-    case erofs
-    case ext4
-
+extension AndroidRuntimeApexPayloadFileSystem {
     fileprivate var platformValue: UInt32 {
         switch self {
         case .erofs:
-            UInt32(COLLIDER_APEX_PAYLOAD_FILESYSTEM_EROFS.rawValue)
+            UInt32(NUCLEUS_ANDROID_RUNTIME_APEX_PAYLOAD_FILESYSTEM_EROFS.rawValue)
         case .ext4:
-            UInt32(COLLIDER_APEX_PAYLOAD_FILESYSTEM_EXT4.rawValue)
+            UInt32(NUCLEUS_ANDROID_RUNTIME_APEX_PAYLOAD_FILESYSTEM_EXT4.rawValue)
         }
     }
 }
@@ -30,14 +21,14 @@ public struct AndroidApexMountRequest: Equatable, Sendable {
     public let rootFileSystem: String
     public let source: String
     public let target: String
-    public let payloadFileSystem: AndroidApexPayloadFileSystem
+    public let payloadFileSystem: AndroidRuntimeApexPayloadFileSystem
     public let payloadOffset: UInt64
 
     public init(
         rootFileSystem: String,
         source: String,
         target: String,
-        payloadFileSystem: AndroidApexPayloadFileSystem,
+        payloadFileSystem: AndroidRuntimeApexPayloadFileSystem,
         payloadOffset: UInt64
     ) throws {
         let rootComponents = try absoluteComponents(
@@ -121,7 +112,7 @@ public struct AndroidApexMountRequest: Equatable, Sendable {
         let status = rootFileSystem.withCString { rootPath in
             source.withCString { sourcePath in
                 target.withCString { targetPath in
-                    unsafe collider_mount_apex_in_chroot(
+                    unsafe nucleus_android_runtime_mount_apex_in_chroot(
                         rootPath,
                         sourcePath,
                         targetPath,

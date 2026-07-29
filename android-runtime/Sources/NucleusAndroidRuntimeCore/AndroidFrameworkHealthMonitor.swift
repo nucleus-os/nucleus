@@ -1,6 +1,18 @@
 import Foundation
 
-struct AndroidFrameworkHealthMonitor {
+public struct AndroidRuntimeFailure:
+    Error, Equatable, Sendable, CustomStringConvertible
+{
+    public let message: String
+
+    public init(_ message: String) {
+        self.message = message
+    }
+
+    public var description: String { message }
+}
+
+public struct AndroidFrameworkHealthMonitor {
     private struct LogCursor {
         var offset: UInt64 = 0
         var pending = Data()
@@ -14,7 +26,9 @@ struct AndroidFrameworkHealthMonitor {
     private var systemServerCrashProcessIDs: Set<Int32> = []
     private var homeLauncherCrashCount = 0
 
-    mutating func check(
+    public init() {}
+
+    public mutating func check(
         kernelLog: URL,
         frameworkLog: URL,
         diagnostics: URL
@@ -256,7 +270,8 @@ struct AndroidFrameworkHealthMonitor {
     private func failure(
         _ reason: String,
         diagnostics: URL
-    ) -> WorkspaceFailure {
-        .message("\(reason); diagnostics: \(diagnostics.path)")
+    ) -> AndroidRuntimeFailure {
+        AndroidRuntimeFailure(
+            "\(reason); diagnostics: \(diagnostics.path)")
     }
 }

@@ -1,4 +1,4 @@
-import ColliderPlatformC
+import NucleusAndroidRuntimePlatformC
 import Foundation
 
 #if canImport(Glibc)
@@ -36,7 +36,7 @@ public struct AndroidBPFDelegationBroker: Equatable, Sendable {
             throw AndroidBPFDelegationFailure.brokerRequiresRoot
         }
         let status = socketPath.withCString {
-            unsafe collider_android_bpf_delegation_broker(
+            unsafe nucleus_android_runtime_android_bpf_delegation_broker(
                 $0,
                 containerRootUID,
                 containerRootGID)
@@ -48,7 +48,6 @@ public struct AndroidBPFDelegationBroker: Equatable, Sendable {
         }
     }
 }
-
 public struct AndroidBPFDelegationMount: Equatable, Sendable {
     public let socketPath: String
     public let rootFileSystem: String
@@ -94,7 +93,7 @@ public struct AndroidBPFDelegationMount: Equatable, Sendable {
         let targetPath = try bpfMountTarget(mountedRoot: mountedRoot)
         let status = socketPath.withCString { socket in
             targetPath.withCString { target in
-                unsafe collider_android_bpf_delegation_mount(socket, target)
+                unsafe nucleus_android_runtime_android_bpf_delegation_mount(socket, target)
             }
         }
         guard status == 0 else {

@@ -20,6 +20,16 @@ private func waitForFile(_ path: String) {
     while unsafe access(path, F_OK) != 0 { usleep(10_000) }
 }
 
+private func argumentValue(
+    following argument: String,
+    in arguments: [String]
+) -> String? {
+    guard let index = arguments.firstIndex(of: argument),
+          arguments.indices.contains(index + 1)
+    else { return nil }
+    return arguments[index + 1]
+}
+
 private func descriptor(
     following argument: String,
     in arguments: [String]
@@ -32,11 +42,19 @@ private func descriptor(
 }
 
 private func run() throws -> Int32 {
-    let role = try SessionProcessRole.inherited()
     guard let directoryValue = unsafe getenv(
         "NUCLEUS_SESSION_FIXTURE_DIRECTORY")
     else { throw FixtureFailure.missingDirectory }
     let directory = unsafe String(cString: directoryValue)
+    if let capabilityID = argumentValue(
+        following: SessionCapabilityProcess.identifierArgument,
+        in: CommandLine.arguments)
+    {
+        return try runCapability(
+            identifier: capabilityID,
+            directory: directory)
+    }
+    let role = try SessionProcessRole.inherited()
     let roleName = role == .compositor ? "compositor" : "shell"
     let waylandDisplay = unsafe getenv("WAYLAND_DISPLAY").map {
         unsafe String(cString: $0)
@@ -269,6 +287,38 @@ private func run() throws -> Int32 {
             return role == .compositor ? 72 : 73
         }
         try writeText("restarted", to: directory + "/\(roleName)-restarted")
+    }
+    while true { pause() }
+}
+
+private func runCapability(
+    identifier: String,
+    directory: String
+) throws -> Int32 {
+    let mode = unsafe getenv(
+        "NUCLEUS_SESSION_FIXTURE_CAPABILITY_MODE").map {
+            unsafe String(cString: $0)
+        } ?? "ready-wait"
+    let pidPath = directory + "/capability-pid"
+    let firstPIDPath = directory + "/capability-first-pid"
+    let exitedOncePath = directory + "/capability-exited-once"
+    try writeText(identifier, to: directory + "/capability-identifier")
+    try writeText(String(getpid()), to: pidPath)
+    if unsafe access(firstPIDPath, F_OK) != 0 {
+        try writeText(String(getpid()), to: firstPIDPath)
+    }
+    if mode == "exit-once-nonzero",
+       unsafe access(exitedOncePath, F_OK) != 0
+    {
+        try writeText("exited", to: exitedOncePath)
+        return 79
+    }
+    if mode == "exit-zero" {
+        try writeText("exited", to: directory + "/capability-exited-zero")
+        return 0
+    }
+    if unsafe access(exitedOncePath, F_OK) == 0 {
+        try writeText("restarted", to: directory + "/capability-restarted")
     }
     while true { pause() }
 }

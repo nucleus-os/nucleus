@@ -52,6 +52,17 @@ let hostProducts: [Product] = [
     .library(name: "NucleusAndroidGraphicsPlatform", targets: ["NucleusAndroidGraphicsPlatform"]),
     .library(name: "NucleusAndroidGpuBrokerCore", targets: ["NucleusAndroidGpuBrokerCore"]),
     .library(name: "NucleusAndroidContainerContract", targets: ["NucleusAndroidContainerContract"]),
+    .library(name: "NucleusAndroidRuntimeCore", targets: ["NucleusAndroidRuntimeCore"]),
+    .library(
+        name: "NucleusAndroidRuntimeBridgeProtocol",
+        targets: ["NucleusAndroidRuntimeBridgeProtocol"]),
+    .library(
+        name: "NucleusAndroidRuntimeBrokerCore",
+        targets: ["NucleusAndroidRuntimeBrokerCore"]),
+    .executable(name: "nucleus-android-runtime", targets: ["NucleusAndroidRuntime"]),
+    .executable(
+        name: "nucleus-android-runtime-privileged",
+        targets: ["NucleusAndroidRuntimePrivileged"]),
     .library(name: "NucleusAndroidDisplayHostCore", targets: ["NucleusAndroidDisplayHostCore"]),
     .library(name: "NucleusAndroidSurfaceProbeCore", targets: ["NucleusAndroidSurfaceProbeCore"]),
     .executable(name: "nucleus-android-gpu-broker", targets: ["NucleusAndroidGpuBroker"]),
@@ -349,7 +360,81 @@ let hostTargets: [Target] = [
         path: "android-runtime/Sources/NucleusAndroidContainerContract",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
+            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
+            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+        ]),
+    .target(
+        name: "NucleusAndroidRuntimeCore",
+        dependencies: [
+            "NucleusAndroidContainerContract",
+            "NucleusAndroidRuntimePlatformC",
+        ],
+        path: "android-runtime/Sources/NucleusAndroidRuntimeCore",
+        cSettings: [.unsafeFlags(["-Werror"])],
+        swiftSettings: [
+            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
+            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+        ]),
+    .target(
+        name: "NucleusAndroidRuntimeBridgeProtocol",
+        dependencies: [
+            "NucleusAndroidRuntimeCore",
+            "NucleusIPCTransport",
+        ],
+        path:
+            "android-runtime/Sources/NucleusAndroidRuntimeBridgeProtocol",
+        cSettings: [.unsafeFlags(["-Werror"])],
+        swiftSettings: [
+            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
+            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+        ]),
+    .target(
+        name: "NucleusAndroidRuntimeBrokerCore",
+        dependencies: [
+            "NucleusAndroidRuntimeBridgeProtocol",
+            "NucleusAndroidRuntimeCore",
+        ],
+        path: "android-runtime/Sources/NucleusAndroidRuntimeBrokerCore",
+        cSettings: [.unsafeFlags(["-Werror"])],
+        swiftSettings: [
+            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
+            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+        ]),
+    .target(
+        name: "NucleusAndroidRuntimePlatformC",
+        path: "android-runtime/Sources/NucleusAndroidRuntimePlatformC",
+        cSettings: [.unsafeFlags(["-Werror"])]),
+    .target(
+        name: "NucleusAndroidRuntimeHostLinux",
+        dependencies: [
+            "NucleusAndroidRuntimeCore",
+            "NucleusAndroidRuntimePlatformC",
+        ],
+        path: "android-runtime/Sources/NucleusAndroidRuntimeHostLinux",
+        cSettings: [.unsafeFlags(["-Werror"])],
+        swiftSettings: [
+            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
+            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+        ]),
+    .executableTarget(
+        name: "NucleusAndroidRuntime",
+        dependencies: [
+            "NucleusAndroidRuntimeBrokerCore",
+            "NucleusAndroidRuntimeCore",
+            "NucleusAndroidRuntimeHostLinux",
+        ],
+        path: "android-runtime/Sources/NucleusAndroidRuntime",
+        cSettings: [.unsafeFlags(["-Werror"])],
+        swiftSettings: [
+            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
+            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+        ]),
+    .executableTarget(
+        name: "NucleusAndroidRuntimePrivileged",
+        dependencies: ["NucleusAndroidRuntimeCore"],
+        path: "android-runtime/Sources/NucleusAndroidRuntimePrivileged",
+        cSettings: [.unsafeFlags(["-Werror"])],
+        swiftSettings: [
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -520,6 +605,28 @@ let hostTargets: [Target] = [
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
             .interoperabilityMode(.Cxx),
+            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
+            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+        ]),
+    .testTarget(
+        name: "NucleusAndroidRuntimeCoreTests",
+        dependencies: ["NucleusAndroidRuntimeCore"],
+        path: "android-runtime/Tests/NucleusAndroidRuntimeCoreTests",
+        cSettings: [.unsafeFlags(["-Werror"])],
+        swiftSettings: [
+            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
+            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+        ]),
+    .testTarget(
+        name: "NucleusAndroidRuntimeBridgeProtocolTests",
+        dependencies: [
+            "NucleusAndroidRuntimeBridgeProtocol",
+            "NucleusIPCTransport",
+        ],
+        path:
+            "android-runtime/Tests/NucleusAndroidRuntimeBridgeProtocolTests",
+        cSettings: [.unsafeFlags(["-Werror"])],
+        swiftSettings: [
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1164,7 +1271,6 @@ let hostTargets: [Target] = [
     .target(
         name: "NucleusConfig", path: "config/model/Sources/NucleusConfig",
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1172,7 +1278,6 @@ let hostTargets: [Target] = [
         name: "NucleusConfigModelTests", dependencies: ["NucleusConfig"],
         path: "config/model/Tests/NucleusConfigModelTests",
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1931,7 +2036,6 @@ let hostTargets: [Target] = [
         name: "NucleusIPCTransport", dependencies: ["NucleusIPCTransportC"],
         path: "ipc/transport/Sources/NucleusIPCTransport",
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1939,7 +2043,6 @@ let hostTargets: [Target] = [
         name: "NucleusIPCTransportTests", dependencies: ["NucleusIPCTransport"],
         path: "ipc/transport/Tests/NucleusIPCTransportTests",
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -2874,7 +2977,6 @@ let hostTargets: [Target] = [
         dependencies: ["NucleusConfig", "NucleusIPCTransport", "NucleusIPCTransportC"],
         path: "session/protocol/Sources/NucleusSessionProtocol",
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -2883,7 +2985,6 @@ let hostTargets: [Target] = [
         dependencies: ["NucleusSessionProtocol", "NucleusIPCTransport", "NucleusIPCTransportC"],
         path: "session/protocol/Tests/NucleusSessionProtocolTests",
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),

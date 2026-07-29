@@ -1,0 +1,12 @@
+android_app {
+    name: "NucleusRuntimeBridge",
+    srcs: ["src/**/*.java"],
+    manifest: "AndroidManifest.xml",
+    certificate: "platform",
+    privileged: true,
+    platform_apis: true,
+    system_ext_specific: true,
+    optimize: {
+        enabled: true,
+    },
+}
