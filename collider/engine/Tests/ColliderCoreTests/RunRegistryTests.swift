@@ -1,8 +1,8 @@
 import ColliderCore
-import ColliderRuntime
 import Foundation
 import SystemPackage
 import Testing
+@testable import ColliderRuntime
 
 @Test func runRegistryPublishesManifestEventsAndLatest() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -28,6 +28,52 @@ import Testing
     #expect(events.split(separator: "\n").count == 3)
 }
 
+@Test func runRegistryReclaimsOnlySupersededSucceededRuns() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-retention-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let manager = FileManager.default
+    let runs = directory.appendingPathComponent("runs")
+    try manager.createDirectory(at: runs, withIntermediateDirectories: true)
+    let overflow = 5
+    let existing = Int(RunRegistry.retainedRuns) + overflow
+    func record(_ id: String, startedAt: String, status: RunStatus) throws {
+        let run = runs.appendingPathComponent(id)
+        try manager.createDirectory(at: run, withIntermediateDirectories: true)
+        var manifest = RunManifest(
+            runID: RunID(rawValue: id),
+            command: ["collider", "doctor"],
+            startedAt: startedAt)
+        manifest.status = status
+        try JSONEncoder().encode(manifest).write(
+            to: run.appendingPathComponent("manifest.json"))
+    }
+    var oldest: [String] = []
+    for index in 0..<existing {
+        let id = "2026-01-01T00-00-00Z-\(1_000 + index)"
+        // The oldest run of all did not succeed, so it outlives newer successes.
+        try record(
+            id,
+            startedAt: String(format: "2026-01-01T00:00:00.%03dZ", index),
+            status: index == 0 ? .failed : .succeeded)
+        oldest.append(id)
+    }
+    // A run still recording belongs to whoever is writing it.
+    try record("2020-01-01T00-00-00Z-7", startedAt: "2020-01-01T00:00:00Z", status: .running)
+
+    let registry = RunRegistry(root: FilePath(directory.path))
+    let run = try await registry.begin(command: ["collider", "doctor"])
+
+    let remaining = Set(try manager.contentsOfDirectory(atPath: runs.path))
+    #expect(remaining.contains(run.id.rawValue))
+    #expect(remaining.contains("2020-01-01T00-00-00Z-7"))
+    #expect(remaining.contains(oldest[0]))
+    for id in oldest[1...overflow] {
+        #expect(!remaining.contains(id))
+    }
+    #expect(remaining.contains(oldest[oldest.count - 1]))
+}
+
 @Test func runManifestRoundTripsAllDurableTaskMetadata() throws {
     let runID = RunID(rawValue: "fixture-run")
     var manifest = RunManifest(
@@ -37,6 +83,7 @@ import Testing
     manifest.finishedAt = "2026-07-22T00:00:01Z"
     manifest.status = .failed
     manifest.failedTask = TaskID(rawValue: "runtime.build")
+    manifest.planningDurationNanoseconds = 42
     manifest.taskDurationsNanoseconds = ["runtime.build": 123]
     let digest = ArtifactDigest(bytes: [UInt8](repeating: 7, count: 32))
     manifest.activeArtifacts = ["runtime": digest]
@@ -52,6 +99,8 @@ import Testing
     #expect(decoded.finishedAt == manifest.finishedAt)
     #expect(decoded.status == manifest.status)
     #expect(decoded.failedTask == manifest.failedTask)
+    #expect(decoded.planningDurationNanoseconds
+        == manifest.planningDurationNanoseconds)
     #expect(decoded.taskDurationsNanoseconds
         == manifest.taskDurationsNanoseconds)
     #expect(decoded.activeArtifacts == manifest.activeArtifacts)

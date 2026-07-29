@@ -26,6 +26,7 @@ import Vulkan
         let contract = VkRequirements.contract()
         #expect(contract.requiresTimelineSemaphore, "req-feature-timeline")
         #expect(contract.requiresSamplerYcbcrConversion, "req-feature-ycbcr")
+        #expect(!contract.requiresSynchronization2, "req-feature-synchronization2")
 
         // C-string array borrowing.
         unsafe withCStringArray(deviceExtensions) { ptr, count in
@@ -42,9 +43,10 @@ import Vulkan
     }
 
     @Test func featureChain() {
-        // Feature chain: FEATURES_2 -> VULKAN_1_2 -> VULKAN_1_1 (dynamic last link).
+        // Feature chain: FEATURES_2 -> VULKAN_1_3 -> VULKAN_1_2 -> VULKAN_1_1.
         let contract = VkRequirements.contract(
-            for: .waylandClientBackingStore)
+            for: .waylandSwapchain)
+        #expect(!contract.requiresSynchronization2, "chain-does-not-require-synchronization2")
         unsafe withRequiredFeatureEnableChain(contract: contract) { head in
             let headSType = unsafe head.pointee.sType
             #expect(
@@ -58,7 +60,7 @@ import Vulkan
             let link1 = unsafe raw1.assumingMemoryBound(to: VkBaseInStructure.self)
             let link1SType = unsafe link1.pointee.sType
             #expect(
-                link1SType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+                link1SType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
                 "chain-link1-stype")
             guard let link2 = unsafe link1.pointee.pNext else {
                 #expect(Bool(false), "chain-link2")
@@ -66,9 +68,26 @@ import Vulkan
             }
             let link2SType = unsafe link2.pointee.sType
             #expect(
-                link2SType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+                link2SType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
                 "chain-link2-stype")
-            let tailIsNil = unsafe link2.pointee.pNext == nil
+            guard let link3 = unsafe link2.pointee.pNext else {
+                #expect(Bool(false), "chain-link3")
+                return
+            }
+            let link3SType = unsafe link3.pointee.sType
+            #expect(
+                link3SType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+                "chain-link3-stype")
+            guard let link4 = unsafe link3.pointee.pNext else {
+                #expect(Bool(false), "chain-link4")
+                return
+            }
+            let link4SType = unsafe link4.pointee.sType
+            #expect(
+                link4SType
+                    == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_KHR,
+                "chain-link4-stype")
+            let tailIsNil = unsafe link4.pointee.pNext == nil
             #expect(tailIsNil, "chain-tail-nil")
         }
     }

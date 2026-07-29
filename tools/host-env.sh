@@ -56,6 +56,16 @@ else
 fi
 nucleus_workspace_root="$(cd "$(dirname "$nucleus_host_env_source")/.." && pwd)"
 export SWIFT_JAVA_JNI_CORE_PATH="$nucleus_workspace_root/third-party/swift-java-jni-core"
+
+# The workspace build directory, published by Collider when it resolves the
+# default build context. A manifest that needs SwiftPM's generated header
+# directory reads it here, so a language server build and a Collider build name
+# the same directory instead of recompiling each other. Absent before the first
+# build, which is the same as a checkout that has never been built.
+if [[ -r "$nucleus_workspace_root/.nucleus/swiftpm/environment.sh" ]]; then
+  source "$nucleus_workspace_root/.nucleus/swiftpm/environment.sh"
+fi
+
 unset nucleus_host_env_source nucleus_workspace_root
 unset nucleus_fnm_environment
 unset nucleus_toolchain nucleus_source_id nucleus_platform_id

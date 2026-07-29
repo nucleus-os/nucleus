@@ -12,18 +12,6 @@ enum WorkspaceComponent: String, Hashable, Sendable {
     case compositor
     case shell
 
-    var directoryName: String {
-        switch self {
-        case .tracy: "swift-tracy"
-        case .vulkan: "swift-vulkan"
-        case .wayland: "swift-wayland"
-        case .core: "core"
-        case .linux: "platform-linux"
-        case .rn: "react-native"
-        case .compositor: "compositor"
-        case .shell: "shell"
-        }
-    }
 }
 
 struct Orchestrator {
@@ -37,30 +25,28 @@ struct Orchestrator {
 
     private struct ReleaseStructuralSuite {
         let component: WorkspaceComponent
-        let packagePath: String?
         let name: String
     }
 
     private var releaseStructuralSuites: [ReleaseStructuralSuite] {
         [
             ReleaseStructuralSuite(
-                component: .core, packagePath: nil,
+                component: .core,
                 name: "NucleusFoundationPublicationStressTests"),
             ReleaseStructuralSuite(
-                component: .core, packagePath: nil,
+                component: .core,
                 name: "NucleusFoundationLifecycleStressTests"),
             ReleaseStructuralSuite(
-                component: .core, packagePath: nil,
+                component: .core,
                 name: "NucleusTextEditorStressTests"),
             ReleaseStructuralSuite(
-                component: .core, packagePath: nil,
+                component: .core,
                 name: "NucleusCollectionStressTests"),
             ReleaseStructuralSuite(
                 component: .shell,
-                packagePath: "../integration-tests/window-client-conformance",
                 name: "NucleusPlatformTransportStressTests"),
             ReleaseStructuralSuite(
-                component: .compositor, packagePath: "compositor-core",
+                component: .compositor,
                 name: "NucleusCompositorTransitionStressTests"),
         ]
     }
@@ -68,23 +54,22 @@ struct Orchestrator {
     private func testReleaseSuite(
         _ suite: ReleaseStructuralSuite
     ) async throws {
-        var arguments = [
-            "test", "-c", "release",
-        ]
-        if let packagePath = suite.packagePath {
-            arguments += ["--package-path", packagePath]
-        }
+        // These gates run the same packages the task graph builds, one
+        // configuration over. Driving them through the release build context
+        // shares one build directory across all of them instead of leaving a
+        // release build tree beside every package they touch, and gives the
+        // manifests the generated header directory that context belongs to.
+        let swiftPM = try context.swiftPMInvocation(configuration: .release)
+        var arguments = ["test"]
         arguments += ["--filter", suite.name]
-        let package = suite.packagePath.map {
-            suite.component.directoryName + "/" + $0
-        } ?? suite.component.directoryName
         try await runTest(
             component: suite.component.rawValue,
-            package: package,
+            package: ".",
             configuration: "release",
             suite: suite.name,
-            arguments: arguments,
-            directory: context.repository(suite.component.directoryName))
+            arguments: swiftPM.commandArguments(arguments),
+            environmentOverrides: swiftPM.commandEnvironment([:]),
+            directory: context.root)
     }
 
     private func runTest(
@@ -93,16 +78,19 @@ struct Orchestrator {
         configuration: String,
         suite: String,
         arguments: [String],
+        environmentOverrides: [String: String] = [:],
         directory: URL
     ) async throws {
-        let identity = "component=\(component) package=\(package) "
+        let identity =
+            "component=\(component) package=\(package) "
             + "configuration=\(configuration) suite=\(suite)"
         print("==> test \(identity)")
         do {
             try await context.run(
                 "swift",
                 arguments,
-                directory: directory)
+                directory: directory,
+                environmentOverrides: environmentOverrides)
         } catch {
             throw WorkspaceFailure.message("test failed [\(identity)]: \(error)")
         }

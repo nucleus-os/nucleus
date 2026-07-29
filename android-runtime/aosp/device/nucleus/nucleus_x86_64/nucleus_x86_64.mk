@@ -26,15 +26,39 @@ $(call inherit-product, $(SRC_TARGET_DIR)/product/updatable_apex.mk)
 $(call inherit-product, $(SRC_TARGET_DIR)/product/emulated_storage.mk)
 $(call inherit-product, frameworks/native/build/tablet-10in-xhdpi-2048-dalvik-heap.mk)
 
+# Android's text stack requires the generated system font configurations and
+# every font family referenced by them. Keep this contract explicit instead of
+# inheriting the unrelated phone/tablet system package surface.
+$(call inherit-product-if-exists, frameworks/base/data/fonts/fonts.mk)
+$(call inherit-product-if-exists, external/google-fonts/dancing-script/fonts.mk)
+$(call inherit-product-if-exists, external/google-fonts/carrois-gothic-sc/fonts.mk)
+$(call inherit-product-if-exists, external/google-fonts/coming-soon/fonts.mk)
+$(call inherit-product-if-exists, external/google-fonts/cutive-mono/fonts.mk)
+$(call inherit-product-if-exists, external/google-fonts/source-sans-pro/fonts.mk)
+$(call inherit-product-if-exists, external/noto-fonts/fonts.mk)
+$(call inherit-product-if-exists, external/roboto-fonts/fonts.mk)
+$(call inherit-product-if-exists, external/roboto-flex-fonts/fonts.mk)
+$(call inherit-product-if-exists, external/roboto-mono/fonts.mk)
+$(call inherit-product-if-exists, external/hyphenation-patterns/patterns.mk)
+
 # Desktop application-runtime surface.
 PRODUCT_PACKAGES += \
+    cameraserver \
     DocumentsUI \
+    FusedLocation \
     LatinIME \
+    Launcher3QuickStep \
     Settings \
     SettingsIntelligence \
     frameworks-base-overlays \
     librs_jni \
     preinstalled-packages-nucleus.xml
+
+# LocationManagerService requires one direct-boot-aware fused provider before
+# third-party applications can start. FusedLocation runs in the system process,
+# so keep its system-server app class-loader contract explicit as well.
+PRODUCT_SYSTEM_SERVER_APPS += \
+    FusedLocation
 
 # Container-owned vendor surface.
 $(call inherit-product, device/nucleus/nucleus_x86_64/device.mk)

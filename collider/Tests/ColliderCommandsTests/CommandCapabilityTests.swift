@@ -162,29 +162,7 @@ func installationAndBrowserHelpExposeOneBrowserInstallLeaf() throws {
 }
 
 @Test
-func privilegedModesRequireAnExactFirstTokenAndStayOutOfRootHelp() {
-    #expect(
-        colliderPrivilegedMode(for: [androidApexMountCommandName])
-            == .androidApexMount)
-    #expect(
-        colliderPrivilegedMode(for: [androidBPFBrokerCommandName])
-            == .androidBPFBroker)
-    #expect(
-        colliderPrivilegedMode(for: [androidBPFMountCommandName])
-            == .androidBPFMount)
-    #expect(
-        colliderPrivilegedMode(for: [androidCgroupDelegateCommandName])
-            == .androidCgroupDelegate)
-    #expect(
-        colliderPrivilegedMode(for: [
-            "status",
-            androidApexMountCommandName,
-        ]) == nil)
-    #expect(
-        colliderPrivilegedMode(for: [
-            "\(androidApexMountCommandName)-suffix",
-        ]) == nil)
-
+func privilegedAndroidOperationsStayOutOfColliderRootHelp() {
     let rootHelp = ColliderCommand.message(for: CleanExit.helpRequest())
     #expect(!rootHelp.contains(androidApexMountCommandName))
     #expect(!rootHelp.contains(androidBPFBrokerCommandName))

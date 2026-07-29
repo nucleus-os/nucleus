@@ -1,0 +1,4 @@
+module NucleusWindowClientVulkanWaylandC {
+    header "NucleusWindowClientVulkanWaylandC.h"
+    export *
+}

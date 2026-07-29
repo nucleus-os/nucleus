@@ -1,0 +1,3 @@
+import ColliderAndroidPrivileged
+
+AndroidPrivilegedCommand.main()

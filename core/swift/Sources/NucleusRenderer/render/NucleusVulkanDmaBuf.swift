@@ -189,190 +189,6 @@ public struct DmaBufSyncPoint: Equatable, Sendable {
     }
 }
 
-/// One client-owned Vulkan image exported as a DMA-BUF backing store. The
-/// Vulkan image and memory remain process-local; only a duplicated DMA-BUF file
-/// descriptor and value metadata are transferred to Wayland.
-@safe public final class ExportedDmaBufImage {
-    private let image: VkOwnedImageBox
-    private let rawImage: VkImage
-    private var fileDescriptor: Int32
-    public let width: UInt32
-    public let height: UInt32
-    public let drmFormat: UInt32
-    public let modifier: UInt64
-    public let offset: UInt32
-    public let rowPitch: UInt32
-
-    init(
-        image: consuming VkOwned<VkImage>,
-        fileDescriptor: Int32,
-        width: UInt32,
-        height: UInt32,
-        drmFormat: UInt32,
-        modifier: UInt64,
-        offset: UInt32,
-        rowPitch: UInt32
-    ) {
-        unsafe self.rawImage = image.handle
-        unsafe self.image = VkOwnedImageBox(consuming: image)
-        self.fileDescriptor = fileDescriptor
-        self.width = width
-        self.height = height
-        self.drmFormat = drmFormat
-        self.modifier = modifier
-        self.offset = offset
-        self.rowPitch = rowPitch
-    }
-
-    public var imageHandle: VkImage? {
-        unsafe rawImage
-    }
-
-    /// Transfer the exported DMA-BUF descriptor exactly once. The Vulkan image
-    /// and its memory remain owned here after the descriptor is sent to Wayland.
-    public func takeFileDescriptor() -> Int32? {
-        guard fileDescriptor >= 0 else { return nil }
-        let descriptor = fileDescriptor
-        fileDescriptor = -1
-        return descriptor
-    }
-
-    deinit {
-        if fileDescriptor >= 0 {
-            close(fileDescriptor)
-        }
-    }
-}
-
-/// One process-local Vulkan timeline semaphore exported to Wayland as a DRM
-/// syncobj timeline. Graphite submits first on `queue`; `signal(_:)` then
-/// appends an empty submit on that same queue, making the published acquire
-/// point an exact completion marker without a CPU wait.
-@MainActor
-@safe public final class ExportedTimelineSemaphore {
-    private let device: VkDevice
-    private let dispatch: VK.DeviceDispatch
-    private let queue: VkQueue
-    public let semaphore: VkSemaphore
-    private var fileDescriptor: Int32
-    public private(set) var lastResult: VkResult = VK_SUCCESS
-
-    public var deviceLost: Bool {
-        lastResult == VK_ERROR_DEVICE_LOST
-    }
-
-    public init?(
-        device: VkDevice,
-        dispatch: VK.DeviceDispatch,
-        queue: VkQueue
-    ) {
-        guard let createSemaphore = unsafe dispatch.vkCreateSemaphore,
-              let getSemaphoreFd = unsafe dispatch.vkGetSemaphoreFdKHR
-        else { return nil }
-
-        var exportInfo = unsafe VkExportSemaphoreCreateInfo()
-        unsafe exportInfo.sType =
-            VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO
-        unsafe exportInfo.handleTypes = VkExternalSemaphoreHandleTypeFlags(
-            VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT.rawValue)
-
-        var typeInfo = unsafe VkSemaphoreTypeCreateInfo()
-        unsafe typeInfo.sType =
-            VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO
-        unsafe typeInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE
-        unsafe typeInfo.initialValue = 0
-
-        var createInfo = unsafe VkSemaphoreCreateInfo()
-        unsafe createInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
-        var created: VkSemaphore?
-        let result = withUnsafePointer(to: &exportInfo) { exportPointer in
-            withUnsafeMutablePointer(to: &typeInfo) { typePointer in
-                unsafe typePointer.pointee.pNext =
-                    UnsafeRawPointer(exportPointer)
-                unsafe createInfo.pNext = UnsafeRawPointer(typePointer)
-                return unsafe createSemaphore(
-                    device, &createInfo, nil, &created)
-            }
-        }
-        guard result == VK_SUCCESS, let created = unsafe created else {
-            return nil
-        }
-
-        var fdInfo = unsafe VkSemaphoreGetFdInfoKHR()
-        unsafe fdInfo.sType =
-            VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR
-        unsafe fdInfo.semaphore = created
-        unsafe fdInfo.handleType =
-            VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT
-        var descriptor: Int32 = -1
-        guard unsafe getSemaphoreFd(
-            device, &fdInfo, &descriptor) == VK_SUCCESS,
-              descriptor >= 0
-        else {
-            unsafe dispatch.vkDestroySemaphore?(
-                device, created, nil)
-            return nil
-        }
-
-        unsafe self.device = device
-        self.dispatch = dispatch
-        unsafe self.queue = queue
-        unsafe self.semaphore = created
-        self.fileDescriptor = descriptor
-    }
-
-    public func takeFileDescriptor() -> Int32? {
-        guard fileDescriptor >= 0 else { return nil }
-        let descriptor = fileDescriptor
-        fileDescriptor = -1
-        return descriptor
-    }
-
-    public func currentValue() -> UInt64? {
-        guard let getValue =
-            unsafe dispatch.vkGetSemaphoreCounterValue
-        else { return nil }
-        var value: UInt64 = 0
-        lastResult = unsafe getValue(
-            device, semaphore, &value)
-        guard lastResult == VK_SUCCESS else { return nil }
-        return value
-    }
-
-    /// Append a timeline signal after all work already submitted to the shared
-    /// graphics queue.
-    public func signal(_ value: UInt64) -> Bool {
-        guard value > 0,
-              let queueSubmit2 = unsafe dispatch.vkQueueSubmit2
-        else { return false }
-        var signalInfo = unsafe VkSemaphoreSubmitInfo()
-        unsafe signalInfo.sType =
-            VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO
-        unsafe signalInfo.semaphore = semaphore
-        unsafe signalInfo.value = value
-        unsafe signalInfo.stageMask =
-            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT
-
-        var submitInfo = unsafe VkSubmitInfo2()
-        unsafe submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2
-        unsafe submitInfo.signalSemaphoreInfoCount = 1
-        lastResult = withUnsafePointer(to: &signalInfo) { signalPointer in
-            unsafe submitInfo.pSignalSemaphoreInfos = signalPointer
-            return unsafe queueSubmit2(
-                queue, 1, &submitInfo, nil)
-        }
-        return lastResult == VK_SUCCESS
-    }
-
-    isolated deinit {
-        if fileDescriptor >= 0 {
-            close(fileDescriptor)
-        }
-        unsafe dispatch.vkDestroySemaphore?(
-            device, semaphore, nil)
-    }
-}
-
 /// Map a DRM fourcc to the Vulkan format Skia/the compositor sample it as.
 public func vulkanFormatForDrm(_ fourcc: UInt32) -> VkFormat {
     switch fourcc {
@@ -389,195 +205,70 @@ public func vulkanFormatForDrm(_ fourcc: UInt32) -> VkFormat {
     }
 }
 
-/// Allocate a single-plane DRM-modifier Vulkan image whose memory can be
-/// exported as a DMA-BUF. This is the client backing-store allocation path: the
-/// returned owner retains the process-local image and memory while its exported
-/// descriptor is transferred to `zwp_linux_dmabuf_v1`.
-public func allocateExportedDmaBufImage(
+@unsafe private func supportsDmaBufImage(
     physicalDevice: VkPhysicalDevice,
-    instanceDispatch: VK.InstanceDispatch,
-    device: VkDevice,
-    deviceDispatch: VK.DeviceDispatch,
-    width: UInt32,
-    height: UInt32,
-    drmFormat: UInt32,
-    modifier: UInt64
-) -> ExportedDmaBufImage? {
-    guard width > 0,
-          height > 0,
-          vulkanFormatForDrm(drmFormat) != VK_FORMAT_UNDEFINED,
-          let getMemoryProperties =
-            unsafe instanceDispatch.vkGetPhysicalDeviceMemoryProperties,
-          let createImage = unsafe deviceDispatch.vkCreateImage,
-          let destroyImage = unsafe deviceDispatch.vkDestroyImage,
-          let getRequirements =
-            unsafe deviceDispatch.vkGetImageMemoryRequirements,
-          let allocateMemory = unsafe deviceDispatch.vkAllocateMemory,
-          let freeMemory = unsafe deviceDispatch.vkFreeMemory,
-          let bindImageMemory = unsafe deviceDispatch.vkBindImageMemory,
-          let getMemoryFd = unsafe deviceDispatch.vkGetMemoryFdKHR,
-          let getModifier =
-            unsafe deviceDispatch.vkGetImageDrmFormatModifierPropertiesEXT,
-          let getLayout = unsafe deviceDispatch.vkGetImageSubresourceLayout
-    else {
-        return nil
-    }
+    getImageFormatProperties:
+        PFN_vkGetPhysicalDeviceImageFormatProperties2,
+    format: VkFormat,
+    modifier: UInt64,
+    usage: VK.ImageUsageFlags,
+    requiredExternalFeature: UInt32
+) -> Bool {
+    var externalInfo =
+        unsafe VkPhysicalDeviceExternalImageFormatInfo()
+    unsafe externalInfo.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO
+    unsafe externalInfo.handleType =
+        VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT
 
-    var selectedModifier = modifier
-    var modifierList = unsafe VkImageDrmFormatModifierListCreateInfoEXT()
-    unsafe modifierList.sType =
-        VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_LIST_CREATE_INFO_EXT
-    unsafe modifierList.drmFormatModifierCount = 1
+    var modifierInfo =
+        unsafe VkPhysicalDeviceImageDrmFormatModifierInfoEXT()
+    unsafe modifierInfo.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_DRM_FORMAT_MODIFIER_INFO_EXT
+    unsafe modifierInfo.drmFormatModifier = modifier
+    unsafe modifierInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE
 
-    var externalImage = unsafe VkExternalMemoryImageCreateInfo()
-    unsafe externalImage.sType =
-        VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO
-    unsafe externalImage.handleTypes =
-        VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT.rawValue
+    var imageInfo = unsafe VkPhysicalDeviceImageFormatInfo2()
+    unsafe imageInfo.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2
+    unsafe imageInfo.format = format
+    unsafe imageInfo.type = VK_IMAGE_TYPE_2D
+    unsafe imageInfo.tiling =
+        VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT
+    unsafe imageInfo.usage = usage.rawValue
 
-    var createInfo = unsafe VkImageCreateInfo()
-    unsafe createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO
-    unsafe createInfo.imageType = VK_IMAGE_TYPE_2D
-    unsafe createInfo.format = vulkanFormatForDrm(drmFormat)
-    unsafe createInfo.extent = VkExtent3D(
-        width: width, height: height, depth: 1)
-    unsafe createInfo.mipLevels = 1
-    unsafe createInfo.arrayLayers = 1
-    unsafe createInfo.samples = VK_SAMPLE_COUNT_1_BIT
-    unsafe createInfo.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT
-    unsafe createInfo.usage =
-        DmaBufImageDescriptor.scanoutUsage.rawValue
-    unsafe createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE
-    unsafe createInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
-
-    var image: VkImage?
-    let createResult = withUnsafePointer(to: &selectedModifier) {
-        selectedModifierPointer in
-        unsafe modifierList.pDrmFormatModifiers =
-            selectedModifierPointer
-        return withUnsafePointer(to: &modifierList) {
-            modifierListPointer in
-            unsafe externalImage.pNext =
-                UnsafeRawPointer(modifierListPointer)
-            return withUnsafePointer(to: &externalImage) {
-                externalImagePointer in
-                unsafe createInfo.pNext =
-                    UnsafeRawPointer(externalImagePointer)
-                return unsafe createImage(
-                    device, &createInfo, nil, &image)
+    var externalProperties =
+        unsafe VkExternalImageFormatProperties()
+    unsafe externalProperties.sType =
+        VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES
+    var imageProperties = unsafe VkImageFormatProperties2()
+    unsafe imageProperties.sType =
+        VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2
+    let result = withUnsafePointer(to: &externalInfo) {
+        externalPointer in
+        unsafe modifierInfo.pNext =
+            UnsafeRawPointer(externalPointer)
+        return withUnsafePointer(to: &modifierInfo) {
+            modifierPointer in
+            unsafe imageInfo.pNext =
+                UnsafeRawPointer(modifierPointer)
+            return withUnsafeMutablePointer(
+                to: &externalProperties
+            ) { externalPropertiesPointer in
+                unsafe imageProperties.pNext =
+                    UnsafeMutableRawPointer(
+                        externalPropertiesPointer)
+                return unsafe getImageFormatProperties(
+                    physicalDevice,
+                    &imageInfo,
+                    &imageProperties)
             }
         }
     }
-    guard createResult == VK_SUCCESS, let image = unsafe image else {
-        return nil
-    }
-    var ownsImage = true
-    var memory: VkDeviceMemory?
-    defer {
-        if let memory = unsafe memory {
-            unsafe freeMemory(device, memory, nil)
-        }
-        if ownsImage {
-            unsafe destroyImage(device, image, nil)
-        }
-    }
-
-    var requirements = VkMemoryRequirements()
-    unsafe getRequirements(device, image, &requirements)
-    guard requirements.memoryTypeBits != 0 else { return nil }
-
-    var memoryProperties = VkPhysicalDeviceMemoryProperties()
-    unsafe getMemoryProperties(physicalDevice, &memoryProperties)
-    let memoryTypeIndex =
-        UInt32(requirements.memoryTypeBits.trailingZeroBitCount)
-    guard memoryTypeIndex < memoryProperties.memoryTypeCount else {
-        return nil
-    }
-
-    var dedicated = unsafe VkMemoryDedicatedAllocateInfo()
-    unsafe dedicated.sType =
-        VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO
-    unsafe dedicated.image = image
-
-    var exportInfo = unsafe VkExportMemoryAllocateInfo()
-    unsafe exportInfo.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO
-    unsafe exportInfo.handleTypes =
-        VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT.rawValue
-
-    var allocateInfo = unsafe VkMemoryAllocateInfo()
-    unsafe allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO
-    unsafe allocateInfo.allocationSize = requirements.size
-    unsafe allocateInfo.memoryTypeIndex = memoryTypeIndex
-    let allocateResult = withUnsafePointer(to: &dedicated) {
-        dedicatedPointer in
-        unsafe exportInfo.pNext = UnsafeRawPointer(dedicatedPointer)
-        return withUnsafePointer(to: &exportInfo) {
-            exportInfoPointer in
-            unsafe allocateInfo.pNext =
-                UnsafeRawPointer(exportInfoPointer)
-            return unsafe allocateMemory(
-                device, &allocateInfo, nil, &memory)
-        }
-    }
-    guard allocateResult == VK_SUCCESS, let boundMemory = unsafe memory else {
-        return nil
-    }
-    guard unsafe bindImageMemory(device, image, boundMemory, 0)
-        == VK_SUCCESS
-    else {
-        return nil
-    }
-
-    var modifierProperties =
-        unsafe VkImageDrmFormatModifierPropertiesEXT()
-    unsafe modifierProperties.sType =
-        VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_PROPERTIES_EXT
-    guard unsafe getModifier(
-        device, image, &modifierProperties) == VK_SUCCESS
-    else {
-        return nil
-    }
-
-    var subresource = VkImageSubresource()
-    subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT.rawValue
-    var layout = VkSubresourceLayout()
-    unsafe getLayout(device, image, &subresource, &layout)
-    guard let offset = UInt32(exactly: layout.offset),
-          let rowPitch = UInt32(exactly: layout.rowPitch)
-    else {
-        return nil
-    }
-
-    var fdInfo = unsafe VkMemoryGetFdInfoKHR()
-    unsafe fdInfo.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR
-    unsafe fdInfo.memory = boundMemory
-    unsafe fdInfo.handleType =
-        VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT
-    var exportedFD: Int32 = -1
-    guard unsafe getMemoryFd(device, &fdInfo, &exportedFD) == VK_SUCCESS,
-          exportedFD >= 0
-    else {
-        return nil
-    }
-
-    unsafe memory = nil
-    ownsImage = false
-    let owner = unsafe VkOwned(
-        adopting: image,
-        device: device,
-        destroy: { device, image in
-            unsafe destroyImage(device, image, nil)
-            unsafe freeMemory(device, boundMemory, nil)
-        })
-    return unsafe ExportedDmaBufImage(
-        image: owner,
-        fileDescriptor: exportedFD,
-        width: width,
-        height: height,
-        drmFormat: drmFormat,
-        modifier: modifierProperties.drmFormatModifier,
-        offset: offset,
-        rowPitch: rowPitch)
+    guard result == VK_SUCCESS else { return false }
+    let features = unsafe externalProperties
+        .externalMemoryProperties.externalMemoryFeatures
+    return features & requiredExternalFeature != 0
 }
 
 /// Query the selected Vulkan physical device for DRM format modifiers that can be
@@ -632,45 +323,18 @@ public func querySampleableDmaBufFormats(
             let features = modifier.drmFormatModifierTilingFeatures
             if features & UInt64(VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT) == 0 { continue }
 
-            // Modifier tiling support alone does not mean an image allocated by a
-            // Wayland client can be imported. NVIDIA in particular exposes sampled
-            // modifiers which fail the external-memory import path. Advertising one
-            // lets the client create a perfectly valid buffer that this compositor
-            // can never turn into a texture, producing an invisible surface.
-            var externalInfo = unsafe VkPhysicalDeviceExternalImageFormatInfo()
-            unsafe externalInfo.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO
-            unsafe externalInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT
-
-            var modifierInfo = unsafe VkPhysicalDeviceImageDrmFormatModifierInfoEXT()
-            unsafe modifierInfo.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_DRM_FORMAT_MODIFIER_INFO_EXT
-            unsafe modifierInfo.drmFormatModifier = modifier.drmFormatModifier
-            unsafe modifierInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE
-
-            var imageInfo = unsafe VkPhysicalDeviceImageFormatInfo2()
-            unsafe imageInfo.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2
-            unsafe imageInfo.format = vulkanFormat
-            unsafe imageInfo.type = VK_IMAGE_TYPE_2D
-            unsafe imageInfo.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT
-            unsafe imageInfo.usage = DmaBufImageDescriptor.sampledUsage.rawValue
-
-            var externalProperties = unsafe VkExternalImageFormatProperties()
-            unsafe externalProperties.sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES
-            var imageProperties = unsafe VkImageFormatProperties2()
-            unsafe imageProperties.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2
-            let supported = withUnsafePointer(to: &externalInfo) { externalPtr in
-                unsafe modifierInfo.pNext = unsafe UnsafeRawPointer(externalPtr)
-                return withUnsafePointer(to: &modifierInfo) { modifierPtr in
-                    unsafe imageInfo.pNext = unsafe UnsafeRawPointer(modifierPtr)
-                    return withUnsafeMutablePointer(to: &externalProperties) { externalPropertiesPtr in
-                        unsafe imageProperties.pNext = UnsafeMutableRawPointer(externalPropertiesPtr)
-                        return unsafe getImageFormatProperties(physicalDevice, &imageInfo, &imageProperties)
-                    }
-                }
-            }
-            guard supported == VK_SUCCESS else { continue }
-            let externalFeatures = unsafe externalProperties.externalMemoryProperties.externalMemoryFeatures
-            guard externalFeatures & VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT.rawValue != 0 else { continue }
-            out.append(DmaBufFormatModifier(format: drmFormat, modifier: modifier.drmFormatModifier))
+            let value = modifier.drmFormatModifier
+            guard unsafe supportsDmaBufImage(
+                physicalDevice: physicalDevice,
+                getImageFormatProperties: getImageFormatProperties,
+                format: vulkanFormat,
+                modifier: value,
+                usage: DmaBufImageDescriptor.sampledUsage,
+                requiredExternalFeature:
+                    VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT.rawValue)
+            else { continue }
+            out.append(DmaBufFormatModifier(
+                format: drmFormat, modifier: value))
         }
     }
     return out

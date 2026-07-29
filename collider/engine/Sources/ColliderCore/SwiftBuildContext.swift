@@ -16,6 +16,7 @@ public enum SwiftBuildTarget: Hashable, Sendable {
 /// Every setting that determines whether SwiftPM compilation artifacts may be
 /// reused by another task.
 public struct SwiftBuildContext: Hashable, Sendable {
+    public let packageRoot: FilePath
     public let configuration: SwiftBuildConfiguration
     public let target: SwiftBuildTarget
     public let toolchainIdentity: String
@@ -28,6 +29,7 @@ public struct SwiftBuildContext: Hashable, Sendable {
     public let staticSwiftStandardLibrary: Bool
 
     public init(
+        packageRoot: FilePath,
         configuration: SwiftBuildConfiguration,
         target: SwiftBuildTarget,
         toolchainIdentity: String,
@@ -39,6 +41,8 @@ public struct SwiftBuildContext: Hashable, Sendable {
         linkerFlags: [String] = [],
         staticSwiftStandardLibrary: Bool = false
     ) {
+        precondition(packageRoot.isAbsolute && packageRoot.isLexicallyNormal)
+        self.packageRoot = packageRoot
         self.configuration = configuration
         self.target = target
         self.toolchainIdentity = toolchainIdentity
@@ -52,9 +56,10 @@ public struct SwiftBuildContext: Hashable, Sendable {
     }
 
     /// Stable canonical bytes used both in task identity and to derive the
-    /// workspace scratch directory.
+    /// package scratch directory.
     public var identityBytes: [UInt8] {
         var encoder = CanonicalDigestEncoder()
+        encoder.append(tag: 13, string: packageRoot.string)
         encoder.append(tag: 1, string: configuration.rawValue)
         switch target {
         case .host(let identity):
@@ -87,7 +92,10 @@ public struct SwiftPMInvocation: Hashable, Sendable {
     public let context: SwiftBuildContext
     public let scratchPath: FilePath
 
-    public init(context: SwiftBuildContext, scratchPath: FilePath) {
+    public init(
+        context: SwiftBuildContext,
+        scratchPath: FilePath
+    ) {
         self.context = context
         self.scratchPath = scratchPath
     }
@@ -122,6 +130,53 @@ public struct SwiftPMInvocation: Hashable, Sendable {
 
     public func executable(_ product: String) -> FilePath {
         configurationProducts.appending(product)
+    }
+
+    public func product(
+        package: String,
+        product: String,
+        packageRoot: FilePath,
+        environment: [String: String],
+        expectedOutputs: [PathPostcondition] = []
+    ) -> SwiftProductRequirement {
+        SwiftProductRequirement(
+            package: package,
+            product: product,
+            packageRoot: context.packageRoot,
+            invocation: self,
+            inputs: [
+                .file(context.packageRoot.appending("Package.swift")),
+                .optionalTree(
+                    packageRoot.appending("Sources"),
+                    fallback: Array("no-sources-directory".utf8)),
+            ],
+            environment: environment,
+            expectedOutputs: expectedOutputs)
+    }
+
+    public func testProduct(
+        package: String,
+        testProduct: String,
+        packageRoot: FilePath,
+        environment: [String: String],
+        arguments: [String] = []
+    ) -> SwiftTestRequirement {
+        SwiftTestRequirement(
+            package: package,
+            testProduct: testProduct,
+            packageRoot: context.packageRoot,
+            invocation: self,
+            inputs: [
+                .file(context.packageRoot.appending("Package.swift")),
+                .optionalTree(
+                    packageRoot.appending("Sources"),
+                    fallback: Array("no-sources-directory".utf8)),
+                .optionalTree(
+                    packageRoot.appending("Tests"),
+                    fallback: Array("no-tests-directory".utf8)),
+            ],
+            environment: environment,
+            arguments: arguments)
     }
 
     public func generatedSwiftHeader(_ module: String) -> FilePath {
@@ -159,6 +214,13 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         } else {
             environment.removeValue(forKey: "NUCLEUS_SWIFTPM_SANITIZER")
         }
+        if case .swiftSDK(_, let triple) = context.target,
+            triple.contains("android")
+        {
+            environment["NUCLEUS_TARGET_PLATFORM"] = "android"
+        } else {
+            environment.removeValue(forKey: "NUCLEUS_TARGET_PLATFORM")
+        }
         return environment
     }
 
@@ -172,6 +234,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         var arguments = [
             "--configuration", context.configuration.rawValue,
             "--scratch-path", scratchPath.string,
+            "--package-path", context.packageRoot.string,
         ]
         if case .triple(let triple) = context.target {
             arguments += ["--triple", triple]
@@ -204,8 +267,86 @@ public struct SwiftPMInvocation: Hashable, Sendable {
     }
 }
 
-private extension SwiftBuildTarget {
-    var productsSuffix: String {
+/// One product that a task needs from the canonical Swift package. Recipes
+/// declare requirements; ColliderRuntime unions them into one SwiftPM request.
+public struct SwiftProductRequirement: Hashable, Sendable {
+    public let package: String
+    public let product: String
+    public let packageRoot: FilePath
+    public let invocation: SwiftPMInvocation
+    public let inputs: [ArtifactInput]
+    public let environment: [String: String]
+    public let expectedOutputs: [PathPostcondition]
+
+    public init(
+        package: String,
+        product: String,
+        packageRoot: FilePath,
+        invocation: SwiftPMInvocation,
+        inputs: [ArtifactInput],
+        environment: [String: String],
+        expectedOutputs: [PathPostcondition] = []
+    ) {
+        precondition(
+            packageRoot == invocation.context.packageRoot,
+            "Swift product requirement uses a different package root")
+        precondition(!package.isEmpty, "Swift package identity is empty")
+        precondition(!product.isEmpty, "Swift product name is empty")
+        self.package = package
+        self.product = product
+        self.packageRoot = packageRoot
+        self.invocation = invocation
+        self.inputs = inputs
+        self.environment = environment
+        self.expectedOutputs = expectedOutputs
+    }
+
+    public var qualifiedProduct: String {
+        "\(package):\(product)"
+    }
+}
+
+/// One independently attributed test product. Collider unions compilation for
+/// these requirements, then runs each selected product without rebuilding it.
+public struct SwiftTestRequirement: Hashable, Sendable {
+    public let package: String
+    public let testProduct: String
+    public let packageRoot: FilePath
+    public let invocation: SwiftPMInvocation
+    public let inputs: [ArtifactInput]
+    public let environment: [String: String]
+    public let arguments: [String]
+
+    public init(
+        package: String,
+        testProduct: String,
+        packageRoot: FilePath,
+        invocation: SwiftPMInvocation,
+        inputs: [ArtifactInput],
+        environment: [String: String],
+        arguments: [String] = []
+    ) {
+        precondition(
+            packageRoot == invocation.context.packageRoot,
+            "Swift test requirement uses a different package root")
+        precondition(!package.isEmpty, "Swift package identity is empty")
+        precondition(!testProduct.isEmpty, "Swift test product name is empty")
+        self.package = package
+        self.testProduct = testProduct
+        self.packageRoot = packageRoot
+        self.invocation = invocation
+        self.inputs = inputs
+        self.environment = environment
+        self.arguments = arguments
+    }
+
+    public var qualifiedProduct: String {
+        "\(package):\(testProduct)"
+    }
+}
+
+extension SwiftBuildTarget {
+    fileprivate var productsSuffix: String {
         switch self {
         case .host(let identity):
             let parts = identity.split(separator: "-", maxSplits: 1)

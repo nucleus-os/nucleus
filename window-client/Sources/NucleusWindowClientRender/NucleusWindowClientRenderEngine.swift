@@ -2,15 +2,108 @@
 public import NucleusRenderModel
 import NucleusDiagnostics
 import NucleusWindowClientRuntime
+import NucleusWindowClientVulkanWaylandC
 @_spi(NucleusWindowClientImplementation)
 import NucleusWindowClientWayland
 import Tracy
+import VulkanC
 import WaylandClientDispatch
 #if canImport(Glibc)
 import Glibc
 #endif
 
-// Owns the shared render core and one DMA-BUF presenter per desktop surface, and drives the
+func linuxDeviceNumbers(_ deviceID: UInt64) -> (
+    major: Int64, minor: Int64
+) {
+    (
+        Int64(((deviceID >> 8) & 0xfff)
+            | ((deviceID >> 32) & ~0xfff)),
+        Int64((deviceID & 0xff)
+            | ((deviceID >> 12) & ~0xff))
+    )
+}
+
+@unsafe private func physicalDeviceMatchesRenderDevice(
+    _ physicalDevice: VulkanPhysicalDeviceHandle,
+    matchesRenderDevice deviceID: UInt64,
+    instance: VulkanInstanceHandle
+) -> Bool {
+    guard let raw = unsafe vkGetInstanceProcAddr(
+        instance.vkInstance,
+        "vkGetPhysicalDeviceProperties2")
+    else { return false }
+    let getProperties = unsafe unsafeBitCast(
+        raw, to: PFN_vkGetPhysicalDeviceProperties2.self)
+    var drm = unsafe VkPhysicalDeviceDrmPropertiesEXT()
+    unsafe drm.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRM_PROPERTIES_EXT
+    var properties = unsafe VkPhysicalDeviceProperties2()
+    unsafe properties.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2
+    withUnsafeMutablePointer(to: &drm) { drmPointer in
+        unsafe properties.pNext = UnsafeMutableRawPointer(drmPointer)
+        unsafe getProperties(
+            physicalDevice.vkPhysicalDevice, &properties)
+    }
+    let target = linuxDeviceNumbers(deviceID)
+    let hasRender = unsafe drm.hasRender != 0
+    let renderMajor = unsafe drm.renderMajor
+    let renderMinor = unsafe drm.renderMinor
+    let matches = hasRender
+        && renderMajor == target.major
+        && renderMinor == target.minor
+    NucleusLogger(subsystem: "window-client-render").info(
+        "Vulkan candidate render="
+            + "\(hasRender ? "\(renderMajor):\(renderMinor)" : "none") "
+            + "target=\(target.major):\(target.minor) match=\(matches)")
+    return matches
+}
+
+@unsafe private func physicalDeviceSupportsWaylandPresentation(
+    _ physicalDevice: VulkanPhysicalDeviceHandle,
+    queueFamily: UInt32,
+    display: OpaquePointer,
+    instance: VulkanInstanceHandle
+) -> Bool {
+    guard let raw = unsafe vkGetInstanceProcAddr(
+        instance.vkInstance,
+        "vkGetPhysicalDeviceWaylandPresentationSupportKHR")
+    else { return false }
+    let function = unsafe unsafeBitCast(
+        raw, to: UnsafeMutableRawPointer.self)
+    return unsafe nucleus_vk_wayland_presentation_supported(
+        function,
+        UnsafeMutableRawPointer(
+            physicalDevice.vkPhysicalDevice),
+        queueFamily,
+        UnsafeMutableRawPointer(display)) != 0
+}
+
+@unsafe private func createWaylandVulkanSurface(
+    instance: VulkanInstanceHandle,
+    display: OpaquePointer,
+    surface: OpaquePointer
+) -> VulkanSurfaceHandle? {
+    guard let raw = unsafe vkGetInstanceProcAddr(
+        instance.vkInstance, "vkCreateWaylandSurfaceKHR")
+    else { return nil }
+    let function = unsafe unsafeBitCast(
+        raw, to: UnsafeMutableRawPointer.self)
+    var created: UnsafeMutableRawPointer?
+    let result = unsafe nucleus_vk_create_wayland_surface(
+        function,
+        UnsafeMutableRawPointer(instance.vkInstance),
+        UnsafeMutableRawPointer(display),
+        UnsafeMutableRawPointer(surface),
+        &created)
+    guard result == VK_SUCCESS.rawValue,
+          unsafe created != nil
+    else { return nil }
+    return unsafe VulkanSurfaceHandle(
+        OpaquePointer(unsafe created!))
+}
+
+// Owns the shared render core and one WSI presenter per desktop surface, and drives the
 // per-frame record/present. Mirrors the Android host's AndroidRenderEngine, generalized to N
 // surfaces: each desktop surface (bar, dock, lock, …) is its own presentable output with its own
 // swapchain, all sharing one RenderCore (one VkDevice — Skia can only draw into swapchain
@@ -32,7 +125,7 @@ public enum WindowClientImageResidency: Sendable, Equatable {
 @safe public final class NucleusWindowClientRenderEngine {
     public let core: RenderCore
     private var presenters:
-        [UInt64: WaylandBackingStorePresenter] = [:]
+        [UInt64: SwapchainPresenter] = [:]
     private var refreshMillihertzByOutput: [UInt64: Int32] = [:]
     private var presentationContextIDByOutput: [UInt64: UInt32] = [:]
     private var presentationRootLayerIDByOutput: [UInt64: UInt64] = [:]
@@ -48,13 +141,28 @@ public enum WindowClientImageResidency: Sendable, Equatable {
         resourceHost: SwiftResourceHost,
         asyncRenderWakeSink: any AsyncRenderWakeSink
     ) {
-        guard let bootstrap = VulkanBootstrap.create(
+        guard let mainDevice = connection.dmaBufMainDevice,
+              mainDevice != 0,
+              let bootstrap = VulkanBootstrap.create(
             applicationName: "Nucleus Window Client",
-            presentation: .waylandClientBackingStore,
+            presentation: .waylandSwapchain,
             enableValidation: enableValidation),
               let core = RenderCore.create(
             bootstrap: bootstrap,
-            qualification: .none,
+            qualification: .platformProbe {
+                instance, physicalDevice, queueFamily in
+                unsafe connection.withUnsafeNativeDisplay { display in
+                    unsafe physicalDeviceMatchesRenderDevice(
+                        physicalDevice,
+                        matchesRenderDevice: mainDevice,
+                        instance: instance)
+                        && physicalDeviceSupportsWaylandPresentation(
+                            physicalDevice,
+                            queueFamily: queueFamily,
+                            display: display,
+                            instance: instance)
+                }
+            },
             store: store,
             resourceHost: resourceHost,
             asyncRenderWakeSink: asyncRenderWakeSink
@@ -80,27 +188,45 @@ public enum WindowClientImageResidency: Sendable, Equatable {
         nextOutputID &+= 1
         Self.log(
             "window-client-render: add surface output=\(id) extent=\(width)x\(height)")
-        guard let presenter = WaylandBackingStorePresenter(
-            core: core,
-            outputID: id,
-            surface: waylandSurface,
-            connection: connection)
+        let vulkanSurface: VulkanSurface?
+        do {
+            vulkanSurface = try unsafe waylandSurface
+                .withUnsafeNativeProxy { nativeSurface in
+                    unsafe connection.withUnsafeNativeDisplay { display in
+                        core.createSurface { instance in
+                            unsafe createWaylandVulkanSurface(
+                                instance: instance,
+                                display: display,
+                                surface: nativeSurface)
+                        }
+                    }
+                }
+        } catch {
+            Self.log(
+                "window-client-render: output=\(id) "
+                    + "Wayland surface access failed: \(error)")
+            return nil
+        }
+        guard let vulkanSurface,
+              let presenter = SwapchainPresenter(
+                core: core,
+                outputID: id,
+                surface: vulkanSurface)
         else {
             Self.log("window-client-render: output=\(id) presenter creation failed")
             return nil
         }
-        Self.log("window-client-render: output=\(id) configuring backing stores")
+        Self.log("window-client-render: output=\(id) configuring swapchain")
         guard presenter.configure(
-            width: width,
-            height: height)
+            width: width, height: height, hasAlpha: true)
         else {
             Self.log(
-                "window-client-render: output=\(id) backing-store configuration failed")
+                "window-client-render: output=\(id) swapchain configuration failed")
             presenter.teardown()
             return nil
         }
         Self.log(
-            "window-client-render: output=\(id) backing stores ready "
+            "window-client-render: output=\(id) swapchain ready "
                 + "extent=\(presenter.lastExtentWidth)x"
                 + "\(presenter.lastExtentHeight)")
         presenters[id] = presenter
@@ -163,10 +289,11 @@ public enum WindowClientImageResidency: Sendable, Equatable {
             fractionalScale: scale)
     }
 
-    /// Replace a surface's backing-store generation after layer-shell configure.
+    /// Replace a surface's swapchain generation after layer-shell configure.
     public func resizeSurface(_ id: UInt64, width: Int32, height: Int32, scale: Double) {
         guard let presenter = presenters[id] else { return }
-        _ = presenter.configure(width: width, height: height)
+        _ = presenter.configure(
+            width: width, height: height, hasAlpha: true)
         core.attachOutputGeometry(
             outputID: id, logicalX: 0, logicalY: 0,
             logicalWidth: Double(presenter.lastExtentWidth) / scale,
@@ -221,7 +348,12 @@ public enum WindowClientImageResidency: Sendable, Equatable {
                 }
             }
             deviceLost = presenters.values.contains {
-                $0.deviceLost
+                switch $0.lastStatus {
+                case .acquireFailed, .renderFailed, .presentFailed:
+                    true
+                default:
+                    false
+                }
             }
             if startupFrameDiagnosticsRemaining > 0 {
                 startupFrameDiagnosticsRemaining -= 1

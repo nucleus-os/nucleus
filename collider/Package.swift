@@ -6,78 +6,120 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [
         .executable(name: "collider", targets: ["Collider"]),
+        .executable(
+            name: "collider-android-privileged",
+            targets: ["ColliderAndroidPrivilegedExecutable"]),
     ],
     dependencies: [
         .package(path: "engine"),
-        .package(
-            name: "NucleusSessionProtocolPackage",
-            path: "../session/protocol"),
         .package(path: "../third-party/swift-argument-parser"),
-        .package(name: "NucleusSwiftPlatform", path: "../swift-toolchain"),
-        .package(name: "swift-tracy", path: "../swift-tracy"),
-        .package(name: "swift-vulkan", path: "../swift-vulkan"),
-        .package(name: "swift-wayland", path: "../swift-wayland"),
-        .package(name: "Nucleus", path: "../core"),
-        .package(name: "NucleusConfigIOPackage", path: "../config"),
-        .package(name: "NucleusIPCPackage", path: "../ipc"),
-        .package(name: "NucleusLinuxPlatform", path: "../platform-linux"),
-        .package(name: "android-runtime", path: "../android-runtime"),
-        .package(name: "NucleusReactNative", path: "../react-native"),
-        .package(name: "compositor-core", path: "../compositor/compositor-core"),
-        .package(name: "NucleusCompositorApp", path: "../compositor/compositor"),
-        .package(name: "NucleusShell", path: "../shell"),
-        .package(name: "NucleusBrowser", path: "../chromium"),
+        .package(name: "Nucleus", path: ".."),
     ],
     targets: [
         .executableTarget(
             name: "Collider",
             dependencies: ["ColliderCommands"]),
+        .executableTarget(
+            name: "ColliderAndroidPrivilegedExecutable",
+            dependencies: ["ColliderAndroidPrivileged"]),
+        .target(
+            name: "ColliderAndroidPrivileged",
+            dependencies: [
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(name: "ColliderRuntime", package: "engine"),
+            ]),
         .target(
             name: "ColliderCommands",
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                "ColliderAndroidPrivileged",
                 .product(name: "ColliderCore", package: "engine"),
                 .product(name: "ColliderRuntime", package: "engine"),
                 .product(
                     name: "NucleusSessionProtocol",
-                    package: "NucleusSessionProtocolPackage"),
+                    package: "Nucleus"),
                 .product(
-                    name: "SwiftPlatformColliderRecipe",
-                    package: "NucleusSwiftPlatform"),
-                .product(name: "TracyColliderRecipe", package: "swift-tracy"),
-                .product(name: "VulkanColliderRecipe", package: "swift-vulkan"),
-                .product(name: "WaylandColliderRecipe", package: "swift-wayland"),
-                .product(name: "CoreColliderRecipe", package: "Nucleus"),
-                .product(
-                    name: "ConfigColliderRecipe",
-                    package: "NucleusConfigIOPackage"),
-                .product(
-                    name: "IPCColliderRecipe",
-                    package: "NucleusIPCPackage"),
-                .product(name: "LinuxColliderRecipe", package: "NucleusLinuxPlatform"),
-                .product(name: "AndroidRuntimeColliderRecipe", package: "android-runtime"),
-                .product(name: "NucleusAndroidContainerContract", package: "android-runtime"),
-                .product(name: "ReactNativeColliderRecipe", package: "NucleusReactNative"),
-                .product(name: "CompositorColliderRecipe", package: "compositor-core"),
-                .product(name: "CompositorAppColliderRecipe", package: "NucleusCompositorApp"),
-                .product(name: "ShellColliderRecipe", package: "NucleusShell"),
-                .product(name: "ChromiumColliderRecipe", package: "NucleusBrowser"),
+                    name: "NucleusAndroidContainerContract",
+                    package: "Nucleus"),
+                "AndroidRuntimeColliderRecipe",
+                "ChromiumColliderRecipe",
+                "CompositorAppColliderRecipe",
+                "CompositorColliderRecipe",
+                "ConfigColliderRecipe",
+                "CoreColliderRecipe",
+                "IPCColliderRecipe",
+                "LinuxColliderRecipe",
+                "ReactNativeColliderRecipe",
+                "ShellColliderRecipe",
+                "SwiftPlatformColliderRecipe",
+                "TracyColliderRecipe",
+                "VulkanColliderRecipe",
+                "WaylandColliderRecipe",
             ]),
+        .target(
+            name: "AndroidRuntimeColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+        .target(
+            name: "ChromiumColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+        .target(
+            name: "CompositorAppColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+        .target(
+            name: "CompositorColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+        .target(
+            name: "ConfigColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+        .target(
+            name: "CoreColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+        .target(
+            name: "IPCColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+        .target(
+            name: "LinuxColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+        .target(
+            name: "ReactNativeColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+        .target(
+            name: "ShellColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+        .target(
+            name: "SwiftPlatformColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+        .target(
+            name: "TracyColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+        .target(
+            name: "VulkanColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+        .target(
+            name: "WaylandColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
         .testTarget(
             name: "ColliderCommandsTests",
             dependencies: [
                 "ColliderCommands",
-                .product(name: "AndroidRuntimeColliderRecipe", package: "android-runtime"),
-                .product(name: "ChromiumColliderRecipe", package: "NucleusBrowser"),
+                "ColliderAndroidPrivileged",
+                "AndroidRuntimeColliderRecipe",
+                "ChromiumColliderRecipe",
                 .product(name: "ColliderCore", package: "engine"),
-                .product(name: "CoreColliderRecipe", package: "Nucleus"),
+                "CoreColliderRecipe",
                 .product(
                     name: "NucleusSessionProtocol",
-                    package: "NucleusSessionProtocolPackage"),
-                .product(name: "ReactNativeColliderRecipe", package: "NucleusReactNative"),
-                .product(name: "TracyColliderRecipe", package: "swift-tracy"),
-                .product(name: "VulkanColliderRecipe", package: "swift-vulkan"),
-                .product(name: "WaylandColliderRecipe", package: "swift-wayland"),
+                    package: "Nucleus"),
+                "ReactNativeColliderRecipe",
+                "TracyColliderRecipe",
+                "VulkanColliderRecipe",
+                "WaylandColliderRecipe",
+            ]),
+        .testTarget(
+            name: "SwiftPlatformColliderRecipeTests",
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                "SwiftPlatformColliderRecipe",
             ]),
     ]
 )

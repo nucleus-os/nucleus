@@ -27,6 +27,17 @@ public enum ArtifactHasher {
         tree root: FilePath,
         excluding excludedRelativePaths: Set<String> = []
     ) throws -> ArtifactDigest {
+        try digest(
+            tree: root,
+            excluding: excludedRelativePaths,
+            digestFile: { path, _ in try digest(file: path) })
+    }
+
+    static func digest(
+        tree root: FilePath,
+        excluding excludedRelativePaths: Set<String> = [],
+        digestFile: (FilePath, Stat) throws -> ArtifactDigest
+    ) throws -> ArtifactDigest {
         let rootURL = URL(fileURLWithPath: root.string, isDirectory: true)
         guard let enumerator = FileManager.default.enumerator(
             at: rootURL,
@@ -53,7 +64,9 @@ public enum ArtifactHasher {
             framing.append(tag: 2, integer: metadata.permissions.contains(.ownerExecute) ? 1 : 0)
             if metadata.type == .regular {
                 framing.append(tag: 3, string: "file")
-                framing.append(tag: 4, bytes: try digest(file: path).bytes)
+                framing.append(
+                    tag: 4,
+                    bytes: try digestFile(path, metadata).bytes)
             } else if metadata.type == .directory {
                 framing.append(tag: 3, string: "directory")
             } else if metadata.type == .symbolicLink {

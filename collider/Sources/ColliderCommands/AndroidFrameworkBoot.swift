@@ -1,3 +1,4 @@
+import AndroidRuntimeColliderRecipe
 import ColliderCore
 import ColliderRuntime
 import Foundation
@@ -351,9 +352,9 @@ struct AndroidFrameworkBootCommand {
                     ).sha256Hex)
             }
         }
-        let productTreeSHA256 = try ArtifactHasher.digest(
-            tree: FilePath(layout.productSource.path)
-        ).sha256Hex
+        let productTreeSHA256 =
+            try androidFrameworkProductDefinitionDigest(
+                androidRoot: layout.androidRoot).sha256Hex
         if let reason = androidImageStalenessReason(
             image: image,
             source: source,
@@ -707,6 +708,20 @@ struct AndroidFrameworkBootCommand {
     }
 }
 
+func androidFrameworkProductDefinitionDigest(
+    androidRoot: URL
+) throws -> ArtifactDigest {
+    try aospProductDefinitionDigest(
+        productSource: FilePath(
+            androidRoot.appendingPathComponent(
+                "aosp/device/nucleus/nucleus_x86_64",
+                isDirectory: true
+            ).path),
+        sourceOverlays:
+            AndroidRuntimeColliderRecipe.aospProductSourceOverlays(
+                root: FilePath(androidRoot.path)))
+}
+
 struct AndroidFrameworkBrokerLaunch {
     let executable: URL
     let environment: [String: String]
@@ -866,7 +881,7 @@ private actor AndroidFrameworkBootSession {
                 "--non-interactive",
                 "mount",
                 "--bind",
-                try currentColliderExecutable(),
+                try currentColliderAndroidPrivilegedExecutable(),
                 layout.bpfHookExecutable.path,
             ])
         mounts.record(layout.bpfHookExecutable)
@@ -1177,7 +1192,8 @@ private actor AndroidFrameworkBootSession {
             ])
         mounts.record(apexRoot)
 
-        let colliderExecutable = try currentColliderExecutable()
+        let helperExecutable =
+            try currentColliderAndroidPrivilegedExecutable()
         for apex in apexes {
             let versionName = "\(apex.name)@\(apex.version)"
             let versionMount = apexRoot.appendingPathComponent(
@@ -1203,7 +1219,7 @@ private actor AndroidFrameworkBootSession {
                 payloadFileSystem: apex.payloadFileSystem,
                 payloadOffset: apex.payload.offset)
             let mountInvocation = AndroidApexMountInvocation(
-                colliderExecutable: colliderExecutable,
+                helperExecutable: helperExecutable,
                 request: mountRequest)
             try await context.run(
                 mountInvocation.executable,
@@ -1411,7 +1427,8 @@ private actor AndroidFrameworkBootSession {
     ) async throws {
         try progress?.record("services.starting")
         let invocation = AndroidBPFBrokerInvocation(
-            colliderExecutable: try currentColliderExecutable(),
+            helperExecutable:
+                try currentColliderAndroidPrivilegedExecutable(),
             socket: layout.bpfBrokerSocket.path,
             rootUID: host.subordinateUID,
             rootGID: host.subordinateGID)
@@ -1512,7 +1529,10 @@ private actor AndroidFrameworkBootSession {
                                     container: container,
                                     displayHost: displayHost,
                                     gfxstreamBroker: gfxstreamBroker,
-                                    timeoutSeconds: timeoutSeconds)
+                                    timeoutSeconds: timeoutSeconds,
+                                    waylandRuntimeDirectory:
+                                        waylandRuntimeDirectory,
+                                    waylandSocket: waylandSocket)
                             } catch {
                                 await self.stopContainer()
                                 throw error
@@ -1718,7 +1738,9 @@ private actor AndroidFrameworkBootSession {
         container: RunningCommand,
         displayHost: RunningCommand,
         gfxstreamBroker: RunningCommand,
-        timeoutSeconds: UInt32
+        timeoutSeconds: UInt32,
+        waylandRuntimeDirectory: URL,
+        waylandSocket: String
     ) async throws {
         let deadline = ContinuousClock.now.advanced(
             by: .seconds(Int64(timeoutSeconds)))
@@ -1758,7 +1780,10 @@ private actor AndroidFrameworkBootSession {
                         logcat: logcat,
                         displayHost: displayHost,
                         gfxstreamBroker: gfxstreamBroker,
-                        deadline: deadline)
+                        deadline: deadline,
+                        waylandRuntimeDirectory:
+                            waylandRuntimeDirectory,
+                        waylandSocket: waylandSocket)
                 }
                 return
             }
@@ -1774,7 +1799,9 @@ private actor AndroidFrameworkBootSession {
         logcat: RunningCommand,
         displayHost: RunningCommand,
         gfxstreamBroker: RunningCommand,
-        deadline: ContinuousClock.Instant
+        deadline: ContinuousClock.Instant,
+        waylandRuntimeDirectory: URL,
+        waylandSocket: String
     ) async throws {
         var frameworkBooted = false
         var synchronizedFramePresented = false
@@ -1818,6 +1845,10 @@ private actor AndroidFrameworkBootSession {
             }
             if frameworkBooted && presented {
                 try progress?.record("framework.ready")
+                await captureCompositorScreenshot(
+                    waylandRuntimeDirectory: waylandRuntimeDirectory,
+                    waylandSocket: waylandSocket)
+                await captureFrameworkScreenshot()
                 return
             }
             try frameworkHealth.check(
@@ -1922,6 +1953,61 @@ private actor AndroidFrameworkBootSession {
                     "error": "\(error)",
                 ])
             throw error
+        }
+    }
+
+    private func captureFrameworkScreenshot() async {
+        do {
+            try await context.withRunningCommand(
+                "sudo",
+                [
+                    "--non-interactive",
+                    "lxc-attach",
+                    "--name",
+                    layout.name,
+                    "--",
+                    "/system/bin/screencap",
+                    "-p",
+                ],
+                output: .file(FilePath(layout.androidScreenshot.path))
+            ) { command in
+                try await command.waitUntilReady()
+                let status = try await command.wait().status
+                guard status == 0 else {
+                    throw WorkspaceFailure.message(
+                        "Android screencap exited with status \(status)")
+                }
+            }
+            try progress?.record(
+                "android.screenshot.captured",
+                fields: ["path": layout.androidScreenshot.path])
+        } catch {
+            try? progress?.record(
+                "android.screenshot.failed",
+                fields: ["error": "\(error)"])
+        }
+    }
+
+    private func captureCompositorScreenshot(
+        waylandRuntimeDirectory: URL,
+        waylandSocket: String
+    ) async {
+        do {
+            try await context.run(
+                "grim",
+                [layout.compositorScreenshot.path],
+                environmentOverrides: [
+                    "XDG_RUNTIME_DIR": waylandRuntimeDirectory.path,
+                    "WAYLAND_DISPLAY": waylandSocket,
+                ],
+                timeoutSeconds: 10)
+            try progress?.record(
+                "compositor.screenshot.captured",
+                fields: ["path": layout.compositorScreenshot.path])
+        } catch {
+            try? progress?.record(
+                "compositor.screenshot.failed",
+                fields: ["error": "\(error)"])
         }
     }
 
@@ -2136,9 +2222,14 @@ func androidLXCPrimaryFailure(logFile: URL) -> String? {
         contentsOf: logFile,
         encoding: .utf8)
     else { return nil }
-    return contents.split(separator: "\n").lazy
-        .map(String.init)
-        .first { $0.contains(" ERROR ") }
+    let lines = contents.split(separator: "\n").map(String.init)
+    if let hookLoaderFailure = lines.first(where: {
+        $0.contains("produced output:")
+            && $0.contains("error while loading shared libraries:")
+    }) {
+        return hookLoaderFailure
+    }
+    return lines.first { $0.contains(" ERROR ") }
 }
 
 private struct AndroidFrameworkBootLayout {
@@ -2165,6 +2256,8 @@ private struct AndroidFrameworkBootLayout {
     let lxcLog: URL
     let androidKernelLog: URL
     let androidLog: URL
+    let androidScreenshot: URL
+    let compositorScreenshot: URL
     let gfxstreamBrokerLog: URL
     let displayHostLog: URL
     let progressLog: URL
@@ -2182,7 +2275,6 @@ private struct AndroidFrameworkBootLayout {
     let patchManifest: URL
     let sourceLock: URL
     let productLock: URL
-    let productSource: URL
     let signingIdentity: URL
     let hostTools: URL
     let appArmorProfile: URL
@@ -2212,7 +2304,7 @@ private struct AndroidFrameworkBootLayout {
         bpfBrokerSocket = bpfBrokerDirectory.appendingPathComponent(
             "broker.sock")
         bpfHookExecutable = bpfBrokerDirectory.appendingPathComponent(
-            "collider")
+            "collider-android-privileged")
         gfxstreamBrokerDirectory = instance.appendingPathComponent(
             "gfxstream-broker",
             isDirectory: true)
@@ -2244,6 +2336,10 @@ private struct AndroidFrameworkBootLayout {
             "android-kmsg.log")
         androidLog = diagnostics.appendingPathComponent(
             "android-logcat.log")
+        androidScreenshot = diagnostics.appendingPathComponent(
+            "android-screenshot.png")
+        compositorScreenshot = diagnostics.appendingPathComponent(
+            "compositor-screenshot.png")
         gfxstreamBrokerLog = diagnostics.appendingPathComponent(
             "android-gfxstream-broker.log")
         displayHostLog = diagnostics.appendingPathComponent(
@@ -2280,9 +2376,6 @@ private struct AndroidFrameworkBootLayout {
         sourceLock = android.appendingPathComponent("aosp.lock.json")
         productLock = android.appendingPathComponent(
             "aosp-product.lock.json")
-        productSource = android.appendingPathComponent(
-            "aosp/device/nucleus/nucleus_x86_64",
-            isDirectory: true)
         signingIdentity = android.appendingPathComponent(
             ".aosp-signing/local-development",
             isDirectory: true)

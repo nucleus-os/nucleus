@@ -125,12 +125,7 @@ struct WorkspaceDoctor {
                 scope: "runtime")
             + paths(
                 [
-                    "swift-tracy/Package.swift",
-                    "swift-vulkan/Package.swift", "swift-wayland/Package.swift",
-                    "core/Package.swift", "platform-linux/Package.swift",
-                    "react-native/Package.swift",
-                    "compositor/compositor-core/Package.swift",
-                    "compositor/compositor/Package.swift", "shell/Package.swift",
+                    "Package.swift",
                     "tools/stage-runtime-elf.sh",
                     "tools/validate-runtime-elf.sh",
                     "third-party/swift-java-jni-core/Package.swift",

@@ -62,12 +62,14 @@ struct RuntimeInstaller {
         prefix: URL,
         options: RuntimeBuildOptions = RuntimeBuildOptions()
     ) async throws -> RuntimeInstallation {
-        guard !FileManager.default.fileExists(atPath: prefix.path)
-            || (try? FileManager.default.destinationOfSymbolicLink(
-                atPath: prefix.path)) != nil
+        guard
+            !FileManager.default.fileExists(atPath: prefix.path)
+                || (try? FileManager.default.destinationOfSymbolicLink(
+                    atPath: prefix.path)) != nil
         else {
             throw WorkspaceFailure.message(
-                "runtime installation path must be absent or an active-generation symlink: \(prefix.path)")
+                "runtime installation path must be absent or an active-generation symlink: \(prefix.path)"
+            )
         }
         // Generation and candidate directories live under the repository's
         // already-ignored `.nucleus/` tree, keyed per active prefix, rather than
@@ -108,15 +110,16 @@ struct RuntimeInstaller {
             generation: FilePath(generation.path),
             active: FilePath(prefix.path))
         published = true
-        try DirectoryLifecycle.prune(DirectoryRetentionPlan(
-            safetyRoot: FilePath(context.layout.runtimeState.path),
-            rules: [
-                DirectoryRetentionRule(
-                    root: FilePath(generationsRoot.path),
-                    current: FilePath(prefix.path),
-                    retain: 3,
-                    naming: .contentIdentity),
-            ]))
+        try DirectoryLifecycle.prune(
+            DirectoryRetentionPlan(
+                safetyRoot: FilePath(context.layout.runtimeState.path),
+                rules: [
+                    DirectoryRetentionRule(
+                        root: FilePath(generationsRoot.path),
+                        current: FilePath(prefix.path),
+                        retain: 3,
+                        naming: .contentIdentity)
+                ]))
         print("runtime generation: \(identity) \(generation.path)")
         return RuntimeInstallation(prefix: prefix)
     }
@@ -127,7 +130,8 @@ struct RuntimeInstaller {
         context.layout.runtimeState
             .appendingPathComponent(
                 generationKey(for: prefix),
-                isDirectory: true)
+                isDirectory: true
+            )
             .appendingPathComponent("generations", isDirectory: true)
     }
 
@@ -140,8 +144,9 @@ struct RuntimeInstaller {
                 String(standardized.dropFirst(rootPath.count + 1)))
             if !sanitized.isEmpty { return sanitized }
         }
-        return "external-" + hex(
-            ArtifactHasher.digest(bytes: Array(standardized.utf8)).bytes.prefix(8))
+        return "external-"
+            + hex(
+                ArtifactHasher.digest(bytes: Array(standardized.utf8)).bytes.prefix(8))
     }
 
     private func sanitizedKey(_ value: String) -> String {
@@ -189,7 +194,7 @@ struct RuntimeInstaller {
 
         let metadata = prefix.appendingPathComponent("share/nucleus/runtime-build.txt")
         guard let installed = try? String(contentsOf: metadata, encoding: .utf8),
-              installed == options.metadata
+            installed == options.metadata
         else {
             throw WorkspaceFailure.message(
                 "installed runtime does not match the requested build; rerun without --no-build")
@@ -202,73 +207,41 @@ struct RuntimeInstaller {
         publishedPrefix: URL,
         options: RuntimeBuildOptions
     ) async throws -> URL {
-        let compositor = try await buildProduct(
+        let swiftPM = try context.swiftPMInvocation(
+            configuration: options.optimization == .debug ? .debug : .release,
+            sanitizer: options.sanitizer?.rawValue,
+            cFlags: options.tracy ? ["-DTRACY_ENABLE"] : [],
+            linkerFlags: options.sanitizer == .undefined ? ["-lubsan"] : [])
+        print("==> build complete runtime graph variant=\(options.identity)")
+        try await context.run(
+            "swift",
+            swiftPM.commandArguments(["build"]),
+            environmentOverrides: swiftPM.commandEnvironment(
+                context.taskEnvironment))
+        let products = URL(
+            fileURLWithPath: swiftPM.configurationProducts.string,
+            isDirectory: true)
+        for product in [
             "NucleusCompositor",
-            package: context.layout.compositorApp,
-            component: "compositor",
-            options: options)
-
-        _ = try await buildProduct(
             "NucleusSessionSupervisor",
-            package: context.layout.platformLinuxSession,
-            component: "session-supervisor",
-            options: options)
-
-        let configService = try await buildProduct(
             "NucleusConfigService",
-            package: context.layout.config.appendingPathComponent(
-                "config-service",
-                isDirectory: true),
-            component: "config-service",
-            options: options,
-            scratchNamespace: "runtime-config-service",
-            selectProduct: false)
-
-        let controlService = try await buildProduct(
             "NucleusControlService",
-            package: context.layout.ipc.appendingPathComponent(
-                "control-service",
-                isDirectory: true),
-            component: "control-service",
-            options: options,
-            scratchNamespace: "runtime-control-service",
-            selectProduct: false)
-
-        let products = compositor.deletingLastPathComponent()
-        try copyExecutable(
-            configService,
-            to: products.appendingPathComponent("NucleusConfigService"))
-        try copyExecutable(
-            configService.deletingLastPathComponent()
-                .appendingPathComponent("libNucleusConfigService.so"),
-            to: products.appendingPathComponent("libNucleusConfigService.so"))
-        try copyExecutable(
-            controlService,
-            to: products.appendingPathComponent("NucleusControlService"))
-        try copyExecutable(
-            controlService.deletingLastPathComponent()
-                .appendingPathComponent("libNucleusControlService.so"),
-            to: products.appendingPathComponent("libNucleusControlService.so"))
-
-        _ = try await buildProduct(
             "NucleusShell",
-            package: context.layout.shell,
-            component: "shell",
-            options: options)
-        _ = try await buildProduct(
             "NucleusShellPamHelper",
-            package: context.layout.shell,
-            component: "shell",
-            options: options)
-        _ = try await buildProduct(
             "nucleus",
-            package: context.layout.ipc,
-            component: "control-cli",
-            options: options)
+        ] {
+            let executable = products.appendingPathComponent(product)
+            guard FileManager.default.isExecutableFile(atPath: executable.path)
+            else {
+                throw WorkspaceFailure.message(
+                    "runtime product is missing after build: \(executable.path)")
+            }
+        }
 
         try await context.run(
             context.layout.tools.appendingPathComponent(
-                "stage-runtime-elf.sh").path,
+                "stage-runtime-elf.sh"
+            ).path,
             [products.path, installation.prefix.path])
 
         let sessionPackage = context.layout.compositorSessionPackage
@@ -303,58 +276,14 @@ struct RuntimeInstaller {
             "systemd-analyze",
             ["--user", "--recursive-errors=no", "verify", unitPath.path])
 
-        let publishedBinDirectory = publishedPrefix
+        let publishedBinDirectory =
+            publishedPrefix
             .appendingPathComponent("bin").path
         let publishedUnit = template.replacing(
             "@bindir@",
             with: publishedBinDirectory)
         try Data(publishedUnit.utf8).write(to: unitPath, options: .atomic)
         return products
-    }
-
-    private func buildProduct(
-        _ product: String,
-        package: URL,
-        component: String,
-        options: RuntimeBuildOptions,
-        scratchNamespace: String? = nil,
-        selectProduct: Bool = true
-    ) async throws -> URL {
-        let baseInvocation = try context.swiftPMInvocation(
-            configuration: options.optimization == .debug ? .debug : .release,
-            sanitizer: options.sanitizer?.rawValue,
-            cFlags: options.tracy ? ["-DTRACY_ENABLE"] : [],
-            linkerFlags: options.sanitizer == .undefined ? ["-lubsan"] : [])
-        let swiftPM =
-            if let scratchNamespace {
-                SwiftPMInvocation(
-                    context: baseInvocation.context,
-                    scratchPath: baseInvocation.scratchPath.appending(
-                        scratchNamespace))
-            } else {
-                baseInvocation
-            }
-        var arguments = [
-            "build",
-            "--package-path", package.path,
-        ]
-        if selectProduct {
-            arguments += ["--product", product]
-        }
-
-        print("==> build runtime product=\(product) variant=\(options.identity)")
-        try await context.run(
-            "swift",
-            swiftPM.commandArguments(arguments),
-            environmentOverrides: swiftPM.commandEnvironment(
-                context.taskEnvironment))
-        let executable = URL(
-            fileURLWithPath: swiftPM.executable(product).string)
-        guard FileManager.default.isExecutableFile(atPath: executable.path) else {
-            throw WorkspaceFailure.message(
-                "runtime product is missing after build: \(executable.path)")
-        }
-        return executable
     }
 
     private func copyExecutable(_ source: URL, to destination: URL) throws {
@@ -394,7 +323,8 @@ struct RuntimeInstaller {
             installation.controlCLI,
             installation.pamHelper,
         ]
-        for executable in executables where
+        for executable in executables
+        where
             !FileManager.default.isExecutableFile(atPath: executable.path)
         {
             throw WorkspaceFailure.message(

@@ -18,7 +18,24 @@ public struct RunHandle: Sendable {
     }
 }
 
+/// A run the registry has on disk, named by its manifest rather than by the
+/// shape of its directory name.
+public struct RecordedRun: Hashable, Sendable {
+    public let id: RunID
+    public let directory: FilePath
+
+    public init(id: RunID, directory: FilePath) {
+        self.id = id
+        self.directory = directory
+    }
+}
+
 public actor RunRegistry {
+    /// The run history the workspace keeps. Every run durably holds its
+    /// manifest, event stream, and the captured output of each task it ran, so
+    /// the registry reclaims the oldest runs once history exceeds this depth.
+    static let retainedRuns = 100
+
     private let root: FilePath
     private var sequences: [RunID: UInt64] = [:]
 
@@ -36,6 +53,8 @@ public actor RunRegistry {
             startedAt: timestamp())
         try writeJSON(manifest, to: directory.appending("manifest.json"))
         try replaceLatest(runID: id, runs: runs)
+        // Reclaiming disk is never a reason to fail the run that is starting.
+        try? remove(reclaimableRuns(keeping: Self.retainedRuns))
         sequences[id] = 0
         let handle = RunHandle(id: id, directory: directory)
         try append(
@@ -128,6 +147,15 @@ public actor RunRegistry {
         }
     }
 
+    public func recordPlanningDuration(
+        _ nanoseconds: UInt64,
+        in run: RunHandle
+    ) throws {
+        try updateManifest(run) {
+            $0.planningDurationNanoseconds = nanoseconds
+        }
+    }
+
     public func recordActiveArtifact(
         _ digest: ArtifactDigest,
         name: String,
@@ -151,14 +179,56 @@ public actor RunRegistry {
         try record(kind: .runFinished, task: failedTask, message: status.rawValue, in: run)
     }
 
+    /// Captured task output arrives in whatever chunks the task writes, and the
+    /// writer blocks until the chunk lands. Synchronizing each chunk would put
+    /// storage latency in the path of every line a build prints; the manifest
+    /// and the event stream carry the durable record of a run instead.
     public func appendLog(_ bytes: [UInt8], stage: TaskID? = nil, in run: RunHandle) throws {
         let scrubbed = CredentialScrubber.bytes(bytes)
-        try appendBytes(scrubbed, to: run.directory.appending("run.log"))
+        try appendBytes(
+            scrubbed,
+            to: run.directory.appending("run.log"),
+            synchronized: false)
         if let stage {
             try appendBytes(
                 scrubbed,
                 to: run.directory.appending("stages")
-                    .appending(safeName(stage.rawValue) + ".log"))
+                    .appending(safeName(stage.rawValue) + ".log"),
+                synchronized: false)
+        }
+    }
+
+    /// Run history the registry may reclaim, oldest first, once more than
+    /// `keeping` runs are recorded. Only a succeeded run is reclaimable: a run
+    /// that failed, was interrupted, or is still recording is the record someone
+    /// comes back to, including a run another process is writing right now.
+    /// Recency is the recorded start, not directory metadata.
+    public func reclaimableRuns(keeping: Int) -> [RecordedRun] {
+        let runs = root.appending("runs")
+        let recorded = ((try? FileManager.default.contentsOfDirectory(
+            at: URL(fileURLWithPath: runs.string),
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles])) ?? [])
+            .compactMap { url -> (RecordedRun, RunManifest)? in
+                guard let data = try? Data(contentsOf: url.appendingPathComponent(
+                    "manifest.json")),
+                      let manifest = try? JSONDecoder().decode(
+                        RunManifest.self, from: data)
+                else { return nil }
+                return (
+                    RecordedRun(id: manifest.runID, directory: FilePath(url.path)),
+                    manifest)
+            }
+            .sorted { $0.1.startedAt > $1.1.startedAt }
+        let retained = Set(recorded.prefix(max(0, keeping)).map(\.0.id))
+        return recorded
+            .filter { $0.1.status == .succeeded && !retained.contains($0.0.id) }
+            .map(\.0)
+    }
+
+    public func remove(_ runs: [RecordedRun]) throws {
+        for run in runs {
+            try FileManager.default.removeItem(atPath: run.directory.string)
         }
     }
 
@@ -256,11 +326,16 @@ private func writeJSON<T: Encodable>(_ value: T, to path: FilePath) throws {
     }
 }
 
-private func appendBytes(_ bytes: [UInt8], to path: FilePath) throws {
+private func appendBytes(
+    _ bytes: [UInt8],
+    to path: FilePath,
+    synchronized: Bool = true
+) throws {
     let descriptor = try FileDescriptor.open(
         path, .writeOnly, options: [.create, .append], permissions: .ownerReadWrite)
     defer { try? descriptor.close() }
     try descriptor.writeAll(bytes)
+    guard synchronized else { return }
     guard collider_sync_file(descriptor.rawValue) == 0 else {
         throw Errno(rawValue: errno)
     }

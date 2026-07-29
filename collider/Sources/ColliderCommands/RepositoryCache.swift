@@ -1,4 +1,6 @@
+import ColliderRuntime
 import Foundation
+import SystemPackage
 
 private struct CacheEntry: Codable {
     let name: String
@@ -28,39 +30,21 @@ struct RepositoryCache {
         }
     }
 
-    func prune(keepingRuns keepCount: Int, dryRun: Bool, json: Bool) throws {
-        let runs = context.layout.runs
-        guard FileManager.default.fileExists(atPath: runs.path) else {
-            try emit(PruneResult(removedRuns: [], reclaimedBytes: 0, dryRun: dryRun), json: json)
-            return
+    /// Reclaim run history down to `keepCount`. The registry owns the retention
+    /// policy it applies on every run; this is the same policy on demand, at
+    /// whatever depth the caller asks for.
+    func prune(keepingRuns keepCount: Int, dryRun: Bool, json: Bool) async throws {
+        let registry = RunRegistry(root: FilePath(context.layout.state.path))
+        let reclaimable = await registry.reclaimableRuns(keeping: keepCount)
+        let reclaimed = try reclaimable.reduce(into: UInt64(0)) { total, run in
+            total &+= try allocatedSize(URL(fileURLWithPath: run.directory.string))
         }
-        let values = try FileManager.default.contentsOfDirectory(
-            at: runs,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles])
-            .compactMap { url -> (URL, RepositoryRun)? in
-                let manifest = url.appendingPathComponent("manifest.json")
-                guard let data = try? Data(contentsOf: manifest),
-                      let run = try? JSONDecoder().decode(RepositoryRun.self, from: data)
-                else { return nil }
-                return (url, run)
-            }
-            .sorted { $0.1.startedAt > $1.1.startedAt }
-
-        let protectedIDs = Set(values.prefix(keepCount).map { $0.1.runID })
-        var removed: [String] = []
-        var reclaimed: UInt64 = 0
-        for (directory, run) in values {
-            guard run.status == "succeeded", !protectedIDs.contains(run.runID) else {
-                continue
-            }
-            reclaimed &+= try allocatedSize(directory)
-            removed.append(run.runID)
-            if !dryRun { try FileManager.default.removeItem(at: directory) }
+        if !dryRun {
+            try await registry.remove(reclaimable)
         }
         try emit(
             PruneResult(
-                removedRuns: removed,
+                removedRuns: reclaimable.map(\.id.rawValue),
                 reclaimedBytes: reclaimed,
                 dryRun: dryRun),
             json: json)

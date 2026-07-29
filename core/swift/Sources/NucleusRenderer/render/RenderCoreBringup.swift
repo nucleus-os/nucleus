@@ -22,9 +22,6 @@ extension RenderCore {
         resourceHost: SwiftResourceHost,
         asyncRenderWakeSink: any AsyncRenderWakeSink
     ) -> RenderCore? {
-        guard requireTextRenderingBridge() else {
-            return nil
-        }
         guard let bootstrap = VulkanBootstrap.create(
             applicationName: applicationName, presentation: presentation)
         else { return nil }
@@ -41,9 +38,6 @@ extension RenderCore {
         resourceHost: SwiftResourceHost,
         asyncRenderWakeSink: any AsyncRenderWakeSink
     ) -> RenderCore? {
-        guard requireTextRenderingBridge() else {
-            return nil
-        }
         guard !bootstrap.finalized else { return nil }
         let contract = bootstrap.contract
         guard let instanceHandle = unsafe bootstrap.instanceLifetime.owner?.handle,
@@ -113,15 +107,6 @@ extension RenderCore {
             resourceHost: resourceHost,
             vulkanContract: contract,
             asyncRenderWakeSink: asyncRenderWakeSink)
-    }
-
-    private static func requireTextRenderingBridge() -> Bool {
-        guard nucleus.skia.hasTextLayoutBorrow() else {
-            NucleusLogger(subsystem: "render-core").error(
-                "required Graphite text borrow provider is not installed")
-            return false
-        }
-        return true
     }
 
     func makeReplacementGraphiteContext() -> nucleus.skia.GraphiteContext {

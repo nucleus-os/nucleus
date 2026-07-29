@@ -24,6 +24,7 @@ public struct NucleusDesktopDmaBufFormat:
         WaylandProxy<ZwpLinuxDmabufFeedbackV1Client>
     private let onFormatsChanged:
         ([NucleusDesktopDmaBufFormat]) -> Void
+    private let onMainDeviceChanged: (UInt64?) -> Void
     private var formatTable: [NucleusDesktopDmaBufFormat] = []
     private var pendingIndices: [UInt16] = []
     private var publishedFormats:
@@ -32,10 +33,12 @@ public struct NucleusDesktopDmaBufFormat:
     init(
         proxy: WaylandProxy<ZwpLinuxDmabufFeedbackV1Client>,
         onFormatsChanged:
-            @escaping ([NucleusDesktopDmaBufFormat]) -> Void
+            @escaping ([NucleusDesktopDmaBufFormat]) -> Void,
+        onMainDeviceChanged: @escaping (UInt64?) -> Void
     ) {
         self.proxy = proxy
         self.onFormatsChanged = onFormatsChanged
+        self.onMainDeviceChanged = onMainDeviceChanged
     }
 
     func start() -> Bool {
@@ -74,7 +77,9 @@ public struct NucleusDesktopDmaBufFormat:
         _ proxy:
             WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>,
         device: WaylandClientArrayView
-    ) {}
+    ) {
+        onMainDeviceChanged(Self.decodeDevice(device))
+    }
 
     func trancheDone(
         _ proxy:
@@ -143,6 +148,21 @@ public struct NucleusDesktopDmaBufFormat:
                 format: format, modifier: modifier))
         }
         return formats
+    }
+
+    static func decodeDevice(
+        _ device: WaylandClientArrayView
+    ) -> UInt64? {
+        guard let values =
+            device.copiedElements(of: dev_t.self)
+        else { return nil }
+        return decodeDeviceElements(values)
+    }
+
+    static func decodeDeviceElements(
+        _ values: [dev_t]
+    ) -> UInt64? {
+        values.count == 1 ? UInt64(values[0]) : nil
     }
 
     private static func loadUInt32LE(

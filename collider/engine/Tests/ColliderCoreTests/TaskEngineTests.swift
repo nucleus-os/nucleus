@@ -2,6 +2,7 @@ import ColliderCore
 import Foundation
 import SystemPackage
 import Testing
+
 @testable import ColliderRuntime
 
 @Test func taskOutputStreamsLoggedCommandsByDefaultAndQuietSuppressesInheritedOutput() {
@@ -19,6 +20,50 @@ import Testing
             == CommandSpec.Output.file(FilePath("/tmp/output")))
 }
 
+@Test func taskIdentitySurvivesAShellSearchPathThatChangesEveryInvocation()
+    async throws
+{
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-path-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(
+        at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let tool = FilePath("/usr/bin/env")
+    func task(searchPath: String, language: String) -> TaskDeclaration {
+        TaskDeclaration(
+            id: TaskID(rawValue: "fixture.search-path"),
+            component: ComponentID(rawValue: "fixture"),
+            inputs: [.tool(.path(tool))],
+            operation: .command(
+                CommandSpec(
+                    executable: .path(tool),
+                    arguments: ["true"],
+                    workingDirectory: FilePath(directory.path),
+                    environment: ["PATH": searchPath, "LANG": language])))
+    }
+    func identity(of task: TaskDeclaration) async throws -> ArtifactDigest {
+        try await ColliderRuntime().execute(
+            graph: TaskGraph([task]),
+            selected: [task.id],
+            stateRoot: FilePath(directory.appendingPathComponent("state").path),
+            options: TaskExecutionOptions(dryRun: true)
+        ).plan[0].identity
+    }
+
+    let first = try await identity(
+        of: task(
+            searchPath: "/run/shim/98431_1785277689021:/usr/bin", language: "C"))
+    let relaunched = try await identity(
+        of: task(
+            searchPath: "/run/shim/98452_1785277711088:/usr/bin", language: "C"))
+    let reconfigured = try await identity(
+        of: task(
+            searchPath: "/run/shim/98431_1785277689021:/usr/bin", language: "en_US"))
+
+    #expect(first == relaunched)
+    #expect(first != reconfigured)
+}
+
 @Test func taskIdentityEncodingRemainsByteStableAcrossWorkflowMoves() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-engine-identity-\(UUID().uuidString)")
@@ -32,7 +77,7 @@ import Testing
             .environment(name: "MODE", value: "release"),
         ],
         outputs: [
-            OutputDeclaration(path: output, validation: .regularFile),
+            OutputDeclaration(path: output, validation: .regularFile)
         ],
         operation: .writeFile(output, bytes: Array("payload\n".utf8)))
     let report = try await ColliderRuntime().execute(
@@ -56,26 +101,27 @@ import Testing
             id: TaskID(rawValue: "fixture.aosp-publish"),
             component: ComponentID(rawValue: "fixture"),
             inputs: [
-                .value(name: "product", bytes: Array("stable".utf8)),
+                .value(name: "product", bytes: Array("stable".utf8))
             ],
-            operation: .publishAOSPProduct(AOSPProductBuild(
-                productSource: root.appending("product"),
-                source: root.appending("source"),
-                repoLauncher: root.appending("repo"),
-                sourceProvenance: root.appending("source-provenance.json"),
-                buildRoot: root.appending("build"),
-                ccacheDirectory: root.appending("ccache"),
-                containerImageID: root.appending("container-image-id"),
-                signingIdentity: root.appending("signing-identity"),
-                product: "nucleus_x86_64",
-                release: "cp2a",
-                variant: "user",
-                buildNumber: "nucleus",
-                buildTimestamp: 1,
-                buildJobs: jobs,
-                expectedPlatformSDK: 37,
-                expectedVendorAPILevel: 202604,
-                environment: [:])))
+            operation: .publishAOSPProduct(
+                AOSPProductBuild(
+                    productSource: root.appending("product"),
+                    source: root.appending("source"),
+                    repoLauncher: root.appending("repo"),
+                    sourceProvenance: root.appending("source-provenance.json"),
+                    buildRoot: root.appending("build"),
+                    ccacheDirectory: root.appending("ccache"),
+                    containerImageID: root.appending("container-image-id"),
+                    signingIdentity: root.appending("signing-identity"),
+                    product: "nucleus_x86_64",
+                    release: "cp2a",
+                    variant: "user",
+                    buildNumber: "nucleus",
+                    buildTimestamp: 1,
+                    buildJobs: jobs,
+                    expectedPlatformSDK: 37,
+                    expectedVendorAPILevel: 202604,
+                    environment: [:])))
     }
     let runtime = ColliderRuntime()
     let state = FilePath(directory.appendingPathComponent("state").path)
@@ -122,6 +168,96 @@ import Testing
     #expect(second.plan[0].isClean)
 }
 
+@Test func selectedSupersetTaskOmitsAndCompletesRedundantDependencyOperation()
+    async throws
+{
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-subsumption-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(
+        at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let preparationOutput = root.appending("prepared")
+    let buildOutput = root.appending("built")
+    let testOutput = root.appending("tested")
+    let preparation = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.prepare"),
+        component: ComponentID(rawValue: "fixture"),
+        outputs: [
+            OutputDeclaration(
+                path: preparationOutput,
+                validation: .regularFile)
+        ],
+        operation: .writeFile(preparationOutput, bytes: Array("ready".utf8)))
+    let build = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.build"),
+        component: ComponentID(rawValue: "fixture"),
+        dependencies: [preparation.id],
+        operation: .writeFile(buildOutput, bytes: Array("redundant".utf8)))
+    let test = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.test"),
+        component: ComponentID(rawValue: "fixture"),
+        dependencies: [build.id],
+        subsumedDependencies: [build.id],
+        outputs: [
+            OutputDeclaration(path: testOutput, validation: .regularFile)
+        ],
+        operation: .writeFile(testOutput, bytes: Array("tested".utf8)))
+    let graph = try TaskGraph([preparation, build, test])
+    let runtime = ColliderRuntime()
+    let state = root.appending("state")
+
+    let first = try await runtime.execute(
+        graph: graph, selected: [test.id], stateRoot: state)
+    #expect(first.executed == [preparation.id, test.id])
+    #expect(first.plan.first { $0.task == build.id }?.isSubsumed == true)
+    #expect(FileManager.default.fileExists(atPath: preparationOutput.string))
+    #expect(!FileManager.default.fileExists(atPath: buildOutput.string))
+    #expect(FileManager.default.fileExists(atPath: testOutput.string))
+
+    let second = try await runtime.execute(
+        graph: graph, selected: [test.id], stateRoot: state)
+    #expect(second.executed.isEmpty)
+    #expect(second.plan.allSatisfy { $0.isClean })
+}
+
+@Test func sharedDependencyExecutesWhenAnySelectedConsumerDoesNotSubsumeIt()
+    async throws
+{
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-shared-subsumption-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(
+        at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let buildOutput = root.appending("built")
+    let build = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.build"),
+        component: ComponentID(rawValue: "fixture"),
+        outputs: [
+            OutputDeclaration(path: buildOutput, validation: .regularFile)
+        ],
+        operation: .writeFile(buildOutput, bytes: Array("built".utf8)))
+    let superset = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.superset"),
+        component: ComponentID(rawValue: "fixture"),
+        dependencies: [build.id],
+        subsumedDependencies: [build.id],
+        operation: .createDirectory(root.appending("superset")))
+    let consumer = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.consumer"),
+        component: ComponentID(rawValue: "fixture"),
+        dependencies: [build.id],
+        operation: .createDirectory(root.appending("consumer")))
+
+    let report = try await ColliderRuntime().execute(
+        graph: TaskGraph([build, superset, consumer]),
+        selected: [superset.id, consumer.id],
+        stateRoot: root.appending("state"))
+    #expect(report.executed == [build.id, superset.id, consumer.id])
+    #expect(FileManager.default.fileExists(atPath: buildOutput.string))
+}
+
 @Test func executableOutputValidationFollowsTheDeclaredSymlink() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-engine-executable-symlink-\(UUID().uuidString)")
@@ -137,30 +273,32 @@ import Testing
         outputs: [
             OutputDeclaration(
                 path: FilePath(link.path),
-                validation: .executableFile),
+                validation: .executableFile)
         ],
-        operation: .command(CommandSpec(
-            executable: .named("sh"),
-            arguments: [
-                "-c",
-                "printf '#!/bin/sh\\n' > \"$1\" && chmod 755 \"$1\" && "
-                    + "ln -s swift-driver \"$2\"",
-                "sh",
-                executable.path,
-                link.path,
-            ],
-            workingDirectory: FilePath(directory.path),
-            environment: [
-                "PATH": ProcessInfo.processInfo.environment["PATH"]
-                    ?? "/usr/bin:/bin",
-            ])))
+        operation: .command(
+            CommandSpec(
+                executable: .named("sh"),
+                arguments: [
+                    "-c",
+                    "printf '#!/bin/sh\\n' > \"$1\" && chmod 755 \"$1\" && "
+                        + "ln -s swift-driver \"$2\"",
+                    "sh",
+                    executable.path,
+                    link.path,
+                ],
+                workingDirectory: FilePath(directory.path),
+                environment: [
+                    "PATH": ProcessInfo.processInfo.environment["PATH"]
+                        ?? "/usr/bin:/bin"
+                ])))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
 
-    #expect(try FileManager.default.destinationOfSymbolicLink(
-        atPath: link.path) == "swift-driver")
+    #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+            atPath: link.path) == "swift-driver")
 }
 
 @Test func taskIdentityIgnoresPerRunLoggingDestinations() async throws {
@@ -180,17 +318,18 @@ import Testing
             outputs: [
                 OutputDeclaration(
                     path: FilePath(output.path),
-                    validation: .regularFile),
+                    validation: .regularFile)
             ],
-            operation: .command(CommandSpec(
-                executable: .named("sh"),
-                arguments: ["-c", "printf result > \"$1\"", "sh", output.path],
-                workingDirectory: FilePath(directory.path),
-                environment: [
-                    "PATH": path,
-                    "NUCLEUS_RUN_DIR": runDirectory,
-                    "NUCLEUS_RUN_LOG": runDirectory + "/run.log",
-                ])))
+            operation: .command(
+                CommandSpec(
+                    executable: .named("sh"),
+                    arguments: ["-c", "printf result > \"$1\"", "sh", output.path],
+                    workingDirectory: FilePath(directory.path),
+                    environment: [
+                        "PATH": path,
+                        "NUCLEUS_RUN_DIR": runDirectory,
+                        "NUCLEUS_RUN_LOG": runDirectory + "/run.log",
+                    ])))
     }
 
     let runtime = ColliderRuntime()
@@ -217,7 +356,7 @@ import Testing
         arguments: ["-c", "printf result > \"$1\"", "sh", output.path],
         workingDirectory: FilePath(directory.path),
         environment: [
-            "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin",
+            "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
         ])
 
     func task(validation: OutputDeclaration.Validation) -> TaskDeclaration {
@@ -227,7 +366,7 @@ import Testing
             outputs: [
                 OutputDeclaration(
                     path: FilePath(output.path),
-                    validation: validation),
+                    validation: validation)
             ],
             operation: .command(command))
     }
@@ -258,18 +397,19 @@ import Testing
         inputs: [.file(FilePath(source.path))],
         outputs: [
             OutputDeclaration(
-                path: FilePath(output.path), validation: .regularFile),
+                path: FilePath(output.path), validation: .regularFile)
         ],
-        operation: .command(CommandSpec(
-            executable: .named("sh"),
-            arguments: [
-                "-c", "cp \"$1\" \"$2\"", "sh", source.path, output.path,
-            ],
-            workingDirectory: FilePath(directory.path),
-            environment: [
-                "PATH": ProcessInfo.processInfo.environment["PATH"]
-                    ?? "/usr/bin:/bin",
-            ])))
+        operation: .command(
+            CommandSpec(
+                executable: .named("sh"),
+                arguments: [
+                    "-c", "cp \"$1\" \"$2\"", "sh", source.path, output.path,
+                ],
+                workingDirectory: FilePath(directory.path),
+                environment: [
+                    "PATH": ProcessInfo.processInfo.environment["PATH"]
+                        ?? "/usr/bin:/bin"
+                ])))
     let runtime = ColliderRuntime()
     let graph = try TaskGraph([task])
     let state = FilePath(directory.appendingPathComponent("state").path)
@@ -300,7 +440,7 @@ import Testing
         id: TaskID(rawValue: "fixture.sequence"),
         component: ComponentID(rawValue: "fixture"),
         outputs: [
-            OutputDeclaration(path: payload, validation: .regularFile),
+            OutputDeclaration(path: payload, validation: .regularFile)
         ],
         operation: .sequence([
             .removePath(candidate),
@@ -313,11 +453,13 @@ import Testing
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
     #expect(report.executed == [task.id])
-    #expect(!FileManager.default.fileExists(
-        atPath: candidate.appending("stale").string))
-    #expect(try String(
-        contentsOf: URL(fileURLWithPath: payload.string),
-        encoding: .utf8) == "fresh")
+    #expect(
+        !FileManager.default.fileExists(
+            atPath: candidate.appending("stale").string))
+    #expect(
+        try String(
+            contentsOf: URL(fileURLWithPath: payload.string),
+            encoding: .utf8) == "fresh")
 }
 
 @Test func staticArchiveMergeDiscoversPostBuildArchivesWithoutShellSyntax() async throws {
@@ -328,21 +470,22 @@ import Testing
         at: build, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     let environment = [
-        "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin",
+        "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
     ]
     let runtime = ColliderRuntime()
     for name in ["one", "two", "gtest-fixture"] {
         let member = build.appendingPathComponent("\(name).member")
         try Data(name.utf8).write(to: member)
-        let result = try await runtime.execute(CommandSpec(
-            executable: .named("ar"),
-            arguments: [
-                "rcs",
-                build.appendingPathComponent("lib\(name).a").path,
-                member.path,
-            ],
-            workingDirectory: FilePath(build.path),
-            environment: environment))
+        let result = try await runtime.execute(
+            CommandSpec(
+                executable: .named("ar"),
+                arguments: [
+                    "rcs",
+                    build.appendingPathComponent("lib\(name).a").path,
+                    member.path,
+                ],
+                workingDirectory: FilePath(build.path),
+                environment: environment))
         #expect(result.status == 0)
     }
     let combined = FilePath(
@@ -351,23 +494,25 @@ import Testing
         id: TaskID(rawValue: "fixture.archive-merge"),
         component: ComponentID(rawValue: "fixture"),
         outputs: [
-            OutputDeclaration(path: combined, validation: .regularFile),
+            OutputDeclaration(path: combined, validation: .regularFile)
         ],
-        operation: .mergeStaticArchives(StaticArchiveMerge(
-            sourceRoot: FilePath(build.path),
-            output: combined,
-            excludedFilePrefixes: ["libgtest"],
-            environment: environment)))
+        operation: .mergeStaticArchives(
+            StaticArchiveMerge(
+                sourceRoot: FilePath(build.path),
+                output: combined,
+                excludedFilePrefixes: ["libgtest"],
+                environment: environment)))
     _ = try await runtime.execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
-    let table = try await runtime.execute(CommandSpec(
-        executable: .named("ar"),
-        arguments: ["t", combined.string],
-        workingDirectory: FilePath(build.path),
-        environment: environment,
-        output: .captured(limit: 1_024)))
+    let table = try await runtime.execute(
+        CommandSpec(
+            executable: .named("ar"),
+            arguments: ["t", combined.string],
+            workingDirectory: FilePath(build.path),
+            environment: environment,
+            output: .captured(limit: 1_024)))
     #expect(table.standardOutput.contains("one.member"))
     #expect(table.standardOutput.contains("two.member"))
     #expect(!table.standardOutput.contains("gtest-fixture.member"))
@@ -420,23 +565,26 @@ import Testing
         outputs: [
             OutputDeclaration(
                 path: FilePath(sysroot.appendingPathComponent("usr/include").path),
-                validation: .exists),
+                validation: .exists)
         ],
-        operation: .wireAndroidSDK(AndroidSDKWiring(
-            bundle: FilePath(bundle.path),
-            ndk: FilePath(ndk.path))))
+        operation: .wireAndroidSDK(
+            AndroidSDKWiring(
+                bundle: FilePath(bundle.path),
+                ndk: FilePath(ndk.path))))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
 
     #expect(!FileManager.default.fileExists(atPath: legacyToolchain.path))
-    #expect(try FileManager.default.destinationOfSymbolicLink(
-        atPath: sysroot.appendingPathComponent("usr/include").path)
-        == prebuilt.appendingPathComponent("sysroot/usr/include").path)
-    #expect(try FileManager.default.destinationOfSymbolicLink(
-        atPath: resourceLibrary.appendingPathComponent("swift/clang").path)
-        == prebuilt.appendingPathComponent("lib/clang/19").path)
+    #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+            atPath: sysroot.appendingPathComponent("usr/include").path)
+            == prebuilt.appendingPathComponent("sysroot/usr/include").path)
+    #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+            atPath: resourceLibrary.appendingPathComponent("swift/clang").path)
+            == prebuilt.appendingPathComponent("lib/clang/19").path)
     let wiredRuntime = sysroot.appendingPathComponent(
         "usr/lib/swift/android/aarch64/swiftrt.o")
     let runtimeTarget = try FileManager.default.destinationOfSymbolicLink(
@@ -466,20 +614,30 @@ import Testing
         try Data(contents.utf8).write(to: path)
     }
 
-    try write("header", toolchain.appendingPathComponent(
-        "include/swift/bridging.modulemap"))
-    try write("module Swift {}", toolchain.appendingPathComponent(
-        "include/module.modulemap"))
+    try write(
+        "header",
+        toolchain.appendingPathComponent(
+            "include/swift/bridging.modulemap"))
+    try write(
+        "module Swift {}",
+        toolchain.appendingPathComponent(
+            "include/module.modulemap"))
     try write("include", installUSR.appendingPathComponent("include/fixture.h"))
     try write("archive", installUSR.appendingPathComponent("lib/libfixture.a"))
     try write("cxx", dynamic.appendingPathComponent("libswiftCxx.a"))
-    try write("cxx stdlib", dynamic.appendingPathComponent(
-        "libswiftCxxStdlib.a"))
+    try write(
+        "cxx stdlib",
+        dynamic.appendingPathComponent(
+            "libswiftCxxStdlib.a"))
     try write("core", dynamic.appendingPathComponent("libswiftCore.so"))
-    try write("cfxml", staticRuntime.appendingPathComponent(
-        "lib_CFXMLInterface.a"))
-    try write("-lswiftCore", staticRuntime.appendingPathComponent(
-        "static-stdlib-args.lnk"))
+    try write(
+        "cfxml",
+        staticRuntime.appendingPathComponent(
+            "lib_CFXMLInterface.a"))
+    try write(
+        "-lswiftCore",
+        staticRuntime.appendingPathComponent(
+            "static-stdlib-args.lnk"))
     try write(
         "prefix=/absolute\nexec_prefix=/absolute\nlibdir=/absolute\n"
             + "includedir=/absolute\n",
@@ -496,15 +654,16 @@ import Testing
         outputs: [
             OutputDeclaration(
                 path: FilePath(bundle.path),
-                validation: .nonEmptyDirectory),
+                validation: .nonEmptyDirectory)
         ],
-        operation: .assembleAndroidSDK(AndroidSDKAssembly(
-            toolchain: FilePath(toolchain.path),
-            installRoot: FilePath(installs.path),
-            bundle: FilePath(bundle.path),
-            sourceID: "test",
-            architectures: ["aarch64"],
-            apiLevel: 37)))
+        operation: .assembleAndroidSDK(
+            AndroidSDKAssembly(
+                toolchain: FilePath(toolchain.path),
+                installRoot: FilePath(installs.path),
+                bundle: FilePath(bundle.path),
+                sourceID: "test",
+                architectures: ["aarch64"],
+                apiLevel: 37)))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],
@@ -514,13 +673,17 @@ import Testing
         "swift-android/swift-resources/usr")
     let staticAndroid = resources.appendingPathComponent(
         "lib/swift_static-aarch64/android")
-    #expect(FileManager.default.fileExists(
-        atPath: resources.appendingPathComponent(
-            "lib/swift-aarch64/android/lib_CFXMLInterface.a").path))
-    #expect(FileManager.default.fileExists(
-        atPath: staticAndroid.appendingPathComponent("libswiftCxx.a").path))
-    #expect(FileManager.default.fileExists(
-        atPath: staticAndroid.appendingPathComponent("libfixture.a").path))
+    #expect(
+        FileManager.default.fileExists(
+            atPath: resources.appendingPathComponent(
+                "lib/swift-aarch64/android/lib_CFXMLInterface.a"
+            ).path))
+    #expect(
+        FileManager.default.fileExists(
+            atPath: staticAndroid.appendingPathComponent("libswiftCxx.a").path))
+    #expect(
+        FileManager.default.fileExists(
+            atPath: staticAndroid.appendingPathComponent("libfixture.a").path))
     let staticArguments = try String(
         contentsOf: staticAndroid.appendingPathComponent(
             "static-stdlib-args.lnk"),
@@ -539,9 +702,11 @@ import Testing
         encoding: .utf8)
     #expect(cmake.contains("${_IMPORT_PREFIX}/lib"))
     #expect(!cmake.contains(installUSR.path))
-    let sdk = try JSONSerialization.jsonObject(
-        with: Data(contentsOf: bundle.appendingPathComponent(
-            "swift-android/swift-sdk.json"))) as? [String: Any]
+    let sdk =
+        try JSONSerialization.jsonObject(
+            with: Data(
+                contentsOf: bundle.appendingPathComponent(
+                    "swift-android/swift-sdk.json"))) as? [String: Any]
     let triples = sdk?["targetTriples"] as? [String: Any]
     #expect(triples?["aarch64-unknown-linux-android37"] != nil)
 }
@@ -560,9 +725,11 @@ import Testing
         component: ComponentID(rawValue: "fixture"),
         outputs: [
             OutputDeclaration(
-                path: FilePath(staging.appendingPathComponent(
-                    ".nucleus-owned").path),
-                validation: .regularFile),
+                path: FilePath(
+                    staging.appendingPathComponent(
+                        ".nucleus-owned"
+                    ).path),
+                validation: .regularFile)
         ],
         cachePolicy: .always,
         operation: .prepareHostToolchainBuild(
@@ -574,12 +741,16 @@ import Testing
         graph: TaskGraph([preparation]),
         selected: [preparation.id],
         stateRoot: state)
-    #expect(try FileManager.default.destinationOfSymbolicLink(
-        atPath: staging.appendingPathComponent(
-            "usr/lib/swift/linux/libc++.so.1").path) == "../../libc++.so.1")
-    #expect(try String(
-        contentsOf: staging.appendingPathComponent("usr/bin/clang.cfg"),
-        encoding: .utf8).contains("-L<CFGDIR>/../lib"))
+    #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+            atPath: staging.appendingPathComponent(
+                "usr/lib/swift/linux/libc++.so.1"
+            ).path) == "../../libc++.so.1")
+    #expect(
+        try String(
+            contentsOf: staging.appendingPathComponent("usr/bin/clang.cfg"),
+            encoding: .utf8
+        ).contains("-L<CFGDIR>/../lib"))
 
     func write(_ contents: String, _ path: URL, executable: Bool = false) throws {
         try FileManager.default.createDirectory(
@@ -616,7 +787,7 @@ import Testing
             workingDirectory: FilePath(workspace.path),
             environment: [
                 "PATH": ProcessInfo.processInfo.environment["PATH"]
-                    ?? "/usr/bin:/bin",
+                    ?? "/usr/bin:/bin"
             ],
             output: .combined(limit: 1_024 * 1_024)))
     #expect(tar.status == 0)
@@ -625,24 +796,29 @@ import Testing
         component: ComponentID(rawValue: "fixture"),
         outputs: [
             OutputDeclaration(
-                path: FilePath(toolchain.appendingPathComponent(
-                    "bin/swift").path),
-                validation: .executableFile),
+                path: FilePath(
+                    toolchain.appendingPathComponent(
+                        "bin/swift"
+                    ).path),
+                validation: .executableFile)
         ],
         cachePolicy: .always,
-        operation: .assembleHostToolchain(HostToolchainAssembly(
-            workspace: FilePath(workspace.path),
-            archive: FilePath(archive.path),
-            toolchain: FilePath(toolchain.path),
-            platform: .linux,
-            environment: ProcessInfo.processInfo.environment)))
+        operation: .assembleHostToolchain(
+            HostToolchainAssembly(
+                workspace: FilePath(workspace.path),
+                archive: FilePath(archive.path),
+                toolchain: FilePath(toolchain.path),
+                platform: .linux,
+                environment: ProcessInfo.processInfo.environment)))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([assembly]),
         selected: [assembly.id],
         stateRoot: state)
-    #expect(FileManager.default.fileExists(
-        atPath: toolchain.appendingPathComponent(
-            "lib/swift/linux/lib_CFXMLInterface.a").path))
+    #expect(
+        FileManager.default.fileExists(
+            atPath: toolchain.appendingPathComponent(
+                "lib/swift/linux/lib_CFXMLInterface.a"
+            ).path))
     let staticArguments = try String(
         contentsOf: toolchain.appendingPathComponent(
             "lib/swift_static/linux/static-stdlib-args.lnk"),
@@ -695,7 +871,7 @@ import Testing
                 architectures: ["aarch64"],
                 environment: [
                     "PATH": ProcessInfo.processInfo.environment["PATH"]
-                        ?? "/usr/bin:/bin",
+                        ?? "/usr/bin:/bin"
                 ])))
     let report = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
@@ -756,18 +932,19 @@ import Testing
         id: TaskID(rawValue: "fixture.validate-android-sdk"),
         component: ComponentID(rawValue: "fixture"),
         cachePolicy: .always,
-        operation: .validateAndroidSDK(AndroidSDKValidation(
-            toolchain: FilePath(toolchain.path),
-            sdkSearchRoot: FilePath(sdkRoot.path),
-            bundleName: bundleName,
-            ndk: FilePath(ndk.path),
-            architecture: "aarch64",
-            apiLevel: 37,
-            workDirectory: FilePath(work.path),
-            environment: [
-                "PATH": ProcessInfo.processInfo.environment["PATH"]
-                    ?? "/usr/bin:/bin",
-            ])))
+        operation: .validateAndroidSDK(
+            AndroidSDKValidation(
+                toolchain: FilePath(toolchain.path),
+                sdkSearchRoot: FilePath(sdkRoot.path),
+                bundleName: bundleName,
+                ndk: FilePath(ndk.path),
+                architecture: "aarch64",
+                apiLevel: 37,
+                workDirectory: FilePath(work.path),
+                environment: [
+                    "PATH": ProcessInfo.processInfo.environment["PATH"]
+                        ?? "/usr/bin:/bin"
+                ])))
     let report = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],
@@ -813,14 +990,15 @@ import Testing
         id: TaskID(rawValue: "fixture.validate-android-host"),
         component: ComponentID(rawValue: "fixture"),
         cachePolicy: .always,
-        operation: .validateAndroidHost(AndroidHostValidation(
-            library: FilePath(library.path),
-            kotlinContract: FilePath(kotlin.path),
-            ndk: FilePath(directory.appendingPathComponent("ndk").path),
-            environment: [
-                "PATH": ProcessInfo.processInfo.environment["PATH"]
-                    ?? "/usr/bin:/bin",
-            ])))
+        operation: .validateAndroidHost(
+            AndroidHostValidation(
+                library: FilePath(library.path),
+                kotlinContract: FilePath(kotlin.path),
+                ndk: FilePath(directory.appendingPathComponent("ndk").path),
+                environment: [
+                    "PATH": ProcessInfo.processInfo.environment["PATH"]
+                        ?? "/usr/bin:/bin"
+                ])))
     let report = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],
@@ -846,11 +1024,12 @@ import Testing
         outputs: [
             OutputDeclaration(
                 path: FilePath(metadata.path),
-                validation: .regularFile),
+                validation: .regularFile)
         ],
-        operation: .sanitizeLinkMetadata(LinkMetadataSanitization(
-            root: FilePath(directory.path),
-            removedLinkerOptions: ["-pthread"])))
+        operation: .sanitizeLinkMetadata(
+            LinkMetadataSanitization(
+                root: FilePath(directory.path),
+                removedLinkerOptions: ["-pthread"])))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],
@@ -888,28 +1067,29 @@ import Testing
         outputs: [
             OutputDeclaration(
                 path: FilePath(metadata.path),
-                validation: .regularFile),
+                validation: .regularFile)
         ],
-        operation: .sanitizeLinkMetadata(LinkMetadataSanitization(
-            root: FilePath(directory.path),
-            removedLinkerOptions: [],
-            cmakeDependencyRepairs: [
+        operation: .sanitizeLinkMetadata(
+            LinkMetadataSanitization(
+                root: FilePath(directory.path),
+                removedLinkerOptions: [],
+                cmakeDependencyRepairs: [
                     CMakeDependencyRepair(
                         configurationFileName: "CURLConfig.cmake",
                         package: "OpenSSL",
                         version: "3",
-                        configurationOnly: true),
-            ],
-            replacements: [
-                LinkMetadataReplacement(
-                    fileName: "CURLTargets.cmake",
-                    original: "OpenSSL::SSL",
-                    replacement: "${_IMPORT_PREFIX}/lib/libssl.a"),
-                LinkMetadataReplacement(
-                    fileName: "CURLTargets.cmake",
-                    original: "INTERFACE_LINK_LIBRARIES \"\\;",
-                    replacement: "INTERFACE_LINK_LIBRARIES \""),
-            ])))
+                        configurationOnly: true)
+                ],
+                replacements: [
+                    LinkMetadataReplacement(
+                        fileName: "CURLTargets.cmake",
+                        original: "OpenSSL::SSL",
+                        replacement: "${_IMPORT_PREFIX}/lib/libssl.a"),
+                    LinkMetadataReplacement(
+                        fileName: "CURLTargets.cmake",
+                        original: "INTERFACE_LINK_LIBRARIES \"\\;",
+                        replacement: "INTERFACE_LINK_LIBRARIES \""),
+                ])))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],
@@ -917,10 +1097,12 @@ import Testing
     let contents = try String(contentsOf: metadata, encoding: .utf8)
     #expect(contents.contains("find_package(OpenSSL 3 REQUIRED CONFIG)"))
     #expect(!contents.contains("find_dependency(OpenSSL"))
-    #expect(try String(contentsOf: targets, encoding: .utf8)
-        .contains("${_IMPORT_PREFIX}/lib/libssl.a"))
-    #expect(try String(contentsOf: targets, encoding: .utf8)
-        .contains("INTERFACE_LINK_LIBRARIES \"${_IMPORT_PREFIX}"))
+    #expect(
+        try String(contentsOf: targets, encoding: .utf8)
+            .contains("${_IMPORT_PREFIX}/lib/libssl.a"))
+    #expect(
+        try String(contentsOf: targets, encoding: .utf8)
+            .contains("INTERFACE_LINK_LIBRARIES \"${_IMPORT_PREFIX}"))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],
@@ -934,8 +1116,9 @@ import Testing
         selected: [task.id],
         stateRoot: FilePath(
             directory.appendingPathComponent("migration-state").path))
-    #expect(try String(contentsOf: metadata, encoding: .utf8)
-        .contains("find_package(OpenSSL 3 REQUIRED CONFIG)"))
+    #expect(
+        try String(contentsOf: metadata, encoding: .utf8)
+            .contains("find_package(OpenSSL 3 REQUIRED CONFIG)"))
 }
 
 @Test func changedCMakeDependencyRepairInvalidatesPriorTaskState() async throws {
@@ -956,17 +1139,18 @@ import Testing
             outputs: [
                 OutputDeclaration(
                     path: FilePath(metadata.path),
-                    validation: .regularFile),
+                    validation: .regularFile)
             ],
-            operation: .sanitizeLinkMetadata(LinkMetadataSanitization(
-                root: FilePath(directory.path),
-                removedLinkerOptions: [],
-                cmakeDependencyRepairs: [
-                    CMakeDependencyRepair(
-                        configurationFileName: "CURLConfig.cmake",
-                        package: "OpenSSL",
-                        version: version),
-                ])))
+            operation: .sanitizeLinkMetadata(
+                LinkMetadataSanitization(
+                    root: FilePath(directory.path),
+                    removedLinkerOptions: [],
+                    cmakeDependencyRepairs: [
+                        CMakeDependencyRepair(
+                            configurationFileName: "CURLConfig.cmake",
+                            package: "OpenSSL",
+                            version: version)
+                    ])))
     }
 
     try Data("find_dependency(OpenSSL \"3\")\n".utf8).write(to: metadata)
@@ -1001,21 +1185,24 @@ import Testing
         outputs: [
             OutputDeclaration(
                 path: FilePath(link.path),
-                validation: .exists),
+                validation: .exists)
         ],
-        operation: .publishSymlink(SymlinkPublication(
-            path: FilePath(link.path),
-            target: "/immutable/generation",
-            displacedItem: FilePath(displaced.path))))
+        operation: .publishSymlink(
+            SymlinkPublication(
+                path: FilePath(link.path),
+                target: "/immutable/generation",
+                displacedItem: FilePath(displaced.path))))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
-    #expect(try FileManager.default.destinationOfSymbolicLink(
-        atPath: link.path) == "/immutable/generation")
-    #expect(try String(
-        contentsOf: displaced.appendingPathComponent("payload"),
-        encoding: .utf8) == "legacy")
+    #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+            atPath: link.path) == "/immutable/generation")
+    #expect(
+        try String(
+            contentsOf: displaced.appendingPathComponent("payload"),
+            encoding: .utf8) == "legacy")
 }
 
 @Test func directoryPublicationAtomicallyReplacesThePreviousGeneration() async throws {
@@ -1038,19 +1225,21 @@ import Testing
         outputs: [
             OutputDeclaration(
                 path: FilePath(destination.path),
-                validation: .nonEmptyDirectory),
+                validation: .nonEmptyDirectory)
         ],
         cachePolicy: .always,
-        operation: .publishDirectory(DirectoryPublication(
-            prepared: FilePath(prepared.path),
-            destination: FilePath(destination.path))))
+        operation: .publishDirectory(
+            DirectoryPublication(
+                prepared: FilePath(prepared.path),
+                destination: FilePath(destination.path))))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
-    #expect(try String(
-        contentsOf: destination.appendingPathComponent("payload"),
-        encoding: .utf8) == "new")
+    #expect(
+        try String(
+            contentsOf: destination.appendingPathComponent("payload"),
+            encoding: .utf8) == "new")
     #expect(!FileManager.default.fileExists(atPath: prepared.path))
 }
 
@@ -1082,25 +1271,29 @@ import Testing
         id: TaskID(rawValue: "fixture.prune-directories"),
         component: ComponentID(rawValue: "fixture"),
         cachePolicy: .always,
-        operation: .pruneDirectories(DirectoryRetentionPlan(
-            safetyRoot: FilePath(directory.path),
-            rules: [
-                DirectoryRetentionRule(
-                    root: FilePath(generations.path),
-                    current: FilePath(current.path),
-                    retain: 1,
-                    naming: .contentIdentity),
-            ])))
+        operation: .pruneDirectories(
+            DirectoryRetentionPlan(
+                safetyRoot: FilePath(directory.path),
+                rules: [
+                    DirectoryRetentionRule(
+                        root: FilePath(generations.path),
+                        current: FilePath(current.path),
+                        retain: 1,
+                        naming: .contentIdentity)
+                ])))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
-    #expect(FileManager.default.fileExists(
-        atPath: generations.appendingPathComponent(names[0]).path))
-    #expect(!FileManager.default.fileExists(
-        atPath: generations.appendingPathComponent(names[1]).path))
-    #expect(FileManager.default.fileExists(
-        atPath: generations.appendingPathComponent(names[2]).path))
+    #expect(
+        FileManager.default.fileExists(
+            atPath: generations.appendingPathComponent(names[0]).path))
+    #expect(
+        !FileManager.default.fileExists(
+            atPath: generations.appendingPathComponent(names[1]).path))
+    #expect(
+        FileManager.default.fileExists(
+            atPath: generations.appendingPathComponent(names[2]).path))
 }
 
 @Test func chromiumSourcePreparationValidatesAndActivatesAnImmutableGeneration() async throws {
@@ -1132,19 +1325,21 @@ import Testing
             ["add", "marker"],
             ["commit", "-qm", "fixture"],
         ] {
-            let result = try await runtime.execute(CommandSpec(
-                executable: .named("git"),
-                arguments: arguments,
-                workingDirectory: FilePath(repository.path),
-                environment: environment))
+            let result = try await runtime.execute(
+                CommandSpec(
+                    executable: .named("git"),
+                    arguments: arguments,
+                    workingDirectory: FilePath(repository.path),
+                    environment: environment))
             #expect(result.status == 0)
         }
-        let result = try await runtime.execute(CommandSpec(
-            executable: .named("git"),
-            arguments: ["rev-parse", "HEAD"],
-            workingDirectory: FilePath(repository.path),
-            environment: environment,
-            output: .captured(limit: 4_096)))
+        let result = try await runtime.execute(
+            CommandSpec(
+                executable: .named("git"),
+                arguments: ["rev-parse", "HEAD"],
+                workingDirectory: FilePath(repository.path),
+                environment: environment,
+                output: .captured(limit: 4_096)))
         #expect(result.status == 0)
         return result.standardOutput.trimmingCharacters(
             in: .whitespacesAndNewlines)
@@ -1168,44 +1363,50 @@ import Testing
             "depot_tools": depotRevision,
         ],
         "automateGitSHA256": try ArtifactHasher.digest(
-            file: FilePath(automate.path)).description,
+            file: FilePath(automate.path)
+        ).description,
     ]
     try JSONSerialization.data(
         withJSONObject: manifest,
-        options: [.sortedKeys]).write(
-            to: source.appendingPathComponent(
-                "nucleus-source-manifest.json"))
+        options: [.sortedKeys]
+    ).write(
+        to: source.appendingPathComponent(
+            "nucleus-source-manifest.json"))
     let current = generations.appendingPathComponent("current")
     let task = TaskDeclaration(
         id: TaskID(rawValue: "fixture.prepare-chromium-source"),
         component: ComponentID(rawValue: "fixture"),
         outputs: [
             OutputDeclaration(
-                path: FilePath(source.appendingPathComponent(
-                    "nucleus-source-manifest.json").path),
-                validation: .json),
+                path: FilePath(
+                    source.appendingPathComponent(
+                        "nucleus-source-manifest.json"
+                    ).path),
+                validation: .json)
         ],
         cachePolicy: .always,
-        operation: .prepareChromiumSource(ChromiumSourcePreparation(
-            workspace: FilePath(directory.path),
-            sourceID: sourceID,
-            sourceRoot: FilePath(source.path),
-            sourceGenerations: FilePath(generations.path),
-            current: FilePath(current.path),
-            depotTools: FilePath(depot.path),
-            automateScript: FilePath(automate.path),
-            cefBranch: "fixture",
-            cefCheckout: cefRevision,
-            chromiumCheckout: chromiumRevision,
-            depotToolsRevision: depotRevision,
-            patchStacks: [],
-            environment: environment)))
+        operation: .prepareChromiumSource(
+            ChromiumSourcePreparation(
+                workspace: FilePath(directory.path),
+                sourceID: sourceID,
+                sourceRoot: FilePath(source.path),
+                sourceGenerations: FilePath(generations.path),
+                current: FilePath(current.path),
+                depotTools: FilePath(depot.path),
+                automateScript: FilePath(automate.path),
+                cefBranch: "fixture",
+                cefCheckout: cefRevision,
+                chromiumCheckout: chromiumRevision,
+                depotToolsRevision: depotRevision,
+                patchStacks: [],
+                environment: environment)))
     _ = try await runtime.execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
-    #expect(try FileManager.default.destinationOfSymbolicLink(
-        atPath: current.path) == sourceID)
+    #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+            atPath: current.path) == sourceID)
 }
 
 @Test func chromiumProductBuildOwnsGNMetadataAndAutoninjaExecution() async throws {
@@ -1229,9 +1430,10 @@ import Testing
         at: source, withIntermediateDirectories: true)
     try JSONSerialization.data(
         withJSONObject: ["sourceID": "source-fixture"],
-        options: [.sortedKeys]).write(
-            to: source.appendingPathComponent(
-                "nucleus-source-manifest.json"))
+        options: [.sortedKeys]
+    ).write(
+        to: source.appendingPathComponent(
+            "nucleus-source-manifest.json"))
     try Data(
         """
         #!/bin/sh
@@ -1256,27 +1458,29 @@ import Testing
         outputs: [
             OutputDeclaration(
                 path: FilePath(built.path),
-                validation: .json),
+                validation: .json)
         ],
         cachePolicy: .always,
-        operation: .buildChromiumProduct(ChromiumProductBuild(
-            product: .browser,
-            sourceRoot: FilePath(source.path),
-            output: FilePath(output.path),
-            depotTools: FilePath(depot.path),
-            gnArguments: #"is_official_build=true target_cpu="x64""#,
-            targets: ["chrome", "chrome_sandbox"],
-            jobs: 2,
-            environment: [
-                "PATH": ProcessInfo.processInfo.environment["PATH"]
-                    ?? "/usr/bin:/bin",
-            ])))
+        operation: .buildChromiumProduct(
+            ChromiumProductBuild(
+                product: .browser,
+                sourceRoot: FilePath(source.path),
+                output: FilePath(output.path),
+                depotTools: FilePath(depot.path),
+                gnArguments: #"is_official_build=true target_cpu="x64""#,
+                targets: ["chrome", "chrome_sandbox"],
+                jobs: 2,
+                environment: [
+                    "PATH": ProcessInfo.processInfo.environment["PATH"]
+                        ?? "/usr/bin:/bin"
+                ])))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
-    let object = try JSONSerialization.jsonObject(
-        with: Data(contentsOf: built)) as? [String: Any]
+    let object =
+        try JSONSerialization.jsonObject(
+            with: Data(contentsOf: built)) as? [String: Any]
     #expect((object?["buildID"] as? String)?.count == 24)
 }
 
@@ -1317,9 +1521,10 @@ import Testing
     let buildID = "abcdefabcdefabcdefabcdef"
     try JSONSerialization.data(
         withJSONObject: ["buildID": buildID],
-        options: [.sortedKeys]).write(
-            to: output.appendingPathComponent(
-                ".nucleus-built-build.json"))
+        options: [.sortedKeys]
+    ).write(
+        to: output.appendingPathComponent(
+            ".nucleus-built-build.json"))
     let tools = directory.appendingPathComponent("tools")
     try FileManager.default.createDirectory(
         at: tools, withIntermediateDirectories: true)
@@ -1336,16 +1541,18 @@ import Testing
         environment: [
             "PATH": tools.path + ":"
                 + (ProcessInfo.processInfo.environment["PATH"]
-                    ?? "/usr/bin:/bin"),
+                    ?? "/usr/bin:/bin")
         ])
     let task = TaskDeclaration(
         id: TaskID(rawValue: "fixture.assemble-browser-artifact"),
         component: ComponentID(rawValue: "fixture"),
         outputs: [
             OutputDeclaration(
-                path: FilePath(distribution.appendingPathComponent(
-                    "current").path),
-                validation: .exists),
+                path: FilePath(
+                    distribution.appendingPathComponent(
+                        "current"
+                    ).path),
+                validation: .exists)
         ],
         cachePolicy: .always,
         operation: .sequence([
@@ -1356,9 +1563,10 @@ import Testing
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
-    #expect(try FileManager.default.destinationOfSymbolicLink(
-        atPath: distribution.appendingPathComponent("current").path)
-        == "generations/\(buildID)")
+    #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+            atPath: distribution.appendingPathComponent("current").path)
+            == "generations/\(buildID)")
 }
 
 @Test func aptPackageValidationReportsTheUserOwnedInstallCommand() async throws {
@@ -1386,9 +1594,10 @@ import Testing
         id: TaskID(rawValue: "fixture.validate-apt-packages"),
         component: ComponentID(rawValue: "fixture"),
         cachePolicy: .always,
-        operation: .validateAptPackages(AptPackageValidation(
-            packageList: FilePath(packages.path),
-            environment: ["PATH": tools.path])))
+        operation: .validateAptPackages(
+            AptPackageValidation(
+                packageList: FilePath(packages.path),
+                environment: ["PATH": tools.path])))
     do {
         _ = try await ColliderRuntime().execute(
             graph: TaskGraph([task]),
@@ -1397,10 +1606,12 @@ import Testing
         Issue.record("missing apt package unexpectedly passed validation")
     } catch {
         let description = String(describing: error)
-        #expect(description.contains(
-            "sudo apt-get install -y missing"))
-        #expect(!description.contains(
-            "sudo apt-get install -y installed"))
+        #expect(
+            description.contains(
+                "sudo apt-get install -y missing"))
+        #expect(
+            !description.contains(
+                "sudo apt-get install -y installed"))
     }
 }
 
@@ -1420,9 +1631,10 @@ import Testing
     let buildID = "1234567890abcdef12345678"
     try JSONSerialization.data(
         withJSONObject: ["buildID": buildID],
-        options: [.sortedKeys]).write(
-            to: output.appendingPathComponent(
-                ".nucleus-built-build.json"))
+        options: [.sortedKeys]
+    ).write(
+        to: output.appendingPathComponent(
+            ".nucleus-built-build.json"))
     let checkout = "abcdefa000000000000000000000000000000000"
     let version = "1.2.3.4"
     let produced = chromium.appendingPathComponent(
@@ -1490,7 +1702,7 @@ import Testing
     let environment = [
         "PATH": tools.path + ":"
             + (ProcessInfo.processInfo.environment["PATH"]
-                ?? "/usr/bin:/bin"),
+                ?? "/usr/bin:/bin")
     ]
     let assembly = CEFArtifactAssembly(
         sourceRoot: FilePath(source.path),
@@ -1507,9 +1719,11 @@ import Testing
         component: ComponentID(rawValue: "fixture"),
         outputs: [
             OutputDeclaration(
-                path: FilePath(distribution.appendingPathComponent(
-                    "current").path),
-                validation: .exists),
+                path: FilePath(
+                    distribution.appendingPathComponent(
+                        "current"
+                    ).path),
+                validation: .exists)
         ],
         cachePolicy: .always,
         operation: .sequence([
@@ -1520,15 +1734,19 @@ import Testing
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
-    #expect(try FileManager.default.destinationOfSymbolicLink(
-        atPath: distribution.appendingPathComponent(
-            "current-release").path) == "releases/\(buildID)")
+    #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+            atPath: distribution.appendingPathComponent(
+                "current-release"
+            ).path) == "releases/\(buildID)")
     let artifactNames = try FileManager.default.contentsOfDirectory(
         atPath: distribution.appendingPathComponent(
-            "artifacts-current").path)
-    #expect(artifactNames.contains {
-        $0.hasSuffix(".tar.gz.sha256")
-    })
+            "artifacts-current"
+        ).path)
+    #expect(
+        artifactNames.contains {
+            $0.hasSuffix(".tar.gz.sha256")
+        })
 }
 
 @Test func browserInstallationPublishesOneVersionedPrefixGeneration() async throws {
@@ -1579,9 +1797,10 @@ import Testing
     try Data("icon".utf8).write(to: icon)
     try JSONSerialization.data(
         withJSONObject: ["buildID": buildID],
-        options: [.sortedKeys]).write(
-            to: artifact.appendingPathComponent(
-                "nucleus-build-manifest.json"))
+        options: [.sortedKeys]
+    ).write(
+        to: artifact.appendingPathComponent(
+            "nucleus-build-manifest.json"))
     try FileManager.default.createSymbolicLink(
         atPath: distribution.appendingPathComponent("current").path,
         withDestinationPath: "generations/\(buildID)")
@@ -1606,15 +1825,18 @@ import Testing
         component: ComponentID(rawValue: "fixture"),
         outputs: [
             OutputDeclaration(
-                path: FilePath(prefix.appendingPathComponent(
-                    "lib/nucleus-browser/current").path),
-                validation: .exists),
+                path: FilePath(
+                    prefix.appendingPathComponent(
+                        "lib/nucleus-browser/current"
+                    ).path),
+                validation: .exists)
         ],
         cachePolicy: .always,
-        operation: .installBrowser(BrowserInstallation(
-            distributionRoot: FilePath(distribution.path),
-            prefix: FilePath(prefix.path),
-            environment: ["PATH": tools.path])))
+        operation: .installBrowser(
+            BrowserInstallation(
+                distributionRoot: FilePath(distribution.path),
+                prefix: FilePath(prefix.path),
+                environment: ["PATH": tools.path])))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],
@@ -1624,10 +1846,12 @@ import Testing
     let target = try FileManager.default.destinationOfSymbolicLink(
         atPath: current.path)
     #expect(target.hasPrefix("generations/"))
-    #expect(try FileManager.default.destinationOfSymbolicLink(
-        atPath: prefix.appendingPathComponent(
-            "bin/nucleus-browser").path)
-        == "../lib/nucleus-browser/current/bin/nucleus-browser")
+    #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+            atPath: prefix.appendingPathComponent(
+                "bin/nucleus-browser"
+            ).path)
+            == "../lib/nucleus-browser/current/bin/nucleus-browser")
 }
 
 @Test func invalidGenerationCandidateNeverReplacesTheActivePointer() async throws {
@@ -1666,8 +1890,9 @@ import Testing
     }
     #expect(FileManager.default.fileExists(atPath: candidate.path))
     #expect(!FileManager.default.fileExists(atPath: generation.path))
-    #expect(try FileManager.default.destinationOfSymbolicLink(atPath: active.path)
-        == "generation-previous")
+    #expect(
+        try FileManager.default.destinationOfSymbolicLink(atPath: active.path)
+            == "generation-previous")
 }
 
 @Test func taskEnginePublishesAndAtomicallyActivatesImmutableGeneration() async throws {
@@ -1701,11 +1926,13 @@ import Testing
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
     #expect(report.executed == [task.id])
     #expect(!FileManager.default.fileExists(atPath: candidate.path))
-    #expect(try FileManager.default.destinationOfSymbolicLink(atPath: active.path)
-        == "generation-1")
-    #expect(try String(
-        contentsOf: generation.appendingPathComponent("payload"),
-        encoding: .utf8) == "artifact")
+    #expect(
+        try FileManager.default.destinationOfSymbolicLink(atPath: active.path)
+            == "generation-1")
+    #expect(
+        try String(
+            contentsOf: generation.appendingPathComponent("payload"),
+            encoding: .utf8) == "artifact")
 }
 
 @Test func generationPublicationCutsOverMutableLayoutAndReusesIdenticalGeneration() throws {
@@ -1728,8 +1955,9 @@ import Testing
         candidate: FilePath(candidate.path),
         generation: FilePath(generation.path),
         active: FilePath(active.path))
-    #expect(try FileManager.default.destinationOfSymbolicLink(
-        atPath: active.path) == "generation")
+    #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+            atPath: active.path) == "generation")
 
     try FileManager.default.createDirectory(
         at: candidate, withIntermediateDirectories: true)
@@ -1740,8 +1968,9 @@ import Testing
         generation: FilePath(generation.path),
         active: FilePath(active.path))
     #expect(!FileManager.default.fileExists(atPath: candidate.path))
-    #expect(try FileManager.default.destinationOfSymbolicLink(
-        atPath: active.path) == "generation")
+    #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+            atPath: active.path) == "generation")
 }
 
 @Test func publicationFaultsPreserveACompleteOldOrNewActiveGeneration() throws {
@@ -1777,20 +2006,23 @@ import Testing
                 })
         }
 
-        let cutoverCompleted = switch boundary {
-        case .activePointerReplaced, .activeDirectorySynchronized:
-            true
-        default:
-            false
-        }
+        let cutoverCompleted =
+            switch boundary {
+            case .activePointerReplaced, .activeDirectorySynchronized:
+                true
+            default:
+                false
+            }
         let target = try FileManager.default.destinationOfSymbolicLink(
             atPath: active.path)
         #expect(target == (cutoverCompleted ? "generation" : "previous"))
-        let activePayload = active
+        let activePayload =
+            active
             .resolvingSymlinksInPath()
             .appendingPathComponent("payload")
-        #expect(try String(contentsOf: activePayload, encoding: .utf8)
-            == (cutoverCompleted ? "new" : "old"))
+        #expect(
+            try String(contentsOf: activePayload, encoding: .utf8)
+                == (cutoverCompleted ? "new" : "old"))
         #expect(FileManager.default.fileExists(atPath: previous.path))
     }
 }

@@ -36,6 +36,14 @@ public final class NucleusDesktopConnection {
     private var seatEventBroker: NucleusDesktopSeatEventBroker?
 
     @_spi(NucleusWindowClientImplementation)
+    @unsafe
+    public func withUnsafeNativeDisplay<Result>(
+        _ body: (OpaquePointer) throws -> Result
+    ) rethrows -> Result {
+        try unsafe body(connection.display)
+    }
+
+    @_spi(NucleusWindowClientImplementation)
     public private(set) var compositor:
         WaylandProxy<WlCompositorClient>?
     @_spi(NucleusWindowClientImplementation)
@@ -99,6 +107,8 @@ public final class NucleusDesktopConnection {
     @_spi(NucleusWindowClientImplementation)
     public private(set) var dmaBufFormats:
         [NucleusDesktopDmaBufFormat] = []
+    @_spi(NucleusWindowClientImplementation)
+    public private(set) var dmaBufMainDevice: UInt64?
     private var dmaBufFeedback: NucleusDesktopDmaBufFeedback?
 
     public private(set) var outputs: [UInt32: NucleusDesktopOutput] = [:]
@@ -352,6 +362,7 @@ public final class NucleusDesktopConnection {
                 if kind == .dmaBuf {
                     self.dmaBufFeedback = nil
                     self.dmaBufFormats = []
+                    self.dmaBufMainDevice = nil
                 }
                 self.withdrawCapability(kind)
                 self.onGlobalChanged?(kind)
@@ -367,6 +378,10 @@ public final class NucleusDesktopConnection {
             proxy: feedbackProxy,
             onFormatsChanged: { [weak self] formats in
                 self?.dmaBufFormats = formats
+                self?.onGlobalChanged?(.dmaBuf)
+            },
+            onMainDeviceChanged: { [weak self] device in
+                self?.dmaBufMainDevice = device
                 self?.onGlobalChanged?(.dmaBuf)
             })
         guard feedback.start() else { return }

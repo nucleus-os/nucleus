@@ -8,7 +8,10 @@ import Testing
 import TracyColliderRecipe
 import VulkanColliderRecipe
 import WaylandColliderRecipe
+
 @testable import ColliderCommands
+
+private let fixtureSwiftPackageRoot = FilePath("/workspace")
 
 @Test func androidToolchainCatalogDrivesColliderVersionsAndNDKSelection() throws {
     let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -19,7 +22,8 @@ import WaylandColliderRecipe
     try FileManager.default.createDirectory(
         at: catalog.deletingLastPathComponent(),
         withIntermediateDirectories: true)
-    try Data("""
+    try Data(
+        """
         [versions]
         agp = "9.3.1"
         gradle = "9.5.0"
@@ -33,14 +37,17 @@ import WaylandColliderRecipe
 
         [plugins]
         ignored = { id = "example" }
-        """.utf8).write(to: catalog)
+        """.utf8
+    ).write(to: catalog)
     let ndk = workspace.appendingPathComponent("selected-ndk")
     try FileManager.default.createDirectory(
         at: ndk, withIntermediateDirectories: true)
-    try Data("""
+    try Data(
+        """
         Pkg.Revision = 30.0.15729638-beta2
         Pkg.BaseRevision = 30.0.15729638
-        """.utf8).write(to: ndk.appendingPathComponent("source.properties"))
+        """.utf8
+    ).write(to: ndk.appendingPathComponent("source.properties"))
 
     let versions = try AndroidToolchainVersions.load(workspaceRoot: workspace)
 
@@ -53,43 +60,52 @@ import WaylandColliderRecipe
     #expect(versions.buildTools == "37.0.0")
     #expect(versions.ndk == "30.0.15729638")
     #expect(versions.java == 17)
-    #expect(try versions.ndkRoot(environment: [
-        "NUCLEUS_ANDROID_NDK_HOME": ndk.path,
-    ]).standardizedFileURL.path == ndk.standardizedFileURL.path)
+    #expect(
+        try versions.ndkRoot(environment: [
+            "NUCLEUS_ANDROID_NDK_HOME": ndk.path
+        ]).standardizedFileURL.path == ndk.standardizedFileURL.path)
 }
 
 @Test func componentTestSelectionPreservesTheRepositoryOrder() throws {
-    let registry = ComponentRegistry(context: WorkspaceContext(
-        root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
-        environment: [:]))
+    let registry = ComponentRegistry(
+        context: WorkspaceContext(
+            root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+            environment: [:]))
 
-    #expect(try registry.selectedTestTasks(nil).map(\.rawValue) == [
-        "tracy.test", "vulkan.test", "wayland.test", "core.test",
-        "config.test", "ipc.test",
-        "linux.test", "rn.test", "compositor-core.test",
-        "compositor-core.test-loader",
-        "compositor-core.test-gpu-headless",
-        "compositor.test", "shell.test", "android-runtime.test",
-    ])
-    #expect(try registry.selectedTestTasks(.config).map(\.rawValue) == [
-        "config.test",
-    ])
-    #expect(try registry.selectedTestTasks(.ipc).map(\.rawValue) == [
-        "ipc.test",
-    ])
-    #expect(try registry.selectedTestTasks(.compositor).map(\.rawValue) == [
-        "compositor-core.test", "compositor-core.test-loader",
-        "compositor-core.test-gpu-headless", "compositor.test",
-    ])
-    #expect(try registry.selectedTestTasks(.loader).map(\.rawValue) == [
-        "compositor-core.test-loader",
-    ])
-    #expect(try registry.selectedTestTasks(.gpuHeadless).map(\.rawValue) == [
-        "compositor-core.test-gpu-headless",
-    ])
-    #expect(try registry.selectedTestTasks(.gpuDRM).map(\.rawValue) == [
-        "compositor-core.test-gpu-drm",
-    ])
+    #expect(
+        try registry.selectedTestTasks(nil).map(\.rawValue) == [
+            "tracy.test", "vulkan.test", "wayland.test", "core.test",
+            "config.test", "ipc.test",
+            "linux.test", "rn.test", "compositor-core.test",
+            "compositor-core.test-loader",
+            "compositor-core.test-gpu-headless",
+            "compositor.test", "shell.test", "android-runtime.test",
+        ])
+    #expect(
+        try registry.selectedTestTasks(.config).map(\.rawValue) == [
+            "config.test"
+        ])
+    #expect(
+        try registry.selectedTestTasks(.ipc).map(\.rawValue) == [
+            "ipc.test"
+        ])
+    #expect(
+        try registry.selectedTestTasks(.compositor).map(\.rawValue) == [
+            "compositor-core.test", "compositor-core.test-loader",
+            "compositor-core.test-gpu-headless", "compositor.test",
+        ])
+    #expect(
+        try registry.selectedTestTasks(.loader).map(\.rawValue) == [
+            "compositor-core.test-loader"
+        ])
+    #expect(
+        try registry.selectedTestTasks(.gpuHeadless).map(\.rawValue) == [
+            "compositor-core.test-gpu-headless"
+        ])
+    #expect(
+        try registry.selectedTestTasks(.gpuDRM).map(\.rawValue) == [
+            "compositor-core.test-gpu-drm"
+        ])
     #expect(throws: (any Error).self) {
         try ColliderCommand.parseAsRoot(["test", "unknown"])
     }
@@ -99,6 +115,7 @@ import WaylandColliderRecipe
     let root = FilePath("/workspace")
     let environment = ["PATH": "/toolchain/bin"]
     let context = SwiftBuildContext(
+        packageRoot: fixtureSwiftPackageRoot,
         configuration: .debug,
         target: .host(identity: "x86_64-linux"),
         toolchainIdentity: "/toolchain/bin/swiftc@fixture")
@@ -122,29 +139,27 @@ import WaylandColliderRecipe
         #expect(task.inputs.contains(swiftPM.identityInput))
         #expect(task.outputs.isEmpty)
         #expect(task.postconditions == [swiftPM.postcondition])
-        #expect(task.locks.contains(swiftPM.lock))
-        guard case .command(let command) = task.operation else {
-            Issue.record("SwiftPM task must be a typed command")
-            continue
-        }
-        #expect(command.arguments.suffix(4) == [
-            "--configuration", "debug",
-            "--scratch-path", scratch.string,
-        ])
+        #expect(!task.locks.contains(swiftPM.lock))
+        #expect(task.swiftProducts.count == 1)
+        #expect(task.swiftProducts[0].invocation == swiftPM)
+        #expect(task.operation == .sequence([]))
     }
 }
 
 @Test func incompatibleSwiftBuildContextsUseDifferentScratchPaths() {
     let layout = WorkspaceLayout(root: URL(fileURLWithPath: "/workspace"))
     let debug = SwiftBuildContext(
+        packageRoot: fixtureSwiftPackageRoot,
         configuration: .debug,
         target: .host(identity: "x86_64-linux"),
         toolchainIdentity: "swiftc@first")
     let release = SwiftBuildContext(
+        packageRoot: fixtureSwiftPackageRoot,
         configuration: .release,
         target: .host(identity: "x86_64-linux"),
         toolchainIdentity: "swiftc@first")
     let otherToolchain = SwiftBuildContext(
+        packageRoot: fixtureSwiftPackageRoot,
         configuration: .debug,
         target: .host(identity: "x86_64-linux"),
         toolchainIdentity: "swiftc@second")
@@ -165,12 +180,132 @@ import WaylandColliderRecipe
         ])
 
     #expect(context.taskEnvironment["CCACHE_BASEDIR"] == "/workspace")
-    #expect(context.taskEnvironment["CCACHE_DIR"]
-        == "/cache/nucleus/host-ccache")
+    #expect(
+        context.taskEnvironment["CCACHE_DIR"]
+            == "/cache/nucleus/host-ccache")
     #expect(context.taskEnvironment["CCACHE_COMPILERCHECK"] == "content")
     #expect(context.taskEnvironment["CCACHE_MAXSIZE"] == "50G")
-    #expect(context.taskEnvironment["CCACHE_SLOPPINESS"]
-        == "include_file_ctime,include_file_mtime,locale")
+    #expect(
+        context.taskEnvironment["CCACHE_SLOPPINESS"]
+            == "include_file_ctime,include_file_mtime,locale")
+}
+
+@Test func workspaceEnvironmentRetainsEveryPackageBuildDescription() {
+    let context = WorkspaceContext(
+        root: URL(fileURLWithPath: "/workspace"),
+        environment: ["HOME": "/home/fixture"])
+
+    // Every workspace package plans one Swift Build description for `build` and
+    // one for `test` against the shared scratch directory. Retaining fewer than
+    // the workspace produces purges descriptions the same run needs again, and
+    // each purge re-plans that package graph from scratch.
+    let descriptions = 40
+    let onDisk = context.taskEnvironment["BuildDescriptionOnDiskCacheSize"]
+        .flatMap(Int.init)
+    let inMemory = context.taskEnvironment["BuildDescriptionInMemoryCacheSize"]
+        .flatMap(Int.init)
+
+    #expect((onDisk ?? 0) >= descriptions)
+    #expect((inMemory ?? 0) >= descriptions)
+}
+
+@Test func languageServerSharesTheWorkspaceBuildDirectory() throws {
+    let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-lsp-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+    try FileManager.default.createDirectory(
+        at: workspace, withIntermediateDirectories: true)
+    let context = WorkspaceContext(
+        root: workspace,
+        environment: ["HOME": "/home/fixture"])
+    func invocation(_ digest: String) -> SwiftPMInvocation {
+        return SwiftPMInvocation(
+            context: SwiftBuildContext(
+                packageRoot: fixtureSwiftPackageRoot,
+                configuration: .debug,
+                target: .host(identity: "x86_64-linux"),
+                toolchainIdentity: "swiftc@\(digest)"),
+            scratchPath: FilePath(
+                workspace.appendingPathComponent(
+                    ".nucleus/swiftpm/unsanitized/sha256-\(digest)"
+                ).path))
+    }
+    func published() throws -> [String: Any] {
+        let data = try Data(
+            contentsOf: workspace.appendingPathComponent(
+                ".sourcekit-lsp/config.json"))
+        return try JSONSerialization.jsonObject(with: data) as! [String: Any]
+    }
+
+    try context.publishLanguageServerConfiguration(invocation("first"))
+    let first = try published()
+    let firstSwiftPM = first["swiftPM"] as! [String: Any]
+
+    // The workspace build directory, named the way the workspace names it, so
+    // the language server's builds and the workspace's builds are the same work.
+    // The language server resolves a relative directory against each package it
+    // finds, so the name has to be absolute to mean one directory.
+    #expect(
+        firstSwiftPM["scratchPath"] as? String
+            == invocation("first").scratchPath.string)
+    #expect((firstSwiftPM["scratchPath"] as? String)?.hasPrefix("/") == true)
+    #expect(firstSwiftPM["configuration"] as? String == "debug")
+    #expect(firstSwiftPM["workspacePlan"] == nil)
+    #expect(first["backgroundPreparationMode"] as? String == "build")
+
+    // Manifests that need SwiftPM's generated header directory read it from the
+    // host environment, which has to name the same directory a build names.
+    let shell = try String(
+        contentsOf: workspace.appendingPathComponent(".nucleus/swiftpm/environment.sh"),
+        encoding: .utf8)
+    #expect(
+        shell.contains(
+            "export NUCLEUS_SWIFTPM_SCRATCH_PATH='\(invocation("first").scratchPath.string)'"))
+    #expect(
+        shell.contains(
+            "export NUCLEUS_SWIFTPM_GENERATED_MODULE_MAPS_PATH='"
+                + invocation("first").generatedModuleMaps.string + "'"))
+    #expect(!shell.contains("NUCLEUS_SWIFTPM_WORKSPACE_PLAN"))
+
+    // A build context that resolves somewhere new republishes rather than
+    // leaving the language server pointed at a directory nothing maintains.
+    try context.publishLanguageServerConfiguration(invocation("second"))
+    #expect(
+        (try published()["swiftPM"] as! [String: Any])["scratchPath"] as? String
+            == invocation("second").scratchPath.string)
+}
+
+@Test func toolchainRebuildReclaimsEverySupersededSwiftBuildContext() throws {
+    let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-contexts-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+    let manager = FileManager.default
+    let swiftPM = workspace.appendingPathComponent(
+        ".nucleus/swiftpm", isDirectory: true)
+    let contexts = ["unsanitized", "thread"].map {
+        swiftPM.appendingPathComponent(
+            "\($0)/sha256-\(String(repeating: "a", count: 64))",
+            isDirectory: true)
+    }
+    for context in contexts {
+        try manager.createDirectory(at: context, withIntermediateDirectories: true)
+        try Data("stale".utf8).write(
+            to: context.appendingPathComponent("build.db"))
+    }
+    // Only content-addressed build contexts are the rebuild's to reclaim.
+    let unrelated = swiftPM.appendingPathComponent(
+        "unsanitized/notes", isDirectory: true)
+    try manager.createDirectory(at: unrelated, withIntermediateDirectories: true)
+
+    let context = WorkspaceContext(
+        root: workspace,
+        environment: ["HOME": "/home/fixture"])
+    try context.reclaimSwiftBuildContexts()
+
+    for stale in contexts {
+        #expect(!manager.fileExists(atPath: stale.path))
+    }
+    #expect(manager.fileExists(atPath: unrelated.path))
 }
 
 @Test func reactNativeBuildProducesTheSwiftHeaderBeforeCompilingTheHost() {
@@ -178,6 +313,7 @@ import WaylandColliderRecipe
     let scratch = FilePath("/workspace/.nucleus/swiftpm/fixture")
     let swiftPM = SwiftPMInvocation(
         context: SwiftBuildContext(
+            packageRoot: fixtureSwiftPackageRoot,
             configuration: .debug,
             target: .host(identity: "x86_64-linux"),
             toolchainIdentity: "swiftc@fixture"),
@@ -188,28 +324,16 @@ import WaylandColliderRecipe
         environment: ["PATH": "/usr/bin"],
         swiftPM: swiftPM)
 
-    guard case .sequence(let operations) = task.operation,
-          operations.count == 2,
-          case .command(let facade) = operations[0],
-          case .command(let package) = operations[1]
-    else {
-        Issue.record("RN build must build the Swift façade before the package")
-        return
-    }
-    #expect(facade.arguments == [
-        "build",
-        "--configuration", "debug",
-        "--scratch-path", "/workspace/.nucleus/swiftpm/fixture",
-        "--target", "NucleusReactRuntimeCxx",
-    ])
-    #expect(package.arguments.first == "build")
-    #expect(facade.environment["NUCLEUS_SWIFTPM_SCRATCH_PATH"]
-        == scratch.string)
-    #expect(facade.environment["NUCLEUS_SWIFTPM_GENERATED_MODULE_MAPS_PATH"]
-        == swiftPM.generatedModuleMaps.string)
-    #expect(task.postconditions.contains(PathPostcondition(
-        path: swiftPM.generatedSwiftHeader("NucleusReactRuntimeCxx"),
-        validation: .regularFile)))
+    #expect(task.operation == .sequence([]))
+    #expect(
+        task.swiftProducts.map(\.qualifiedProduct) == [
+            "react-native:NucleusReactRuntime"
+        ])
+    #expect(
+        task.postconditions.contains(
+            PathPostcondition(
+                path: swiftPM.generatedSwiftHeader("NucleusReactRuntimeCxx"),
+                validation: .regularFile)))
 }
 
 @Test func lavapipeArtifactStagesAnAbsoluteValidatedICDManifest() throws {
@@ -222,7 +346,8 @@ import WaylandColliderRecipe
     let library = directory.appendingPathComponent("libvulkan_lvp.so")
     try Data("fixture".utf8).write(to: library)
     let manifest = directory.appendingPathComponent("lvp_icd.json")
-    try Data("""
+    try Data(
+        """
         {
           "file_format_version": "1.0.0",
           "ICD": {
@@ -230,18 +355,24 @@ import WaylandColliderRecipe
             "library_path": "\(library.path)"
           }
         }
-        """.utf8).write(to: manifest)
+        """.utf8
+    ).write(to: manifest)
 
-    let artifact = try LavapipeTestArtifact.resolve(context: WorkspaceContext(
-        root: directory,
-        environment: [
-            "NUCLEUS_LAVAPIPE_ICD": manifest.path,
-            "XDG_CACHE_HOME": directory.appendingPathComponent("cache").path,
-        ]))
+    let artifact = try LavapipeTestArtifact.resolve(
+        context: WorkspaceContext(
+            root: directory,
+            environment: [
+                "NUCLEUS_LAVAPIPE_ICD": manifest.path,
+                "XDG_CACHE_HOME": directory.appendingPathComponent("cache").path,
+            ]))
     #expect(artifact.sourceManifest == FilePath(manifest.path))
     #expect(artifact.library == FilePath(library.path))
-    #expect(artifact.stagedManifest == FilePath(directory.appendingPathComponent(
-        "cache/nucleus/test-vulkan/lavapipe_icd.json").path))
+    #expect(
+        artifact.stagedManifest
+            == FilePath(
+                directory.appendingPathComponent(
+                    "cache/nucleus/test-vulkan/lavapipe_icd.json"
+                ).path))
     let staged = String(decoding: artifact.stagedBytes, as: UTF8.self)
     #expect(staged.contains(#""library_path" : "\#(library.path)""#))
     #expect(artifact.task.id == TaskID(rawValue: "workspace.lavapipe-icd"))
@@ -255,7 +386,7 @@ import WaylandColliderRecipe
 
     #expect(throws: (any Error).self) {
         try requiredDRMRenderNode(environment: [
-            "NUCLEUS_TEST_DRM_RENDER_NODE": file.path,
+            "NUCLEUS_TEST_DRM_RENDER_NODE": file.path
         ])
     }
 }
@@ -265,6 +396,7 @@ import WaylandColliderRecipe
     let environment = ["PATH": "/usr/bin"]
     let swiftPM = SwiftPMInvocation(
         context: SwiftBuildContext(
+            packageRoot: fixtureSwiftPackageRoot,
             configuration: .debug,
             target: .host(identity: "x86_64-linux"),
             toolchainIdentity: "swiftc@fixture"),
@@ -278,16 +410,19 @@ import WaylandColliderRecipe
         Issue.record("Vulkan generation must be a typed command")
         return
     }
-    #expect(vulkanCommand.executable == .named("swift"))
-    #expect(vulkanCommand.arguments == [
-        "run",
-        "--configuration", "debug",
-        "--scratch-path", "/workspace/.nucleus/swiftpm/fixture",
-        "VulkanGen",
-        "/workspace/swift-vulkan/third-party/vk.xml",
-        "/workspace/swift-vulkan/Sources/Vulkan/Vulkan.swift",
-        "1",
-    ])
+    #expect(
+        vulkan.swiftProducts.map(\.qualifiedProduct) == [
+            "swift-vulkan:VulkanGen"
+        ])
+    #expect(
+        vulkanCommand.executable
+            == .taskOutput(swiftPM.executable("VulkanGen")))
+    #expect(
+        vulkanCommand.arguments == [
+            "/workspace/swift-vulkan/third-party/vk.xml",
+            "/workspace/swift-vulkan/Sources/Vulkan/Vulkan.swift",
+            "1",
+        ])
 
     let reactNative = ReactNativeColliderRecipe.generate(
         root: root.appending("react-native"),
@@ -297,9 +432,10 @@ import WaylandColliderRecipe
         return
     }
     #expect(reactNativeCommand.executable == .named("node"))
-    #expect(reactNativeCommand.arguments == [
-        "/workspace/react-native/tools/generate-rn-spec.js",
-    ])
+    #expect(
+        reactNativeCommand.arguments == [
+            "/workspace/react-native/tools/generate-rn-spec.js"
+        ])
 }
 
 @Test func waylandGenerationIsOneColliderOwnedCommandSequence() throws {
@@ -313,12 +449,14 @@ import WaylandColliderRecipe
         environment: ["PATH": "/usr/bin"],
         swiftPM: SwiftPMInvocation(
             context: SwiftBuildContext(
+                packageRoot: fixtureSwiftPackageRoot,
                 configuration: .debug,
                 target: .host(identity: "x86_64-linux"),
                 toolchainIdentity: "swiftc@fixture"),
             scratchPath: FilePath(
                 workspace.appendingPathComponent(
-                    ".nucleus/swiftpm/fixture").path)))
+                    ".nucleus/swiftpm/fixture"
+                ).path)))
     guard case .sequence(let operations) = task.operation else {
         Issue.record("Wayland generation must be one ordered task sequence")
         return
@@ -337,12 +475,17 @@ import WaylandColliderRecipe
     let scannerCommands = commands.filter {
         $0.executable == .named("wayland-scanner")
     }
-    #expect(buildCommands.count == 1)
+    #expect(buildCommands.isEmpty)
+    #expect(
+        task.swiftProducts.map(\.qualifiedProduct) == [
+            "swift-wayland:SwiftWaylandGen"
+        ])
     #expect(generatorCommands.count == 2)
     #expect(scannerCommands.count == 62 * 3)
-    #expect(commands.allSatisfy {
-        !$0.arguments.contains("generate-wayland")
-    })
+    #expect(
+        commands.allSatisfy {
+            !$0.arguments.contains("generate-wayland")
+        })
 }
 
 @Test func skiaRecipesInvokeGNAndNinjaWithoutACommandPlugin() {
@@ -368,14 +511,16 @@ import WaylandColliderRecipe
             return command
         }
         #expect(commands.count == 2)
-        #expect(commands[0].executable
-            == .path(root.appending("third-party/skia/bin/gn")))
+        #expect(
+            commands[0].executable
+                == .path(root.appending("third-party/skia/bin/gn")))
         #expect(commands[1].executable == .named("ninja"))
-        #expect(commands.allSatisfy {
-            !$0.arguments.contains("build-skia")
-                && $0.executable != .named("sh")
-                && $0.executable != .named("bash")
-        })
+        #expect(
+            commands.allSatisfy {
+                !$0.arguments.contains("build-skia")
+                    && $0.executable != .named("sh")
+                    && $0.executable != .named("bash")
+            })
     }
 }
 
@@ -396,21 +541,24 @@ import WaylandColliderRecipe
             return command
         }
         #expect(!commands.isEmpty)
-        #expect(commands.allSatisfy {
-            $0.executable == .named("cmake")
-                || $0.executable == .named("ninja")
-        })
-        #expect(commands.allSatisfy {
-            !$0.arguments.contains("build-rn-support")
-                && !$0.arguments.contains("build-rn-cxx")
-        })
+        #expect(
+            commands.allSatisfy {
+                $0.executable == .named("cmake")
+                    || $0.executable == .named("ninja")
+            })
+        #expect(
+            commands.allSatisfy {
+                !$0.arguments.contains("build-rn-support")
+                    && !$0.arguments.contains("build-rn-cxx")
+            })
     }
-    #expect(runtime.dependencies == [
-        TaskID(rawValue: "rn.support"),
-        TaskID(rawValue: "rn.generate"),
-        TaskID(rawValue: "rn.boost"),
-        TaskID(rawValue: "rn.hermes"),
-    ])
+    #expect(
+        runtime.dependencies == [
+            TaskID(rawValue: "rn.support"),
+            TaskID(rawValue: "rn.generate"),
+            TaskID(rawValue: "rn.boost"),
+            TaskID(rawValue: "rn.hermes"),
+        ])
 }
 
 @Test func hermesRecipeUsesTypedCommandsAndArchiveMerge() {
@@ -431,8 +579,8 @@ import WaylandColliderRecipe
     }
     #expect(operations.count == 3)
     guard case .command(let configure) = operations[0],
-          case .command(let build) = operations[1],
-          case .mergeStaticArchives(let merge) = operations[2]
+        case .command(let build) = operations[1],
+        case .mergeStaticArchives(let merge) = operations[2]
     else {
         Issue.record("Hermes must configure, build, then merge its archives")
         return
@@ -461,6 +609,7 @@ import WaylandColliderRecipe
         root: FilePath(directory.path),
         swiftPM: SwiftPMInvocation(
             context: SwiftBuildContext(
+                packageRoot: fixtureSwiftPackageRoot,
                 configuration: .debug,
                 target: .host(identity: "x86_64-linux"),
                 toolchainIdentity: "swiftc@fixture"),
@@ -469,12 +618,20 @@ import WaylandColliderRecipe
         Issue.record("RN host archive staging must be a typed matched copy")
         return
     }
-    #expect(copy.searchDirectory == FilePath(directory.appendingPathComponent(
-        "scratch/out/Products").path))
+    #expect(
+        copy.searchDirectory
+            == FilePath(
+                directory.appendingPathComponent(
+                    "scratch/out/Products"
+                ).path))
     #expect(copy.childDirectoryPrefix == "Debug-")
     #expect(copy.fileName == "libNucleusReactRuntimeHostCxx.a")
-    #expect(copy.destination == FilePath(directory.appendingPathComponent(
-        ".cxx-build/debug/libNucleusReactRuntimeHostCxx.a").path))
+    #expect(
+        copy.destination
+            == FilePath(
+                directory.appendingPathComponent(
+                    ".cxx-build/debug/libNucleusReactRuntimeHostCxx.a"
+                ).path))
 }
 
 @Test func androidImageRecipeHasIndependentArtifactBoundaries() throws {
@@ -484,67 +641,80 @@ import WaylandColliderRecipe
         .deletingLastPathComponent()
         .deletingLastPathComponent()
     let tasks = try AndroidRuntimeColliderRecipe.aospImageTasks(
-        root: FilePath(workspace.appendingPathComponent(
-            "android-runtime").path),
+        root: FilePath(
+            workspace.appendingPathComponent(
+                "android-runtime"
+            ).path),
         environment: ["PATH": "/usr/bin"])
     let pipelineIDs = tasks.map(\.id.rawValue).filter {
         $0.hasPrefix("android-runtime.aosp-")
     }
-    #expect(pipelineIDs.contains(
-        "android-runtime.aosp-build-container"))
-    #expect(pipelineIDs.suffix(5) == [
-        "android-runtime.aosp-compile",
-        "android-runtime.aosp-sign",
-        "android-runtime.aosp-assemble-images",
-        "android-runtime.aosp-validate",
-        "android-runtime.aosp-image",
-    ])
-    let container = try #require(tasks.first {
-        $0.id.rawValue == "android-runtime.aosp-build-container"
-    })
-    #expect({
-        guard case .prepareAOSPBuildContainer = container.operation else {
-            return false
-        }
-        return true
-    }())
+    #expect(
+        pipelineIDs.contains(
+            "android-runtime.aosp-build-container"))
+    #expect(
+        pipelineIDs.suffix(5) == [
+            "android-runtime.aosp-compile",
+            "android-runtime.aosp-sign",
+            "android-runtime.aosp-assemble-images",
+            "android-runtime.aosp-validate",
+            "android-runtime.aosp-image",
+        ])
+    let container = try #require(
+        tasks.first {
+            $0.id.rawValue == "android-runtime.aosp-build-container"
+        })
+    #expect(
+        {
+            guard case .prepareAOSPBuildContainer = container.operation else {
+                return false
+            }
+            return true
+        }())
     let operations = Array(tasks.suffix(5)).map(\.operation)
     let publication = try #require(tasks.last)
-    #expect(publication.outputs.contains {
-        $0.path.string.hasSuffix(".aosp-build/current")
-    })
-    #expect(publication.outputs.contains {
-        $0.path.string.contains(".aosp-build/generations/")
-            && $0.path.string.hasSuffix("/images/system.img")
-    })
-    #expect({
-        guard case .compileAOSPProduct = operations[0] else {
-            return false
-        }
-        return true
-    }())
-    #expect({
-        guard case .signAOSPProduct = operations[1] else {
-            return false
-        }
-        return true
-    }())
-    #expect({
-        guard case .assembleAOSPProductImages = operations[2] else {
-            return false
-        }
-        return true
-    }())
-    #expect({
-        guard case .validateAOSPProduct = operations[3] else {
-            return false
-        }
-        return true
-    }())
-    #expect({
-        guard case .publishAOSPProduct = operations[4] else {
-            return false
-        }
-        return true
-    }())
+    #expect(
+        publication.outputs.contains {
+            $0.path.string.hasSuffix(".aosp-build/current")
+        })
+    #expect(
+        publication.outputs.contains {
+            $0.path.string.contains(".aosp-build/generations/")
+                && $0.path.string.hasSuffix("/images/system.img")
+        })
+    #expect(
+        {
+            guard case .compileAOSPProduct = operations[0] else {
+                return false
+            }
+            return true
+        }())
+    #expect(
+        {
+            guard case .signAOSPProduct = operations[1] else {
+                return false
+            }
+            return true
+        }())
+    #expect(
+        {
+            guard case .assembleAOSPProductImages = operations[2] else {
+                return false
+            }
+            return true
+        }())
+    #expect(
+        {
+            guard case .validateAOSPProduct = operations[3] else {
+                return false
+            }
+            return true
+        }())
+    #expect(
+        {
+            guard case .publishAOSPProduct = operations[4] else {
+                return false
+            }
+            return true
+        }())
 }

@@ -384,9 +384,11 @@ This prevents two checkouts from concurrently publishing the same toolchain,
 native SDK, Chromium source generation, or browser distribution.
 
 Run identifiers use one UTC timestamp format plus the process identifier. The
-`latest` pointer updates atomically when a run starts. Each manifest records the
-final status, failed task, durable diagnostic path, task durations, and active
-artifact identities. `collider logs show latest --kind runtime|toolchain|android|browser`
+`latest` pointer updates atomically when a run starts. Starting a run also
+reclaims run history beyond the retained depth, oldest first, so captured task
+output cannot grow without bound; the starting run and the `latest` target are
+never reclaimed. Each manifest records the final status, failed task, durable
+diagnostic path, task durations, and active artifact identities. `collider logs show latest --kind runtime|toolchain|android|browser`
 resolves the newest matching manifest from the same registry, so an unrelated
 doctor or build command cannot hide the latest domain-specific diagnostic.
 

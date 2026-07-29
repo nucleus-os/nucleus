@@ -16,34 +16,62 @@ public import Vulkan
     enableRequiredFeatures: Bool,
     _ body: (UnsafeMutablePointer<VkPhysicalDeviceFeatures2>) -> R
 ) -> R {
+    var v13 = unsafe VkPhysicalDeviceVulkan13Features()
+    unsafe v13.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES
+    unsafe v13.synchronization2 =
+        enableRequiredFeatures && contract.requiresSynchronization2
+            ? 1 : 0
     var v12 = unsafe VkPhysicalDeviceVulkan12Features()
     unsafe v12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES
     unsafe v12.timelineSemaphore = enableRequiredFeatures && contract.requiresTimelineSemaphore ? 1 : 0
     var feats = unsafe VkPhysicalDeviceFeatures2()
     unsafe feats.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2
 
-    return withUnsafeMutablePointer(to: &v12) { p12 -> R in
-        func withYcbcrChain(_ tail: UnsafeMutableRawPointer?) -> R {
-            unsafe p12.pointee.pNext = unsafe tail
-            unsafe feats.pNext = UnsafeMutableRawPointer(p12)
-            return withUnsafeMutablePointer(to: &feats) { unsafe body($0) }
-        }
-        func withOptionalYcbcr(_ tail: UnsafeMutableRawPointer?) -> R {
-            guard contract.requiresSamplerYcbcrConversion else { return unsafe withYcbcrChain(tail) }
-            var v11 = unsafe VkPhysicalDeviceVulkan11Features()
-            unsafe v11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES
-            unsafe v11.samplerYcbcrConversion = enableRequiredFeatures ? 1 : 0
-            return withUnsafeMutablePointer(to: &v11) { p11 -> R in
-                unsafe p11.pointee.pNext = unsafe tail
-                return unsafe withYcbcrChain(UnsafeMutableRawPointer(p11))
+    return withUnsafeMutablePointer(to: &v13) { p13 -> R in
+        withUnsafeMutablePointer(to: &v12) { p12 -> R in
+            func withYcbcrChain(
+                _ tail: UnsafeMutableRawPointer?
+            ) -> R {
+                unsafe p12.pointee.pNext = unsafe tail
+                unsafe p13.pointee.pNext =
+                    UnsafeMutableRawPointer(p12)
+                unsafe feats.pNext = UnsafeMutableRawPointer(p13)
+                return withUnsafeMutablePointer(to: &feats) {
+                    unsafe body($0)
+                }
             }
-        }
-        guard contract.requiresSwapchainMaintenance1 else { return withOptionalYcbcr(nil) }
-        var maintenance = unsafe VkPhysicalDeviceSwapchainMaintenance1FeaturesKHR()
-        unsafe maintenance.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_KHR
-        unsafe maintenance.swapchainMaintenance1 = enableRequiredFeatures ? 1 : 0
-        return withUnsafeMutablePointer(to: &maintenance) { pointer in
-            unsafe withOptionalYcbcr(UnsafeMutableRawPointer(pointer))
+            func withOptionalYcbcr(
+                _ tail: UnsafeMutableRawPointer?
+            ) -> R {
+                guard contract.requiresSamplerYcbcrConversion
+                else { return unsafe withYcbcrChain(tail) }
+                var v11 =
+                    unsafe VkPhysicalDeviceVulkan11Features()
+                unsafe v11.sType =
+                    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES
+                unsafe v11.samplerYcbcrConversion =
+                    enableRequiredFeatures ? 1 : 0
+                return withUnsafeMutablePointer(to: &v11) {
+                    p11 -> R in
+                    unsafe p11.pointee.pNext = unsafe tail
+                    return unsafe withYcbcrChain(
+                        UnsafeMutableRawPointer(p11))
+                }
+            }
+            guard contract.requiresSwapchainMaintenance1
+            else { return withOptionalYcbcr(nil) }
+            var maintenance =
+                unsafe VkPhysicalDeviceSwapchainMaintenance1FeaturesKHR()
+            unsafe maintenance.sType =
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_KHR
+            unsafe maintenance.swapchainMaintenance1 =
+                enableRequiredFeatures ? 1 : 0
+            return withUnsafeMutablePointer(to: &maintenance) {
+                pointer in
+                unsafe withOptionalYcbcr(
+                    UnsafeMutableRawPointer(pointer))
+            }
         }
     }
 }
@@ -102,11 +130,16 @@ public import Vulkan
         unsafe getFeatures(physicalDevice, pointer)
         var feature = unsafe pointer.pointee.pNext
         var timeline = !contract.requiresTimelineSemaphore
+        var synchronization2 = !contract.requiresSynchronization2
         var ycbcr = !contract.requiresSamplerYcbcrConversion
         var maintenance = !contract.requiresSwapchainMaintenance1
         while let raw = unsafe feature {
             let header = unsafe raw.assumingMemoryBound(to: VkBaseOutStructure.self)
             switch unsafe header.pointee.sType {
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES:
+                synchronization2 = unsafe raw.assumingMemoryBound(
+                    to: VkPhysicalDeviceVulkan13Features.self
+                ).pointee.synchronization2 != 0
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES:
                 timeline = unsafe raw.assumingMemoryBound(
                     to: VkPhysicalDeviceVulkan12Features.self).pointee.timelineSemaphore != 0
@@ -121,7 +154,8 @@ public import Vulkan
             }
             unsafe feature = unsafe UnsafeMutableRawPointer(header.pointee.pNext)
         }
-        supported = timeline && ycbcr && maintenance
+        supported = timeline && synchronization2
+            && ycbcr && maintenance
     }
     return supported
 }

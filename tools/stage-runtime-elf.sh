@@ -9,27 +9,6 @@ fi
 products=$1
 prefix=$2
 
-libraries=(
-  libNucleusFoundation.so
-  libNucleus.so
-  libNucleusLinux.so
-  libNucleusLinuxDesktop.so
-  libNucleusConfig.so
-  libNucleusConfigIO.so
-  libNucleusConfigService.so
-  libNucleusIPCTransport.so
-  libNucleusControlProtocol.so
-  libNucleusControlClient.so
-  libNucleusControlService.so
-  libNucleusWindowClient.so
-  libNucleusRenderServer.so
-  libNucleusShellKit.so
-  libSwiftWaylandProtocolRuntime.so
-  libSwiftVulkan.so
-  libSwiftTracy.so
-  libNucleusSessionProtocol.so
-)
-
 bin_executables=(
   NucleusCompositor
   NucleusShell
@@ -57,52 +36,11 @@ copy_artifact() {
 
 mkdir -p "$prefix/bin" "$prefix/lib" "$prefix/libexec" "$prefix/share/nucleus"
 
-for artifact in "${libraries[@]}"; do
-  copy_artifact "$artifact" "$prefix/lib"
-done
 for artifact in "${bin_executables[@]}"; do
   copy_artifact "$artifact" "$prefix/bin"
 done
 for artifact in "${libexec_executables[@]}"; do
   copy_artifact "$artifact" "$prefix/libexec"
-done
-
-# SwiftPM propagates the render-server's native linker settings into its
-# composition-root executable. The implementation DSO owns those dependencies;
-# remove the unused direct edges from the launch stub.
-server_native_dependencies=(
-  libvulkan.so.1
-  libsystemd.so.0
-  libdrm.so.2
-  libgbm.so.1
-  libxcb-ewmh.so.2
-  libxcb-icccm.so.4
-  libxcb-composite.so.0
-  libxcb-xfixes.so.0
-  libxcb-res.so.0
-  libxcb.so.1
-  libinput.so.10
-  libudev.so.1
-  libseat.so.1
-  libxkbcommon.so.0
-  libfontconfig.so.1
-  libfreetype.so.6
-  libz.so.1
-  libwayland-client.so.0
-  libwayland-server.so.0
-  libharfbuzz.so.0
-  libpng16.so.16
-  libjpeg.so.8
-  libwebp.so.7
-  libexpat.so.1
-)
-
-for dependency in "${server_native_dependencies[@]}"; do
-  if patchelf --print-needed "$prefix/bin/NucleusCompositor" |
-    grep -Fxq "$dependency"
-  then
-    patchelf --remove-needed "$dependency" "$prefix/bin/NucleusCompositor"
-  fi
 done
 
 # Resolve the non-system dynamic closure while the copied artifacts still carry

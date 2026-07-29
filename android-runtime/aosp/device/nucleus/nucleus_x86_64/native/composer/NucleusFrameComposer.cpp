@@ -442,6 +442,7 @@ HWC3::Error NucleusFrameComposer::presentDisplay(
         reply_descriptors,
         1,
         &reply_fd_count);
+    const int receive_errno = errno;
     if (received != sizeof(reply) ||
         reply.magic != NUCLEUS_COMPOSER_PROTOCOL_MAGIC ||
         reply.version != NUCLEUS_COMPOSER_PROTOCOL_VERSION ||
@@ -452,7 +453,25 @@ HWC3::Error NucleusFrameComposer::presentDisplay(
         reply.fd_count != 1 ||
         reply_fd_count != 1) {
         if (reply_fd_count == 1) close(reply_descriptors[0]);
-        ALOGE("Nucleus Composer3 received an invalid present reply");
+        ALOGE(
+            "Nucleus Composer3 received an invalid present reply: "
+            "received=%d errno=%d(%s) magic=%" PRIu32
+            " version=%" PRIu16 " operation=%" PRIu16
+            " byte_count=%" PRIu32 " request_id=%" PRIu64
+            " expected_request_id=%" PRIu64 " status=%" PRIu32
+            " declared_fd_count=%" PRIu32 " received_fd_count=%zu",
+            received,
+            receive_errno,
+            strerror(receive_errno),
+            reply.magic,
+            reply.version,
+            reply.operation,
+            reply.byte_count,
+            reply.request_id,
+            request.request_id,
+            reply.status,
+            reply.fd_count,
+            reply_fd_count);
         socket_.reset();
         return HWC3::Error::NoResources;
     }

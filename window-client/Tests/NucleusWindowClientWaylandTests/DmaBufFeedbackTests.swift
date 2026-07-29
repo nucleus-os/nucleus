@@ -48,4 +48,13 @@ import Testing
         #expect(NucleusDesktopDmaBufFeedback.readFormatTable(
             descriptor: -1, size: 1_048_592).isEmpty)
     }
+
+    @Test func decodesExactlyOneLinuxMainDevice() {
+        #expect(NucleusDesktopDmaBufFeedback.decodeDeviceElements(
+            [dev_t(0xe281)]) == 0xe281)
+        #expect(NucleusDesktopDmaBufFeedback.decodeDeviceElements(
+            []) == nil)
+        #expect(NucleusDesktopDmaBufFeedback.decodeDeviceElements(
+            [1, 2]) == nil)
+    }
 }

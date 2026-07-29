@@ -28,6 +28,22 @@ import Testing
     }
 }
 
+@Test func taskGraphRejectsSubsumingANonDependency() {
+    let build = TaskDeclaration(
+        id: TaskID(rawValue: "build"),
+        component: ComponentID(rawValue: "core"),
+        operation: .createDirectory(FilePath("build")))
+    let test = TaskDeclaration(
+        id: TaskID(rawValue: "test"),
+        component: ComponentID(rawValue: "core"),
+        subsumedDependencies: [build.id],
+        operation: .createDirectory(FilePath("test")))
+
+    #expect(throws: TaskGraphFailure.self) {
+        _ = try TaskGraph([build, test])
+    }
+}
+
 @Test func canonicalFramingDistinguishesFieldBoundaries() {
     var first = CanonicalDigestEncoder()
     first.append(tag: 1, string: "ab")

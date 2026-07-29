@@ -151,6 +151,14 @@ struct WorkspaceContext: Sendable {
         // first-party builds, so successful object bytes remain unchanged.
         environment["CCACHE_SLOPPINESS"] =
             "include_file_ctime,include_file_mtime,locale"
+        // Swift Build caches one build description per root package and build
+        // action, and purges the oldest beyond these limits. Every workspace
+        // package builds and tests against the single shared scratch, so the
+        // stock limit of four evicts descriptions that the same run needs
+        // again, and each eviction re-plans the whole package graph. The limits
+        // hold every description the workspace produces.
+        environment["BuildDescriptionInMemoryCacheSize"] = "64"
+        environment["BuildDescriptionOnDiskCacheSize"] = "64"
         return environment
     }
 

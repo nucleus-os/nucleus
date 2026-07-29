@@ -38,13 +38,34 @@ struct TaskControls: Sendable {
                 decoding: try JSONEncoder.sorted.encode(report),
                 as: UTF8.self))
         } else if dryRun || explain {
+            let planningMilliseconds =
+                Double(report.planningDurationNanoseconds) / 1_000_000
+            print(String(
+                format: "planning  %.3f ms",
+                planningMilliseconds))
             for entry in report.plan {
+                let state =
+                    entry.isClean ? "clean"
+                    : entry.isSubsumed ? "subsumed"
+                    : "dirty"
                 print(
-                    "\(entry.isClean ? "clean" : "dirty")  "
+                    "\(state)  "
                         + "\(entry.task.rawValue)  \(entry.explanation)")
             }
         }
     }
+}
+
+/// The subset of the sourcekit-lsp configuration the package owns. Every other
+/// language server setting stays the editor's to choose.
+private struct LanguageServerConfiguration: Codable {
+    struct SwiftPM: Codable {
+        let configuration: String
+        let scratchPath: String
+    }
+
+    let backgroundPreparationMode: String
+    let swiftPM: SwiftPM
 }
 
 extension WorkspaceContext {
@@ -62,6 +83,32 @@ extension WorkspaceContext {
                     retain: 2,
                     naming: .swiftBuildContext)
             }))
+    }
+
+    /// Every SwiftPM build context is keyed to the compiler that produced it, so
+    /// publishing a Swift platform generation strands all of them at once.
+    /// Reclaim them with the rebuild that superseded them rather than leaving a
+    /// multi-gigabyte build directory behind per retired toolchain.
+    func reclaimSwiftBuildContexts() throws {
+        let swiftPM = layout.state.appendingPathComponent(
+            "swiftpm",
+            isDirectory: true)
+        let contents = (try? FileManager.default.contentsOfDirectory(
+            at: swiftPM,
+            includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+        try DirectoryLifecycle.prune(DirectoryRetentionPlan(
+            safetyRoot: FilePath(layout.state.path),
+            rules: contents
+                .filter {
+                    (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?
+                        .isDirectory == true
+                }
+                .map {
+                    DirectoryRetentionRule(
+                        root: FilePath($0.path),
+                        retain: 0,
+                        naming: .swiftBuildContext)
+                }))
     }
 
     /// The user cache root: `$XDG_CACHE_HOME`, else `$HOME/.cache`, else the
@@ -98,10 +145,18 @@ extension WorkspaceContext {
         staticSwiftStandardLibrary: Bool = false,
         target: SwiftBuildTarget? = nil
     ) throws -> SwiftPMInvocation {
+        let packageRoot = layout.rootPath
+        let manifest = packageRoot.appending("Package.swift")
+        guard FileManager.default.fileExists(atPath: manifest.string) else {
+            throw WorkspaceFailure.message(
+                "canonical Swift package has no manifest: " + manifest.string)
+        }
+
         let compiler = try swiftCompilerPath()
         let compilerIdentity = try ArtifactHasher.digest(file: compiler)
             .description
         let context = SwiftBuildContext(
+            packageRoot: packageRoot,
             configuration: configuration,
             target: target ?? .host(identity: hostSwiftTarget),
             toolchainIdentity: "\(compiler.string)@\(compilerIdentity)",
@@ -112,10 +167,79 @@ extension WorkspaceContext {
             cxxFlags: cxxFlags,
             linkerFlags: linkerFlags,
             staticSwiftStandardLibrary: staticSwiftStandardLibrary)
-        return SwiftPMInvocation(
+        let invocation = SwiftPMInvocation(
             context: context,
             scratchPath: FilePath(layout.swiftScratch(for: context).path))
+        let isDefaultContext = configuration == .debug
+            && sanitizer == nil
+            && target == nil
+            && traits.isEmpty
+            && swiftFlags.isEmpty
+            && cFlags.isEmpty
+            && cxxFlags.isEmpty
+            && linkerFlags.isEmpty
+            && !staticSwiftStandardLibrary
+        if isDefaultContext {
+            // Publishing the editor's view of the package build directory is
+            // part of resolving it. A stale pointer would send the language
+            // server off to build its own copy, so this republishes whenever the
+            // default context resolves somewhere new.
+            try publishLanguageServerConfiguration(invocation)
+        }
+        return invocation
     }
+
+    /// Point the language server at the build directory the package already
+    /// maintains. Without it sourcekit-lsp builds and indexes every package into
+    /// a second directory, duplicating the complete package build.
+    /// The directory is content addressed, so this configuration is generated
+    /// rather than checked in.
+    func publishLanguageServerConfiguration(
+        _ invocation: SwiftPMInvocation
+    ) throws {
+        let configuration = LanguageServerConfiguration(
+            // Preparing a target the way the package builds it keeps one set
+            // of compiled modules. The lazily type-checked default writes
+            // modules that the next package build has to replace.
+            backgroundPreparationMode: "build",
+            swiftPM: LanguageServerConfiguration.SwiftPM(
+                configuration: invocation.context.configuration.rawValue,
+                // The language server resolves a relative build directory
+                // against the package. Name it absolutely.
+                scratchPath: invocation.scratchPath.string))
+        var bytes = try JSONEncoder.sorted.encode(configuration)
+        bytes.append(UInt8(ascii: "\n"))
+        try publish(
+            bytes,
+            to: root.appendingPathComponent(".sourcekit-lsp", isDirectory: true)
+                .appendingPathComponent("config.json"))
+
+        // A manifest that needs SwiftPM's generated header directory reads it
+        // from the environment, and a language server build has to name the same
+        // directory as a package build or the two recompile each other. The
+        // host environment carries these to every tool started from a Nucleus
+        // shell, the language server included.
+        let shell = """
+            # Generated by Collider. The package build directory the language
+            # server and every other Nucleus entry point share.
+            export NUCLEUS_SWIFTPM_SCRATCH_PATH='\(invocation.scratchPath.string)'
+            export NUCLEUS_SWIFTPM_GENERATED_MODULE_MAPS_PATH='\(invocation.generatedModuleMaps.string)'
+            """
+        try publish(
+            Data(shell.utf8),
+            to: layout.state
+                .appendingPathComponent("swiftpm", isDirectory: true)
+                .appendingPathComponent("environment.sh"))
+    }
+
+    private func publish(_ bytes: Data, to path: URL) throws {
+        guard (try? Data(contentsOf: path)) != bytes else { return }
+        try FileManager.default.createDirectory(
+            at: path.deletingLastPathComponent(),
+            withIntermediateDirectories: true)
+        try bytes.write(to: path, options: .atomic)
+    }
+
 
     /// Build the task graph, execute the selected tasks against the repository
     /// task-state root, render the report, and return it.

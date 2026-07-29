@@ -204,7 +204,7 @@ struct ToolchainCommand {
         let discoveryDirectory = homeDirectory.appendingPathComponent(
             ".swiftpm/swift-sdks", isDirectory: true)
         let discoveryLink = discoveryDirectory.appendingPathComponent(bundleName)
-        let taskSet = try SwiftPlatformColliderRecipe.generation(
+        let generationConfiguration =
             SwiftPlatformGenerationConfiguration(
                 foundation: foundation,
                 candidate: FilePath(candidate.path),
@@ -230,7 +230,12 @@ struct ToolchainCommand {
                     discoveryDirectory.appendingPathComponent(
                         ".legacy-\(bundleName)-\(generationID)").path),
                 reconfigureHost: options.reconfigure,
-                environment: environment))
+                environment: environment)
+        let taskSet = try SwiftPlatformColliderRecipe.generation(
+            generationConfiguration)
+        if !options.controls.dryRun, !options.controls.explain {
+            try reclaimSupersededAndroidBuildRoots(generationConfiguration)
+        }
         try await context.execute(
             tasks: taskSet.tasks,
             selected: taskSet.selected,
@@ -239,11 +244,25 @@ struct ToolchainCommand {
                 .shared(FilePath(
                     platformRoot.appendingPathComponent("rebuild.lock").path)),
             ])
-        if !options.controls.json,
-            !options.controls.dryRun,
-            !options.controls.explain
-        {
+        guard !options.controls.dryRun, !options.controls.explain else { return }
+        try context.reclaimSwiftBuildContexts()
+        if !options.controls.json {
             print("==> active Swift platform generation: \(generation.path)")
+        }
+    }
+
+    /// Remove the cross build roots of retired generations before configuring
+    /// this one. They describe host tools that no longer exist, and one left
+    /// inconsistent by a failed configure fails every rebuild after it, so a
+    /// rebuild that inherits nothing is a rebuild that can repair itself.
+    private func reclaimSupersededAndroidBuildRoots(
+        _ configuration: SwiftPlatformGenerationConfiguration
+    ) throws {
+        for root in SwiftPlatformColliderRecipe
+            .supersededAndroidBuildRoots(configuration)
+        where FileManager.default.fileExists(atPath: root.string) {
+            print("==> reclaiming superseded cross build root: \(root)")
+            try FileManager.default.removeItem(atPath: root.string)
         }
     }
 

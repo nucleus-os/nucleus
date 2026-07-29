@@ -1,7 +1,9 @@
+import Glibc
+import NucleusIPCTransport
 import NucleusControlProtocol
-import NucleusControlService
 import NucleusSessionProtocol
 import Testing
+@testable import NucleusControlService
 
 @Suite struct ControlRoutingTests {
     @Test func unavailableOwnersProduceStableTypedFailure() {
@@ -52,5 +54,17 @@ import Testing
                 code: owner,
                 message: "fixture").code == publicCode)
         }
+    }
+
+    @Test func closedSupervisorAttachmentTerminatesTheService() {
+        #expect(isSupervisorAttachmentClosure(
+            IPCTransportError.systemCall(
+                operation: "recvmsg", errno: ECONNRESET)))
+        #expect(isSupervisorAttachmentClosure(
+            IPCTransportError.systemCall(
+                operation: "recvmsg", errno: EPIPE)))
+        #expect(!isSupervisorAttachmentClosure(
+            IPCTransportError.systemCall(
+                operation: "recvmsg", errno: EINVAL)))
     }
 }

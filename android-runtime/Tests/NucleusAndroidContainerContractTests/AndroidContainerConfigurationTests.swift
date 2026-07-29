@@ -66,4 +66,8 @@ func containerConfigurationRunsDelegationBeforeAndroidInit() throws {
     #expect(text.contains("lxc.cgroup.dir.container = payload"))
     #expect(text.contains("lxc.cgroup.dir.container.inner = android"))
     #expect(text.contains("lxc.cgroup.dir.monitor = monitor"))
+    #expect(text.contains("lxc.cgroup2.devices.allow = c 10:229 rwm"))
+    #expect(
+        text.contains(
+            "lxc.mount.entry = /dev/fuse dev/fuse none bind,create=file 0 0"))
 }

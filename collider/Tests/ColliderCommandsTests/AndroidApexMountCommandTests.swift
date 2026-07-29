@@ -3,7 +3,7 @@ import Testing
 @testable import ColliderCommands
 
 @Test
-func frameworkBootUsesTheInternalColliderApexMountOperation() throws {
+func frameworkBootUsesTheDedicatedAndroidApexMountHelper() throws {
     let request = try AndroidApexMountRequest(
         rootFileSystem:
             "/run/nucleus/android/nucleus-framework-3970820/rootfs",
@@ -13,13 +13,15 @@ func frameworkBootUsesTheInternalColliderApexMountOperation() throws {
         payloadOffset: 4_096)
 
     let invocation = AndroidApexMountInvocation(
-        colliderExecutable: "/workspace/collider/.build/release/collider",
+        helperExecutable:
+            "/workspace/collider/.build/release/"
+            + "collider-android-privileged",
         request: request)
 
     #expect(invocation.executable == "sudo")
     #expect(invocation.arguments == [
         "--non-interactive",
-        "/workspace/collider/.build/release/collider",
+        "/workspace/collider/.build/release/collider-android-privileged",
         "__android-apex-mount",
         "--root-file-system",
         "/run/nucleus/android/nucleus-framework-3970820/rootfs",

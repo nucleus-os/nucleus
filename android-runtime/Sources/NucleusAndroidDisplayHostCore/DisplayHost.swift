@@ -1200,6 +1200,20 @@ private final class PresentationClockHandler: WpPresentationEvents {
             width: Int32(width),
             height: Int32(height))
         try toplevel.setFullscreen(output: output)
+        let opaqueRegion: WaylandProxy<WlRegionClient>
+        do {
+            opaqueRegion = try compositor.createRegion()
+            defer { try? opaqueRegion.destroy() }
+            try opaqueRegion.add(
+                x: 0,
+                y: 0,
+                width: Int32(width),
+                height: Int32(height))
+            try surface.setOpaqueRegion(region: opaqueRegion)
+        } catch {
+            throw DisplayHostError.wayland(
+                "opaque display-region creation failed")
+        }
         try surface.commit()
         guard connection.flush() >= 0 else {
             throw DisplayHostError.wayland("initial commit failed")

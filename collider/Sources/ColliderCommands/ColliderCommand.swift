@@ -4,30 +4,6 @@ import ColliderRuntime
 import FoundationEssentials
 import SystemPackage
 
-public enum ColliderPrivilegedMode: Equatable {
-    case androidApexMount
-    case androidBPFBroker
-    case androidBPFMount
-    case androidCgroupDelegate
-}
-
-public func colliderPrivilegedMode(
-    for arguments: [String]
-) -> ColliderPrivilegedMode? {
-    switch arguments.first {
-    case androidApexMountCommandName:
-        .androidApexMount
-    case androidBPFBrokerCommandName:
-        .androidBPFBroker
-    case androidBPFMountCommandName:
-        .androidBPFMount
-    case androidCgroupDelegateCommandName:
-        .androidCgroupDelegate
-    default:
-        nil
-    }
-}
-
 public struct ColliderCommand: AsyncParsableCommand {
     public static let configuration = CommandConfiguration(
         commandName: "collider",
@@ -114,27 +90,6 @@ func commandFailureStatus(
         return .interrupted
     }
     return .failed
-}
-
-public func runColliderPrivilegedMode(
-    _ mode: ColliderPrivilegedMode,
-    arguments: [String]
-) throws {
-    switch mode {
-    case .androidApexMount:
-        var command = try AndroidApexMountPrivilegedCommand.parse(arguments)
-        try command.run()
-    case .androidBPFBroker:
-        var command = try AndroidBPFBrokerPrivilegedCommand.parse(arguments)
-        try command.run()
-    case .androidBPFMount:
-        var command = try AndroidBPFMountPrivilegedCommand.parse(arguments)
-        try command.run()
-    case .androidCgroupDelegate:
-        var command = try AndroidCgroupDelegatePrivilegedCommand.parse(
-            arguments)
-        try command.run()
-    }
 }
 
 struct RunIDArgument: ExpressibleByArgument, Equatable, Sendable {
@@ -798,7 +753,7 @@ struct Cache: AsyncParsableCommand {
         }
 
         mutating func run() async throws {
-            try RepositoryCache(context: context()).prune(
+            try await RepositoryCache(context: context()).prune(
                 keepingRuns: keepRuns,
                 dryRun: dryRun,
                 json: json)

@@ -22,6 +22,7 @@ public struct RunManifest: Codable, Sendable {
     public var finishedAt: String?
     public var status: RunStatus
     public var failedTask: TaskID?
+    public var planningDurationNanoseconds: UInt64?
     public var taskDurationsNanoseconds: [String: UInt64]
     public var activeArtifacts: [String: ArtifactDigest]
     public var plannedTasks: [String: ArtifactDigest]?
@@ -35,6 +36,7 @@ public struct RunManifest: Codable, Sendable {
         finishedAt = nil
         status = .running
         failedTask = nil
+        planningDurationNanoseconds = nil
         taskDurationsNanoseconds = [:]
         activeArtifacts = [:]
         plannedTasks = nil

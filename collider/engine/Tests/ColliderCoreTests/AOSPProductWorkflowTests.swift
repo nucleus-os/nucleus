@@ -137,6 +137,71 @@ import Testing
             with: "/home/user/signing/releasekey")))
 }
 
+@Test func aospFontContractResolvesEveryConfiguredFont() throws {
+    let configurations = [
+        "SYSTEM/etc/fonts.xml": """
+            <familyset>
+              <family name="sans-serif">
+                <font weight="400">Roboto-Regular.ttf</font>
+              </family>
+              <family>
+                <font>NotoColorEmojiLegacy.ttf</font>
+              </family>
+            </familyset>
+            """,
+        "SYSTEM/etc/font_fallback.xml": """
+            <familyset>
+              <family>
+                <font>NotoColorEmoji.ttf</font>
+                <font>/product/fonts/DisplaySerif.ttf</font>
+              </family>
+            </familyset>
+            """,
+    ]
+    try validateAOSPFontContract(
+        archiveEntries: Array(configurations.keys) + [
+            "SYSTEM/fonts/Roboto-Regular.ttf",
+            "SYSTEM/fonts/NotoColorEmoji.ttf",
+            "PRODUCT/fonts/DisplaySerif.ttf",
+        ],
+        configurations: configurations)
+}
+
+@Test func aospFontContractRejectsMissingConfigurationAndAssets() {
+    let fontsXML = """
+        <familyset>
+          <family name="sans-serif">
+            <font>Roboto-Regular.ttf</font>
+          </family>
+        </familyset>
+        """
+    #expect(throws: RuntimeFailure.self) {
+        try validateAOSPFontContract(
+            archiveEntries: [
+                "SYSTEM/etc/fonts.xml",
+                "SYSTEM/fonts/Roboto-Regular.ttf",
+            ],
+            configurations: ["SYSTEM/etc/fonts.xml": fontsXML])
+    }
+
+    #expect(throws: RuntimeFailure.self) {
+        try validateAOSPFontContract(
+            archiveEntries: [
+                "SYSTEM/etc/fonts.xml",
+                "SYSTEM/etc/font_fallback.xml",
+                "SYSTEM/fonts/Roboto-Regular.ttf",
+            ],
+            configurations: [
+                "SYSTEM/etc/fonts.xml": fontsXML,
+                "SYSTEM/etc/font_fallback.xml": """
+                    <familyset>
+                      <family><font>MissingFallback.ttf</font></family>
+                    </familyset>
+                    """,
+            ])
+    }
+}
+
 @Test func aospProductStagingPreservesUnchangedFiles() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-aosp-product-stage-\(UUID().uuidString)")

@@ -2,6 +2,8 @@
 /.install
 /Tools/.build/
 /.nucleus/
+/.sourcekit-lsp/
+/out/
 /logs/
 **/.build/
 **/.rn-build/

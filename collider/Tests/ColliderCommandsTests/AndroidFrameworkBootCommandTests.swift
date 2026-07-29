@@ -137,6 +137,30 @@ func frameworkBootReportsTheFirstCausalLXCFailure() throws {
 }
 
 @Test
+func frameworkBootPrioritizesMountHookLoaderFailure() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(
+            "collider-lxc-hook-failure-\(UUID().uuidString)",
+            isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let log = directory.appendingPathComponent("lxc.log")
+    let loaderFailure =
+        "lxc-start nucleus DEBUG utils - Script produced output: "
+        + "/run/nucleus/collider-android-privileged: error while loading "
+        + "shared libraries: libExample.so: cannot open shared object file"
+    try Data((
+        "lxc-start nucleus ERROR cgfsng - Device or resource busy\n"
+            + loaderFailure + "\n"
+            + "lxc-start nucleus ERROR utils - Script exited with status 127\n"
+    ).utf8).write(to: log)
+
+    #expect(androidLXCPrimaryFailure(logFile: log) == loaderFailure)
+}
+
+@Test
 func frameworkBootFailsOnARepeatedSurfaceFlingerCrash() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-framework-health-\(UUID().uuidString)",
@@ -542,6 +566,37 @@ func frameworkBootAcceptsImagesBuiltFromTheCurrentInputs() {
         sourceManifestCommit: "manifest-commit",
         productLock: fixture.productLock,
         productTreeSHA256: "product-tree") == nil)
+}
+
+@Test
+func frameworkBootProductDigestIncludesTheRecipeOverlay() throws {
+    let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-framework-product-\(UUID().uuidString)",
+        isDirectory: true)
+    let androidRoot = repository.appendingPathComponent(
+        "android-runtime",
+        isDirectory: true)
+    let product = androidRoot.appendingPathComponent(
+        "aosp/device/nucleus/nucleus_x86_64",
+        isDirectory: true)
+    let overlay = repository.appendingPathComponent(
+        "ipc/transport/Sources/NucleusIPCTransportC",
+        isDirectory: true)
+    for path in [product, overlay] {
+        try FileManager.default.createDirectory(
+            at: path, withIntermediateDirectories: true)
+    }
+    defer { try? FileManager.default.removeItem(at: repository) }
+    try Data("product".utf8).write(
+        to: product.appendingPathComponent("device.mk"))
+    let transport = overlay.appendingPathComponent("transport.c")
+    try Data("first".utf8).write(to: transport)
+
+    let initial = try androidFrameworkProductDefinitionDigest(
+        androidRoot: androidRoot)
+    try Data("changed".utf8).write(to: transport)
+    #expect(try androidFrameworkProductDefinitionDigest(
+        androidRoot: androidRoot) != initial)
 }
 
 @Test

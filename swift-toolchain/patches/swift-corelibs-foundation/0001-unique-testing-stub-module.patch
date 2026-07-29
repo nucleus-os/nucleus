@@ -1,0 +1,34 @@
+Subject: Give Foundation's Testing stub a workspace-unique module name
+
+swift-corelibs-foundation carries a minimal Testing module solely to satisfy
+SwiftPM's generated test runner without importing the toolchain Foundation.
+In a multi-root Swift Build workspace, that private stub otherwise writes
+Testing.swiftmodule into the shared products directory and shadows the real
+toolchain Testing module for unrelated packages.
+
+Sentinel: NUCLEUS_FOUNDATION_UNIQUE_TESTING_STUB_MODULE
+
+diff --git a/Package.swift b/Package.swift
+index c0ad41358..36b97ad46 100644
+--- a/Package.swift
++++ b/Package.swift
+@@ -324,8 +324,9 @@ let package = Package(
+             ],
+             path: "Sources/XCTest"
+         ),
++        // NUCLEUS_FOUNDATION_UNIQUE_TESTING_STUB_MODULE
+         .target(
+-            name: "Testing",
++            name: "FoundationTestingStub",
+             dependencies: [],
+             path: "Sources/Testing"
+         ),
+@@ -336,7 +337,7 @@ let package = Package(
+                 "FoundationXML",
+                 "FoundationNetworking",
+                 "XCTest",
+-                "Testing",
++                "FoundationTestingStub",
+                 .target(name: "xdgTestHelper", condition: .when(platforms: [.linux, .android, .windows]))
+             ],
+             resources: [

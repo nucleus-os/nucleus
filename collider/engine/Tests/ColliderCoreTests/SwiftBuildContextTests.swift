@@ -2,8 +2,11 @@ import ColliderCore
 import SystemPackage
 import Testing
 
+private let fixturePackageRoot = FilePath("/workspace")
+
 @Test func swiftBuildContextCanonicalizesTraitsAndPreservesFlagOrder() {
     let first = SwiftBuildContext(
+        packageRoot: fixturePackageRoot,
         configuration: .debug,
         target: .host(identity: "x86_64-linux"),
         toolchainIdentity: "swiftc@fixture",
@@ -12,6 +15,7 @@ import Testing
         cFlags: ["-DC_FIRST", "-DC_SECOND"],
         cxxFlags: ["-DCXX_FIRST", "-DCXX_SECOND"])
     let equivalent = SwiftBuildContext(
+        packageRoot: fixturePackageRoot,
         configuration: .debug,
         target: .host(identity: "x86_64-linux"),
         toolchainIdentity: "swiftc@fixture",
@@ -20,6 +24,7 @@ import Testing
         cFlags: ["-DC_FIRST", "-DC_SECOND"],
         cxxFlags: ["-DCXX_FIRST", "-DCXX_SECOND"])
     let reorderedFlags = SwiftBuildContext(
+        packageRoot: fixturePackageRoot,
         configuration: .debug,
         target: .host(identity: "x86_64-linux"),
         toolchainIdentity: "swiftc@fixture",
@@ -35,6 +40,7 @@ import Testing
 
 @Test func swiftPMInvocationOwnsArgumentsOutputAndSharedLock() {
     let context = SwiftBuildContext(
+        packageRoot: fixturePackageRoot,
         configuration: .release,
         target: .triple("aarch64-unknown-linux-gnu"),
         toolchainIdentity: "swiftc@fixture",
@@ -58,6 +64,7 @@ import Testing
             "test",
             "--configuration", "release",
             "--scratch-path", scratch.string,
+            "--package-path", fixturePackageRoot.string,
             "--triple", "aarch64-unknown-linux-gnu",
             "--sanitize", "address",
             "--traits", "diagnostics,renderer",
@@ -76,20 +83,25 @@ import Testing
         invocation.lock
             == .shared(
                 scratch.appending(".collider.lock")))
-    #expect(invocation.productsRoot
-        == scratch.appending("out/Products"))
-    #expect(invocation.configurationProducts
-        == scratch.appending("out/Products/Release-linux-aarch64"))
-    #expect(invocation.generatedModuleMaps
-        == scratch.appending(
-            "out/Intermediates.noindex/GeneratedModuleMaps-linux-aarch64"))
-    #expect(invocation.executable("Fixture")
-        == scratch.appending(
-            "out/Products/Release-linux-aarch64/Fixture"))
-    #expect(invocation.generatedSwiftHeader("Fixture")
-        == scratch.appending(
-            "out/Intermediates.noindex/"
-                + "GeneratedModuleMaps-linux-aarch64/Fixture-Swift.h"))
+    #expect(
+        invocation.productsRoot
+            == scratch.appending("out/Products"))
+    #expect(
+        invocation.configurationProducts
+            == scratch.appending("out/Products/Release-linux-aarch64"))
+    #expect(
+        invocation.generatedModuleMaps
+            == scratch.appending(
+                "out/Intermediates.noindex/GeneratedModuleMaps-linux-aarch64"))
+    #expect(
+        invocation.executable("Fixture")
+            == scratch.appending(
+                "out/Products/Release-linux-aarch64/Fixture"))
+    #expect(
+        invocation.generatedSwiftHeader("Fixture")
+            == scratch.appending(
+                "out/Intermediates.noindex/"
+                    + "GeneratedModuleMaps-linux-aarch64/Fixture-Swift.h"))
     #expect(
         invocation.identityInput
             == .value(
@@ -103,6 +115,7 @@ import Testing
                 "run",
                 "--configuration", "release",
                 "--scratch-path", scratch.string,
+                "--package-path", fixturePackageRoot.string,
                 "--triple", "aarch64-unknown-linux-gnu",
                 "--sanitize", "address",
                 "--traits", "diagnostics,renderer",
@@ -117,6 +130,7 @@ import Testing
 @Test func swiftSDKContextOwnsCrossCompilationArgumentsAndProducts() {
     let invocation = SwiftPMInvocation(
         context: SwiftBuildContext(
+            packageRoot: fixturePackageRoot,
             configuration: .release,
             target: .swiftSDK(
                 name: "swift-release-6.4.x_android",
@@ -125,14 +139,18 @@ import Testing
             staticSwiftStandardLibrary: true),
         scratchPath: FilePath("/workspace/.nucleus/swiftpm/android"))
 
-    #expect(invocation.commandArguments(["build"]) == [
-        "build",
-        "--configuration", "release",
-        "--scratch-path", "/workspace/.nucleus/swiftpm/android",
-        "--swift-sdk", "swift-release-6.4.x_android",
-        "--static-swift-stdlib",
-    ])
-    #expect(invocation.configurationProducts == FilePath(
-        "/workspace/.nucleus/swiftpm/android/out/Products/"
-            + "Release-android-aarch64"))
+    #expect(
+        invocation.commandArguments(["build"]) == [
+            "build",
+            "--configuration", "release",
+            "--scratch-path", "/workspace/.nucleus/swiftpm/android",
+            "--package-path", fixturePackageRoot.string,
+            "--swift-sdk", "swift-release-6.4.x_android",
+            "--static-swift-stdlib",
+        ])
+    #expect(
+        invocation.configurationProducts
+            == FilePath(
+                "/workspace/.nucleus/swiftpm/android/out/Products/"
+                    + "Release-android-aarch64"))
 }

@@ -126,10 +126,6 @@ struct ComponentRegistry {
                 root: FilePath(layout.core.path),
                 environment: environment,
                 swiftPM: swiftPM),
-            ConfigColliderRecipe.test(
-                root: FilePath(layout.config.path),
-                environment: environment,
-                swiftPM: swiftPM),
             ReactNativeColliderRecipe.test(
                 root: FilePath(layout.reactNative.path),
                 environment: environment,
@@ -142,15 +138,19 @@ struct ComponentRegistry {
                 root: FilePath(layout.compositorApp.path),
                 environment: environment,
                 swiftPM: swiftPM),
-            ShellColliderRecipe.test(
-                root: FilePath(layout.shell.path),
-                environment: environment,
-                swiftPM: swiftPM),
             AndroidRuntimeColliderRecipe.test(
                 root: FilePath(layout.androidRuntime.path),
                 environment: environment,
                 swiftPM: swiftPM),
-        ] + IPCColliderRecipe.tests(
+        ] + ConfigColliderRecipe.tests(
+            root: FilePath(layout.config.path),
+            environment: environment,
+            swiftPM: swiftPM
+        ) + ShellColliderRecipe.tests(
+            root: FilePath(layout.shell.path),
+            environment: environment,
+            swiftPM: swiftPM
+        ) + IPCColliderRecipe.tests(
             root: FilePath(layout.ipc.path),
             environment: environment,
             swiftPM: swiftPM

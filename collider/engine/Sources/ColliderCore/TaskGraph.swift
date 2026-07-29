@@ -408,7 +408,6 @@ public struct DirectoryPublication: Hashable, Sendable {
 public struct DirectoryRetentionRule: Hashable, Sendable {
     public enum Naming: String, Hashable, Sendable {
         case contentIdentity
-        case colliderRun
         case swiftBuildContext
         case aospProduct
     }
@@ -904,6 +903,7 @@ public struct AptPackageValidation: Hashable, Sendable {
 public enum TaskOperation: Hashable, Sendable {
     case applyGitPatch(GitPatchApplication)
     case command(CommandSpec)
+    case runSwiftTest(SwiftTestExecution)
     case configureMeson(MesonSetup)
     case createDirectory(FilePath)
     case copyFile(source: FilePath, destination: FilePath)
@@ -948,6 +948,24 @@ public enum TaskOperation: Hashable, Sendable {
     indirect case sequence([TaskOperation])
 }
 
+public struct SwiftTestExecution: Hashable, Sendable {
+    public let invocation: SwiftPMInvocation
+    public let package: String
+    public let testProduct: String
+    public let packageRoot: FilePath
+    public let environment: [String: String]
+    public let arguments: [String]
+
+    public init(requirement: SwiftTestRequirement) {
+        invocation = requirement.invocation
+        package = requirement.package
+        testProduct = requirement.testProduct
+        packageRoot = requirement.packageRoot
+        environment = requirement.environment
+        arguments = requirement.arguments
+    }
+}
+
 public enum TaskLock: Hashable, Sendable {
     case checkout(String)
     case shared(FilePath)
@@ -962,6 +980,13 @@ public struct TaskDeclaration: Hashable, Sendable {
     public let id: TaskID
     public let component: ComponentID
     public let dependencies: [TaskID]
+    /// Direct dependency operations that this task's operation performs as a
+    /// strict superset. Their identities still participate in this task's
+    /// identity, but the runtime may omit their redundant operations when this
+    /// task is dirty and selected.
+    public let subsumedDependencies: [TaskID]
+    public let swiftProducts: [SwiftProductRequirement]
+    public let swiftTests: [SwiftTestRequirement]
     public let inputs: [ArtifactInput]
     public let outputs: [OutputDeclaration]
     public let postconditions: [PathPostcondition]
@@ -973,6 +998,9 @@ public struct TaskDeclaration: Hashable, Sendable {
         id: TaskID,
         component: ComponentID,
         dependencies: [TaskID] = [],
+        subsumedDependencies: [TaskID] = [],
+        swiftProducts: [SwiftProductRequirement] = [],
+        swiftTests: [SwiftTestRequirement] = [],
         inputs: [ArtifactInput] = [],
         outputs: [OutputDeclaration] = [],
         postconditions: [PathPostcondition] = [],
@@ -983,6 +1011,9 @@ public struct TaskDeclaration: Hashable, Sendable {
         self.id = id
         self.component = component
         self.dependencies = dependencies
+        self.subsumedDependencies = subsumedDependencies
+        self.swiftProducts = swiftProducts
+        self.swiftTests = swiftTests
         self.inputs = inputs
         self.outputs = outputs
         self.postconditions = postconditions
@@ -1000,6 +1031,9 @@ public struct TaskDeclaration: Hashable, Sendable {
             dependencies: dependencies + additionalDependencies.filter {
                 !dependencies.contains($0)
             },
+            subsumedDependencies: subsumedDependencies,
+            swiftProducts: swiftProducts,
+            swiftTests: swiftTests,
             inputs: inputs,
             outputs: outputs,
             postconditions: postconditions,
@@ -1012,6 +1046,7 @@ public struct TaskDeclaration: Hashable, Sendable {
 public enum TaskGraphFailure: Error, CustomStringConvertible, Sendable {
     case duplicate(TaskID)
     case missing(task: TaskID, dependency: TaskID)
+    case invalidSubsumption(task: TaskID, dependency: TaskID)
     case cycle([TaskID])
 
     public var description: String {
@@ -1019,6 +1054,8 @@ public enum TaskGraphFailure: Error, CustomStringConvertible, Sendable {
         case .duplicate(let id): "duplicate task identifier '\(id)'"
         case .missing(let task, let dependency):
             "task '\(task)' has missing dependency '\(dependency)'"
+        case .invalidSubsumption(let task, let dependency):
+            "task '\(task)' cannot subsume non-dependency '\(dependency)'"
         case .cycle(let path):
             "task dependency cycle: " + path.map(\.rawValue).joined(separator: " -> ")
         }
@@ -1038,6 +1075,13 @@ public struct TaskGraph: Sendable {
         for declaration in declarations {
             for dependency in declaration.dependencies where tasks[dependency] == nil {
                 throw TaskGraphFailure.missing(task: declaration.id, dependency: dependency)
+            }
+            for dependency in declaration.subsumedDependencies
+            where !declaration.dependencies.contains(dependency)
+            {
+                throw TaskGraphFailure.invalidSubsumption(
+                    task: declaration.id,
+                    dependency: dependency)
             }
         }
         self.tasks = tasks

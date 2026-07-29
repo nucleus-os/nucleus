@@ -1,6 +1,25 @@
 import ColliderCore
 import Foundation
+import FoundationXML
 import SystemPackage
+
+public func aospProductDefinitionDigest(
+    productSource: FilePath,
+    sourceOverlays: [AOSPProductSourceOverlay]
+) throws -> ArtifactDigest {
+    var framing = Data()
+    framing.append(contentsOf: try ArtifactHasher.digest(
+        tree: productSource).bytes)
+    for overlay in sourceOverlays.sorted(by: {
+        $0.relativeDestination < $1.relativeDestination
+    }) {
+        framing.append(contentsOf: overlay.relativeDestination.utf8)
+        framing.append(0)
+        framing.append(contentsOf: try ArtifactHasher.digest(
+            tree: overlay.source).bytes)
+    }
+    return ArtifactHasher.digest(bytes: framing)
+}
 
 extension ColliderRuntime {
     func prepareAOSPBuildContainer(
@@ -243,7 +262,9 @@ extension ColliderRuntime {
                 "current AOSP project revisions do not match signed-build "
                     + "source provenance")
         }
-        let productDigest = try aospProductSourceDigest(build)
+        let productDigest = try aospProductDefinitionDigest(
+            productSource: build.productSource,
+            sourceOverlays: build.sourceOverlays)
         try stageAOSPProduct(build, digest: productDigest)
 
         let output = build.buildRoot.appending("out")
@@ -571,7 +592,9 @@ extension ColliderRuntime {
             AOSPBuildSourceProvenance.self,
             from: Data(contentsOf: URL(
                 fileURLWithPath: build.sourceProvenance.string)))
-        let productDigest = try aospProductSourceDigest(build)
+        let productDigest = try aospProductDefinitionDigest(
+            productSource: build.productSource,
+            sourceOverlays: build.sourceOverlays)
         let output = build.buildRoot.appending("out")
         let staged = build.buildRoot.appending("staged")
         let hostTools = output.appending("host/linux-x86/bin")
@@ -637,6 +660,10 @@ extension ColliderRuntime {
             stage: stage)
         let systemProperties = aospProperties(systemBuildProperties)
         let vendorProperties = aospProperties(vendorBuildProperties)
+        try await requireAOSPFontContract(
+            archive: signedTargetCandidate,
+            environment: environment,
+            stage: stage)
         guard systemProperties["ro.build.version.sdk"]
             == String(build.expectedPlatformSDK)
         else {
@@ -898,23 +925,6 @@ extension ColliderRuntime {
             to: stageMetadata)
     }
 
-    private func aospProductSourceDigest(
-        _ build: AOSPProductBuild
-    ) throws -> ArtifactDigest {
-        var framing = Data()
-        framing.append(contentsOf: try ArtifactHasher.digest(
-            tree: build.productSource).bytes)
-        for overlay in build.sourceOverlays.sorted(by: {
-            $0.relativeDestination < $1.relativeDestination
-        }) {
-            framing.append(contentsOf: overlay.relativeDestination.utf8)
-            framing.append(0)
-            framing.append(contentsOf: try ArtifactHasher.digest(
-                tree: overlay.source).bytes)
-        }
-        return ArtifactHasher.digest(bytes: framing)
-    }
-
     private func requireAOSPReleaseSigning(
         archive: FilePath,
         signingIdentity: FilePath,
@@ -1122,6 +1132,40 @@ extension ColliderRuntime {
             stage: stage)
     }
 
+    private func requireAOSPFontContract(
+        archive: FilePath,
+        environment: [String: String],
+        stage: TaskID
+    ) async throws {
+        let entries = try await capturedAOSPProductCommand(
+            .named("unzip"),
+            ["-Z1", archive.string],
+            in: archive.removingLastComponent(),
+            environment: environment,
+            stage: stage)
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+        let requiredConfigurations = [
+            "SYSTEM/etc/fonts.xml",
+            "SYSTEM/etc/font_fallback.xml",
+        ]
+        for path in requiredConfigurations where !entries.contains(path) {
+            throw RuntimeFailure.invalidOutput(
+                "signed Android font contract is missing \(path)")
+        }
+        var configurations: [String: String] = [:]
+        for path in requiredConfigurations {
+            configurations[path] = try await capturedAOSPArchiveEntry(
+                archive: archive,
+                candidates: [path],
+                environment: environment,
+                stage: stage)
+        }
+        try validateAOSPFontContract(
+            archiveEntries: entries,
+            configurations: configurations)
+    }
+
     private func aospProductPackages(
         under directory: FilePath
     ) throws -> [FilePath] {
@@ -1232,6 +1276,106 @@ extension ColliderRuntime {
 
 private let aospContainerReleaseKey = "/keys/releasekey"
 private let aospContainerReleasePEM = "\(aospContainerReleaseKey).pem"
+
+private final class AOSPFontReferenceParser: NSObject, XMLParserDelegate {
+    private(set) var references: Set<String> = []
+    private var fontText: String?
+
+    func parser(
+        _: XMLParser,
+        didStartElement elementName: String,
+        namespaceURI _: String?,
+        qualifiedName _: String?,
+        attributes _: [String: String] = [:]
+    ) {
+        if elementName == "font" {
+            fontText = ""
+        }
+    }
+
+    func parser(_: XMLParser, foundCharacters string: String) {
+        if fontText != nil {
+            fontText?.append(string)
+        }
+    }
+
+    func parser(
+        _: XMLParser,
+        didEndElement elementName: String,
+        namespaceURI _: String?,
+        qualifiedName _: String?
+    ) {
+        guard elementName == "font", let fontText else { return }
+        let reference = fontText.trimmingCharacters(
+            in: .whitespacesAndNewlines)
+        if !reference.isEmpty {
+            references.insert(reference)
+        }
+        self.fontText = nil
+    }
+}
+
+func validateAOSPFontContract(
+    archiveEntries: [String],
+    configurations: [String: String]
+) throws {
+    let requiredConfigurations = [
+        "SYSTEM/etc/fonts.xml",
+        "SYSTEM/etc/font_fallback.xml",
+    ]
+    let entries = Set(archiveEntries)
+    var referencesByConfiguration: [String: Set<String>] = [:]
+    for path in requiredConfigurations {
+        guard entries.contains(path), let contents = configurations[path] else {
+            throw RuntimeFailure.invalidOutput(
+                "signed Android font contract is missing \(path)")
+        }
+        let parser = XMLParser(data: Data(contents.utf8))
+        let delegate = AOSPFontReferenceParser()
+        parser.delegate = delegate
+        guard parser.parse() else {
+            throw RuntimeFailure.invalidOutput(
+                "signed Android font configuration \(path) is invalid: "
+                    + (parser.parserError?.localizedDescription
+                        ?? "XML parsing failed"))
+        }
+        referencesByConfiguration[path] = delegate.references
+    }
+    guard referencesByConfiguration["SYSTEM/etc/fonts.xml"]?
+        .contains("Roboto-Regular.ttf") == true
+    else {
+        throw RuntimeFailure.invalidOutput(
+            "signed Android font contract has no Roboto default family")
+    }
+
+    // fonts.xml is Android's deprecated compatibility view and can retain
+    // names removed or renamed by release flags. font_fallback.xml is generated
+    // for the selected release and is the authoritative runtime font map.
+    let references =
+        referencesByConfiguration["SYSTEM/etc/font_fallback.xml"] ?? []
+    let fontRoots = ["SYSTEM", "PRODUCT", "SYSTEM_EXT", "VENDOR"]
+    let missing = references.filter { reference in
+        guard !reference.contains("..") else { return true }
+        if reference.hasPrefix("/") {
+            let components = reference.dropFirst().split(
+                separator: "/",
+                omittingEmptySubsequences: true)
+            guard let partition = components.first else { return true }
+            let archivePath = ([partition.uppercased()]
+                + components.dropFirst().map(String.init))
+                .joined(separator: "/")
+            return !entries.contains(archivePath)
+        }
+        return !fontRoots.contains { root in
+            entries.contains("\(root)/fonts/\(reference)")
+        }
+    }
+    guard missing.isEmpty else {
+        throw RuntimeFailure.invalidOutput(
+            "signed Android font configurations reference missing fonts: "
+                + missing.sorted().joined(separator: ", "))
+    }
+}
 
 func aospReleaseSigningMetadataUsesContainerKeys(
     _ metadata: String

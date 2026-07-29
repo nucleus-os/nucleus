@@ -30,16 +30,18 @@ extension RuntimeSanitizer {
         switch self {
         case .address:
             [
-                "ASAN_OPTIONS": "detect_leaks=1:halt_on_error=1:abort_on_error=1:strict_string_checks=1",
+                "ASAN_OPTIONS":
+                    "detect_leaks=1:halt_on_error=1:abort_on_error=1:strict_string_checks=1",
                 "LSAN_OPTIONS": "exitcode=23:report_objects=1:use_unaligned=0",
             ]
         case .undefined:
             [
-                "UBSAN_OPTIONS": "halt_on_error=1:abort_on_error=1:print_stacktrace=1",
+                "UBSAN_OPTIONS": "halt_on_error=1:abort_on_error=1:print_stacktrace=1"
             ]
         case .thread:
             [
-                "TSAN_OPTIONS": "halt_on_error=1:abort_on_error=1:history_size=7:second_deadlock_stack=1",
+                "TSAN_OPTIONS":
+                    "halt_on_error=1:abort_on_error=1:history_size=7:second_deadlock_stack=1"
             ]
         }
     }
@@ -63,19 +65,16 @@ struct SanitizerCommand {
 
         let id: String
         let package: String
-        let packagePath: String?
         let prerequisiteTargets: [String]
         let workload: Workload
 
         init(
             id: String,
             package: String,
-            packagePath: String?,
             suite: String
         ) {
             self.id = id
             self.package = package
-            self.packagePath = packagePath
             self.prerequisiteTargets = []
             self.workload = .test(suite: suite)
         }
@@ -83,13 +82,11 @@ struct SanitizerCommand {
         init(
             id: String,
             package: String,
-            packagePath: String? = nil,
             prerequisiteTargets: [String] = [],
             executable: String
         ) {
             self.id = id
             self.package = package
-            self.packagePath = packagePath
             self.prerequisiteTargets = prerequisiteTargets
             self.workload = .executable(product: executable)
         }
@@ -114,60 +111,54 @@ struct SanitizerCommand {
             [
                 Invocation(
                     id: "wayland-resource-failure", package: "swift-wayland",
-                    packagePath: nil, suite: "WaylandResourceOwnershipTests"),
+                    suite: "WaylandResourceOwnershipTests"),
                 Invocation(
-                    id: "core-runtime-graph", package: "core", packagePath: nil,
+                    id: "core-runtime-graph", package: "core",
                     suite: "NucleusRuntimeGraphTests"),
                 Invocation(
-                    id: "core-publication-lifetime", package: "core", packagePath: nil,
+                    id: "core-publication-lifetime", package: "core",
                     suite: "ViewPublicationAuthorityTests"),
                 Invocation(
-                    id: "linux-dbus", package: "platform-linux", packagePath: nil,
+                    id: "linux-dbus", package: "platform-linux",
                     suite: "DBusConnectionTests"),
                 Invocation(
                     id: "linux-accessibility-wire", package: "platform-linux",
-                    packagePath: "desktop", suite: "AtSPIWireBoundaryTests"),
+                    suite: "AtSPIWireBoundaryTests"),
                 Invocation(
                     id: "compositor-wayland-lifetime", package: "compositor",
-                    packagePath: "compositor-core",
                     suite: "WaylandProtocolConformanceTests"),
                 Invocation(
                     id: "compositor-seat-open-failure", package: "compositor",
-                    packagePath: "compositor-core",
                     suite: "SeatSessionOwnershipTests"),
                 Invocation(
                     id: "compositor-drm-lifecycle", package: "compositor",
-                    packagePath: "compositor-core",
                     suite: "RendererRetirementCoordinatorTests"),
                 Invocation(
                     id: "shell-transfer-lifetime",
                     package: "integration-tests/window-client-conformance",
-                    packagePath: nil,
                     suite: "NucleusPlatformTransportStressTests"),
                 Invocation(
-                    id: "rn-host-lifecycle", package: "react-native", packagePath: nil,
+                    id: "rn-host-lifecycle", package: "react-native",
                     suite: "FabricRuntimeTests"),
             ]
         case .undefined:
             [
                 Invocation(
-                    id: "core-boundaries", package: "core", packagePath: nil,
+                    id: "core-boundaries", package: "core",
                     suite: "NucleusVulkanDmaBufTests"),
                 Invocation(
-                    id: "core-pixel-boundaries", package: "core", packagePath: nil,
+                    id: "core-pixel-boundaries", package: "core",
                     suite: "RawPixelBufferTests"),
                 Invocation(
                     id: "linux-accessibility-numeric-boundaries",
-                    package: "platform-linux", packagePath: "desktop",
+                    package: "platform-linux",
                     suite: "AtSPIWireBoundaryTests"),
                 Invocation(
                     id: "compositor-layout-boundaries", package: "compositor",
-                    packagePath: "compositor-core",
                     suite: "DmabufLayoutValidatorTests"),
                 Invocation(
                     id: "shell-wire-boundaries",
                     package: "integration-tests/window-client-conformance",
-                    packagePath: nil,
                     suite: "NucleusDesktopTextInputWireTests"),
             ]
         case .thread:
@@ -188,7 +179,6 @@ struct SanitizerCommand {
                 // under TSan before the selected suite can be evaluated.
                 Invocation(
                     id: "compositor-callbacks", package: "compositor",
-                    packagePath: "compositor-core",
                     executable:
                         "NucleusRenderServerThreadSanitizerHarness"),
                 Invocation(
@@ -207,17 +197,14 @@ struct SanitizerCommand {
         sanitizer: RuntimeSanitizer,
         seed: String
     ) async throws {
-        let packageDirectory = context.repository(invocation.package)
+        let packageDirectory = context.root
         let swiftPM = try context.swiftPMInvocation(
             sanitizer: sanitizer.rawValue,
             linkerFlags: sanitizer == .undefined ? ["-lubsan"] : [])
-        var commonArguments: [String] = []
+        let commonArguments: [String] = []
         // SwiftPM instruments every product in the package graph. Its Linux
         // UBSan link invocation does not add the runtime for unrelated C++
         // executable products, so make that runtime explicit for every link.
-        if let packagePath = invocation.packagePath {
-            commonArguments += ["--package-path", packagePath]
-        }
 
         var environment = context.environment
         for (key, value) in sanitizer.runtimeEnvironment {
@@ -233,9 +220,7 @@ struct SanitizerCommand {
         let instrumentedContext = WorkspaceContext(
             root: context.root,
             environment: environment)
-        let packageIdentity = invocation.packagePath.map {
-            invocation.package + "/" + $0
-        } ?? invocation.package
+        let packageIdentity = invocation.package
         let options = sanitizer.runtimeEnvironment
             .map { "\($0.key)=\($0.value)" }.sorted().joined(separator: " ")
         print(
@@ -273,8 +258,9 @@ struct SanitizerCommand {
                     environmentOverrides: swiftPM.commandEnvironment(environment))
                 let executable = URL(
                     fileURLWithPath: swiftPM.executable(product).string)
-                guard FileManager.default.isExecutableFile(
-                    atPath: executable.path)
+                guard
+                    FileManager.default.isExecutableFile(
+                        atPath: executable.path)
                 else {
                     throw WorkspaceFailure.message(
                         "sanitizer executable is missing: \(executable.path)")

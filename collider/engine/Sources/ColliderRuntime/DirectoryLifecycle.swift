@@ -123,8 +123,6 @@ public enum DirectoryLifecycle {
         }
         let pattern = switch rule.naming {
         case .contentIdentity: #"^[0-9a-f]{24}$"#
-        case .colliderRun:
-            #"^[0-9]{8}T[0-9]{6}\.[0-9]+Z-[0-9]+-(doctor|bootstrap|build|test|install)$"#
         case .swiftBuildContext:
             #"^sha256-[0-9a-f]{64}$"#
         case .aospProduct:

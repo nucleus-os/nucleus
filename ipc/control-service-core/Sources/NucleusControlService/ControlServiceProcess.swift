@@ -31,6 +31,12 @@ private struct PendingRequest {
     let deadlineNanoseconds: UInt64
 }
 
+func isSupervisorAttachmentClosure(_ error: Error) -> Bool {
+    guard case .systemCall(_, let code) = error as? IPCTransportError
+    else { return false }
+    return code == ECONNRESET || code == EPIPE
+}
+
 @MainActor
 private final class ControlServiceProcess {
     private static let maximumRequestBytes = 64 * 1024
@@ -164,13 +170,19 @@ private final class ControlServiceProcess {
                 let result = LinuxPollResult(
                     returnedEvents: event.returnedEvents)
                 if result.isReadable {
-                    processAttachment()
+                    guard processAttachment() else {
+                        await reactor.shutdown()
+                        return 0
+                    }
+                } else if result.isTerminal {
+                    await reactor.shutdown()
+                    return 0
                 }
             }
         }
     }
 
-    private func processAttachment() {
+    private func processAttachment() -> Bool {
         do {
             let attachment = try attachments.receive()
             switch attachment.role {
@@ -195,8 +207,12 @@ private final class ControlServiceProcess {
                     "configuration subscriber sent to control service")
             }
         } catch {
+            if isSupervisorAttachmentClosure(error) {
+                return false
+            }
             diagnostic("supervisor attachment failed: \(error)")
         }
+        return true
     }
 
     private func acceptClients() {
