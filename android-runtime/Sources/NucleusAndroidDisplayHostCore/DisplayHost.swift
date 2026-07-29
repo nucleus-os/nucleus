@@ -813,6 +813,7 @@ private final class PresentationClockHandler: WpPresentationEvents {
     private var nextPresentPoint: UInt64 = 1
     private var deferredFailure: DisplayHostError?
     private var presentationDiagnosticBudget = 16
+    private var discardedPresentationCount: UInt64 = 0
     private var pendingBufferReleases:
         [UInt64: (frameNumber: UInt64, committed: ContinuousClock.Instant)] = [:]
     private var presentationFeedback:
@@ -1420,16 +1421,19 @@ private final class PresentationClockHandler: WpPresentationEvents {
                 "signaling discarded Composer present fence")
             return
         }
-        let diagnostic =
-            "{\"component\":\"nucleus-android-display-host\","
-            + "\"stage\":\"presentation.discarded\","
-            + "\"frameNumber\":\(entry.frameNumber),"
-            + "\"presentPoint\":\(entry.presentPoint)}\n"
-        FileHandle.standardError.write(
-            Data(diagnostic.utf8))
-        deferredFailure = .wayland(
-            "physical presentation discarded for Composer3 frame "
-                + "\(entry.frameNumber)")
+        discardedPresentationCount &+= 1
+        if discardedPresentationCount == 1
+            || discardedPresentationCount.isMultiple(of: 120)
+        {
+            let diagnostic =
+                "{\"component\":\"nucleus-android-display-host\","
+                + "\"stage\":\"presentation.discarded\","
+                + "\"frameNumber\":\(entry.frameNumber),"
+                + "\"presentPoint\":\(entry.presentPoint),"
+                + "\"discardedCount\":\(discardedPresentationCount)}\n"
+            FileHandle.standardError.write(
+                Data(diagnostic.utf8))
+        }
     }
     func configureBounds(
         _ proxy: WaylandBorrowedProxy<XdgToplevelClient>,

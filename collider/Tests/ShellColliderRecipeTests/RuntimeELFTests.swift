@@ -81,6 +81,7 @@ import Testing
         type: .regular,
         ownerExecutable: true)
     },
+    contentsEqual: { _, _ in false },
     createDirectory: { _ in },
     copy: { _, _ in },
     setPermissions: { _, _ in },
@@ -136,6 +137,7 @@ import Testing
     metadata: { _ in
       ActionFileSystem.Metadata(type: .regular, ownerExecutable: true)
     },
+    contentsEqual: { _, _ in false },
     createDirectory: { _ in },
     copy: { source, destination in
       recording.withLock {
@@ -152,6 +154,12 @@ import Testing
       $0.commands.append((executable, command.arguments))
     }
     if executable == "ldd" {
+      if command.arguments == ["/runtime/lib/libswiftCore.so"] {
+        return CommandResult(
+          status: 0,
+          standardOutput:
+            "libswiftCore.so => /runtime/lib/libswiftCore.so (0x1)\n")
+      }
       return CommandResult(
         status: 0,
         standardOutput:
@@ -173,6 +181,41 @@ import Testing
   })
   #expect(result.commands.filter { $0.0 == "patchelf" }.count == 8)
   #expect(result.commands.filter { $0.0 == "strip" }.count == 8)
+}
+
+@Test func stagingActionRejectsDifferentLibrariesWithTheSameBasename() async {
+  let lddInvocation = Mutex(0)
+  let files = ActionFileSystem(
+    metadata: { _ in
+      ActionFileSystem.Metadata(type: .regular, ownerExecutable: true)
+    },
+    contentsEqual: { _, _ in false },
+    createDirectory: { _ in },
+    copy: { _, _ in },
+    setPermissions: { _, _ in },
+    write: { _, _ in })
+  let context = ActionContext(files: files) { command in
+    guard case .named("ldd") = command.executable else {
+      return CommandResult(status: 0)
+    }
+    let invocation = lddInvocation.withLock {
+      $0 += 1
+      return $0
+    }
+    let root = invocation == 1 ? "/toolchain-a" : "/toolchain-b"
+    return CommandResult(
+      status: 0,
+      standardOutput:
+        "libswiftCore.so => \(root)/libswiftCore.so (0x1)\n")
+  }
+
+  await #expect(throws: RuntimeELFFailure.self) {
+    try await StageRuntimeELFAction(
+      products: FilePath("/products"),
+      prefix: FilePath("/runtime"),
+      environment: [:]
+    ).execute(in: context)
+  }
 }
 
 private func validInspections() -> [String: RuntimeELFInspection] {

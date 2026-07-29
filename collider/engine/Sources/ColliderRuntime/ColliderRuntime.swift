@@ -156,6 +156,15 @@ public actor ColliderRuntime {
                     type: fileType,
                     ownerExecutable: permissions & 0o100 != 0)
             },
+            contentsEqual: { first, second in
+                let firstResolved = URL(fileURLWithPath: first.string)
+                    .resolvingSymlinksInPath().path
+                let secondResolved = URL(fileURLWithPath: second.string)
+                    .resolvingSymlinksInPath().path
+                return FileManager.default.contentsEqual(
+                    atPath: firstResolved,
+                    andPath: secondResolved)
+            },
             createDirectory: { path in
                 try FileManager.default.createDirectory(
                     atPath: path.string,

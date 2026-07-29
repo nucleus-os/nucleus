@@ -94,6 +94,8 @@ public struct ActionFileSystem: Sendable {
   }
 
   private let metadataBody: @Sendable (FilePath) throws -> Metadata?
+  private let contentsEqualBody:
+    @Sendable (FilePath, FilePath) throws -> Bool
   private let createDirectoryBody: @Sendable (FilePath) throws -> Void
   private let copyBody: @Sendable (FilePath, FilePath) throws -> Void
   private let setPermissionsBody: @Sendable (FilePath, UInt16) throws -> Void
@@ -101,12 +103,15 @@ public struct ActionFileSystem: Sendable {
 
   public init(
     metadata: @escaping @Sendable (FilePath) throws -> Metadata?,
+    contentsEqual:
+      @escaping @Sendable (FilePath, FilePath) throws -> Bool,
     createDirectory: @escaping @Sendable (FilePath) throws -> Void,
     copy: @escaping @Sendable (FilePath, FilePath) throws -> Void,
     setPermissions: @escaping @Sendable (FilePath, UInt16) throws -> Void,
     write: @escaping @Sendable ([UInt8], FilePath) throws -> Void
   ) {
     metadataBody = metadata
+    contentsEqualBody = contentsEqual
     createDirectoryBody = createDirectory
     copyBody = copy
     setPermissionsBody = setPermissions
@@ -115,6 +120,13 @@ public struct ActionFileSystem: Sendable {
 
   public func metadata(for path: FilePath) throws -> Metadata? {
     try metadataBody(path)
+  }
+
+  public func contentsEqual(
+    at first: FilePath,
+    and second: FilePath
+  ) throws -> Bool {
+    try contentsEqualBody(first, second)
   }
 
   public func createDirectory(_ path: FilePath) throws {

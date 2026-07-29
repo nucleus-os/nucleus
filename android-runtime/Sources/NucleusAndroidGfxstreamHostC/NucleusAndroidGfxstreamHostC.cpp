@@ -288,6 +288,7 @@ nucleus_android_gfxstream_host_renderer_create(
     enable(&features.VulkanQueueSubmitWithCommands);
     enable(&features.VulkanShaderFloat16Int8);
     enable(&features.VulkanEnsureCachedCoherentMemoryAvailable);
+    enable(&features.VulkanUseDedicatedAhbMemoryType);
     enable(&features.VulkanExternalSync);
     enable(&features.ExternalBlob);
     enable(&features.SystemBlob);

@@ -78,8 +78,15 @@ public struct StageRuntimeELFAction: ColliderAction {
       for dependency in parseLDDResolvedPaths(output)
       where !RuntimeELFLayout.isSystemLibrary(dependency) {
         let name = dependency.lastComponent?.string ?? dependency.string
+        let destination = prefix.appending("lib").appending(name)
         if let existing = copiedDependencies[name] {
-          guard existing == dependency else {
+          if dependency == destination || existing == dependency {
+            continue
+          }
+          guard try context.files.contentsEqual(
+            at: existing,
+            and: dependency)
+          else {
             throw RuntimeELFFailure(
               "dynamic dependency basename collision for \(name): "
                 + "\(existing) and \(dependency)")
@@ -87,7 +94,6 @@ public struct StageRuntimeELFAction: ColliderAction {
           continue
         }
         try requireRegularFile(dependency, files: context.files)
-        let destination = prefix.appending("lib").appending(name)
         try context.files.copy(from: dependency, to: destination)
         try context.files.setPermissions(0o755, for: destination)
         copiedDependencies[name] = dependency

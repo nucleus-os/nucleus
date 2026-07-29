@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
@@ -50,6 +51,20 @@ constexpr uint32_t kFirstColorBufferHandle = 1;
 constexpr uint32_t kNativeBufferWidth = 1280;
 constexpr uint32_t kNativeBufferHeight = 720;
 constexpr int kCompletionTimeoutMilliseconds = 10000;
+constexpr std::array<float, 4> kDeferredNativeBufferColor = {
+    0.18f,
+    0.36f,
+    0.82f,
+    1.0f,
+};
+constexpr std::array<std::array<float, 4>, 6> kFrameColors = {{
+    {0.92f, 0.12f, 0.18f, 1.0f},
+    {0.08f, 0.78f, 0.32f, 1.0f},
+    {0.07f, 0.42f, 0.94f, 1.0f},
+    {0.96f, 0.62f, 0.08f, 1.0f},
+    {0.58f, 0.16f, 0.90f, 1.0f},
+    {0.04f, 0.78f, 0.84f, 1.0f},
+}};
 
 void traceStage(const char *stage) {
     std::fprintf(
@@ -77,6 +92,28 @@ void traceBufferStage(
         stage,
         colorBufferHandle,
         static_cast<unsigned long long>(point),
+        width,
+        height);
+    std::fflush(stderr);
+}
+
+void traceContentValidation(
+    const char *importPath,
+    uint32_t colorBufferHandle,
+    uint32_t width,
+    uint32_t height,
+    bool valid) {
+    std::fprintf(
+        stderr,
+        "{\"component\":\"nucleus-android-gfxstream-workload\","
+        "\"stage\":\"content-validation.%s\","
+        "\"importPath\":\"%s\","
+        "\"colorBufferHandle\":%u,"
+        "\"width\":%u,"
+        "\"height\":%u}\n",
+        valid ? "complete" : "failed",
+        importPath,
+        colorBufferHandle,
         width,
         height);
     std::fflush(stderr);
@@ -1274,6 +1311,7 @@ class GuestWorkload {
         uint64_t modifier,
         uint32_t planeOffset,
         uint32_t planeStride,
+        VkFormat format,
         const std::array<float, 4> &clearColor,
         bool deferredAndroidNativeBuffer = false) {
         const std::size_t resourceIndex = mResources.size();
@@ -1312,7 +1350,7 @@ class GuestWorkload {
                 : &externalInfo,
             .flags = 0,
             .imageType = VK_IMAGE_TYPE_2D,
-            .format = VK_FORMAT_B8G8R8A8_UNORM,
+            .format = format,
             .extent = {
                 .width = width,
                 .height = height,
@@ -1850,6 +1888,7 @@ void verifyGuestImportFailure(
             reference.modifier(),
             reference.plane().offset,
             reference.plane().stride,
+            VK_FORMAT_R8G8B8A8_UNORM,
             {0.0f, 0.0f, 0.0f, 1.0f});
     } catch (const std::exception &) {
         rejected = true;
@@ -1900,14 +1939,6 @@ void createGuestResources(
     GuestWorkload &guest,
     BufferGeneration &generation,
     uint32_t paletteOffset) {
-    constexpr std::array<std::array<float, 4>, 6> colors = {{
-        {0.92f, 0.12f, 0.18f, 1.0f},
-        {0.08f, 0.78f, 0.32f, 1.0f},
-        {0.07f, 0.42f, 0.94f, 1.0f},
-        {0.96f, 0.62f, 0.08f, 1.0f},
-        {0.58f, 0.16f, 0.90f, 1.0f},
-        {0.04f, 0.78f, 0.84f, 1.0f},
-    }};
     for (std::size_t index = 0; index < generation.size(); ++index) {
         auto &slot = *generation[index];
         slot.guestResourceIndex =
@@ -1918,14 +1949,99 @@ void createGuestResources(
                 slot.modifier(),
                 slot.plane().offset,
                 slot.plane().stride,
-                colors[(paletteOffset + index) % colors.size()]);
+                VK_FORMAT_R8G8B8A8_UNORM,
+                kFrameColors[
+                    (paletteOffset + index) % kFrameColors.size()]);
     }
+}
+
+std::array<uint8_t, 4> encodedClearColor(
+    const std::array<float, 4> &clearColor) {
+    std::array<uint8_t, 4> encoded = {};
+    for (std::size_t channel = 0; channel < encoded.size(); ++channel) {
+        encoded[channel] = static_cast<uint8_t>(
+            std::lround(
+                std::clamp(clearColor[channel], 0.0f, 1.0f) *
+                255.0f));
+    }
+    return encoded;
+}
+
+std::string validateColorBufferContent(
+    nucleus_android_gfxstream_host_renderer *renderer,
+    const BufferSlot &slot,
+    uint32_t drmFormat,
+    const std::array<float, 4> &clearColor,
+    const char *importPath) {
+    constexpr int kChannelTolerance = 2;
+    const std::size_t pixelCount =
+        static_cast<std::size_t>(slot.width()) *
+        static_cast<std::size_t>(slot.height());
+    std::vector<uint8_t> pixels(pixelCount * 4);
+    if (nucleus_android_gfxstream_host_read_color_buffer(
+            renderer,
+            slot.colorBufferHandle(),
+            drmFormat,
+            slot.width(),
+            slot.height(),
+            pixels.data(),
+            pixels.size()) != 0) {
+        traceContentValidation(
+            importPath,
+            slot.colorBufferHandle(),
+            slot.width(),
+            slot.height(),
+            false);
+        return std::string(importPath) +
+            " host readback failed for color buffer " +
+            std::to_string(slot.colorBufferHandle());
+    }
+
+    const auto expected = encodedClearColor(clearColor);
+    for (std::size_t pixel = 0; pixel < pixelCount; ++pixel) {
+        for (std::size_t channel = 0; channel < expected.size(); ++channel) {
+            const uint8_t actual = pixels[pixel * 4 + channel];
+            if (std::abs(
+                    static_cast<int>(actual) -
+                    static_cast<int>(expected[channel])) <=
+                kChannelTolerance) {
+                continue;
+            }
+            traceContentValidation(
+                importPath,
+                slot.colorBufferHandle(),
+                slot.width(),
+                slot.height(),
+                false);
+            const std::size_t x = pixel % slot.width();
+            const std::size_t y = pixel / slot.width();
+            return std::string(importPath) +
+                " pixel mismatch for color buffer " +
+                std::to_string(slot.colorBufferHandle()) +
+                " at (" + std::to_string(x) + "," +
+                std::to_string(y) + "), channel " +
+                std::to_string(channel) + ": expected " +
+                std::to_string(expected[channel]) + ", observed " +
+                std::to_string(actual);
+        }
+    }
+    traceContentValidation(
+        importPath,
+        slot.colorBufferHandle(),
+        slot.width(),
+        slot.height(),
+        true);
+    return {};
 }
 
 void runBufferGeneration(
     GuestWorkload &guest,
     BufferGeneration &generation,
-    const char *renderPath) {
+    nucleus_android_gfxstream_host_renderer *renderer,
+    uint32_t drmFormat,
+    uint32_t paletteOffset,
+    const char *renderPath,
+    std::vector<std::string> &contentValidationFailures) {
     if (generation.size() != kBufferCount) {
         throw std::runtime_error(
             "the workload did not create a three-buffer generation");
@@ -1967,6 +2083,19 @@ void runBufferGeneration(
                 expectedCallbacks) {
             throw std::runtime_error(
                 "sustained buffer reuse did not traverse both sync callbacks");
+        }
+    }
+    for (std::size_t index = 0; index < generation.size(); ++index) {
+        const std::string failure =
+            validateColorBufferContent(
+                renderer,
+                *generation[index],
+                drmFormat,
+                kFrameColors[
+                    (paletteOffset + index) % kFrameColors.size()],
+                "explicit-dma-buf");
+        if (!failure.empty()) {
+            contentValidationFailures.push_back(failure);
         }
     }
 }
@@ -2430,7 +2559,7 @@ int main(int argc, char **argv) {
         traceStage("host.create-renderer.complete");
 
         const uint32_t format =
-            nucleus_android_drm_format_xrgb8888();
+            nucleus_android_drm_format_abgr8888();
         traceStage("failure-paths.broker-capability.begin");
         verifyBrokerCapabilityFailure(gpu.get(), format);
         traceStage("failure-paths.broker-capability.complete");
@@ -2442,7 +2571,7 @@ int main(int argc, char **argv) {
                 0);
         if (modifierCount <= 0) {
             throw std::runtime_error(
-                "the selected GPU exposes no XRGB8888 modifiers");
+                "the selected GPU exposes no ABGR8888 modifiers");
         }
         std::vector<nucleus_android_format_modifier_properties>
             modifiers(static_cast<std::size_t>(modifierCount));
@@ -2514,6 +2643,7 @@ int main(int argc, char **argv) {
         }
 
         std::string guestDeviceName;
+        std::vector<std::string> contentValidationFailures;
         try {
             {
                 traceStage("guest.workload-construction.begin");
@@ -2539,10 +2669,22 @@ int main(int argc, char **argv) {
                         nativeBuffer->modifier(),
                         nativeBuffer->plane().offset,
                         nativeBuffer->plane().stride,
-                        {0.18f, 0.36f, 0.82f, 1.0f},
+                        VK_FORMAT_R8G8B8A8_UNORM,
+                        kDeferredNativeBufferColor,
                         true);
                 guest.submit(nativeResource);
                 guest.waitIdle();
+                const std::string nativeBufferFailure =
+                    validateColorBufferContent(
+                        renderer.get(),
+                        *nativeBuffer,
+                        format,
+                        kDeferredNativeBufferColor,
+                        "android-native-buffer");
+                if (!nativeBufferFailure.empty()) {
+                    contentValidationFailures.push_back(
+                        nativeBufferFailure);
+                }
                 guest.destroyResources();
                 nativeBuffer.reset();
                 traceStage("guest.deferred-native-buffer.complete");
@@ -2556,7 +2698,11 @@ int main(int argc, char **argv) {
                 runBufferGeneration(
                     guest,
                     buffers,
-                    candidate->render_path);
+                    renderer.get(),
+                    format,
+                    0,
+                    candidate->render_path,
+                    contentValidationFailures);
                 traceStage("guest.resize-reallocation.begin");
                 guest.destroyResources();
                 buffers.clear();
@@ -2575,7 +2721,11 @@ int main(int argc, char **argv) {
                 runBufferGeneration(
                     guest,
                     buffers,
-                    candidate->render_path);
+                    renderer.get(),
+                    format,
+                    kBufferCount,
+                    candidate->render_path,
+                    contentValidationFailures);
                 traceStage("guest.resize-reallocation.complete");
                 traceStage("guest.submit-workload.complete");
                 traceStage("guest.workload-destruction.begin");
@@ -2597,6 +2747,14 @@ int main(int argc, char **argv) {
         connection.stop();
         if (connection.failed()) {
             throw std::runtime_error(connection.error());
+        }
+        if (!contentValidationFailures.empty()) {
+            std::string detail =
+                "guest Vulkan content validation failed";
+            for (const auto &failure : contentValidationFailures) {
+                detail += "; " + failure;
+            }
+            throw std::runtime_error(detail);
         }
         const uint64_t backpressureEvents =
             connection.backpressureEvents();
@@ -2647,6 +2805,8 @@ int main(int argc, char **argv) {
             "\"unsupportedCapabilityFailures\":true,"
             "\"guestImportColorBuffer\":true,"
             "\"deferredAndroidNativeBuffer\":true,"
+            "\"explicitDmaBufPixelValidation\":true,"
+            "\"androidNativeBufferPixelValidation\":true,"
             "\"liveRingDecoder\":true,"
             "\"releaseSyncFileWait\":true,"
             "\"acquireSyncFileSignal\":true,"

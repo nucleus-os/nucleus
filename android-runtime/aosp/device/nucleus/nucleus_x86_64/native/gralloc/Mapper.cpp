@@ -199,10 +199,10 @@ class NucleusMapper final : public vendor::mapper::IMapperV5Impl {
             static_cast<uint64_t>(BufferUsage::CPU_WRITE_MASK);
         uint32_t access = 0;
         if ((cpuUsage & readMask) != 0) {
-            access |= NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_READ;
+            access |= NUCLEUS_GRALLOC_CPU_ACCESS_READ;
         }
         if ((cpuUsage & writeMask) != 0) {
-            access |= NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_WRITE;
+            access |= NUCLEUS_GRALLOC_CPU_ACCESS_WRITE;
         }
         if (handle == nullptr || access == 0) {
             return AIMAPPER_ERROR_BAD_VALUE;
@@ -274,12 +274,12 @@ class NucleusMapper final : public vendor::mapper::IMapperV5Impl {
 
     AIMapper_Error flushLockedBuffer(buffer_handle_t buffer) override {
         return synchronize(
-            buffer, NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_WRITE);
+            buffer, NUCLEUS_GRALLOC_CPU_ACCESS_WRITE);
     }
 
     AIMapper_Error rereadLockedBuffer(buffer_handle_t buffer) override {
         return synchronize(
-            buffer, NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_READ);
+            buffer, NUCLEUS_GRALLOC_CPU_ACCESS_READ);
     }
 
     int32_t getMetadata(

@@ -13,11 +13,16 @@ namespace {
 
 constexpr const char *kBrokerSocket = "/dev/nucleus/gfxstream.sock";
 
+static_assert(
+    static_cast<uint32_t>(NUCLEUS_GRALLOC_CPU_ACCESS_READ) ==
+    static_cast<uint32_t>(NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_READ));
+static_assert(
+    static_cast<uint32_t>(NUCLEUS_GRALLOC_CPU_ACCESS_WRITE) ==
+    static_cast<uint32_t>(NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_WRITE));
+
 int transact(
     const nucleus_android_gfxstream_socket_message &request,
     nucleus_android_gfxstream_socket_message *response,
-    const int *requestDescriptors,
-    size_t requestDescriptorCount,
     int *responseDescriptors,
     size_t responseDescriptorCount) {
     const int socket = nucleus_ipc_connect(kBrokerSocket);
@@ -25,11 +30,7 @@ int transact(
         return -errno;
     }
     if (nucleus_ipc_send(
-            socket,
-            &request,
-            sizeof(request),
-            requestDescriptors,
-            requestDescriptorCount) < 0) {
+            socket, &request, sizeof(request), nullptr, 0) < 0) {
         const int result = -errno;
         close(socket);
         return result;
@@ -79,8 +80,6 @@ native_handle_t *nucleus_gralloc_broker_allocate(
     if (transact(
             request,
             &response,
-            nullptr,
-            0,
             descriptors,
             NUCLEUS_GRALLOC_HANDLE_FDS) < 0) {
         return nullptr;
@@ -127,10 +126,10 @@ int nucleus_gralloc_broker_lock(
     uint32_t access,
     nucleus_gralloc_cpu_mapping *mapping) {
     if (mapping == nullptr ||
-        (access & (NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_READ |
-                   NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_WRITE)) == 0 ||
-        (access & ~(NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_READ |
-                    NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_WRITE)) != 0) {
+        (access & (NUCLEUS_GRALLOC_CPU_ACCESS_READ |
+                   NUCLEUS_GRALLOC_CPU_ACCESS_WRITE)) == 0 ||
+        (access & ~(NUCLEUS_GRALLOC_CPU_ACCESS_READ |
+                    NUCLEUS_GRALLOC_CPU_ACCESS_WRITE)) != 0) {
         return -EINVAL;
     }
     nucleus_android_gfxstream_socket_message request = {};
@@ -144,8 +143,6 @@ int nucleus_gralloc_broker_lock(
     const int result = transact(
         request,
         &response,
-        nullptr,
-        0,
         descriptors,
         2);
     if (result < 0) {
@@ -187,12 +184,9 @@ int nucleus_gralloc_broker_unlock(
     request.cpu_mapping_size = mapping.size;
     request.cpu_access = mapping.access;
     nucleus_android_gfxstream_socket_message response = {};
-    const int descriptor = mapping.staging_fd;
     const int result = transact(
         request,
         &response,
-        &descriptor,
-        1,
         nullptr,
         0);
     if (result < 0) {
@@ -210,8 +204,8 @@ int nucleus_gralloc_broker_sync(
     uint32_t access) {
     if (mapping.staging_fd < 0 || mapping.lifetime_fd < 0 ||
         mapping.lock_id == 0 || mapping.size == 0 ||
-        (access != NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_READ &&
-         access != NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_WRITE) ||
+        (access != NUCLEUS_GRALLOC_CPU_ACCESS_READ &&
+         access != NUCLEUS_GRALLOC_CPU_ACCESS_WRITE) ||
         (mapping.access & access) == 0) {
         return -EINVAL;
     }
@@ -224,12 +218,9 @@ int nucleus_gralloc_broker_sync(
     request.cpu_mapping_size = mapping.size;
     request.cpu_access = access;
     nucleus_android_gfxstream_socket_message response = {};
-    const int descriptor = mapping.staging_fd;
     const int result = transact(
         request,
         &response,
-        &descriptor,
-        1,
         nullptr,
         0);
     if (result < 0) {

@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <drm/drm_fourcc.h>
+#include <fcntl.h>
 #include <linux/memfd.h>
 #include <poll.h>
 #include <signal.h>
@@ -56,14 +57,25 @@ struct BrokerStatistics {
     std::atomic<uint64_t> vulkanSemaphoreExports = 0;
     std::atomic<uint64_t> vulkanQsriExports = 0;
     std::atomic<uint64_t> vulkanQsriSignals = 0;
+    std::atomic<uint64_t> cpuLocksOpened = 0;
+    std::atomic<uint64_t> cpuLocksClosed = 0;
+    std::atomic<uint64_t> cpuReadbacks = 0;
+    std::atomic<uint64_t> cpuUploads = 0;
+    std::atomic<uint64_t> cpuSyncs = 0;
+    std::atomic<uint64_t> cpuOperationFailures = 0;
     std::atomic<uint64_t> vulkanFenceExportMaxMicroseconds = 0;
     std::atomic<uint64_t> vulkanFenceWaitMaxMicroseconds = 0;
     std::atomic<uint64_t> vulkanSemaphoreExportMaxMicroseconds = 0;
     std::atomic<uint64_t> vulkanQsriExportMaxMicroseconds = 0;
     std::atomic<uint64_t> vulkanQsriWaitMaxMicroseconds = 0;
+    std::atomic<uint64_t> cpuReadbackMaxMicroseconds = 0;
+    std::atomic<uint64_t> cpuUploadMaxMicroseconds = 0;
     std::atomic<uint32_t> bufferDiagnosticBudget = 8;
     std::atomic_flag loggedFirstQsriExport = ATOMIC_FLAG_INIT;
     std::atomic_flag loggedFirstQsriSignal = ATOMIC_FLAG_INIT;
+    std::atomic_flag loggedFirstCpuLock = ATOMIC_FLAG_INIT;
+    std::atomic_flag loggedFirstCpuReadback = ATOMIC_FLAG_INIT;
+    std::atomic_flag loggedFirstCpuUpload = ATOMIC_FLAG_INIT;
 };
 
 BrokerStatistics statistics;
@@ -348,6 +360,40 @@ void traceHostMemory(
         status);
 }
 
+void traceCpuTransfer(
+    const char *stage,
+    uint64_t allocationIdentifier,
+    uint64_t cpuLockIdentifier,
+    uint32_t peerPID,
+    uint32_t access,
+    uint64_t size,
+    int status,
+    uint64_t durationMicroseconds = 0,
+    bool firstSuccess = false) {
+    if (status != 0) {
+        statistics.cpuOperationFailures.fetch_add(
+            1, std::memory_order_relaxed);
+    }
+    if (status == 0 &&
+        durationMicroseconds < slowOperationMicroseconds &&
+        !firstSuccess) {
+        return;
+    }
+    writeLog(
+        "{\"component\":\"nucleus-android-gfxstream-broker\","
+        "\"stage\":\"%s\",\"allocationId\":%llu,\"cpuLockId\":%llu,"
+        "\"peerPid\":%u,\"access\":%u,\"size\":%llu,\"status\":%d,"
+        "\"durationMicroseconds\":%llu}\n",
+        stage,
+        static_cast<unsigned long long>(allocationIdentifier),
+        static_cast<unsigned long long>(cpuLockIdentifier),
+        peerPID,
+        access,
+        static_cast<unsigned long long>(size),
+        status,
+        static_cast<unsigned long long>(durationMicroseconds));
+}
+
 void traceVulkanFence(
     const char *stage,
     uint64_t deviceHandle,
@@ -480,11 +526,16 @@ void traceStatistics() {
         "\"hostMemoryExports\":%llu,\"vulkanFenceExports\":%llu,"
         "\"vulkanSemaphoreExports\":%llu,\"vulkanQsriExports\":%llu,"
         "\"vulkanQsriSignals\":%llu,"
+        "\"cpuLocksOpened\":%llu,\"cpuLocksClosed\":%llu,"
+        "\"cpuReadbacks\":%llu,\"cpuUploads\":%llu,\"cpuSyncs\":%llu,"
+        "\"cpuOperationFailures\":%llu,"
         "\"vulkanFenceExportMaxMicroseconds\":%llu,"
         "\"vulkanFenceWaitMaxMicroseconds\":%llu,"
         "\"vulkanSemaphoreExportMaxMicroseconds\":%llu,"
         "\"vulkanQsriExportMaxMicroseconds\":%llu,"
-        "\"vulkanQsriWaitMaxMicroseconds\":%llu}\n",
+        "\"vulkanQsriWaitMaxMicroseconds\":%llu,"
+        "\"cpuReadbackMaxMicroseconds\":%llu,"
+        "\"cpuUploadMaxMicroseconds\":%llu}\n",
         static_cast<unsigned long long>(
             statistics.connectionsOpened.load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(
@@ -505,6 +556,18 @@ void traceStatistics() {
         static_cast<unsigned long long>(
             statistics.vulkanQsriSignals.load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(
+            statistics.cpuLocksOpened.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            statistics.cpuLocksClosed.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            statistics.cpuReadbacks.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            statistics.cpuUploads.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            statistics.cpuSyncs.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            statistics.cpuOperationFailures.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
             statistics.vulkanFenceExportMaxMicroseconds.load(
                 std::memory_order_relaxed)),
         static_cast<unsigned long long>(
@@ -518,6 +581,12 @@ void traceStatistics() {
                 std::memory_order_relaxed)),
         static_cast<unsigned long long>(
             statistics.vulkanQsriWaitMaxMicroseconds.load(
+                std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            statistics.cpuReadbackMaxMicroseconds.load(
+                std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            statistics.cpuUploadMaxMicroseconds.load(
                 std::memory_order_relaxed)));
 }
 
@@ -1032,6 +1101,7 @@ struct CpuLock {
         uint32_t accessValue,
         uint64_t sizeValue,
         uint32_t strideValue,
+        int stagingDescriptorValue,
         int lifetimeDescriptorValue)
         : identifier(identifierValue),
           allocationIdentifier(allocationIdentifierValue),
@@ -1039,6 +1109,7 @@ struct CpuLock {
           access(accessValue),
           size(sizeValue),
           stride(strideValue),
+          stagingDescriptor(stagingDescriptorValue),
           lifetimeDescriptor(lifetimeDescriptorValue) {}
     CpuLock(const CpuLock &) = delete;
     CpuLock &operator=(const CpuLock &) = delete;
@@ -1049,9 +1120,13 @@ struct CpuLock {
     uint32_t access;
     uint64_t size;
     uint32_t stride;
+    int stagingDescriptor;
     int lifetimeDescriptor;
 
     ~CpuLock() {
+        if (stagingDescriptor >= 0) {
+            close(stagingDescriptor);
+        }
         if (lifetimeDescriptor >= 0) {
             close(lifetimeDescriptor);
         }
@@ -1081,11 +1156,20 @@ int createCpuStaging(uint64_t size) {
     const int descriptor = static_cast<int>(syscall(
         SYS_memfd_create,
         "nucleus-gralloc-cpu",
-        MFD_CLOEXEC));
+        MFD_CLOEXEC | MFD_ALLOW_SEALING));
     if (descriptor < 0) {
         return -1;
     }
     if (ftruncate(descriptor, static_cast<off_t>(size)) < 0) {
+        const int savedErrno = errno;
+        close(descriptor);
+        errno = savedErrno;
+        return -1;
+    }
+    if (fcntl(
+            descriptor,
+            F_ADD_SEALS,
+            F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL) < 0) {
         const int savedErrno = errno;
         close(descriptor);
         errno = savedErrno;
@@ -1301,6 +1385,8 @@ int main(int argc, char **argv) {
                          lock != cpuLocks.end();) {
                         if (lock->second->allocationIdentifier ==
                             found->first) {
+                            statistics.cpuLocksClosed.fetch_add(
+                                1, std::memory_order_relaxed);
                             lock = cpuLocks.erase(lock);
                         } else {
                             ++lock;
@@ -1311,6 +1397,8 @@ int main(int argc, char **argv) {
                 const auto foundCpuLock =
                     cpuLocks.find(pollCpuLocks[index]);
                 if (foundCpuLock != cpuLocks.end()) {
+                    statistics.cpuLocksClosed.fetch_add(
+                        1, std::memory_order_relaxed);
                     cpuLocks.erase(foundCpuLock);
                 }
             }
@@ -1331,14 +1419,13 @@ int main(int argc, char **argv) {
         }
         struct nucleus_ipc_peer_credentials credentials = {};
         nucleus_android_gfxstream_socket_message request = {};
-        int requestDescriptors[1] = {-1};
         size_t receivedDescriptors = 0;
         const int received = nucleus_ipc_receive(
             peer,
             &request,
             sizeof(request),
-            requestDescriptors,
-            1,
+            nullptr,
+            0,
             &receivedDescriptors);
         const int credentialsResult =
             nucleus_ipc_peer_credentials(peer, &credentials);
@@ -1347,22 +1434,14 @@ int main(int argc, char **argv) {
             credentials.pid > 0 &&
             static_cast<uint64_t>(credentials.uid) >= uidRangeStart &&
             static_cast<uint64_t>(credentials.uid) < uidRangeEnd;
-        const bool operationTakesDescriptor =
-            request.operation == NUCLEUS_ANDROID_GFXSTREAM_UNLOCK_BUFFER ||
-            request.operation == NUCLEUS_ANDROID_GFXSTREAM_SYNC_BUFFER;
-        const size_t expectedRequestDescriptors =
-            operationTakesDescriptor ? 1 : 0;
         if (!peerUIDAuthorized ||
             received != static_cast<int>(sizeof(request)) ||
-            receivedDescriptors != expectedRequestDescriptors ||
+            receivedDescriptors != 0 ||
             request.magic != NUCLEUS_ANDROID_GFXSTREAM_SOCKET_MAGIC ||
             request.version != NUCLEUS_ANDROID_GFXSTREAM_SOCKET_VERSION ||
             request.operation < NUCLEUS_ANDROID_GFXSTREAM_OPEN_STREAM ||
             request.operation >
                 NUCLEUS_ANDROID_GFXSTREAM_SYNC_BUFFER) {
-            if (requestDescriptors[0] >= 0) {
-                close(requestDescriptors[0]);
-            }
             (void)sendResponse(peer, -EPERM, emptyDescriptors());
             close(peer);
             trace("peer.rejected", std::to_string(credentials.uid));
@@ -1425,18 +1504,38 @@ int main(int argc, char **argv) {
                     if (stagingDescriptor < 0 || pixels == MAP_FAILED) {
                         response.status = -errno;
                     } else {
+                        const auto readbackBegan = MonotonicClock::now();
                         response.status =
-                            (request.cpu_access &
-                             NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_READ) != 0
-                            ? nucleus_android_gfxstream_host_read_color_buffer(
+                            nucleus_android_gfxstream_host_read_color_buffer(
                                 renderer.get(),
                                 buffer.colorBufferHandle,
                                 buffer.request.drm_format,
                                 buffer.request.width,
                                 buffer.request.height,
                                 pixels,
-                                size)
-                            : 0;
+                                size);
+                        const uint64_t duration =
+                            elapsedMicroseconds(readbackBegan);
+                        if (response.status == 0) {
+                            statistics.cpuReadbacks.fetch_add(
+                                1, std::memory_order_relaxed);
+                            recordMaximum(
+                                statistics.cpuReadbackMaxMicroseconds,
+                                duration);
+                        }
+                        traceCpuTransfer(
+                            "cpu-readback.completed",
+                            request.allocation_id,
+                            0,
+                            static_cast<uint32_t>(credentials.pid),
+                            request.cpu_access,
+                            size,
+                            response.status,
+                            duration,
+                            response.status == 0 &&
+                                !statistics.loggedFirstCpuReadback
+                                    .test_and_set(
+                                        std::memory_order_relaxed));
                         munmap(pixels, static_cast<size_t>(size));
                     }
                     if (response.status == 0 &&
@@ -1474,7 +1573,22 @@ int main(int argc, char **argv) {
                         request.cpu_access,
                         response.cpu_mapping_size,
                         response.cpu_stride,
+                        stagingDescriptor,
                         lifetimeDescriptors[0]));
+                statistics.cpuLocksOpened.fetch_add(
+                    1, std::memory_order_relaxed);
+                traceCpuTransfer(
+                    "cpu-lock.opened",
+                    request.allocation_id,
+                    response.cpu_lock_id,
+                    static_cast<uint32_t>(credentials.pid),
+                    request.cpu_access,
+                    response.cpu_mapping_size,
+                    0,
+                    0,
+                    !statistics.loggedFirstCpuLock.test_and_set(
+                        std::memory_order_relaxed));
+                stagingDescriptor = -1;
                 lifetimeDescriptors[0] = -1;
             } else if (response.status == 0) {
                 response.status = -sendErrno;
@@ -1490,7 +1604,14 @@ int main(int argc, char **argv) {
             }
             close(peer);
             if (response.status != 0) {
-                trace("cpu-lock.failed", std::to_string(response.status));
+                traceCpuTransfer(
+                    "cpu-lock.failed",
+                    request.allocation_id,
+                    response.cpu_lock_id,
+                    static_cast<uint32_t>(credentials.pid),
+                    request.cpu_access,
+                    response.cpu_mapping_size,
+                    response.status);
             }
             continue;
         }
@@ -1510,16 +1631,18 @@ int main(int argc, char **argv) {
             const bool unlock =
                 request.operation ==
                 NUCLEUS_ANDROID_GFXSTREAM_UNLOCK_BUFFER;
-            if (lock == cpuLocks.end() ||
-                allocation == allocations.end() ||
-                lock->second->allocationIdentifier !=
-                    request.allocation_id ||
-                lock->second->peerPID !=
-                    static_cast<uint32_t>(credentials.pid) ||
-                lock->second->size != request.cpu_mapping_size ||
-                !validateCpuStaging(
-                    requestDescriptors[0],
-                    request.cpu_mapping_size)) {
+            const bool lockValid =
+                lock != cpuLocks.end() &&
+                allocation != allocations.end() &&
+                lock->second->allocationIdentifier ==
+                    request.allocation_id &&
+                lock->second->peerPID ==
+                    static_cast<uint32_t>(credentials.pid) &&
+                lock->second->size == request.cpu_mapping_size &&
+                validateCpuStaging(
+                    lock->second->stagingDescriptor,
+                    request.cpu_mapping_size);
+            if (!lockValid) {
                 response.status = -EINVAL;
             } else {
                 const uint32_t access = unlock
@@ -1539,7 +1662,7 @@ int main(int argc, char **argv) {
                         static_cast<size_t>(lock->second->size),
                         PROT_READ | PROT_WRITE,
                         MAP_SHARED,
-                        requestDescriptors[0],
+                        lock->second->stagingDescriptor,
                         0);
                     if (pixels == MAP_FAILED) {
                         response.status = -errno;
@@ -1548,6 +1671,8 @@ int main(int argc, char **argv) {
                         if (!unlock &&
                             access ==
                             NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_READ) {
+                            const auto readbackBegan =
+                                MonotonicClock::now();
                             response.status =
                                 nucleus_android_gfxstream_host_read_color_buffer(
                                     renderer.get(),
@@ -1557,9 +1682,33 @@ int main(int argc, char **argv) {
                                     buffer.request.height,
                                     pixels,
                                     lock->second->size);
+                            const uint64_t duration =
+                                elapsedMicroseconds(readbackBegan);
+                            if (response.status == 0) {
+                                statistics.cpuReadbacks.fetch_add(
+                                    1, std::memory_order_relaxed);
+                                recordMaximum(
+                                    statistics.cpuReadbackMaxMicroseconds,
+                                    duration);
+                            }
+                            traceCpuTransfer(
+                                "cpu-readback.completed",
+                                request.allocation_id,
+                                request.cpu_lock_id,
+                                static_cast<uint32_t>(credentials.pid),
+                                access,
+                                lock->second->size,
+                                response.status,
+                                duration,
+                                response.status == 0 &&
+                                    !statistics.loggedFirstCpuReadback
+                                        .test_and_set(
+                                            std::memory_order_relaxed));
                         } else if (
                             (access &
                              NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_WRITE) != 0) {
+                            const auto uploadBegan =
+                                MonotonicClock::now();
                             response.status =
                                 nucleus_android_gfxstream_host_update_color_buffer(
                                     renderer.get(),
@@ -1569,6 +1718,28 @@ int main(int argc, char **argv) {
                                     buffer.request.height,
                                     pixels,
                                     lock->second->size);
+                            const uint64_t duration =
+                                elapsedMicroseconds(uploadBegan);
+                            if (response.status == 0) {
+                                statistics.cpuUploads.fetch_add(
+                                    1, std::memory_order_relaxed);
+                                recordMaximum(
+                                    statistics.cpuUploadMaxMicroseconds,
+                                    duration);
+                            }
+                            traceCpuTransfer(
+                                "cpu-upload.completed",
+                                request.allocation_id,
+                                request.cpu_lock_id,
+                                static_cast<uint32_t>(credentials.pid),
+                                access,
+                                lock->second->size,
+                                response.status,
+                                duration,
+                                response.status == 0 &&
+                                    !statistics.loggedFirstCpuUpload
+                                        .test_and_set(
+                                            std::memory_order_relaxed));
                         } else {
                             response.status = 0;
                         }
@@ -1578,17 +1749,26 @@ int main(int argc, char **argv) {
                     }
                 }
             }
-            close(requestDescriptors[0]);
-            requestDescriptors[0] = -1;
-            if (unlock && lock != cpuLocks.end()) {
+            if (unlock && lockValid) {
+                statistics.cpuLocksClosed.fetch_add(
+                    1, std::memory_order_relaxed);
                 cpuLocks.erase(lock);
+            }
+            if (!unlock && response.status == 0) {
+                statistics.cpuSyncs.fetch_add(
+                    1, std::memory_order_relaxed);
             }
             (void)sendControlResponse(peer, response);
             close(peer);
             if (response.status != 0) {
-                trace(
+                traceCpuTransfer(
                     unlock ? "cpu-unlock.failed" : "cpu-sync.failed",
-                    std::to_string(response.status));
+                    request.allocation_id,
+                    request.cpu_lock_id,
+                    static_cast<uint32_t>(credentials.pid),
+                    request.cpu_access,
+                    request.cpu_mapping_size,
+                    response.status);
             }
             continue;
         }
@@ -2154,6 +2334,8 @@ int main(int argc, char **argv) {
     }
     stopping.store(true, std::memory_order_release);
     endpoints.clear();
+    statistics.cpuLocksClosed.fetch_add(
+        cpuLocks.size(), std::memory_order_relaxed);
     cpuLocks.clear();
     allocations.clear();
     close(endpointCompletionDescriptor);

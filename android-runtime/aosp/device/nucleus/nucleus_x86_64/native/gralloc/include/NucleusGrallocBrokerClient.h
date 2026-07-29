@@ -5,6 +5,11 @@
 
 #include "NucleusGrallocHandle.h"
 
+enum nucleus_gralloc_cpu_access : uint32_t {
+    NUCLEUS_GRALLOC_CPU_ACCESS_READ = 1u << 0,
+    NUCLEUS_GRALLOC_CPU_ACCESS_WRITE = 1u << 1,
+};
+
 struct nucleus_gralloc_cpu_mapping {
     int32_t staging_fd;
     int32_t lifetime_fd;
