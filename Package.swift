@@ -182,6 +182,7 @@ let hostTargets: [Target] = [
         path: "android-runtime/Sources/NucleusAndroidProcessLifecycleC",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -190,6 +191,7 @@ let hostTargets: [Target] = [
         path: "android-runtime/aosp/device/nucleus/nucleus_x86_64/native/composer-protocol",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -198,6 +200,7 @@ let hostTargets: [Target] = [
         path: "android-runtime/aosp/device/nucleus/nucleus_x86_64/native/shared-ring",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -206,6 +209,7 @@ let hostTargets: [Target] = [
         path: "android-runtime/Sources/NucleusAndroidGfxstreamWorkerProtocolC",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -220,6 +224,7 @@ let hostTargets: [Target] = [
             ])
         ],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -235,6 +240,7 @@ let hostTargets: [Target] = [
             ])
         ],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ], linkerSettings: [.linkedLibrary("dl")]),
@@ -250,6 +256,7 @@ let hostTargets: [Target] = [
             ])
         ],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -268,6 +275,7 @@ let hostTargets: [Target] = [
             ])
         ],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ],
@@ -282,6 +290,7 @@ let hostTargets: [Target] = [
         name: "NucleusAndroidDrmC", path: "android-runtime/Sources/NucleusAndroidDrmC",
         cSettings: [.unsafeFlags(["-I/usr/include/libdrm"]), .unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ], linkerSettings: [.unsafeFlags(["-ldrm", "-lgbm", "-lvulkan"])]),
@@ -290,6 +299,7 @@ let hostTargets: [Target] = [
         path: "android-runtime/Sources/NucleusAndroidGraphicsContract",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -300,6 +310,7 @@ let hostTargets: [Target] = [
         ], path: "android-runtime/Sources/NucleusAndroidIPC",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -308,6 +319,7 @@ let hostTargets: [Target] = [
         path: "android-runtime/Sources/NucleusAndroidGfxstreamTransport",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -317,6 +329,7 @@ let hostTargets: [Target] = [
         path: "android-runtime/Sources/NucleusAndroidGraphicsPlatform",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -327,6 +340,7 @@ let hostTargets: [Target] = [
         ], path: "android-runtime/Sources/NucleusAndroidGpuBrokerCore",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -335,6 +349,7 @@ let hostTargets: [Target] = [
         path: "android-runtime/Sources/NucleusAndroidContainerContract",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -350,6 +365,7 @@ let hostTargets: [Target] = [
         ], path: "android-runtime/Sources/NucleusAndroidGpuBroker",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -359,6 +375,7 @@ let hostTargets: [Target] = [
         path: "android-runtime/Sources/NucleusAndroidGfxstreamHostProbe",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -380,6 +397,7 @@ let hostTargets: [Target] = [
             ]),
         ],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ], linkerSettings: [.linkedLibrary("dl"), .linkedLibrary("pthread")]),
@@ -393,6 +411,7 @@ let hostTargets: [Target] = [
         ], path: "android-runtime/Sources/NucleusAndroidGfxstreamBroker",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ],
@@ -433,6 +452,7 @@ let hostTargets: [Target] = [
         path: "android-runtime/Sources/NucleusAndroidSharedRingStress",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -489,6 +509,7 @@ let hostTargets: [Target] = [
         path: "android-runtime/Tests/NucleusAndroidGraphicsContractTests",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -498,6 +519,7 @@ let hostTargets: [Target] = [
         path: "android-runtime/Tests/NucleusAndroidContainerContractTests",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -507,6 +529,7 @@ let hostTargets: [Target] = [
         path: "android-runtime/Tests/NucleusAndroidIPCTests",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -516,6 +539,7 @@ let hostTargets: [Target] = [
         path: "android-runtime/Tests/NucleusAndroidGfxstreamTransportTests",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -525,6 +549,7 @@ let hostTargets: [Target] = [
         path: "android-runtime/Tests/NucleusAndroidGfxstreamAdaptersTests",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -536,6 +561,7 @@ let hostTargets: [Target] = [
         ], path: "android-runtime/Tests/NucleusAndroidGraphicsPlatformTests",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -544,6 +570,7 @@ let hostTargets: [Target] = [
         path: "android-runtime/Tests/Support/NucleusAndroidDrmCTestSupport",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -555,6 +582,7 @@ let hostTargets: [Target] = [
         ], path: "android-runtime/SanitizerHarnesses/NucleusAndroidThreadSanitizerHarness",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -566,6 +594,7 @@ let hostTargets: [Target] = [
         ], path: "android-runtime/Tests/NucleusAndroidGpuBrokerCoreTests",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -598,6 +627,7 @@ let hostTargets: [Target] = [
         path: "compositor/compositor-core/Sources/NucleusCompositorServerTypes",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -617,6 +647,7 @@ let hostTargets: [Target] = [
         path: "compositor/compositor-core/Sources/NucleusCompositorSignalC",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -625,6 +656,7 @@ let hostTargets: [Target] = [
         path: "compositor/compositor-core/Sources/NucleusCompositorRenderSession",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -632,6 +664,7 @@ let hostTargets: [Target] = [
         name: "WaylandWireTestC", path: "compositor/compositor-core/Tests/WaylandWireTestC",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -646,6 +679,7 @@ let hostTargets: [Target] = [
         ], path: "compositor/compositor-core/Sources/NucleusCompositorServer",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -675,6 +709,7 @@ let hostTargets: [Target] = [
         ], path: "compositor/compositor-core/Sources/NucleusCompositorWindowScene",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -873,6 +908,7 @@ let hostTargets: [Target] = [
         path: "compositor/compositor-core/Tests/NucleusCompositorRenderSessionTests",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -958,6 +994,7 @@ let hostTargets: [Target] = [
         path: "compositor/compositor-core/Tests/NucleusCompositorServerTests",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1041,6 +1078,7 @@ let hostTargets: [Target] = [
         ], path: "compositor/compositor-core/Tests/NucleusCompositorWindowSceneTests",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1059,6 +1097,7 @@ let hostTargets: [Target] = [
         name: "NucleusConfigSyntax", path: "config/Sources/NucleusConfigSyntax",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1067,6 +1106,7 @@ let hostTargets: [Target] = [
         path: "config/Tests/NucleusConfigSyntaxTests", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1075,6 +1115,7 @@ let hostTargets: [Target] = [
         path: "config/Sources/NucleusConfigIO", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1084,6 +1125,7 @@ let hostTargets: [Target] = [
         path: "config/Tests/NucleusConfigTests", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1097,6 +1139,7 @@ let hostTargets: [Target] = [
         ], path: "config/config-service-core/Sources/NucleusConfigService",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1105,6 +1148,7 @@ let hostTargets: [Target] = [
         path: "config/config-service-core/Tests/NucleusConfigServiceTests",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1113,12 +1157,14 @@ let hostTargets: [Target] = [
         path: "config/config-service/Sources/NucleusConfigServiceExecutable",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .target(
         name: "NucleusConfig", path: "config/model/Sources/NucleusConfig",
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1126,6 +1172,7 @@ let hostTargets: [Target] = [
         name: "NucleusConfigModelTests", dependencies: ["NucleusConfig"],
         path: "config/model/Tests/NucleusConfigModelTests",
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1134,6 +1181,7 @@ let hostTargets: [Target] = [
         path: "core/swift/Sources/Nucleus", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ],
@@ -1160,6 +1208,7 @@ let hostTargets: [Target] = [
         name: "NucleusAndroidHostLifecycle", path: "core/swift/Sources/NucleusAndroidHostLifecycle",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1168,6 +1217,7 @@ let hostTargets: [Target] = [
         path: "core/swift/Sources/NucleusLayers", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .define("NUCLEUS_LAYERS_PUBLIC_NAMES"), .strictMemorySafety(), .strictMemorySafety(),
             .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
@@ -1210,6 +1260,7 @@ let hostTargets: [Target] = [
                 ], .when(platforms: [.android])), .unsafeFlags(["-Werror"]),
         ],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1232,6 +1283,7 @@ let hostTargets: [Target] = [
         path: "core/swift/Sources/NucleusUI", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1239,6 +1291,7 @@ let hostTargets: [Target] = [
         name: "NucleusSecureMemoryC", path: "core/swift/Sources/NucleusSecureMemoryC",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1248,6 +1301,7 @@ let hostTargets: [Target] = [
         path: "core/swift/Sources/NucleusUIEmbedder", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1256,6 +1310,7 @@ let hostTargets: [Target] = [
         path: "core/swift/Sources/NucleusApp", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1264,6 +1319,7 @@ let hostTargets: [Target] = [
         path: "core/swift/Sources/NucleusRenderModel", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1273,6 +1329,7 @@ let hostTargets: [Target] = [
         path: "core/swift/Sources/NucleusAppHostBundle", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1312,6 +1369,7 @@ let hostTargets: [Target] = [
                 ], .when(platforms: [.android])), .unsafeFlags(["-Werror"]),
         ],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ],
@@ -1367,6 +1425,7 @@ let hostTargets: [Target] = [
                 ], .when(platforms: [.android])), .unsafeFlags(["-Werror"]),
         ],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1398,6 +1457,7 @@ let hostTargets: [Target] = [
         path: "core/swift/Sources/NucleusBlockingSynchronizationC",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1407,6 +1467,7 @@ let hostTargets: [Target] = [
         path: "core/swift/Sources/NucleusRenderHost", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1417,6 +1478,7 @@ let hostTargets: [Target] = [
         ], path: "core/swift/Tests/NucleusRenderHostTests", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1429,6 +1491,7 @@ let hostTargets: [Target] = [
         cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1437,6 +1500,7 @@ let hostTargets: [Target] = [
         path: "core/swift/Tests/NucleusAndroidHostLifecycleTests",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1483,6 +1547,7 @@ let hostTargets: [Target] = [
         path: "core/swift/Tests/NucleusDiagnosticsTests", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1491,6 +1556,7 @@ let hostTargets: [Target] = [
         path: "core/swift/Tests/NucleusRenderModelTests", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1499,6 +1565,7 @@ let hostTargets: [Target] = [
         path: "core/swift/Tests/Support/RetainedScene", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1506,6 +1573,7 @@ let hostTargets: [Target] = [
         name: "NucleusHostProjectionTestSupport", path: "core/swift/Tests/Support/HostProjection",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1513,6 +1581,7 @@ let hostTargets: [Target] = [
         name: "NucleusRendererTestSupport", path: "core/swift/Tests/Support/Renderer",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1521,6 +1590,7 @@ let hostTargets: [Target] = [
         path: "core/swift/Tests/Support/PresentationBackendContract",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1528,6 +1598,7 @@ let hostTargets: [Target] = [
         name: "NucleusResourceTestSupport", path: "core/swift/Tests/Support/Resources",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1537,6 +1608,7 @@ let hostTargets: [Target] = [
         path: "core/swift/Tests/Support/TextRendering", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1545,6 +1617,7 @@ let hostTargets: [Target] = [
         path: "core/swift/Tests/NucleusUmbrellaTests", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1554,6 +1627,7 @@ let hostTargets: [Target] = [
         path: "core/swift/Tests/NucleusUIEmbedderTests", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1562,6 +1636,7 @@ let hostTargets: [Target] = [
         path: "core/swift/Tests/NucleusAppTests", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1603,6 +1678,7 @@ let hostTargets: [Target] = [
         ], path: "core/swift/Benchmarks/NucleusHeadlessBenchmarks",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1612,6 +1688,7 @@ let hostTargets: [Target] = [
         cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1619,6 +1696,7 @@ let hostTargets: [Target] = [
         name: "NucleusBenchmarkMetricsC", path: "core/swift/Benchmarks/NucleusBenchmarkMetricsC",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1628,6 +1706,7 @@ let hostTargets: [Target] = [
         cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1684,12 +1763,14 @@ let hostTargets: [Target] = [
     .target(
         name: "NucleusTypes", path: "foundation/Sources/NucleusTypes",
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .target(
         name: "NucleusDiagnostics", path: "foundation/Sources/NucleusDiagnostics",
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1697,6 +1778,7 @@ let hostTargets: [Target] = [
         name: "NucleusAppHostProtocols", dependencies: ["NucleusTypes"],
         path: "foundation/Sources/NucleusAppHostProtocols",
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1705,6 +1787,7 @@ let hostTargets: [Target] = [
         dependencies: ["NucleusTypes", "NucleusDiagnostics", "NucleusAppHostProtocols"],
         path: "foundation/Sources/NucleusFoundation",
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1774,6 +1857,7 @@ let hostTargets: [Target] = [
         ], path: "ipc/Sources/NucleusControlCLI", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1782,6 +1866,7 @@ let hostTargets: [Target] = [
         dependencies: ["NucleusIPCTransport", "NucleusIPCTransportC", "NucleusControlProtocol"],
         path: "ipc/control-client/Sources/NucleusControlClient",
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1789,6 +1874,7 @@ let hostTargets: [Target] = [
         name: "NucleusControlClientTests", dependencies: ["NucleusControlClient"],
         path: "ipc/control-client/Tests/NucleusControlClientTests",
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1796,6 +1882,7 @@ let hostTargets: [Target] = [
         name: "NucleusControlProtocol", dependencies: ["NucleusFoundation", "NucleusConfig"],
         path: "ipc/control-protocol/Sources/NucleusControlProtocol",
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1803,6 +1890,7 @@ let hostTargets: [Target] = [
         name: "NucleusControlProtocolTests", dependencies: ["NucleusControlProtocol"],
         path: "ipc/control-protocol/Tests/NucleusControlProtocolTests",
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1817,6 +1905,7 @@ let hostTargets: [Target] = [
         ], path: "ipc/control-service-core/Sources/NucleusControlService",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1825,6 +1914,7 @@ let hostTargets: [Target] = [
         path: "ipc/control-service-core/Tests/NucleusControlServiceTests",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1832,6 +1922,7 @@ let hostTargets: [Target] = [
         name: "NucleusControlServiceExecutable", dependencies: ["NucleusControlService"],
         path: "ipc/control-service/Sources/NucleusControlServiceExecutable",
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1840,6 +1931,7 @@ let hostTargets: [Target] = [
         name: "NucleusIPCTransport", dependencies: ["NucleusIPCTransportC"],
         path: "ipc/transport/Sources/NucleusIPCTransport",
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1847,6 +1939,7 @@ let hostTargets: [Target] = [
         name: "NucleusIPCTransportTests", dependencies: ["NucleusIPCTransport"],
         path: "ipc/transport/Tests/NucleusIPCTransportTests",
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1856,6 +1949,7 @@ let hostTargets: [Target] = [
         cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]), .strictMemorySafety(),
             .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
@@ -1864,6 +1958,7 @@ let hostTargets: [Target] = [
         name: "NucleusLinuxPrimitivesC", path: "platform-linux/Sources/NucleusLinuxPrimitivesC",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1876,6 +1971,7 @@ let hostTargets: [Target] = [
         cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]), .strictMemorySafety(),
             .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
@@ -1884,6 +1980,7 @@ let hostTargets: [Target] = [
         name: "NucleusLinuxReactorC", path: "platform-linux/Sources/NucleusLinuxReactorC",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1895,6 +1992,7 @@ let hostTargets: [Target] = [
         path: "platform-linux/Sources/NucleusLinuxDBus", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1902,6 +2000,7 @@ let hostTargets: [Target] = [
         name: "NucleusLinuxSessionC", path: "platform-linux/Sources/NucleusLinuxSessionC",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1909,6 +2008,7 @@ let hostTargets: [Target] = [
         name: "NucleusThemeAssetIO", path: "platform-linux/Sources/NucleusThemeAssetIO",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1918,6 +2018,7 @@ let hostTargets: [Target] = [
         path: "platform-linux/SanitizerHarnesses/NucleusLinuxThreadSanitizerHarness",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]), .strictMemorySafety(),
             .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
@@ -1928,6 +2029,7 @@ let hostTargets: [Target] = [
         path: "platform-linux/Tests/NucleusLinuxPrimitivesTests",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]), .strictMemorySafety(),
             .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
@@ -1938,6 +2040,7 @@ let hostTargets: [Target] = [
         cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]), .strictMemorySafety(),
             .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
@@ -1947,6 +2050,7 @@ let hostTargets: [Target] = [
         path: "platform-linux/Tests/NucleusLinuxDBusTests", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1956,6 +2060,7 @@ let hostTargets: [Target] = [
         cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -2056,6 +2161,7 @@ let hostTargets: [Target] = [
         ], path: "platform-linux/session/Sources/NucleusSessionSupervisor",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -2067,6 +2173,7 @@ let hostTargets: [Target] = [
         ], path: "platform-linux/session/Tests/Fixtures/NucleusSessionFixture",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -2080,6 +2187,7 @@ let hostTargets: [Target] = [
         ], path: "platform-linux/session/Tests/NucleusLinuxSessionTests",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -2110,6 +2218,7 @@ let hostTargets: [Target] = [
             ]), .unsafeFlags(["-Werror"]),
         ],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -2118,6 +2227,7 @@ let hostTargets: [Target] = [
         path: "react-native/swift/Tests/NucleusReactNativeCxxTests",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ],
@@ -2286,6 +2396,7 @@ let hostTargets: [Target] = [
         ], path: "react-native/swift/SanitizerHarnesses/NucleusReactThreadSanitizerHarness",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ],
@@ -2645,6 +2756,7 @@ let hostTargets: [Target] = [
             ]), .unsafeFlags(["-Werror"]),
         ],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -2762,6 +2874,7 @@ let hostTargets: [Target] = [
         dependencies: ["NucleusConfig", "NucleusIPCTransport", "NucleusIPCTransportC"],
         path: "session/protocol/Sources/NucleusSessionProtocol",
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -2770,6 +2883,7 @@ let hostTargets: [Target] = [
         dependencies: ["NucleusSessionProtocol", "NucleusIPCTransport", "NucleusIPCTransportC"],
         path: "session/protocol/Tests/NucleusSessionProtocolTests",
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -2804,6 +2918,7 @@ let hostTargets: [Target] = [
     .target(
         name: "NucleusShellAuthWire", path: "shell/auth-wire/Sources/NucleusShellAuthWire",
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -2811,6 +2926,7 @@ let hostTargets: [Target] = [
         name: "NucleusShellAuthWireTests", dependencies: ["NucleusShellAuthWire"],
         path: "shell/auth-wire/Tests/NucleusShellInputTests",
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -2818,6 +2934,7 @@ let hostTargets: [Target] = [
         name: "NucleusShellSignalC", path: "shell/shell-kit/Sources/NucleusShellSignalC",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -2825,6 +2942,7 @@ let hostTargets: [Target] = [
         name: "NucleusShellProcessC", path: "shell/shell-kit/Sources/NucleusShellProcessC",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -2908,6 +3026,7 @@ let hostTargets: [Target] = [
         path: "shell/shell-kit/Tests/Fixtures/NucleusShellPamAttemptFixture",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -2923,6 +3042,7 @@ let hostTargets: [Target] = [
         cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -2977,6 +3097,7 @@ let hostTargets: [Target] = [
             .unsafeFlags(["-Werror"]),
         ],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ],
@@ -2987,6 +3108,7 @@ let hostTargets: [Target] = [
         name: "Tracy", dependencies: ["TracyBridge"], path: "swift-tracy/Sources/Tracy",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -2994,6 +3116,7 @@ let hostTargets: [Target] = [
         name: "TracyTests", dependencies: ["Tracy"], path: "swift-tracy/Tests/TracyTests",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -3002,6 +3125,7 @@ let hostTargets: [Target] = [
         name: "Vulkan", dependencies: ["VulkanC"], path: "swift-vulkan/Sources/Vulkan",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -3010,6 +3134,7 @@ let hostTargets: [Target] = [
         cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -3017,6 +3142,7 @@ let hostTargets: [Target] = [
         name: "VulkanTests", dependencies: ["Vulkan"], path: "swift-vulkan/Tests/VulkanTests",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -3024,6 +3150,7 @@ let hostTargets: [Target] = [
         name: "WaylandProtocolModel", path: "swift-wayland/Sources/WaylandProtocolModel",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -3037,6 +3164,7 @@ let hostTargets: [Target] = [
         cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -3045,6 +3173,7 @@ let hostTargets: [Target] = [
         path: "swift-wayland/Sources/SwiftWaylandGen", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -3124,6 +3253,7 @@ let hostTargets: [Target] = [
         cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -3134,6 +3264,7 @@ let hostTargets: [Target] = [
         cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -3183,6 +3314,7 @@ let hostTargets: [Target] = [
         name: "WaylandProtocolTypes",
         path: "swift-wayland/protocol-runtime/Sources/WaylandProtocolTypes",
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -3190,6 +3322,7 @@ let hostTargets: [Target] = [
         name: "SwiftWaylandProtocolRuntime", dependencies: ["WaylandProtocolTypes"],
         path: "swift-wayland/protocol-runtime/Sources/SwiftWaylandProtocolRuntime",
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -3198,6 +3331,7 @@ let hostTargets: [Target] = [
         path: "window-client/Sources/NucleusWindowClientContracts",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -3210,6 +3344,7 @@ let hostTargets: [Target] = [
         ], path: "window-client/Sources/NucleusWindowClientRuntime",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
