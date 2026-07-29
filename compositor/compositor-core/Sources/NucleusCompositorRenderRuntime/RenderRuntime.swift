@@ -109,7 +109,8 @@ public final class RenderRuntime {
         _ output: OutputInfo,
         logicalX: Double, logicalY: Double,
         logicalWidth: Double, logicalHeight: Double,
-        fractionalScale: Double
+        fractionalScale: Double,
+        adaptiveSync: Bool? = nil
     ) -> Bool {
         renderer?.applyProposedOutput(
             RendererOutputInfo(
@@ -125,7 +126,13 @@ public final class RenderRuntime {
                 cursorPlaneID: output.cursorPlaneID),
             logicalX: logicalX, logicalY: logicalY,
             logicalWidth: logicalWidth, logicalHeight: logicalHeight,
-            fractionalScale: fractionalScale) ?? false
+            fractionalScale: fractionalScale,
+            adaptiveSync: adaptiveSync) ?? false
+    }
+
+    /// Whether an output is currently set to drive variable refresh.
+    public func adaptiveSyncEnabled(outputID: UInt64) -> Bool {
+        renderer?.adaptiveSyncEnabled(outputID: outputID) ?? false
     }
 
     @discardableResult

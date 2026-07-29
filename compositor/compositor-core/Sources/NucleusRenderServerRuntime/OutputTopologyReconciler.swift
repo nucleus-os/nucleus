@@ -269,7 +269,8 @@ final class OutputTopologyReconciler {
                 ?? Double(planned.renderer.pixelWidth) / scale,
             logicalHeight: configuration.logicalHeight
                 ?? Double(planned.renderer.pixelHeight) / scale,
-            fractionalScale: scale)
+            fractionalScale: scale,
+            adaptiveSync: override?.adaptiveSync)
         else {
             logRuntime("output topology: failed to attach output \(planned.id)")
             return nil
@@ -319,7 +320,13 @@ final class OutputTopologyReconciler {
                     Int32(clamping: Int(display.logicalRect.height.rounded())),
                     display.fractionalScale,
                     name,
-                    description)
+                    description,
+                    // What is actually in force, not what was asked for: a
+                    // non-capable connector reports false however it is
+                    // configured, so a display tool never shows VRR on a
+                    // panel that cannot do it.
+                    adaptiveSyncEnabled: renderRuntime.adaptiveSyncEnabled(
+                        outputID: output.id))
             }
         }
     }

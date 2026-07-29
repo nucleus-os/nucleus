@@ -38,9 +38,16 @@ struct VrrState: Sendable, Equatable {
     /// modeset on the next commit.
     var enabled: Bool
 
-    init(capable: Bool) {
+    /// `adaptiveSync` is the user's stated preference: nil means none was
+    /// stated, so a capable output keeps the default of driving VRR for
+    /// fullscreen direct scanout. An explicit `false` is what lets someone turn
+    /// it off on a panel that flickers or shifts brightness under it — which
+    /// was impossible while the policy was fixed at construction.
+    init(capable: Bool, adaptiveSync: Bool? = nil) {
         self.capable = capable
-        self.policy = capable ? .fullscreenDirectScanoutOnly : .disabled
+        self.policy = capable && (adaptiveSync ?? true)
+            ? .fullscreenDirectScanoutOnly
+            : .disabled
         self.enabled = false
     }
 

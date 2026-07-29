@@ -379,3 +379,53 @@ import Testing
         }
     }
 }
+
+@Suite struct OutputAdaptiveSyncTests {
+    private func outputs(_ json: String) throws -> [OutputConfig] {
+        switch ConfigLoader.load(text: json) {
+        case .loaded(let configuration, _): return configuration.outputs
+        case .failed(let diagnostics):
+            Issue.record("load failed: \(diagnostics.map(\.summary))")
+            throw CancellationError()
+        }
+    }
+
+    @Test func adaptiveSyncCanBeTurnedOffPerOutput() throws {
+        // The setting exists for the panel that flickers under VRR; a capable
+        // connector drives it by default, so `false` is the meaningful value.
+        let table = try outputs(#"""
+        { "outputs": [ { "name": "DP-1", "adaptive_sync": false } ] }
+        """#)
+        #expect(table.entry(named: "DP-1")?.adaptiveSync == false)
+    }
+
+    @Test func anAbsentAdaptiveSyncPreferenceStaysAbsent() throws {
+        // nil means "no preference", distinct from false: it leaves the
+        // compositor's own default in place.
+        let table = try outputs(#"{ "outputs": [ { "name": "DP-1" } ] }"#)
+        #expect(table.first?.adaptiveSync == nil)
+    }
+
+    @Test func aMisspelledAdaptiveSyncKeyWarns() {
+        switch ConfigLoader.load(text: #"""
+        { "outputs": [ { "name": "DP-1", "adaptive_synk": false } ] }
+        """#) {
+        case .loaded(_, let warnings):
+            #expect(warnings.first?.keyPath
+                == ["outputs", "[0]", "adaptive_synk"])
+        case .failed(let diagnostics):
+            Issue.record("load failed: \(diagnostics.map(\.summary))")
+        }
+    }
+
+    @Test func theAuditReferenceCoversAdaptiveSync() {
+        // The unknown-key audit derives valid keys from a reference whose
+        // arrays carry one element; a field missing there goes unchecked.
+        switch ConfigLoader.load(text: #"""
+        { "outputs": [ { "name": "DP-1", "adaptive_sync": true } ] }
+        """#) {
+        case .loaded(_, let warnings): #expect(warnings.isEmpty)
+        case .failed(let d): Issue.record("\(d.map(\.summary))")
+        }
+    }
+}

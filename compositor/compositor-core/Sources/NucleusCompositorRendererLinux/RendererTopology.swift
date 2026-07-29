@@ -20,6 +20,7 @@ extension DRMScanoutPresenter {
         connectorId: UInt32, crtcId: UInt32,
         planeId: UInt32, cursorPlaneId: UInt32,
         modeBlobId: UInt32, vrrCapable: Bool,
+        adaptiveSync: Bool? = nil,
         drmFourcc: UInt32 = DrmFourcc.xrgb8888,
         ringDepth: Int = 2
     ) -> Bool {
@@ -35,6 +36,7 @@ extension DRMScanoutPresenter {
             width: pixelWidth,
             height: pixelHeight,
             vrrCapable: vrrCapable,
+            adaptiveSync: adaptiveSync,
             presentPolicy: presentPolicy,
             onPageFlip: { [weak self] event in
                 self?.notePageFlipComplete(
@@ -250,7 +252,8 @@ extension DRMScanoutPresenter {
         logicalY: Double,
         logicalWidth: Double,
         logicalHeight: Double,
-        fractionalScale: Double
+        fractionalScale: Double,
+        adaptiveSync: Bool? = nil
     ) -> Bool {
         switch backendState {
         case .active, .resuming:
@@ -301,7 +304,19 @@ extension DRMScanoutPresenter {
             cursorPlaneId:
                 assignment.cursorPlaneID?.rawValue ?? 0,
             modeBlobId: modeBlobID,
-            vrrCapable: connector.vrrCapable)
+            vrrCapable: connector.vrrCapable,
+            adaptiveSync: adaptiveSync)
+    }
+
+    /// Whether an output is currently set to drive variable refresh.
+    ///
+    /// Reports the policy in force rather than the last committed frame's
+    /// decision: VRR is engaged per frame on direct-scanout eligibility, so the
+    /// per-frame value would flicker in a display tool for reasons that have
+    /// nothing to do with configuration.
+    public func adaptiveSyncEnabled(outputID: UInt64) -> Bool {
+        guard let binding = bindings[outputID] else { return false }
+        return binding.drm.vrr.capable && binding.drm.vrr.policy != .disabled
     }
 
     @discardableResult

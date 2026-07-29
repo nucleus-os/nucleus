@@ -62,7 +62,8 @@ public final class WaylandRuntime {
         _ physicalWidthMm: Int32, _ physicalHeightMm: Int32,
         _ pixelWidth: Int32, _ pixelHeight: Int32, _ refreshMhz: Int32, _ scale: Int32,
         _ logicalWidth: Int32, _ logicalHeight: Int32, _ fractionalScale: Double,
-        _ name: UnsafePointer<CChar>?, _ description: UnsafePointer<CChar>?
+        _ name: UnsafePointer<CChar>?, _ description: UnsafePointer<CChar>?,
+        adaptiveSyncEnabled: Bool = false
     ) {
         let nm = unsafe name.map { unsafe String(cString: $0) } ?? "Nucleus"
         let desc = unsafe description.map {
@@ -75,7 +76,8 @@ public final class WaylandRuntime {
             pixelWidth: pixelWidth, pixelHeight: pixelHeight, refreshMhz: refreshMhz, scale: scale,
             name: nm, description: desc,
             logicalWidth: logicalWidth, logicalHeight: logicalHeight,
-            fractionalScale: fractionalScale))
+            fractionalScale: fractionalScale,
+            adaptiveSyncEnabled: adaptiveSyncEnabled))
     }
 
     /// Withdraw an output global after emitting surface leaves and cleaning up

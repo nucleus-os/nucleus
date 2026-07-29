@@ -66,7 +66,8 @@ public struct NucleusConfiguration: Codable, Equatable, Sendable {
         outputs: [OutputConfig(
             name: "",
             scale: 1,
-            position: OutputPosition(x: 0, y: 0))],
+            position: OutputPosition(x: 0, y: 0),
+            adaptiveSync: true)],
         shell: .defaults)
 
     public func applying(_ part: NucleusConfigurationPart) -> NucleusConfiguration {

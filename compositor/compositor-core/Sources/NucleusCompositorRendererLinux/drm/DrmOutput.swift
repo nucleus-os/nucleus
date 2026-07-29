@@ -136,6 +136,7 @@ final class DrmOutput {
         props: AtomicProps,
         cursorProps: CursorPlaneProps = CursorPlaneProps(),
         vrrCapable: Bool = false,
+        adaptiveSync: Bool? = nil,
         presentPolicy: RendererPresentPolicy = .vsync,
         onPageFlip: @escaping @MainActor @Sendable (DrmPageFlipEvent) -> Void = { _ in }
     ) {
@@ -149,7 +150,7 @@ final class DrmOutput {
         self.height = height
         self.props = props
         self.cursorProps = cursorProps
-        self.vrr = VrrState(capable: vrrCapable)
+        self.vrr = VrrState(capable: vrrCapable, adaptiveSync: adaptiveSync)
         self.mailbox = MailboxQueue(policy: presentPolicy)
         self.flipToken = DrmPageFlipToken(onFlip: onPageFlip)
     }
@@ -178,6 +179,7 @@ final class DrmOutput {
         width: UInt32,
         height: UInt32,
         vrrCapable: Bool = false,
+        adaptiveSync: Bool? = nil,
         presentPolicy: RendererPresentPolicy = .vsync,
         onPageFlip: @escaping @MainActor @Sendable (DrmPageFlipEvent) -> Void = { _ in }
     ) -> DrmOutput? {
@@ -190,7 +192,8 @@ final class DrmOutput {
         return DrmOutput(
             device: device, connectorId: connectorId, crtcId: crtcId, planeId: planeId,
             cursorPlaneId: cursorPlaneId, modeBlobId: modeBlobId, width: width, height: height,
-            props: props, cursorProps: cursor, vrrCapable: vrrCapable, presentPolicy: presentPolicy,
+            props: props, cursorProps: cursor, vrrCapable: vrrCapable,
+            adaptiveSync: adaptiveSync, presentPolicy: presentPolicy,
             onPageFlip: onPageFlip)
     }
 

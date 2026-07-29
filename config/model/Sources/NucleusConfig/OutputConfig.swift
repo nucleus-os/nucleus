@@ -12,10 +12,10 @@ public struct OutputPosition: Codable, Equatable, Sendable {
 /// Per-output configuration.
 ///
 /// Deliberately narrow: it carries only settings the compositor can actually
-/// apply today. Mode, transform, and variable refresh are all reachable at the
-/// DRM layer but not through the topology reconciler, and a settings key that
-/// silently does nothing is worse than an absent one — a user who writes it
-/// concludes the compositor is broken rather than that the feature is missing.
+/// apply today. Mode and transform remain absent — both need renderer work that
+/// does not exist — because a settings key that silently does nothing is worse
+/// than a missing one: a user who writes it concludes the compositor is broken
+/// rather than that the feature is unimplemented.
 public struct OutputConfig: Codable, Equatable, Sendable {
     /// Connector name, as `nucleus msg outputs` reports it — `DP-1`, `HDMI-A-1`.
     public var name: String
@@ -25,15 +25,22 @@ public struct OutputConfig: Codable, Equatable, Sendable {
     /// choice rather than a missing value, so it stays optional after
     /// resolution too.
     public var position: OutputPosition?
+    /// Variable refresh rate. Absent means the compositor's own default, which
+    /// drives VRR for fullscreen direct scanout on any capable connector — so
+    /// the value that matters most here is an explicit `false`, for a panel
+    /// that flickers or shifts brightness under it.
+    public var adaptiveSync: Bool?
 
     public init(
         name: String,
         scale: Double? = nil,
-        position: OutputPosition? = nil
+        position: OutputPosition? = nil,
+        adaptiveSync: Bool? = nil
     ) {
         self.name = name
         self.scale = scale
         self.position = position
+        self.adaptiveSync = adaptiveSync
     }
 }
 

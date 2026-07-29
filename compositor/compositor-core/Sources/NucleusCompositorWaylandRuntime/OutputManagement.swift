@@ -12,9 +12,9 @@
 // entries that fail when chosen. One true mode beats a menu of lies.
 //
 // A configuration is atomic — the protocol says so, and `succeeded`/`failed`
-// exist precisely to say which happened. Scale and position are applied through
-// the topology reconciler; anything else (a different mode, a custom mode, a
-// rotation, adaptive sync, disabling an output) fails the *whole* configuration
+// exist precisely to say which happened. Scale, position, and adaptive sync are
+// applied through the topology reconciler; anything else (a different mode, a custom mode, a
+// rotation, disabling an output) fails the *whole* configuration
 // rather than being partially honored. Rejecting inside the protocol contract
 // is not a shortfall; silently applying half of an atomic request would be.
 
@@ -28,6 +28,7 @@ package struct OutputConfigurationRequest: Equatable, Sendable {
     package var scale: Double?
     package var positionX: Int32?
     package var positionY: Int32?
+    package var adaptiveSync: Bool?
 }
 
 /// Where an applied configuration goes.
@@ -50,7 +51,6 @@ package enum OutputConfigurationRejection: Equatable, Sendable {
     case modeChangeUnsupported
     case customModeUnsupported
     case transformUnsupported
-    case adaptiveSyncUnsupported
     case disableUnsupported
     case unknownHead
 
@@ -62,8 +62,6 @@ package enum OutputConfigurationRejection: Equatable, Sendable {
             "custom modes are not supported"
         case .transformUnsupported:
             "output transforms are not supported"
-        case .adaptiveSyncUnsupported:
-            "adaptive sync is not supported"
         case .disableUnsupported:
             "disabling an output is not supported"
         case .unknownHead:
@@ -229,6 +227,10 @@ package enum OutputConfigurationRejection: Equatable, Sendable {
         _ = resource.sendScale(
             scale: info.fractionalScale > 0
                 ? info.fractionalScale : Double(info.scale))
+        // Reported so a display tool shows the state it can actually change,
+        // rather than a value the compositor never confirms.
+        _ = resource.sendAdaptiveSync(
+            state: info.adaptiveSyncEnabled ? .enabled : .disabled)
     }
 
     /// Is `candidate` the mode this head is currently running?
@@ -348,7 +350,8 @@ package enum OutputConfigurationRejection: Equatable, Sendable {
                 outputID: outputID,
                 scale: entry.scale,
                 positionX: entry.positionX,
-                positionY: entry.positionY)
+                positionY: entry.positionY,
+                adaptiveSync: entry.adaptiveSync)
         }
         if manager.apply(requests) {
             _ = resource.sendSucceeded()
@@ -396,6 +399,7 @@ package enum OutputConfigurationRejection: Equatable, Sendable {
     private(set) var scale: Double?
     private(set) var positionX: Int32?
     private(set) var positionY: Int32?
+    private(set) var adaptiveSync: Bool?
     private var setMode = false
     private var setTransform = false
     private var setAdaptiveSync = false
@@ -477,9 +481,10 @@ package enum OutputConfigurationRejection: Equatable, Sendable {
         state: ZwlrOutputHeadV1AdaptiveSyncState
     ) {
         guard once(request, &setAdaptiveSync) else { return }
-        if state != .disabled {
-            configuration.reject(.adaptiveSyncUnsupported)
-        }
+        // A capable connector drives VRR by default, so `enabled` is usually a
+        // no-op; `disabled` is the request that actually changes something,
+        // and the reason this is worth honoring rather than rejecting.
+        adaptiveSync = state == .enabled
     }
 
     /// Each property may be set once per configuration head.

@@ -38,6 +38,10 @@ struct OutputInfo {
     var logicalHeight: Int32 = 0
     /// Exact output scale advertised through wp_fractional_scale_v1.
     var fractionalScale: Double = 0.0
+    /// Whether the output is currently driving variable refresh. Reported by
+    /// wlr-output-management so a display tool shows real state; a connector
+    /// that is not VRR-capable always reads false.
+    var adaptiveSyncEnabled: Bool = false
 }
 
 /// Owner bound to each wl_output resource (Rule 9). Back-links to its WlOutput so
