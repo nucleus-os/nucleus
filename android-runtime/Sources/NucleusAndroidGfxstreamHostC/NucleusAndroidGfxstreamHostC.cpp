@@ -355,6 +355,46 @@ extern "C" int nucleus_android_gfxstream_host_release_dmabuf(
     return gfxstream_nucleus_release_color_buffer(colorBufferHandle);
 }
 
+extern "C" int nucleus_android_gfxstream_host_read_color_buffer(
+    nucleus_android_gfxstream_host_renderer *renderer,
+    uint32_t colorBufferHandle,
+    uint32_t drmFormat,
+    uint32_t width,
+    uint32_t height,
+    void *pixels,
+    uint64_t pixelsSize) {
+    if (!renderer || !renderer->renderer) {
+        return -EINVAL;
+    }
+    return gfxstream_nucleus_read_color_buffer(
+        colorBufferHandle,
+        drmFormat,
+        width,
+        height,
+        pixels,
+        pixelsSize);
+}
+
+extern "C" int nucleus_android_gfxstream_host_update_color_buffer(
+    nucleus_android_gfxstream_host_renderer *renderer,
+    uint32_t colorBufferHandle,
+    uint32_t drmFormat,
+    uint32_t width,
+    uint32_t height,
+    const void *pixels,
+    uint64_t pixelsSize) {
+    if (!renderer || !renderer->renderer) {
+        return -EINVAL;
+    }
+    return gfxstream_nucleus_update_color_buffer(
+        colorBufferHandle,
+        drmFormat,
+        width,
+        height,
+        pixels,
+        pixelsSize);
+}
+
 extern "C" int nucleus_android_gfxstream_host_export_memory(
     nucleus_android_gfxstream_host_renderer *renderer,
     uint32_t contextId,

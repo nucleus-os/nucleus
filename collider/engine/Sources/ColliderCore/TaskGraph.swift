@@ -901,6 +901,7 @@ public struct AptPackageValidation: Hashable, Sendable {
 }
 
 public enum TaskOperation: Hashable, Sendable {
+    case action(AnyColliderAction)
     case applyGitPatch(GitPatchApplication)
     case command(CommandSpec)
     case runSwiftTest(SwiftTestExecution)

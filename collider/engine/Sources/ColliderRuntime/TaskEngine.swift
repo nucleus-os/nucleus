@@ -757,6 +757,13 @@ extension ColliderRuntime {
         into encoder: inout CanonicalDigestEncoder
     ) throws {
         switch operation {
+        case .action(let action):
+            encoder.append(tag: 235, string: action.kind)
+            encoder.append(tag: 236, bytes: action.identity)
+            for (name, value) in artifactEnvironment(action.environment) {
+                encoder.append(tag: 237, string: name)
+                encoder.append(tag: 238, string: value)
+            }
         case .applyGitPatch(let patch):
             let tool = try resolvedToolIdentity(
                 .named("git"),
@@ -1383,6 +1390,8 @@ extension ColliderRuntime {
         options: TaskExecutionOptions
     ) async throws {
         switch operation {
+        case .action(let action):
+            try await execute(action, stage: stage)
         case .applyGitPatch(let patch):
             func command(_ arguments: [String]) -> CommandSpec {
                 CommandSpec(
@@ -1890,6 +1899,8 @@ public enum RuntimeFailure: Error, CustomStringConvertible, Sendable {
 
 private func operationEnvironment(_ operation: TaskOperation) -> [String: String] {
     switch operation {
+    case .action(let action):
+        action.environment
     case .applyGitPatch(let patch):
         patch.environment
     case .command(let command):

@@ -50,6 +50,7 @@ PRODUCT_PACKAGES += \
     Launcher3QuickStep \
     Settings \
     SettingsIntelligence \
+    SystemUI \
     frameworks-base-overlays \
     librs_jni \
     preinstalled-packages-nucleus.xml

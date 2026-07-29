@@ -1,8 +1,11 @@
 #include <errno.h>
+#include <drm/drm_fourcc.h>
+#include <linux/memfd.h>
 #include <poll.h>
 #include <signal.h>
 #include <sys/eventfd.h>
 #include <sys/resource.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -1021,6 +1024,87 @@ struct Allocation {
     GpuBuffer buffer;
 };
 
+struct CpuLock {
+    CpuLock(
+        uint64_t identifierValue,
+        uint64_t allocationIdentifierValue,
+        uint32_t peerPIDValue,
+        uint32_t accessValue,
+        uint64_t sizeValue,
+        uint32_t strideValue,
+        int lifetimeDescriptorValue)
+        : identifier(identifierValue),
+          allocationIdentifier(allocationIdentifierValue),
+          peerPID(peerPIDValue),
+          access(accessValue),
+          size(sizeValue),
+          stride(strideValue),
+          lifetimeDescriptor(lifetimeDescriptorValue) {}
+    CpuLock(const CpuLock &) = delete;
+    CpuLock &operator=(const CpuLock &) = delete;
+
+    uint64_t identifier;
+    uint64_t allocationIdentifier;
+    uint32_t peerPID;
+    uint32_t access;
+    uint64_t size;
+    uint32_t stride;
+    int lifetimeDescriptor;
+
+    ~CpuLock() {
+        if (lifetimeDescriptor >= 0) {
+            close(lifetimeDescriptor);
+        }
+    }
+};
+
+uint32_t formatBytesPerPixel(uint32_t drmFormat) {
+    switch (drmFormat) {
+        case DRM_FORMAT_ARGB8888:
+        case DRM_FORMAT_XRGB8888:
+        case DRM_FORMAT_ABGR8888:
+        case DRM_FORMAT_XBGR8888:
+        case DRM_FORMAT_ABGR2101010:
+            return 4;
+        case DRM_FORMAT_ABGR16161616F:
+            return 8;
+        default:
+            return 0;
+    }
+}
+
+int createCpuStaging(uint64_t size) {
+    if (size == 0 || size > static_cast<uint64_t>(INT64_MAX)) {
+        errno = EINVAL;
+        return -1;
+    }
+    const int descriptor = static_cast<int>(syscall(
+        SYS_memfd_create,
+        "nucleus-gralloc-cpu",
+        MFD_CLOEXEC));
+    if (descriptor < 0) {
+        return -1;
+    }
+    if (ftruncate(descriptor, static_cast<off_t>(size)) < 0) {
+        const int savedErrno = errno;
+        close(descriptor);
+        errno = savedErrno;
+        return -1;
+    }
+    return descriptor;
+}
+
+bool validateCpuStaging(int descriptor, uint64_t size) {
+    struct stat status = {};
+    return descriptor >= 0 &&
+        size > 0 &&
+        size <= static_cast<uint64_t>(INT64_MAX) &&
+        fstat(descriptor, &status) == 0 &&
+        S_ISREG(status.st_mode) &&
+        status.st_size >= 0 &&
+        static_cast<uint64_t>(status.st_size) == size;
+}
+
 int sendControlResponse(
     int socket,
     const nucleus_android_gfxstream_socket_message &response,
@@ -1146,22 +1230,34 @@ int main(int argc, char **argv) {
 
     std::vector<std::unique_ptr<Endpoint>> endpoints;
     std::unordered_map<uint64_t, std::unique_ptr<Allocation>> allocations;
+    std::unordered_map<uint64_t, std::unique_ptr<CpuLock>> cpuLocks;
     VulkanFenceCompletions fenceCompletions;
     uint64_t nextEndpointIdentifier = 1;
     uint32_t nextColorBufferHandle = UINT32_C(0x40000000);
     uint64_t nextAllocationIdentifier = 1;
+    uint64_t nextCpuLockIdentifier = 1;
     while (!stopping.load(std::memory_order_acquire)) {
         std::vector<pollfd> pollDescriptors;
         std::vector<uint64_t> pollAllocations;
+        std::vector<uint64_t> pollCpuLocks;
         pollDescriptors.push_back({listener, POLLIN, 0});
         pollAllocations.push_back(0);
+        pollCpuLocks.push_back(0);
         pollDescriptors.push_back(
             {endpointCompletionDescriptor, POLLIN, 0});
         pollAllocations.push_back(0);
+        pollCpuLocks.push_back(0);
         for (const auto &[identifier, allocation] : allocations) {
             pollDescriptors.push_back(
                 {allocation->lifetimeDescriptor, POLLIN, 0});
             pollAllocations.push_back(identifier);
+            pollCpuLocks.push_back(0);
+        }
+        for (const auto &[identifier, cpuLock] : cpuLocks) {
+            pollDescriptors.push_back(
+                {cpuLock->lifetimeDescriptor, POLLIN, 0});
+            pollAllocations.push_back(0);
+            pollCpuLocks.push_back(identifier);
         }
         int pollResult;
         do {
@@ -1201,7 +1297,21 @@ int main(int argc, char **argv) {
                         found->second->modifier,
                         found->second->stride,
                         0);
+                    for (auto lock = cpuLocks.begin();
+                         lock != cpuLocks.end();) {
+                        if (lock->second->allocationIdentifier ==
+                            found->first) {
+                            lock = cpuLocks.erase(lock);
+                        } else {
+                            ++lock;
+                        }
+                    }
                     allocations.erase(found);
+                }
+                const auto foundCpuLock =
+                    cpuLocks.find(pollCpuLocks[index]);
+                if (foundCpuLock != cpuLocks.end()) {
+                    cpuLocks.erase(foundCpuLock);
                 }
             }
         }
@@ -1221,13 +1331,14 @@ int main(int argc, char **argv) {
         }
         struct nucleus_ipc_peer_credentials credentials = {};
         nucleus_android_gfxstream_socket_message request = {};
+        int requestDescriptors[1] = {-1};
         size_t receivedDescriptors = 0;
         const int received = nucleus_ipc_receive(
             peer,
             &request,
             sizeof(request),
-            nullptr,
-            0,
+            requestDescriptors,
+            1,
             &receivedDescriptors);
         const int credentialsResult =
             nucleus_ipc_peer_credentials(peer, &credentials);
@@ -1236,17 +1347,249 @@ int main(int argc, char **argv) {
             credentials.pid > 0 &&
             static_cast<uint64_t>(credentials.uid) >= uidRangeStart &&
             static_cast<uint64_t>(credentials.uid) < uidRangeEnd;
+        const bool operationTakesDescriptor =
+            request.operation == NUCLEUS_ANDROID_GFXSTREAM_UNLOCK_BUFFER ||
+            request.operation == NUCLEUS_ANDROID_GFXSTREAM_SYNC_BUFFER;
+        const size_t expectedRequestDescriptors =
+            operationTakesDescriptor ? 1 : 0;
         if (!peerUIDAuthorized ||
             received != static_cast<int>(sizeof(request)) ||
-            receivedDescriptors != 0 ||
+            receivedDescriptors != expectedRequestDescriptors ||
             request.magic != NUCLEUS_ANDROID_GFXSTREAM_SOCKET_MAGIC ||
             request.version != NUCLEUS_ANDROID_GFXSTREAM_SOCKET_VERSION ||
             request.operation < NUCLEUS_ANDROID_GFXSTREAM_OPEN_STREAM ||
             request.operation >
-                NUCLEUS_ANDROID_GFXSTREAM_EXPORT_VULKAN_QSRI) {
+                NUCLEUS_ANDROID_GFXSTREAM_SYNC_BUFFER) {
+            if (requestDescriptors[0] >= 0) {
+                close(requestDescriptors[0]);
+            }
             (void)sendResponse(peer, -EPERM, emptyDescriptors());
             close(peer);
             trace("peer.rejected", std::to_string(credentials.uid));
+            continue;
+        }
+        if (request.operation ==
+            NUCLEUS_ANDROID_GFXSTREAM_LOCK_BUFFER) {
+            nucleus_android_gfxstream_socket_message response = {};
+            response.magic = NUCLEUS_ANDROID_GFXSTREAM_SOCKET_MAGIC;
+            response.version = NUCLEUS_ANDROID_GFXSTREAM_SOCKET_VERSION;
+            response.operation = request.operation;
+            response.allocation_id = request.allocation_id;
+            response.cpu_access = request.cpu_access;
+            response.status = -EINVAL;
+            int stagingDescriptor = -1;
+            int lifetimeDescriptors[2] = {-1, -1};
+            auto allocation = allocations.find(request.allocation_id);
+            bool alreadyLocked = false;
+            for (const auto &[unused, lock] : cpuLocks) {
+                if (lock->allocationIdentifier == request.allocation_id) {
+                    alreadyLocked = true;
+                    break;
+                }
+            }
+            const uint32_t validAccess =
+                NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_READ |
+                NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_WRITE;
+            if (allocation == allocations.end() ||
+                request.cpu_access == 0 ||
+                (request.cpu_access & ~validAccess) != 0) {
+                response.status = -EINVAL;
+            } else if (alreadyLocked) {
+                response.status = -EBUSY;
+            } else {
+                const auto &buffer = *allocation->second;
+                const uint32_t bytesPerPixel =
+                    formatBytesPerPixel(buffer.request.drm_format);
+                const uint64_t stride =
+                    static_cast<uint64_t>(buffer.request.width) *
+                    bytesPerPixel;
+                const uint64_t size =
+                    stride * buffer.request.height;
+                if (bytesPerPixel == 0 ||
+                    stride > UINT32_MAX ||
+                    (buffer.request.height != 0 &&
+                     size / buffer.request.height != stride) ||
+                    size > SIZE_MAX) {
+                    response.status = -EOVERFLOW;
+                } else {
+                    stagingDescriptor = createCpuStaging(size);
+                    void *pixels = stagingDescriptor >= 0
+                        ? mmap(
+                            nullptr,
+                            static_cast<size_t>(size),
+                            PROT_READ | PROT_WRITE,
+                            MAP_SHARED,
+                            stagingDescriptor,
+                            0)
+                        : MAP_FAILED;
+                    if (stagingDescriptor < 0 || pixels == MAP_FAILED) {
+                        response.status = -errno;
+                    } else {
+                        response.status =
+                            (request.cpu_access &
+                             NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_READ) != 0
+                            ? nucleus_android_gfxstream_host_read_color_buffer(
+                                renderer.get(),
+                                buffer.colorBufferHandle,
+                                buffer.request.drm_format,
+                                buffer.request.width,
+                                buffer.request.height,
+                                pixels,
+                                size)
+                            : 0;
+                        munmap(pixels, static_cast<size_t>(size));
+                    }
+                    if (response.status == 0 &&
+                        socketpair(
+                            AF_UNIX,
+                            SOCK_SEQPACKET | SOCK_CLOEXEC,
+                            0,
+                            lifetimeDescriptors) < 0) {
+                        response.status = -errno;
+                    }
+                    if (response.status == 0) {
+                        response.cpu_lock_id =
+                            nextCpuLockIdentifier++;
+                        response.cpu_mapping_size = size;
+                        response.cpu_stride =
+                            static_cast<uint32_t>(stride);
+                    }
+                }
+            }
+            const int descriptors[2] = {
+                stagingDescriptor,
+                lifetimeDescriptors[1],
+            };
+            const int result = response.status == 0
+                ? sendControlResponse(peer, response, descriptors, 2)
+                : sendControlResponse(peer, response);
+            const int sendErrno = errno;
+            if (result == 0 && response.status == 0) {
+                cpuLocks.emplace(
+                    response.cpu_lock_id,
+                    std::make_unique<CpuLock>(
+                        response.cpu_lock_id,
+                        request.allocation_id,
+                        static_cast<uint32_t>(credentials.pid),
+                        request.cpu_access,
+                        response.cpu_mapping_size,
+                        response.cpu_stride,
+                        lifetimeDescriptors[0]));
+                lifetimeDescriptors[0] = -1;
+            } else if (response.status == 0) {
+                response.status = -sendErrno;
+            }
+            if (stagingDescriptor >= 0) {
+                close(stagingDescriptor);
+            }
+            if (lifetimeDescriptors[0] >= 0) {
+                close(lifetimeDescriptors[0]);
+            }
+            if (lifetimeDescriptors[1] >= 0) {
+                close(lifetimeDescriptors[1]);
+            }
+            close(peer);
+            if (response.status != 0) {
+                trace("cpu-lock.failed", std::to_string(response.status));
+            }
+            continue;
+        }
+        if (request.operation ==
+                NUCLEUS_ANDROID_GFXSTREAM_UNLOCK_BUFFER ||
+            request.operation ==
+                NUCLEUS_ANDROID_GFXSTREAM_SYNC_BUFFER) {
+            nucleus_android_gfxstream_socket_message response = {};
+            response.magic = NUCLEUS_ANDROID_GFXSTREAM_SOCKET_MAGIC;
+            response.version = NUCLEUS_ANDROID_GFXSTREAM_SOCKET_VERSION;
+            response.operation = request.operation;
+            response.allocation_id = request.allocation_id;
+            response.cpu_lock_id = request.cpu_lock_id;
+            response.status = -EINVAL;
+            const auto lock = cpuLocks.find(request.cpu_lock_id);
+            const auto allocation = allocations.find(request.allocation_id);
+            const bool unlock =
+                request.operation ==
+                NUCLEUS_ANDROID_GFXSTREAM_UNLOCK_BUFFER;
+            if (lock == cpuLocks.end() ||
+                allocation == allocations.end() ||
+                lock->second->allocationIdentifier !=
+                    request.allocation_id ||
+                lock->second->peerPID !=
+                    static_cast<uint32_t>(credentials.pid) ||
+                lock->second->size != request.cpu_mapping_size ||
+                !validateCpuStaging(
+                    requestDescriptors[0],
+                    request.cpu_mapping_size)) {
+                response.status = -EINVAL;
+            } else {
+                const uint32_t access = unlock
+                    ? lock->second->access
+                    : request.cpu_access;
+                const bool accessValid = unlock ||
+                    ((access ==
+                         NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_READ ||
+                      access ==
+                         NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_WRITE) &&
+                     (lock->second->access & access) != 0);
+                if (!accessValid) {
+                    response.status = -EINVAL;
+                } else {
+                    void *pixels = mmap(
+                        nullptr,
+                        static_cast<size_t>(lock->second->size),
+                        PROT_READ | PROT_WRITE,
+                        MAP_SHARED,
+                        requestDescriptors[0],
+                        0);
+                    if (pixels == MAP_FAILED) {
+                        response.status = -errno;
+                    } else {
+                        const auto &buffer = *allocation->second;
+                        if (!unlock &&
+                            access ==
+                            NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_READ) {
+                            response.status =
+                                nucleus_android_gfxstream_host_read_color_buffer(
+                                    renderer.get(),
+                                    buffer.colorBufferHandle,
+                                    buffer.request.drm_format,
+                                    buffer.request.width,
+                                    buffer.request.height,
+                                    pixels,
+                                    lock->second->size);
+                        } else if (
+                            (access &
+                             NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_WRITE) != 0) {
+                            response.status =
+                                nucleus_android_gfxstream_host_update_color_buffer(
+                                    renderer.get(),
+                                    buffer.colorBufferHandle,
+                                    buffer.request.drm_format,
+                                    buffer.request.width,
+                                    buffer.request.height,
+                                    pixels,
+                                    lock->second->size);
+                        } else {
+                            response.status = 0;
+                        }
+                        munmap(
+                            pixels,
+                            static_cast<size_t>(lock->second->size));
+                    }
+                }
+            }
+            close(requestDescriptors[0]);
+            requestDescriptors[0] = -1;
+            if (unlock && lock != cpuLocks.end()) {
+                cpuLocks.erase(lock);
+            }
+            (void)sendControlResponse(peer, response);
+            close(peer);
+            if (response.status != 0) {
+                trace(
+                    unlock ? "cpu-unlock.failed" : "cpu-sync.failed",
+                    std::to_string(response.status));
+            }
             continue;
         }
         if (request.operation ==
@@ -1686,7 +2029,7 @@ int main(int argc, char **argv) {
             response.usage = request.usage;
             response.drm_modifier = modifier;
             response.allocation_size =
-                static_cast<uint64_t>(plane.stride) * request.height;
+                nucleus_android_gpu_buffer_allocation_size(buffer.get());
             response.width = request.width;
             response.height = request.height;
             response.android_format = request.android_format;
@@ -1811,6 +2154,7 @@ int main(int argc, char **argv) {
     }
     stopping.store(true, std::memory_order_release);
     endpoints.clear();
+    cpuLocks.clear();
     allocations.clear();
     close(endpointCompletionDescriptor);
     fenceCompletions.wait();

@@ -61,6 +61,7 @@ struct nucleus_android_gpu_buffer {
     uint32_t height;
     uint32_t drm_format;
     uint64_t modifier;
+    uint64_t allocation_size;
     uint32_t plane_count;
     VkImageLayout layout;
     uint64_t last_use_serial;
@@ -1079,6 +1080,7 @@ static nucleus_android_gpu_buffer *nucleus_android_gpu_buffer_create_locked(
     buffer->height = height;
     buffer->drm_format = drm_format;
     buffer->modifier = modifier;
+    buffer->allocation_size = requirements.size;
     buffer->plane_count = plane_count;
     buffer->layout = VK_IMAGE_LAYOUT_UNDEFINED;
     ++gpu->diagnostic.live_buffer_count;
@@ -1131,6 +1133,11 @@ void nucleus_android_gpu_buffer_destroy(nucleus_android_gpu_buffer *buffer) {
 
 uint32_t nucleus_android_gpu_buffer_plane_count(nucleus_android_gpu_buffer *buffer) {
     return buffer ? buffer->plane_count : 0;
+}
+
+uint64_t nucleus_android_gpu_buffer_allocation_size(
+    nucleus_android_gpu_buffer *buffer) {
+    return buffer ? buffer->allocation_size : 0;
 }
 
 int nucleus_android_gpu_buffer_export_plane(

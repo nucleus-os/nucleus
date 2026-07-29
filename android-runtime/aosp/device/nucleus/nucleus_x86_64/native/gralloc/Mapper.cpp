@@ -158,7 +158,13 @@ class NucleusMapper final : public vendor::mapper::IMapperV5Impl {
             std::lock_guard lock(mutex_);
             const auto found = mappings_.find(buffer);
             if (found != mappings_.end()) {
-                munmap(found->second.address, found->second.size);
+                (void)nucleus_gralloc_broker_unlock(
+                    *handle, found->second.broker);
+                munmap(
+                    found->second.address,
+                    found->second.broker.size);
+                close(found->second.broker.staging_fd);
+                close(found->second.broker.lifetime_fd);
                 mappings_.erase(found);
             }
         }
@@ -187,33 +193,58 @@ class NucleusMapper final : public vendor::mapper::IMapperV5Impl {
         void **output) override {
         unique_fd fence(acquireFence);
         const auto *handle = getHandle(buffer);
-        if (handle == nullptr || cpuUsage == 0) {
+        const uint64_t readMask =
+            static_cast<uint64_t>(BufferUsage::CPU_READ_MASK);
+        const uint64_t writeMask =
+            static_cast<uint64_t>(BufferUsage::CPU_WRITE_MASK);
+        uint32_t access = 0;
+        if ((cpuUsage & readMask) != 0) {
+            access |= NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_READ;
+        }
+        if ((cpuUsage & writeMask) != 0) {
+            access |= NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_WRITE;
+        }
+        if (handle == nullptr || access == 0) {
             return AIMAPPER_ERROR_BAD_VALUE;
         }
         if (fence.ok() && sync_wait(fence.get(), -1) < 0) {
             return AIMAPPER_ERROR_NO_RESOURCES;
         }
+        nucleus_gralloc_cpu_mapping brokerMapping = {};
+        brokerMapping.staging_fd = -1;
+        brokerMapping.lifetime_fd = -1;
+        if (nucleus_gralloc_broker_lock(
+                *handle, access, &brokerMapping) < 0) {
+            return AIMAPPER_ERROR_NO_RESOURCES;
+        }
         void *mapping = mmap(
             nullptr,
-            handle->allocation_size,
+            brokerMapping.size,
             PROT_READ | PROT_WRITE,
             MAP_SHARED,
-            handle->dmabuf_fd,
+            brokerMapping.staging_fd,
             0);
         if (mapping == MAP_FAILED) {
+            (void)nucleus_gralloc_broker_unlock(*handle, brokerMapping);
+            close(brokerMapping.staging_fd);
+            close(brokerMapping.lifetime_fd);
             return AIMAPPER_ERROR_NO_RESOURCES;
         }
         {
             std::lock_guard lock(mutex_);
             if (mappings_.contains(buffer)) {
-                munmap(mapping, handle->allocation_size);
+                munmap(mapping, brokerMapping.size);
+                (void)nucleus_gralloc_broker_unlock(
+                    *handle, brokerMapping);
+                close(brokerMapping.staging_fd);
+                close(brokerMapping.lifetime_fd);
                 return AIMAPPER_ERROR_BAD_VALUE;
             }
             mappings_.emplace(
                 buffer,
-                Mapping{mapping, handle->allocation_size});
+                Mapping{mapping, brokerMapping});
         }
-        *output = static_cast<std::byte *>(mapping) + handle->plane_offset;
+        *output = mapping;
         return AIMAPPER_ERROR_NONE;
     }
 
@@ -225,19 +256,30 @@ class NucleusMapper final : public vendor::mapper::IMapperV5Impl {
         if (found == mappings_.end()) {
             return AIMAPPER_ERROR_BAD_BUFFER;
         }
-        (void)msync(found->second.address, found->second.size, MS_SYNC);
-        munmap(found->second.address, found->second.size);
+        const auto *handle = getHandle(buffer);
+        if (handle == nullptr) {
+            return AIMAPPER_ERROR_BAD_BUFFER;
+        }
+        const int result = nucleus_gralloc_broker_unlock(
+            *handle, found->second.broker);
+        munmap(found->second.address, found->second.broker.size);
+        close(found->second.broker.staging_fd);
+        close(found->second.broker.lifetime_fd);
         mappings_.erase(found);
         *releaseFence = -1;
-        return AIMAPPER_ERROR_NONE;
+        return result == 0
+            ? AIMAPPER_ERROR_NONE
+            : AIMAPPER_ERROR_NO_RESOURCES;
     }
 
     AIMapper_Error flushLockedBuffer(buffer_handle_t buffer) override {
-        return synchronize(buffer);
+        return synchronize(
+            buffer, NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_WRITE);
     }
 
     AIMapper_Error rereadLockedBuffer(buffer_handle_t buffer) override {
-        return synchronize(buffer);
+        return synchronize(
+            buffer, NUCLEUS_ANDROID_GFXSTREAM_CPU_ACCESS_READ);
     }
 
     int32_t getMetadata(
@@ -438,18 +480,23 @@ class NucleusMapper final : public vendor::mapper::IMapperV5Impl {
   private:
     struct Mapping {
         void *address;
-        size_t size;
+        nucleus_gralloc_cpu_mapping broker;
     };
 
-    AIMapper_Error synchronize(buffer_handle_t buffer) {
+    AIMapper_Error synchronize(buffer_handle_t buffer, uint32_t access) {
         std::lock_guard lock(mutex_);
         const auto found = mappings_.find(buffer);
         if (found == mappings_.end()) {
             return AIMAPPER_ERROR_BAD_BUFFER;
         }
-        return msync(found->second.address, found->second.size, MS_SYNC) == 0
+        const auto *handle = getHandle(buffer);
+        if (handle == nullptr) {
+            return AIMAPPER_ERROR_BAD_BUFFER;
+        }
+        return nucleus_gralloc_broker_sync(
+            *handle, found->second.broker, access) == 0
                    ? AIMAPPER_ERROR_NONE
-                   : AIMAPPER_ERROR_NO_RESOURCES;
+                   : AIMAPPER_ERROR_BAD_VALUE;
     }
 
     std::mutex mutex_;

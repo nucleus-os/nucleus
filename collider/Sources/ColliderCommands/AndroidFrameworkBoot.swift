@@ -722,6 +722,15 @@ func androidFrameworkProductDefinitionDigest(
                 root: FilePath(androidRoot.path)))
 }
 
+func androidFrameworkLogReachedLauncher(frameworkLog: URL) -> Bool {
+    guard let log = try? String(
+        contentsOf: frameworkLog,
+        encoding: .utf8)
+    else { return false }
+    return log.contains(
+        "Displayed com.android.launcher3/.uioverrides.QuickstepLauncher")
+}
+
 struct AndroidFrameworkBrokerLaunch {
     let executable: URL
     let environment: [String: String]
@@ -1805,6 +1814,8 @@ private actor AndroidFrameworkBootSession {
     ) async throws {
         var frameworkBooted = false
         var synchronizedFramePresented = false
+        var launcherDrawn = false
+        var launcherPresentationBaseline: UInt64?
         while ContinuousClock.now < deadline {
             try progress?.recordHostSample(
                 cgroup: containerCgroup,
@@ -1843,7 +1854,21 @@ private actor AndroidFrameworkBootSession {
                 try progress?.record(
                     "composer.frame-physically-presented")
             }
-            if frameworkBooted && presented {
+            if !launcherDrawn && androidFrameworkLogReachedLauncher(
+                frameworkLog: layout.androidLog)
+            {
+                launcherDrawn = true
+                launcherPresentationBaseline =
+                    displayHostLatestPhysicallyPresentedFrame()
+                try progress?.record("android.launcher-drawn")
+            }
+            let launcherFramePresented =
+                launcherPresentationBaseline.map {
+                    (displayHostLatestPhysicallyPresentedFrame() ?? 0) > $0
+                } ?? false
+            if frameworkBooted && presented && launcherDrawn
+                && launcherFramePresented
+            {
                 try progress?.record("framework.ready")
                 await captureCompositorScreenshot(
                     waylandRuntimeDirectory: waylandRuntimeDirectory,
@@ -1859,8 +1884,8 @@ private actor AndroidFrameworkBootSession {
         }
         throw WorkspaceFailure.message(
             frameworkBooted
-                ? "Android framework booted without a synchronized, "
-                    + "physically presented Composer3 frame; diagnostics: "
+                ? "Android framework booted without a drawn Launcher3 home "
+                    + "frame presented through Composer3; diagnostics: "
                     + layout.diagnostics.path
                 : "Android framework did not publish sys.boot_completed=1; "
                 + "diagnostics: \(layout.diagnostics.path)")
@@ -1910,6 +1935,25 @@ private actor AndroidFrameworkBootSession {
             && log.contains("\"hasAcquireFence\":1")
             && log.contains(
                 "\"stage\":\"presentation.physically-presented\"")
+    }
+
+    private func displayHostLatestPhysicallyPresentedFrame() -> UInt64? {
+        guard let log = try? String(
+            contentsOf: layout.displayHostLog,
+            encoding: .utf8)
+        else { return nil }
+        for line in log.split(separator: "\n").reversed()
+        where line.contains(
+            "\"stage\":\"presentation.physically-presented\"")
+        {
+            guard let data = line.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data),
+                  let fields = object as? [String: Any],
+                  let frame = fields["frameNumber"] as? NSNumber
+            else { continue }
+            return frame.uint64Value
+        }
+        return nil
     }
 
     private func containerProperty(_ name: String) async throws -> String {

@@ -91,6 +91,22 @@ int nucleus_android_gfxstream_host_import_dmabuf(
 int nucleus_android_gfxstream_host_release_dmabuf(
     nucleus_android_gfxstream_host_renderer *renderer,
     uint32_t color_buffer_handle);
+int nucleus_android_gfxstream_host_read_color_buffer(
+    nucleus_android_gfxstream_host_renderer *renderer,
+    uint32_t color_buffer_handle,
+    uint32_t drm_format,
+    uint32_t width,
+    uint32_t height,
+    void *pixels,
+    uint64_t pixels_size);
+int nucleus_android_gfxstream_host_update_color_buffer(
+    nucleus_android_gfxstream_host_renderer *renderer,
+    uint32_t color_buffer_handle,
+    uint32_t drm_format,
+    uint32_t width,
+    uint32_t height,
+    const void *pixels,
+    uint64_t pixels_size);
 /* Transfers ownership of the returned shared-memory descriptor. */
 int nucleus_android_gfxstream_host_export_memory(
     nucleus_android_gfxstream_host_renderer *renderer,

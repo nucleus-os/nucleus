@@ -2,6 +2,7 @@ import ArgumentParser
 import ColliderCore
 import ColliderRuntime
 import FoundationEssentials
+import ShellColliderRecipe
 import SystemPackage
 
 enum RuntimeSanitizer: String, CaseIterable, Equatable,
@@ -238,11 +239,11 @@ struct RuntimeInstaller {
             }
         }
 
-        try await context.run(
-            context.layout.tools.appendingPathComponent(
-                "stage-runtime-elf.sh"
-            ).path,
-            [products.path, installation.prefix.path])
+        try await context.runtime.execute(
+            StageRuntimeELFAction(
+                products: FilePath(products.path),
+                prefix: FilePath(installation.prefix.path),
+                environment: context.taskEnvironment))
 
         let sessionPackage = context.layout.compositorSessionPackage
         for name in ["nucleus-session", "nucleus-session-validate"] {
@@ -341,13 +342,13 @@ struct RuntimeInstaller {
     private func validateELF(
         _ installation: RuntimeInstallation
     ) async throws {
-        let validator = context.layout.tools.appendingPathComponent(
-            "validate-runtime-elf.sh")
         let stagedManifest = installation.prefix.appendingPathComponent(
-            "share/nucleus/runtime-elf-ownership.tsv")
-        try await context.run(
-            validator.path,
-            [installation.prefix.path, stagedManifest.path])
+            "share/nucleus/runtime-elf-report.json")
+        try await context.runtime.execute(
+            ValidateRuntimeELFAction(
+                root: FilePath(installation.prefix.path),
+                report: FilePath(stagedManifest.path),
+                environment: context.taskEnvironment))
     }
 
     private func validateRelocation(
@@ -360,13 +361,13 @@ struct RuntimeInstaller {
                 isDirectory: true)
         try FileManager.default.moveItem(at: original, to: relocated)
         do {
-            let validator = context.layout.tools.appendingPathComponent(
-                "validate-runtime-elf.sh")
             let manifest = relocated.appendingPathComponent(
-                "share/nucleus/runtime-elf-ownership.tsv")
-            try await context.run(
-                validator.path,
-                [relocated.path, manifest.path])
+                "share/nucleus/runtime-elf-report.json")
+            try await context.runtime.execute(
+                ValidateRuntimeELFAction(
+                    root: FilePath(relocated.path),
+                    report: FilePath(manifest.path),
+                    environment: context.taskEnvironment))
             try FileManager.default.moveItem(at: relocated, to: original)
         } catch {
             try? FileManager.default.moveItem(at: relocated, to: original)

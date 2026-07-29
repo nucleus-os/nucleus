@@ -1,0 +1,204 @@
+import ColliderCore
+import Foundation
+import Synchronization
+import SystemPackage
+import Testing
+
+@testable import ShellColliderRecipe
+
+@Test func readELFDynamicMetadataIsParsedIntoTypedValues() {
+  let inspection = parseReadELFDynamic(
+    """
+     0x0000000000000001 (NEEDED) Shared library: [libvulkan.so.1]
+     0x0000000000000001 (NEEDED) Shared library: [libdrm.so.2]
+     0x000000000000001d (RUNPATH) Library runpath: [$ORIGIN/../lib]
+    """)
+
+  #expect(inspection.runpath == "$ORIGIN/../lib")
+  #expect(inspection.needed == ["libvulkan.so.1", "libdrm.so.2"])
+}
+
+@Test func lddOutputRetainsOnlyResolvedAbsolutePaths() {
+  let paths = parseLDDResolvedPaths(
+    """
+        linux-vdso.so.1 (0x00007fff00000000)
+        libswiftCore.so => /toolchain/usr/lib/swift/linux/libswiftCore.so (0x1)
+        libmissing.so => not found
+        /lib64/ld-linux-x86-64.so.2 (0x2)
+    """)
+
+  #expect(
+    paths == [
+      FilePath("/toolchain/usr/lib/swift/linux/libswiftCore.so"),
+      FilePath("/lib64/ld-linux-x86-64.so.2"),
+    ])
+}
+
+@Test func dependencyContractsRejectRenderLibrariesAtPrivilegeBoundaries() {
+  var inspections = validInspections()
+  inspections["NucleusShellPamHelper"] = RuntimeELFInspection(
+    runpath: "$ORIGIN",
+    needed: ["libpam.so.0", "libvulkan.so.1"])
+
+  #expect(throws: RuntimeELFFailure.self) {
+    try validateDependencyContracts(inspections)
+  }
+}
+
+@Test func componentActionsHaveStableDistinctIdentity() {
+  let first = AnyColliderAction(
+    ValidateRuntimeELFAction(
+      root: FilePath("/products"),
+      report: FilePath("/products/report.json"),
+      environment: ["PATH": "/one"]))
+  let sameDeclaration = AnyColliderAction(
+    ValidateRuntimeELFAction(
+      root: FilePath("/products"),
+      report: FilePath("/products/report.json"),
+      environment: ["PATH": "/one"]))
+  let differentOutput = AnyColliderAction(
+    ValidateRuntimeELFAction(
+      root: FilePath("/products"),
+      report: FilePath("/elsewhere/report.json"),
+      environment: ["PATH": "/one"]))
+
+  #expect(first == sameDeclaration)
+  #expect(first != differentOutput)
+  #expect(first.kind == "shell.validate-runtime-elf")
+}
+
+@Test func validationActionInspectsEveryProcessAndWritesTypedJSON() async throws {
+  let reportBytes = Mutex<[UInt8]?>(nil)
+  let inspections = validInspections()
+  let files = ActionFileSystem(
+    metadata: { path in
+      if ["/products/bin", "/products/lib", "/products/libexec"]
+        .contains(path.string)
+      {
+        return nil
+      }
+      return ActionFileSystem.Metadata(
+        type: .regular,
+        ownerExecutable: true)
+    },
+    createDirectory: { _ in },
+    copy: { _, _ in },
+    setPermissions: { _, _ in },
+    write: { bytes, _ in
+      reportBytes.withLock { $0 = bytes }
+    })
+  let context = ActionContext(files: files) { command in
+    guard case .named(let executable) = command.executable else {
+      return CommandResult(status: 1)
+    }
+    let name = command.arguments.last.map {
+      FilePath($0).lastComponent?.string ?? $0
+    } ?? ""
+    if executable == "readelf", command.arguments.first == "-d",
+      let inspection = inspections[name]
+    {
+      let needed = inspection.needed.sorted().map {
+        " 0x1 (NEEDED) Shared library: [\($0)]"
+      }
+      return CommandResult(
+        status: 0,
+        standardOutput: (
+          needed
+            + [
+              " 0x1 (RUNPATH) Library runpath: "
+                + "[\(inspection.runpath)]"
+            ]
+        ).joined(separator: "\n"))
+    }
+    return CommandResult(status: 0)
+  }
+
+  try await ValidateRuntimeELFAction(
+    root: FilePath("/products"),
+    report: FilePath("/products/runtime-elf-report.json"),
+    environment: [:]
+  ).execute(in: context)
+
+  let bytes = try #require(reportBytes.withLock { $0 })
+  let report = try JSONDecoder().decode(RuntimeELFReport.self, from: Data(bytes))
+  #expect(report.staged == false)
+  #expect(report.executables.count == 7)
+  #expect(report.executables.map(\.name).contains("NucleusCompositor"))
+}
+
+@Test func stagingActionCopiesTheDynamicClosureAndRewritesEveryRunpath() async throws {
+  struct Recording: Sendable {
+    var copies: [(String, String)] = []
+    var commands: [(String, [String])] = []
+  }
+  let recording = Mutex(Recording())
+  let files = ActionFileSystem(
+    metadata: { _ in
+      ActionFileSystem.Metadata(type: .regular, ownerExecutable: true)
+    },
+    createDirectory: { _ in },
+    copy: { source, destination in
+      recording.withLock {
+        $0.copies.append((source.string, destination.string))
+      }
+    },
+    setPermissions: { _, _ in },
+    write: { _, _ in })
+  let context = ActionContext(files: files) { command in
+    guard case .named(let executable) = command.executable else {
+      return CommandResult(status: 1)
+    }
+    recording.withLock {
+      $0.commands.append((executable, command.arguments))
+    }
+    if executable == "ldd" {
+      return CommandResult(
+        status: 0,
+        standardOutput:
+          "libswiftCore.so => /toolchain/libswiftCore.so (0x1)\n")
+    }
+    return CommandResult(status: 0)
+  }
+
+  try await StageRuntimeELFAction(
+    products: FilePath("/products"),
+    prefix: FilePath("/runtime"),
+    environment: [:]
+  ).execute(in: context)
+
+  let result = recording.withLock { $0 }
+  #expect(result.copies.count == 8)
+  #expect(result.copies.contains {
+    $0 == ("/toolchain/libswiftCore.so", "/runtime/lib/libswiftCore.so")
+  })
+  #expect(result.commands.filter { $0.0 == "patchelf" }.count == 8)
+  #expect(result.commands.filter { $0.0 == "strip" }.count == 8)
+}
+
+private func validInspections() -> [String: RuntimeELFInspection] {
+  [
+    "NucleusCompositor": RuntimeELFInspection(
+      runpath: "$ORIGIN",
+      needed: [
+        "libvulkan.so.1",
+        "libdrm.so.2",
+        "libwayland-server.so.0",
+      ]),
+    "NucleusShell": RuntimeELFInspection(
+      runpath: "$ORIGIN",
+      needed: ["libvulkan.so.1", "libwayland-client.so.0"]),
+    "NucleusSessionSupervisor": RuntimeELFInspection(
+      runpath: "$ORIGIN",
+      needed: ["libsystemd.so.0"]),
+    "NucleusConfigService": RuntimeELFInspection(
+      runpath: "$ORIGIN",
+      needed: ["libsystemd.so.0"]),
+    "NucleusControlService": RuntimeELFInspection(
+      runpath: "$ORIGIN",
+      needed: ["libsystemd.so.0"]),
+    "NucleusShellPamHelper": RuntimeELFInspection(
+      runpath: "$ORIGIN",
+      needed: ["libpam.so.0"]),
+    "nucleus": RuntimeELFInspection(runpath: "$ORIGIN", needed: []),
+  ]
+}

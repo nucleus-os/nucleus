@@ -12,10 +12,8 @@ public enum ShellColliderRecipe {
         let authWire = root.appending("auth-wire")
         let windowClient = workspace.appending("window-client")
         let desktop = workspace.appending("desktop")
-        let validator = workspace.appending(
-            "tools/validate-runtime-elf.sh")
         let manifest = swiftPM.configurationProducts.appending(
-            "runtime-elf-ownership.tsv")
+            "runtime-elf-report.json")
         return TaskDeclaration(
             id: TaskID(rawValue: "shell.build"),
             component: ComponentID(rawValue: "shell"),
@@ -48,14 +46,9 @@ public enum ShellColliderRecipe {
                 .tree(authWire.appending("Sources")),
                 .tree(windowClient.appending("Sources")),
                 .tree(desktop.appending("Sources")),
-                .file(validator),
                 .tool(.named("swift")),
                 .tool(.named("readelf")),
                 .tool(.named("ldd")),
-                .tool(.named("sed")),
-                .tool(.named("grep")),
-                .tool(.named("awk")),
-                .tool(.named("sort")),
                 swiftPM.identityInput,
             ],
             postconditions: [
@@ -67,8 +60,6 @@ public enum ShellColliderRecipe {
             locks: [.checkout("shell")],
             operation: .sequence(
                 runtimeFinalizationOperations(
-                    root: root,
-                    workspace: workspace,
                     environment: environment,
                     swiftPM: swiftPM)))
     }
@@ -84,7 +75,7 @@ public enum ShellColliderRecipe {
         let integration = workspace.appending(
             "integration-tests/window-client-conformance")
         let manifest = swiftPM.configurationProducts.appending(
-            "runtime-elf-ownership.tsv")
+            "runtime-elf-report.json")
         let integrationRequirement = swiftPM.testProduct(
             package: "window-client-conformance",
             testProduct: "NucleusWindowClientIntegrationTestsPackageTests",
@@ -150,8 +141,6 @@ public enum ShellColliderRecipe {
                                 requirement: shellKitRequirement))
                     ]
                         + runtimeFinalizationOperations(
-                            root: root,
-                            workspace: workspace,
                             environment: environment,
                             swiftPM: swiftPM))),
         ]
@@ -159,24 +148,17 @@ public enum ShellColliderRecipe {
 }
 
 private func runtimeFinalizationOperations(
-    root: FilePath,
-    workspace: FilePath,
     environment: [String: String],
     swiftPM: SwiftPMInvocation
 ) -> [TaskOperation] {
-    let validator = workspace.appending(
-        "tools/validate-runtime-elf.sh")
     let manifest = swiftPM.configurationProducts.appending(
-        "runtime-elf-ownership.tsv")
+        "runtime-elf-report.json")
     return [
-        .command(
-            CommandSpec(
-                executable: .path(validator),
-                arguments: [
-                    swiftPM.configurationProducts.string,
-                    manifest.string,
-                ],
-                workingDirectory: workspace,
-                environment: environment)),
+        .action(
+            AnyColliderAction(
+                ValidateRuntimeELFAction(
+                    root: swiftPM.configurationProducts,
+                    report: manifest,
+                    environment: environment))),
     ]
 }

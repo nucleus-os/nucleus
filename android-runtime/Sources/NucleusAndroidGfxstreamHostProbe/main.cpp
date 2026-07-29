@@ -159,6 +159,39 @@ int main(int argc, char **argv) {
         printFailure("gfxstream rejected the broker-owned dma-buf");
         return 2;
     }
+    std::vector<uint8_t> uploaded(64 * 64 * 4);
+    for (std::size_t index = 0; index < uploaded.size(); ++index) {
+        uploaded[index] = static_cast<uint8_t>(
+            (index * 37u + index / 17u) & 0xffu);
+    }
+    if (nucleus_android_gfxstream_host_update_color_buffer(
+            renderer.get(),
+            dmabuf.color_buffer_handle,
+            format,
+            dmabuf.width,
+            dmabuf.height,
+            uploaded.data(),
+            uploaded.size()) != 0) {
+        (void)nucleus_android_gfxstream_host_release_dmabuf(
+            renderer.get(), dmabuf.color_buffer_handle);
+        printFailure("gfxstream failed to upload linear CPU pixels");
+        return 2;
+    }
+    std::vector<uint8_t> readback(uploaded.size());
+    if (nucleus_android_gfxstream_host_read_color_buffer(
+            renderer.get(),
+            dmabuf.color_buffer_handle,
+            format,
+            dmabuf.width,
+            dmabuf.height,
+        readback.data(),
+        readback.size()) != 0 ||
+        readback != uploaded) {
+        (void)nucleus_android_gfxstream_host_release_dmabuf(
+            renderer.get(), dmabuf.color_buffer_handle);
+        printFailure("gfxstream linear CPU readback did not round-trip");
+        return 2;
+    }
     if (nucleus_android_gfxstream_host_release_dmabuf(
             renderer.get(),
             dmabuf.color_buffer_handle) != 0) {
@@ -180,6 +213,7 @@ int main(int argc, char **argv) {
         "\"vulkanDevice\":\"%s\",\"vulkanDeviceUUID\":\"%s\","
         "\"drmFormat\":\"0x%08x\",\"drmModifier\":\"0x%016llx\","
         "\"exactDmaBufGfxstreamImport\":true,"
+        "\"linearCpuRoundTrip\":true,"
         "\"liveBuffersAfterRelease\":%llu,"
         "\"retiredBuffersAfterRelease\":%llu,"
         "\"reclaimedBuffers\":%llu}\n",

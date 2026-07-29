@@ -113,6 +113,34 @@ func frameworkBootExposesPersistentDataThroughTheSessionRuntime() {
 }
 
 @Test
+func frameworkBootWaitsForLauncherToDraw() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(
+            "collider-framework-launcher-\(UUID().uuidString)",
+            isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let log = directory.appendingPathComponent("android-logcat.log")
+    try Data((
+        "I ActivityTaskManager: Displayed com.android.settings/.FallbackHome "
+            + "for user 0: +420ms\n"
+    ).utf8).write(to: log)
+    #expect(!androidFrameworkLogReachedLauncher(frameworkLog: log))
+
+    let handle = try FileHandle(forWritingTo: log)
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data((
+        "I ActivityTaskManager: Displayed "
+            + "com.android.launcher3/.uioverrides.QuickstepLauncher "
+            + "for user 0: +931ms\n"
+    ).utf8))
+    try handle.close()
+    #expect(androidFrameworkLogReachedLauncher(frameworkLog: log))
+}
+
+@Test
 func frameworkBootReportsTheFirstCausalLXCFailure() throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent(

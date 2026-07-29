@@ -121,6 +121,12 @@ let package = Package(
                 .product(name: "ColliderCore", package: "engine"),
                 "SwiftPlatformColliderRecipe",
             ]),
+        .testTarget(
+            name: "ShellColliderRecipeTests",
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                "ShellColliderRecipe",
+            ]),
     ]
 )
 

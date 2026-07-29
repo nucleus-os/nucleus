@@ -121,6 +121,8 @@ nucleus_android_gpu_buffer *nucleus_android_gpu_buffer_create(
     size_t error_capacity);
 void nucleus_android_gpu_buffer_destroy(nucleus_android_gpu_buffer *buffer);
 uint32_t nucleus_android_gpu_buffer_plane_count(nucleus_android_gpu_buffer *buffer);
+uint64_t nucleus_android_gpu_buffer_allocation_size(
+    nucleus_android_gpu_buffer *buffer);
 int nucleus_android_gpu_buffer_export_plane(
     nucleus_android_gpu_buffer *buffer,
     uint32_t plane_index,

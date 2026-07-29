@@ -118,16 +118,13 @@ struct WorkspaceDoctor {
                 [
                     "swift", "swiftc", "git", "cmake", "ninja", "pkg-config",
                     "corepack", "bun", "tar", "python3", "ccache", "readelf",
-                    "nm", "ldd", "patchelf", "strip", "install", "readlink",
-                    "bash", "systemd-analyze", "find", "awk", "sed", "grep",
-                    "sort", "cut", "uniq",
+                    "ldd", "patchelf", "strip", "install", "bash",
+                    "systemd-analyze",
                 ],
                 scope: "runtime")
             + paths(
                 [
                     "Package.swift",
-                    "tools/stage-runtime-elf.sh",
-                    "tools/validate-runtime-elf.sh",
                     "third-party/swift-java-jni-core/Package.swift",
                 ],
                 under: context.root,

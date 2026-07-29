@@ -1,6 +1,7 @@
 import ColliderCore
 import ColliderDownloads
 import ColliderPlatformC
+import Foundation
 import Subprocess
 import Synchronization
 import SystemPackage
@@ -49,6 +50,24 @@ public actor ColliderRuntime {
 
     public func execute(_ command: CommandSpec) async throws -> CommandResult {
         try await execute(command, stage: nil, onStarted: nil)
+    }
+
+    public func execute<Action: ColliderAction>(
+        _ action: Action
+    ) async throws {
+        try await execute(AnyColliderAction(action), stage: nil)
+    }
+
+    func execute(
+        _ action: AnyColliderAction,
+        stage: TaskID?
+    ) async throws {
+        let context = ActionContext(
+            files: actionFileSystem(),
+            execute: { command in
+                try await self.execute(command, stage: stage)
+            })
+        try await action.execute(in: context)
     }
 
     public func download(
@@ -107,6 +126,56 @@ public actor ColliderRuntime {
             await cancellation.unregister(registration)
             throw error
         }
+    }
+
+    private nonisolated func actionFileSystem() -> ActionFileSystem {
+        ActionFileSystem(
+            metadata: { path in
+                guard FileManager.default.fileExists(atPath: path.string) else {
+                    return nil
+                }
+                let resolved = URL(fileURLWithPath: path.string)
+                    .resolvingSymlinksInPath().path
+                let attributes = try FileManager.default.attributesOfItem(
+                    atPath: resolved)
+                let fileType: ActionFileSystem.FileType
+                switch attributes[.type] as? FileAttributeType {
+                case .typeRegular:
+                    fileType = .regular
+                case .typeDirectory:
+                    fileType = .directory
+                case .typeSymbolicLink:
+                    fileType = .symbolicLink
+                default:
+                    fileType = .other
+                }
+                let permissions =
+                    (attributes[.posixPermissions] as? NSNumber)?.uint16Value
+                    ?? 0
+                return ActionFileSystem.Metadata(
+                    type: fileType,
+                    ownerExecutable: permissions & 0o100 != 0)
+            },
+            createDirectory: { path in
+                try FileManager.default.createDirectory(
+                    atPath: path.string,
+                    withIntermediateDirectories: true)
+            },
+            copy: { source, destination in
+                let resolved = URL(fileURLWithPath: source.string)
+                    .resolvingSymlinksInPath().path
+                try DurableFile.copy(
+                    from: FilePath(resolved),
+                    to: destination)
+            },
+            setPermissions: { path, permissions in
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: NSNumber(value: permissions)],
+                    ofItemAtPath: path.string)
+            },
+            write: { bytes, path in
+                try DurableFile.write(Data(bytes), to: path)
+            })
     }
 
     private func executeRegistered(
