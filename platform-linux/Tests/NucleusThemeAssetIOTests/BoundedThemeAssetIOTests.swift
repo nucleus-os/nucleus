@@ -54,7 +54,9 @@ import Testing
         let first = Task { await service.resolve(1) }
         started.wait()
         let dropped = Task { await service.resolve(2) }
-        await Task.yield()
+        while await service.snapshot.pending != 1 {
+            await Task.yield()
+        }
         let retained = Task { await service.resolve(3) }
         #expect(await dropped.value == nil)
         gate.signal()

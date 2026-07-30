@@ -6,12 +6,17 @@ import Testing
 @Suite struct LinuxRuntimePrimitivesTests {
     @Test func ownedDescriptorClosesAtEndOfLifetime() {
         var descriptors = [Int32](repeating: -1, count: 2)
-        let pipeResult = descriptors.withUnsafeMutableBufferPointer {
-            unsafe pipe($0.baseAddress)
+        let socketResult = descriptors.withUnsafeMutableBufferPointer {
+            unsafe socketpair(
+                AF_UNIX,
+                Int32(SOCK_STREAM.rawValue | SOCK_CLOEXEC.rawValue),
+                0,
+                $0.baseAddress)
         }
-        #expect(pipeResult == 0)
+        #expect(socketResult == 0)
         let observed = descriptors[0]
-        close(descriptors[1])
+        let peer = descriptors[1]
+        defer { close(peer) }
 
         do {
             let owned = LinuxOwnedFileDescriptor(adopting: observed)
@@ -20,9 +25,8 @@ import Testing
             #expect(fcntl(borrowed, F_GETFD) >= 0)
         }
 
-        errno = 0
-        #expect(fcntl(observed, F_GETFD) == -1)
-        #expect(errno == EBADF)
+        var byte: UInt8 = 0
+        #expect(unsafe recv(peer, &byte, 1, Int32(MSG_DONTWAIT)) == 0)
     }
 
     @Test func duplicateHasIndependentOwnership() {

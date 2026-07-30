@@ -200,7 +200,7 @@ final class RouterWindowDriver {
         if initial {
             _ = window.protocolState.queueConfigure(
                 rect: WindowRect(), activeMaximized: false, activeFullscreen: false,
-                specialOutputID: nil, layoutTransitionID: 0,
+                resizing: false, specialOutputID: nil, layoutTransitionID: 0,
                 serial: serial.rawValue)
         } else if let plan = entry.pendingPlan {
             let pending = wm.recordConfigureSent(

@@ -1,6 +1,6 @@
 import Foundation
 
-public struct AndroidFrameworkProgressRecorder {
+public struct AndroidRuntimeEventRecorder {
     private struct Event: Encodable {
         let elapsedMilliseconds: Int64
         let stage: String
@@ -13,7 +13,12 @@ public struct AndroidFrameworkProgressRecorder {
 
     public init(output: URL) throws {
         self.output = output
-        try Data().write(to: output, options: .atomic)
+        if !FileManager.default.fileExists(atPath: output.path) {
+            _ = FileManager.default.createFile(
+                atPath: output.path,
+                contents: nil,
+                attributes: [.posixPermissions: 0o600])
+        }
         try FileManager.default.setAttributes(
             [.posixPermissions: 0o600],
             ofItemAtPath: output.path)

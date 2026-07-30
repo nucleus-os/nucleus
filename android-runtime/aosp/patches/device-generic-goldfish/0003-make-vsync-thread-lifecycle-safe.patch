@@ -1,0 +1,91 @@
+diff --git a/hals/hwc3/VsyncThread.cpp b/hals/hwc3/VsyncThread.cpp
+index 0ec1b23e..9da40a91 100644
+--- a/hals/hwc3/VsyncThread.cpp
++++ b/hals/hwc3/VsyncThread.cpp
+@@ -76,7 +76,10 @@ HWC3::Error VsyncThread::start(int32_t vsyncPeriodNanos) {
+
+ HWC3::Error VsyncThread::stop() {
+     mShuttingDown.store(true);
+-    mThread.join();
++    mStateCondition.notify_all();
++    if (mThread.joinable()) {
++        mThread.join();
++    }
+
+     return HWC3::Error::None;
+ }
+@@ -140,34 +143,40 @@ void VsyncThread::threadLoop() {
+     TimePoint previousLog = std::chrono::steady_clock::now();
+
+     while (!mShuttingDown.load()) {
+-        TimePoint now = std::chrono::steady_clock::now();
+-        TimePoint nextVsync = GetNextVsyncInPhase(vsyncPeriod, mPreviousVsync, now);
+-
+-        std::this_thread::sleep_until(nextVsync);
++        std::shared_ptr<IComposerCallback> callbacks;
++        bool vsyncEnabled = false;
++        TimePoint nextVsync;
+         {
+             std::unique_lock<std::mutex> lock(mStateMutex);
+-
++            const TimePoint now = std::chrono::steady_clock::now();
++            nextVsync = GetNextVsyncInPhase(
++                    mVsyncPeriod, mPreviousVsync, now);
++            if (mStateCondition.wait_until(lock, nextVsync, [this] {
++                    return mShuttingDown.load();
++                })) {
++                continue;
++            }
+             mPreviousVsync = nextVsync;
+-
+-            // Display has finished refreshing at previous vsync period. Update the
+-            // vsync period if there was a pending update.
+             vsyncPeriod = updateVsyncPeriodLocked(mPreviousVsync);
++            callbacks = mCallbacks;
++            vsyncEnabled = mVsyncEnabled;
+         }
+
+-        if (mVsyncEnabled) {
+-            if (mCallbacks) {
++        if (vsyncEnabled) {
++            if (callbacks) {
+                 DEBUG_LOG("%s: for display:%" PRIu64 " calling vsync", __FUNCTION__, mDisplayId);
+-                mCallbacks->onVsync(mDisplayId, asNanosTimePoint(nextVsync),
+-                                    static_cast<int32_t>(asNanosDuration(vsyncPeriod)));
++                callbacks->onVsync(mDisplayId, asNanosTimePoint(nextVsync),
++                                   static_cast<int32_t>(asNanosDuration(vsyncPeriod)));
+             }
+         }
+
+         static constexpr const int kLogIntervalSeconds = 60;
+-        if (now > (previousLog + std::chrono::seconds(kLogIntervalSeconds))) {
++        const TimePoint logNow = std::chrono::steady_clock::now();
++        if (logNow > (previousLog + std::chrono::seconds(kLogIntervalSeconds))) {
+             DEBUG_LOG("%s: for display:%" PRIu64 " send %" PRIu32 " in last %d seconds",
+                       __FUNCTION__, mDisplayId, vsyncs, kLogIntervalSeconds);
+             (void)vsyncs;
+-            previousLog = now;
++            previousLog = logNow;
+             vsyncs = 0;
+         }
+         ++vsyncs;
+diff --git a/hals/hwc3/VsyncThread.h b/hals/hwc3/VsyncThread.h
+index d2d3ad7b..0795b7d5 100644
+--- a/hals/hwc3/VsyncThread.h
++++ b/hals/hwc3/VsyncThread.h
+@@ -22,6 +22,7 @@
+ #include <android/hardware/graphics/common/1.0/types.h>
+
+ #include <chrono>
++#include <condition_variable>
+ #include <mutex>
+ #include <optional>
+ #include <thread>
+@@ -65,6 +66,7 @@ class VsyncThread {
+     std::thread mThread;
+
+     std::mutex mStateMutex;
++    std::condition_variable mStateCondition;
+
+     std::atomic<bool> mShuttingDown{false};
+

@@ -7,6 +7,7 @@ public enum SessionProcessRole: UInt8, Sendable, Equatable {
     case supervisor = 3
     case configService = 4
     case controlService = 5
+    case capability = 6
 
     public static let argument = "--nucleus-session-role"
 

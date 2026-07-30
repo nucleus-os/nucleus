@@ -43,6 +43,7 @@ $(call inherit-product-if-exists, external/hyphenation-patterns/patterns.mk)
 
 # Desktop application-runtime surface.
 PRODUCT_PACKAGES += \
+    libnucleus_host_display_jni \
     cameraserver \
     DocumentsUI \
     FusedLocation \
@@ -52,9 +53,15 @@ PRODUCT_PACKAGES += \
     Settings \
     SettingsIntelligence \
     SystemUI \
+    UserDictionaryProvider \
     frameworks-base-overlays \
     librs_jni \
     preinstalled-packages-nucleus.xml
+
+PRODUCT_COPY_FILES += \
+    device/nucleus/nucleus_x86_64/sysconfig/oem-defined-uids-nucleus.xml:$(TARGET_COPY_OUT_SYSTEM_EXT)/etc/sysconfig/oem-defined-uids-nucleus.xml \
+    device/nucleus/nucleus_x86_64/sysconfig/package-shareduid-allowlist-nucleus.xml:$(TARGET_COPY_OUT_SYSTEM_EXT)/etc/sysconfig/package-shareduid-allowlist-nucleus.xml \
+    device/nucleus/nucleus_x86_64/sysconfig/privapp-permissions-nucleus.xml:$(TARGET_COPY_OUT_SYSTEM_EXT)/etc/permissions/privapp-permissions-nucleus.xml
 
 # LocationManagerService requires one direct-boot-aware fused provider before
 # third-party applications can start. FusedLocation runs in the system process,
@@ -136,7 +143,8 @@ PRODUCT_VENDOR_PROPERTIES += \
     ro.hardware.gralloc=nucleus \
     ro.hardware.hwcomposer=nucleus \
     ro.hardware.vulkan=nucleus \
-    ro.nucleus.container=true
+    ro.nucleus.container=true \
+    ro.nucleus.host_display=true
 
 # Nucleus deliberately has no fallback guest renderer.
 PRODUCT_VENDOR_PROPERTIES += \

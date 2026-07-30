@@ -1,6 +1,11 @@
 import ArgumentParser
 import Foundation
 import NucleusSessionProtocol
+import SystemPackage
+
+#if os(Linux)
+import Glibc
+#endif
 
 enum OptimizationMode: String, Equatable, ExpressibleByArgument {
     case debug
@@ -30,6 +35,7 @@ struct RunOptions: Equatable {
     var drmDevice: String?
     var wallpaper: String?
     var build = true
+    var android = false
     var validation = false
     var diagnostics = false
     var optimization: OptimizationMode?
@@ -124,11 +130,15 @@ struct RunCommand {
 
         var environment = context.environment
         try configureRuntimeEnvironment(options, environment: &environment)
+        if options.android {
+            try requireInstalledAndroidCapability(installation)
+        }
 
         if options.tracy {
             if options.build {
                 try await TracyTools(context: context).buildReceivers()
             }
+            try await authenticateAndroidRuntimeIfNeeded(options)
             try await ProfileCapture(context: context).run(
                 options: options,
                 installation: installation,
@@ -158,23 +168,19 @@ struct RunCommand {
             compositorCommand = [installation.compositor.path]
                 + options.compositorArguments
         }
-        let sessionArguments = [
+        try await authenticateAndroidRuntimeIfNeeded(options)
+        var sessionArguments = [
             "--configuration", try options.sessionConfiguration.hexEncoded,
-            "--",
-        ] + compositorCommand
-        if let seconds = options.seconds {
-            try await runForDuration(
-                seconds,
-                executable: installation.session,
-                arguments: sessionArguments,
-                environment: environment)
-        } else {
-            try await context.run(
-                installation.session.path,
-                sessionArguments,
-                environmentOverrides: environment,
-                terminal: true)
+        ]
+        if options.android {
+            sessionArguments += ["--capability", "android"]
         }
+        sessionArguments += ["--"] + compositorCommand
+        try await runSession(
+            options: options,
+            installation: installation,
+            arguments: sessionArguments,
+            environment: environment)
     }
 
     private func requireLaunchableSeatEnvironment() throws {
@@ -185,6 +191,34 @@ struct RunCommand {
                 + "desktop session; switch to a free virtual terminal or a "
                 + "display-manager session")
         }
+    }
+
+    private func requireInstalledAndroidCapability(
+        _ installation: RuntimeInstallation
+    ) throws {
+        let manifest = installation.prefix.appendingPathComponent(
+            "share/nucleus/session-capabilities/android.json")
+        let values = try? manifest.resourceValues(
+            forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+        guard values?.isRegularFile == true,
+              values?.isSymbolicLink != true,
+              FileManager.default.isExecutableFile(
+                atPath: installation.androidRuntime.path)
+        else {
+            throw WorkspaceFailure.message(
+                "the Android runtime is not installed; build the signed "
+                    + "Android image and rerun without --no-build")
+        }
+    }
+
+    private func authenticateAndroidRuntimeIfNeeded(
+        _ options: RunOptions
+    ) async throws {
+        guard options.android else { return }
+        try await context.run(
+            "sudo",
+            ["--validate"],
+            terminal: true)
     }
 
     private func configureRuntimeEnvironment(
@@ -224,20 +258,112 @@ struct RunCommand {
         return directory
     }
 
-    private func runForDuration(
-        _ seconds: Int,
-        executable: URL,
+    private func runSession(
+        options: RunOptions,
+        installation: RuntimeInstallation,
         arguments: [String],
         environment: [String: String]
     ) async throws {
-        print("run duration: \(seconds) second\(seconds == 1 ? "" : "s")")
-        try await context.run(
-            executable.path,
+        if let seconds = options.seconds {
+            print(
+                "run duration: \(seconds) second"
+                    + "\(seconds == 1 ? "" : "s")")
+        }
+        guard options.android else {
+            try await context.run(
+                installation.session.path,
+                arguments,
+                environmentOverrides: environment,
+                timeoutSeconds: options.seconds,
+                timeoutIsSuccess: options.seconds != nil,
+                terminal: true)
+            return
+        }
+        guard let runDirectory = environment["NUCLEUS_RUN_DIR"].map({
+            URL(fileURLWithPath: $0, isDirectory: true)
+        }) else {
+            throw WorkspaceFailure.message(
+                "Android runtime logging requires NUCLEUS_RUN_DIR")
+        }
+        let diagnostics = runDirectory.appendingPathComponent(
+            "android-runtime",
+            isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: diagnostics,
+            withIntermediateDirectories: true)
+        let kittyLog = diagnostics.appendingPathComponent("kitty.log")
+        try await context.withRunningCommand(
+            installation.session.path,
             arguments,
             environmentOverrides: environment,
-            timeoutSeconds: seconds,
-            timeoutIsSuccess: true,
-            terminal: true)
+            terminal: true,
+            timeoutSeconds: options.seconds
+        ) { session in
+            try await session.waitUntilReady()
+            let runtimeDirectory = try await waitForSessionWaylandSocket(
+                session,
+                environment: environment)
+            let invocation = AndroidRuntimeLogWindowInvocation(
+                diagnosticsDirectory: diagnostics)
+            try await context.withRunningCommand(
+                invocation.executable,
+                invocation.arguments,
+                environmentOverrides: [
+                    "XDG_RUNTIME_DIR": runtimeDirectory.path,
+                    "WAYLAND_DISPLAY": "wayland-0",
+                ],
+                output: .file(FilePath(kittyLog.path))
+            ) { kitty in
+                try await kitty.waitUntilReady()
+                let result = try await session.wait()
+                guard result.status == 0
+                    || result.timedOut && options.seconds != nil
+                else {
+                    throw WorkspaceFailure.process(
+                        [installation.session.path] + arguments,
+                        result.status)
+                }
+            }
+        }
+    }
+
+    private func waitForSessionWaylandSocket(
+        _ session: RunningCommand,
+        environment: [String: String]
+    ) async throws -> URL {
+        let parentRuntimeDirectory =
+            environment["XDG_RUNTIME_DIR"]
+            ?? "/run/user/\(getuid())"
+        guard parentRuntimeDirectory.hasPrefix("/") else {
+            throw WorkspaceFailure.message(
+                "XDG_RUNTIME_DIR must be absolute")
+        }
+        guard let processIdentifier = await session.processIdentifier else {
+            throw WorkspaceFailure.message(
+                "session process identifier is unavailable")
+        }
+        let runtimeDirectory = URL(
+            fileURLWithPath: parentRuntimeDirectory,
+            isDirectory: true
+        ).appendingPathComponent(
+            "nucleus-\(processIdentifier)",
+            isDirectory: true)
+        let socket = runtimeDirectory.appendingPathComponent("wayland-0")
+        for _ in 0..<300 {
+            if FileManager.default.fileExists(atPath: socket.path) {
+                return runtimeDirectory
+            }
+            guard await session.isRunning else {
+                let result = try await session.wait()
+                throw WorkspaceFailure.process(
+                    ["nucleus-session"],
+                    result.status)
+            }
+            try await ContinuousClock().sleep(for: .milliseconds(100))
+        }
+        throw WorkspaceFailure.message(
+            "Nucleus Wayland socket was not published before the log-window "
+                + "deadline")
     }
 }
 

@@ -1,9 +1,42 @@
 import Foundation
 import Glibc
+import NucleusAndroidComposerProtocolC
 @testable import NucleusAndroidDisplayHostCore
 import NucleusIPCTransportC
 import NucleusLinuxReactor
 import Testing
+
+@Test
+func composerTopologySubscriptionReceivesTheZeroDescriptorPacket() throws {
+    var sockets = [Int32](repeating: -1, count: 2)
+    #expect(unsafe nucleus_ipc_socket_pair(&sockets) == 0)
+    guard sockets.allSatisfy({ $0 >= 0 }) else { return }
+    defer {
+        for descriptor in sockets {
+            _ = close(descriptor)
+        }
+    }
+
+    var request = nucleus_composer_topology_subscribe_request()
+    request.operation = UInt32(
+        NUCLEUS_COMPOSER_SUBSCRIBE_TOPOLOGY.rawValue)
+    request.byte_count = UInt32(MemoryLayout.size(ofValue: request))
+    request.fd_count = 0
+    request.last_generation = 37
+    let requestSize = MemoryLayout.size(ofValue: request)
+    let sent = withUnsafePointer(to: &request) {
+        unsafe nucleus_ipc_send(
+            sockets[0],
+            $0,
+            requestSize,
+            nil,
+            0)
+    }
+    #expect(sent == 0)
+
+    let received = try receiveComposerTopologySubscription(sockets[1])
+    #expect(received.last_generation == 37)
+}
 
 @Test
 @MainActor

@@ -374,7 +374,7 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     #expect(isSignaled == 1)
 }
 
-@Test func composerPresentFenceIsIndependentFromBufferRelease() throws {
+@Test func perBufferReleaseTimelineExportsPendingFenceAfterAvailability() throws {
     guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
     var bridgeError = [CChar](repeating: 0, count: 1_024)
     let bridge = candidate.renderNode.withCString { path in
@@ -401,81 +401,59 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     }
     defer { unsafe nucleus_android_gpu_destroy(gpu) }
 
-    let timelineFD = unsafe nucleus_android_syncobj_bridge_export_release_timeline(
-        bridge)
-    guard timelineFD >= 0 else {
-        throw RawGraphicsTestError(
-            description: "release timeline export failed")
-    }
-    guard let timeline = unsafe nucleus_android_syncobj_timeline_import_fd(
-        gpu, timelineFD)
+    guard let timeline =
+            unsafe nucleus_android_syncobj_bridge_create_timeline(bridge)
     else {
-        _ = close(timelineFD)
         throw RawGraphicsTestError(
-            description: "release timeline import failed")
+            description: "per-buffer release timeline creation failed")
     }
-    _ = close(timelineFD)
     defer { unsafe nucleus_android_syncobj_timeline_destroy(timeline) }
 
-    #expect(unsafe nucleus_android_syncobj_bridge_watch_release(
-        bridge, 7) == 0)
-
-    var presentError = [CChar](repeating: 0, count: 1_024)
-    let firstPresentFence =
-        unsafe nucleus_android_syncobj_bridge_export_present_sync_file(
-            bridge, 1, &presentError, presentError.count)
-    guard firstPresentFence >= 0 else {
+    var producerFence: Int32 = -1
+    guard let nativeFence = unsafe nucleus_android_native_fence_create(
+        gpu,
+        &producerFence,
+        &error,
+        error.count)
+    else {
         throw RawGraphicsTestError(
-            description: presentError.withUnsafeBufferPointer {
+            description: error.withUnsafeBufferPointer {
                 unsafe String(cString: $0.baseAddress!)
             })
     }
-    defer { _ = close(firstPresentFence) }
-    let secondPresentFence =
-        unsafe nucleus_android_syncobj_bridge_export_present_sync_file(
-            bridge, 2, &presentError, presentError.count)
-    guard secondPresentFence >= 0 else {
-        throw RawGraphicsTestError(
-            description: presentError.withUnsafeBufferPointer {
-                unsafe String(cString: $0.baseAddress!)
-            })
+    defer {
+        unsafe nucleus_android_native_fence_destroy(nativeFence)
+        _ = close(producerFence)
     }
-    defer { _ = close(secondPresentFence) }
 
-    var firstPresent = pollfd(
-        fd: firstPresentFence,
+    #expect(unsafe nucleus_android_syncobj_timeline_arm_available(
+        timeline, 7) == 0)
+    var availability = pollfd(
+        fd: unsafe nucleus_android_syncobj_timeline_availability_fd(
+            timeline),
         events: Int16(POLLIN),
         revents: 0)
-    var secondPresent = pollfd(
-        fd: secondPresentFence,
+    #expect(unsafe poll(&availability, 1, 0) == 0)
+    #expect(unsafe nucleus_android_syncobj_timeline_import_sync_file(
+        timeline, 7, producerFence) == 0)
+    #expect(unsafe poll(&availability, 1, 1_000) == 1)
+    #expect(unsafe nucleus_android_syncobj_timeline_drain_available(
+        timeline) == 0)
+
+    let releaseFence =
+        unsafe nucleus_android_syncobj_timeline_export_sync_file(
+            timeline, 7)
+    #expect(releaseFence >= 0)
+    guard releaseFence >= 0 else { return }
+    defer { _ = close(releaseFence) }
+    var releaseState = pollfd(
+        fd: releaseFence,
         events: Int16(POLLIN),
         revents: 0)
-    #expect(unsafe poll(&firstPresent, 1, 0) == 0)
-    #expect(unsafe poll(&secondPresent, 1, 0) == 0)
-
-    // Retiring the Wayland allocation must not impersonate a physical display
-    // presentation.
-    #expect(unsafe nucleus_android_syncobj_timeline_signal(timeline, 7) == 0)
-    var notification = pollfd(
-        fd: unsafe nucleus_android_syncobj_bridge_release_notification_fd(
-            bridge),
-        events: Int16(POLLIN),
-        revents: 0)
-    #expect(unsafe poll(&notification, 1, 1_000) == 1)
-    #expect(unsafe nucleus_android_syncobj_bridge_dispatch_releases(
-        bridge) == 0)
-    #expect(unsafe nucleus_android_syncobj_bridge_forwarded_release_point(
-        bridge) == 7)
-    #expect(unsafe poll(&firstPresent, 1, 0) == 0)
-    #expect(unsafe poll(&secondPresent, 1, 0) == 0)
-
-    #expect(unsafe nucleus_android_syncobj_bridge_signal_present(
-        bridge, 1) == 0)
-    #expect(unsafe poll(&firstPresent, 1, 1_000) == 1)
-    #expect(unsafe poll(&secondPresent, 1, 0) == 0)
-    #expect(unsafe nucleus_android_syncobj_bridge_signal_present(
-        bridge, 2) == 0)
-    #expect(unsafe poll(&secondPresent, 1, 1_000) == 1)
+    #expect(unsafe poll(&releaseState, 1, 0) == 0)
+    #expect(unsafe nucleus_android_native_fence_signal(
+        nativeFence, &error, error.count) == 0)
+    #expect(unsafe poll(&releaseState, 1, 1_000) == 1)
 }
 
 @Test func nativeFenceExportsUnsignaledSyncFileThenSignalsIt() throws {

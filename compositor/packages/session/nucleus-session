@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [ "${1:-}" = "--help" ]; then
   cat <<'USAGE'
-usage: nucleus-session [--status-file PATH] [--configuration HEX] [--] [NucleusCompositor [args...]]
+usage: nucleus-session [--status-file PATH] [--configuration HEX] [--capability NAME]... [--] [NucleusCompositor [args...]]
 
 Construct the Nucleus Linux session environment and run the compositor inside a
 private session bus. The compositor consumes the resulting environment; it does
@@ -20,6 +20,7 @@ export PATH="$session_bin_dir:$PATH"
 
 status_file=""
 configuration_hex=""
+requested_capabilities=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --status-file)
@@ -36,6 +37,26 @@ while [ "$#" -gt 0 ]; do
         exit 64
       }
       configuration_hex="$2"
+      shift 2
+      ;;
+    --capability)
+      [ "$#" -ge 2 ] || {
+        echo "nucleus-session: --capability requires a name" >&2
+        exit 64
+      }
+      case "$2" in
+        ""|*[!a-z0-9.-]*|.*|*.)
+          echo "nucleus-session: invalid capability name: $2" >&2
+          exit 64
+          ;;
+      esac
+      for requested_capability in "${requested_capabilities[@]}"; do
+        if [ "$requested_capability" = "$2" ]; then
+          echo "nucleus-session: capability requested more than once: $2" >&2
+          exit 64
+        fi
+      done
+      requested_capabilities+=("$2")
       shift 2
       ;;
     --)
@@ -344,21 +365,19 @@ supervisor_arguments=(
   --shell "$session_bin_dir/NucleusShell"
 )
 session_capability_dir="$session_bin_dir/../share/nucleus/session-capabilities"
-if [ -e "$session_capability_dir" ]; then
+if [ "${#requested_capabilities[@]}" -gt 0 ]; then
   if [ -L "$session_capability_dir" ] || [ ! -d "$session_capability_dir" ]; then
-    echo "nucleus-session: capability path must be a directory, not a symlink: $session_capability_dir" >&2
+    echo "nucleus-session: requested capability directory is unavailable: $session_capability_dir" >&2
     exit 64
   fi
-  while IFS= read -r -d '' capability_manifest; do
+  for capability_name in "${requested_capabilities[@]}"; do
+    capability_manifest="$session_capability_dir/$capability_name.json"
     if [ -L "$capability_manifest" ] || [ ! -f "$capability_manifest" ]; then
-      echo "nucleus-session: capability manifest must be a regular file, not a symlink: $capability_manifest" >&2
+      echo "nucleus-session: requested capability manifest is unavailable: $capability_manifest" >&2
       exit 64
     fi
     supervisor_arguments+=(--capability-manifest "$capability_manifest")
-  done < <(
-    find "$session_capability_dir" -mindepth 1 -maxdepth 1 \
-      -name '*.json' -print0 | sort -z
-  )
+  done
 fi
 if [ -n "$status_file" ]; then
   supervisor_arguments+=(--status-file "$status_file")

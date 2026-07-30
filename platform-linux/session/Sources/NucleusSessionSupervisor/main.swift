@@ -695,9 +695,9 @@ private final class SessionSupervisor {
                             configService, controlService, compositor, shell,
                         ])
                     try statusPublisher.publish(shellReady)
-                case .supervisor:
+                case .supervisor, .capability:
                     throw SupervisorFailure.childExited(
-                        .supervisor, unexpectedExit.status)
+                        unexpectedExit.role, unexpectedExit.status)
                 }
             }
         } catch SupervisorFailure.interrupted(let signal) {
@@ -759,9 +759,13 @@ private final class SessionSupervisor {
             return .controlServiceStartupTimedOut
         case .usage, .system, .channel, .interrupted,
              .childExited(.supervisor, _),
+             .childExited(.capability, _),
              .readinessClosed(.supervisor),
+             .readinessClosed(.capability),
              .invalidReadiness(.supervisor),
-             .startupTimedOut(.supervisor):
+             .invalidReadiness(.capability),
+             .startupTimedOut(.supervisor),
+             .startupTimedOut(.capability):
             return .internalFailure
         }
     }
@@ -857,65 +861,22 @@ private final class SessionSupervisor {
         _ declaration: SessionCapabilityDeclaration,
         restartCount: UInt8
     ) throws -> SupervisedCapability {
-        var attributes = posix_spawnattr_t()
-        guard unsafe posix_spawnattr_init(&attributes) == 0 else {
-            throw SupervisorFailure.system(
-                "initializing capability process attributes", errno)
-        }
-        defer { unsafe posix_spawnattr_destroy(&attributes) }
-
-        var defaultSignals = sigset_t()
-        var emptyMask = sigset_t()
-        unsafe sigemptyset(&defaultSignals)
-        unsafe sigemptyset(&emptyMask)
-        for signal in [SIGCHLD, SIGINT, SIGQUIT, SIGTERM, SIGHUP, SIGPIPE] {
-            unsafe sigaddset(&defaultSignals, signal)
-        }
-        guard unsafe posix_spawnattr_setsigdefault(
-            &attributes,
-            &defaultSignals) == 0,
-              unsafe posix_spawnattr_setsigmask(&attributes, &emptyMask) == 0,
-              unsafe posix_spawnattr_setflags(
-                &attributes,
-                Int16(
-                    POSIX_SPAWN_SETSIGDEF
-                        | POSIX_SPAWN_SETSIGMASK
-                        | POSIX_SPAWN_SETPGROUP)) == 0,
-              unsafe posix_spawnattr_setpgroup(&attributes, 0) == 0
-        else {
-            throw SupervisorFailure.system(
-                "configuring capability process attributes", errno)
-        }
-
-        let childArguments = [
-            declaration.executable,
-            SessionCapabilityProcess.identifierArgument,
-            declaration.identifier,
-        ] + declaration.arguments
-        let storage: [UnsafeMutablePointer<CChar>?] =
-            unsafe childArguments.map { unsafe strdup($0) } + [nil]
-        defer { unsafe storage.forEach { unsafe free($0) } }
-        var processID = pid_t()
-        let result = storage.withUnsafeBufferPointer { buffer in
-            unsafe posix_spawnp(
-                &processID,
-                buffer[0]!,
-                nil,
-                &attributes,
-                UnsafeMutablePointer(mutating: buffer.baseAddress!),
-                environ)
-        }
-        guard result == 0 else {
-            throw SupervisorFailure.system(
-                "launching capability \(declaration.identifier)",
-                Int32(result))
-        }
+        let child = try spawn(
+            role: .capability,
+            command: [
+                declaration.executable,
+                SessionCapabilityProcess.identifierArgument,
+                declaration.identifier,
+            ] + declaration.arguments,
+            sendsSessionConfiguration: false,
+            reportsReadiness: false)
         log(
-            "spawned capability \(declaration.identifier) pid=\(processID) "
+            "spawned capability \(declaration.identifier) "
+                + "pid=\(child.processID) "
                 + "restart=\(restartCount)")
         return SupervisedCapability(
             declaration: declaration,
-            processID: processID,
+            processID: child.processID,
             restartCount: restartCount)
     }
 
@@ -923,23 +884,29 @@ private final class SessionSupervisor {
         role: SessionProcessRole,
         command: [String],
         inheritedDescriptors: [InheritedDescriptor] = [],
-        sendsSessionConfiguration: Bool = true
+        sendsSessionConfiguration: Bool = true,
+        reportsReadiness: Bool = true
     ) throws -> SupervisedChild {
-        let pipeDescriptors: (Int32, Int32)
-        do {
-            pipeDescriptors = try SessionChannel.socketPair()
-        } catch {
-            throw SupervisorFailure.channel("\(error)")
+        let pipeDescriptors: (Int32, Int32)?
+        if reportsReadiness {
+            do {
+                pipeDescriptors = try SessionChannel.socketPair()
+            } catch {
+                throw SupervisorFailure.channel("\(error)")
+            }
+        } else {
+            pipeDescriptors = nil
         }
-        let readDescriptor = pipeDescriptors.0
-        let writeDescriptor = pipeDescriptors.1
+        let readDescriptor = pipeDescriptors?.0 ?? -1
         let configurationPair: (Int32, Int32)?
         if sendsSessionConfiguration {
             do {
                 configurationPair = try SessionChannel.socketPair()
             } catch {
-                _ = close(readDescriptor)
-                _ = close(writeDescriptor)
+                if let pipeDescriptors {
+                    _ = close(pipeDescriptors.0)
+                    _ = close(pipeDescriptors.1)
+                }
                 inheritedDescriptors.forEach { _ = close($0.source) }
                 throw SupervisorFailure.channel("\(error)")
             }
@@ -952,8 +919,10 @@ private final class SessionSupervisor {
         guard unsafe posix_spawn_file_actions_init(&actions) == 0,
               unsafe posix_spawnattr_init(&attributes) == 0
         else {
-            _ = close(readDescriptor)
-            _ = close(writeDescriptor)
+            if let pipeDescriptors {
+                _ = close(pipeDescriptors.0)
+                _ = close(pipeDescriptors.1)
+            }
             if let configurationPair {
                 _ = close(configurationPair.0)
                 _ = close(configurationPair.1)
@@ -965,16 +934,26 @@ private final class SessionSupervisor {
             unsafe posix_spawn_file_actions_destroy(&actions)
             unsafe posix_spawnattr_destroy(&attributes)
         }
-        guard unsafe posix_spawn_file_actions_adddup2(
-            &actions,
-            writeDescriptor,
-            Self.childReadinessDescriptor) == 0,
-              unsafe posix_spawn_file_actions_addclose(
+        let readinessActionsAdded: Bool
+        if let pipeDescriptors {
+            let duplicateResult = unsafe posix_spawn_file_actions_adddup2(
                 &actions,
-                readDescriptor) == 0,
-              unsafe posix_spawn_file_actions_addclose(
+                pipeDescriptors.1,
+                Self.childReadinessDescriptor)
+            let closeReadResult = unsafe posix_spawn_file_actions_addclose(
                 &actions,
-                writeDescriptor) == 0,
+                pipeDescriptors.0)
+            let closeWriteResult = unsafe posix_spawn_file_actions_addclose(
+                &actions,
+                pipeDescriptors.1)
+            readinessActionsAdded =
+                duplicateResult == 0
+                && closeReadResult == 0
+                && closeWriteResult == 0
+        } else {
+            readinessActionsAdded = true
+        }
+        guard readinessActionsAdded,
               unsafe addDescriptorActions(
                 &actions,
                 configurationPair.map {
@@ -989,14 +968,16 @@ private final class SessionSupervisor {
                     &actions, $0, closingPeer: nil)
               })
         else {
-            _ = close(readDescriptor)
-            _ = close(writeDescriptor)
+            if let pipeDescriptors {
+                _ = close(pipeDescriptors.0)
+                _ = close(pipeDescriptors.1)
+            }
             if let configurationPair {
                 _ = close(configurationPair.0)
                 _ = close(configurationPair.1)
             }
             inheritedDescriptors.forEach { _ = close($0.source) }
-            throw SupervisorFailure.system("readiness descriptor actions", errno)
+            throw SupervisorFailure.system("child descriptor actions", errno)
         }
 
         var defaultSignals = sigset_t()
@@ -1018,8 +999,10 @@ private final class SessionSupervisor {
                         | POSIX_SPAWN_SETPGROUP)) == 0,
               unsafe posix_spawnattr_setpgroup(&attributes, 0) == 0
         else {
-            _ = close(readDescriptor)
-            _ = close(writeDescriptor)
+            if let pipeDescriptors {
+                _ = close(pipeDescriptors.0)
+                _ = close(pipeDescriptors.1)
+            }
             if let configurationPair {
                 _ = close(configurationPair.0)
                 _ = close(configurationPair.1)
@@ -1031,9 +1014,13 @@ private final class SessionSupervisor {
         var childArguments = [command[0],
             SessionProcessRole.argument,
             String(role.rawValue),
-            SessionReadinessReporter.descriptorArgument,
-            String(Self.childReadinessDescriptor),
         ]
+        if reportsReadiness {
+            childArguments += [
+                SessionReadinessReporter.descriptorArgument,
+                String(Self.childReadinessDescriptor),
+            ]
+        }
         if configurationPair != nil {
             childArguments += [
                 SessionConfiguration.descriptorArgument,
@@ -1060,11 +1047,15 @@ private final class SessionSupervisor {
                 UnsafeMutablePointer(mutating: buffer.baseAddress!),
                 environ)
         }
-        _ = close(writeDescriptor)
+        if let pipeDescriptors {
+            _ = close(pipeDescriptors.1)
+        }
         if let configurationPair { _ = close(configurationPair.0) }
         inheritedDescriptors.forEach { _ = close($0.source) }
         guard result == 0 else {
-            _ = close(readDescriptor)
+            if let pipeDescriptors {
+                _ = close(pipeDescriptors.0)
+            }
             if let configurationPair { _ = close(configurationPair.1) }
             throw SupervisorFailure.system(
                 "launching \(command[0])",
@@ -1077,7 +1068,9 @@ private final class SessionSupervisor {
                     to: configurationPair.1)
             } catch {
                 _ = close(configurationPair.1)
-                _ = close(readDescriptor)
+                if let pipeDescriptors {
+                    _ = close(pipeDescriptors.0)
+                }
                 _ = kill(-processID, SIGKILL)
                 while waitpid(processID, nil, 0) < 0, errno == EINTR {}
                 throw error
@@ -1112,11 +1105,14 @@ private final class SessionSupervisor {
     private func waitForReadiness(
         _ child: SupervisedChild,
         milestone: SessionMilestone,
-        monitoring children: [SupervisedChild]
+        monitoring children: [SupervisedChild],
+        timeoutMilliseconds: Int32? = nil
     ) throws -> SessionReadinessMessage {
         defer { _ = close(child.readinessDescriptor) }
         let deadline = Self.monotonicNanoseconds()
-            + UInt64(arguments.startupTimeoutMilliseconds) * 1_000_000
+            + UInt64(
+                timeoutMilliseconds
+                    ?? arguments.startupTimeoutMilliseconds) * 1_000_000
         while true {
             var descriptors = [
                 pollfd(
@@ -1262,12 +1258,21 @@ private final class SessionSupervisor {
         return values
     }
 
-    private func terminate(_ children: [SupervisedChild]) {
+    private func terminate(
+        _ children: [SupervisedChild],
+        graceMilliseconds: UInt64 = 1_000,
+        gracefulRootOnly: Bool = false
+    ) {
         let processGroups = Set(children.map(\.processID))
         var remaining = processGroups
-        for processGroup in processGroups { _ = kill(-processGroup, SIGTERM) }
+        for processGroup in processGroups {
+            _ = kill(
+                gracefulRootOnly ? processGroup : -processGroup,
+                SIGTERM)
+        }
 
-        let deadline = Self.monotonicNanoseconds() + 1_000_000_000
+        let deadline = Self.monotonicNanoseconds()
+            + graceMilliseconds * 1_000_000
         while !remaining.isEmpty,
               Self.monotonicNanoseconds() < deadline
         {
@@ -1301,12 +1306,18 @@ private final class SessionSupervisor {
     private func terminateCapabilities(
         _ capabilities: [SupervisedCapability]
     ) {
+        let graceMilliseconds =
+            UInt64(capabilities.map {
+                $0.declaration.shutdownTimeoutSeconds
+            }.max() ?? 1) * 1_000
         terminate(capabilities.map {
             SupervisedChild(
-                role: .supervisor,
+                role: .capability,
                 processID: $0.processID,
                 readinessDescriptor: -1)
-        })
+        },
+        graceMilliseconds: graceMilliseconds,
+        gracefulRootOnly: true)
     }
 
     private func terminateSession(_ children: [SupervisedChild]) {

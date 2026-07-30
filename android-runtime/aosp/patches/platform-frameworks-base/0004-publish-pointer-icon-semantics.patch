@@ -1,0 +1,155 @@
+diff --git a/core/java/android/hardware/input/IPointerIconChangedListener.aidl b/core/java/android/hardware/input/IPointerIconChangedListener.aidl
+new file mode 100644
+index 000000000000..24d17c86a95b
+--- /dev/null
++++ b/core/java/android/hardware/input/IPointerIconChangedListener.aidl
+@@ -0,0 +1,6 @@
++package android.hardware.input;
++
++/** @hide */
++oneway interface IPointerIconChangedListener {
++    void onPointerIconChanged(int displayId, int pointerIconType);
++}
+diff --git a/core/java/android/hardware/input/IInputManager.aidl b/core/java/android/hardware/input/IInputManager.aidl
+index fb7dd19e730c..e8d556afafcb 100644
+--- a/core/java/android/hardware/input/IInputManager.aidl
++++ b/core/java/android/hardware/input/IInputManager.aidl
+@@ -29,6 +29,7 @@ import android.hardware.input.IKeyboardBacklightListener;
+ import android.hardware.input.IKeyboardBacklightState;
+ import android.hardware.input.IKeyGestureEventListener;
+ import android.hardware.input.IKeyGestureHandler;
++import android.hardware.input.IPointerIconChangedListener;
+ import android.hardware.input.IStickyModifierStateListener;
+ import android.hardware.input.ITabletModeChangedListener;
+ import android.hardware.input.IVirtualGamepad;
+@@ -104,4 +105,6 @@ interface IInputManager {
+     // another window system. The caller must have ASSOCIATE_INPUT_DEVICE_TO_DISPLAY.
+     void setPointerIconVisible(boolean visible, int displayId);
++    void registerPointerIconChangedListener(in IPointerIconChangedListener listener);
++    void unregisterPointerIconChangedListener(in IPointerIconChangedListener listener);
+
+     // Injects an input event into the system. The caller must have the INJECT_EVENTS permission.
+diff --git a/core/java/android/hardware/input/InputManager.java b/core/java/android/hardware/input/InputManager.java
+index 4b0143ac92f6..205a2427e1d1 100644
+--- a/core/java/android/hardware/input/InputManager.java
++++ b/core/java/android/hardware/input/InputManager.java
+@@ -1387,5 +1387,19 @@ public final class InputManager {
+         mGlobal.setPointerIconVisible(visible, displayId);
+     }
+
++    /** @hide */
++    @RequiresPermission(Manifest.permission.ASSOCIATE_INPUT_DEVICE_TO_DISPLAY)
++    public void registerPointerIconChangedListener(
++            @NonNull IPointerIconChangedListener listener) {
++        mGlobal.registerPointerIconChangedListener(listener);
++    }
++
++    /** @hide */
++    @RequiresPermission(Manifest.permission.ASSOCIATE_INPUT_DEVICE_TO_DISPLAY)
++    public void unregisterPointerIconChangedListener(
++            @NonNull IPointerIconChangedListener listener) {
++        mGlobal.unregisterPointerIconChangedListener(listener);
++    }
++
+     /**
+      * Injects an input event into the event system on behalf of an application.
+diff --git a/core/java/android/hardware/input/InputManagerGlobal.java b/core/java/android/hardware/input/InputManagerGlobal.java
+index 560dc690757e..54e06ebdf9bd 100644
+--- a/core/java/android/hardware/input/InputManagerGlobal.java
++++ b/core/java/android/hardware/input/InputManagerGlobal.java
+@@ -1794,5 +1794,23 @@ public final class InputManagerGlobal {
+         }
+     }
+
++    public void registerPointerIconChangedListener(
++            @NonNull IPointerIconChangedListener listener) {
++        try {
++            mIm.registerPointerIconChangedListener(listener);
++        } catch (RemoteException e) {
++            throw e.rethrowFromSystemServer();
++        }
++    }
++
++    public void unregisterPointerIconChangedListener(
++            @NonNull IPointerIconChangedListener listener) {
++        try {
++            mIm.unregisterPointerIconChangedListener(listener);
++        } catch (RemoteException e) {
++            throw e.rethrowFromSystemServer();
++        }
++    }
++
+     /**
+      * @see InputManager#setPointerIcon(PointerIcon, int, int, int, IBinder)
+diff --git a/services/core/java/com/android/server/input/InputManagerService.java b/services/core/java/com/android/server/input/InputManagerService.java
+index a348cbbc3e5b..da105c647b2d 100644
+--- a/services/core/java/com/android/server/input/InputManagerService.java
++++ b/services/core/java/com/android/server/input/InputManagerService.java
+@@ -68,6 +68,7 @@ import android.hardware.input.IVirtualGamepad;
+ import android.hardware.input.IVirtualKeyboard;
+ import android.hardware.input.IVirtualMouse;
+ import android.hardware.input.IVirtualNavigationTouchpad;
++import android.hardware.input.IPointerIconChangedListener;
+ import android.hardware.input.IVirtualRotaryEncoder;
+ import android.hardware.input.IVirtualStylus;
+ import android.hardware.input.IVirtualTouchscreen;
+@@ -271,4 +272,6 @@ public class InputManagerService extends IInputManager.Stub
+     @GuardedBy("mVibratorLock")
+     private final SparseArray<RemoteCallbackList<IVibratorStateListener>> mVibratorStateListeners =
+             new SparseArray<>();
++    private final RemoteCallbackList<IPointerIconChangedListener>
++            mPointerIconChangedListeners = new RemoteCallbackList<>();
+     // List of vibrator states by device id.
+@@ -1542,4 +1545,29 @@ public class InputManagerService extends IInputManager.Stub
+         setPointerIconVisibleInternal(visible, displayId);
+     }
+
++    @Override // Binder call
++    public void registerPointerIconChangedListener(
++            @NonNull IPointerIconChangedListener listener) {
++        enforcePointerPresentationPermission(
++                "registerPointerIconChangedListener()");
++        mPointerIconChangedListeners.register(listener);
++    }
++
++    @Override // Binder call
++    public void unregisterPointerIconChangedListener(
++            @NonNull IPointerIconChangedListener listener) {
++        enforcePointerPresentationPermission(
++                "unregisterPointerIconChangedListener()");
++        mPointerIconChangedListeners.unregister(listener);
++    }
++
++    private void enforcePointerPresentationPermission(String operation) {
++        if (!checkCallingPermission(
++                android.Manifest.permission.ASSOCIATE_INPUT_DEVICE_TO_DISPLAY,
++                operation)) {
++            throw new SecurityException(
++                    "Requires ASSOCIATE_INPUT_DEVICE_TO_DISPLAY permission");
++        }
++    }
++
+     private void setDisplayEligibilityForPointerCapture(int displayId, boolean isEligible) {
+@@ -1843,5 +1870,21 @@ public class InputManagerService extends IInputManager.Stub
+     public boolean setPointerIcon(@NonNull PointerIcon icon, int displayId, int deviceId,
+             int pointerId, IBinder inputToken) {
+         Objects.requireNonNull(icon);
+-        return mNative.setPointerIcon(icon, displayId, deviceId, pointerId, inputToken);
++        final boolean changed =
++                mNative.setPointerIcon(icon, displayId, deviceId, pointerId, inputToken);
++        if (changed) {
++            final int count = mPointerIconChangedListeners.beginBroadcast();
++            try {
++                for (int index = 0; index < count; index++) {
++                    try {
++                        mPointerIconChangedListeners.getBroadcastItem(index)
++                                .onPointerIconChanged(displayId, icon.getType());
++                    } catch (RemoteException ignored) {
++                    }
++                }
++            } finally {
++                mPointerIconChangedListeners.finishBroadcast();
++            }
++        }
++        return changed;
+     }

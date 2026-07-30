@@ -665,6 +665,35 @@ final class RecordingDesktopObserver: DesktopModelObserver {
 }
 
 @MainActor
+@Test func finishingResizeConfiguresTheSameGeometryToClearResizingState() throws {
+    server.serverReset()
+    windowManager.reset()
+    try seedConfigurePolicyDisplay()
+
+    let windowID = try server.windowCreate(source: .xdg)
+    let target = WindowRect(x: 10, y: 20, width: 900, height: 700)
+    let resizing = try #require(windowManager.planConfigure(
+        ConfigureRequest(
+            windowID: windowID,
+            reason: .resize,
+            targetRect: target,
+            resizing: true)))
+    _ = windowManager.recordConfigureSent(
+        windowID: windowID,
+        serial: 200,
+        plan: resizing)
+
+    let finished = try #require(windowManager.planConfigure(
+        ConfigureRequest(
+            windowID: windowID,
+            reason: .move,
+            targetRect: target,
+            resizing: false)))
+    #expect(finished.shouldConfigure)
+    #expect(!finished.stateMask.contains(.resizing))
+}
+
+@MainActor
 @Test func fullscreenExitPreservesSwiftRestoreRect() throws {
     server.serverReset()
     windowManager.reset()

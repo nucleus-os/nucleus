@@ -91,9 +91,14 @@ struct ProfileCapture {
         environment["TRACY_PORT"] = String(port)
         let runtimeEnvironment = environment
         let configuration = try options.sessionConfiguration
-        let sessionArguments = [
+        var sessionArguments = [
             "--status-file", sessionStatus.path,
             "--configuration", configuration.hexEncoded,
+        ]
+        if options.android {
+            sessionArguments += ["--capability", "android"]
+        }
+        sessionArguments += [
             "--", installation.compositor.path,
         ] + options.compositorArguments
         try await context.withRunningCommand(

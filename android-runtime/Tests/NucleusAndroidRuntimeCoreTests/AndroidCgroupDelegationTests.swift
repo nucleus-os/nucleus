@@ -5,21 +5,21 @@ import Testing
 @Test
 func androidCgroupDelegationResolvesTheOwnedPayloadRoot() throws {
     let delegation = try AndroidCgroupDelegation(
-        containerName: "nucleus-framework-3970820",
+        containerName: "nucleus-android-runtime-3970820",
         mappedSystemUser: 166_536,
         mappedSystemGroup: 166_536)
 
     #expect(
         delegation.cgroupPath
             == "/sys/fs/cgroup/system.slice/"
-            + "nucleus-framework-3970820.scope/payload/android")
+            + "nucleus-android-runtime-3970820.scope/payload/android")
 }
 @Test
 func androidCgroupDelegationRejectsPathsOutsideItsPrivilegeBoundary() {
     for name in [
-        "nucleus-framework-",
-        "nucleus-framework-current",
-        "../nucleus-framework-1",
+        "nucleus-android-runtime-",
+        "nucleus-android-runtime-current",
+        "../nucleus-android-runtime-1",
         "other-1",
     ] {
         #expect(throws: AndroidCgroupDelegationFailure.self) {
@@ -35,7 +35,7 @@ func androidCgroupDelegationRejectsPathsOutsideItsPrivilegeBoundary() {
 func androidCgroupDelegationRequiresAMappedSystemIdentity() {
     #expect(throws: AndroidCgroupDelegationFailure.self) {
         try AndroidCgroupDelegation(
-            containerName: "nucleus-framework-1",
+            containerName: "nucleus-android-runtime-1",
             mappedSystemUser: 1_000,
             mappedSystemGroup: 1_000)
     }
@@ -44,7 +44,7 @@ func androidCgroupDelegationRequiresAMappedSystemIdentity() {
 @Test
 func androidCgroupDelegationRequiresControllersAndProcessFreeParents() throws {
     let delegation = try AndroidCgroupDelegation(
-        containerName: "nucleus-framework-1",
+        containerName: "nucleus-android-runtime-1",
         mappedSystemUser: 166_536,
         mappedSystemGroup: 166_536)
 
@@ -76,7 +76,7 @@ func androidCgroupDelegationRequiresControllersAndProcessFreeParents() throws {
 @Test
 func androidCgroupDelegationRequiresMappedSystemOwnership() throws {
     let delegation = try AndroidCgroupDelegation(
-        containerName: "nucleus-framework-1",
+        containerName: "nucleus-android-runtime-1",
         mappedSystemUser: 166_536,
         mappedSystemGroup: 166_536)
 

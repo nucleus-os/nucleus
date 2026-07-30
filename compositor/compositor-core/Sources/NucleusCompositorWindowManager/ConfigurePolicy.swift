@@ -152,6 +152,7 @@ extension WindowManager {
             rect: plan.targetRect,
             activeMaximized: plan.activeMaximized,
             activeFullscreen: plan.activeFullscreen,
+            resizing: plan.stateMask.contains(.resizing),
             specialOutputID: plan.specialOutputID,
             layoutTransitionID: plan.layoutTransitionID,
             serial: serial
@@ -161,6 +162,7 @@ extension WindowManager {
             rect: plan.targetRect,
             activeMaximized: plan.activeMaximized,
             activeFullscreen: plan.activeFullscreen,
+            resizing: plan.stateMask.contains(.resizing),
             specialOutputID: plan.specialOutputID,
             layoutTransitionID: plan.layoutTransitionID,
             slotGeneration: slotGeneration
@@ -252,7 +254,9 @@ extension WindowManager {
             window.currentOutputID = outputID
             window.preferredOutputID = outputID
         }
-        let samePending = window.protocolState.latest?.rect == targetRect
+        let samePending = window.protocolState.latest.map {
+            $0.rect == targetRect && $0.resizing == request.resizing
+        } ?? false
         return ConfigurePlan(
             shouldConfigure: !samePending,
             shouldPresent: false,

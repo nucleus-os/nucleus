@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<config>
+    <allow-package-shareduid
+        package="org.nucleus.android.runtimebridge"
+        shareduid="android.uid.nucleus_runtime" />
+</config>

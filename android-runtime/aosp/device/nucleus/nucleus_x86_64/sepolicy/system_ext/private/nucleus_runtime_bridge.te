@@ -10,3 +10,11 @@ allow nucleus_runtime_bridge nucleus_runtime_socket:sock_file {
     read
     write
 };
+
+allow system_server nucleus_runtime_socket:dir search;
+allow system_server nucleus_runtime_socket:sock_file {
+    getattr
+    open
+    read
+    write
+};

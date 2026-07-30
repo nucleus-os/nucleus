@@ -17,7 +17,13 @@ do {
     let renderDevice = try value("--render-device")
     let parentPID = try Int32(value("--parent-pid"))
     let wayland = try value("--wayland")
-    guard let expectedUserID, let parentPID, arguments.isEmpty else {
+    let inputSocket = try value("--input-socket")
+    let presentationSocket = try value("--presentation-socket")
+    let displayControlSocket = try value("--display-control-socket")
+    let presentationUserID =
+        try UInt32(value("--presentation-expected-uid"))
+    guard let expectedUserID, let presentationUserID,
+          let parentPID, arguments.isEmpty else {
         throw DisplayHostError.invalidArguments("invalid numeric argument or unknown option")
     }
     try await NucleusAndroidDisplayHost(
@@ -25,7 +31,11 @@ do {
         expectedUserID: expectedUserID,
         renderDevice: renderDevice,
         parentProcessID: parentPID,
-        waylandSocket: wayland
+        waylandSocket: wayland,
+        inputSocketPath: inputSocket,
+        presentationSocketPath: presentationSocket,
+        displayControlSocketPath: displayControlSocket,
+        presentationExpectedUserID: presentationUserID
     ).run()
 } catch {
     FileHandle.standardError.write(

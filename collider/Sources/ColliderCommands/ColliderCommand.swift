@@ -14,7 +14,7 @@ public struct ColliderCommand: AsyncParsableCommand {
             Install.self, Toolchain.self, Android.self, AndroidRuntime.self,
             Browser.self,
             Generate.self, Sanitize.self, Benchmark.self,
-            Validate.self, Qualify.self, Cache.self, Logs.self, Status.self,
+            Validate.self, Cache.self, Logs.self, Status.self,
         ])
 
     public init() {}
@@ -84,6 +84,9 @@ func commandFailureStatus(
     wasInterrupted: Bool
 ) -> RunStatus {
     if wasInterrupted {
+        return .interrupted
+    }
+    if error is CancellationError {
         return .interrupted
     }
     if case .resumptionIdentityChanged = error as? RunRegistryFailure {
@@ -278,6 +281,10 @@ struct Run: AsyncParsableCommand {
     var optimization: OptimizationMode?
     @Option var sanitize: RuntimeSanitizer?
     @Flag(name: .customLong("no-build")) var noBuild = false
+    @Flag(
+        help:
+            "Start the contained Android runtime as an optional session capability.")
+    var android = false
     @Flag(name: .customLong("vk-validation")) var validation = false
     @Flag(name: .customLong("trace-diagnostics")) var diagnostics = false
     @Flag var valgrind = false
@@ -324,6 +331,7 @@ struct Run: AsyncParsableCommand {
         options.optimization = optimization
         options.sanitizer = sanitize
         options.build = !noBuild
+        options.android = android
         options.validation = validation
         options.diagnostics = diagnostics
         options.valgrind = valgrind
@@ -466,13 +474,6 @@ struct Android: AsyncParsableCommand {
     }
 }
 
-enum AndroidFrameworkBrokerSanitizer:
-    String,
-    ExpressibleByArgument
-{
-    case address
-}
-
 struct AndroidRuntime: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "android-runtime",
@@ -481,7 +482,6 @@ struct AndroidRuntime: AsyncParsableCommand {
             SourceLock.self,
             Source.self,
             Image.self,
-            FrameworkBoot.self,
         ])
 
     struct SourceLock: TaskControlledCommand {
@@ -521,42 +521,6 @@ struct AndroidRuntime: AsyncParsableCommand {
         }
     }
 
-    struct FrameworkBoot: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(
-            commandName: "framework-boot",
-            abstract:
-                "Boot the signed Android framework in its production container.")
-
-        @Option(
-            name: .customLong("timeout-seconds"),
-            help: "Maximum framework readiness wait.")
-        var timeoutSeconds: UInt32 = 180
-
-        @Flag(
-            name: .customLong("vk-validation"),
-            help: "Enable Vulkan validation for the Nucleus compositor.")
-        var validation = false
-
-        @Option(
-            help: "Instrument the gfxstream broker with address sanitizer.")
-        var sanitize: AndroidFrameworkBrokerSanitizer?
-
-        mutating func validate() throws {
-            guard timeoutSeconds > 0 else {
-                throw ValidationError(
-                    "--timeout-seconds must be positive")
-            }
-        }
-
-        mutating func run() async throws {
-            try await AndroidFrameworkBootCommand(
-                context: context(),
-                timeoutSeconds: timeoutSeconds,
-                enableVulkanValidation: validation,
-                brokerSanitizer: sanitize
-            ).run()
-        }
-    }
 }
 
 struct Browser: AsyncParsableCommand {
@@ -662,71 +626,6 @@ struct Validate: AsyncParsableCommand {
             try VulkanValidation(context: context()).run(
                 dryRun: dryRun,
                 json: json)
-        }
-    }
-}
-
-struct Qualify: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        abstract: "Run live hardware qualification workflows.",
-        subcommands: [AndroidPresentation.self])
-
-    struct AndroidPresentation: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(
-            commandName: "android-presentation",
-            abstract:
-                "Qualify gfxstream-to-Wayland presentation in a bounded Nucleus session.")
-
-        @Option(
-            name: .customLong("drm-device"),
-            help: "Connected DRM render node used by every graphics participant.")
-        var drmDevice: String
-
-        @Option(help: "Number of paced frames to present.")
-        var frames = 600
-
-        @Option(help: "Qualification artifact directory.")
-        var output: String?
-
-        @Option(help: "Positive fractional output scale.")
-        var scale = 1.0
-
-        @Option(
-            name: .customLong("present-mode"),
-            help: "vsync or mailbox_latest_wins.")
-        var presentMode: PresentMode = .vsync
-
-        @Flag(name: .customLong("no-build"))
-        var noBuild = false
-
-        @Flag(name: .customLong("vk-validation"))
-        var validation = false
-
-        @Flag(name: .customLong("trace-diagnostics"))
-        var diagnostics = false
-
-        mutating func validate() throws {
-            guard (1...6_000).contains(frames) else {
-                throw ValidationError("--frames must be between 1 and 6000")
-            }
-            guard scale.isFinite, scale > 0 else {
-                throw ValidationError("--scale must be positive and finite")
-            }
-        }
-
-        mutating func run() async throws {
-            try await AndroidPresentationQualificationCommand(
-                context: context()
-            ).run(
-                AndroidPresentationQualificationOptions(
-                    drmDevice: drmDevice,
-                    frames: frames,
-                    output: output,
-                    scale: scale,
-                    presentMode: presentMode,
-                    build: !noBuild,
-                    validation: validation,
-                    diagnostics: diagnostics))
         }
     }
 }

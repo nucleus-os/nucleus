@@ -151,7 +151,7 @@ private func runDiagnostics(renderNode: String?) throws {
                 acquireTimeline: ring.acquireTimeline,
                 acquirePoint: 1)
             return DiagnosticRecord(
-                status: "qualified",
+                status: "supported",
                 device: device.diagnostic,
                 drmFormat: String(format: "0x%08x", pair.format),
                 drmModifier: String(format: "0x%016llx", pair.modifier),
@@ -178,7 +178,7 @@ private func runDiagnostics(renderNode: String?) throws {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     print(String(decoding: try encoder.encode(records), as: UTF8.self))
-    guard records.allSatisfy({ $0.status == "qualified" }) else { exit(2) }
+    guard records.allSatisfy({ $0.status == "supported" }) else { exit(2) }
 }
 
 private struct GuestWorkloadDiagnosticRecord: Codable {
@@ -270,7 +270,7 @@ private func runGuestWorkloadDiagnostics(
     }
     let pair = ring.buffers[0].formatModifier
     let record = GuestWorkloadDiagnosticRecord(
-        status: "qualified",
+        status: "completed",
         device: ring.diagnostic,
         drmFormat: String(format: "0x%08x", pair.format),
         drmModifier: String(format: "0x%016llx", pair.modifier),
@@ -383,7 +383,7 @@ do {
                parentPID) != 0
         {
             throw CLIError(
-                "cannot bind the one-shot broker lifetime to its qualifier "
+                "cannot bind the one-shot broker lifetime to its parent "
                     + "(errno \(errno))")
         }
         let path = try arguments.socketPath ?? defaultSocketPath()

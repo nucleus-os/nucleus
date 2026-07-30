@@ -148,7 +148,6 @@ package protocol FrameResourceResolver: AnyObject {
     private var compiledEffects: [UInt64: nucleus.skia.RuntimeEffect] = unsafe [:]
     private var recording = false
     private(set) var sawCallbackWhileRecording = false
-    private var presentationPlanDiagnosticsRemaining: [UInt64: Int] = [:]
 
     init?(
         context: nucleus.skia.GraphiteContext,
@@ -563,9 +562,6 @@ package protocol FrameResourceResolver: AnyObject {
             rootLayerIDs: request.rootLayerIDs,
             lockContexts: request.lockContexts
         )
-        logPresentationPlan(
-            plan,
-            rootLayerIDs: request.rootLayerIDs)
         var timings = RenderFrameTimings()
         timings.planNs = elapsedNanoseconds(phaseStart, clock.now)
         timings.resourceSummaryNs = plan.resourceSummaryConstructionNs
@@ -744,55 +740,6 @@ package protocol FrameResourceResolver: AnyObject {
             callbackDuringRecord: sawCallbackWhileRecording,
             submissionResult: submissionResult,
             timings: timings)
-    }
-
-    private func logPresentationPlan(
-        _ plan: FramePlan,
-        rootLayerIDs: [UInt64]?
-    ) {
-        #if canImport(Glibc)
-        let outputID = plan.frame.outputId
-        let remaining = presentationPlanDiagnosticsRemaining[outputID] ?? 4
-        guard remaining > 0 else { return }
-        presentationPlanDiagnosticsRemaining[outputID] = remaining - 1
-        let operations = plan.ops.map { operation -> String in
-            switch operation {
-            case .textureQuad(let quad):
-                let role: String
-                switch quad.role {
-                case .content: role = "content"
-                case .paint: role = "paint"
-                case .snapshot: role = "snapshot"
-                case .remoteHost: role = "remote-host"
-                case .shadow: role = "shadow"
-                case .fill: role = "fill"
-                case .shell: role = "shell"
-                case .unknown: role = "unknown"
-                }
-                let handle = quad.texture?.raw ?? 0
-                return "\(role):layer=\(quad.layerId),handle=\(handle),"
-                    + "dst=\(quad.dst.x),\(quad.dst.y),"
-                    + "\(quad.dst.w)x\(quad.dst.h)"
-            case .fillQuad:
-                return "fill"
-            case .visualStyle:
-                return "style"
-            case .shadowQuad(let quad):
-                return "shadow:layer=\(quad.material?.layerId ?? 0)"
-            case .backdrop:
-                return "backdrop"
-            }
-        }
-        let roots = rootLayerIDs.map { String(describing: $0) }
-            ?? "context-default"
-        let line = "render-plan: output=\(outputID) roots=\(roots) "
-            + "textures=\(plan.resourceSummary.textureReferences.count) "
-            + "paint=\(plan.resourceSummary.paintRequests.count) "
-            + "shadows=\(plan.resourceSummary.shadowMaterials.count) "
-            + "blur=\(plan.resourceSummary.backdropBlurRegions.count) "
-            + "ops=[\(operations.joined(separator: ";"))]"
-        NucleusLogger(subsystem: "frame-driver").debug(line)
-        #endif
     }
 
     struct FrameDamage {

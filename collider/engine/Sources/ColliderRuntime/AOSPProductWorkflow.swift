@@ -314,7 +314,7 @@ extension ColliderRuntime {
         environment["CCACHE_DIR"] = "/src/out/nucleus/.ccache"
         environment["CCACHE_COMPILERCHECK"] = "content"
 
-        try await qualifyAOSPBuildSandbox(
+        try await validateAOSPBuildSandbox(
             build,
             writableMounts: [
                 (output, "/src/out/nucleus"),
@@ -322,6 +322,36 @@ extension ColliderRuntime {
             ],
             environment: environment,
             stage: stage)
+
+        let cleanResult = try await execute(
+            CommandSpec(
+                executable: .named("podman"),
+                arguments: try aospContainerArguments(
+                    build: build,
+                    writableMounts: [
+                        (output, "/src/out/nucleus"),
+                        (distribution, "/src/out/nucleus-dist"),
+                        (
+                            build.ccacheDirectory,
+                            "/src/out/nucleus/.ccache"
+                        ),
+                    ],
+                    readOnlyMounts: [
+                        (build.source, "/src"),
+                    ],
+                    environment: environment,
+                    command: [
+                        "/src/build/soong/soong_ui.bash",
+                        "--make-mode",
+                        "installclean",
+                    ]),
+                workingDirectory: build.source,
+                environment: build.environment,
+                output: .logged),
+            stage: stage)
+        try rejectAOSPSandboxDegradation(
+            cleanResult.standardOutput,
+            status: cleanResult.status)
 
         let result = try await execute(
             CommandSpec(
@@ -342,10 +372,10 @@ extension ColliderRuntime {
                     environment: environment,
                     command: [
                         "/src/build/soong/soong_ui.bash",
-                "--make-mode",
-                "-j\(build.buildJobs)",
-                "target-files-package",
-                "otatools",
+                        "--make-mode",
+                        "-j\(build.buildJobs)",
+                        "target-files-package",
+                        "otatools",
                     ]),
                 workingDirectory: build.source,
                 environment: build.environment,
@@ -1447,25 +1477,25 @@ func aospContainerArguments(
 }
 
 private extension ColliderRuntime {
-    func qualifyAOSPBuildSandbox(
+    func validateAOSPBuildSandbox(
         _ build: AOSPProductBuild,
         writableMounts: [(FilePath, String)],
         environment: [String: String],
         stage: TaskID
     ) async throws {
-        let qualification = build.buildRoot.appending(
-            ".sandbox-qualification-\(UUID().uuidString)")
+        let validation = build.buildRoot.appending(
+            ".sandbox-validation-\(UUID().uuidString)")
         defer {
             try? FileManager.default.removeItem(
-                atPath: qualification.string)
+                atPath: validation.string)
         }
         try FileManager.default.createDirectory(
-            atPath: qualification.string,
+            atPath: validation.string,
             withIntermediateDirectories: false)
         try DurableFile.write(
             Data("host-visible\n".utf8),
-            to: qualification.appending("host-canary"))
-        let brokenNSJail = qualification.appending("broken-nsjail")
+            to: validation.appending("host-canary"))
+        let brokenNSJail = validation.appending("broken-nsjail")
         try DurableFile.write(
             Data("#!/bin/sh\nexit 1\n".utf8),
             to: brokenNSJail)
@@ -1473,7 +1503,7 @@ private extension ColliderRuntime {
             [.posixPermissions: 0o755],
             ofItemAtPath: brokenNSJail.string)
 
-        let isolationProbe = """
+        let isolationValidation = """
             import socket
             import subprocess
             import sys
@@ -1487,7 +1517,7 @@ private extension ColliderRuntime {
             import socket
             import sys
 
-            if os.path.exists("/qualification/host-canary"):
+            if os.path.exists("/validation/host-canary"):
                 sys.exit(41)
             print("NUCLEUS_NSJAIL_FILE_HIDDEN")
             connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -1502,15 +1532,14 @@ private extension ColliderRuntime {
             result = subprocess.run(
                 [
                     "/src/prebuilts/build-tools/linux-x86/bin/nsjail",
-                    "-Q",
                     "-H", "android-build",
                     "--disable_clone_newuts",
                     "-e",
-                    "-u", "nobody",
-                    "-g", "nogroup",
+                    "-u", "1000",
+                    "-g", "1000",
                     "-R", "/",
                     "-B", "/tmp",
-                    "-T", "/qualification",
+                    "-T", "/validation",
                     "--disable_clone_newcgroup",
                     "--",
                     "/usr/bin/python3", "-c", child,
@@ -1534,7 +1563,7 @@ private extension ColliderRuntime {
                 arguments: try aospContainerArguments(
                     build: build,
                     writableMounts: writableMounts + [
-                        (qualification, "/qualification"),
+                        (validation, "/validation"),
                     ],
                     readOnlyMounts: [
                         (build.source, "/src"),
@@ -1543,13 +1572,13 @@ private extension ColliderRuntime {
                     command: [
                         "/usr/bin/python3",
                         "-c",
-                        isolationProbe,
+                        isolationValidation,
                     ]),
                 workingDirectory: build.source,
                 environment: build.environment,
                 output: .combined(limit: 4 * 1_024 * 1_024)),
             stage: stage)
-        try validateAOSPSandboxIsolationProbe(
+        try validateAOSPSandboxIsolation(
             isolation.standardOutput,
             status: isolation.status)
 
@@ -1576,13 +1605,13 @@ private extension ColliderRuntime {
                 environment: build.environment,
                 output: .combined(limit: 4 * 1_024 * 1_024)),
             stage: stage)
-        try validateAOSPBrokenSandboxProbe(
+        try validateAOSPBrokenSandboxBehavior(
             broken.standardOutput,
             status: broken.status)
     }
 }
 
-func validateAOSPSandboxIsolationProbe(
+func validateAOSPSandboxIsolation(
     _ output: String,
     status: Int32
 ) throws {
@@ -1596,7 +1625,7 @@ func validateAOSPSandboxIsolationProbe(
     }
 }
 
-func validateAOSPBrokenSandboxProbe(
+func validateAOSPBrokenSandboxBehavior(
     _ output: String,
     status: Int32
 ) throws {

@@ -374,7 +374,8 @@ struct RuntimeInstaller {
                 context.layout.androidRuntime.path,
             ],
             restartPolicy: .onFailure,
-            maximumRestarts: 3)
+            maximumRestarts: 3,
+            shutdownTimeoutSeconds: 60)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         var bytes = Array(try encoder.encode(declaration))

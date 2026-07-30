@@ -17,6 +17,7 @@ import Testing
             from: data) == declaration)
         #expect(declaration.restartPolicy == .onFailure)
         #expect(declaration.maximumRestarts == 3)
+        #expect(declaration.shutdownTimeoutSeconds == 10)
     }
 
     @Test func declarationRejectsUntrustedProcessShape() throws {
@@ -41,6 +42,12 @@ import Testing
                 identifier: "android.runtime",
                 executable: "/usr/bin/true",
                 maximumRestarts: 17)
+        }
+        #expect(throws: SessionCapabilityDeclarationFailure.self) {
+            _ = try SessionCapabilityDeclaration(
+                identifier: "android.runtime",
+                executable: "/usr/bin/true",
+                shutdownTimeoutSeconds: 0)
         }
     }
 

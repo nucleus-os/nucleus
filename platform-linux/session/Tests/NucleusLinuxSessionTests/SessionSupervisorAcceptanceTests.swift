@@ -244,6 +244,7 @@ private func processIsGone(_ processID: pid_t) -> Bool {
             maximumRestarts: 0)
         let process = try fixture.launch(capability: declaration)
         #expect(fixture.waitForFile("capability-pid"))
+        #expect(fixture.waitForFile("capability-started"))
         #expect(fixture.status() == SessionReadinessMessage(
             role: .shell,
             milestone: .shellReady))
@@ -259,6 +260,25 @@ private func processIsGone(_ processID: pid_t) -> Bool {
         #expect(waitForExit(process))
         #expect(process.terminationStatus == 128 + SIGTERM)
         #expect(processIsGone(capabilityPID))
+    }
+
+    @Test func capabilityReceivesItsDeclaredGracefulShutdownInterval() throws {
+        let fixture = try SupervisorFixture()
+        defer { fixture.remove() }
+        let declaration = try SessionCapabilityDeclaration(
+            identifier: "fixture.delayed-shutdown",
+            executable: fixture.child.path,
+            restartPolicy: .never,
+            maximumRestarts: 0,
+            shutdownTimeoutSeconds: 2)
+        let process = try fixture.launch(
+            capability: declaration,
+            capabilityMode: "delayed-shutdown")
+        #expect(fixture.waitForFile("capability-started"))
+
+        _ = kill(process.processIdentifier, SIGTERM)
+        #expect(waitForExit(process))
+        #expect(fixture.waitForFile("capability-shutdown-complete"))
     }
 
     @Test func failedCapabilityRestartsWithoutFailingCoreSession() throws {

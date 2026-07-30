@@ -18,8 +18,9 @@
       "patches": [
         "aosp/patches/device-generic-goldfish/0001-export-composer3-framework-sources-for-nucleus.patch",
         "aosp/patches/device-generic-goldfish/0002-make-composer-contract-output-aware.patch",
-        "aosp/patches/device-generic-goldfish/0003-rephase-vsync-from-physical-presentation.patch",
-        "aosp/patches/device-generic-goldfish/0004-discover-initial-displays-before-hotplug-events.patch"
+        "aosp/patches/device-generic-goldfish/0003-make-vsync-thread-lifecycle-safe.patch",
+        "aosp/patches/device-generic-goldfish/0004-discover-initial-displays-before-hotplug-events.patch",
+        "aosp/patches/device-generic-goldfish/0005-make-client-target-cache-reconnect-idempotent.patch"
       ]
     },
     {
@@ -38,7 +39,10 @@
       "path": "frameworks/base",
       "patches": [
         "aosp/patches/platform-frameworks-base/0001-zygote-support-nucleus-container.patch",
-        "aosp/patches/platform-frameworks-base/0002-support-absent-power-hal.patch"
+        "aosp/patches/platform-frameworks-base/0002-support-absent-power-hal.patch",
+        "aosp/patches/platform-frameworks-base/0003-expose-display-pointer-icon-policy.patch",
+        "aosp/patches/platform-frameworks-base/0004-publish-pointer-icon-semantics.patch",
+        "aosp/patches/platform-frameworks-base/0005-add-nucleus-host-display-adapter.patch"
       ]
     },
     {
@@ -52,7 +56,8 @@
       "patches": [
         "aosp/patches/platform-system-core/0001-init-add-nucleus-container-entry.patch",
         "aosp/patches/platform-system-core/0002-libprocessgroup-support-nucleus-container-cgroups.patch",
-        "aosp/patches/platform-system-core/0003-run-as-support-nucleus-container.patch"
+        "aosp/patches/platform-system-core/0003-run-as-support-nucleus-container.patch",
+        "aosp/patches/platform-system-core/0004-init-respect-host-kernel-ownership.patch"
       ]
     },
     {
@@ -88,7 +93,14 @@
     {
       "path": "system/vold",
       "patches": [
-        "aosp/patches/platform-system-vold/0001-vold-support-nucleus-container.patch"
+        "aosp/patches/platform-system-vold/0001-vold-support-nucleus-container.patch",
+        "aosp/patches/platform-system-vold/0002-vold-defer-container-quotas-to-host.patch"
+      ]
+    },
+    {
+      "path": "system/netd",
+      "patches": [
+        "aosp/patches/platform-system-netd/0001-defer-container-network-quotas-to-host.patch"
       ]
     },
     {

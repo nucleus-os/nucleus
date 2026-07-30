@@ -20,9 +20,6 @@ class NucleusFrameComposer final : public FrameComposer {
         std::vector<DisplayMultiConfigs>* out_displays) override;
     HWC3::Error registerOnHotplugCallback(const HotplugCallback& callback) override;
     HWC3::Error unregisterOnHotplugCallback() override;
-    HWC3::Error registerOnPhysicalVsyncCallback(
-        const PhysicalVsyncCallback& callback) override;
-    HWC3::Error unregisterOnPhysicalVsyncCallback() override;
     HWC3::Error onDisplayCreate(Display*) override;
     HWC3::Error onDisplayDestroy(Display*) override;
     HWC3::Error onDisplayClientTargetSet(Display*) override;
@@ -39,6 +36,8 @@ class NucleusFrameComposer final : public FrameComposer {
   private:
     struct DisplayTopology {
         uint32_t id;
+        uint32_t width;
+        uint32_t height;
         int32_t vsync_period_ns;
     };
 
@@ -47,8 +46,6 @@ class NucleusFrameComposer final : public FrameComposer {
     void topologyLoop();
     void handleTopologyEvent(const nucleus_composer_topology_event& event);
 
-    std::mutex socket_mutex_;
-    ::android::base::unique_fd socket_;
     std::mutex topology_connection_mutex_;
     ::android::base::unique_fd topology_socket_;
     std::thread topology_thread_;
@@ -62,11 +59,8 @@ class NucleusFrameComposer final : public FrameComposer {
     std::mutex topology_mutex_;
     std::mutex callback_mutex_;
     HotplugCallback hotplug_callback_;
-    PhysicalVsyncCallback physical_vsync_callback_;
     std::unordered_map<uint32_t, DisplayTopology> displays_;
     uint64_t topology_generation_ = 0;
-    uint64_t next_request_id_ = 1;
-    uint64_t next_frame_number_ = 1;
 };
 
 }  // namespace aidl::android::hardware::graphics::composer3::impl

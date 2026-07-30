@@ -2,9 +2,46 @@ import Foundation
 import Glibc
 import NucleusAndroidContainerContract
 
-public enum AndroidRuntimeLifetime: Equatable, Sendable {
-    case untilReadiness
-    case untilCancellation
+public func initializeAndroidRuntimeDiagnostics(
+    layout: AndroidRuntimeLayout
+) throws -> AndroidRuntimeEventRecorder {
+    try FileManager.default.createDirectory(
+        at: layout.diagnostics,
+        withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        at: layout.diagnosticTombstones,
+        withIntermediateDirectories: true)
+    let progress = try AndroidRuntimeEventRecorder(
+        output: layout.progressLog)
+    try progress.record(
+        "session.initialized",
+        fields: ["runtime": layout.name])
+    for log in [
+        layout.lxcLog,
+        layout.androidKernelLog,
+        layout.androidLog,
+        layout.gfxstreamBrokerLog,
+        layout.displayHostLog,
+        layout.hostAuditLog,
+        layout.gfxstreamCoreCollectorLog,
+    ] {
+        if !FileManager.default.fileExists(atPath: log.path) {
+            _ = FileManager.default.createFile(
+                atPath: log.path,
+                contents: nil,
+                attributes: [.posixPermissions: 0o600])
+        }
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: log.path)
+    }
+    for artifact in [
+        layout.gfxstreamCore,
+        layout.gfxstreamCoreMetadata,
+    ] where FileManager.default.fileExists(atPath: artifact.path) {
+        try FileManager.default.removeItem(at: artifact)
+    }
+    return progress
 }
 
 public actor AndroidRuntimeSession<
@@ -17,12 +54,11 @@ public actor AndroidRuntimeSession<
     let swiftRuntime: AndroidSwiftRuntime
     let persistentData: URL
     let gfxstreamBrokerEnvironment: [String: String]
-    var mounts = AndroidFrameworkMountLedger()
+    var mounts = AndroidRuntimeMountLedger()
     var binderMounted = false
     var containerStarted = false
     var kernelLog: RuntimeHost.KernelLog?
-    var frameworkHealth = AndroidFrameworkHealthMonitor()
-    var progress: AndroidFrameworkProgressRecorder?
+    var progress: AndroidRuntimeEventRecorder?
     var trackedHostProcesses: [String: Int32] = [:]
     var binderDevices: [AndroidContainerDevice] = []
     let startedAt = Date()
@@ -34,7 +70,8 @@ public actor AndroidRuntimeSession<
         privilegedHelperExecutable: String,
         swiftRuntime: AndroidSwiftRuntime,
         dataProvenanceKey: String,
-        gfxstreamBrokerEnvironment: [String: String]
+        gfxstreamBrokerEnvironment: [String: String],
+        progress: AndroidRuntimeEventRecorder
     ) {
         self.context = context
         self.layout = layout
@@ -45,41 +82,11 @@ public actor AndroidRuntimeSession<
             .appendingPathComponent(".runtime-data", isDirectory: true)
             .appendingPathComponent(dataProvenanceKey, isDirectory: true)
         self.gfxstreamBrokerEnvironment = gfxstreamBrokerEnvironment
-    }
-
-    public func initializeDiagnostics() throws {
-        try FileManager.default.createDirectory(
-            at: layout.diagnostics,
-            withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(
-            at: layout.diagnosticTombstones,
-            withIntermediateDirectories: true)
-        progress = try AndroidFrameworkProgressRecorder(
-            output: layout.progressLog)
-        try progress?.record("session.initialized")
-        for log in [
-            layout.lxcLog,
-            layout.androidKernelLog,
-            layout.androidLog,
-            layout.gfxstreamBrokerLog,
-            layout.displayHostLog,
-            layout.hostAuditLog,
-            layout.gfxstreamCoreCollectorLog,
-        ] {
-            try Data().write(to: log, options: .atomic)
-            try FileManager.default.setAttributes(
-                [.posixPermissions: 0o600],
-                ofItemAtPath: log.path)
-        }
-        for artifact in [
-            layout.gfxstreamCore,
-            layout.gfxstreamCoreMetadata,
-        ] where FileManager.default.fileExists(atPath: artifact.path) {
-            try FileManager.default.removeItem(at: artifact)
-        }
+        self.progress = progress
     }
 
     public func prepare() async throws {
+        try await reconcileAbandonedRuntimes()
         for module in androidRuntimeRequiredKernelModules {
             try await context.run(
                 "sudo",
@@ -130,6 +137,28 @@ public actor AndroidRuntimeSession<
                 "--mode=0710",
                 layout.instance.path,
             ])
+        try await context.run(
+            "sudo",
+            [
+                "--non-interactive",
+                "install",
+                "--directory",
+                "--owner=root",
+                "--group=root",
+                "--mode=0755",
+                layout.deviceFileSystem.path,
+            ])
+        try await context.run(
+            "sudo",
+            [
+                "--non-interactive",
+                "mount",
+                "--types=tmpfs",
+                "--options=rw,nosuid,dev,noexec,mode=0755,size=64k",
+                "tmpfs",
+                layout.deviceFileSystem.path,
+            ])
+        mounts.record(layout.deviceFileSystem)
         try await context.run(
             "sudo",
             [
@@ -281,7 +310,7 @@ public actor AndroidRuntimeSession<
                 "--mode=0771",
                 persistentData.path,
             ])
-        try await qualifyPersistentDataFileSystem()
+        try await validatePersistentDataFileSystem()
         try await context.run(
             "sudo",
             [
@@ -321,20 +350,20 @@ public actor AndroidRuntimeSession<
             ])
     }
 
-    private func qualifyPersistentDataFileSystem() async throws {
-        let probe = persistentData.appendingPathComponent(
-            ".nucleus-fsverity-probe")
+    private func validatePersistentDataFileSystem() async throws {
+        let validationFile = persistentData.appendingPathComponent(
+            ".nucleus-fsverity-validation")
         try Data("nucleus-fsverity\n".utf8).write(
-            to: probe,
+            to: validationFile,
             options: .atomic)
-        defer { try? FileManager.default.removeItem(at: probe) }
+        defer { try? FileManager.default.removeItem(at: validationFile) }
         do {
             try await context.run(
                 "fsverity",
-                ["enable", probe.path])
+                ["enable", validationFile.path])
             _ = try await context.run(
                 "fsverity",
-                ["digest", probe.path],
+                ["digest", validationFile.path],
                 capture: true)
         } catch {
             throw AndroidRuntimeFailure(
@@ -666,8 +695,9 @@ public actor AndroidRuntimeSession<
             persistentData: layout.persistentDataMountPoint.path,
             gfxstreamSocketDirectory:
                 layout.gfxstreamBrokerDirectory.path,
-            runtimeBridgeSocketDirectory:
-                layout.runtimeBridgeDirectory.path,
+            runtimeBridgeSocket: layout.runtimeBridgeSocket.path,
+            presentationSocket: layout.presentationSocket.path,
+            displayControlSocket: layout.displayControlSocket.path,
             hostKernelConfigurationDirectory:
                 layout.hostKernelConfigurationDirectory.path,
             hostUIDStart: host.subordinateUID,
@@ -719,11 +749,46 @@ public actor AndroidRuntimeSession<
         ).write(to: layout.configuration, options: .atomic)
     }
 
+    public func recordRuntimeBridgeListener() throws {
+        var metadata = stat()
+        guard unsafe lstat(
+            layout.runtimeBridgeSocket.path,
+            &metadata) == 0
+        else {
+            throw AndroidRuntimeFailure(
+                "Android runtime bridge listener is not visible before "
+                    + "container start: \(layout.runtimeBridgeSocket.path)")
+        }
+        guard metadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFSOCK) else {
+            throw AndroidRuntimeFailure(
+                "Android runtime bridge endpoint is not a socket: "
+                    + layout.runtimeBridgeSocket.path)
+        }
+        try progress?.record(
+            "runtime-bridge.listener-ready",
+            fields: [
+                "path": layout.runtimeBridgeSocket.path,
+                "uid": String(metadata.st_uid),
+                "gid": String(metadata.st_gid),
+                "mode": String(metadata.st_mode & 0o777, radix: 8),
+                "device": String(metadata.st_dev),
+                "inode": String(metadata.st_ino),
+            ])
+    }
+
+    public func recordRuntimeBridgeStage(
+        _ stage: String,
+        fields: [String: String] = [:]
+    ) throws {
+        try progress?.record(
+            "runtime-bridge.\(stage)",
+            fields: fields)
+    }
+
     public func runProcesses(
         timeoutSeconds: UInt32,
         waylandRuntimeDirectory: URL,
-        waylandSocket: String,
-        lifetime: AndroidRuntimeLifetime = .untilReadiness
+        waylandSocket: String
     ) async throws {
         try progress?.record("services.starting")
         let invocation = AndroidBPFBrokerInvocation(
@@ -781,6 +846,14 @@ public actor AndroidRuntimeSession<
                             "\(getpid())",
                             "--wayland",
                             waylandSocket,
+                            "--input-socket",
+                            self.layout.displayInputSocket.path,
+                            "--presentation-socket",
+                            self.layout.presentationSocket.path,
+                            "--display-control-socket",
+                            self.layout.displayControlSocket.path,
+                            "--presentation-expected-uid",
+                            "\(UInt64(self.host.subordinateUID) + 2_900)",
                         ],
                         environmentOverrides: [
                             "XDG_RUNTIME_DIR": waylandRuntimeDirectory.path,
@@ -801,6 +874,9 @@ public actor AndroidRuntimeSession<
                         try await self.waitForDisplayHostReady(displayHost)
                         try await self.recordProgress("display-host.ready")
                         let containerInvocation = AndroidLXCStartInvocation(
+                            helperExecutable:
+                                self.privilegedHelperExecutable,
+                            ownerProcessIdentifier: getpid(),
                             name: self.layout.name,
                             configuration: self.layout.configuration.path,
                             logFile: self.layout.lxcLog.path)
@@ -820,23 +896,21 @@ public actor AndroidRuntimeSession<
                             try await self.recordProgress(
                                 "container.started")
                             do {
+                                try await self.waitForRuntimeBridgeMount(
+                                    container: container)
                                 try await self.waitForBPFDelegation(
                                     broker: broker,
                                     container: container)
-                                try await self.waitForFramework(
+                                try await self.runRuntime(
                                     container: container,
                                     displayHost: displayHost,
                                     gfxstreamBroker: gfxstreamBroker,
-                                    timeoutSeconds: timeoutSeconds,
-                                    waylandRuntimeDirectory:
-                                        waylandRuntimeDirectory,
-                                    waylandSocket: waylandSocket,
-                                    lifetime: lifetime)
+                                    timeoutSeconds: timeoutSeconds)
                             } catch {
-                                await self.stopContainer()
+                                try? await self.stopContainer()
                                 throw error
                             }
-                            await self.stopContainer()
+                            try await self.stopContainer()
                             try await self.recordProgress(
                                 "container.stopped")
                         }
@@ -929,7 +1003,11 @@ public actor AndroidRuntimeSession<
         let deadline = ContinuousClock.now.advanced(by: .seconds(30))
         while ContinuousClock.now < deadline {
             if FileManager.default.fileExists(
-                atPath: layout.displayHostSocket.path)
+                atPath: layout.displayHostSocket.path),
+               FileManager.default.fileExists(
+                atPath: layout.presentationSocket.path),
+               FileManager.default.fileExists(
+                atPath: layout.displayControlSocket.path)
             {
                 return
             }
@@ -945,6 +1023,85 @@ public actor AndroidRuntimeSession<
         throw AndroidRuntimeFailure(
             "Android display host did not become ready; diagnostics: "
                 + layout.diagnostics.path)
+    }
+
+    private func waitForRuntimeBridgeMount(
+        container: RuntimeHost.RunningProcess
+    ) async throws {
+        try await waitForRuntimeSocketMount(
+            hostPath: layout.runtimeBridgeSocket.path,
+            containerPath: "/dev/nucleus-runtime/broker.sock",
+            container: container)
+        try await waitForRuntimeSocketMount(
+            hostPath: layout.presentationSocket.path,
+            containerPath: "/dev/nucleus-runtime/presentation.sock",
+            container: container)
+        try await waitForRuntimeSocketMount(
+            hostPath: layout.displayControlSocket.path,
+            containerPath: "/dev/nucleus-runtime/display-control.sock",
+            container: container)
+    }
+
+    private func waitForRuntimeSocketMount(
+        hostPath: String,
+        containerPath: String,
+        container: RuntimeHost.RunningProcess
+    ) async throws {
+        var metadata = stat()
+        guard unsafe lstat(
+            hostPath,
+            &metadata) == 0,
+            metadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFSOCK)
+        else {
+            throw AndroidRuntimeFailure(
+                "Android runtime socket disappeared before "
+                    + "container mount validation")
+        }
+        let expected = "\(metadata.st_dev):\(metadata.st_ino)"
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        var observed = "unavailable"
+        while ContinuousClock.now < deadline {
+            if let value = try? await context.run(
+                "sudo",
+                [
+                    "--non-interactive",
+                    "lxc-attach",
+                    "--name",
+                    layout.name,
+                    "--",
+                    "/system/bin/stat",
+                    "-c",
+                    "%d:%i",
+                    containerPath,
+                ],
+                capture: true)
+            {
+                observed = value.trimmingCharacters(
+                    in: .whitespacesAndNewlines)
+                if observed == expected {
+                    try progress?.record(
+                        "runtime-bridge.mount-verified",
+                        fields: [
+                            "hostPath": hostPath,
+                            "containerPath": containerPath,
+                            "deviceAndInode": expected,
+                        ])
+                    return
+                }
+            }
+            if !(await container.isRunning) {
+                let status = try await container.waitForExit().status
+                throw AndroidRuntimeFailure(
+                    "Android container exited before runtime bridge mount "
+                        + "validation (status \(status)); diagnostics: "
+                        + layout.diagnostics.path)
+            }
+            try await ContinuousClock().sleep(for: .milliseconds(50))
+        }
+        throw AndroidRuntimeFailure(
+            "Android runtime bridge mount does not resolve to the host "
+                + "listener (expected \(expected), observed \(observed)); "
+                + "diagnostics: \(layout.diagnostics.path)")
     }
 
     private func waitForGfxstreamBrokerReady(
@@ -1033,30 +1190,23 @@ public actor AndroidRuntimeSession<
                 + "diagnostics: \(layout.diagnostics.path)")
     }
 
-    private func waitForFramework(
+    private func runRuntime(
         container: RuntimeHost.RunningProcess,
         displayHost: RuntimeHost.RunningProcess,
         gfxstreamBroker: RuntimeHost.RunningProcess,
-        timeoutSeconds: UInt32,
-        waylandRuntimeDirectory: URL,
-        waylandSocket: String,
-        lifetime: AndroidRuntimeLifetime
+        timeoutSeconds: UInt32
     ) async throws {
         let deadline = ContinuousClock.now.advanced(
             by: .seconds(Int64(timeoutSeconds)))
         while ContinuousClock.now < deadline {
             try kernelLog?.checkHealth()
-            try frameworkHealth.check(
-                kernelLog: layout.androidKernelLog,
-                frameworkLog: layout.androidLog,
-                diagnostics: layout.diagnostics)
             try await checkGraphicsServices(
                 displayHost: displayHost,
                 gfxstreamBroker: gfxstreamBroker)
             if !(await container.isRunning) {
                 let status = try await container.waitForExit().status
                 throw AndroidRuntimeFailure(
-                    "Android container exited before framework boot "
+                    "Android container exited during runtime startup "
                         + "(lxc-start status \(status)); diagnostics: "
                         + layout.diagnostics.path)
             }
@@ -1075,33 +1225,23 @@ public actor AndroidRuntimeSession<
                 ) { logcat in
                     try await logcat.waitUntilReady()
                     try await self.recordProgress("android.logcat.ready")
-                    try await self.waitForFrameworkBoot(
+                    try await self.recordProgress("runtime.monitoring")
+                    try await self.monitorRuntime(
                         container: container,
                         logcat: logcat,
                         displayHost: displayHost,
-                        gfxstreamBroker: gfxstreamBroker,
-                        deadline: deadline,
-                        waylandRuntimeDirectory:
-                            waylandRuntimeDirectory,
-                        waylandSocket: waylandSocket)
-                    if lifetime == .untilCancellation {
-                        try await self.waitForRuntimeLifetime(
-                            container: container,
-                            logcat: logcat,
-                            displayHost: displayHost,
-                            gfxstreamBroker: gfxstreamBroker)
-                    }
+                        gfxstreamBroker: gfxstreamBroker)
                 }
                 return
             }
             try await ContinuousClock().sleep(for: .milliseconds(100))
         }
         throw AndroidRuntimeFailure(
-            "Android framework did not publish sys.boot_completed=1; "
+            "Android runtime did not publish sys.boot_completed=1; "
                 + "diagnostics: \(layout.diagnostics.path)")
     }
 
-    private func waitForRuntimeLifetime(
+    private func monitorRuntime(
         container: RuntimeHost.RunningProcess,
         logcat: RuntimeHost.RunningProcess,
         displayHost: RuntimeHost.RunningProcess,
@@ -1110,10 +1250,6 @@ public actor AndroidRuntimeSession<
         while true {
             try Task.checkCancellation()
             try kernelLog?.checkHealth()
-            try frameworkHealth.check(
-                kernelLog: layout.androidKernelLog,
-                frameworkLog: layout.androidLog,
-                diagnostics: layout.diagnostics)
             try await checkGraphicsServices(
                 displayHost: displayHost,
                 gfxstreamBroker: gfxstreamBroker)
@@ -1135,109 +1271,25 @@ public actor AndroidRuntimeSession<
         }
     }
 
-    private func waitForFrameworkBoot(
-        container: RuntimeHost.RunningProcess,
-        logcat: RuntimeHost.RunningProcess,
-        displayHost: RuntimeHost.RunningProcess,
-        gfxstreamBroker: RuntimeHost.RunningProcess,
-        deadline: ContinuousClock.Instant,
-        waylandRuntimeDirectory: URL,
-        waylandSocket: String
-    ) async throws {
-        var frameworkBooted = false
-        var synchronizedFramePresented = false
-        var launcherDrawn = false
-        var launcherPresentationBaseline: UInt64?
-        while ContinuousClock.now < deadline {
-            try progress?.recordHostSample(
-                cgroup: containerCgroup,
-                processIdentifiers: trackedHostProcesses)
-            try kernelLog?.checkHealth()
-            try await checkGraphicsServices(
-                displayHost: displayHost,
-                gfxstreamBroker: gfxstreamBroker)
-            if !(await container.isRunning) {
-                let status = try await container.waitForExit().status
-                throw AndroidRuntimeFailure(
-                    "Android container exited before framework boot "
-                        + "(lxc-start status \(status)); diagnostics: "
-                        + layout.diagnostics.path)
-            }
-            if !(await logcat.isRunning) {
-                let status = try await logcat.waitForExit().status
-                throw AndroidRuntimeFailure(
-                    "Android logcat collector exited unexpectedly "
-                        + "(status \(status)); diagnostics: "
-                        + layout.diagnostics.path)
-            }
-            if let property = try? await containerProperty(
-                "sys.boot_completed"),
-                property == "1"
-            {
-                if !frameworkBooted {
-                    try progress?.record("android.boot-completed")
-                }
-                frameworkBooted = true
-            }
-            let presented =
-                displayHostPresentedPhysicalFrame()
-            if presented && !synchronizedFramePresented {
-                synchronizedFramePresented = true
-                try progress?.record(
-                    "composer.frame-physically-presented")
-            }
-            if !launcherDrawn && androidFrameworkLogReachedLauncher(
-                frameworkLog: layout.androidLog)
-            {
-                launcherDrawn = true
-                launcherPresentationBaseline =
-                    displayHostLatestPhysicallyPresentedFrame()
-                try progress?.record("android.launcher-drawn")
-            }
-            let launcherFramePresented =
-                launcherPresentationBaseline.map {
-                    (displayHostLatestPhysicallyPresentedFrame() ?? 0) > $0
-                } ?? false
-            if frameworkBooted && presented && launcherDrawn
-                && launcherFramePresented
-            {
-                try progress?.record("framework.ready")
-                await captureCompositorScreenshot(
-                    waylandRuntimeDirectory: waylandRuntimeDirectory,
-                    waylandSocket: waylandSocket)
-                await captureFrameworkScreenshot()
-                return
-            }
-            try frameworkHealth.check(
-                kernelLog: layout.androidKernelLog,
-                frameworkLog: layout.androidLog,
-                diagnostics: layout.diagnostics)
-            try await ContinuousClock().sleep(for: .seconds(1))
-        }
-        throw AndroidRuntimeFailure(
-            frameworkBooted
-                ? "Android framework booted without a drawn Launcher3 home "
-                    + "frame presented through Composer3; diagnostics: "
-                    + layout.diagnostics.path
-                : "Android framework did not publish sys.boot_completed=1; "
-                + "diagnostics: \(layout.diagnostics.path)")
-    }
-
     private func checkGraphicsServices(
         displayHost: RuntimeHost.RunningProcess,
         gfxstreamBroker: RuntimeHost.RunningProcess
     ) async throws {
         if !(await displayHost.isRunning) {
+            try Task.checkCancellation()
             let status = try await displayHost.waitForExit().status
+            try Task.checkCancellation()
             throw AndroidRuntimeFailure(
-                "Android display host failed during framework boot "
+                "Android display host exited unexpectedly during runtime operation "
                     + "(status \(status)); diagnostics: "
                     + layout.diagnostics.path)
         }
         if !(await gfxstreamBroker.isRunning) {
+            try Task.checkCancellation()
             let status = try await gfxstreamBroker.waitForExit().status
+            try Task.checkCancellation()
             throw AndroidRuntimeFailure(
-                "Android gfxstream broker failed during framework boot "
+                "Android gfxstream broker exited unexpectedly during runtime operation "
                     + "(status \(status)); diagnostics: "
                 + layout.diagnostics.path)
         }
@@ -1257,37 +1309,6 @@ public actor AndroidRuntimeSession<
         }
     }
 
-    private func displayHostPresentedPhysicalFrame() -> Bool {
-        guard let log = try? String(
-            contentsOf: layout.displayHostLog,
-            encoding: .utf8)
-        else { return false }
-        return log.contains(
-            "\"stage\":\"presentation.committed\"")
-            && log.contains("\"hasAcquireFence\":1")
-            && log.contains(
-                "\"stage\":\"presentation.physically-presented\"")
-    }
-
-    private func displayHostLatestPhysicallyPresentedFrame() -> UInt64? {
-        guard let log = try? String(
-            contentsOf: layout.displayHostLog,
-            encoding: .utf8)
-        else { return nil }
-        for line in log.split(separator: "\n").reversed()
-        where line.contains(
-            "\"stage\":\"presentation.physically-presented\"")
-        {
-            guard let data = line.data(using: .utf8),
-                  let object = try? JSONSerialization.jsonObject(with: data),
-                  let fields = object as? [String: Any],
-                  let frame = fields["frameNumber"] as? NSNumber
-            else { continue }
-            return frame.uint64Value
-        }
-        return nil
-    }
-
     private func containerProperty(_ name: String) async throws -> String {
         let began = ContinuousClock.now
         do {
@@ -1303,7 +1324,7 @@ public actor AndroidRuntimeSession<
                     name,
                 ],
                 capture: true)
-            let duration = AndroidFrameworkProgressRecorder.milliseconds(
+            let duration = AndroidRuntimeEventRecorder.milliseconds(
                 began.duration(to: ContinuousClock.now))
             try progress?.record(
                 "android.property",
@@ -1319,7 +1340,7 @@ public actor AndroidRuntimeSession<
             }
             return value
         } catch {
-            let duration = AndroidFrameworkProgressRecorder.milliseconds(
+            let duration = AndroidRuntimeEventRecorder.milliseconds(
                 began.duration(to: ContinuousClock.now))
             try? progress?.record(
                 "android.property.failed",
@@ -1329,61 +1350,6 @@ public actor AndroidRuntimeSession<
                     "error": "\(error)",
                 ])
             throw error
-        }
-    }
-
-    private func captureFrameworkScreenshot() async {
-        do {
-            try await context.withRunningCommand(
-                "sudo",
-                [
-                    "--non-interactive",
-                    "lxc-attach",
-                    "--name",
-                    layout.name,
-                    "--",
-                    "/system/bin/screencap",
-                    "-p",
-                ],
-                output: .file(layout.androidScreenshot)
-            ) { command in
-                try await command.waitUntilReady()
-                let status = try await command.waitForExit().status
-                guard status == 0 else {
-                    throw AndroidRuntimeFailure(
-                        "Android screencap exited with status \(status)")
-                }
-            }
-            try progress?.record(
-                "android.screenshot.captured",
-                fields: ["path": layout.androidScreenshot.path])
-        } catch {
-            try? progress?.record(
-                "android.screenshot.failed",
-                fields: ["error": "\(error)"])
-        }
-    }
-
-    private func captureCompositorScreenshot(
-        waylandRuntimeDirectory: URL,
-        waylandSocket: String
-    ) async {
-        do {
-            try await context.run(
-                "grim",
-                [layout.compositorScreenshot.path],
-                environmentOverrides: [
-                    "XDG_RUNTIME_DIR": waylandRuntimeDirectory.path,
-                    "WAYLAND_DISPLAY": waylandSocket,
-                ],
-                timeoutSeconds: 10)
-            try progress?.record(
-                "compositor.screenshot.captured",
-                fields: ["path": layout.compositorScreenshot.path])
-        } catch {
-            try? progress?.record(
-                "compositor.screenshot.failed",
-                fields: ["error": "\(error)"])
         }
     }
 
@@ -1403,6 +1369,16 @@ public actor AndroidRuntimeSession<
 
     private func recordProgress(_ stage: String) throws {
         try progress?.record(stage)
+    }
+
+    public func recordFailure(_ error: String) {
+        try? progress?.record(
+            "runtime.failed",
+            fields: ["error": error])
+    }
+
+    public func recordCancellation() {
+        try? progress?.record("runtime.cancelled")
     }
 
     private func captureStallSnapshot(
@@ -1435,9 +1411,9 @@ public actor AndroidRuntimeSession<
             ])
     }
 
-    private func stopContainer() async {
+    private func stopContainer() async throws {
         if containerStarted {
-            _ = try? await context.run(
+            try await context.run(
                 "sudo",
                 [
                     "--non-interactive",
@@ -1450,8 +1426,119 @@ public actor AndroidRuntimeSession<
         }
     }
 
-    public func cleanup() async {
-        await stopContainer()
+    private func reconcileAbandonedRuntimes() async throws {
+        let output = try await context.run(
+            "sudo",
+            [
+                "--non-interactive",
+                "lxc-ls",
+                "--running",
+                "--line",
+            ],
+            capture: true)
+        var abandonedNames = Set(androidRuntimeContainerNames(output))
+        if FileManager.default.fileExists(atPath: layout.runtime.path) {
+            let entries = try FileManager.default.contentsOfDirectory(
+                at: layout.runtime,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles])
+            abandonedNames.formUnion(
+                entries.lazy
+                    .map(\.lastPathComponent)
+                    .filter(isNucleusAndroidRuntimeContainerName))
+        }
+        abandonedNames.remove(layout.name)
+        let runningNames = Set(androidRuntimeContainerNames(output))
+        for name in abandonedNames.sorted() {
+            do {
+                try progress?.record(
+                    "runtime.orphan-discovered",
+                    fields: [
+                        "container": name,
+                        "running":
+                            runningNames.contains(name) ? "true" : "false",
+                    ])
+                if runningNames.contains(name) {
+                    try await context.run(
+                        "sudo",
+                        [
+                            "--non-interactive",
+                            "lxc-stop",
+                            "--kill",
+                            "--name",
+                            name,
+                        ])
+                }
+                _ = try? await context.run(
+                    "sudo",
+                    [
+                        "--non-interactive",
+                        "systemctl",
+                        "stop",
+                        "\(name).scope",
+                    ])
+                try await removeAbandonedRuntimeDirectory(name: name)
+                try progress?.record(
+                    "runtime.orphan-reconciled",
+                    fields: ["container": name])
+            } catch {
+                try? progress?.record(
+                    "runtime.orphan-reconciliation-failed",
+                    fields: [
+                        "container": name,
+                        "error": String(describing: error),
+                    ])
+                throw error
+            }
+        }
+    }
+
+    private func removeAbandonedRuntimeDirectory(
+        name: String
+    ) async throws {
+        let instance = layout.runtime.appendingPathComponent(
+            name,
+            isDirectory: true)
+        guard FileManager.default.fileExists(atPath: instance.path) else {
+            return
+        }
+        let output = try await context.run(
+            "findmnt",
+            androidRuntimeMountDiscoveryArguments(
+                instance: instance.path),
+            capture: true)
+        let mountPoints = androidRuntimeMountPoints(
+            output,
+            instance: instance.path)
+        for mountPoint in mountPoints {
+            try await context.run(
+                "sudo",
+                [
+                    "--non-interactive",
+                    "umount",
+                    mountPoint,
+                ])
+        }
+        try await context.run(
+            "sudo",
+            [
+                "--non-interactive",
+                "rm",
+                "--recursive",
+                "--force",
+                "--one-file-system",
+                instance.path,
+            ])
+    }
+
+    public func cleanup() async throws {
+        try? progress?.record("runtime.cleanup-started")
+        var failures: [String] = []
+        do {
+            try await stopContainer()
+        } catch {
+            failures.append("stop container: \(error)")
+        }
         await persistTombstones()
         await captureHostAudit()
         kernelLog?.stop()
@@ -1466,39 +1553,71 @@ public actor AndroidRuntimeSession<
         }
         kernelLog = nil
         for mountPoint in mounts.takeInReverseOrder() {
-            _ = try? await context.run(
-                "sudo",
-                [
-                    "--non-interactive",
-                    "umount",
-                    mountPoint.path,
-                ])
+            do {
+                try await context.run(
+                    "sudo",
+                    [
+                        "--non-interactive",
+                        "umount",
+                        mountPoint.path,
+                    ])
+            } catch {
+                failures.append(
+                    "unmount \(mountPoint.path): \(error)")
+            }
         }
         if binderMounted {
-            _ = try? await context.run(
-                "sudo",
-                [
-                    "--non-interactive",
-                    "umount",
-                    layout.binder.path,
-                ])
-            binderMounted = false
+            do {
+                try await context.run(
+                    "sudo",
+                    [
+                        "--non-interactive",
+                        "umount",
+                        layout.binder.path,
+                    ])
+                binderMounted = false
+            } catch {
+                failures.append(
+                    "unmount \(layout.binder.path): \(error)")
+            }
         }
-        _ = try? await context.run(
-            "sudo",
-            [
-                "--non-interactive",
-                "rm",
-                "--recursive",
-                "--force",
-                "--one-file-system",
-                layout.instance.path,
-            ])
+        if FileManager.default.fileExists(atPath: layout.instance.path) {
+            do {
+                try await context.run(
+                    "sudo",
+                    [
+                        "--non-interactive",
+                        "rm",
+                        "--recursive",
+                        "--force",
+                        "--one-file-system",
+                        layout.instance.path,
+                    ])
+            } catch {
+                failures.append("remove \(layout.instance.path): \(error)")
+            }
+        }
+        if FileManager.default.fileExists(atPath: layout.instance.path) {
+            failures.append(
+                "runtime instance remains at \(layout.instance.path)")
+        }
+        guard failures.isEmpty else {
+            let message = failures.joined(separator: "\n")
+            try? Data((message + "\n").utf8).write(
+                to: layout.collectorErrors,
+                options: .atomic)
+            try? progress?.record(
+                "runtime.cleanup-failed",
+                fields: ["failures": message])
+            throw AndroidRuntimeFailure(
+                "Android runtime cleanup failed: \(message)")
+        }
+        try? progress?.record("runtime.cleanup-completed")
     }
 
     public func printFailureDiagnostics() async {
         writeStandardError(
-            "Android framework boot diagnostics: "
+            "Android runtime diagnostics: "
                 + layout.diagnostics.path + "\n")
         for log in [
             layout.androidKernelLog,
@@ -1506,7 +1625,6 @@ public actor AndroidRuntimeSession<
             layout.gfxstreamBrokerLog,
             layout.displayHostLog,
             layout.progressLog,
-            layout.kittyLog,
             layout.lxcLog,
             layout.hostAuditLog,
             layout.collectorErrors,

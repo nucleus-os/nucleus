@@ -57,6 +57,7 @@ public final class LinuxAndroidRuntimeRunningProcess:
                 contents: nil,
                 attributes: [.posixPermissions: 0o600])
             let handle = try FileHandle(forWritingTo: path)
+            try handle.seekToEnd()
             process.standardOutput = handle
             process.standardError = handle
             outputHandle = handle
@@ -78,7 +79,7 @@ public final class LinuxAndroidRuntimeRunningProcess:
             self?.didTerminate(status: process.terminationStatus)
         }
         do {
-            try process.run()
+            try launchAndroidRuntimeProcess(process)
         } catch {
             try? retainedOutput?.close()
             throw LinuxAndroidRuntimeHostFailure(
@@ -148,6 +149,30 @@ public final class LinuxAndroidRuntimeRunningProcess:
     }
 }
 
+func launchAndroidRuntimeProcess(_ process: Process) throws {
+    var emptyMask = sigset_t()
+    var inheritedMask = sigset_t()
+    guard unsafe sigemptyset(&emptyMask) == 0 else {
+        throw LinuxAndroidRuntimeHostFailure(
+            "create clean child signal mask failed with errno \(errno)")
+    }
+    let clearStatus = unsafe pthread_sigmask(
+        SIG_SETMASK,
+        &emptyMask,
+        &inheritedMask)
+    guard clearStatus == 0 else {
+        throw LinuxAndroidRuntimeHostFailure(
+            "clear child signal mask failed with status \(clearStatus)")
+    }
+    defer {
+        _ = unsafe pthread_sigmask(
+            SIG_SETMASK,
+            &inheritedMask,
+            nil)
+    }
+    try process.run()
+}
+
 public final class LinuxAndroidRuntimeKernelLog:
     AndroidRuntimeKernelLog, @unchecked Sendable
 {
@@ -176,7 +201,7 @@ public final class LinuxAndroidRuntimeKernelLog:
         }
         let output = unsafe open(
             path.path,
-            O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
+            O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC,
             mode_t(0o600))
         guard output >= 0 else {
             let code = errno

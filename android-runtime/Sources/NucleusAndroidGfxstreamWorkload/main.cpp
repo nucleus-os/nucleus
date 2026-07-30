@@ -2776,7 +2776,7 @@ int main(int argc, char **argv) {
         }
 
         std::printf(
-            "{\"status\":\"qualified\","
+            "{\"status\":\"completed\","
             "\"renderNode\":\"%s\","
             "\"hostVulkanDevice\":\"%s\","
             "\"guestVulkanDevice\":\"%s\","

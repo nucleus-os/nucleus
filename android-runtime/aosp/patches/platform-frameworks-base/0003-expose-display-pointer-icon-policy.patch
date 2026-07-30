@@ -1,0 +1,95 @@
+diff --git a/core/java/android/hardware/input/IInputManager.aidl b/core/java/android/hardware/input/IInputManager.aidl
+index 7c2b60fca75a..fb7dd19e730c 100644
+--- a/core/java/android/hardware/input/IInputManager.aidl
++++ b/core/java/android/hardware/input/IInputManager.aidl
+@@ -100,6 +100,10 @@ interface IInputManager {
+     @EnforcePermission("INJECT_EVENTS")
+     IVirtualMouse createVirtualMouse(in IBinder token, in VirtualMouseConfig config);
+
++    // Controls framework pointer-icon composition for a display whose input is presented by
++    // another window system. The caller must have ASSOCIATE_INPUT_DEVICE_TO_DISPLAY.
++    void setPointerIconVisible(boolean visible, int displayId);
++
+     // Injects an input event into the system. The caller must have the INJECT_EVENTS permission.
+     // The caller can target windows owned by a certain UID by providing a valid UID, or by
+     // providing {@link android.os.Process#INVALID_UID} to target all windows.
+diff --git a/core/java/android/hardware/input/InputManager.java b/core/java/android/hardware/input/InputManager.java
+index aeb9b59bd470..4b0143ac92f6 100644
+--- a/core/java/android/hardware/input/InputManager.java
++++ b/core/java/android/hardware/input/InputManager.java
+@@ -1377,6 +1377,16 @@ public final class InputManager {
+         return mGlobal.createVirtualMouse(config);
+     }
+
++    /**
++     * Controls whether Android composes its pointer icon on the specified display.
++     *
++     * @hide
++     */
++    @RequiresPermission(Manifest.permission.ASSOCIATE_INPUT_DEVICE_TO_DISPLAY)
++    public void setPointerIconVisible(boolean visible, int displayId) {
++        mGlobal.setPointerIconVisible(visible, displayId);
++    }
++
+     /**
+      * Injects an input event into the event system on behalf of an application.
+      * The synchronization mode determines whether the method blocks while waiting for
+diff --git a/core/java/android/hardware/input/InputManagerGlobal.java b/core/java/android/hardware/input/InputManagerGlobal.java
+index a34ef6733d8f..560dc690757e 100644
+--- a/core/java/android/hardware/input/InputManagerGlobal.java
++++ b/core/java/android/hardware/input/InputManagerGlobal.java
+@@ -1783,6 +1783,17 @@ public final class InputManagerGlobal {
+         }
+     }
+
++    /**
++     * @see InputManager#setPointerIconVisible(boolean, int)
++     */
++    public void setPointerIconVisible(boolean visible, int displayId) {
++        try {
++            mIm.setPointerIconVisible(visible, displayId);
++        } catch (RemoteException e) {
++            throw e.rethrowFromSystemServer();
++        }
++    }
++
+     /**
+      * @see InputManager#setPointerIcon(PointerIcon, int, int, int, IBinder)
+      */
+diff --git a/services/core/java/com/android/server/input/InputManagerService.java b/services/core/java/com/android/server/input/InputManagerService.java
+index fae546b85a8a..a348cbbc3e5b 100644
+--- a/services/core/java/com/android/server/input/InputManagerService.java
++++ b/services/core/java/com/android/server/input/InputManagerService.java
+@@ -1528,11 +1528,22 @@ public class InputManagerService extends IInputManager.Stub
+                 properties -> properties.mouseScalingEnabled = enabled);
+     }
+
+-    private void setPointerIconVisible(boolean visible, int displayId) {
++    private void setPointerIconVisibleInternal(boolean visible, int displayId) {
+         updateAdditionalDisplayInputProperties(displayId,
+                 properties -> properties.pointerIconVisible = visible);
+     }
+
++    @Override // Binder call
++    public void setPointerIconVisible(boolean visible, int displayId) {
++        if (!checkCallingPermission(
++                android.Manifest.permission.ASSOCIATE_INPUT_DEVICE_TO_DISPLAY,
++                "setPointerIconVisible()")) {
++            throw new SecurityException(
++                    "Requires ASSOCIATE_INPUT_DEVICE_TO_DISPLAY permission");
++        }
++        setPointerIconVisibleInternal(visible, displayId);
++    }
++
+     private void setDisplayEligibilityForPointerCapture(int displayId, boolean isEligible) {
+         mNative.setDisplayEligibilityForPointerCapture(displayId, isEligible);
+     }
+@@ -4164,7 +4175,7 @@ public class InputManagerService extends IInputManager.Stub
+
+         @Override
+         public void setPointerIconVisible(boolean visible, int displayId) {
+-            InputManagerService.this.setPointerIconVisible(visible, displayId);
++            InputManagerService.this.setPointerIconVisibleInternal(visible, displayId);
+         }
+
+         @Override

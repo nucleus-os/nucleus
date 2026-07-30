@@ -2,10 +2,10 @@ import NucleusAndroidRuntimeCore
 import Testing
 
 @Test
-func androidApexMountRequestAcceptsTheContainedFrameworkLayout() throws {
+func androidApexMountRequestAcceptsTheRuntimeLayout() throws {
     let request = try AndroidApexMountRequest(
         rootFileSystem:
-            "/run/nucleus/android/nucleus-framework-3970820/rootfs",
+            "/run/nucleus/android/nucleus-android-runtime-3970820/rootfs",
         source: "/system/apex/com.android.runtime.apex",
         target: "/apex/com.android.runtime@370399999",
         payloadFileSystem: .erofs,
@@ -13,7 +13,7 @@ func androidApexMountRequestAcceptsTheContainedFrameworkLayout() throws {
 
     #expect(
         request.rootFileSystem
-            == "/run/nucleus/android/nucleus-framework-3970820/rootfs")
+            == "/run/nucleus/android/nucleus-android-runtime-3970820/rootfs")
     #expect(request.source == "/system/apex/com.android.runtime.apex")
     #expect(request.target == "/apex/com.android.runtime@370399999")
     #expect(request.payloadFileSystem == .erofs)
@@ -32,7 +32,7 @@ func androidApexMountRequestRejectsPathsOutsideItsPrivilegeBoundary() {
     #expect(throws: AndroidApexMountFailure.self) {
         try AndroidApexMountRequest(
             rootFileSystem:
-                "/run/nucleus/android/nucleus-framework-1/rootfs",
+                "/run/nucleus/android/nucleus-android-runtime-1/rootfs",
             source: "/system/apex/../com.android.runtime.apex",
             target: "/apex/com.android.runtime@370399999",
             payloadFileSystem: .erofs,
@@ -41,7 +41,7 @@ func androidApexMountRequestRejectsPathsOutsideItsPrivilegeBoundary() {
     #expect(throws: AndroidApexMountFailure.self) {
         try AndroidApexMountRequest(
             rootFileSystem:
-                "/run/nucleus/android/nucleus-framework-1/rootfs",
+                "/run/nucleus/android/nucleus-android-runtime-1/rootfs",
             source: "/system/apex/com.android.runtime.apex",
             target: "/system/com.android.runtime@370399999",
             payloadFileSystem: .erofs,
@@ -53,7 +53,7 @@ func androidApexMountRequestRejectsPathsOutsideItsPrivilegeBoundary() {
 func androidApexMountRequestAcceptsTheStockExt4CtsShim() throws {
     let request = try AndroidApexMountRequest(
         rootFileSystem:
-            "/run/nucleus/android/nucleus-framework-1/rootfs",
+            "/run/nucleus/android/nucleus-android-runtime-1/rootfs",
         source: "/system/apex/com.android.apex.cts.shim.apex",
         target: "/apex/com.android.apex.cts.shim@1",
         payloadFileSystem: .ext4,
@@ -69,7 +69,7 @@ func androidApexMountRequestRequiresPositiveVersionAndAlignedPayload() {
     #expect(throws: AndroidApexMountFailure.self) {
         try AndroidApexMountRequest(
             rootFileSystem:
-                "/run/nucleus/android/nucleus-framework-1/rootfs",
+                "/run/nucleus/android/nucleus-android-runtime-1/rootfs",
             source: "/product/apex/com.android.runtime.apex",
             target: "/apex/com.android.runtime@0",
             payloadFileSystem: .erofs,
@@ -78,7 +78,7 @@ func androidApexMountRequestRequiresPositiveVersionAndAlignedPayload() {
     #expect(throws: AndroidApexMountFailure.self) {
         try AndroidApexMountRequest(
             rootFileSystem:
-                "/run/nucleus/android/nucleus-framework-1/rootfs",
+                "/run/nucleus/android/nucleus-android-runtime-1/rootfs",
             source: "/product/apex/com.android.runtime.apex",
             target: "/apex/com.android.runtime@370399999",
             payloadFileSystem: .erofs,

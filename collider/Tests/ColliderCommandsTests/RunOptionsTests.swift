@@ -1,3 +1,4 @@
+import Foundation
 import NucleusSessionProtocol
 import Testing
 @testable import ColliderCommands
@@ -9,6 +10,7 @@ func plainRunBuildsTheDebugSessionWithoutInstrumentation() throws {
     #expect(options.build)
     #expect(options.effectiveOptimization == .debug)
     #expect(!options.tracy)
+    #expect(!options.android)
     #expect(options.sanitizer == nil)
     #expect(options.compositorArguments.isEmpty)
     #expect(options.buildOptions.identity == "debug-plain-unsanitized")
@@ -21,6 +23,7 @@ func runParsesAUnifiedInstrumentedCapture() throws {
         "--seconds", "20",
         "--scale", "1.25",
         "--sanitize", "address",
+        "--android",
         "--vk-validation",
         "--present-mode", "mailbox_latest_wins",
         "--optimize", "release",
@@ -31,11 +34,32 @@ func runParsesAUnifiedInstrumentedCapture() throws {
     #expect(options.seconds == 20)
     #expect(options.scale == 1.25)
     #expect(options.sanitizer == .address)
+    #expect(options.android)
     #expect(options.validation)
     #expect(options.presentMode == .mailboxLatestWins)
     #expect(options.effectiveOptimization == .release)
     #expect(options.compositorArguments == ["--fixture-output", "DP-1"])
     #expect(options.buildOptions.identity == "release-tracy-address")
+}
+
+@Test
+func androidRuntimeLogWindowFollowsTheProductionDiagnostics() {
+    let invocation = AndroidRuntimeLogWindowInvocation(
+        diagnosticsDirectory: URL(
+            fileURLWithPath: "/runs/current/android-runtime",
+            isDirectory: true))
+
+    #expect(invocation.executable == "kitty")
+    #expect(invocation.arguments == [
+        "--class", "nucleus.android.runtime-log",
+        "--title", "Nucleus Android Runtime",
+        "--", "tail", "--lines=200", "--follow=name", "--retry",
+        "/runs/current/android-runtime/android-kmsg.log",
+        "/runs/current/android-runtime/android-logcat.log",
+        "/runs/current/android-runtime/android-gfxstream-broker.log",
+        "/runs/current/android-runtime/android-display-host.log",
+        "/runs/current/android-runtime/android-progress.jsonl",
+    ])
 }
 
 @Test

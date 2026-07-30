@@ -81,6 +81,24 @@ public enum AndroidRuntimePrivilegedCommand {
                 mappedSystemUser: userID,
                 mappedSystemGroup: groupID
             ).run(environment: environment)
+        case AndroidRuntimePrivilegedOperation.containerSupervisorCommandName:
+            try requireExactly(
+                options,
+                [
+                    "owner-pid", "container", "configuration", "log-file",
+                ])
+            guard let owner = Int32(options["owner-pid"]!),
+                owner > 0
+            else {
+                throw AndroidRuntimePrivilegedCommandFailure(
+                    "invalid Android runtime owner process identifier")
+            }
+            try AndroidContainerSupervisor(
+                ownerProcessIdentifier: owner,
+                containerName: options["container"]!,
+                configuration: options["configuration"]!,
+                logFile: options["log-file"]!
+            ).run()
         default:
             throw AndroidRuntimePrivilegedCommandFailure(
                 "unknown privileged operation: \(operation)")

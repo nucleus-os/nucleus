@@ -4,6 +4,8 @@ public enum AndroidRuntimePrivilegedOperation {
     public static let bpfMountCommandName = "__android-bpf-mount"
     public static let cgroupDelegateCommandName =
         "__android-cgroup-delegate"
+    public static let containerSupervisorCommandName =
+        "__android-container-supervise"
 }
 
 public enum AndroidRuntimeApexPayloadFileSystem:
@@ -65,6 +67,34 @@ public struct AndroidBPFBrokerInvocation: Equatable, Sendable {
             String(rootUID),
             "--root-gid",
             String(rootGID),
+        ]
+    }
+}
+
+public struct AndroidContainerSupervisorInvocation: Equatable, Sendable {
+    public let executable: String
+    public let arguments: [String]
+
+    public init(
+        helperExecutable: String,
+        ownerProcessIdentifier: Int32,
+        name: String,
+        configuration: String,
+        logFile: String
+    ) {
+        executable = "sudo"
+        arguments = [
+            "--non-interactive",
+            helperExecutable,
+            AndroidRuntimePrivilegedOperation.containerSupervisorCommandName,
+            "--owner-pid",
+            String(ownerProcessIdentifier),
+            "--container",
+            name,
+            "--configuration",
+            configuration,
+            "--log-file",
+            logFile,
         ]
     }
 }

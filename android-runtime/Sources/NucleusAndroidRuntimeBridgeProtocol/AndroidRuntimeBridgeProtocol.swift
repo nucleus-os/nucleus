@@ -2,11 +2,12 @@ import Foundation
 import Glibc
 import NucleusAndroidRuntimeCore
 import NucleusIPCTransport
+import Synchronization
 
 public enum AndroidRuntimeBridgeProtocol {
-    public static let version: UInt16 = 1
     public static let maximumPacketBytes = 256 * 1_024
     public static let maximumActivities = 16_384
+    public static let androidUserID: UInt32 = 2_900
 }
 
 public enum AndroidRuntimeBridgeMessageKind:
@@ -16,6 +17,128 @@ public enum AndroidRuntimeBridgeMessageKind:
     case brokerHello
     case runtimeState
     case replaceActivities
+    case inputState
+    case inputEvent
+    case cursorShape
+}
+
+public enum AndroidInputAction: String, Codable, Equatable, Sendable {
+    case pointerMotion
+    case pointerButton
+    case pointerScroll
+    case key
+}
+
+public struct AndroidInputEvent: Codable, Equatable, Sendable {
+    public let displayID: Int32
+    public let eventTimeNanoseconds: UInt64
+    public let x: Double?
+    public let y: Double?
+    public let button: UInt32?
+    public let keyCode: UInt32?
+    public let pressed: Bool?
+    public let scrollX: Double?
+    public let scrollY: Double?
+    public let action: AndroidInputAction
+
+    public init(
+        displayID: Int32,
+        eventTimeNanoseconds: UInt64,
+        x: Double? = nil,
+        y: Double? = nil,
+        button: UInt32? = nil,
+        keyCode: UInt32? = nil,
+        pressed: Bool? = nil,
+        scrollX: Double? = nil,
+        scrollY: Double? = nil,
+        action: AndroidInputAction
+    ) throws {
+        self.displayID = displayID
+        self.eventTimeNanoseconds = eventTimeNanoseconds
+        self.x = x
+        self.y = y
+        self.button = button
+        self.keyCode = keyCode
+        self.pressed = pressed
+        self.scrollX = scrollX
+        self.scrollY = scrollY
+        self.action = action
+        try validate()
+    }
+
+    public func validate() throws {
+        guard displayID >= 0,
+            x?.isFinite ?? true,
+            y?.isFinite ?? true,
+            (x ?? 0) >= 0, (y ?? 0) >= 0,
+            (x ?? 0) <= 65_536, (y ?? 0) <= 65_536,
+            scrollX?.isFinite ?? true,
+            scrollY?.isFinite ?? true
+        else {
+            throw AndroidRuntimeFailure(
+                "Android input event is invalid")
+        }
+        switch action {
+        case .pointerMotion:
+            guard x != nil, y != nil,
+                button == nil, keyCode == nil, pressed == nil,
+                scrollX == nil, scrollY == nil
+            else {
+                throw AndroidRuntimeFailure(
+                    "Android pointer motion has invalid fields")
+            }
+        case .pointerButton:
+            guard let button,
+                button == 0x110 || button == 0x111
+                    || button == 0x112 || button == 0x113
+                    || button == 0x114,
+                x != nil, y != nil,
+                keyCode == nil, pressed != nil,
+                scrollX == nil, scrollY == nil
+            else {
+                throw AndroidRuntimeFailure(
+                    "Android pointer button is invalid")
+            }
+        case .pointerScroll:
+            guard x != nil, y != nil,
+                button == nil, keyCode == nil, pressed == nil,
+                scrollX != nil || scrollY != nil
+            else {
+                throw AndroidRuntimeFailure(
+                    "Android pointer scroll is invalid")
+            }
+        case .key:
+            guard x == nil, y == nil, button == nil,
+                let keyCode, keyCode <= 0x2ff,
+                pressed != nil,
+                scrollX == nil, scrollY == nil
+            else {
+                throw AndroidRuntimeFailure(
+                    "Android keyboard event is invalid")
+            }
+        }
+    }
+}
+
+public struct AndroidCursorShapeUpdate: Codable, Equatable, Sendable {
+    public let displayID: Int32
+    public let pointerIconType: Int32
+
+    public init(displayID: Int32, pointerIconType: Int32) throws {
+        self.displayID = displayID
+        self.pointerIconType = pointerIconType
+        try validate()
+    }
+
+    public func validate() throws {
+        guard displayID >= 0,
+            pointerIconType >= -1,
+            pointerIconType <= 10_000
+        else {
+            throw AndroidRuntimeFailure(
+                "Android cursor-shape update is invalid")
+        }
+    }
 }
 
 public struct AndroidRuntimeBridgeActivity:
@@ -39,36 +162,40 @@ public struct AndroidRuntimeBridgeActivity:
 public struct AndroidRuntimeBridgeEnvelope:
     Codable, Equatable, Sendable
 {
-    public let protocolVersion: UInt16
     public let kind: AndroidRuntimeBridgeMessageKind
     public let generation: String?
     public let userUnlocked: Bool?
     public let userSerial: Int64?
     public let activities: [AndroidRuntimeBridgeActivity]?
+    public let inputReady: Bool?
+    public let inputError: String?
+    public let inputEvent: AndroidInputEvent?
+    public let cursorShape: AndroidCursorShapeUpdate?
 
     public init(
-        protocolVersion: UInt16 =
-            AndroidRuntimeBridgeProtocol.version,
         kind: AndroidRuntimeBridgeMessageKind,
         generation: String? = nil,
         userUnlocked: Bool? = nil,
         userSerial: Int64? = nil,
-        activities: [AndroidRuntimeBridgeActivity]? = nil
+        activities: [AndroidRuntimeBridgeActivity]? = nil,
+        inputReady: Bool? = nil,
+        inputError: String? = nil,
+        inputEvent: AndroidInputEvent? = nil,
+        cursorShape: AndroidCursorShapeUpdate? = nil
     ) throws {
-        self.protocolVersion = protocolVersion
         self.kind = kind
         self.generation = generation
         self.userUnlocked = userUnlocked
         self.userSerial = userSerial
         self.activities = activities
+        self.inputReady = inputReady
+        self.inputError = inputError
+        self.inputEvent = inputEvent
+        self.cursorShape = cursorShape
         try validate()
     }
 
     public func validate() throws {
-        guard protocolVersion == AndroidRuntimeBridgeProtocol.version else {
-            throw AndroidRuntimeFailure(
-                "unsupported Android bridge protocol version")
-        }
         if let generation {
             guard !generation.isEmpty,
                 generation.utf8.count <= 128,
@@ -90,12 +217,30 @@ public struct AndroidRuntimeBridgeEnvelope:
             throw AndroidRuntimeFailure(
                 "Android bridge activity snapshot is oversized")
         }
+        guard activities?.allSatisfy({
+            Self.validActivityField($0.packageName)
+                && Self.validActivityField($0.activityName)
+                && Self.validActivityField($0.label)
+        }) ?? true else {
+            throw AndroidRuntimeFailure(
+                "Android bridge activity metadata is invalid")
+        }
+        guard inputError?.utf8.count ?? 0 <= 16_384,
+            !(inputError?.contains("\0") ?? false)
+        else {
+            throw AndroidRuntimeFailure(
+                "Android input-service error is invalid")
+        }
         switch kind {
         case .bridgeHello:
             guard generation == nil,
                 userUnlocked == nil,
                 userSerial == nil,
-                activities == nil
+                activities == nil,
+                inputReady == nil,
+                inputError == nil,
+                inputEvent == nil,
+                cursorShape == nil
             else {
                 throw AndroidRuntimeFailure(
                     "invalid Android bridge hello")
@@ -104,7 +249,11 @@ public struct AndroidRuntimeBridgeEnvelope:
             guard generation != nil,
                 userUnlocked == nil,
                 userSerial == nil,
-                activities == nil
+                activities == nil,
+                inputReady == nil,
+                inputError == nil,
+                inputEvent == nil,
+                cursorShape == nil
             else {
                 throw AndroidRuntimeFailure(
                     "invalid Android broker hello")
@@ -113,7 +262,11 @@ public struct AndroidRuntimeBridgeEnvelope:
             guard generation != nil,
                 userUnlocked != nil,
                 userSerial != nil,
-                activities == nil
+                activities == nil,
+                inputReady == nil,
+                inputError == nil,
+                inputEvent == nil,
+                cursorShape == nil
             else {
                 throw AndroidRuntimeFailure(
                     "invalid Android bridge runtime state")
@@ -122,22 +275,78 @@ public struct AndroidRuntimeBridgeEnvelope:
             guard generation != nil,
                 userUnlocked == true,
                 userSerial != nil,
-                activities != nil
+                activities != nil,
+                inputReady == nil,
+                inputError == nil,
+                inputEvent == nil,
+                cursorShape == nil
             else {
                 throw AndroidRuntimeFailure(
                     "invalid Android activity snapshot")
             }
+        case .inputState:
+            guard generation != nil,
+                userUnlocked == nil,
+                userSerial == nil,
+                activities == nil,
+                let inputReady,
+                inputReady ? inputError == nil : inputError?.isEmpty == false,
+                inputEvent == nil,
+                cursorShape == nil
+            else {
+                throw AndroidRuntimeFailure(
+                    "invalid Android input-service state")
+            }
+        case .inputEvent:
+            guard generation != nil,
+                userUnlocked == nil,
+                userSerial == nil,
+                activities == nil,
+                inputReady == nil,
+                inputError == nil,
+                let inputEvent,
+                cursorShape == nil
+            else {
+                throw AndroidRuntimeFailure(
+                    "invalid Android input event")
+            }
+            try inputEvent.validate()
+        case .cursorShape:
+            guard generation != nil,
+                userUnlocked == nil,
+                userSerial == nil,
+                activities == nil,
+                inputReady == nil,
+                inputError == nil,
+                inputEvent == nil,
+                let cursorShape
+            else {
+                throw AndroidRuntimeFailure(
+                    "invalid Android cursor-shape update")
+            }
+            try cursorShape.validate()
         }
+    }
+
+    private static func validActivityField(_ value: String) -> Bool {
+        !value.isEmpty
+            && value.utf8.count <= 4_096
+            && !value.contains("\0")
     }
 }
 
 public enum AndroidRuntimeBridgeEvent: Equatable, Sendable {
     case connected(generation: String)
+    case inputReady(generation: String)
+    case inputFailed(generation: String, error: String)
     case userUnlocked(generation: String, userSerial: Int64)
     case activitiesReplaced(
         generation: String,
         userSerial: Int64,
         activities: [AndroidRuntimeBridgeActivity])
+    case cursorShapeChanged(
+        generation: String,
+        update: AndroidCursorShapeUpdate)
     case disconnected(generation: String)
 }
 
@@ -145,6 +354,7 @@ public final class AndroidRuntimeBridgeServer: @unchecked Sendable {
     private let listener: PacketListener
     private let expectedUserID: UInt32
     public let generation: String
+    private let writer = Mutex<PacketConnection?>(nil)
 
     public init(
         socketPath: URL,
@@ -157,6 +367,21 @@ public final class AndroidRuntimeBridgeServer: @unchecked Sendable {
             path: socketPath.path,
             mode: 0o666,
             nonblocking: true)
+    }
+
+    public func send(_ inputEvent: AndroidInputEvent) throws {
+        try writer.withLock { connection in
+            guard let connection else {
+                throw AndroidRuntimeFailure(
+                    "Android runtime bridge is not connected")
+            }
+            try send(
+                AndroidRuntimeBridgeEnvelope(
+                    kind: .inputEvent,
+                    generation: generation,
+                    inputEvent: inputEvent),
+                over: connection)
+        }
     }
 
     public func run(
@@ -185,6 +410,8 @@ public final class AndroidRuntimeBridgeServer: @unchecked Sendable {
                 try await serve(connection, onEvent: onEvent)
             } catch is CancellationError {
                 throw CancellationError()
+            } catch let failure as AndroidRuntimeFailure {
+                throw failure
             } catch {
                 await onEvent(.disconnected(generation: generation))
             }
@@ -202,12 +429,21 @@ public final class AndroidRuntimeBridgeServer: @unchecked Sendable {
             throw AndroidRuntimeFailure(
                 "Android bridge did not begin with hello")
         }
+        writer.withLock { $0 = connection }
+        defer {
+            writer.withLock { current in
+                if current === connection {
+                    current = nil
+                }
+            }
+        }
         try send(
             AndroidRuntimeBridgeEnvelope(
                 kind: .brokerHello,
                 generation: generation),
             over: connection)
         await onEvent(.connected(generation: generation))
+        var inputStatePublished = false
         var unlockedPublished = false
         while true {
             try Task.checkCancellation()
@@ -220,7 +456,28 @@ public final class AndroidRuntimeBridgeServer: @unchecked Sendable {
                     "Android bridge sent a stale generation")
             }
             switch envelope.kind {
+            case .inputState:
+                guard !inputStatePublished,
+                    let ready = envelope.inputReady
+                else {
+                    throw AndroidRuntimeFailure(
+                        "Android bridge duplicated input-service state")
+                }
+                inputStatePublished = true
+                if ready {
+                    await onEvent(.inputReady(generation: generation))
+                } else {
+                    let error = envelope.inputError
+                        ?? "Android omitted the input-service error"
+                    await onEvent(.inputFailed(
+                        generation: generation,
+                        error: error))
+                }
             case .runtimeState:
+                guard inputStatePublished else {
+                    throw AndroidRuntimeFailure(
+                        "Android bridge published runtime state before input")
+                }
                 if envelope.userUnlocked == true {
                     guard !unlockedPublished,
                         let serial = envelope.userSerial
@@ -245,7 +502,15 @@ public final class AndroidRuntimeBridgeServer: @unchecked Sendable {
                     generation: generation,
                     userSerial: serial,
                     activities: activities))
-            case .bridgeHello, .brokerHello:
+            case .cursorShape:
+                guard let update = envelope.cursorShape else {
+                    throw AndroidRuntimeFailure(
+                        "Android bridge omitted cursor-shape update")
+                }
+                await onEvent(.cursorShapeChanged(
+                    generation: generation,
+                    update: update))
+            case .bridgeHello, .brokerHello, .inputEvent:
                 throw AndroidRuntimeFailure(
                     "unexpected Android bridge handshake message")
             }
@@ -298,5 +563,229 @@ public final class AndroidRuntimeBridgeServer: @unchecked Sendable {
                 errno: errno)
         }
         return result > 0
+    }
+}
+
+private enum AndroidDisplayInteractionKind:
+    String, Codable, Sendable
+{
+    case inputEvent
+    case cursorShape
+}
+
+private struct AndroidDisplayInteractionEnvelope:
+    Codable, Sendable
+{
+    let kind: AndroidDisplayInteractionKind
+    let inputEvent: AndroidInputEvent?
+    let cursorShape: AndroidCursorShapeUpdate?
+
+    init(inputEvent: AndroidInputEvent) {
+        kind = .inputEvent
+        self.inputEvent = inputEvent
+        cursorShape = nil
+    }
+
+    init(cursorShape: AndroidCursorShapeUpdate) {
+        kind = .cursorShape
+        inputEvent = nil
+        self.cursorShape = cursorShape
+    }
+}
+
+public enum AndroidDisplayInteractionEvent: Sendable {
+    case input(AndroidInputEvent)
+}
+
+public final class AndroidDisplayInteractionServer: @unchecked Sendable {
+    private struct State {
+        var connection: PacketConnection?
+        var latestCursorShapeByDisplay: [
+            Int32: AndroidCursorShapeUpdate
+        ] = [:]
+    }
+
+    private let listener: PacketListener
+    private let expectedUserID: UInt32
+    private let state = Mutex(State())
+
+    public init(socketPath: URL, expectedUserID: UInt32) throws {
+        self.expectedUserID = expectedUserID
+        listener = try PacketListener(
+            path: socketPath.path,
+            mode: 0o600,
+            nonblocking: true)
+    }
+
+    public func run(
+        onEvent: @escaping @Sendable (
+            AndroidDisplayInteractionEvent
+        ) throws -> Void
+    ) async throws {
+        while true {
+            try Task.checkCancellation()
+            guard try waitUntilReadable(listener.fileDescriptor) else {
+                continue
+            }
+            let connection: PacketConnection
+            do {
+                connection = try listener.accept(
+                    expectedUserID: expectedUserID)
+            } catch let error as IPCTransportError {
+                if case .systemCall(_, let code) = error,
+                    code == EAGAIN || code == EWOULDBLOCK
+                {
+                    continue
+                }
+                throw error
+            }
+            do {
+                try state.withLock { state in
+                    state.connection = connection
+                    for update in state.latestCursorShapeByDisplay
+                        .values.sorted(by: {
+                            $0.displayID < $1.displayID
+                        })
+                    {
+                        try connection.send(
+                            try Self.encode(cursorShape: update))
+                    }
+                }
+                defer {
+                    state.withLock { state in
+                        if state.connection === connection {
+                            state.connection = nil
+                        }
+                    }
+                }
+                while true {
+                    try Task.checkCancellation()
+                    guard try waitUntilReadable(connection.fileDescriptor) else {
+                        continue
+                    }
+                    do {
+                        let packet = try connection.receive(
+                            maximumBytes:
+                                AndroidRuntimeBridgeProtocol.maximumPacketBytes,
+                            maximumDescriptors: 0)
+                        guard packet.descriptors.isEmpty else {
+                            throw AndroidRuntimeFailure(
+                                "Android display interaction packets cannot carry descriptors")
+                        }
+                        let envelope = try JSONDecoder().decode(
+                            AndroidDisplayInteractionEnvelope.self,
+                            from: Data(packet.bytes))
+                        switch envelope.kind {
+                        case .inputEvent:
+                            guard let event = envelope.inputEvent,
+                                envelope.cursorShape == nil
+                            else {
+                                throw AndroidRuntimeFailure(
+                                    "invalid Android display input")
+                            }
+                            try event.validate()
+                            try onEvent(.input(event))
+                        case .cursorShape:
+                            throw AndroidRuntimeFailure(
+                                "Android display host sent a cursor shape")
+                        }
+                    } catch let error as IPCTransportError {
+                        if case .systemCall(_, let code) = error,
+                            code == ECONNRESET || code == EPIPE
+                        {
+                            break
+                        }
+                        throw error
+                    }
+                }
+            }
+        }
+    }
+
+    public func send(_ update: AndroidCursorShapeUpdate) throws {
+        try update.validate()
+        let bytes = try Self.encode(cursorShape: update)
+        try state.withLock { state in
+            state.latestCursorShapeByDisplay[update.displayID] = update
+            guard let connection = state.connection else { return }
+            try connection.send(bytes)
+        }
+    }
+
+    private static func encode(
+        cursorShape update: AndroidCursorShapeUpdate
+    ) throws -> Data {
+        let bytes = try JSONEncoder().encode(
+            AndroidDisplayInteractionEnvelope(cursorShape: update))
+        guard bytes.count
+            <= AndroidRuntimeBridgeProtocol.maximumPacketBytes
+        else {
+            throw AndroidRuntimeFailure(
+                "Android display interaction packet is oversized")
+        }
+        return bytes
+    }
+
+    private func waitUntilReadable(_ descriptor: Int32) throws -> Bool {
+        var state = pollfd(
+            fd: descriptor,
+            events: Int16(POLLIN),
+            revents: 0)
+        let result = unsafe poll(&state, 1, 50)
+        if result < 0, errno != EINTR {
+            throw IPCTransportError.systemCall(
+                operation: "poll(Android display input)",
+                errno: errno)
+        }
+        return result > 0
+    }
+}
+
+public final class AndroidDisplayInteractionClient: @unchecked Sendable {
+    private let connection: PacketConnection
+    public var fileDescriptor: Int32 { connection.fileDescriptor }
+
+    public init(socketPath: String) throws {
+        connection = try PacketConnection.connect(path: socketPath)
+    }
+
+    public func send(_ event: AndroidInputEvent) throws {
+        try send(AndroidDisplayInteractionEnvelope(inputEvent: event))
+    }
+
+    private func send(
+        _ envelope: AndroidDisplayInteractionEnvelope
+    ) throws {
+        let bytes = try JSONEncoder().encode(envelope)
+        guard bytes.count
+            <= AndroidRuntimeBridgeProtocol.maximumPacketBytes
+        else {
+            throw AndroidRuntimeFailure(
+                "Android display-input packet is oversized")
+        }
+        try connection.send(bytes)
+    }
+
+    public func receiveCursorShape() throws -> AndroidCursorShapeUpdate {
+        let packet = try connection.receive(
+            maximumBytes:
+                AndroidRuntimeBridgeProtocol.maximumPacketBytes,
+            maximumDescriptors: 0)
+        guard packet.descriptors.isEmpty else {
+            throw AndroidRuntimeFailure(
+                "Android display interaction packets cannot carry descriptors")
+        }
+        let envelope = try JSONDecoder().decode(
+            AndroidDisplayInteractionEnvelope.self,
+            from: Data(packet.bytes))
+        guard envelope.kind == .cursorShape,
+            envelope.inputEvent == nil,
+            let update = envelope.cursorShape
+        else {
+            throw AndroidRuntimeFailure(
+                "Android display interaction expected cursor shape")
+        }
+        try update.validate()
+        return update
     }
 }

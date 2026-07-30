@@ -71,6 +71,7 @@ struct nucleus_android_gpu_buffer {
 struct nucleus_android_syncobj_timeline {
     nucleus_android_gpu *gpu;
     uint32_t handle;
+    int availability_event_fd;
 };
 
 struct nucleus_android_native_fence {
@@ -90,13 +91,6 @@ struct nucleus_android_syncobj_waiter {
 struct nucleus_android_syncobj_bridge {
     nucleus_android_gpu *gpu;
     uint32_t acquire_handle;
-    uint32_t release_handle;
-    int release_event_fd;
-    VkSemaphore present_semaphore;
-    uint64_t highest_release_point;
-    uint64_t forwarded_release_point;
-    uint64_t highest_present_point;
-    uint64_t signaled_present_point;
 };
 
 static void nucleus_android_gpu_lock(nucleus_android_gpu *gpu) {
@@ -1170,8 +1164,16 @@ nucleus_android_syncobj_timeline *nucleus_android_syncobj_timeline_create(
     nucleus_android_syncobj_timeline *timeline = calloc(1, sizeof(*timeline));
     if (!timeline) return NULL;
     timeline->gpu = gpu;
+    timeline->availability_event_fd = -1;
     if (drmSyncobjCreate(gpu->drm_fd, 0, &timeline->handle) != 0 ||
         timeline->handle == 0) {
+        free(timeline);
+        return NULL;
+    }
+    timeline->availability_event_fd =
+        eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    if (timeline->availability_event_fd < 0) {
+        (void)drmSyncobjDestroy(gpu->drm_fd, timeline->handle);
         free(timeline);
         return NULL;
     }
@@ -1188,11 +1190,19 @@ nucleus_android_syncobj_timeline *nucleus_android_syncobj_timeline_import_fd(
     nucleus_android_syncobj_timeline *timeline = calloc(1, sizeof(*timeline));
     if (!timeline) return NULL;
     timeline->gpu = gpu;
+    timeline->availability_event_fd = -1;
     if (drmSyncobjFDToHandle(
             gpu->drm_fd,
             timeline_fd,
             &timeline->handle) != 0 ||
         timeline->handle == 0) {
+        free(timeline);
+        return NULL;
+    }
+    timeline->availability_event_fd =
+        eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    if (timeline->availability_event_fd < 0) {
+        (void)drmSyncobjDestroy(gpu->drm_fd, timeline->handle);
         free(timeline);
         return NULL;
     }
@@ -1202,8 +1212,63 @@ nucleus_android_syncobj_timeline *nucleus_android_syncobj_timeline_import_fd(
 void nucleus_android_syncobj_timeline_destroy(
     nucleus_android_syncobj_timeline *timeline) {
     if (!timeline) return;
+    if (timeline->availability_event_fd >= 0) {
+        close(timeline->availability_event_fd);
+    }
     (void)drmSyncobjDestroy(timeline->gpu->drm_fd, timeline->handle);
     free(timeline);
+}
+
+int nucleus_android_syncobj_timeline_arm_available(
+    nucleus_android_syncobj_timeline *timeline,
+    uint64_t point) {
+    if (!timeline || point == 0 ||
+        timeline->availability_event_fd < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    uint64_t notifications = 0;
+    ssize_t read_result;
+    do {
+        read_result = read(
+            timeline->availability_event_fd,
+            &notifications,
+            sizeof(notifications));
+    } while (read_result < 0 && errno == EINTR);
+    if (read_result < 0 && errno != EAGAIN) return -1;
+    return drmSyncobjEventfd(
+        timeline->gpu->drm_fd,
+        timeline->handle,
+        point,
+        timeline->availability_event_fd,
+        DRM_SYNCOBJ_WAIT_FLAGS_WAIT_AVAILABLE);
+}
+
+int nucleus_android_syncobj_timeline_availability_fd(
+    nucleus_android_syncobj_timeline *timeline) {
+    if (!timeline || timeline->availability_event_fd < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    return timeline->availability_event_fd;
+}
+
+int nucleus_android_syncobj_timeline_drain_available(
+    nucleus_android_syncobj_timeline *timeline) {
+    if (!timeline || timeline->availability_event_fd < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    uint64_t notifications = 0;
+    ssize_t read_result;
+    do {
+        read_result = read(
+            timeline->availability_event_fd,
+            &notifications,
+            sizeof(notifications));
+    } while (read_result < 0 && errno == EINTR);
+    if (read_result < 0 && errno != EAGAIN) return -1;
+    return 0;
 }
 
 int nucleus_android_syncobj_timeline_export_fd(
@@ -1364,7 +1429,6 @@ nucleus_android_syncobj_bridge *nucleus_android_syncobj_bridge_create(
             error_message, error_capacity, "out of memory");
         return NULL;
     }
-    bridge->release_event_fd = -1;
     bridge->gpu = nucleus_android_gpu_create(
         render_path, error_message, error_capacity);
     if (!bridge->gpu) {
@@ -1372,45 +1436,12 @@ nucleus_android_syncobj_bridge *nucleus_android_syncobj_bridge_create(
         return NULL;
     }
     if (drmSyncobjCreate(
-            bridge->gpu->drm_fd, 0, &bridge->acquire_handle) != 0 ||
-        drmSyncobjCreate(
-            bridge->gpu->drm_fd, 0, &bridge->release_handle) != 0) {
+            bridge->gpu->drm_fd, 0, &bridge->acquire_handle) != 0) {
         int saved_errno = errno;
         nucleus_android_errno_error(
-            error_message, error_capacity, "creating DRM syncobj timelines");
+            error_message, error_capacity, "creating DRM acquire timeline");
         nucleus_android_syncobj_bridge_destroy(bridge);
         errno = saved_errno;
-        return NULL;
-    }
-    bridge->release_event_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
-    if (bridge->release_event_fd < 0) {
-        int saved_errno = errno;
-        nucleus_android_errno_error(
-            error_message, error_capacity, "creating release eventfd");
-        nucleus_android_syncobj_bridge_destroy(bridge);
-        errno = saved_errno;
-        return NULL;
-    }
-    VkSemaphoreTypeCreateInfo timeline = {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
-        .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
-        .initialValue = 0};
-    VkSemaphoreCreateInfo semaphore = {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-        .pNext = &timeline};
-    VkResult result = vkCreateSemaphore(
-        bridge->gpu->device,
-        &semaphore,
-        NULL,
-        &bridge->present_semaphore);
-    if (result != VK_SUCCESS) {
-        errno = EIO;
-        nucleus_android_vulkan_error(
-            error_message,
-            error_capacity,
-            "creating Composer present timeline semaphore",
-            result);
-        nucleus_android_syncobj_bridge_destroy(bridge);
         return NULL;
     }
     return bridge;
@@ -1419,31 +1450,12 @@ nucleus_android_syncobj_bridge *nucleus_android_syncobj_bridge_create(
 void nucleus_android_syncobj_bridge_destroy(
     nucleus_android_syncobj_bridge *bridge) {
     if (!bridge) return;
-    if (bridge->gpu && bridge->present_semaphore &&
-        bridge->highest_present_point > bridge->signaled_present_point) {
-        VkSemaphoreSignalInfo signal = {
-            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO,
-            .semaphore = bridge->present_semaphore,
-            .value = bridge->highest_present_point};
-        (void)vkSignalSemaphore(bridge->gpu->device, &signal);
-    }
     if (bridge->gpu && bridge->gpu->device) {
         (void)vkDeviceWaitIdle(bridge->gpu->device);
-    }
-    if (bridge->gpu && bridge->present_semaphore) {
-        vkDestroySemaphore(
-            bridge->gpu->device, bridge->present_semaphore, NULL);
     }
     if (bridge->gpu && bridge->acquire_handle != 0) {
         (void)drmSyncobjDestroy(
             bridge->gpu->drm_fd, bridge->acquire_handle);
-    }
-    if (bridge->gpu && bridge->release_handle != 0) {
-        (void)drmSyncobjDestroy(
-            bridge->gpu->drm_fd, bridge->release_handle);
-    }
-    if (bridge->release_event_fd >= 0) {
-        close(bridge->release_event_fd);
     }
     nucleus_android_gpu_destroy(bridge->gpu);
     free(bridge);
@@ -1467,10 +1479,30 @@ int nucleus_android_syncobj_bridge_export_acquire_timeline(
         bridge, bridge ? bridge->acquire_handle : 0);
 }
 
-int nucleus_android_syncobj_bridge_export_release_timeline(
+nucleus_android_syncobj_timeline *
+nucleus_android_syncobj_bridge_create_timeline(
     nucleus_android_syncobj_bridge *bridge) {
-    return nucleus_android_syncobj_bridge_export(
-        bridge, bridge ? bridge->release_handle : 0);
+    if (!bridge || !bridge->gpu) {
+        errno = EINVAL;
+        return NULL;
+    }
+    return nucleus_android_syncobj_timeline_create(bridge->gpu);
+}
+
+nucleus_android_native_fence *
+nucleus_android_syncobj_bridge_create_native_fence(
+    nucleus_android_syncobj_bridge *bridge,
+    int *sync_file,
+    char *error_message,
+    size_t error_capacity) {
+    if (!bridge) {
+        errno = EINVAL;
+        nucleus_android_error(
+            error_message, error_capacity, "syncobj bridge is required");
+        return NULL;
+    }
+    return nucleus_android_native_fence_create(
+        bridge->gpu, sync_file, error_message, error_capacity);
 }
 
 int nucleus_android_syncobj_bridge_import_acquire_sync_file(
@@ -1508,210 +1540,6 @@ int nucleus_android_syncobj_bridge_signal_acquire(
     }
     return drmSyncobjTimelineSignal(
         bridge->gpu->drm_fd, &bridge->acquire_handle, &point, 1);
-}
-
-int nucleus_android_syncobj_bridge_watch_release(
-    nucleus_android_syncobj_bridge *bridge,
-    uint64_t point) {
-    if (!bridge || point == 0 || point <= bridge->highest_release_point) {
-        errno = EINVAL;
-        return -1;
-    }
-    if (drmSyncobjEventfd(
-            bridge->gpu->drm_fd,
-            bridge->release_handle,
-            point,
-            bridge->release_event_fd,
-            0) != 0) {
-        return -1;
-    }
-    bridge->highest_release_point = point;
-    return 0;
-}
-
-int nucleus_android_syncobj_bridge_release_notification_fd(
-    nucleus_android_syncobj_bridge *bridge) {
-    if (!bridge || bridge->release_event_fd < 0) {
-        errno = EINVAL;
-        return -1;
-    }
-    return bridge->release_event_fd;
-}
-
-int nucleus_android_syncobj_bridge_dispatch_releases(
-    nucleus_android_syncobj_bridge *bridge) {
-    if (!bridge || !bridge->gpu || bridge->release_event_fd < 0) {
-        errno = EINVAL;
-        return -1;
-    }
-    uint64_t notifications = 0;
-    ssize_t read_result;
-    do {
-        read_result = read(
-            bridge->release_event_fd,
-            &notifications,
-            sizeof(notifications));
-    } while (read_result < 0 && errno == EINTR);
-    if (read_result < 0 && errno != EAGAIN) return -1;
-
-    uint64_t completed = 0;
-    if (drmSyncobjQuery(
-            bridge->gpu->drm_fd,
-            &bridge->release_handle,
-            &completed,
-            1) != 0) {
-        return -1;
-    }
-    if (completed <= bridge->forwarded_release_point) return 0;
-    bridge->forwarded_release_point = completed;
-    return 0;
-}
-
-uint64_t nucleus_android_syncobj_bridge_forwarded_release_point(
-    nucleus_android_syncobj_bridge *bridge) {
-    return bridge ? bridge->forwarded_release_point : 0;
-}
-
-int nucleus_android_syncobj_bridge_export_present_sync_file(
-    nucleus_android_syncobj_bridge *bridge,
-    uint64_t point,
-    char *error_message,
-    size_t error_capacity) {
-    if (!bridge || !bridge->gpu || !bridge->present_semaphore ||
-        point == 0 || point <= bridge->highest_present_point) {
-        errno = EINVAL;
-        nucleus_android_error(
-            error_message,
-            error_capacity,
-            "invalid or non-monotonic present point");
-        return -1;
-    }
-    nucleus_android_gpu *gpu = bridge->gpu;
-    nucleus_android_gpu_lock(gpu);
-    VkResult result = nucleus_android_collect_submissions_locked(gpu);
-    if (result != VK_SUCCESS) {
-        nucleus_android_gpu_unlock(gpu);
-        errno = EIO;
-        nucleus_android_vulkan_error(
-            error_message,
-            error_capacity,
-            "collecting present-fence submissions",
-            result);
-        return -1;
-    }
-    if (gpu->next_submission_serial == UINT64_MAX) {
-        nucleus_android_gpu_unlock(gpu);
-        errno = EOVERFLOW;
-        nucleus_android_error(
-            error_message,
-            error_capacity,
-            "present-fence submission serial space exhausted");
-        return -1;
-    }
-    struct nucleus_android_submission *submission =
-        calloc(1, sizeof(*submission));
-    if (!submission) {
-        nucleus_android_gpu_unlock(gpu);
-        nucleus_android_error(
-            error_message, error_capacity, "out of memory");
-        return -1;
-    }
-    const char *operation = "creating present-fence semaphore";
-    VkExportSemaphoreCreateInfo export = {
-        .sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO,
-        .handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT};
-    VkSemaphoreCreateInfo semaphore = {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-        .pNext = &export};
-    result = vkCreateSemaphore(
-        gpu->device,
-        &semaphore,
-        NULL,
-        &submission->signal_semaphore);
-    if (result != VK_SUCCESS) goto fail;
-    operation = "creating present-fence submission fence";
-    VkFenceCreateInfo fence = {
-        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-    result = vkCreateFence(
-        gpu->device, &fence, NULL, &submission->fence);
-    if (result != VK_SUCCESS) goto fail;
-
-    uint64_t signal_value = 0;
-    VkTimelineSemaphoreSubmitInfo timeline = {
-        .sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
-        .waitSemaphoreValueCount = 1,
-        .pWaitSemaphoreValues = &point,
-        .signalSemaphoreValueCount = 1,
-        .pSignalSemaphoreValues = &signal_value};
-    VkPipelineStageFlags wait_stage =
-        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-    VkSubmitInfo submit = {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .pNext = &timeline,
-        .waitSemaphoreCount = 1,
-        .pWaitSemaphores = &bridge->present_semaphore,
-        .pWaitDstStageMask = &wait_stage,
-        .signalSemaphoreCount = 1,
-        .pSignalSemaphores = &submission->signal_semaphore};
-    operation = "submitting present-fence timeline wait";
-    result = vkQueueSubmit(
-        gpu->queue, 1, &submit, submission->fence);
-    if (result != VK_SUCCESS) goto fail;
-
-    submission->serial = gpu->next_submission_serial++;
-    submission->next = gpu->submissions;
-    gpu->submissions = submission;
-    gpu->diagnostic.submitted_serial = submission->serial;
-    bridge->highest_present_point = point;
-
-    int fd = -1;
-    VkSemaphoreGetFdInfoKHR get_fd = {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR,
-        .semaphore = submission->signal_semaphore,
-        .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT};
-    result = gpu->get_semaphore_fd(
-        gpu->device, &get_fd, &fd);
-    nucleus_android_gpu_unlock(gpu);
-    if (result != VK_SUCCESS || fd < 0) {
-        errno = EIO;
-        nucleus_android_vulkan_error(
-            error_message,
-            error_capacity,
-            "exporting Composer present sync_file",
-            result);
-        return -1;
-    }
-    return fd;
-
-fail:
-    nucleus_android_vulkan_error(
-        error_message, error_capacity, operation, result);
-    nucleus_android_destroy_submission_locked(gpu, submission);
-    nucleus_android_gpu_unlock(gpu);
-    errno = EIO;
-    return -1;
-}
-
-int nucleus_android_syncobj_bridge_signal_present(
-    nucleus_android_syncobj_bridge *bridge,
-    uint64_t point) {
-    if (!bridge || point == 0 || point > bridge->highest_present_point) {
-        errno = EINVAL;
-        return -1;
-    }
-    if (point <= bridge->signaled_present_point) return 0;
-    VkSemaphoreSignalInfo signal = {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO,
-        .semaphore = bridge->present_semaphore,
-        .value = point};
-    VkResult result = vkSignalSemaphore(
-        bridge->gpu->device, &signal);
-    if (result != VK_SUCCESS) {
-        errno = EIO;
-        return -1;
-    }
-    bridge->signaled_present_point = point;
-    return 0;
 }
 
 int nucleus_android_syncobj_timeline_export_sync_file(

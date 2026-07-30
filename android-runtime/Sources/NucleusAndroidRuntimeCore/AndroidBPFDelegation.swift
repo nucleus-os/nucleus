@@ -207,9 +207,9 @@ private func bpfDelegationComponents(
         components[0] == "run",
         components[1] == "nucleus",
         components[2] == "android",
-        components[3].hasPrefix("nucleus-framework-"),
-        !components[3].dropFirst("nucleus-framework-".count).isEmpty,
-        components[3].dropFirst("nucleus-framework-".count)
+        components[3].hasPrefix("nucleus-android-runtime-"),
+        !components[3].dropFirst("nucleus-android-runtime-".count).isEmpty,
+        components[3].dropFirst("nucleus-android-runtime-".count)
             .allSatisfy(\.isNumber),
         components.allSatisfy({
             !$0.isEmpty

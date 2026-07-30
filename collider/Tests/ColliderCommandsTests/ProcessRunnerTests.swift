@@ -24,6 +24,9 @@ func commandFailuresPreserveRunFinalizationSemantics() {
         WorkspaceFailure.message("signal"),
         wasInterrupted: true) == .interrupted)
     #expect(commandFailureStatus(
+        CancellationError(),
+        wasInterrupted: false) == .interrupted)
+    #expect(commandFailureStatus(
         RunRegistryFailure.resumptionIdentityChanged(runID),
         wasInterrupted: false) == .interrupted)
 }

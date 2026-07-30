@@ -38,12 +38,12 @@ public struct AndroidApexMountRequest: Equatable, Sendable {
             rootComponents[0] == "run",
             rootComponents[1] == "nucleus",
             rootComponents[2] == "android",
-            rootComponents[3].hasPrefix("nucleus-framework-"),
+            rootComponents[3].hasPrefix("nucleus-android-runtime-"),
             !rootComponents[3]
-                .dropFirst("nucleus-framework-".count)
+                .dropFirst("nucleus-android-runtime-".count)
                 .isEmpty,
             rootComponents[3]
-                .dropFirst("nucleus-framework-".count)
+                .dropFirst("nucleus-android-runtime-".count)
                 .allSatisfy(\.isNumber),
             rootComponents[4] == "rootfs"
         else {

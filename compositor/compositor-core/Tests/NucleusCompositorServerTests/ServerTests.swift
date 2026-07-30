@@ -185,6 +185,7 @@ import NucleusCompositorServerTypes
         rect: WindowRect(x: 30, y: 40, width: 800, height: 600),
         activeMaximized: false,
         activeFullscreen: false,
+        resizing: false,
         specialOutputID: nil,
         layoutTransitionID: 0,
         serial: 44

@@ -385,6 +385,9 @@ public enum AndroidRuntimeColliderRecipe {
                 .tree(
                     root.removingLastComponent().appending(
                         "ipc/transport/Sources/NucleusIPCTransportC")),
+                .tree(
+                    root.appending(
+                        "aosp/packages/apps/NucleusRuntimeBridge")),
                 .dependencyOutput(launcher),
                 .dependencyOutput(sourceProvenance),
                 .dependencyOutput(containerImageID),
@@ -765,13 +768,10 @@ public enum AndroidRuntimeColliderRecipe {
             id == "android-runtime.build"
             ? [
                 "nucleus-android-gpu-broker",
-                "nucleus-android-gfxstream-host-probe",
                 "nucleus-android-gfxstream-workload",
                 "nucleus-android-gfxstream-broker",
                 "nucleus-android-display-host",
                 "nucleus-android-shared-ring-stress",
-                "nucleus-android-surface-probe",
-                "nucleus-android-presentation-qualifier",
             ] : []
         return TaskDeclaration(
             id: TaskID(rawValue: id),

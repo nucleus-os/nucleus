@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Nucleus relies on the host page cache and memory policy. Pinning Android
+  applications inside the contained runtime duplicates that policy and exceeds
+  the intentionally bounded memlock allowance.
+-->
+<resources>
+    <integer name="config_pinnerHomePinBytes">0</integer>
+    <integer name="config_pinnerCameraPinBytes">0</integer>
+    <integer name="config_pinnerAssistantPinBytes">0</integer>
+    <integer name="config_pinnerWebviewPinBytes">0</integer>
+    <integer name="config_pinnerMaxPinnedMemoryPercentage">0</integer>
+</resources>

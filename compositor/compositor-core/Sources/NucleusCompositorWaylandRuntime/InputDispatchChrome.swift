@@ -235,16 +235,15 @@ extension InputDispatch {
         let previousRect = host.server
             .window(id: windowID)?.currentRect()
         if update.needsResizeConfigure {
-            // Keep presenting the last client-committed buffer at its native
-            // logical size. The new frame lands atomically with the client's
-            // acked configure instead of stretching stale pixels under the drag.
             windowDriver?.configureInteractive(
                 windowId: windowID, resizing: true, targetRect: update.rect)
-        } else {
-            windowDriver?.previewInteractiveRect(
-                windowId: windowID, x: update.rect.x, y: update.rect.y,
-                w: Double(update.rect.width), h: Double(update.rect.height))
         }
+        // Pointer-to-window geometry is compositor-owned during a direct
+        // manipulation. Present the requested rect immediately; the client
+        // configure/ack/redraw path converges asynchronously behind it.
+        windowDriver?.previewInteractiveRect(
+            windowId: windowID, x: update.rect.x, y: update.rect.y,
+            w: Double(update.rect.width), h: Double(update.rect.height))
         RenderBridge.requestFrame(
             server: host.server,
             forWindowID: windowID,

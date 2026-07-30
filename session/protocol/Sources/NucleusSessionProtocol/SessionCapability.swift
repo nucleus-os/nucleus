@@ -16,6 +16,7 @@ public enum SessionCapabilityDeclarationFailure:
     case invalidExecutable
     case invalidArguments
     case invalidMaximumRestarts
+    case invalidShutdownTimeout
 
     public var description: String {
         switch self {
@@ -29,6 +30,8 @@ public enum SessionCapabilityDeclarationFailure:
             "session capability arguments exceed the protocol bounds"
         case .invalidMaximumRestarts:
             "session capability maximum restarts must be between 0 and 16"
+        case .invalidShutdownTimeout:
+            "session capability shutdown timeout must be between 1 and 600 seconds"
         }
     }
 }
@@ -42,6 +45,7 @@ public struct SessionCapabilityDeclaration:
     public var arguments: [String]
     public var restartPolicy: SessionCapabilityRestartPolicy
     public var maximumRestarts: UInt8
+    public var shutdownTimeoutSeconds: UInt16
 
     public init(
         protocolVersion: UInt16 = SessionProtocolVersion.current,
@@ -49,7 +53,8 @@ public struct SessionCapabilityDeclaration:
         executable: String,
         arguments: [String] = [],
         restartPolicy: SessionCapabilityRestartPolicy = .onFailure,
-        maximumRestarts: UInt8 = 3
+        maximumRestarts: UInt8 = 3,
+        shutdownTimeoutSeconds: UInt16 = 10
     ) throws {
         guard protocolVersion == SessionProtocolVersion.current else {
             throw SessionCapabilityDeclarationFailure.invalidProtocolVersion(
@@ -74,12 +79,16 @@ public struct SessionCapabilityDeclaration:
         guard maximumRestarts <= 16 else {
             throw SessionCapabilityDeclarationFailure.invalidMaximumRestarts
         }
+        guard (1...600).contains(shutdownTimeoutSeconds) else {
+            throw SessionCapabilityDeclarationFailure.invalidShutdownTimeout
+        }
         self.protocolVersion = protocolVersion
         self.identifier = identifier
         self.executable = executable
         self.arguments = arguments
         self.restartPolicy = restartPolicy
         self.maximumRestarts = maximumRestarts
+        self.shutdownTimeoutSeconds = shutdownTimeoutSeconds
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -89,6 +98,7 @@ public struct SessionCapabilityDeclaration:
         case arguments
         case restartPolicy
         case maximumRestarts
+        case shutdownTimeoutSeconds
     }
 
     public init(from decoder: any Decoder) throws {
@@ -107,7 +117,9 @@ public struct SessionCapabilityDeclaration:
                 SessionCapabilityRestartPolicy.self,
                 forKey: .restartPolicy) ?? .onFailure,
             maximumRestarts: try container.decodeIfPresent(
-                UInt8.self, forKey: .maximumRestarts) ?? 3)
+                UInt8.self, forKey: .maximumRestarts) ?? 3,
+            shutdownTimeoutSeconds: try container.decodeIfPresent(
+                UInt16.self, forKey: .shutdownTimeoutSeconds) ?? 10)
     }
 
     private static func validIdentifier(_ value: String) -> Bool {

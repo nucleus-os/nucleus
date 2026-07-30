@@ -1,0 +1,46 @@
+From 4b626eff28d4ba65c6df65d4fe4e7c0f17250499 Mon Sep 17 00:00:00 2001
+From: Nucleus Build <nucleus@localhost>
+Date: Thu, 30 Jul 2026 12:08:00 -0600
+Subject: [PATCH] Make client target cache reconnect idempotent
+
+SurfaceFlinger repeats setClientTargetSlotCount when an existing physical
+display publishes an updated mode through the Composer hotplug contract.
+ComposerResources intentionally initializes its handle cache only once, so
+blindly forwarding the repeated request reports BAD_PARAMETER even when the
+requested cache is already active.
+
+Accept the existing cache when its size matches the request. A request to
+change an initialized cache retains the existing BAD_PARAMETER contract.
+---
+ hals/hwc3/ComposerClient.cpp | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/hals/hwc3/ComposerClient.cpp b/hals/hwc3/ComposerClient.cpp
+index 4dfc86b1..dfac7aa8 100644
+--- a/hals/hwc3/ComposerClient.cpp
++++ b/hals/hwc3/ComposerClient.cpp
+@@ -561,8 +561,20 @@ ndk::ScopedAStatus ComposerClient::setClientTargetSlotCount(int64_t displayId, i
+
+     GET_DISPLAY_OR_RETURN_ERROR();
+
+-    return ToBinderStatus(
+-        mResources->setDisplayClientTargetCacheSize(displayId, static_cast<uint32_t>(count)));
++    if (count < 0) {
++        return ToBinderStatus(HWC3::Error::BadParameter);
++    }
++
++    const uint32_t requestedSize = static_cast<uint32_t>(count);
++    size_t existingSize = 0;
++    const HWC3::Error queryError =
++        mResources->getDisplayClientTargetCacheSize(displayId, &existingSize);
++    if (queryError == HWC3::Error::None && existingSize == requestedSize) {
++        return ToBinderStatus(HWC3::Error::None);
++    }
++
++    return ToBinderStatus(
++        mResources->setDisplayClientTargetCacheSize(displayId, requestedSize));
+ }
+
+ ndk::ScopedAStatus ComposerClient::setColorMode(int64_t displayId, ColorMode mode,
+--
+2.47.3

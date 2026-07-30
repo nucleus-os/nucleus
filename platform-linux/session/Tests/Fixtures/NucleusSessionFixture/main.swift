@@ -97,7 +97,7 @@ private func run() throws -> Int32 {
         try writeText(
             "valid",
             to: directory + "/shell-policy-endpoint-\(getpid())")
-    case .supervisor, .configService, .controlService:
+    case .supervisor, .configService, .controlService, .capability:
         throw ConfigurationChannelFailure.unexpectedPublication
     }
     defer {
@@ -123,7 +123,7 @@ private func run() throws -> Int32 {
         guard case .some = publication.shellConfiguration else {
             throw ConfigurationChannelFailure.unexpectedPublication
         }
-    case .supervisor, .configService, .controlService:
+    case .supervisor, .configService, .controlService, .capability:
         throw ConfigurationChannelFailure.unexpectedPublication
     }
     try configurationChannel.acknowledge(publication)
@@ -307,6 +307,26 @@ private func runCapability(
     if unsafe access(firstPIDPath, F_OK) != 0 {
         try writeText(String(getpid()), to: firstPIDPath)
     }
+    let shutdownSignal: DispatchSourceSignal?
+    if mode == "delayed-shutdown" {
+        signal(SIGTERM, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(
+            signal: SIGTERM,
+            queue: .global(qos: .userInitiated))
+        source.setEventHandler {
+            usleep(1_200_000)
+            try? writeText(
+                "complete",
+                to: directory + "/capability-shutdown-complete")
+            exit(0)
+        }
+        source.resume()
+        shutdownSignal = source
+    } else {
+        shutdownSignal = nil
+    }
+    defer { _ = shutdownSignal }
+    try writeText("started", to: directory + "/capability-started")
     if mode == "exit-once-nonzero",
        unsafe access(exitedOncePath, F_OK) != 0
     {

@@ -169,16 +169,6 @@ extension RenderCore {
         lastFrameReferencedCommitInstants = result.referencedSurfaceIDs.reduce(into: [:]) {
             if let instant = clientCommitInstants[$1] { $0[$1] = instant }
         }
-        if startupFrameDiagnosticsRemaining > 0 {
-            startupFrameDiagnosticsRemaining -= 1
-            NucleusLogger(subsystem: "render-frame").debug(
-                "output=\(outputID) serial=\(frameSerial) layers=\(tree.layers.count) "
-                    + "ops=\(result.opsDrawn) backdrops=\(result.backdropDraws) "
-                    + "damage=\(result.damageRectCount) full_damage=\(result.fullDamage) "
-                    + "acquire_waits=\(result.acquireWaitCount) presented=\(result.presented) "
-                    + "submitted=\(result.submitted) uploads=\(clientUploadStats.uploaded) "
-                    + "upload_failures=\(clientUploadStats.failed)")
-        }
         if let submission = result.submissionResult,
            !submission.isOk()
         {

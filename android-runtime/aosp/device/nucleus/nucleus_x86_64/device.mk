@@ -19,6 +19,9 @@ $(call inherit-product, hardware/interfaces/audio/aidl/default/audio_effects.mk)
 PRODUCT_SOONG_NAMESPACES += \
     device/nucleus/nucleus_x86_64
 
+DEVICE_PACKAGE_OVERLAYS += \
+    device/nucleus/nucleus_x86_64/overlay
+
 PRODUCT_PACKAGES += \
     android.hardware.graphics.composer3-service.nucleus \
     android.hardware.graphics.allocator-service.nucleus \

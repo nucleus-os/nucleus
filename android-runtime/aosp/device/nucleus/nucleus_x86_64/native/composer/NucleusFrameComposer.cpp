@@ -15,7 +15,6 @@
 #include "Layer.h"
 #include "NucleusIPCTransportC.h"
 #include "NucleusComposerProtocol.h"
-#include "NucleusGrallocHandle.h"
 
 namespace aidl::android::hardware::graphics::composer3::impl {
 namespace {
@@ -54,12 +53,6 @@ HWC3::Error NucleusFrameComposer::init() {
             return HWC3::Error::NoResources;
         }
     }
-    socket_.reset(nucleus_ipc_connect(socket_path_.c_str()));
-    if (!socket_.ok()) {
-        ALOGE("Nucleus Composer3 presentation cannot connect to %s: %s",
-              socket_path_.c_str(), strerror(errno));
-        return HWC3::Error::NoResources;
-    }
     ALOGI("Nucleus Composer3 initial topology is ready");
     return HWC3::Error::None;
 }
@@ -78,8 +71,6 @@ bool NucleusFrameComposer::connectTopologySubscriber() {
         last_generation = topology_generation_;
     }
     const nucleus_composer_topology_subscribe_request subscribe = {
-        .magic = NUCLEUS_COMPOSER_PROTOCOL_MAGIC,
-        .version = NUCLEUS_COMPOSER_PROTOCOL_VERSION,
         .operation = NUCLEUS_COMPOSER_SUBSCRIBE_TOPOLOGY,
         .byte_count = sizeof(subscribe),
         .fd_count = 0,
@@ -132,8 +123,8 @@ HWC3::Error NucleusFrameComposer::getDisplayConfigurations(
     for (const auto& [_, display] : displays_) {
         DisplayConfig config(
             static_cast<int32_t>(display.id),
-            /*width=*/1280,
-            /*height=*/720,
+            static_cast<int32_t>(display.width),
+            static_cast<int32_t>(display.height),
             /*dpiX=*/160,
             /*dpiY=*/160,
             display.vsync_period_ns);
@@ -151,21 +142,6 @@ HWC3::Error NucleusFrameComposer::unregisterOnHotplugCallback() {
     std::lock_guard<std::mutex> callback_lock(callback_mutex_);
     std::lock_guard<std::mutex> lock(topology_mutex_);
     hotplug_callback_ = {};
-    return HWC3::Error::None;
-}
-
-HWC3::Error NucleusFrameComposer::registerOnPhysicalVsyncCallback(
-    const PhysicalVsyncCallback& callback) {
-    std::lock_guard<std::mutex> callback_lock(callback_mutex_);
-    std::lock_guard<std::mutex> lock(topology_mutex_);
-    physical_vsync_callback_ = callback;
-    return HWC3::Error::None;
-}
-
-HWC3::Error NucleusFrameComposer::unregisterOnPhysicalVsyncCallback() {
-    std::lock_guard<std::mutex> callback_lock(callback_mutex_);
-    std::lock_guard<std::mutex> lock(topology_mutex_);
-    physical_vsync_callback_ = {};
     return HWC3::Error::None;
 }
 
@@ -192,8 +168,6 @@ bool NucleusFrameComposer::receiveTopologyEvent(
         return false;
     }
     if (received != sizeof(event) ||
-        event.magic != NUCLEUS_COMPOSER_PROTOCOL_MAGIC ||
-        event.version != NUCLEUS_COMPOSER_PROTOCOL_VERSION ||
         event.byte_count != sizeof(event) ||
         event.fd_count != 0 ||
         fd_count != 0) {
@@ -239,6 +213,10 @@ void NucleusFrameComposer::topologyLoop() {
                     topology_socket_.reset();
                 }
             }
+            std::unique_lock<std::mutex> lock(stop_mutex_);
+            stop_condition_.wait_for(
+                lock, std::chrono::milliseconds(250),
+                [this] { return stopping_.load(); });
             continue;
         }
         if (snapshot_complete) {
@@ -277,42 +255,9 @@ void NucleusFrameComposer::handleTopologyEvent(
         topology_generation_ = std::max(topology_generation_, event.generation);
         return;
     }
-    if (event.operation == NUCLEUS_COMPOSER_OUTPUT_PRESENTED) {
-        if (event.display_id > std::numeric_limits<uint32_t>::max() ||
-            event.presentation_timestamp_ns == 0 ||
-            event.presentation_timestamp_ns >
-                static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) ||
-            event.refresh_period_ns == 0 ||
-            event.refresh_period_ns > std::numeric_limits<int32_t>::max()) {
-            ALOGE("Nucleus Composer3 received invalid physical-vsync values");
-            return;
-        }
-        {
-            std::lock_guard<std::mutex> callback_lock(callback_mutex_);
-            std::lock_guard<std::mutex> lock(topology_mutex_);
-            const auto display = displays_.find(
-                static_cast<uint32_t>(event.display_id));
-            if (display == displays_.end()) {
-                return;
-            }
-            const int32_t selected_period_ns =
-                display->second.vsync_period_ns;
-            if (event.refresh_period_ns !=
-                static_cast<uint64_t>(selected_period_ns)) {
-                ALOGW("Nucleus Composer3 presentation interval %" PRIu64
-                      "ns differs from selected period %" PRId32 "ns",
-                      event.refresh_period_ns, selected_period_ns);
-            }
-            if (physical_vsync_callback_) {
-                physical_vsync_callback_(
-                    static_cast<int64_t>(event.display_id),
-                    event.presentation_timestamp_ns,
-                    selected_period_ns);
-            }
-        }
-        return;
-    }
     if (event.display_id > std::numeric_limits<uint32_t>::max() ||
+        event.mode_width <= 0 ||
+        event.mode_height <= 0 ||
         event.refresh_period_ns == 0 ||
         event.refresh_period_ns > std::numeric_limits<int32_t>::max()) {
         ALOGE("Nucleus Composer3 received invalid output topology values");
@@ -322,6 +267,8 @@ void NucleusFrameComposer::handleTopologyEvent(
     bool connected = event.operation != NUCLEUS_COMPOSER_OUTPUT_DISCONNECTED;
     DisplayTopology display = {
         .id = static_cast<uint32_t>(event.display_id),
+        .width = static_cast<uint32_t>(event.mode_width),
+        .height = static_cast<uint32_t>(event.mode_height),
         .vsync_period_ns = static_cast<int32_t>(event.refresh_period_ns),
     };
     {
@@ -346,8 +293,8 @@ void NucleusFrameComposer::handleTopologyEvent(
             hotplug_callback_(
                 connected,
                 display.id,
-                1280,
-                720,
+                display.width,
+                display.height,
                 160,
                 160,
                 display.vsync_period_ns);
@@ -387,95 +334,7 @@ HWC3::Error NucleusFrameComposer::presentDisplay(
     Display* display,
     ::android::base::unique_fd* out_display_fence,
     std::unordered_map<int64_t, ::android::base::unique_fd>*) {
-    std::lock_guard<std::mutex> lock(socket_mutex_);
-    if (!socket_.ok()) {
-        return HWC3::Error::NoResources;
-    }
-
-    const auto* handle =
-        nucleus_gralloc_handle_cast(display->getClientTarget().getBuffer());
-    if (handle == nullptr) {
-        ALOGE("Nucleus Composer3 received a non-Nucleus client target");
-        return HWC3::Error::BadParameter;
-    }
-
-    ::android::base::unique_fd acquire = display->getClientTarget().getFence();
-    nucleus_composer_present_request request = {
-        .magic = NUCLEUS_COMPOSER_PROTOCOL_MAGIC,
-        .version = NUCLEUS_COMPOSER_PROTOCOL_VERSION,
-        .operation = NUCLEUS_COMPOSER_PRESENT,
-        .byte_count = sizeof(request),
-        .fd_count = static_cast<uint32_t>(acquire.ok() ? 3 : 2),
-        .request_id = next_request_id_++,
-        .display_id = static_cast<uint64_t>(display->getId()),
-        .allocation_id = handle->allocation_id,
-        .frame_number = next_frame_number_++,
-        .drm_modifier = handle->drm_modifier,
-        .allocation_size = handle->allocation_size,
-        .width = handle->width,
-        .height = handle->height,
-        .drm_format = handle->drm_format,
-        .plane_offset = handle->plane_offset,
-        .plane_stride = handle->plane_stride,
-        .damage_left = 0,
-        .damage_top = 0,
-        .damage_right = static_cast<int32_t>(handle->width),
-        .damage_bottom = static_cast<int32_t>(handle->height),
-        .has_acquire_fence = acquire.ok() ? 1u : 0u,
-        .reserved = 0,
-    };
-    int descriptors[3] = {handle->dmabuf_fd, handle->lifetime_fd, acquire.get()};
-    if (nucleus_ipc_send(
-            socket_.get(), &request, sizeof(request), descriptors, request.fd_count) != 0) {
-        ALOGE("Nucleus Composer3 present send failed: %s", strerror(errno));
-        socket_.reset();
-        return HWC3::Error::NoResources;
-    }
-
-    nucleus_composer_present_reply reply = {};
-    int reply_descriptors[1] = {-1};
-    size_t reply_fd_count = 0;
-    const int received = nucleus_ipc_receive(
-        socket_.get(),
-        &reply,
-        sizeof(reply),
-        reply_descriptors,
-        1,
-        &reply_fd_count);
-    const int receive_errno = errno;
-    if (received != sizeof(reply) ||
-        reply.magic != NUCLEUS_COMPOSER_PROTOCOL_MAGIC ||
-        reply.version != NUCLEUS_COMPOSER_PROTOCOL_VERSION ||
-        reply.operation != NUCLEUS_COMPOSER_PRESENT ||
-        reply.byte_count != sizeof(reply) ||
-        reply.request_id != request.request_id ||
-        reply.status != NUCLEUS_COMPOSER_STATUS_OK ||
-        reply.fd_count != 1 ||
-        reply_fd_count != 1) {
-        if (reply_fd_count == 1) close(reply_descriptors[0]);
-        ALOGE(
-            "Nucleus Composer3 received an invalid present reply: "
-            "received=%d errno=%d(%s) magic=%" PRIu32
-            " version=%" PRIu16 " operation=%" PRIu16
-            " byte_count=%" PRIu32 " request_id=%" PRIu64
-            " expected_request_id=%" PRIu64 " status=%" PRIu32
-            " declared_fd_count=%" PRIu32 " received_fd_count=%zu",
-            received,
-            receive_errno,
-            strerror(receive_errno),
-            reply.magic,
-            reply.version,
-            reply.operation,
-            reply.byte_count,
-            reply.request_id,
-            request.request_id,
-            reply.status,
-            reply.fd_count,
-            reply_fd_count);
-        socket_.reset();
-        return HWC3::Error::NoResources;
-    }
-    out_display_fence->reset(reply_descriptors[0]);
+    *out_display_fence = display->getClientTarget().getFence();
     return HWC3::Error::None;
 }
 

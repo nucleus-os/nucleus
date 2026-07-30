@@ -83,34 +83,34 @@ import Testing
     try rejectAOSPSandboxDegradation("sandbox active", status: 0)
 }
 
-@Test func aospSandboxQualificationRequiresBothNegativeBoundaries() throws {
-    let qualified = """
+@Test func aospSandboxValidationRequiresBothNegativeBoundaries() throws {
+    let valid = """
         NUCLEUS_NSJAIL_FILE_HIDDEN
         NUCLEUS_NSJAIL_NETWORK_ISOLATED
         NUCLEUS_NSJAIL_ISOLATION_OK
         """
-    try validateAOSPSandboxIsolationProbe(qualified, status: 0)
+    try validateAOSPSandboxIsolation(valid, status: 0)
     #expect(throws: RuntimeFailure.self) {
-        try validateAOSPSandboxIsolationProbe(
+        try validateAOSPSandboxIsolation(
             "NUCLEUS_NSJAIL_FILE_HIDDEN",
             status: 0)
     }
     #expect(throws: RuntimeFailure.self) {
-        try validateAOSPSandboxIsolationProbe(qualified, status: 1)
+        try validateAOSPSandboxIsolation(valid, status: 1)
     }
 }
 
-@Test func aospBrokenSandboxProbeMustFailClosed() throws {
-    try validateAOSPBrokenSandboxProbe(
+@Test func aospBrokenSandboxBehaviorMustFailClosed() throws {
+    try validateAOSPBrokenSandboxBehavior(
         "nsjail sandbox probe failed with exit status 1",
         status: 2)
     #expect(throws: RuntimeFailure.self) {
-        try validateAOSPBrokenSandboxProbe(
+        try validateAOSPBrokenSandboxBehavior(
             "Build sandboxing disabled due to nsjail error.",
             status: 0)
     }
     #expect(throws: RuntimeFailure.self) {
-        try validateAOSPBrokenSandboxProbe(
+        try validateAOSPBrokenSandboxBehavior(
             "TARGET_PRODUCT='nucleus_x86_64'",
             status: 0)
     }

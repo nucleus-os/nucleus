@@ -60,32 +60,11 @@ func boundedCommandValuesRejectUnknownSpellingsDuringParsing() {
         ["run", "--optimize", "fast"],
         ["run", "--sanitize", "memory"],
         ["run", "--present-mode", "immediate"],
-        [
-            "qualify", "android-presentation",
-            "--drm-device", "/dev/dri/renderD128",
-            "--present-mode", "immediate",
-        ],
         ["sanitize", "memory"],
     ] {
         #expect(throws: (any Error).self) {
             try ColliderCommand.parseAsRoot(arguments)
         }
-    }
-}
-
-@Test
-func frameworkBootAcceptsOnlyAddressSanitizerInstrumentation() throws {
-    let command = try AndroidRuntime.FrameworkBoot.parse([
-        "--sanitize", "address",
-        "--vk-validation",
-    ])
-
-    #expect(command.sanitize == .address)
-    #expect(command.validation)
-    #expect(throws: (any Error).self) {
-        try AndroidRuntime.FrameworkBoot.parse([
-            "--sanitize", "thread",
-        ])
     }
 }
 

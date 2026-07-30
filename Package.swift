@@ -64,10 +64,7 @@ let hostProducts: [Product] = [
         name: "nucleus-android-runtime-privileged",
         targets: ["NucleusAndroidRuntimePrivileged"]),
     .library(name: "NucleusAndroidDisplayHostCore", targets: ["NucleusAndroidDisplayHostCore"]),
-    .library(name: "NucleusAndroidSurfaceProbeCore", targets: ["NucleusAndroidSurfaceProbeCore"]),
     .executable(name: "nucleus-android-gpu-broker", targets: ["NucleusAndroidGpuBroker"]),
-    .executable(
-        name: "nucleus-android-gfxstream-host-probe", targets: ["NucleusAndroidGfxstreamHostProbe"]),
     .executable(
         name: "nucleus-android-gfxstream-workload", targets: ["NucleusAndroidGfxstreamWorkload"]),
     .executable(
@@ -75,11 +72,6 @@ let hostProducts: [Product] = [
     .executable(name: "nucleus-android-display-host", targets: ["NucleusAndroidDisplayHost"]),
     .executable(
         name: "nucleus-android-shared-ring-stress", targets: ["NucleusAndroidSharedRingStress"]),
-    .executable(name: "nucleus-android-surface-probe", targets: ["NucleusAndroidSurfaceProbe"]),
-    .executable(
-        name: "nucleus-android-presentation-qualifier",
-        targets: ["NucleusAndroidPresentationQualifier"]
-    ),
     .executable(
         name: "NucleusAndroidThreadSanitizerHarness",
         targets: ["NucleusAndroidThreadSanitizerHarness"]),
@@ -200,6 +192,26 @@ let hostTargets: [Target] = [
     .target(
         name: "NucleusAndroidComposerProtocolC",
         path: "android-runtime/aosp/device/nucleus/nucleus_x86_64/native/composer-protocol",
+        cSettings: [.unsafeFlags(["-Werror"])],
+        swiftSettings: [
+            .interoperabilityMode(.Cxx),
+            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
+            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+        ]),
+    .target(
+        name: "NucleusAndroidPresentationProtocolC",
+        path:
+            "android-runtime/aosp/device/nucleus/nucleus_x86_64/native/presentation-protocol",
+        cSettings: [.unsafeFlags(["-Werror"])],
+        swiftSettings: [
+            .interoperabilityMode(.Cxx),
+            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
+            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+        ]),
+    .target(
+        name: "NucleusAndroidDisplayControlProtocolC",
+        path:
+            "android-runtime/aosp/device/nucleus/nucleus_x86_64/native/display-control-protocol",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
             .interoperabilityMode(.Cxx),
@@ -422,6 +434,7 @@ let hostTargets: [Target] = [
             "NucleusAndroidRuntimeBrokerCore",
             "NucleusAndroidRuntimeCore",
             "NucleusAndroidRuntimeHostLinux",
+            "NucleusSessionProtocol",
         ],
         path: "android-runtime/Sources/NucleusAndroidRuntime",
         cSettings: [.unsafeFlags(["-Werror"])],
@@ -448,16 +461,6 @@ let hostTargets: [Target] = [
             "NucleusLinuxReactorC", "NucleusLinuxDBus", "NucleusLinuxSessionC",
             "NucleusThemeAssetIO",
         ], path: "android-runtime/Sources/NucleusAndroidGpuBroker",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
-    .executableTarget(
-        name: "NucleusAndroidGfxstreamHostProbe",
-        dependencies: ["NucleusAndroidDrmC", "NucleusAndroidGfxstreamHostC"],
-        path: "android-runtime/Sources/NucleusAndroidGfxstreamHostProbe",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
             .interoperabilityMode(.Cxx),
@@ -515,9 +518,12 @@ let hostTargets: [Target] = [
     .target(
         name: "NucleusAndroidDisplayHostCore",
         dependencies: [
-            "NucleusAndroidComposerProtocolC", "NucleusAndroidDrmC",
+            "NucleusAndroidComposerProtocolC",
+            "NucleusAndroidDisplayControlProtocolC", "NucleusAndroidDrmC",
             "NucleusAndroidGraphicsContract",
             "NucleusAndroidGraphicsPlatform", "NucleusAndroidProcessLifecycleC",
+            "NucleusAndroidPresentationProtocolC",
+            "NucleusAndroidRuntimeBridgeProtocol",
             "NucleusIPCTransport",
             "NucleusIPCTransportC", "NucleusLinuxPrimitives", "NucleusLinuxPrimitivesC",
             "NucleusLinuxReactor", "NucleusLinuxReactorC", "NucleusLinuxDBus",
@@ -538,53 +544,6 @@ let hostTargets: [Target] = [
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
             .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
-    .executableTarget(
-        name: "NucleusAndroidSurfaceProbe", dependencies: ["NucleusAndroidSurfaceProbeCore"],
-        path: "android-runtime/Sources/NucleusAndroidSurfaceProbe",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
-    .target(
-        name: "NucleusAndroidPresentationQualification",
-        dependencies: ["NucleusAndroidSurfaceProbeCore"],
-        path: "android-runtime/Sources/NucleusAndroidPresentationQualification",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
-    .executableTarget(
-        name: "NucleusAndroidPresentationQualifier",
-        dependencies: ["NucleusAndroidPresentationQualification"],
-        path: "android-runtime/Sources/NucleusAndroidPresentationQualifier",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
-    .target(
-        name: "NucleusAndroidSurfaceProbeCore",
-        dependencies: [
-            "NucleusAndroidGraphicsContract", "NucleusAndroidIPC", "NucleusAndroidDrmC",
-            "NucleusLinuxPrimitives", "NucleusLinuxPrimitivesC", "NucleusLinuxReactor",
-            "NucleusLinuxReactorC", "NucleusLinuxDBus", "NucleusLinuxSessionC",
-            "NucleusThemeAssetIO",
-            "WaylandClient", "WaylandClientC", "WaylandClientDispatch",
-            "SwiftWaylandProtocolRuntime",
-            "WaylandProtocolTypes", "WaylandProtocolsC",
-        ], path: "android-runtime/Sources/NucleusAndroidSurfaceProbeCore",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -612,6 +571,16 @@ let hostTargets: [Target] = [
         name: "NucleusAndroidRuntimeCoreTests",
         dependencies: ["NucleusAndroidRuntimeCore"],
         path: "android-runtime/Tests/NucleusAndroidRuntimeCoreTests",
+        cSettings: [.unsafeFlags(["-Werror"])],
+        swiftSettings: [
+            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
+            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+        ]),
+    .testTarget(
+        name: "NucleusAndroidRuntimeHostLinuxTests",
+        dependencies: ["NucleusAndroidRuntimeHostLinux"],
+        path:
+            "android-runtime/Tests/NucleusAndroidRuntimeHostLinuxTests",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
@@ -706,19 +675,10 @@ let hostTargets: [Target] = [
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .testTarget(
-        name: "NucleusAndroidSurfaceProbeCoreTests",
-        dependencies: ["NucleusAndroidGraphicsContract", "NucleusAndroidSurfaceProbeCore"],
-        path: "android-runtime/Tests/NucleusAndroidSurfaceProbeCoreTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
-    .testTarget(
         name: "NucleusAndroidDisplayHostCoreTests",
         dependencies: [
-            "NucleusAndroidDisplayHostCore", "NucleusIPCTransport", "NucleusIPCTransportC",
+            "NucleusAndroidComposerProtocolC", "NucleusAndroidDisplayHostCore",
+            "NucleusIPCTransport", "NucleusIPCTransportC",
             "NucleusLinuxPrimitives", "NucleusLinuxPrimitivesC", "NucleusLinuxReactor",
             "NucleusLinuxReactorC", "NucleusLinuxDBus", "NucleusLinuxSessionC",
             "NucleusThemeAssetIO",

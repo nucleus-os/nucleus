@@ -16,16 +16,3 @@ public func isValidHostKernelConfiguration(_ data: Data) -> Bool {
         $0.hasPrefix("CONFIG_") || $0.hasPrefix("# CONFIG_")
     }
 }
-
-public func androidFrameworkLogReachedLauncher(
-    frameworkLog: URL
-) -> Bool {
-    guard let log = try? String(
-        contentsOf: frameworkLog,
-        encoding: .utf8)
-    else {
-        return false
-    }
-    return log.contains(
-        "Displayed com.android.launcher3/.uioverrides.QuickstepLauncher")
-}

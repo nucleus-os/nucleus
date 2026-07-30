@@ -1,3 +1,4 @@
+import NucleusAndroidComposerProtocolC
 @testable import NucleusAndroidDisplayHostCore
 import Testing
 
@@ -11,6 +12,104 @@ func waylandMillihertzConvertsToRoundedComposerPeriods() {
 }
 
 @Test
+func resizedPresentationCoordinatesMapBackToAndroidPixels() {
+    #expect(androidDisplayCoordinate(
+        hostCoordinate: 160,
+        bufferExtent: 1_280,
+        destinationExtent: 640) == 320)
+    #expect(androidDisplayCoordinate(
+        hostCoordinate: 700,
+        bufferExtent: 1_280,
+        destinationExtent: 640) == 1_279)
+    #expect(androidDisplayCoordinate(
+        hostCoordinate: -5,
+        bufferExtent: 720,
+        destinationExtent: 360) == 0)
+    #expect(androidDisplayCoordinate(
+        hostCoordinate: .nan,
+        bufferExtent: 720,
+        destinationExtent: 360) == nil)
+}
+
+@Test
+func presentationModeComesFromWindowGeometryRatherThanPhysicalOutput() {
+    #expect(androidPresentationMode(
+        configuredWidth: nil,
+        configuredHeight: nil
+    ) == AndroidPresentationMode(width: 1_280, height: 720))
+    #expect(androidPresentationMode(
+        configuredWidth: 1_440,
+        configuredHeight: 900
+    ) == AndroidPresentationMode(width: 1_440, height: 900))
+}
+
+@Test
+func androidResizeKeepsOneRelayoutInFlightAndCoalescesToTheNewestSize() {
+    let initial = AndroidPresentationMode(width: 1_280, height: 720)
+    let first = AndroidPresentationMode(width: 1_300, height: 740)
+    let skipped = AndroidPresentationMode(width: 1_360, height: 800)
+    let latest = AndroidPresentationMode(width: 1_440, height: 900)
+    var pipeline = AndroidPresentationResizePipeline(
+        generation: 1,
+        mode: initial)
+
+    #expect(pipeline.configure(first)
+        == AndroidPresentationResizeRequest(
+            generation: 2,
+            mode: first))
+    #expect(pipeline.configure(skipped) == nil)
+    #expect(pipeline.configure(latest) == nil)
+    #expect(pipeline.pendingMode == latest)
+    #expect(pipeline.committedFrame(
+        generation: 1,
+        mode: initial) == nil)
+    #expect(pipeline.committedFrame(
+        generation: 2,
+        mode: first) == AndroidPresentationResizeRequest(
+            generation: 3,
+            mode: latest))
+    #expect(pipeline.pendingMode == nil)
+    #expect(pipeline.committedFrame(
+        generation: 3,
+        mode: latest) == nil)
+    #expect(!pipeline.resizeInFlight)
+}
+
+@Test
+func androidResizeCancelsAQueuedSizeWhenTheCompositorReturnsToInFlightSize() {
+    let initial = AndroidPresentationMode(width: 1_280, height: 720)
+    let inFlight = AndroidPresentationMode(width: 1_360, height: 800)
+    let discarded = AndroidPresentationMode(width: 1_440, height: 900)
+    var pipeline = AndroidPresentationResizePipeline(
+        generation: 8,
+        mode: initial)
+
+    #expect(pipeline.configure(inFlight)?.generation == 9)
+    #expect(pipeline.configure(discarded) == nil)
+    #expect(pipeline.pendingMode == discarded)
+    #expect(pipeline.configure(inFlight) == nil)
+    #expect(pipeline.pendingMode == nil)
+    #expect(pipeline.committedFrame(
+        generation: 9,
+        mode: inFlight) == nil)
+    #expect(!pipeline.resizeInFlight)
+}
+
+@Test
+func androidPointerIconsMapToWaylandCursorSemantics() {
+    #expect(waylandCursorShape(androidPointerIconType: 0) == nil)
+    #expect(waylandCursorShape(androidPointerIconType: 1_000) == 1)
+    #expect(waylandCursorShape(androidPointerIconType: 1_002) == 4)
+    #expect(waylandCursorShape(androidPointerIconType: 1_008) == 9)
+    #expect(waylandCursorShape(androidPointerIconType: 1_014) == 26)
+    #expect(waylandCursorShape(androidPointerIconType: 1_015) == 27)
+    #expect(waylandCursorShape(androidPointerIconType: 1_016) == 28)
+    #expect(waylandCursorShape(androidPointerIconType: 1_017) == 29)
+    #expect(waylandCursorShape(androidPointerIconType: 1_020) == 16)
+    #expect(waylandCursorShape(androidPointerIconType: -1) == 1)
+}
+
+@Test
 func composerTopologyKeepsIndependentOutputCadencesAndStableIDs() {
     var topology = ComposerOutputTopologyState()
     let sixty = topology.publish(
@@ -20,8 +119,8 @@ func composerTopologyKeepsIndependentOutputCadencesAndStableIDs() {
         name: "output-b", width: 1280, height: 720,
         refreshMillihertz: 120_000)
 
-    #expect(sixty?.operation.rawValue == 4)
-    #expect(oneTwenty?.operation.rawValue == 4)
+    #expect(sixty?.operation == NUCLEUS_COMPOSER_OUTPUT_CONNECTED)
+    #expect(oneTwenty?.operation == NUCLEUS_COMPOSER_OUTPUT_CONNECTED)
     #expect(sixty?.output.displayID == 0)
     #expect(oneTwenty?.output.displayID == 1)
     #expect(sixty?.output.refreshPeriodNanoseconds == 16_666_667)
@@ -40,7 +139,7 @@ func composerTopologyHandlesModeChangeRemovalAndReconnect() {
         name: "opaque-name", width: 1920, height: 1080,
         refreshMillihertz: 60_000)
     let changed = topology.publish(
-        name: "opaque-name", width: 1920, height: 1080,
+        name: "opaque-name", width: 1440, height: 900,
         refreshMillihertz: 144_000)
     let disconnected = topology.disconnect(name: "opaque-name")
     let duplicateDisconnect = topology.disconnect(name: "opaque-name")
@@ -49,10 +148,12 @@ func composerTopologyHandlesModeChangeRemovalAndReconnect() {
         refreshMillihertz: 120_000)
 
     #expect(unchanged == nil)
-    #expect(changed?.operation.rawValue == 5)
-    #expect(disconnected?.operation.rawValue == 6)
+    #expect(changed?.operation == NUCLEUS_COMPOSER_OUTPUT_MODE_CHANGED)
+    #expect(changed?.output.width == 1440)
+    #expect(changed?.output.height == 900)
+    #expect(disconnected?.operation == NUCLEUS_COMPOSER_OUTPUT_DISCONNECTED)
     #expect(duplicateDisconnect == nil)
-    #expect(reconnected?.operation.rawValue == 4)
+    #expect(reconnected?.operation == NUCLEUS_COMPOSER_OUTPUT_CONNECTED)
     #expect(reconnected?.output.displayID == connected?.output.displayID)
     #expect(reconnected?.output.refreshPeriodNanoseconds == 8_333_333)
     #expect(topology.generation == 4)

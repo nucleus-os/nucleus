@@ -1,7 +1,6 @@
 import Foundation
 
 public let nucleusAndroidAppArmorProfileName = "lxc-nucleus-android"
-
 public struct AndroidContainerDevice: Hashable, Sendable {
     public let name: String
     public let source: String
@@ -42,7 +41,9 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
     public let tombstones: String
     public let persistentData: String
     public let gfxstreamSocketDirectory: String
-    public let runtimeBridgeSocketDirectory: String
+    public let runtimeBridgeSocket: String
+    public let presentationSocket: String
+    public let displayControlSocket: String
     public let hostKernelConfigurationDirectory: String
     public let hostUIDStart: UInt32
     public let hostGIDStart: UInt32
@@ -60,7 +61,9 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
         tombstones: String,
         persistentData: String,
         gfxstreamSocketDirectory: String,
-        runtimeBridgeSocketDirectory: String,
+        runtimeBridgeSocket: String,
+        presentationSocket: String,
+        displayControlSocket: String,
         hostKernelConfigurationDirectory: String,
         hostUIDStart: UInt32,
         hostGIDStart: UInt32,
@@ -77,7 +80,9 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
         self.tombstones = tombstones
         self.persistentData = persistentData
         self.gfxstreamSocketDirectory = gfxstreamSocketDirectory
-        self.runtimeBridgeSocketDirectory = runtimeBridgeSocketDirectory
+        self.runtimeBridgeSocket = runtimeBridgeSocket
+        self.presentationSocket = presentationSocket
+        self.displayControlSocket = displayControlSocket
         self.hostKernelConfigurationDirectory =
             hostKernelConfigurationDirectory
         self.hostUIDStart = hostUIDStart
@@ -123,6 +128,11 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
             // limit because an unprivileged user namespace cannot raise the
             // host-inherited ceiling itself.
             "lxc.prlimit.nice = 40",
+            // SurfaceFlinger and the Composer vsync thread use bounded
+            // real-time priorities 1 through 3. Establish the hard limit at
+            // the container boundary instead of granting an unbounded host
+            // scheduling policy.
+            "lxc.prlimit.rtprio = 3",
             // Android init must retain every capability requested by a
             // service in the product, plus SETPCAP to establish those
             // service-specific sets. LXC drops everything not named here.
@@ -157,7 +167,10 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
             "lxc.mount.entry = \(kernelLogDevice) dev/kmsg none bind,create=file 0 0",
             "lxc.mount.entry = \(kernelLogDevice) dev/kmsg_debug none bind,create=file 0 0",
             "lxc.mount.entry = \(gfxstreamSocketDirectory) dev/nucleus none bind,ro,create=dir 0 0",
-            "lxc.mount.entry = \(runtimeBridgeSocketDirectory) dev/nucleus-runtime none bind,ro,create=dir 0 0",
+            "lxc.mount.entry = tmpfs dev/nucleus-runtime tmpfs rw,nosuid,nodev,noexec,mode=0755,create=dir 0 0",
+            "lxc.mount.entry = \(runtimeBridgeSocket) dev/nucleus-runtime/broker.sock none bind,create=file 0 0",
+            "lxc.mount.entry = \(presentationSocket) dev/nucleus-runtime/presentation.sock none bind,create=file 0 0",
+            "lxc.mount.entry = \(displayControlSocket) dev/nucleus-runtime/display-control.sock none bind,create=file 0 0",
             "lxc.mount.entry = \(persistentData) data none bind,rw,nosuid,nodev,create=dir 0 0",
             "lxc.mount.entry = \(tombstones) data/tombstones none bind,create=dir 0 0",
             "lxc.mount.entry = tmpfs metadata tmpfs rw,nosuid,nodev,noexec,mode=0755,create=dir 0 0",
@@ -191,8 +204,14 @@ public struct AndroidContainerConfiguration: Hashable, Sendable {
             gfxstreamSocketDirectory,
             field: "gfxstreamSocketDirectory")
         try validateAbsolutePath(
-            runtimeBridgeSocketDirectory,
-            field: "runtimeBridgeSocketDirectory")
+            runtimeBridgeSocket,
+            field: "runtimeBridgeSocket")
+        try validateAbsolutePath(
+            presentationSocket,
+            field: "presentationSocket")
+        try validateAbsolutePath(
+            displayControlSocket,
+            field: "displayControlSocket")
         try validateAbsolutePath(
             hostKernelConfigurationDirectory,
             field: "hostKernelConfigurationDirectory")

@@ -3,13 +3,13 @@ import Testing
 @testable import ColliderCommands
 
 @Test
-func frameworkBootUsesTheDedicatedAndroidApexMountHelper() throws {
+func androidRuntimeUsesTheDedicatedAndroidApexMountHelper() throws {
     let invocation = AndroidApexMountInvocation(
         helperExecutable:
             "/workspace/.build/release/"
             + "nucleus-android-runtime-privileged",
         rootFileSystem:
-            "/run/nucleus/android/nucleus-framework-3970820/rootfs",
+            "/run/nucleus/android/nucleus-android-runtime-3970820/rootfs",
         source: "/system/apex/com.android.runtime.apex",
         target: "/apex/com.android.runtime@370399999",
         payloadFileSystem: .erofs,
@@ -21,7 +21,7 @@ func frameworkBootUsesTheDedicatedAndroidApexMountHelper() throws {
         "/workspace/.build/release/nucleus-android-runtime-privileged",
         "__android-apex-mount",
         "--root-file-system",
-        "/run/nucleus/android/nucleus-framework-3970820/rootfs",
+        "/run/nucleus/android/nucleus-android-runtime-3970820/rootfs",
         "--source",
         "/system/apex/com.android.runtime.apex",
         "--target",

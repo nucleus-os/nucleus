@@ -14,6 +14,26 @@ int32_t nucleus_android_runtime_binderfs_add_device(
     uint32_t *major,
     uint32_t *minor);
 
+int32_t nucleus_android_runtime_pidfd_open(int32_t process_identifier);
+
+int32_t nucleus_android_runtime_pidfd_wait(
+    int32_t descriptor,
+    int32_t timeout_milliseconds);
+
+int32_t nucleus_android_runtime_spawn_container_launcher(
+    const char *container_name,
+    const char *configuration,
+    const char *log_file);
+
+int32_t nucleus_android_runtime_poll_process_status(
+    int32_t process_identifier);
+
+int32_t nucleus_android_runtime_wait_process_status(
+    int32_t process_identifier);
+
+int32_t nucleus_android_runtime_stop_container(
+    const char *container_name);
+
 enum nucleus_android_runtime_apex_payload_filesystem {
     NUCLEUS_ANDROID_RUNTIME_APEX_PAYLOAD_FILESYSTEM_EROFS = 1,
     NUCLEUS_ANDROID_RUNTIME_APEX_PAYLOAD_FILESYSTEM_EXT4 = 2,

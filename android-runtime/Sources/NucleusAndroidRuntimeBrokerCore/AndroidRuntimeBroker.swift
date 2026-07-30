@@ -1,30 +1,36 @@
 import Foundation
+import Glibc
 import NucleusAndroidRuntimeBridgeProtocol
 import NucleusAndroidRuntimeCore
 
 public struct AndroidRuntimeBrokerConfiguration: Sendable {
     public let androidRoot: URL
-    public let runDirectory: URL
+    public let sessionRuntimeDirectory: URL
+    public let diagnosticsRunDirectory: URL
     public let waylandSocket: String
     public let gfxstreamBrokerExecutable: URL
     public let displayHostExecutable: URL
     public let privilegedHelperExecutable: URL
     public let swiftRuntime: AndroidSwiftRuntime
     public let timeoutSeconds: UInt32
+    public let gfxstreamBrokerEnvironment: [String: String]
 
     public init(
         androidRoot: URL,
-        runDirectory: URL,
+        sessionRuntimeDirectory: URL,
+        diagnosticsRunDirectory: URL,
         waylandSocket: String,
         gfxstreamBrokerExecutable: URL,
         displayHostExecutable: URL,
         privilegedHelperExecutable: URL,
         swiftRuntime: AndroidSwiftRuntime,
-        timeoutSeconds: UInt32
+        timeoutSeconds: UInt32,
+        gfxstreamBrokerEnvironment: [String: String] = [:]
     ) throws {
         for path in [
             androidRoot,
-            runDirectory,
+            sessionRuntimeDirectory,
+            diagnosticsRunDirectory,
             gfxstreamBrokerExecutable,
             displayHostExecutable,
             privilegedHelperExecutable,
@@ -43,13 +49,15 @@ public struct AndroidRuntimeBrokerConfiguration: Sendable {
                 "Android runtime Wayland/timeout configuration is invalid")
         }
         self.androidRoot = androidRoot
-        self.runDirectory = runDirectory
+        self.sessionRuntimeDirectory = sessionRuntimeDirectory
+        self.diagnosticsRunDirectory = diagnosticsRunDirectory
         self.waylandSocket = waylandSocket
         self.gfxstreamBrokerExecutable = gfxstreamBrokerExecutable
         self.displayHostExecutable = displayHostExecutable
         self.privilegedHelperExecutable = privilegedHelperExecutable
         self.swiftRuntime = swiftRuntime
         self.timeoutSeconds = timeoutSeconds
+        self.gfxstreamBrokerEnvironment = gfxstreamBrokerEnvironment
     }
 }
 public func runAndroidRuntimeBroker<
@@ -61,10 +69,14 @@ public func runAndroidRuntimeBroker<
 ) async throws {
     let layout = AndroidRuntimeLayout(
         androidRoot: configuration.androidRoot,
-        runDirectory: configuration.runDirectory,
+        diagnosticsRunDirectory:
+            configuration.diagnosticsRunDirectory,
         gfxstreamBrokerExecutable:
             configuration.gfxstreamBrokerExecutable,
         displayHostExecutable: configuration.displayHostExecutable)
+    let progress = try initializeAndroidRuntimeDiagnostics(
+        layout: layout)
+    try progress.record("images.validation-started")
     for executable in [
         configuration.gfxstreamBrokerExecutable,
         configuration.displayHostExecutable,
@@ -87,6 +99,7 @@ public func runAndroidRuntimeBroker<
     let provenance = try await validateAndroidRuntimeImages(
         layout: layout,
         using: runtimeHost)
+    try progress.record("images.validated")
     let host = try await resolveAndroidRuntimeHostConfiguration(
         using: runtimeHost,
         environment: environment)
@@ -101,9 +114,10 @@ public func runAndroidRuntimeBroker<
             provenance.sourceManifestSHA256
             + "-"
             + provenance.productTreeSHA256,
-        gfxstreamBrokerEnvironment: [:])
+        gfxstreamBrokerEnvironment:
+            configuration.gfxstreamBrokerEnvironment,
+        progress: progress)
     do {
-        try await session.initializeDiagnostics()
         try await session.prepare()
         try await session.mountImages(provenance.images)
         try await session.mountApexes()
@@ -111,18 +125,38 @@ public func runAndroidRuntimeBroker<
         try await session.writeConfiguration()
         let bridge = try AndroidRuntimeBridgeServer(
             socketPath: layout.runtimeBridgeSocket,
-            expectedUserID: host.subordinateUID + 1_000)
+            expectedUserID:
+                host.subordinateUID
+                + AndroidRuntimeBridgeProtocol.androidUserID)
+        let displayInteraction = try AndroidDisplayInteractionServer(
+            socketPath: layout.displayInputSocket,
+            expectedUserID: getuid())
+        try await session.recordRuntimeBridgeListener()
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
-                try await bridge.run { _ in }
+                try await bridge.run { event in
+                    if case .cursorShapeChanged(_, let update) = event {
+                        try? displayInteraction.send(update)
+                    }
+                    await recordRuntimeBridgeEvent(
+                        event,
+                        session: session)
+                }
+            }
+            group.addTask {
+                try await displayInteraction.run { event in
+                    switch event {
+                    case .input(let input):
+                        try bridge.send(input)
+                    }
+                }
             }
             group.addTask {
                 try await session.runProcesses(
                     timeoutSeconds: configuration.timeoutSeconds,
                     waylandRuntimeDirectory:
-                        configuration.runDirectory,
-                    waylandSocket: configuration.waylandSocket,
-                    lifetime: .untilCancellation)
+                        configuration.sessionRuntimeDirectory,
+                    waylandSocket: configuration.waylandSocket)
             }
             guard try await group.next() != nil else {
                 throw AndroidRuntimeFailure(
@@ -131,10 +165,82 @@ public func runAndroidRuntimeBroker<
             group.cancelAll()
             while let _ = try await group.next() {}
         }
-        await session.cleanup()
-    } catch {
-        await session.cleanup()
+        try await session.cleanup()
+    } catch is CancellationError {
+        await session.recordCancellation()
+        do {
+            try await session.cleanup()
+        } catch let cleanupError {
+            throw AndroidRuntimeFailure(
+                "Android runtime cancellation cleanup failed: \(cleanupError)")
+        }
+        throw CancellationError()
+    } catch let runtimeError {
+        await session.recordFailure("\(runtimeError)")
+        do {
+            try await session.cleanup()
+        } catch let cleanupError {
+            await session.printFailureDiagnostics()
+            throw AndroidRuntimeFailure(
+                "\(runtimeError); \(cleanupError)")
+        }
         await session.printFailureDiagnostics()
-        throw error
+        throw runtimeError
+    }
+}
+
+private func recordRuntimeBridgeEvent<
+    RuntimeHost: AndroidRuntimeHost
+>(
+    _ event: AndroidRuntimeBridgeEvent,
+    session: AndroidRuntimeSession<RuntimeHost>
+) async {
+    switch event {
+    case .connected(let generation):
+        try? await session.recordRuntimeBridgeStage(
+            "connected",
+            fields: ["generation": generation])
+    case .inputReady(let generation):
+        try? await session.recordRuntimeBridgeStage(
+            "input-ready",
+            fields: ["generation": generation])
+    case .inputFailed(let generation, let error):
+        try? await session.recordRuntimeBridgeStage(
+            "input-failed",
+            fields: [
+                "generation": generation,
+                "error": error,
+            ])
+    case .userUnlocked(let generation, let userSerial):
+        try? await session.recordRuntimeBridgeStage(
+            "user-unlocked",
+            fields: [
+                "generation": generation,
+                "userSerial": String(userSerial),
+            ])
+    case .activitiesReplaced(
+        let generation,
+        let userSerial,
+        let activities
+    ):
+        try? await session.recordRuntimeBridgeStage(
+            "activities-replaced",
+            fields: [
+                "generation": generation,
+                "userSerial": String(userSerial),
+                "count": String(activities.count),
+            ])
+    case .cursorShapeChanged(let generation, let update):
+        try? await session.recordRuntimeBridgeStage(
+            "cursor-shape-changed",
+            fields: [
+                "generation": generation,
+                "displayId": String(update.displayID),
+                "pointerIconType": String(update.pointerIconType),
+            ])
+    case .disconnected(let generation):
+        try? await session.recordRuntimeBridgeStage(
+            "disconnected",
+            fields: ["generation": generation])
     }
 }

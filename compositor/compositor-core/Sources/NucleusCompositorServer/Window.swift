@@ -49,6 +49,7 @@ public struct WindowPendingConfigure: Sendable, Equatable {
     public var rect: WindowRect
     public var activeMaximized: Bool
     public var activeFullscreen: Bool
+    public var resizing: Bool
     public var specialOutputID: DisplayID?
     public var layoutTransitionID: UInt64
     public var slotGeneration: UInt64
@@ -58,6 +59,7 @@ public struct WindowPendingConfigure: Sendable, Equatable {
         rect: WindowRect,
         activeMaximized: Bool,
         activeFullscreen: Bool,
+        resizing: Bool,
         specialOutputID: DisplayID?,
         layoutTransitionID: UInt64,
         slotGeneration: UInt64
@@ -66,6 +68,7 @@ public struct WindowPendingConfigure: Sendable, Equatable {
         self.rect = rect
         self.activeMaximized = activeMaximized
         self.activeFullscreen = activeFullscreen
+        self.resizing = resizing
         self.specialOutputID = specialOutputID
         self.layoutTransitionID = layoutTransitionID
         self.slotGeneration = slotGeneration
@@ -92,6 +95,7 @@ public struct WindowProtocolState: Sendable {
         rect: WindowRect,
         activeMaximized: Bool,
         activeFullscreen: Bool,
+        resizing: Bool,
         specialOutputID: DisplayID?,
         layoutTransitionID: UInt64,
         serial: UInt32
@@ -102,6 +106,7 @@ public struct WindowProtocolState: Sendable {
             rect: rect,
             activeMaximized: activeMaximized,
             activeFullscreen: activeFullscreen,
+            resizing: resizing,
             specialOutputID: specialOutputID,
             layoutTransitionID: layoutTransitionID,
             slotGeneration: generation

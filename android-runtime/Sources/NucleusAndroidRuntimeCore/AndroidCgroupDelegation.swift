@@ -301,7 +301,7 @@ public enum AndroidCgroupDelegationFailure:
 }
 
 private func isValidAndroidContainerName(_ value: String) -> Bool {
-    let prefix = "nucleus-framework-"
+    let prefix = "nucleus-android-runtime-"
     guard value.hasPrefix(prefix) else { return false }
     let identifier = value.dropFirst(prefix.count)
     return !identifier.isEmpty && identifier.allSatisfy(\.isNumber)

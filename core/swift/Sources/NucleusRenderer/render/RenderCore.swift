@@ -136,7 +136,6 @@ import Android
         public var bytesCopied: UInt64 = 0
     }
     public internal(set) var clientUploadStats = ClientUploadStats()
-    var startupFrameDiagnosticsRemaining = 12
     let sampleableDmaBufFormats: [DmaBufFormatModifier]
     var nextSurfaceId: UInt32 = 1
     var nextContentGeneration: UInt64 = 1

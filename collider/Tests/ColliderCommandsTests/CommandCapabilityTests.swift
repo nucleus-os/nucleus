@@ -49,11 +49,6 @@ private let controlFreeLeaves: [[String]] = [
     ["benchmark"],
     ["logs", "show"],
     ["logs", "tail"],
-    [
-        "qualify", "android-presentation",
-        "--drm-device", "/dev/dri/renderD128",
-    ],
-    ["android-runtime", "framework-boot"],
     ["install", "session"],
 ]
 

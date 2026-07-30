@@ -8,6 +8,7 @@ public struct AndroidRuntimeLayout: Sendable {
     public let rootFileSystem: URL
     public let persistentDataMountPoint: URL
     public let binder: URL
+    public let deviceFileSystem: URL
     public let bpfBrokerDirectory: URL
     public let bpfBrokerSocket: URL
     public let bpfHookExecutable: URL
@@ -15,6 +16,9 @@ public struct AndroidRuntimeLayout: Sendable {
     public let gfxstreamBrokerSocket: URL
     public let runtimeBridgeDirectory: URL
     public let runtimeBridgeSocket: URL
+    public let presentationSocket: URL
+    public let displayControlSocket: URL
+    public let displayInputSocket: URL
     public let hostKernelConfigurationDirectory: URL
     public let hostKernelConfiguration: URL
     public let gfxstreamBrokerExecutable: URL
@@ -26,12 +30,9 @@ public struct AndroidRuntimeLayout: Sendable {
     public let lxcLog: URL
     public let androidKernelLog: URL
     public let androidLog: URL
-    public let androidScreenshot: URL
-    public let compositorScreenshot: URL
     public let gfxstreamBrokerLog: URL
     public let displayHostLog: URL
     public let progressLog: URL
-    public let kittyLog: URL
     public let hostAuditLog: URL
     public let collectorErrors: URL
     public let gfxstreamCore: URL
@@ -52,13 +53,13 @@ public struct AndroidRuntimeLayout: Sendable {
 
     public init(
         androidRoot: URL,
-        runDirectory: URL,
+        diagnosticsRunDirectory: URL,
         gfxstreamBrokerExecutable: URL,
         displayHostExecutable: URL,
         processIdentifier: Int32 = ProcessInfo.processInfo.processIdentifier
     ) {
         self.androidRoot = androidRoot
-        name = "nucleus-framework-\(processIdentifier)"
+        name = "nucleus-android-runtime-\(processIdentifier)"
         runtime = URL(
             fileURLWithPath: "/run/nucleus/android",
             isDirectory: true)
@@ -70,6 +71,9 @@ public struct AndroidRuntimeLayout: Sendable {
             instance: instance)
         binder = instance.appendingPathComponent(
             "binder",
+            isDirectory: true)
+        deviceFileSystem = instance.appendingPathComponent(
+            "devices",
             isDirectory: true)
         bpfBrokerDirectory = instance.appendingPathComponent(
             "bpf-broker",
@@ -88,6 +92,12 @@ public struct AndroidRuntimeLayout: Sendable {
             isDirectory: true)
         runtimeBridgeSocket = runtimeBridgeDirectory.appendingPathComponent(
             "broker.sock")
+        presentationSocket = runtimeBridgeDirectory.appendingPathComponent(
+            "presentation.sock")
+        displayControlSocket = runtimeBridgeDirectory.appendingPathComponent(
+            "display-control.sock")
+        displayInputSocket = runtimeBridgeDirectory.appendingPathComponent(
+            "display-input.sock")
         hostKernelConfigurationDirectory = instance.appendingPathComponent(
             "kernel-configuration",
             isDirectory: true)
@@ -101,8 +111,8 @@ public struct AndroidRuntimeLayout: Sendable {
         containerTombstones = instance.appendingPathComponent(
             "tombstones",
             isDirectory: true)
-        diagnostics = runDirectory.appendingPathComponent(
-            "android-framework-boot",
+        diagnostics = diagnosticsRunDirectory.appendingPathComponent(
+            "android-runtime",
             isDirectory: true)
         configuration = diagnostics.appendingPathComponent("lxc.conf")
         lxcLog = diagnostics.appendingPathComponent("lxc.log")
@@ -110,18 +120,12 @@ public struct AndroidRuntimeLayout: Sendable {
             "android-kmsg.log")
         androidLog = diagnostics.appendingPathComponent(
             "android-logcat.log")
-        androidScreenshot = diagnostics.appendingPathComponent(
-            "android-screenshot.png")
-        compositorScreenshot = diagnostics.appendingPathComponent(
-            "compositor-screenshot.png")
         gfxstreamBrokerLog = diagnostics.appendingPathComponent(
             "android-gfxstream-broker.log")
         displayHostLog = diagnostics.appendingPathComponent(
             "android-display-host.log")
         progressLog = diagnostics.appendingPathComponent(
             "android-progress.jsonl")
-        kittyLog = diagnostics.appendingPathComponent(
-            "android-boot-log-window.log")
         hostAuditLog = diagnostics.appendingPathComponent(
             "host-audit.log")
         collectorErrors = diagnostics.appendingPathComponent(

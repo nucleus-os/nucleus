@@ -1,0 +1,43 @@
+diff --git a/init/builtins.cpp b/init/builtins.cpp
+index e0633eb32..1c4d7821b 100644
+--- a/init/builtins.cpp
++++ b/init/builtins.cpp
+@@ -225,6 +225,7 @@ static Result<void> do_class_restart(const BuiltinArguments& args) {
+ }
+
+ static Result<void> do_domainname(const BuiltinArguments& args) {
++    if (IsNucleusContainer()) return {};
+     if (auto result = WriteFile("/proc/sys/kernel/domainname", args[1]); !result.ok()) {
+         return Error() << "Unable to write to /proc/sys/kernel/domainname: " << result.error();
+     }
+@@ -329,6 +330,7 @@ static Result<void> do_load_exports(const BuiltinArguments& args) {
+ }
+
+ static Result<void> do_hostname(const BuiltinArguments& args) {
++    if (IsNucleusContainer()) return {};
+     if (auto result = WriteFile("/proc/sys/kernel/hostname", args[1]); !result.ok()) {
+         return Error() << "Unable to write to /proc/sys/kernel/hostname: " << result.error();
+     }
+@@ -515,6 +517,12 @@ static Result<void> do_mount(const BuiltinArguments& args) {
+     const char* source = args[2].c_str();
+     const char* target = args[3].c_str();
+
++    if (IsNucleusContainer() &&
++        (args[1] == "tracefs" || args[1] == "configfs" || args[1] == "binder" ||
++         args[1] == "bpf" || args[1] == "pstore")) {
++        return {};
++    }
++
+     if (android::base::StartsWith(source, "loop@")) {
+         int mode = (flags & MS_RDONLY) ? O_RDONLY : O_RDWR;
+         const char* file_path = source + strlen("loop@");
+@@ -869,6 +877,9 @@ static Result<void> do_verity_update_state(const BuiltinArguments& args) {
+ }
+
+ static Result<void> do_write(const BuiltinArguments& args) {
++    if (IsNucleusContainer() && android::base::StartsWith(args[1], "/proc/sys/")) {
++        return {};
++    }
+     if (auto result = WriteFile(args[1], args[2]); !result.ok()) {
+         return ErrorIgnoreEnoent()
+                << "Unable to write to file '" << args[1] << "': " << result.error();

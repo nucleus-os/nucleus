@@ -50,17 +50,6 @@ struct WorkspaceLayout: Sendable {
             "native-sanitizers",
             isDirectory: true)
     }
-    var androidPresentationQualifications: URL {
-        state.appendingPathComponent(
-            "qualifications/android-presentation",
-            isDirectory: true)
-    }
-    var androidFrameworkFallbackRun: URL {
-        state.appendingPathComponent(
-            "android-framework-boot",
-            isDirectory: true)
-    }
-
     var installPrefix: URL {
         root.appendingPathComponent(".install", isDirectory: true)
     }

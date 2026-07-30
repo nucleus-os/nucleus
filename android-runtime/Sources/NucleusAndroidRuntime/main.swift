@@ -36,16 +36,17 @@ enum NucleusAndroidRuntimeMain {
 
     private static func run() async throws {
         let arguments = Array(CommandLine.arguments.dropFirst())
+        let environment = ProcessInfo.processInfo.environment
         guard let androidRoot = option(
             "android-root",
             in: arguments),
             option(
                 "nucleus-session-capability-id",
                 in: arguments) == "android",
-            let runDirectory = ProcessInfo.processInfo.environment[
+            let sessionRuntimeDirectory = environment[
                 "NUCLEUS_SESSION_RUNTIME_DIR"
             ],
-            let waylandSocket = ProcessInfo.processInfo.environment[
+            let waylandSocket = environment[
                 "WAYLAND_DISPLAY"
             ]
         else {
@@ -70,16 +71,36 @@ enum NucleusAndroidRuntimeMain {
         let libraryDirectory = prefix.appendingPathComponent(
             "lib",
             isDirectory: true)
+        let diagnosticsRunDirectory =
+            environment["NUCLEUS_RUN_DIR"]
+            ?? sessionRuntimeDirectory
+        let gfxstreamBrokerEnvironment: [String: String]
+        if let encoded = environment[
+            "NUCLEUS_ANDROID_GFXSTREAM_BROKER_ENVIRONMENT"
+        ] {
+            gfxstreamBrokerEnvironment = try JSONDecoder().decode(
+                [String: String].self,
+                from: Data(encoded.utf8))
+        } else {
+            gfxstreamBrokerEnvironment = [:]
+        }
+        let gfxstreamBrokerExecutable = environment[
+            "NUCLEUS_ANDROID_GFXSTREAM_BROKER_EXECUTABLE"
+        ].map(URL.init(fileURLWithPath:))
+            ?? libexec.appendingPathComponent(
+                "nucleus-android-gfxstream-broker")
         let configuration = try AndroidRuntimeBrokerConfiguration(
             androidRoot: URL(
                 fileURLWithPath: androidRoot,
                 isDirectory: true),
-            runDirectory: URL(
-                fileURLWithPath: runDirectory,
+            sessionRuntimeDirectory: URL(
+                fileURLWithPath: sessionRuntimeDirectory,
+                isDirectory: true),
+            diagnosticsRunDirectory: URL(
+                fileURLWithPath: diagnosticsRunDirectory,
                 isDirectory: true),
             waylandSocket: waylandSocket,
-            gfxstreamBrokerExecutable: libexec.appendingPathComponent(
-                "nucleus-android-gfxstream-broker"),
+            gfxstreamBrokerExecutable: gfxstreamBrokerExecutable,
             displayHostExecutable: libexec.appendingPathComponent(
                 "nucleus-android-display-host"),
             privilegedHelperExecutable: libexec.appendingPathComponent(
@@ -87,11 +108,13 @@ enum NucleusAndroidRuntimeMain {
             swiftRuntime: try AndroidSwiftRuntime(
                 libraryRoot: prefix,
                 loaderSearchDirectory: libraryDirectory),
-            timeoutSeconds: timeout)
+            timeoutSeconds: timeout,
+            gfxstreamBrokerEnvironment:
+                gfxstreamBrokerEnvironment)
         try await runAndroidRuntimeBroker(
             configuration: configuration,
             host: LinuxAndroidRuntimeHost(),
-            environment: ProcessInfo.processInfo.environment)
+            environment: environment)
     }
 
     private static func option(

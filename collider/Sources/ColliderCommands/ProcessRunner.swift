@@ -213,6 +213,8 @@ struct WorkspaceContext: Sendable {
         directory: URL? = nil,
         environmentOverrides: [String: String] = [:],
         output: CommandSpec.Output = .inherited,
+        terminal: Bool = false,
+        timeoutSeconds: Int? = nil,
         stage: TaskID? = nil,
         _ body: @escaping @Sendable (RunningCommand) async throws -> Value
     ) async throws -> Value {
@@ -227,7 +229,11 @@ struct WorkspaceContext: Sendable {
             arguments: arguments,
             workingDirectory: FilePath((directory ?? root).path),
             environment: childEnvironment,
-            output: output)
+            input: terminal ? .terminal : .none,
+            output: terminal ? .terminal : output,
+            timeoutNanoseconds: timeoutSeconds.map {
+                UInt64($0) * 1_000_000_000
+            })
         let state = RunningCommandState()
         let handle = RunningCommand(state: state)
         let cancellation = AsyncStream<Void>.makeStream(
