@@ -174,10 +174,6 @@ public enum AndroidRuntimeColliderRecipe {
     ) throws -> TaskDeclaration {
         let lock = try loadAOSPSourceLock(root: root)
         let specification = try lock.specification()
-        let patchManifestPath = root.appending("aosp/patches.json")
-        let patchStacks = try loadAOSPSourcePatchStacks(
-            manifest: patchManifestPath,
-            root: root)
         let lockPath = root.appending("aosp.lock.json")
         let launcher = try aospRepoLauncherPath(root: root)
         let verification = root.appending(
@@ -192,20 +188,15 @@ public enum AndroidRuntimeColliderRecipe {
             ],
             inputs: [
                 .file(lockPath),
-                .file(patchManifestPath),
                 .dependencyOutput(launcher),
                 .dependencyOutput(verification),
                 .tool(.named("git")),
                 .tool(.named("python3")),
-            ] + patchStacks.flatMap(\.patches).map { .file($0.file) },
+            ],
             outputs: [
                 OutputDeclaration(
                     path: source.appending(
-                        ".nucleus/base-resolved-manifest.xml"),
-                    validation: .regularFile),
-                OutputDeclaration(
-                    path: source.appending(
-                        ".nucleus/patched-resolved-manifest.xml"),
+                        ".nucleus/resolved-manifest.xml"),
                     validation: .regularFile),
                 OutputDeclaration(
                     path: source.appending(".nucleus/source-provenance.json"),
@@ -217,7 +208,6 @@ public enum AndroidRuntimeColliderRecipe {
                     specification: specification,
                     launcher: launcher,
                     source: source,
-                    patchStacks: patchStacks,
                     syncJobs: 4,
                     retryFetches: 3,
                     environment: environment)))
@@ -575,58 +565,6 @@ public enum AndroidRuntimeColliderRecipe {
                     fileURLWithPath: root.appending("aosp.lock.json").string)))
     }
 
-    private static func loadAOSPSourcePatchStacks(
-        manifest: FilePath,
-        root: FilePath
-    ) throws -> [AOSPSourcePatchStack] {
-        let declaration = try JSONDecoder().decode(
-            AOSPSourcePatchManifest.self,
-            from: Data(contentsOf: URL(fileURLWithPath: manifest.string)))
-        guard !declaration.repositories.isEmpty else {
-            throw AndroidRuntimeRecipeFailure.invalidAOSPSourceLock(
-                "forward-patch manifest must declare repositories")
-        }
-        var repositories = Set<String>()
-        var patchPaths = Set<String>()
-        return try declaration.repositories.map { repository in
-            guard isSafeRelativePath(repository.path),
-                repositories.insert(repository.path).inserted
-            else {
-                throw AndroidRuntimeRecipeFailure.invalidAOSPSourceLock(
-                    "forward-patch repository path is invalid or duplicated: "
-                        + repository.path)
-            }
-            guard !repository.patches.isEmpty else {
-                throw AndroidRuntimeRecipeFailure.invalidAOSPSourceLock(
-                    "forward-patch repository \(repository.path) has no patches")
-            }
-            let patches = try repository.patches.map { path in
-                guard path.hasPrefix("aosp/patches/"),
-                    isSafeRelativePath(path),
-                    patchPaths.insert(path).inserted
-                else {
-                    throw AndroidRuntimeRecipeFailure.invalidAOSPSourceLock(
-                        "forward-patch path is invalid or duplicated: \(path)")
-                }
-                let file = root.appending(path)
-                var isDirectory = ObjCBool(false)
-                guard
-                    unsafe FileManager.default.fileExists(
-                        atPath: file.string,
-                        isDirectory: &isDirectory),
-                    !isDirectory.boolValue
-                else {
-                    throw AndroidRuntimeRecipeFailure.invalidAOSPSourceLock(
-                        "forward patch is not a regular file: \(path)")
-                }
-                return AOSPSourcePatch(path: path, file: file)
-            }
-            return AOSPSourcePatchStack(
-                repositoryPath: repository.path,
-                patches: patches)
-        }
-    }
-
     private static func aospRepoLauncherPath(
         root: FilePath
     ) throws -> FilePath {
@@ -812,11 +750,16 @@ public enum AndroidRuntimeColliderRecipe {
 }
 
 private struct AOSPSourceLock: Decodable {
-    struct Platform: Decodable {
+    struct Upstream: Decodable {
         let release: String
         let revision: String
+        let manifestCommit: String
+        let superprojectCommit: String
+    }
+
+    struct Source: Decodable {
         let manifestURL: String
-        let manifestTagObject: String
+        let manifestRevision: String
         let manifestCommit: String
         let defaultManifestSHA256: String
         let superprojectURL: String
@@ -834,31 +777,33 @@ private struct AOSPSourceLock: Decodable {
         let commit: String
     }
 
-    let platform: Platform
+    let upstream: Upstream
+    let source: Source
     let repo: Repo
 
     func validate() throws {
-        guard platform.revision == "refs/tags/android-17.0.0_r1" else {
+        guard upstream.revision == "refs/tags/android-17.0.0_r1" else {
             throw AndroidRuntimeRecipeFailure.invalidAOSPSourceLock(
                 "platform revision must be refs/tags/android-17.0.0_r1")
         }
-        guard platform.release == "Android 17.0.0 Release 1" else {
+        guard upstream.release == "Android 17.0.0 Release 1" else {
             throw AndroidRuntimeRecipeFailure.invalidAOSPSourceLock(
                 "platform release must be Android 17.0.0 Release 1")
         }
         guard
-            platform.superprojectRevision
-                == "refs/heads/android-17.0.0_r1"
+            source.manifestRevision
+                == "refs/heads/nucleus-android-17.0.0_r1",
+            source.superprojectRevision
+                == "refs/heads/nucleus-android-17.0.0_r1"
         else {
             throw AndroidRuntimeRecipeFailure.invalidAOSPSourceLock(
-                "superproject revision must be "
-                    + "refs/heads/android-17.0.0_r1")
+                "Nucleus source revisions must select the Android 17 branch")
         }
         guard
-            platform.manifestURL
-                == "https://android.googlesource.com/platform/manifest",
-            platform.superprojectURL
-                == "https://android.googlesource.com/platform/superproject",
+            source.manifestURL
+                == "ssh://git@github.com/nucleus-os/platform_manifest.git",
+            source.superprojectURL
+                == "ssh://git@github.com/nucleus-os/platform_superproject.git",
             repo.launcherURL
                 == "https://storage.googleapis.com/git-repo-downloads/repo",
             repo.repositoryURL
@@ -868,10 +813,11 @@ private struct AOSPSourceLock: Decodable {
                 "source URLs do not match the approved upstreams")
         }
         for (name, value, count) in [
-            ("manifest tag object", platform.manifestTagObject, 40),
-            ("manifest commit", platform.manifestCommit, 40),
-            ("manifest digest", platform.defaultManifestSHA256, 64),
-            ("superproject commit", platform.superprojectCommit, 40),
+            ("upstream manifest commit", upstream.manifestCommit, 40),
+            ("upstream superproject commit", upstream.superprojectCommit, 40),
+            ("manifest commit", source.manifestCommit, 40),
+            ("manifest digest", source.defaultManifestSHA256, 64),
+            ("superproject commit", source.superprojectCommit, 40),
             ("Repo launcher digest", repo.launcherSHA256, 64),
             ("Repo tag object", repo.tagObject, 40),
             ("Repo commit", repo.commit, 40),
@@ -897,7 +843,7 @@ private struct AOSPSourceLock: Decodable {
         try validate()
         guard
             let defaultManifestDigest = ArtifactDigest(
-                sha256Hex: platform.defaultManifestSHA256),
+                sha256Hex: source.defaultManifestSHA256),
             let launcherDigest = ArtifactDigest(
                 sha256Hex: repo.launcherSHA256)
         else {
@@ -906,15 +852,15 @@ private struct AOSPSourceLock: Decodable {
         }
         return AOSPSourceSpecification(
             platform: AOSPPlatformSource(
-                release: platform.release,
-                revision: platform.revision,
-                manifestURL: platform.manifestURL,
-                manifestTagObject: platform.manifestTagObject,
-                manifestCommit: platform.manifestCommit,
+                release: upstream.release,
+                revision: upstream.revision,
+                manifestURL: source.manifestURL,
+                manifestRevision: source.manifestRevision,
+                manifestCommit: source.manifestCommit,
                 defaultManifestDigest: defaultManifestDigest,
-                superprojectURL: platform.superprojectURL,
-                superprojectRevision: platform.superprojectRevision,
-                superprojectCommit: platform.superprojectCommit),
+                superprojectURL: source.superprojectURL,
+                superprojectRevision: source.superprojectRevision,
+                superprojectCommit: source.superprojectCommit),
             repo: AOSPRepoSource(
                 launcherVersion: repo.launcherVersion,
                 launcherDigest: launcherDigest,
@@ -923,23 +869,6 @@ private struct AOSPSourceLock: Decodable {
                 tagObject: repo.tagObject,
                 commit: repo.commit))
     }
-}
-
-private struct AOSPSourcePatchManifest: Decodable {
-    struct Repository: Decodable {
-        let path: String
-        let patches: [String]
-    }
-
-    let repositories: [Repository]
-}
-
-private func isSafeRelativePath(_ value: String) -> Bool {
-    !value.isEmpty
-        && !value.hasPrefix("/")
-        && !value.hasSuffix("/")
-        && value.split(separator: "/", omittingEmptySubsequences: false)
-            .allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
 }
 
 private struct AOSPProductLock: Decodable {

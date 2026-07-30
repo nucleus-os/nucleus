@@ -13,9 +13,47 @@ maintained third-party change is a normal commit in a `nucleus-os` repository.
 Every external checkout resolves to an exact commit. Moving refs are useful for
 development but never substitute for a pinned commit in a build input.
 
+Every canonical GitHub repository is a genuine GitHub fork. GrapheneOS is the
+direct parent when GrapheneOS actively maintains the project and contains the
+frozen AOSP base. Unchanged AOSP projects use an exact-history GitHub mirror.
+The Nucleus branch begins at the frozen AOSP base plus the existing Nucleus
+commit; GrapheneOS changes land later as explicit reviewed commits.
+
 The migration is a hard cutover. Patch application, patch reconciliation,
 forward-patch provenance, and compatibility with the old source layout are
 deleted when fork-backed materialization lands.
+
+## Execution State
+
+Organization ownership, transferred-fork verification, AOSP commit
+publication, superproject construction, manifest construction, source-lock
+cutover, patch-pipeline deletion, consumer repointing, and real-checkout source
+materialization are complete. Every canonical repository is now a genuine
+GitHub fork with the selected direct parent. The temporary import, migration
+backup, and pre-fork staging repositories have been deleted after their
+canonical refs were verified. A clean `nucleus_x86_64-user` image build,
+release signing pass, and image-provenance validation complete successfully
+from the fork-backed source graph.
+
+The selected source graph is:
+
+```text
+manifest commit:     549048432a098fea5b3a2a58bea3948ad87def57
+superproject commit: ac9631ab62101ae9e4635b4293246e69285ee477
+manifest SHA-256:    e77fd22da0e3a9576dde69da2f9cc9ec95bae1387d9e6f4761c0adb926c6778e
+branch:              nucleus-android-17.0.0_r1
+```
+
+The manifest pins all 22 Nucleus projects by commit, identifies the containing
+Nucleus branch for bounded fetches, and shallow-materializes those exact branch
+tips. Collider verifies the manifest ref and digest, the superproject ref, and
+every resolved project revision against its superproject gitlink.
+
+`platform_frameworks_base` is a direct fork of
+`GrapheneOS/platform_frameworks_base`. Its
+`nucleus-android-17.0.0_r1` ref resolves to
+`2a7c81a620759f8114938689558875da4e40ea42`, whose tree is
+`66621a481a00ab4dcdd8c80706e03c99a545a76a`.
 
 ## Repository Naming
 
@@ -328,41 +366,27 @@ Create or reuse the following repositories in `nucleus-os`:
 | `platform/external/mesa3d` | `external/mesa3d` | `platform_external_mesa3d` |
 
 `platform_external_mesa3d` is the repository transferred in Phase 1. Reuse it;
-do not create a competing Android-only Mesa fork. Add the Android 17 ancestry
-and Nucleus Android source line to that repository while preserving its
-existing Nucleus history.
+do not create a competing Android-only Mesa fork. Its canonical repository is
+a GitHub fork of `aosp-mirror-neo/platform_external_mesa3d` and carries both
+Nucleus Android source lines.
 
-The other AOSP repositories are Gerrit-backed mirrors, not GitHub-native forks.
-Seed each repository from its exact base commit and retain the Android upstream
-as a fetch-only remote.
-
-Create a missing Gerrit-backed mirror with `gh`:
+Create each canonical repository through GitHub's fork operation:
 
 ```sh
-gh repo create "nucleus-os/$repository" \
-  --public \
-  --description "Nucleus-maintained mirror of $upstream_project" \
-  --disable-issues \
-  --disable-wiki
+gh repo fork "$parent" \
+  --org nucleus-os \
+  --fork-name "$repository" \
+  --default-branch-only
 
 gh repo view "nucleus-os/$repository" \
-  --json nameWithOwner,url,visibility,isPrivate
+  --json nameWithOwner,url,visibility,isPrivate,isFork,parent
 ```
 
-Match the visibility selected for the Nucleus source graph. The command uses
-`--public` only when the organization policy declares these source mirrors
-public. Substitute `--private` when the policy declares them private; never
-infer visibility from an unrelated repository.
-
-Confirm the repository is empty before its first publication:
-
-```sh
-gh api "repos/nucleus-os/$repository" \
-  --jq '{size, default_branch, empty: (.size == 0)}'
-```
-
-Do not initialize a mirror with a README, license, or `.gitignore`; the first
-published object graph comes directly from the exact Android upstream ancestry.
+Require `isFork` and the intended direct parent before publishing a Nucleus
+ref. Connectivity uses `LineageOS/android_packages_modules_Connectivity`
+because GrapheneOS publishes that maintained project on GitLab rather than
+GitHub. Record GrapheneOS's GitLab repository as an additional fetch-only
+upstream for future security adoption.
 
 ## Phase 4: Publish the Materialized Patch Commits
 
@@ -500,17 +524,23 @@ commits:
     path="frameworks/base"
     name="platform_frameworks_base"
     remote="nucleus"
+    clone-depth="1"
+    upstream="refs/heads/nucleus-android-17.0.0_r1"
     revision="<exact-project-commit>" />
 ```
 
-Point the manifest's superproject entry at the exact Phase 5 commit:
+Point the manifest's superproject entry at the pinned branch:
 
 ```xml
 <superproject
     name="platform_superproject"
     remote="nucleus"
-    revision="<exact-superproject-commit>" />
+    revision="nucleus-android-17.0.0_r1" />
 ```
+
+Repo requires a named superproject revision to fetch the object before
+`ls-tree`. The source lock independently requires that branch to resolve to the
+exact Phase 5 commit, so the build graph remains commit-pinned.
 
 Unmodified projects continue to use the AOSP remote and Android 17 revision.
 Publish the resulting manifest at:

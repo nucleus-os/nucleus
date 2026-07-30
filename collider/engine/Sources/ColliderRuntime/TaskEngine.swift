@@ -1018,13 +1018,6 @@ extension ColliderRuntime {
             encoder.append(tag: 182, string: "prepare")
             encoder.append(tag: 185, string: preparation.launcher.string)
             encoder.append(tag: 185, string: preparation.source.string)
-            for stack in preparation.patchStacks {
-                encoder.append(tag: 191, string: stack.repositoryPath)
-                for patch in stack.patches {
-                    encoder.append(tag: 192, string: patch.path)
-                    encoder.append(tag: 193, string: patch.file.string)
-                }
-            }
             // Sync concurrency and retry limits affect execution only, not the
             // materialized source identity.
             for executable in [
@@ -1298,7 +1291,7 @@ extension ColliderRuntime {
             platform.release,
             platform.revision,
             platform.manifestURL,
-            platform.manifestTagObject,
+            platform.manifestRevision,
             platform.manifestCommit,
             platform.superprojectURL,
             platform.superprojectRevision,

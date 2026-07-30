@@ -56,6 +56,6 @@ live in **`react-native/`**, not `core/`.
 
 ## Submodules
 
-Submodules are detached HEADs. If one needs first-party patches, fork it under `maddythewisp` (Codeberg/GitHub), repoint the submodule at the fork, and push over SSH: `git push origin HEAD:refs/heads/<branch>`.
+Submodules are detached HEADs. If one needs first-party patches, use a genuine upstream fork under `nucleus-os`, repoint the submodule at the fork, and push over SSH: `git push origin HEAD:refs/heads/<branch>`.
 
 The monorepo root is the source-control and release boundary. First-party package directories are not submodules.

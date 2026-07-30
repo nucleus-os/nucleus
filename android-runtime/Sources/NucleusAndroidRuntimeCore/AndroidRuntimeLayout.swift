@@ -43,7 +43,6 @@ public struct AndroidRuntimeLayout: Sendable {
     public let images: URL
     public let provenance: URL
     public let sourceProvenance: URL
-    public let patchManifest: URL
     public let sourceLock: URL
     public let productLock: URL
     public let signingIdentity: URL
@@ -148,8 +147,6 @@ public struct AndroidRuntimeLayout: Sendable {
             ".aosp-build/current/signed/image-provenance.json")
         sourceProvenance = androidRoot.appendingPathComponent(
             ".aosp-source/.nucleus/source-provenance.json")
-        patchManifest = androidRoot.appendingPathComponent(
-            "aosp/patches.json")
         sourceLock = androidRoot.appendingPathComponent("aosp.lock.json")
         productLock = androidRoot.appendingPathComponent(
             "aosp-product.lock.json")

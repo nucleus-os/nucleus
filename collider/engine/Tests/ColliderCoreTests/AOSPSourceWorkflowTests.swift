@@ -18,8 +18,7 @@ import Testing
           ls-remote)
             case "$2" in
               manifest://fixture)
-                printf '%s\t%s\n' '\#(fixture.manifestTag)' 'refs/tags/platform'
-                printf '%s\t%s\n' '\#(fixture.manifestCommit)' 'refs/tags/platform^{}'
+                printf '%s\t%s\n' '\#(fixture.manifestCommit)' 'refs/heads/platform'
                 ;;
               superproject://fixture)
                 printf '%s\t%s\n' '\#(fixture.superprojectCommit)' 'refs/heads/platform'
@@ -33,16 +32,26 @@ import Testing
                 ;;
             esac
             ;;
-          clone)
+          init)
             destination=
             for argument in "$@"; do destination="$argument"; done
             mkdir -p "$destination"
-            cp "$FIXTURE_MANIFEST" "$destination/default.xml"
             ;;
           -C)
-            test "$3" = rev-parse
-            test "$4" = HEAD
-            printf '%s\n' '\#(fixture.manifestCommit)'
+            case "$3" in
+              fetch)
+                cp "$FIXTURE_MANIFEST" "$2/default.xml"
+                ;;
+              checkout)
+                ;;
+              rev-parse)
+                test "$4" = HEAD
+                printf '%s\n' '\#(fixture.manifestCommit)'
+                ;;
+              *)
+                exit 2
+                ;;
+            esac
             ;;
           *)
             exit 2
@@ -96,6 +105,12 @@ import Testing
         #"""
         #!/bin/sh
         set -eu
+        if test "$1" = --git-dir; then
+          test "$3" = ls-tree
+          printf '%s\n' \
+            '160000 commit 0123456789abcdef	platform/frameworks/base'
+          exit 0
+        fi
         test "$1" = -C
         case "$2" in
           */.repo/manifests)
@@ -105,7 +120,7 @@ import Testing
             printf '%s\n' '\#(fixture.repoCommit)'
             ;;
           */.repo/exp-superproject/*-superproject.git)
-            test "$4" = refs/heads/platform
+            test "$4" = '\#(fixture.superprojectCommit)'
             printf '%s\n' '\#(fixture.superprojectCommit)'
             ;;
           *)
@@ -132,9 +147,13 @@ import Testing
             mkdir -p \
               .repo/manifests \
               .repo/repo \
-              .repo/exp-superproject/platform-superproject.git
+              .repo/exp-superproject/platform-superproject.git \
+              .nucleus
             cp "$FIXTURE_MANIFEST" .repo/manifests/default.xml
             cp "$FIXTURE_MANIFEST" .repo/manifest.xml
+            touch \
+              .nucleus/base-resolved-manifest.xml \
+              .nucleus/patched-resolved-manifest.xml
             ;;
           forall)
             ;;
@@ -155,19 +174,14 @@ import Testing
     ]) { _, value in value }
     let provenance = source.appendingPathComponent(
         ".nucleus/source-provenance.json")
-    let baseResolvedManifest = source.appendingPathComponent(
-        ".nucleus/base-resolved-manifest.xml")
-    let patchedResolvedManifest = source.appendingPathComponent(
-        ".nucleus/patched-resolved-manifest.xml")
+    let resolvedManifest = source.appendingPathComponent(
+        ".nucleus/resolved-manifest.xml")
     let task = TaskDeclaration(
         id: TaskID(rawValue: "fixture.aosp-source"),
         component: ComponentID(rawValue: "fixture"),
         outputs: [
             OutputDeclaration(
-                path: FilePath(baseResolvedManifest.path),
-                validation: .regularFile),
-            OutputDeclaration(
-                path: FilePath(patchedResolvedManifest.path),
+                path: FilePath(resolvedManifest.path),
                 validation: .regularFile),
             OutputDeclaration(
                 path: FilePath(provenance.path),
@@ -195,17 +209,18 @@ import Testing
             "init --quiet --partial-clone --clone-filter=blob:limit=10M "
                 + "--use-superproject --no-clone-bundle "
                 + "--repo-url=repo://fixture --repo-rev=refs/tags/v2.65 "
-                + "-u manifest://fixture -b refs/tags/platform"))
+                + "-u manifest://fixture -b refs/heads/platform"))
     #expect(
         commands.contains(
-            "sync --current-branch --detach --fail-fast --no-clone-bundle "
+            "sync --current-branch --detach --fail-fast --force-sync "
+                + "--no-clone-bundle "
                 + "--no-tags --optimized-fetch --prune --jobs=4 "
                 + "--retry-fetches=3"))
     #expect(
         commands.components(
             separatedBy:
                 "forall --ignore-missing --jobs=1 --verbose -c "
-        ).count == 4)
+        ).count == 3)
     #expect(commands.contains("if test ! -e .git; then exit 0; fi"))
     #expect(commands.contains("manifest --revision-as-HEAD"))
     let materialization = try JSONDecoder().decode(
@@ -215,349 +230,18 @@ import Testing
     #expect(materialization.manifestCommit == fixture.manifestCommit)
     #expect(materialization.superprojectCommit == fixture.superprojectCommit)
     #expect(materialization.repoCommit == fixture.repoCommit)
-    #expect(!materialization.baseResolvedManifestSHA256.isEmpty)
     #expect(!materialization.resolvedManifestSHA256.isEmpty)
     #expect(
-        materialization.baseResolvedManifestSHA256
-            == materialization.resolvedManifestSHA256)
-    #expect(materialization.forwardPatches.isEmpty)
-}
-
-@Test func aospSourcePreparationCommitsDeclaredForwardPatches() async throws {
-    let fixture = try AOSPWorkflowFixture(name: "forward-patches")
-    defer { fixture.remove() }
-    let source = fixture.root.appendingPathComponent("source")
-    let patch = fixture.root.appendingPathComponent("forward.patch")
-    let patchContents =
-        """
-        diff --git a/marker.txt b/marker.txt
-        index df967b9..09025f9 100644
-        --- a/marker.txt
-        +++ b/marker.txt
-        @@ -1 +1 @@
-        -base
-        +patched
-        """
-    try Data((patchContents + "\n").utf8).write(to: patch)
-    try fixture.writeExecutable(
-        #"""
-        #!/bin/sh
-        set -eu
-        test "$1" = -C
-        case "$2" in
-          */system/core)
-            exec /usr/bin/git "$@"
-            ;;
-          */.repo/manifests)
-            printf '%s\n' '\#(fixture.manifestCommit)'
-            ;;
-          */.repo/repo)
-            printf '%s\n' '\#(fixture.repoCommit)'
-            ;;
-          */.repo/exp-superproject/*-superproject.git)
-            test "$4" = refs/heads/platform
-            printf '%s\n' '\#(fixture.superprojectCommit)'
-            ;;
-          *)
-            exit 2
-            ;;
-        esac
-        """#,
-        to: fixture.bin.appendingPathComponent("git"))
-    try fixture.writeExecutable(
-        """
-        #!/bin/sh
-        set -eu
-        shift
-        command="$1"
-        shift
-        case "$command" in
-          init)
-            mkdir -p \
-              .repo/manifests \
-              .repo/repo \
-              .repo/exp-superproject/platform-superproject.git \
-              system/core
-            cp "$FIXTURE_MANIFEST" .repo/manifests/default.xml
-            cp "$FIXTURE_MANIFEST" .repo/manifest.xml
-            /usr/bin/git -C system/core init --quiet
-            printf 'base\\n' > system/core/marker.txt
-            /usr/bin/git -C system/core add marker.txt
-            /usr/bin/git -C system/core \
-              -c user.name=Fixture \
-              -c user.email=fixture@nucleus.invalid \
-              commit --quiet --message=base
-            ;;
-          forall)
-            test -z "$(/usr/bin/git -C system/core status --porcelain)"
-            ;;
-          sync)
-            ;;
-          manifest)
-            revision=$(/usr/bin/git -C system/core rev-parse HEAD)
-            printf '<manifest><project name="system/core" revision="%s"/></manifest>\\n' \
-              "$revision"
-            ;;
-          *)
-            exit 2
-            ;;
-        esac
-        """,
-        to: fixture.bin.appendingPathComponent("python3"))
-    let provenance = source.appendingPathComponent(
-        ".nucleus/source-provenance.json")
-    let task = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.aosp-forward-patches"),
-        component: ComponentID(rawValue: "fixture"),
-        outputs: [
-            OutputDeclaration(
-                path: FilePath(source.appendingPathComponent(
-                    ".nucleus/base-resolved-manifest.xml").path),
-                validation: .regularFile),
-            OutputDeclaration(
-                path: FilePath(source.appendingPathComponent(
-                    ".nucleus/patched-resolved-manifest.xml").path),
-                validation: .regularFile),
-            OutputDeclaration(
-                path: FilePath(provenance.path),
-                validation: .json),
-        ],
-        operation: .prepareAOSPSource(AOSPSourcePreparation(
-            specification: fixture.specification,
-            launcher: FilePath(fixture.launcher.path),
-            source: FilePath(source.path),
-            patchStacks: [
-                AOSPSourcePatchStack(
-                    repositoryPath: "system/core",
-                    patches: [
-                        AOSPSourcePatch(
-                            path: "aosp/patches/forward.patch",
-                            file: FilePath(patch.path))
-                    ])
-            ],
-            syncJobs: 1,
-            retryFetches: 1,
-            environment: fixture.environment)))
-
-    _ = try await ColliderRuntime().execute(
-        graph: TaskGraph([task]),
-        selected: [task.id],
-        stateRoot: FilePath(
-            fixture.root.appendingPathComponent("state").path))
-
-    let materialization = try JSONDecoder().decode(
-        AOSPSourceProvenance.self,
-        from: Data(contentsOf: provenance))
-    #expect(materialization.forwardPatches.count == 1)
-    let stack = try #require(materialization.forwardPatches.first)
-    #expect(stack.repositoryPath == "system/core")
-    #expect(stack.baseCommit != stack.patchedCommit)
-    #expect(stack.patchedCommit.count == 40)
-    #expect(stack.patchedTree.count == 40)
-    #expect(stack.patches.count == 1)
-    #expect(stack.patches.first?.path == "aosp/patches/forward.patch")
-    #expect(!stack.patches[0].sha256.isEmpty)
+        !FileManager.default.fileExists(
+            atPath: source.appendingPathComponent(
+                ".nucleus/base-resolved-manifest.xml").path))
     #expect(
-        materialization.baseResolvedManifestSHA256
-            != materialization.resolvedManifestSHA256)
-    let contents = try String(
-        contentsOf: source.appendingPathComponent(
-            "system/core/marker.txt"),
-        encoding: .utf8)
-    #expect(contents == "patched\n")
-    let status = try await ColliderRuntime().execute(CommandSpec(
-        executable: .path(FilePath("/usr/bin/git")),
-        arguments: [
-            "-C",
-            source.appendingPathComponent("system/core").path,
-            "status",
-            "--porcelain",
-        ],
-        workingDirectory: FilePath(source.path),
-        environment: fixture.environment,
-        output: .captured(limit: 1_024)))
-    #expect(status.status == 0)
-
-    let firstPatchedCommit = try String(
-        contentsOf: source.appendingPathComponent(
-            "system/core/.git/refs/heads/master"),
-        encoding: .utf8
-    ).trimmingCharacters(in: .whitespacesAndNewlines)
-    _ = try await ColliderRuntime().execute(
-        graph: TaskGraph([task]),
-        selected: [task.id],
-        stateRoot: FilePath(
-            fixture.root.appendingPathComponent("second-state").path))
-    let preservedCommit = try String(
-        contentsOf: source.appendingPathComponent(
-            "system/core/.git/refs/heads/master"),
-        encoding: .utf8
-    ).trimmingCharacters(in: .whitespacesAndNewlines)
-    #expect(preservedCommit == firstPatchedCommit)
-
-    let equivalentCommitResult = try await ColliderRuntime().execute(
-        CommandSpec(
-            executable: .path(FilePath("/usr/bin/git")),
-            arguments: [
-                "-C",
-                source.appendingPathComponent("system/core").path,
-                "-c", "user.name=Fixture",
-                "-c", "user.email=fixture@nucleus.invalid",
-                "commit", "--amend", "--quiet",
-                "--message=equivalent-forward-patch",
-            ],
-            workingDirectory: FilePath(source.path),
-            environment: fixture.environment,
-            output: .captured(limit: 1_024)))
-    #expect(equivalentCommitResult.status == 0)
-    let equivalentCommit = try await ColliderRuntime().execute(
-        CommandSpec(
-            executable: .path(FilePath("/usr/bin/git")),
-            arguments: [
-                "-C",
-                source.appendingPathComponent("system/core").path,
-                "rev-parse", "HEAD",
-            ],
-            workingDirectory: FilePath(source.path),
-            environment: fixture.environment,
-            output: .captured(limit: 1_024)))
-    #expect(equivalentCommit.status == 0)
-    let equivalentRevision = equivalentCommit.standardOutput
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-    #expect(equivalentRevision != preservedCommit)
-    _ = try await ColliderRuntime().execute(
-        graph: TaskGraph([task]),
-        selected: [task.id],
-        stateRoot: FilePath(
-            fixture.root.appendingPathComponent("adopted-state").path))
-    let adoptedMaterialization = try JSONDecoder().decode(
-        AOSPSourceProvenance.self,
-        from: Data(contentsOf: provenance))
-    #expect(
-        adoptedMaterialization.forwardPatches.first?.patchedCommit
-            == equivalentRevision)
-
-    let revisedPatch =
-        """
-        diff --git a/marker.txt b/marker.txt
-        index df967b9..e66c25f 100644
-        --- a/marker.txt
-        +++ b/marker.txt
-        @@ -1 +1 @@
-        -base
-        +reconciled
-        """
-    try Data((revisedPatch + "\n").utf8).write(to: patch)
-    let adoptedStack = try #require(
-        adoptedMaterialization.forwardPatches.first)
-    for arguments in [
-        [
-            "-C",
-            source.appendingPathComponent("system/core").path,
-            "reset", "--hard", adoptedStack.baseCommit,
-        ],
-        [
-            "-C",
-            source.appendingPathComponent("system/core").path,
-            "apply", "--index", "--whitespace=error-all", patch.path,
-        ],
-        [
-            "-C",
-            source.appendingPathComponent("system/core").path,
-            "-c", "user.name=Fixture",
-            "-c", "user.email=fixture@nucleus.invalid",
-            "commit", "--quiet", "--message=preapplied-revised-patch",
-        ],
-    ] {
-        let result = try await ColliderRuntime().execute(CommandSpec(
-            executable: .path(FilePath("/usr/bin/git")),
-            arguments: arguments,
-            workingDirectory: FilePath(source.path),
-            environment: fixture.environment,
-            output: .captured(limit: 1_024)))
-        #expect(result.status == 0)
-    }
-    _ = try await ColliderRuntime().execute(
-        graph: TaskGraph([task]),
-        selected: [task.id],
-        stateRoot: FilePath(
-            fixture.root.appendingPathComponent("third-state").path))
-    let reconciledContents = try String(
-        contentsOf: source.appendingPathComponent(
-            "system/core/marker.txt"),
-        encoding: .utf8)
-    #expect(reconciledContents == "reconciled\n")
-    let reconciledCommit = try String(
-        contentsOf: source.appendingPathComponent(
-            "system/core/.git/refs/heads/master"),
-        encoding: .utf8
-    ).trimmingCharacters(in: .whitespacesAndNewlines)
-
-    try Data(
-        (revisedPatch.replacingOccurrences(
-            of: "-base",
-            with: "-does-not-exist") + "\n").utf8
-    ).write(to: patch)
-    await #expect(throws: (any Error).self) {
-        _ = try await ColliderRuntime().execute(
-            graph: TaskGraph([task]),
-            selected: [task.id],
-            stateRoot: FilePath(
-                fixture.root.appendingPathComponent("fourth-state").path))
-    }
-    let rolledBackCommit = try String(
-        contentsOf: source.appendingPathComponent(
-            "system/core/.git/refs/heads/master"),
-        encoding: .utf8
-    ).trimmingCharacters(in: .whitespacesAndNewlines)
-    #expect(rolledBackCommit == reconciledCommit)
-    #expect(
-        try String(
-            contentsOf: source.appendingPathComponent(
-                "system/core/marker.txt"),
-            encoding: .utf8) == "reconciled\n")
-    try Data((revisedPatch + "\n").utf8).write(to: patch)
-
-    try Data("unexpected clean revision\n".utf8).write(
-        to: source.appendingPathComponent("system/core/marker.txt"))
-    for arguments in [
-        [
-            "-C",
-            source.appendingPathComponent("system/core").path,
-            "add",
-            "marker.txt",
-        ],
-        [
-            "-C",
-            source.appendingPathComponent("system/core").path,
-            "-c",
-            "user.name=Fixture",
-            "-c",
-            "user.email=fixture@nucleus.invalid",
-            "commit",
-            "--quiet",
-            "--message=unexpected",
-        ],
-    ] {
-        let process = try await ColliderRuntime().execute(CommandSpec(
-            executable: .path(FilePath("/usr/bin/git")),
-            arguments: arguments,
-            workingDirectory: FilePath(source.path),
-            environment: fixture.environment,
-            output: .captured(limit: 1_024)))
-        #expect(process.status == 0)
-    }
-    await #expect(throws: (any Error).self) {
-        _ = try await ColliderRuntime().execute(
-            graph: TaskGraph([task]),
-            selected: [task.id],
-            stateRoot: FilePath(
-                fixture.root.appendingPathComponent("fifth-state").path))
-    }
+        !FileManager.default.fileExists(
+            atPath: source.appendingPathComponent(
+                ".nucleus/patched-resolved-manifest.xml").path))
 }
 
 private struct AOSPWorkflowFixture {
-    let manifestTag = String(repeating: "a", count: 40)
     let manifestCommit = String(repeating: "b", count: 40)
     let superprojectCommit = String(repeating: "c", count: 40)
     let repoTag = String(repeating: "d", count: 40)
@@ -592,7 +276,7 @@ private struct AOSPWorkflowFixture {
                 release: "Fixture Android",
                 revision: "refs/tags/platform",
                 manifestURL: "manifest://fixture",
-                manifestTagObject: manifestTag,
+                manifestRevision: "refs/heads/platform",
                 manifestCommit: manifestCommit,
                 defaultManifestDigest: defaultManifestDigest,
                 superprojectURL: "superproject://fixture",
@@ -653,20 +337,5 @@ private struct AOSPSourceProvenance: Decodable {
     let manifestCommit: String
     let superprojectCommit: String
     let repoCommit: String
-    let baseResolvedManifestSHA256: String
     let resolvedManifestSHA256: String
-    let forwardPatches: [ForwardPatchStack]
-
-    struct ForwardPatchStack: Decodable {
-        let repositoryPath: String
-        let baseCommit: String
-        let patchedCommit: String
-        let patchedTree: String
-        let patches: [ForwardPatch]
-    }
-
-    struct ForwardPatch: Decodable {
-        let path: String
-        let sha256: String
-    }
 }

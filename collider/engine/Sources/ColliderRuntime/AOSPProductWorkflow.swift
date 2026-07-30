@@ -210,11 +210,9 @@ extension ColliderRuntime {
             AOSPBuildSourceProvenance.self,
             from: Data(contentsOf: URL(
                 fileURLWithPath: build.sourceProvenance.string)))
-        guard sourceProvenance.status == "materialized",
-              !sourceProvenance.forwardPatches.isEmpty
-        else {
+        guard sourceProvenance.status == "materialized" else {
             throw RuntimeFailure.invalidOutput(
-                "AOSP source provenance is not a patched materialization")
+                "AOSP source provenance is not materialized")
         }
         let cleanCheck = try await execute(
             CommandSpec(
@@ -747,12 +745,10 @@ extension ColliderRuntime {
                 vendorAPILevel: build.expectedVendorAPILevel,
                 fingerprint: fingerprint,
                 sourceManifestCommit: sourceProvenance.manifestCommit,
-                sourceBaseManifestSHA256:
-                    sourceProvenance.baseResolvedManifestSHA256,
+                sourceSuperprojectCommit:
+                    sourceProvenance.superprojectCommit,
                 sourceManifestSHA256:
                     sourceProvenance.resolvedManifestSHA256,
-                sourceForwardPatches:
-                    sourceProvenance.forwardPatches,
                 productTreeSHA256: productDigest.sha256Hex,
                 signingPurpose: signing.purpose,
                 signingCertificates: signing.certificates,
@@ -1965,25 +1961,11 @@ private struct AOSPSigningIdentity: Codable {
     let certificates: [Certificate]
 }
 
-private struct AOSPForwardPatch: Codable {
-    let path: String
-    let sha256: String
-}
-
-private struct AOSPForwardPatchStack: Codable {
-    let repositoryPath: String
-    let baseCommit: String
-    let patchedCommit: String
-    let patchedTree: String
-    let patches: [AOSPForwardPatch]
-}
-
 private struct AOSPBuildSourceProvenance: Decodable {
     let status: String
     let manifestCommit: String
-    let baseResolvedManifestSHA256: String
+    let superprojectCommit: String
     let resolvedManifestSHA256: String
-    let forwardPatches: [AOSPForwardPatchStack]
 }
 
 private struct AOSPProductStage: Codable {
@@ -2009,9 +1991,8 @@ private struct AOSPImageProvenance: Encodable {
     let vendorAPILevel: UInt32
     let fingerprint: String
     let sourceManifestCommit: String
-    let sourceBaseManifestSHA256: String
+    let sourceSuperprojectCommit: String
     let sourceManifestSHA256: String
-    let sourceForwardPatches: [AOSPForwardPatchStack]
     let productTreeSHA256: String
     let signingPurpose: String
     let signingCertificates: [AOSPSigningIdentity.Certificate]

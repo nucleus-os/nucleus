@@ -447,7 +447,7 @@ public struct AOSPPlatformSource: Hashable, Sendable {
     public let release: String
     public let revision: String
     public let manifestURL: String
-    public let manifestTagObject: String
+    public let manifestRevision: String
     public let manifestCommit: String
     public let defaultManifestDigest: ArtifactDigest
     public let superprojectURL: String
@@ -458,7 +458,7 @@ public struct AOSPPlatformSource: Hashable, Sendable {
         release: String,
         revision: String,
         manifestURL: String,
-        manifestTagObject: String,
+        manifestRevision: String,
         manifestCommit: String,
         defaultManifestDigest: ArtifactDigest,
         superprojectURL: String,
@@ -468,7 +468,7 @@ public struct AOSPPlatformSource: Hashable, Sendable {
         self.release = release
         self.revision = revision
         self.manifestURL = manifestURL
-        self.manifestTagObject = manifestTagObject
+        self.manifestRevision = manifestRevision
         self.manifestCommit = manifestCommit
         self.defaultManifestDigest = defaultManifestDigest
         self.superprojectURL = superprojectURL
@@ -531,34 +531,10 @@ public struct AOSPSourceLockVerification: Hashable, Sendable {
     }
 }
 
-public struct AOSPSourcePatch: Hashable, Sendable {
-    public let path: String
-    public let file: FilePath
-
-    public init(path: String, file: FilePath) {
-        self.path = path
-        self.file = file
-    }
-}
-
-public struct AOSPSourcePatchStack: Hashable, Sendable {
-    public let repositoryPath: String
-    public let patches: [AOSPSourcePatch]
-
-    public init(
-        repositoryPath: String,
-        patches: [AOSPSourcePatch]
-    ) {
-        self.repositoryPath = repositoryPath
-        self.patches = patches
-    }
-}
-
 public struct AOSPSourcePreparation: Hashable, Sendable {
     public let specification: AOSPSourceSpecification
     public let launcher: FilePath
     public let source: FilePath
-    public let patchStacks: [AOSPSourcePatchStack]
     public let syncJobs: UInt32
     public let retryFetches: UInt32
     public let environment: [String: String]
@@ -567,7 +543,6 @@ public struct AOSPSourcePreparation: Hashable, Sendable {
         specification: AOSPSourceSpecification,
         launcher: FilePath,
         source: FilePath,
-        patchStacks: [AOSPSourcePatchStack] = [],
         syncJobs: UInt32,
         retryFetches: UInt32,
         environment: [String: String]
@@ -575,7 +550,6 @@ public struct AOSPSourcePreparation: Hashable, Sendable {
         self.specification = specification
         self.launcher = launcher
         self.source = source
-        self.patchStacks = patchStacks
         self.syncJobs = syncJobs
         self.retryFetches = retryFetches
         self.environment = environment

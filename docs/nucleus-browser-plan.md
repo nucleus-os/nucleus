@@ -242,7 +242,7 @@ not cause CPU readback, software color conversion, an intermediate ARGB video
 copy, or a change of decoder.
 
 For NVIDIA, the supported driver is the pinned
-`maddythewisp/nvidia-vaapi-driver` fork installed privately rather than over a
+`nucleus-os/nvidia-vaapi-driver` fork installed privately rather than over a
 distribution-owned module. Its direct backend exports all NV12/P010 plane
 descriptors from one packed DMA-BUF allocation, with exact per-plane offsets,
 strides, modifiers, and allocation size. Dawn:
@@ -336,7 +336,7 @@ The final implementation is divided by existing Chromium subsystem ownership.
 - `gpu/command_buffer/service/shared_image/dawn_image_representation.*`
 - `third_party/dawn/src/dawn/native/vulkan/SharedTextureMemoryVk.cpp`
 - `third_party/dawn/src/dawn/native/vulkan/PhysicalDeviceVk.cpp`
-- the separately versioned `maddythewisp/nvidia-vaapi-driver` fork
+- the separately versioned `nucleus-os/nvidia-vaapi-driver` fork
 
 ### Device selection and Vulkan setup
 

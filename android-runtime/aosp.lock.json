@@ -1,14 +1,18 @@
 {
-  "platform": {
+  "upstream": {
     "release": "Android 17.0.0 Release 1",
     "revision": "refs/tags/android-17.0.0_r1",
-    "manifestURL": "https://android.googlesource.com/platform/manifest",
-    "manifestTagObject": "7a9e46ba6ed424f922a3457f4964e67e0b966201",
     "manifestCommit": "5bc9a7ce1cd78dd53613bbfd0ebf506e1e4adb0f",
-    "defaultManifestSHA256": "76ef74339da1e0c973d1ec7cb92045e823223a7724d9aa453b4cab4e246122c4",
-    "superprojectURL": "https://android.googlesource.com/platform/superproject",
-    "superprojectRevision": "refs/heads/android-17.0.0_r1",
     "superprojectCommit": "28f0bbddc24d56c8ec5a8df5342ac7a292184039"
+  },
+  "source": {
+    "manifestURL": "ssh://git@github.com/nucleus-os/platform_manifest.git",
+    "manifestRevision": "refs/heads/nucleus-android-17.0.0_r1",
+    "manifestCommit": "549048432a098fea5b3a2a58bea3948ad87def57",
+    "defaultManifestSHA256": "e77fd22da0e3a9576dde69da2f9cc9ec95bae1387d9e6f4761c0adb926c6778e",
+    "superprojectURL": "ssh://git@github.com/nucleus-os/platform_superproject.git",
+    "superprojectRevision": "refs/heads/nucleus-android-17.0.0_r1",
+    "superprojectCommit": "ac9631ab62101ae9e4635b4293246e69285ee477"
   },
   "repo": {
     "launcherURL": "https://storage.googleapis.com/git-repo-downloads/repo",

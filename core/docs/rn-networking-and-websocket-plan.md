@@ -156,7 +156,7 @@ When all phases land, the architecture looks like:
     `/home/maddy/Developer/swift-nio` working copy)
   - `third-party/swift-nio-ssl`
   - `third-party/swift-nio-http2`
-  Each is forked to Codeberg under `maddythewisp` per the submodule
+  Each is forked under `nucleus-os` per the submodule
   policy in `CLAUDE.md`. BoringSSL builds from swift-nio-ssl's
   vendored copy via the standard NIO build path; Skia's BoringSSL stays
   untouched.
@@ -359,7 +359,7 @@ proof.
 - Add submodules under `third-party/`:
   - `third-party/swift-nio` → fork of
     `https://github.com/apple/swift-nio` on
-    `codeberg.org:maddythewisp/swift-nio`, branch `main`, pinned to
+    `github.com:nucleus-os/swift-nio`, branch `main`, pinned to
     the current 2.x release tag on disk at
     `/home/maddy/Developer/swift-nio`.
   - `third-party/swift-nio-ssl` → fork of `apple/swift-nio-ssl`,

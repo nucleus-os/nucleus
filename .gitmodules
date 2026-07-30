@@ -1,21 +1,21 @@
 [submodule "core/third-party/skia"]
 	path = core/third-party/skia
-	url = git@github.com:maddythewisp/skia.git
+	url = git@github.com:nucleus-os/skia.git
 	branch = nucleus-vulkan-render-pass-dependencies
 [submodule "core/third-party/libxkbcommon"]
 	path = core/third-party/libxkbcommon
 	url = https://github.com/xkbcommon/libxkbcommon.git
 [submodule "third-party/swift-system"]
 	path = third-party/swift-system
-	url = git@github.com:maddythewisp/swift-system.git
+	url = git@github.com:nucleus-os/swift-system.git
 	branch = nucleus
 [submodule "third-party/swift-java"]
 	path = third-party/swift-java
-	url = git@github.com:maddythewisp/swift-java.git
+	url = git@github.com:nucleus-os/swift-java.git
 	branch = nucleus-cxx-interop
 [submodule "third-party/swift-java-jni-core"]
 	path = third-party/swift-java-jni-core
-	url = git@github.com:maddythewisp/swift-java-jni-core.git
+	url = git@github.com:nucleus-os/swift-java-jni-core.git
 	branch = nucleus-cxx-interop
 [submodule "react-native/third-party/hermes"]
 	path = react-native/third-party/hermes
@@ -46,7 +46,7 @@
 	url = https://github.com/apple/swift-argument-parser.git
 [submodule "third-party/swift-subprocess"]
 	path = third-party/swift-subprocess
-	url = git@github.com:maddythewisp/swift-subprocess.git
+	url = git@github.com:nucleus-os/swift-subprocess.git
 	branch = nucleus-local-swift-system
 [submodule "third-party/swift-crypto"]
 	path = third-party/swift-crypto
@@ -56,11 +56,11 @@
 	url = https://github.com/apple/swift-asn1.git
 [submodule "third-party/gfxstream"]
 	path = third-party/gfxstream
-	url = git@github.com:maddythewisp/platform_hardware_google_gfxstream.git
+	url = git@github.com:nucleus-os/platform_hardware_google_gfxstream.git
 	branch = nucleus-android-17
 [submodule "third-party/mesa"]
 	path = third-party/mesa
-	url = git@github.com:maddythewisp/platform_external_mesa3d.git
+	url = git@github.com:nucleus-os/platform_external_mesa3d.git
 	branch = nucleus-android-17
 [submodule "third-party/swift-syntax"]
 	path = third-party/swift-syntax
