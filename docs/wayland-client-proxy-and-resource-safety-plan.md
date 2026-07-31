@@ -34,7 +34,9 @@ Macros are not part of this architecture. XML-derived APIs are emitted as visibl
 cacheable Swift source through the existing SwiftSyntax generator. Non-XML native
 mechanics use ordinary handwritten types with narrow unsafe implementations.
 
-Status: complete — Phases 1–11 complete
+Status: complete
+
+Phases 1 through 11 are complete.
 
 ## Progress
 

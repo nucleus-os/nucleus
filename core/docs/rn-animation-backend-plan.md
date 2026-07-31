@@ -23,6 +23,18 @@ Across every phase boundary the following must hold:
    filtering on `ShadowTreeCommitSource`, not by removing the animation
    hook.
 
+Status: active
+
+## Current Disposition
+
+No first-party shared-animation choreographer implementation is present in the
+current React Native host. The Zig compositor, legacy runtime-host phases, WSI,
+and standalone-target assumptions in this document are historical. Before
+implementation, rebase the plan onto `react-native/`, the current Fabric host,
+the public desktop client presentation clock, and Android's native frame clock.
+Retain the one-choreographer-per-scheduler, target-vsync timestamp, idle pause,
+and single commit-hook ownership invariants.
+
 ## Position
 
 This plan is the authoritative reference for nucleus' implementation of

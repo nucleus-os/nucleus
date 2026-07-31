@@ -26,6 +26,19 @@ Across every phase boundary:
    Compositor, and other conformant compositors through standard Wayland protocols and explicit
    shell IPC.
 
+Status: active
+
+## Current Disposition
+
+The out-of-process Swift shell, ShellKit service boundary, public desktop
+client framework, native presentation loop, and several platform services now
+exist. This document does not record any phase as complete, and that substrate
+does not prove Noctalia feature parity. Before transferring another product
+responsibility, rebuild the subsystem ownership ledger against the current
+shell, `window-client`, NucleusUI, browser, and session-service packages; mark
+each responsibility as Nucleus-owned, still Noctalia-owned, or intentionally
+removed. Execute only the remaining vertical slices from that ledger.
+
 This is a native Swift port of the product, not a line-by-line source translation. Noctalia's
 retained UI architecture, controls, behavior, metrics, and visual output inform the design of
 reusable NucleusUI APIs. Its C++ renderer implementation and application-specific ownership do not

@@ -12,6 +12,8 @@ CEF and Nucleus Browser build from one source provenance and separate GN output
 directories. The CEF allocator contract and standalone-browser allocator
 contract remain distinct. There is one source path and no patch fallback.
 
+Status: active
+
 ## Selected Source
 
 `chromium/source.lock.json` selects the complete source graph:

@@ -20,6 +20,8 @@ read-only. Build roots, compiler caches, downloads, staging, and artifacts use
 explicit writable mounts outside the source trees. Container execution is a
 build boundary, not a source-management boundary.
 
+Status: active
+
 ## Phase 1: Capture the Qualified Trees — Complete
 
 Capture the exact upstream commits and final patched trees for Swift, Swift

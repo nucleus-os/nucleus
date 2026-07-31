@@ -4,7 +4,20 @@
 
 This is RN-library / host-embedding work (iOS patterns), not compositor work: the Android host is an embeddable view that renders the Swift Nucleus scene driven by React Native, not a Wayland compositor. It shares the render stack (Nucleus/Vulkan/Skia) but none of the Wayland/DRM/seat/compositor surface.
 
-## Current state
+Status: active
+
+## Current Disposition
+
+Phases 1 through 4 record completed Android render-stack and cross-compilation
+work. Their `platform-android` paths, root-package assumptions,
+`collider android verify` command, software-smoke baseline, and handwritten-JNI
+references are historical and must not be recreated. Before implementing
+Phases 5 or 6, rewrite them against the current `core/` Android SDK and
+React Native package graph, the installed SwiftAndroid toolchain, and Collider's
+typed Android verification tasks. Preserve the invariant of one shared
+Vulkan/Graphite renderer and an Android-only presentation backend.
+
+## Historical Baseline
 
 `platform-android/swift/*` (the Swift Android host) owns the lifecycle state machine, surface/frame/input tracking, and the JNI entry points behind the `NucleusAndroidC` façade. Its renderer (`AndroidRenderer.swift`) is a **software smoke**: it locks the `ANativeWindow`, writes a deterministic CPU pattern, and posts. The production Swift render stack (`NucleusRenderer`, `NucleusRenderModel`, `NucleusLayers`, `Vulkan`, `NucleusSkiaGraphite`) is **not** cross-compiled for Android and is not linked into `libnucleus-android.so`. The NDK ships `libvulkan.so` + `vulkan/vulkan_core.h`, so Vulkan is available on device.
 

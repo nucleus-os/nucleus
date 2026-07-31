@@ -9,6 +9,19 @@ task graph executes concurrently up to the limits its own lock model expresses. 
 first-party Swift module compiles once per configuration per build root, and the number
 of build roots is the minimum the component architecture requires.
 
+Status: active
+
+## Current Disposition
+
+The current-state audit predates framework unification, the single-root
+Collider package, explicit runner/executor/artifact coordinates, and
+backend-neutral OCI execution. Its package counts, source paths, line numbers,
+and operation-identity description are not implementation inputs. Re-audit the
+current SwiftPM graph before executing Phases 1 through 3; do not recreate a
+package merge that a later framework boundary made unnecessary. The undeclared
+input audit, recoverable output store, and lock-aware capacity scheduler in
+Phases 4 through 6 remain active architectural work after that rebase.
+
 ## Current State
 
 The task engine is a content-addressed action graph. `TaskDeclaration`

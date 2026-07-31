@@ -65,6 +65,8 @@ This is the Apple model at the ownership boundary: frameworks share implementati
 applications own local UI and backing-content state, and a render server owns the global
 composition tree and display.
 
+Status: complete
+
 ## Implementation progress
 
 Updated 2026-07-28. A phase becomes complete only after every listed landing gate passes.

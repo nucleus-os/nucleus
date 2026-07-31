@@ -37,6 +37,18 @@ Across every phase boundary the following must hold:
    aligns the visible edge; aligning the raw frame would round the visible
    edge off a pixel whenever a shadow is present.
 
+Status: active
+
+## Current Disposition
+
+The per-window backing-space and explicit-alignment invariants remain valid.
+The Zig compositor, overlay, `swift/Sources`, and render-server paths in the
+baseline predate NucleusUI hardening, framework unification, and the
+out-of-process shell. Re-audit current geometry types, window scale ownership,
+text drawing, and real product call sites before implementing the phases. Pixel
+alignment remains an authoring/layout contract; the compositor must not add an
+implicit snapping pass.
+
 ## Position
 
 This plan is the authoritative reference for nucleus' pixel-alignment

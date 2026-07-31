@@ -13,6 +13,17 @@ SkParagraph remains the layout authority and shaping engine.
 Rasterization and painting of text runs moves from `paragraph->paint()`
 into a Nucleus-owned painter that issues atlas-backed quads.
 
+Status: active
+
+## Current Disposition
+
+The visual requirement remains open, but the Zig backing store, old
+render-server bridge paths, and State 2 baseline are not current implementation
+inputs. Re-audit the present Nucleus text backend, Graphite bridge, glyph cache,
+color pipeline, and renderer ownership before retaining or replacing the custom
+atlas design. Do not introduce a second text layout authority or bypass the
+current SkParagraph-owned shaping contract.
+
 ## Background
 
 macOS CoreGraphics thickens glyph outlines for light-on-dark text. The

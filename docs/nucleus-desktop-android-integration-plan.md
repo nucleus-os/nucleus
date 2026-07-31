@@ -91,7 +91,14 @@ The installable OS is a signed `bootc` image based on Fedora, with transactional
 and rollback. The supported hardware matrix is qualified explicitly; Linux having a
 driver is not itself a product-support claim.
 
-Status: active
+Status: superseded by android-application-integration-plan.md
+
+This document preserves the completed cross-vendor graphics and initial Android
+bring-up record. Its `framework-boot` command, physical-HWC desktop presentation,
+and compositor-visible per-task architecture are retired. The authoritative
+runtime, presentation, input, resize, application-discovery, and lifecycle
+sequence is `android-application-integration-plan.md`; the label-neutral
+security qualification sequence is `android-container-security-boundary-plan.md`.
 
 ## Positioning
 

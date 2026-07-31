@@ -5,6 +5,20 @@
 > capture design stands, but read specific paths and build commands as historical —
 > see `docs/README.md` for the Zig→Swift mapping.
 
+Status: active
+
+## Current Disposition
+
+The production tree already contains typed screencopy protocol support, a
+Wayland screencopy client, and focused capture documentation in
+`compositor/compositor-core/docs/screen-capture.md`. The Zig engine, `.zig`
+paths, `zig build` commands, and claim that no screencopy implementation exists
+are historical. Before additional capture work lands, replace the phased
+implementation section with Swift/C++ owners in the current compositor,
+window-client, portal, PipeWire, and media packages. Retain the shared capture
+engine, inactive-zero-cost, explicit-synchronization, cursor-policy, portal,
+recording, and audio requirements.
+
 ## Goals
 
 Two goals, supported by one engine:

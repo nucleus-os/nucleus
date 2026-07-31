@@ -1,5 +1,12 @@
 # Nucleus Toolchain and SDK CI/CD
 
+Status: superseded by github-actions-macos-builder-and-self-hosted-runner-plan.md
+
+This document is retained as historical release-contract analysis. Its Buildkite
+queue topology is not an implementation target. The authoritative builder,
+qualification, publication, and remote-development sequence is
+`docs/github-actions-macos-builder-and-self-hosted-runner-plan.md`.
+
 ## Invariant
 
 Every published Nucleus Swift toolchain and Android Swift SDK is built from a

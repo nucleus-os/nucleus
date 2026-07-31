@@ -23,6 +23,8 @@ The migration is a hard cutover. Patch application, patch reconciliation,
 forward-patch provenance, and compatibility with the old source layout are
 deleted when fork-backed materialization lands.
 
+Status: complete
+
 ## Execution State
 
 Organization ownership, transferred-fork verification, AOSP commit

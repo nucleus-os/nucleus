@@ -6,6 +6,18 @@ Make Nucleus a drop-in replacement for `sway` / `Hyprland` / `KWin` / `Mutter` f
 
 This plan covers the **non-capture** protocol surface. Capture protocols (`ext-image-copy-capture`, `wlr-screencopy`, `wlr-export-dmabuf`, foreign-toplevel-list, foreign-toplevel-management, xdg-desktop-portal ScreenCast) are handled by `docs/screen_recording_plan.md` — they share a `SCStreamEngine` that's a prerequisite, so they belong with the capture subsystem.
 
+Status: active
+
+## Current Disposition
+
+This file is a requirements inventory, not an authoritative statement of the
+current router. Typed code generation, client/resource safety, main-actor
+isolation, framework unification, and compositor hardening changed the
+implemented protocol set after several entries were written. Before starting
+the next batch, regenerate the implemented/pending table from the selected
+Wayland XML set and registered globals, then retain only protocols with a
+current product consumer and complete behavioral contract.
+
 ## Implementation status
 
 ### Already in tree

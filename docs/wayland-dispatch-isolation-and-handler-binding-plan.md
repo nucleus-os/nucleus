@@ -8,6 +8,8 @@ cast, no isolation laundering, and no global-table lookup. Resource identity is 
 `wl_resource_instance_of` against the interface's own request vtable, so the runtime holds no
 side table keyed by resource address.
 
+Status: active
+
 ## Why
 
 The generated dispatch layer is 192 server interfaces (28,082 lines) and 192 client interfaces

@@ -20,6 +20,15 @@ Across every phase boundary the following must hold:
    lowering switches, no compatibility shims for a replaced API.
 6. **`Float` at the paint-command boundary, `Double` on the geometry plane.**
 
+Status: active
+
+## Current Disposition
+
+Phases 0 through 9 are complete. Phase 10 remains the only active work in this
+document. Phases 11 and 12 are superseded by `ui-authoring-model.md` and must
+not be implemented from this plan. The completed pipeline and module-boundary
+sections remain architectural reference material.
+
 ## Context
 
 Nucleus's product thesis is an AppKit-like Swift API for native desktop UI. `NucleusUI`
@@ -161,10 +170,10 @@ Phase 6 closed the last of the parallel paint path, and Phase 7 established the 
 `NucleusUI` is the product front door with no SPI, `NucleusUIEmbedder` is the platform-integrator
 API, and out-of-package authoring tests exercise the supported public surface.
 
-The remaining phases are additive rather than structural: input (8), layout (9), then the
-text/scroll/editing stack (10–12). Each lands with a real native client, per the principle above.
-The port now grows inside `NucleusShellProduct`, so later phases are driven by what it actually
-needs rather than by anticipation.
+The remaining work here is the unfinished Phase 10 text-field and input-method
+foundation. Later scrolling, collection, and multiline-editing work follows
+`ui-authoring-model.md`, driven by real native product use rather than
+anticipation.
 
 ## Phase 0 — Render-SDK link contract — complete
 

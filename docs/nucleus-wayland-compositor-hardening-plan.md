@@ -17,6 +17,18 @@ This plan replaces incomplete behavior directly. It does not preserve partially 
 
 Status: active
 
+## Current Disposition
+
+Framework unification has already landed process-local presenters, atomic
+standard surface trees, synchronized subsurface state, output reconciliation,
+commit-correlated presentation, and an out-of-process shell. Those completed
+contracts overlap Phases 1 through 9 here and invalidate several audit findings
+and file names. Before further implementation, re-run the audit against the
+current render-server and compositor packages, delete satisfied findings, and
+renumber the remaining phases. Preserve the truthful-advertisement, global KMS
+allocation, pause/resume, demand-driven redraw, protocol-validation, DMA-BUF,
+and hostile-client exit gates that still fail current behavioral tests.
+
 ## Audit basis
 
 The findings came from comparing the Nucleus compositor at `4b4fe13f1aeeb081a012d2dbdc6ec29df2fdaa91` with the local niri and Smithay checkouts, then tracing the relevant Nucleus paths from Wayland request dispatch through scene authoring, renderer submission, DRM completion, and session lifecycle.

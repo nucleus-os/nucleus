@@ -24,6 +24,8 @@ Same-build `SOCK_SEQPACKET` peers use exact packet size, operation, descriptor,
 credential, identity, and state validation without magic bytes or speculative
 protocol versions.
 
+Status: active
+
 The Android runtime boots in the background only when the session explicitly
 requests the Android capability. `collider run --android` is the development
 entry point; plain `collider run` launches the same compositor and shell

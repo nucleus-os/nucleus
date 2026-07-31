@@ -1,5 +1,13 @@
 # Android Runtime Production Security Plan
 
+Status: superseded by android-container-security-boundary-plan.md
+
+This document is retained for its threat model and broker/build-boundary
+analysis. Its Android-SELinux-enforcing runtime is not the selected product
+architecture. `android-container-security-boundary-plan.md` owns the
+label-neutral runtime security contract, and
+`android-application-integration-plan.md` owns desktop integration.
+
 ## Security invariant
 
 Nucleus runs Android without a virtual machine. A malicious Android app or

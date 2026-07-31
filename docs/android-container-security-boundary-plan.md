@@ -26,6 +26,8 @@ used SELinux receive a real non-SELinux authorization implementation.
 `ro.nucleus.container` is immutable product identity, not a feature flag. Stock
 Android behavior remains unchanged outside the Nucleus product.
 
+Status: active
+
 ## Execution and Validation Order
 
 Phases 1 through 9 land in strict order. Each phase completes its source

@@ -12,6 +12,17 @@ The persistent interactive TUI is not implemented by this plan. The plan does im
 
 Status: active
 
+## Current Progress
+
+Collider already owns typed task planning, durable run manifests and logs,
+structured failures, cancellation-aware child-process teardown, cache
+diagnostics, and machine-readable command output. Those are prerequisites, not
+phase completion evidence for this plan. The external observation/control
+protocol, incremental readers, branch-scoped task cancellation, anchored
+console renderer, and headless dashboard contract have not passed their phase
+gates. No phase in this document is currently marked complete, and
+`collider-ratatui-tui-plan.md` remains blocked on Phase 9.
+
 ## Final User Contract
 
 ### Output behavior
