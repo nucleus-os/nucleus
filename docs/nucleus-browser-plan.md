@@ -40,11 +40,11 @@ Ship a functional `nucleus-browser` executable that:
 - retains Chromium's process sandbox and site isolation;
 - tracks resize, fractional scale, presentation timing, output changes, and
   buffer release without CPU/GPU queue-idle waits;
-- builds from the same pinned Chromium source tree and generic patch foundation
-  used by Noctalia's CEF integration, while retaining the standalone browser's
-  own allocator and security configuration.
+- builds from the same locked Chromium-family fork commits used by Noctalia's
+  CEF integration, while retaining the standalone browser's own allocator and
+  security configuration.
 
-Nucleus Browser is also the on-screen reference client for the patched
+Nucleus Browser is also the on-screen reference client for the downstream
 Graphite/Dawn/Vulkan Chromium stack. It does not replace Noctalia's embedded CEF
 panel and does not share CEF's offscreen buffer protocol.
 
@@ -57,10 +57,10 @@ resources, terminology, and browser UI.
 
 ## Why the browser needs a new presentation path
 
-The original CEF patches were sufficient only for CEF's offscreen rendering path:
+The original CEF implementation covered only CEF's offscreen rendering path:
 Graphite/Dawn/Vulkan renders into an exportable DMA-BUF ring, CEF publishes
-those buffers, and Noctalia imports them. The browser patches described below
-add the distinct on-screen path required by a normal Chromium window.
+those buffers, and Noctalia imports them. The browser implementation adds the
+distinct on-screen path required by a normal Chromium window.
 
 Upstream Chromium's Linux `InitializeForDawn()` path supports offscreen output
 and an X11 fallback. The Wayland-only case reaches `NOTREACHED()`. The adjacent
@@ -361,32 +361,31 @@ revision, but subsystem ownership and API direction do not change.
 
 ## Current implementation status
 
-As of 2026-07-22, all planned source, patch-stack, product, packaging, and
-source-level test coding is persisted in the workspace:
+As of 2026-07-30, the source, product, packaging, and source-level test work is
+owned by exact fork commits and the workspace orchestrator:
 
 - `collider browser doctor|bootstrap|build|test|install` is the single
   public workflow; internal product scripts expose no alternate build modes;
-- both products reuse one content-addressed source generation containing the
-  exact CEF, Chromium, depot_tools, patch, generated-API, and PGO inputs;
+- both products reuse one content-addressed source generation containing exact
+  Chromium, CEF, ANGLE, Skia, V8, Dawn, depot_tools, generated-API, and PGO
+  inputs;
 - the complete build is sequential and caps local Siso work at 16 jobs;
 - every run has a timestamped run directory, per-stage logs, a manifest, an
   atomic `latest` link, process-group cleanup, and exclusive source/output/
   publication locks;
 - CEF and the standalone browser retain separate GN outputs because their
   allocator and process-boundary contracts are intentionally different;
-- Chromium-wide patches live in `chromium/patches/common/`, nested Dawn work in
-  `chromium/patches/dawn/`, CEF-only behavior in `cef/patches/`, and the
-  browser presenter work in `chromium/patches/browser/`;
-- every output is generated from the same cumulative common, CEF, browser, and
-  Dawn source patch stack; subsystem ownership limits which targets consume an
-  API without creating divergent source revisions;
+- downstream source changes live as ordinary commits in genuine
+  `nucleus-os` Chromium, CEF, ANGLE, Skia, V8, and Dawn forks;
+- `chromium/source.lock.json` selects exact commits and trees, while
+  `source-provenance.json` binds the resolved clean source graph;
 - the browser GN output sets `enable_cef=false`, and a CEF-owned guard excludes
-  the upstream OSR software proxy from that output without removing CEF patches
-  from the shared revision;
+  the upstream OSR software proxy from that output without creating a divergent
+  shared source revision;
 - the browser layer contains only the backend-neutral Wayland presenter, Ozone
   Viz adapter, explicit-sync requirement, lifecycle failure handling, and
   on-screen `InitializeForDawn()` path;
-- shared Chromium and Dawn patches contain the Graphite/Dawn Ozone SharedImage
+- the Chromium and Dawn commits contain the Graphite/Dawn Ozone SharedImage
   allocation and DRM-modifier path together with the working Vulkan VA-API
   path, packed NV12/P010 import, plane-layout validation, and
   dedicated-allocation handling already accepted in Noctalia's CEF runtime;
@@ -433,12 +432,9 @@ This remains a hard compositor prerequisite, not a reason to add an
 implicit-sync or CPU-waiting fallback to Chromium browser. The browser must
 continue to fail with a named diagnostic when the protocol is absent.
 
-This is coding completion, not runtime acceptance. Earlier presenter slices had
-focused compile/test evidence, but the final cumulative patch revision has
-deliberately not been regenerated or built during this completion pass. One
-final optimized build, focused test run, install, validation run, and live
-acceptance pass remain; those are verification of the code below, not
-additional implementation phases.
+Fork-backed cold source materialization and repeat-bootstrap verification pass.
+An optimized build, focused product tests, installation, and live acceptance
+remain verification of the implementation below, not additional design phases.
 
 ## Sequential implementation
 
@@ -446,9 +442,11 @@ additional implementation phases.
 
 Put the public Chromium workflow in `collider`, retain `chromium/` as its
 internal orchestrator, and retain `cef/` as the CEF-specific build/package
-stage. Exact-commit `automate-git.py` provisions a pristine, content-addressed
-source generation. The orchestrator owns layered patch application and two
-product output directories.
+stage. `chromium/source.lock.json` provisions a clean, content-addressed source
+generation from exact `nucleus-os` Chromium, CEF, ANGLE, Skia, V8, and Dawn
+commits.
+The orchestrator owns one locked source graph and two product output
+directories.
 
 The two output directories are necessary rather than configurable build
 profiles. Embedded CEF must retain the allocator settings required at the
@@ -482,14 +480,14 @@ native Vulkan is mandatory. Expensive DCHECKs stay out of release artifacts,
 while validation-layer support remains buildable for explicit acceptance runs
 and is disabled during ordinary runtime.
 
-One build entry point applies the complete cumulative source stack, then
+One build entry point materializes the complete locked source graph, then
 generates and builds both fixed outputs. It does not
 offer product profiles or a matrix of feature switches. The outputs share the
 source generation, depot tools, downloaded dependencies, and PGO profiles, but
 not GN object files whose compile-time
 contracts differ. CEF packaging and Chromium browser packaging consume their
 respective outputs. The browser output sets `enable_cef=false`: both products
-still compile from the same cumulatively patched source revision, while
+still compile from the same locked source revision, while
 CEF-only behavior and OSR proxy sources remain absent from the standalone
 browser binary.
 
@@ -498,7 +496,7 @@ Chromium and CEF share its pinned runtime contract and deployment convention,
 while the driver remains independently buildable, installable, and
 rollbackable under a revisioned private prefix.
 
-Patch ownership is reorganized by subsystem:
+Source ownership is divided by subsystem:
 
 1. generic Viz/SharedImage/Graphite/Dawn changes;
 2. backend-neutral Ozone Wayland presentation;
@@ -506,9 +504,9 @@ Patch ownership is reorganized by subsystem:
 4. CEF OSR transport and scheduling;
 5. independent CEF behavior fixes.
 
-Two patches do not modify the same source region. CEF-named switches and
-messages are removed from generic GPU code. CEF's offscreen API remains in the
-CEF patch, while the buffer presenter remains entirely generic.
+Each changed path belongs to exactly one fork. CEF-named switches and messages
+remain out of generic GPU code. CEF owns its offscreen API, while Chromium owns
+the generic buffer presenter.
 
 Phase 0 lands with:
 
@@ -939,9 +937,9 @@ installation paths, profile, and cache use Nucleus Browser names. Chromium's
 generated application icon is installed unchanged, and Chromium's internal
 strings, resources, pages, and terminology remain upstream.
 
-## Patch-stack result
+## Source ownership result
 
-The final patch stack has three architectural layers:
+The final commit-backed source has three architectural layers:
 
 1. **Chromium-wide Graphite/Dawn/Vulkan and SharedImage support.** This contains
    DMA-BUF formats/modifiers, external memory, explicit layout/ownership state,
@@ -953,11 +951,10 @@ The final patch stack has three architectural layers:
    CEF callbacks, external BeginFrame scheduling, device scale, and OSR input
    behavior.
 
-Reusable common, browser, and Dawn patches contain no “CEF” or “Noctalia”
-terminology. CEF-owned guards in Chromium files remain in the CEF layer; that
-layer does not own generic Ozone presentation code. With `enable_cef=false`,
-the browser does not compile CEF OSR classes. Patch files are consolidated so
-neighboring edits in a source file belong to one patch.
+Reusable Chromium, ANGLE, V8, and Dawn changes contain no “Noctalia”
+terminology. CEF-specific behavior remains separated from generic Ozone
+presentation code. With `enable_cef=false`, the browser does not compile CEF
+OSR classes.
 
 ## Explicit non-goals
 

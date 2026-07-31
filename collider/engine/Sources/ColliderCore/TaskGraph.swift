@@ -665,13 +665,60 @@ public struct AOSPProductBuild: Hashable, Sendable {
     }
 }
 
-public struct ChromiumPatchStack: Hashable, Sendable {
-    public let repository: FilePath
-    public let directory: FilePath
+public struct ChromiumSourceRepository: Codable, Hashable, Sendable {
+    public let name: String
+    public let checkoutPath: String
+    public let remote: String
+    public let upstreamRemote: String
+    public let upstreamCommit: String
+    public let commit: String
+    public let tree: String
 
-    public init(repository: FilePath, directory: FilePath) {
-        self.repository = repository
-        self.directory = directory
+    public init(
+        name: String,
+        checkoutPath: String,
+        remote: String,
+        upstreamRemote: String,
+        upstreamCommit: String,
+        commit: String,
+        tree: String
+    ) {
+        self.name = name
+        self.checkoutPath = checkoutPath
+        self.remote = remote
+        self.upstreamRemote = upstreamRemote
+        self.upstreamCommit = upstreamCommit
+        self.commit = commit
+        self.tree = tree
+    }
+}
+
+public struct ChromiumDepotToolsLock: Codable, Hashable, Sendable {
+    public let remote: String
+    public let commit: String
+
+    public init(remote: String, commit: String) {
+        self.remote = remote
+        self.commit = commit
+    }
+}
+
+public struct ChromiumSourceLock: Codable, Hashable, Sendable {
+    public let cefBranch: String
+    public let chromiumVersion: String
+    public let repositories: [ChromiumSourceRepository]
+    public let depotTools: ChromiumDepotToolsLock
+
+    public init(
+        cefBranch: String,
+        chromiumVersion: String,
+        repositories: [ChromiumSourceRepository],
+        depotTools: ChromiumDepotToolsLock
+    ) {
+        self.cefBranch = cefBranch
+        self.chromiumVersion = chromiumVersion
+        self.repositories = repositories
+        self.depotTools = depotTools
     }
 }
 
@@ -695,47 +742,32 @@ public struct ChromiumDepotToolsPreparation: Hashable, Sendable {
 }
 
 public struct ChromiumSourcePreparation: Hashable, Sendable {
-    public let workspace: FilePath
     public let sourceID: String
     public let sourceRoot: FilePath
     public let sourceGenerations: FilePath
     public let current: FilePath
     public let depotTools: FilePath
-    public let automateScript: FilePath
-    public let cefBranch: String
-    public let cefCheckout: String
-    public let chromiumCheckout: String
-    public let depotToolsRevision: String
-    public let patchStacks: [ChromiumPatchStack]
+    public let sourceLockFile: FilePath
+    public let sourceLock: ChromiumSourceLock
     public let environment: [String: String]
 
     public init(
-        workspace: FilePath,
         sourceID: String,
         sourceRoot: FilePath,
         sourceGenerations: FilePath,
         current: FilePath,
         depotTools: FilePath,
-        automateScript: FilePath,
-        cefBranch: String,
-        cefCheckout: String,
-        chromiumCheckout: String,
-        depotToolsRevision: String,
-        patchStacks: [ChromiumPatchStack],
+        sourceLockFile: FilePath,
+        sourceLock: ChromiumSourceLock,
         environment: [String: String]
     ) {
-        self.workspace = workspace
         self.sourceID = sourceID
         self.sourceRoot = sourceRoot
         self.sourceGenerations = sourceGenerations
         self.current = current
         self.depotTools = depotTools
-        self.automateScript = automateScript
-        self.cefBranch = cefBranch
-        self.cefCheckout = cefCheckout
-        self.chromiumCheckout = chromiumCheckout
-        self.depotToolsRevision = depotToolsRevision
-        self.patchStacks = patchStacks
+        self.sourceLockFile = sourceLockFile
+        self.sourceLock = sourceLock
         self.environment = environment
     }
 }
@@ -802,33 +834,27 @@ public struct BrowserArtifactAssembly: Hashable, Sendable {
 }
 
 public struct CEFArtifactAssembly: Hashable, Sendable {
-    public let sourceRoot: FilePath
     public let chromiumSource: FilePath
     public let buildOutput: FilePath
     public let depotTools: FilePath
     public let distributionRoot: FilePath
-    public let cefBranch: String
     public let cefCheckout: String
     public let chromiumVersion: String
     public let environment: [String: String]
 
     public init(
-        sourceRoot: FilePath,
         chromiumSource: FilePath,
         buildOutput: FilePath,
         depotTools: FilePath,
         distributionRoot: FilePath,
-        cefBranch: String,
         cefCheckout: String,
         chromiumVersion: String,
         environment: [String: String]
     ) {
-        self.sourceRoot = sourceRoot
         self.chromiumSource = chromiumSource
         self.buildOutput = buildOutput
         self.depotTools = depotTools
         self.distributionRoot = distributionRoot
-        self.cefBranch = cefBranch
         self.cefCheckout = cefCheckout
         self.chromiumVersion = chromiumVersion
         self.environment = environment

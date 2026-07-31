@@ -176,9 +176,7 @@ struct WorkspaceDoctor {
             scope: "browser")
             + paths(
                 [
-                    "chromium/Package.swift", "cef/apt-deps.txt",
-                    "chromium/patches/common", "chromium/patches/browser",
-                    "chromium/patches/dawn", "cef/patches",
+                    "cef/apt-deps.txt", "chromium/source.lock.json",
                 ],
                 under: context.root,
                 scope: "browser")

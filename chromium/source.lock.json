@@ -1,0 +1,64 @@
+{
+  "cefBranch": "7922",
+  "chromiumVersion": "151.0.7922.19",
+  "repositories": [
+    {
+      "checkoutPath": "chromium/src",
+      "commit": "3bdd6908edfb2cd047ba1d6fe61ea6217a4bc9e7",
+      "name": "chromium",
+      "remote": "https://github.com/nucleus-os/chromium.git",
+      "tree": "95ad3bdbb0645db77287053cb4b372044512abcb",
+      "upstreamCommit": "8f914546f6536ee67a34edb3607f946616f55994",
+      "upstreamRemote": "https://chromium.googlesource.com/chromium/src.git"
+    },
+    {
+      "checkoutPath": "chromium/src/cef",
+      "commit": "fed714e8a7c0cf6168720d489cbff4af0e4884a9",
+      "name": "cef",
+      "remote": "https://github.com/nucleus-os/cef.git",
+      "tree": "c7d2bba57546e529a9725016a652ee002077ae29",
+      "upstreamCommit": "6c664b86a4ef3be5c95b1290068f5e5d52b72db3",
+      "upstreamRemote": "https://github.com/chromiumembedded/cef.git"
+    },
+    {
+      "checkoutPath": "chromium/src/third_party/angle",
+      "commit": "48910f210ec32f22ec21e48936afd4a2c547514a",
+      "name": "angle",
+      "remote": "https://github.com/nucleus-os/angle.git",
+      "tree": "3a46f5ef58e547f3a35349a35043c24a0a78c804",
+      "upstreamCommit": "6dab7c7e742b528fd52233d3cc926e61b1e7d70d",
+      "upstreamRemote": "https://chromium.googlesource.com/angle/angle.git"
+    },
+    {
+      "checkoutPath": "chromium/src/third_party/skia",
+      "commit": "fdc1f06fc4bf1721fbb8b36891c192a73be6c2e1",
+      "name": "skia",
+      "remote": "https://github.com/nucleus-os/skia.git",
+      "tree": "231be80a1506ba228e7492af26c9202f5d1faeb1",
+      "upstreamCommit": "0208108c7aed5f4e0faa525cbba52c238005a1ef",
+      "upstreamRemote": "https://skia.googlesource.com/skia.git"
+    },
+    {
+      "checkoutPath": "chromium/src/v8",
+      "commit": "a5423b52e73a9d651ec9aeefa1cad55c9213e1af",
+      "name": "v8",
+      "remote": "https://github.com/nucleus-os/v8.git",
+      "tree": "e1ce86ae1bcc32893dfaef1d649c96aa6e0315e0",
+      "upstreamCommit": "61ac84bde33f6df3e53df05742de164a26a1ae66",
+      "upstreamRemote": "https://chromium.googlesource.com/v8/v8.git"
+    },
+    {
+      "checkoutPath": "chromium/src/third_party/dawn",
+      "commit": "46e228a52427554281e0eda17230a913babca4cb",
+      "name": "dawn",
+      "remote": "https://github.com/nucleus-os/dawn.git",
+      "tree": "ea5b6983bdb89e9a9720156446310a78d47a6ee2",
+      "upstreamCommit": "583f3600453cc982a3dac39308cac8939875d7af",
+      "upstreamRemote": "https://dawn.googlesource.com/dawn.git"
+    }
+  ],
+  "depotTools": {
+    "commit": "35892a9e24190cc5f3a511d3954319c93445926c",
+    "remote": "https://chromium.googlesource.com/chromium/tools/depot_tools.git"
+  }
+}

@@ -12,7 +12,11 @@ extension ColliderRuntime {
             encoding: .utf8)
         let packages = contents.split(separator: "\n").compactMap {
             raw -> String? in
-            let value = raw.split(separator: "#", maxSplits: 1).first?
+            let value = raw.split(
+                separator: "#",
+                maxSplits: 1,
+                omittingEmptySubsequences: false
+            ).first?
                 .trimmingCharacters(in: .whitespaces)
             guard let value, !value.isEmpty else { return nil }
             return value

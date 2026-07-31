@@ -22,22 +22,6 @@ public struct ChromiumRecipeLayout: Hashable, Sendable {
 }
 
 public enum ChromiumColliderRecipe {
-    public static let cefBranch = "7922"
-    public static let cefCheckout =
-        "6c664b86a4ef3be5c95b1290068f5e5d52b72db3"
-    public static let chromiumVersion = "151.0.7922.19"
-    public static let chromiumCheckout =
-        "8f914546f6536ee67a34edb3607f946616f55994"
-    public static let depotToolsRevision =
-        "35892a9e24190cc5f3a511d3954319c93445926c"
-
-    public static let patchDirectories = [
-        "chromium/patches/common",
-        "cef/patches",
-        "chromium/patches/browser",
-        "chromium/patches/dawn",
-    ]
-
     public static func tasks(
         workspaceRoot: FilePath,
         environment: [String: String],
@@ -45,6 +29,31 @@ public enum ChromiumColliderRecipe {
     ) throws -> [TaskDeclaration] {
         let chromium = workspaceRoot.appending("chromium")
         let cef = workspaceRoot.appending("cef")
+        let sourceLockFile = chromium.appending("source.lock.json")
+        let sourceLock = try JSONDecoder().decode(
+            ChromiumSourceLock.self,
+            from: Data(contentsOf: URL(
+                fileURLWithPath: sourceLockFile.string)))
+        try validateSourceLock(sourceLock)
+        var repositories: [String: ChromiumSourceRepository] = [:]
+        for repository in sourceLock.repositories {
+            guard repositories.updateValue(
+                repository,
+                forKey: repository.name
+            ) == nil else {
+                throw ChromiumRecipeFailure.invalidSourceLock
+            }
+        }
+        guard let chromiumRepository = repositories["chromium"],
+              let cefRepository = repositories["cef"],
+              repositories["angle"] != nil,
+              repositories["skia"] != nil,
+              repositories["v8"] != nil,
+              repositories["dawn"] != nil,
+              repositories.count == 6
+        else {
+            throw ChromiumRecipeFailure.invalidSourceLock
+        }
         let cache = layout.cacheRoot
         let sources = cache.appending("source-generations")
         let source = sources.appending(layout.sourceID)
@@ -54,23 +63,13 @@ public enum ChromiumColliderRecipe {
         let cefDistribution = cache.appending("dist")
         let browserDistribution = cache.appending("browser-dist")
         let depotTools = cache.appending("depot_tools")
-        let automateScript = cache.appending(
-            "downloads/automate-git-\(cefCheckout).py")
-        guard
-            let automateDigest = ArtifactDigest(
-                sha256Hex:
-                    "fe0c880fd2a91ac3ab4c82301f596295"
-                    + "cecc1901e503507e36300a5b58578dcd")
-        else {
-            preconditionFailure("invalid pinned CEF automation digest")
-        }
         let childEnvironment = environment.merging([
             "NUCLEUS_CHROMIUM_ORCHESTRATED": "1",
-            "NUCLEUS_CEF_BRANCH": cefBranch,
-            "NUCLEUS_CEF_CHECKOUT": cefCheckout,
-            "NUCLEUS_CEF_CHROMIUM_VERSION": chromiumVersion,
-            "NUCLEUS_CHROMIUM_CHECKOUT": chromiumCheckout,
-            "NUCLEUS_DEPOT_TOOLS_REVISION": depotToolsRevision,
+            "NUCLEUS_CEF_BRANCH": sourceLock.cefBranch,
+            "NUCLEUS_CEF_CHECKOUT": cefRepository.commit,
+            "NUCLEUS_CEF_CHROMIUM_VERSION": sourceLock.chromiumVersion,
+            "NUCLEUS_CHROMIUM_CHECKOUT": chromiumRepository.commit,
+            "NUCLEUS_DEPOT_TOOLS_REVISION": sourceLock.depotTools.commit,
             "NUCLEUS_CEF_CACHE_ROOT": cache.string,
             "NUCLEUS_CEF_DEPOT_TOOLS": depotTools.string,
             "NUCLEUS_CHROMIUM_SOURCE_ID": layout.sourceID,
@@ -89,24 +88,26 @@ public enum ChromiumColliderRecipe {
             "CHROMIUM_BROWSER_GN_DEFINES_BASE": browserGNArguments,
             "PREFIX": layout.installPrefix.string,
         ]) { _, required in required }
+        let depotEnvironment = childEnvironment.merging([
+            "PATH": depotTools.string + ":"
+                + (childEnvironment["PATH"] ?? "/usr/bin:/bin")
+        ]) { _, required in required }
         let commonInputs: [ArtifactInput] =
             [
                 .value(name: "source-id", bytes: Array(layout.sourceID.utf8)),
+                .file(sourceLockFile),
                 .file(chromium.appending("launcher/nucleus-browser")),
                 .file(
                     chromium.appending(
                         "share/applications/dev.nucleus.Browser.desktop.in")),
             ]
-            + patchDirectories.map {
-                .tree(workspaceRoot.appending($0))
-            }
         let depotToolsTask = TaskDeclaration(
             id: TaskID(rawValue: "browser.depot-tools"),
             component: ComponentID(rawValue: "browser"),
             inputs: [
                 .value(
                     name: "depot-tools-revision",
-                    bytes: Array(depotToolsRevision.utf8)),
+                    bytes: Array(sourceLock.depotTools.commit.utf8)),
                 .tool(.named("git")),
             ],
             outputs: [
@@ -119,10 +120,8 @@ public enum ChromiumColliderRecipe {
             operation: .prepareChromiumDepotTools(
                 ChromiumDepotToolsPreparation(
                     repository: depotTools,
-                    remote:
-                        "https://chromium.googlesource.com/chromium/"
-                        + "tools/depot_tools.git",
-                    commit: depotToolsRevision,
+                    remote: sourceLock.depotTools.remote,
+                    commit: sourceLock.depotTools.commit,
                     environment: childEnvironment)))
         let depotBootstrap = TaskDeclaration(
             id: TaskID(rawValue: "browser.depot-tools-bootstrap"),
@@ -143,73 +142,24 @@ public enum ChromiumColliderRecipe {
                         depotTools.appending("ensure_bootstrap")),
                     arguments: [],
                     workingDirectory: depotTools,
-                    environment: childEnvironment)))
-        let automateDownload = TaskDeclaration(
-            id: TaskID(rawValue: "browser.cef-automation"),
-            component: ComponentID(rawValue: "browser"),
-            inputs: [
-                .value(
-                    name: "cef-automation-sha256",
-                    bytes: Array(
-                        "fe0c880fd2a91ac3ab4c82301f596295"
-                            .utf8))
-            ],
-            outputs: [
-                OutputDeclaration(
-                    path: automateScript,
-                    validation: .regularFile)
-            ],
-            locks: [.shared(cache.appending("locks/downloads.lock"))],
-            operation: .download(
-                try DownloadSpec(
-                    url: URL(
-                        string:
-                            "https://raw.githubusercontent.com/"
-                            + "chromiumembedded/cef/\(cefCheckout)/"
-                            + "tools/automate/automate-git.py")!,
-                    permittedRedirectOrigins: [
-                        "https://raw.githubusercontent.com"
-                    ],
-                    expectedDigest: automateDigest,
-                    maximumResponseSize: 2 * 1_024 * 1_024,
-                    acceptedMediaTypes: ["text/plain"]),
-                candidate: automateScript))
+                    environment: depotEnvironment)))
         let sourcePreparation = ChromiumSourcePreparation(
-            workspace: workspaceRoot,
             sourceID: layout.sourceID,
             sourceRoot: source,
             sourceGenerations: sources,
             current: sources.appending("current"),
             depotTools: depotTools,
-            automateScript: automateScript,
-            cefBranch: cefBranch,
-            cefCheckout: cefCheckout,
-            chromiumCheckout: chromiumCheckout,
-            depotToolsRevision: depotToolsRevision,
-            patchStacks: [
-                ChromiumPatchStack(
-                    repository: chromiumSource,
-                    directory: chromium.appending("patches/common")),
-                ChromiumPatchStack(
-                    repository: chromiumSource,
-                    directory: cef.appending("patches")),
-                ChromiumPatchStack(
-                    repository: chromiumSource,
-                    directory: chromium.appending("patches/browser")),
-                ChromiumPatchStack(
-                    repository: chromiumSource.appending(
-                        "third_party/dawn"),
-                    directory: chromium.appending("patches/dawn")),
-            ],
+            sourceLockFile: sourceLockFile,
+            sourceLock: sourceLock,
             environment: childEnvironment)
         let sourceTask = TaskDeclaration(
             id: TaskID(rawValue: "browser.source"),
             component: ComponentID(rawValue: "browser"),
-            dependencies: [depotBootstrap.id, automateDownload.id],
+            dependencies: [depotBootstrap.id],
             inputs: commonInputs,
             outputs: [
                 OutputDeclaration(
-                    path: source.appending("nucleus-source-manifest.json"),
+                    path: source.appending("source-provenance.json"),
                     validation: .json)
             ],
             locks: [
@@ -217,14 +167,12 @@ public enum ChromiumColliderRecipe {
             ],
             operation: .prepareChromiumSource(sourcePreparation))
         let cefAssembly = CEFArtifactAssembly(
-            sourceRoot: source,
             chromiumSource: chromiumSource,
             buildOutput: chromiumSource.appending("out/Release_GN_x64"),
             depotTools: depotTools,
             distributionRoot: cefDistribution,
-            cefBranch: cefBranch,
-            cefCheckout: cefCheckout,
-            chromiumVersion: chromiumVersion,
+            cefCheckout: cefRepository.commit,
+            chromiumVersion: sourceLock.chromiumVersion,
             environment: childEnvironment)
         let cefTask = TaskDeclaration(
             id: TaskID(rawValue: "browser.cef"),
@@ -247,7 +195,8 @@ public enum ChromiumColliderRecipe {
                         sourceRoot: source,
                         output: chromiumSource.appending("out/Release_GN_x64"),
                         depotTools: depotTools,
-                        targets: ["cefsimple", "chrome_sandbox"],
+                        gnArguments: cefGNArguments,
+                        targets: ["libcef", "chrome_sandbox"],
                         jobs: UInt32(layout.jobs),
                         environment: childEnvironment)),
                 .assembleCEFArtifact(cefAssembly),
@@ -336,7 +285,6 @@ public enum ChromiumColliderRecipe {
             dependencies: [
                 bootstrapPackages.id,
                 depotBootstrap.id,
-                automateDownload.id,
             ],
             inputs: sourceTask.inputs,
             outputs: sourceTask.outputs,
@@ -407,15 +355,88 @@ public enum ChromiumColliderRecipe {
                         environment: childEnvironment)),
             ]))
         return [
-            depotToolsTask, depotBootstrap, automateDownload,
+            depotToolsTask, depotBootstrap,
             sourceTask, cefTask, browserTask, retention,
             bootstrapPackages, bootstrapSource, test, install,
         ]
     }
+
+    private static func validateSourceLock(
+        _ sourceLock: ChromiumSourceLock
+    ) throws {
+        let expected: [String: (
+            path: String,
+            remote: String,
+            upstream: String
+        )] = [
+            "chromium": (
+                "chromium/src",
+                "https://github.com/nucleus-os/chromium.git",
+                "https://chromium.googlesource.com/chromium/src.git"
+            ),
+            "cef": (
+                "chromium/src/cef",
+                "https://github.com/nucleus-os/cef.git",
+                "https://github.com/chromiumembedded/cef.git"
+            ),
+            "angle": (
+                "chromium/src/third_party/angle",
+                "https://github.com/nucleus-os/angle.git",
+                "https://chromium.googlesource.com/angle/angle.git"
+            ),
+            "skia": (
+                "chromium/src/third_party/skia",
+                "https://github.com/nucleus-os/skia.git",
+                "https://skia.googlesource.com/skia.git"
+            ),
+            "v8": (
+                "chromium/src/v8",
+                "https://github.com/nucleus-os/v8.git",
+                "https://chromium.googlesource.com/v8/v8.git"
+            ),
+            "dawn": (
+                "chromium/src/third_party/dawn",
+                "https://github.com/nucleus-os/dawn.git",
+                "https://dawn.googlesource.com/dawn.git"
+            ),
+        ]
+        guard sourceLock.repositories.count == expected.count,
+              sourceLock.cefBranch.allSatisfy(\.isNumber),
+              !sourceLock.cefBranch.isEmpty,
+              sourceLock.chromiumVersion.split(separator: ".").count == 4,
+              sourceLock.depotTools.remote
+                == "https://chromium.googlesource.com/chromium/tools/depot_tools.git",
+              isGitObjectID(sourceLock.depotTools.commit)
+        else {
+            throw ChromiumRecipeFailure.invalidSourceLock
+        }
+        for repository in sourceLock.repositories {
+            guard let requirement = expected[repository.name],
+                  repository.checkoutPath == requirement.path,
+                  repository.remote == requirement.remote,
+                  repository.upstreamRemote == requirement.upstream,
+                  isGitObjectID(repository.upstreamCommit),
+                  isGitObjectID(repository.commit),
+                  isGitObjectID(repository.tree)
+            else {
+                throw ChromiumRecipeFailure.invalidSourceLock
+            }
+        }
+    }
+
+    private static func isGitObjectID(_ value: String) -> Bool {
+        value.utf8.count == 40 && value.utf8.allSatisfy {
+            ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
+        }
+    }
+}
+
+private enum ChromiumRecipeFailure: Error {
+    case invalidSourceLock
 }
 
 private let cefGNArguments =
-    #"proprietary_codecs=true ffmpeg_branding=Chrome use_dbus=true is_official_build=true symbol_level=0 dcheck_always_on=false enable_expensive_dchecks=false chrome_pgo_phase=2 use_thin_lto=true thin_lto_enable_optimizations=true use_mold=false use_lld=true use_siso=true cc_wrapper="" use_allocator_shim=false enable_backup_ref_ptr_support=false enable_swiftshader=false enable_swiftshader_vulkan=false angle_enable_swiftshader=false treat_warnings_as_errors=false ozone_platform=wayland ozone_platform_wayland=true ozone_platform_x11=false"#
+    #"angle_enable_swiftshader=false blink_heap_inside_shared_library=true cc_wrapper="" chrome_pgo_phase=2 clang_use_chrome_plugins=false dcheck_always_on=false disable_fieldtrial_testing_config=true enable_background_mode=false enable_backup_ref_ptr_support=false enable_downgrade_processing=false enable_expensive_dchecks=false enable_linux_installer=false enable_precompiled_headers=false enable_resource_allowlist_generation=false enable_swiftshader=false enable_swiftshader_vulkan=false enable_widevine=true ffmpeg_branding="Chrome" forbid_non_component_debug_builds=false is_component_build=false is_debug=false is_official_build=true optimize_webui=true ozone_platform="wayland" ozone_platform_wayland=true ozone_platform_x11=false proprietary_codecs=true symbol_level=0 target_cpu="x64" thin_lto_enable_optimizations=true treat_warnings_as_errors=false use_allocator_shim=false use_dbus=true use_lld=true use_mold=false use_partition_alloc_as_malloc=false use_qt5=false use_qt6=false use_siso=true use_sysroot=false use_thin_lto=true use_unified_system_module=false"#
 
 private let browserGNArguments =
     #"proprietary_codecs=true ffmpeg_branding="Chrome" is_chrome_branded=false enable_cef=false use_dbus=true enable_widevine=true is_official_build=true is_component_build=false symbol_level=0 dcheck_always_on=false enable_expensive_dchecks=false chrome_pgo_phase=2 use_thin_lto=true thin_lto_enable_optimizations=true use_mold=false use_lld=true use_siso=true cc_wrapper="" use_allocator_shim=true use_partition_alloc_as_malloc=true enable_backup_ref_ptr_support=true enable_swiftshader=false enable_swiftshader_vulkan=false angle_enable_swiftshader=false treat_warnings_as_errors=false clang_use_chrome_plugins=false ozone_platform="wayland" ozone_platform_wayland=true ozone_platform_x11=false use_sysroot=false target_cpu="x64""#

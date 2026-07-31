@@ -63,44 +63,10 @@ struct ChromiumCommand {
     }
 
     func sourceIdentifier() throws -> String {
-        var patches: [[String: String]] = []
-        for relative in ChromiumColliderRecipe.patchDirectories {
-            let directory = context.root.appendingPathComponent(relative)
-            let names = try FileManager.default.contentsOfDirectory(
-                atPath: directory.path)
-                .filter { $0.hasSuffix(".patch") }
-                .sorted()
-            for name in names {
-                let path = directory.appendingPathComponent(name)
-                patches.append([
-                    "path": relative + "/" + name,
-                    "sha256": try ArtifactHasher.digest(
-                        file: FilePath(path.path)).description
-                        .replacingOccurrences(of: "sha256:", with: ""),
-                ])
-            }
-        }
-        guard !patches.isEmpty else {
-            throw WorkspaceFailure.message(
-                "the Chromium/CEF patch stack is empty")
-        }
-        let value: [String: Any] = [
-            "cef_branch": ChromiumColliderRecipe.cefBranch,
-            "cef_checkout": ChromiumColliderRecipe.cefCheckout,
-            "chromium_version": ChromiumColliderRecipe.chromiumVersion,
-            "chromium_checkout": ChromiumColliderRecipe.chromiumCheckout,
-            "depot_tools_revision":
-                ChromiumColliderRecipe.depotToolsRevision,
-            "automate_git_url":
-                "https://raw.githubusercontent.com/chromiumembedded/cef/"
-                + ChromiumColliderRecipe.cefCheckout
-                + "/tools/automate/automate-git.py",
-            "patches": patches,
-        ]
-        let bytes = try JSONSerialization.data(
-            withJSONObject: value,
-            options: [.sortedKeys, .withoutEscapingSlashes])
-        let digest = ArtifactHasher.digest(bytes: bytes)
+        let digest = try ArtifactHasher.digest(
+            file: FilePath(
+                context.root.appendingPathComponent(
+                    "chromium/source.lock.json").path))
         return digest.bytes.prefix(12).map {
             String(format: "%02x", $0)
         }.joined()

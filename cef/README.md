@@ -1,8 +1,7 @@
 # CEF product stage
 
 Nucleus builds CEF from source with proprietary H.264/AAC codecs for the
-embedded Apple Music surface. Stock CEF binary distributions omit those
-codecs, while this build fixes:
+embedded Apple Music surface. The production configuration includes:
 
 ```text
 proprietary_codecs=true
@@ -15,12 +14,10 @@ use_lld=true
 use_siso=true
 ```
 
-CEF branch `7922`, CEF commit
-`6c664b86a4ef3be5c95b1290068f5e5d52b72db3`, Chromium
-`151.0.7922.19` at commit
-`8f914546f6536ee67a34edb3607f946616f55994`, and depot_tools commit
-`35892a9e24190cc5f3a511d3954319c93445926c` are one indivisible input.
-`automate-git.py` is downloaded from that exact CEF commit.
+The complete source selection lives in `../chromium/source.lock.json`. CEF
+branch 7922 and Chromium 151.0.7922.19 are currently backed by exact clean
+commits in the `nucleus-os` Chromium, CEF, ANGLE, V8, and Dawn forks. The
+selected `depot_tools` commit is part of the same source identity.
 
 Use the workspace entry point:
 
@@ -31,20 +28,22 @@ collider browser build
 collider browser test
 ```
 
-The Collider recipe calls upstream CEF automation only as a pinned leaf
-executor. There is no independent update, cleanup, product, GN-extra,
-build-only, or package-only workflow.
+Collider materializes one locked source generation shared with Nucleus Browser.
+It does not apply workspace patches or run CEF source-update automation. CEF's
+translator and version manager run as idempotence checks, and publication
+requires the CEF commit, tree, generated API hashes, and worktree to match the
+lock exactly.
 
-CEF patches live in `patches/`. Generic Chromium and Dawn changes live under
-`../chromium/patches/`. They are applied once while constructing the shared,
-content-addressed source generation. CEF's generated C/C++ bridge and API hashes
-are regenerated and checked before the generation is published.
+CEF builds in `out/Release_GN_x64`. Packaging directly invokes the selected
+checkout's `cef/tools/make_distrib.py` to create a private minimal distribution;
+Collider then creates the final Nucleus tarball, checksum, build manifest, and
+atomic publication generation.
 
-The CEF output has its own build identity. A minimal distribution is accepted
-only when the identity still matches the source, GN arguments, compiler, and
-PGO profiles. Before publication, a small external consumer compiles, links,
-loads `libcef.so`, and calls `cef_version_info`; unresolved dynamic libraries
-or API-hash failures reject the artifact.
+A distribution is accepted only when its identity still matches source
+provenance, GN arguments, compiler, and PGO profiles. Before publication, a
+small external consumer compiles, links, loads `libcef.so`, and calls
+`cef_version_info`; unresolved dynamic libraries or API-hash failures reject
+the artifact.
 
 Published layout:
 
@@ -61,5 +60,5 @@ Published layout:
   artifacts-current -> current-release/artifacts
 ```
 
-The shell continues to consume `dist/current/Release/libcef.so`, its matching
-headers/wrapper, and resources colocated beneath the same immutable generation.
+The shell consumes `dist/current/Release/libcef.so`, its matching
+headers/wrapper, and resources from the same immutable generation.

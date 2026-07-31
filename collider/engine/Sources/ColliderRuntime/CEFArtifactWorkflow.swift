@@ -14,36 +14,38 @@ extension ColliderRuntime {
         environment["PATH"] = assembly.depotTools.string + ":"
             + (environment["PATH"] ?? "/usr/bin:/bin")
         environment["DEPOT_TOOLS_UPDATE"] = "0"
-        let automate = assembly.sourceRoot.appending("automate-git.py")
+        try FileManager.default.createDirectory(
+            atPath: assembly.distributionRoot.string,
+            withIntermediateDirectories: true)
+        let distributionCandidate = assembly.distributionRoot.appending(
+            ".\(buildID).\(UUID().uuidString).distribution")
+        try FileManager.default.createDirectory(
+            atPath: distributionCandidate.string,
+            withIntermediateDirectories: false)
+        defer {
+            try? FileManager.default.removeItem(
+                atPath: distributionCandidate.string)
+        }
         try await checkedCEFCommand(
             .named("python3"),
             [
-                automate.string,
-                "--download-dir=\(assembly.sourceRoot)",
-                "--depot-tools-dir=\(assembly.depotTools)",
-                "--branch=\(assembly.cefBranch)",
-                "--checkout=\(assembly.cefCheckout)",
+                "cef/tools/make_distrib.py",
+                "--output-dir=\(distributionCandidate)",
+                "--allow-partial",
+                "--ninja-build",
                 "--x64-build",
-                "--no-debug-build",
-                "--no-chromium-history",
-                "--with-pgo-profiles",
-                "--build-target=cefsimple",
-                "--no-update",
-                "--no-build",
-                "--force-distrib",
-                "--minimal-distrib-only",
+                "--minimal",
+                "--no-archive",
             ],
-            directory: assembly.sourceRoot,
+            directory: assembly.chromiumSource,
             environment: environment,
             stage: stage)
-        let distributionDirectory = assembly.chromiumSource.appending(
-            "cef/binary_distrib")
         let checkout = String(assembly.cefCheckout.prefix(7))
         let suffix =
             "+g\(checkout)+chromium-\(assembly.chromiumVersion)"
             + "_linux64_minimal"
         let matches = try FileManager.default.contentsOfDirectory(
-            atPath: distributionDirectory.string)
+            atPath: distributionCandidate.string)
             .filter {
                 $0.hasPrefix("cef_binary_") && $0.hasSuffix(suffix)
             }
@@ -52,7 +54,7 @@ extension ColliderRuntime {
                 "expected one current CEF minimal distribution; found "
                     + "\(matches.count)")
         }
-        let produced = distributionDirectory.appending(producedName)
+        let produced = distributionCandidate.appending(producedName)
         let releases = assembly.distributionRoot.appending("releases")
         try FileManager.default.createDirectory(
             atPath: releases.string,
@@ -110,7 +112,13 @@ extension ColliderRuntime {
             .named("tar"),
             [
                 "-C", candidate.string,
-                "-czf", archive.string,
+                "--sort=name",
+                "--mtime=@0",
+                "--owner=0",
+                "--group=0",
+                "--numeric-owner",
+                "--use-compress-program=gzip -n",
+                "-cf", archive.string,
                 "--transform=s,^sdk,\(buildID),",
                 "sdk",
             ],

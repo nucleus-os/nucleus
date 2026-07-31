@@ -1132,27 +1132,23 @@ extension ColliderRuntime {
             }
         case .prepareChromiumSource(let preparation):
             for path in [
-                preparation.workspace,
                 preparation.sourceRoot,
                 preparation.sourceGenerations,
                 preparation.current,
                 preparation.depotTools,
-                preparation.automateScript,
+                preparation.sourceLockFile,
             ] {
                 encoder.append(tag: 151, string: path.string)
             }
-            for value in [
-                preparation.sourceID,
-                preparation.cefBranch,
-                preparation.cefCheckout,
-                preparation.chromiumCheckout,
-                preparation.depotToolsRevision,
-            ] {
-                encoder.append(tag: 152, string: value)
-            }
-            for stack in preparation.patchStacks {
-                encoder.append(tag: 153, string: stack.repository.string)
-                encoder.append(tag: 154, string: stack.directory.string)
+            encoder.append(tag: 152, string: preparation.sourceID)
+            encoder.append(
+                tag: 153,
+                bytes: Array(try JSONEncoder().encode(
+                    preparation.sourceLock)))
+            for repository in preparation.sourceLock.repositories {
+                encoder.append(tag: 154, string: repository.name)
+                encoder.append(tag: 154, string: repository.commit)
+                encoder.append(tag: 154, string: repository.tree)
             }
             for (name, value) in artifactEnvironment(
                 preparation.environment)
@@ -1201,7 +1197,6 @@ extension ColliderRuntime {
         case .assembleCEFArtifact(let assembly),
             .validateCEFArtifact(let assembly):
             for path in [
-                assembly.sourceRoot,
                 assembly.chromiumSource,
                 assembly.buildOutput,
                 assembly.depotTools,
@@ -1210,7 +1205,6 @@ extension ColliderRuntime {
                 encoder.append(tag: 168, string: path.string)
             }
             for value in [
-                assembly.cefBranch,
                 assembly.cefCheckout,
                 assembly.chromiumVersion,
             ] {

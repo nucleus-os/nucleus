@@ -9,7 +9,7 @@ extension ColliderRuntime {
     ) async throws {
         let chromium = build.sourceRoot.appending("chromium/src")
         let sourceManifest = build.sourceRoot.appending(
-            "nucleus-source-manifest.json")
+            "source-provenance.json")
         guard chromiumRegularFile(sourceManifest) else {
             throw RuntimeFailure.invalidOutput(
                 "Chromium source manifest is missing: \(sourceManifest)")

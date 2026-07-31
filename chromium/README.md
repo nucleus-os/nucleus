@@ -12,58 +12,66 @@ collider browser install
 ```
 
 `bootstrap` reports missing packages from `../cef/apt-deps.txt`, including the
-exact `sudo apt-get install` command the user may run, then prepares the pinned
-source generation. It never mutates the host package database. `build`
-performs the complete production build and publishes both products. Product
-selectors, package-only modes, update bypasses, and ad-hoc GN overrides are
-not supported workflows.
+exact `sudo apt-get install` command the user may run, then materializes the
+source lock. It never mutates the host package database. `build` performs the
+complete production build and publishes both products. Product selectors,
+package-only modes, update bypasses, and ad-hoc GN overrides are unsupported.
 
-## Fixed architecture
+## Source architecture
 
-CEF and Nucleus Browser share one content-addressed prepared source generation.
-The generation identity covers the exact CEF commit, Chromium version and
-commit, depot_tools commit, exact-commit `automate-git.py`, and every common,
-CEF, browser, and Dawn patch. Preparation starts from a pristine checkout and
-never reverses patches in an existing generation.
+`source.lock.json` is the sole browser source-selection input. It selects exact
+commits and trees in the genuine `nucleus-os` Chromium, CEF, ANGLE, Skia, V8,
+and Dawn forks, plus the exact canonical `depot_tools` commit. It has no format
+version: source updates replace the complete lock atomically.
 
-The products retain separate GN outputs because their allocator contracts are
-different. CEF embeds `libcef.so` into another process and disables Chromium's
-allocator shim and BackupRefPtr support. The standalone browser retains
-PartitionAlloc, the allocator shim, and BackupRefPtr. Both outputs are official
-PGO/ThinLTO builds using LLD, Siso, native Wayland, Graphite/Dawn/Vulkan, and no
-SwiftShader compositor fallback.
+Collider maintains bounded bare object caches under
+`~/.cache/nucleus/cef/repository-cache/`. A private candidate generation checks
+out the locked Chromium commit, synchronizes the upstream DEPS graph, overrides
+ANGLE, Skia, V8, and Dawn with their exact fork commits, checks out CEF, runs
+Chromium hooks, resolves PGO profiles, and verifies CEF translation and API hashes.
+Publication requires every selected repository to have the locked commit and
+tree with a clean worktree.
+
+The resulting `source-provenance.json` binds the lock digest, all six commit
+and tree identities, `depot_tools`, Chromium DEPS, the resolved gclient graph,
+and both PGO profiles. Existing source directories are verified against that
+provenance and are never repaired or adopted. Nucleus source preparation does
+not run CEF's patcher, apply patches, or use `automate-git.py`.
+
+CEF and Nucleus Browser share this one content-addressed source generation.
+They retain separate GN outputs because their allocator contracts differ. CEF
+embeds `libcef.so` into another process and disables Chromium's allocator shim
+and BackupRefPtr support. The standalone browser retains PartitionAlloc, the
+allocator shim, and BackupRefPtr. Both are official PGO/ThinLTO builds using
+LLD, Siso, native Wayland, Graphite/Dawn/Vulkan, and no SwiftShader compositor
+fallback.
 
 The build order is strictly sequential:
 
-1. verify required executables and declared package dependencies;
-2. prepare or verify the source generation;
+1. verify declared package dependencies and pinned tooling;
+2. materialize or verify the source generation;
 3. build, package, and validate CEF;
 4. build, package, and validate Nucleus Browser;
 5. apply cache retention.
 
 Independent CEF and browser link pools never run concurrently. Local Siso work
-is capped at 16 jobs. Collider does not impose swap, disk-space, inode, or
-`vm.max_map_count` policy; failures from the actual build and filesystem remain
-authoritative.
+is capped at 16 jobs.
 
 ## Identities and publication
 
-Each successful output contains `.nucleus-built-build.json`. It binds the
-source-generation manifest, resolved `args.gn`, Chromium clang, and exact PGO
-profiles. Packaging and installation recompute that identity and reject stale
-outputs.
+Each successful output contains `.nucleus-built-build.json`. It binds source
+provenance, resolved `args.gn`, Chromium clang, and exact PGO profiles.
+Packaging and installation recompute that identity and reject stale outputs.
 
 CEF publishes complete SDK and tarball generations beneath
 `~/.cache/nucleus/cef/dist/`. Nucleus Browser publishes validated artifact
-generations beneath `~/.cache/nucleus/cef/browser-dist/`. Prepared directories,
-tarballs, checksums, and stable `current` links are switched only after their
-validation gates pass.
+generations beneath `~/.cache/nucleus/cef/browser-dist/`. Stable `current`
+links switch only after validation.
 
 The installed browser uses versioned generations under
 `~/.local/lib/nucleus-browser/generations/`. A single atomic `current` symlink
 switches the runtime, launcher, desktop entry, icons, Widevine payload, and
-recorded sandbox identity together. The active and immediately preceding
-installed generations are retained; older recognized generations are removed.
+recorded sandbox identity together.
 
 ## Logs and validation
 
@@ -82,6 +90,6 @@ source preparation, GN-output mutation, and publication.
 
 Publication gates include source/build identity verification, CEF API hashes,
 CEF consumer compile/link/load, dynamic-library resolution, launcher syntax,
-and the focused Ozone/Viz presenter tests. Browser startup and live
+and focused Ozone/Viz presenter tests. Browser startup and live
 Wayland/120 Hz/media acceptance remain explicit user-run validation after
 installation.

@@ -5,6 +5,5 @@
 git
 curl
 python3
-python3-venv
 pkg-config
 lsb-release

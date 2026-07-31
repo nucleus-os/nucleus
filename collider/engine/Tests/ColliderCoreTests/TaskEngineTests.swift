@@ -295,6 +295,10 @@ import Testing
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
+    _ = try await ColliderRuntime().execute(
+        graph: TaskGraph([task]),
+        selected: [task.id],
+        stateRoot: FilePath(directory.appendingPathComponent("state").path))
 
     #expect(
         try FileManager.default.destinationOfSymbolicLink(
@@ -1305,8 +1309,12 @@ import Testing
     let source = generations.appendingPathComponent(sourceID)
     let chromium = source.appendingPathComponent("chromium/src")
     let cef = chromium.appendingPathComponent("cef")
+    let angle = chromium.appendingPathComponent("third_party/angle")
+    let skia = chromium.appendingPathComponent("third_party/skia")
+    let v8 = chromium.appendingPathComponent("v8")
     let dawn = chromium.appendingPathComponent("third_party/dawn")
     let depot = directory.appendingPathComponent("depot_tools")
+    let lockFile = directory.appendingPathComponent("source.lock.json")
     let environment = [
         "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin",
         "GIT_AUTHOR_NAME": "Collider Test",
@@ -1315,14 +1323,16 @@ import Testing
         "GIT_COMMITTER_EMAIL": "collider@example.invalid",
     ]
     let runtime = ColliderRuntime()
-    func git(_ repository: URL) async throws -> String {
+    func git(_ repository: URL) async throws -> (commit: String, tree: String) {
         try FileManager.default.createDirectory(
             at: repository, withIntermediateDirectories: true)
         let marker = repository.appendingPathComponent("marker")
-        try Data("source".utf8).write(to: marker)
+        if !FileManager.default.fileExists(atPath: marker.path) {
+            try Data("source".utf8).write(to: marker)
+        }
         for arguments in [
             ["init", "-q"],
-            ["add", "marker"],
+            ["add", "."],
             ["commit", "-qm", "fixture"],
         ] {
             let result = try await runtime.execute(
@@ -1333,45 +1343,111 @@ import Testing
                     environment: environment))
             #expect(result.status == 0)
         }
-        let result = try await runtime.execute(
+        let commitResult = try await runtime.execute(
             CommandSpec(
                 executable: .named("git"),
                 arguments: ["rev-parse", "HEAD"],
                 workingDirectory: FilePath(repository.path),
                 environment: environment,
                 output: .captured(limit: 4_096)))
-        #expect(result.status == 0)
-        return result.standardOutput.trimmingCharacters(
-            in: .whitespacesAndNewlines)
+        let treeResult = try await runtime.execute(
+            CommandSpec(
+                executable: .named("git"),
+                arguments: ["rev-parse", "HEAD^{tree}"],
+                workingDirectory: FilePath(repository.path),
+                environment: environment,
+                output: .captured(limit: 4_096)))
+        #expect(commitResult.status == 0)
+        #expect(treeResult.status == 0)
+        return (
+            commitResult.standardOutput.trimmingCharacters(
+                in: .whitespacesAndNewlines),
+            treeResult.standardOutput.trimmingCharacters(
+                in: .whitespacesAndNewlines)
+        )
     }
-    let chromiumRevision = try await git(chromium)
     let cefRevision = try await git(cef)
+    let angleRevision = try await git(angle)
+    let skiaRevision = try await git(skia)
     let dawnRevision = try await git(dawn)
+    let pgoName = "fixture.profdata"
+    let pgo = chromium.appendingPathComponent(
+        "chrome/build/pgo_profiles/\(pgoName)")
+    let pgoDescriptor = chromium.appendingPathComponent(
+        "chrome/build/linux.pgo.txt")
+    let v8PGO = v8.appendingPathComponent(
+        "tools/builtins-pgo/profiles/x64.profile")
+    for file in [pgo, pgoDescriptor, v8PGO] {
+        try FileManager.default.createDirectory(
+            at: file.deletingLastPathComponent(),
+            withIntermediateDirectories: true)
+    }
+    try Data("profile".utf8).write(to: pgo)
+    try Data("\(pgoName)\n".utf8).write(to: pgoDescriptor)
+    try Data("v8 profile".utf8).write(to: v8PGO)
+    let v8Revision = try await git(v8)
+    let deps = chromium.appendingPathComponent("DEPS")
+    try Data("deps fixture".utf8).write(to: deps)
+    let chromiumRevision = try await git(chromium)
     let depotRevision = try await git(depot)
-    let automate = directory.appendingPathComponent("automate-git.py")
-    try Data("automation".utf8).write(to: automate)
+    let graph = source.appendingPathComponent("chromium/.gclient_entries")
+    try Data("graph fixture".utf8).write(to: graph)
+    let repositories = [
+        ("chromium", "chromium/src", chromiumRevision),
+        ("cef", "chromium/src/cef", cefRevision),
+        ("angle", "chromium/src/third_party/angle", angleRevision),
+        ("skia", "chromium/src/third_party/skia", skiaRevision),
+        ("v8", "chromium/src/v8", v8Revision),
+        ("dawn", "chromium/src/third_party/dawn", dawnRevision),
+    ].map { name, checkoutPath, revision in
+        ChromiumSourceRepository(
+            name: name,
+            checkoutPath: checkoutPath,
+            remote: "https://example.invalid/\(name).git",
+            upstreamRemote: "https://upstream.example.invalid/\(name).git",
+            upstreamCommit: revision.commit,
+            commit: revision.commit,
+            tree: revision.tree)
+    }
+    let sourceLock = ChromiumSourceLock(
+        cefBranch: "fixture",
+        chromiumVersion: "1.2.3.4",
+        repositories: repositories,
+        depotTools: ChromiumDepotToolsLock(
+            remote: "https://example.invalid/depot_tools.git",
+            commit: depotRevision.commit))
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    try encoder.encode(sourceLock).write(to: lockFile)
     let manifest: [String: Any] = [
         "sourceID": sourceID,
-        "cefBranch": "fixture",
-        "cefCheckout": cefRevision,
-        "chromiumCheckout": chromiumRevision,
-        "depotToolsRevision": depotRevision,
-        "revisions": [
-            "chromium": chromiumRevision,
-            "cef": cefRevision,
-            "dawn": dawnRevision,
-            "depot_tools": depotRevision,
+        "sourceLockSHA256": try ArtifactHasher.digest(
+            file: FilePath(lockFile.path)).description,
+        "repositories": repositories.map {
+            ["name": $0.name, "commit": $0.commit, "tree": $0.tree]
+        },
+        "depotToolsCommit": depotRevision.commit,
+        "chromiumDEPSSHA256": try ArtifactHasher.digest(
+            file: FilePath(deps.path)).description,
+        "gclientGraphSHA256": try ArtifactHasher.digest(
+            file: FilePath(graph.path)).description,
+        "pgo": [
+            "name": pgoName,
+            "sha256": try ArtifactHasher.digest(
+                file: FilePath(pgo.path)).description,
         ],
-        "automateGitSHA256": try ArtifactHasher.digest(
-            file: FilePath(automate.path)
-        ).description,
+        "v8BuiltinsPGO": [
+            "name": "x64.profile",
+            "sha256": try ArtifactHasher.digest(
+                file: FilePath(v8PGO.path)).description,
+        ],
     ]
     try JSONSerialization.data(
         withJSONObject: manifest,
         options: [.sortedKeys]
     ).write(
         to: source.appendingPathComponent(
-            "nucleus-source-manifest.json"))
+            "source-provenance.json"))
     let current = generations.appendingPathComponent("current")
     let task = TaskDeclaration(
         id: TaskID(rawValue: "fixture.prepare-chromium-source"),
@@ -1380,25 +1456,20 @@ import Testing
             OutputDeclaration(
                 path: FilePath(
                     source.appendingPathComponent(
-                        "nucleus-source-manifest.json"
+                        "source-provenance.json"
                     ).path),
                 validation: .json)
         ],
         cachePolicy: .always,
         operation: .prepareChromiumSource(
             ChromiumSourcePreparation(
-                workspace: FilePath(directory.path),
                 sourceID: sourceID,
                 sourceRoot: FilePath(source.path),
                 sourceGenerations: FilePath(generations.path),
                 current: FilePath(current.path),
                 depotTools: FilePath(depot.path),
-                automateScript: FilePath(automate.path),
-                cefBranch: "fixture",
-                cefCheckout: cefRevision,
-                chromiumCheckout: chromiumRevision,
-                depotToolsRevision: depotRevision,
-                patchStacks: [],
+                sourceLockFile: FilePath(lockFile.path),
+                sourceLock: sourceLock,
                 environment: environment)))
     _ = try await runtime.execute(
         graph: TaskGraph([task]),
@@ -1433,7 +1504,7 @@ import Testing
         options: [.sortedKeys]
     ).write(
         to: source.appendingPathComponent(
-            "nucleus-source-manifest.json"))
+            "source-provenance.json"))
     try Data(
         """
         #!/bin/sh
@@ -1589,7 +1660,13 @@ import Testing
     try FileManager.default.setAttributes(
         [.posixPermissions: 0o755], ofItemAtPath: query.path)
     let packages = directory.appendingPathComponent("apt-deps.txt")
-    try Data("installed\nmissing\n".utf8).write(to: packages)
+    try Data(
+        """
+        # Package-list documentation is not a package.
+        installed # Inline comments are also ignored.
+        missing
+        """.utf8
+    ).write(to: packages)
     let task = TaskDeclaration(
         id: TaskID(rawValue: "fixture.validate-apt-packages"),
         component: ComponentID(rawValue: "fixture"),
@@ -1612,6 +1689,9 @@ import Testing
         #expect(
             !description.contains(
                 "sudo apt-get install -y installed"))
+        #expect(
+            !description.contains(
+                "sudo apt-get install -y Package-list"))
     }
 }
 
@@ -1637,20 +1717,24 @@ import Testing
             ".nucleus-built-build.json"))
     let checkout = "abcdefa000000000000000000000000000000000"
     let version = "1.2.3.4"
-    let produced = chromium.appendingPathComponent(
-        "cef/binary_distrib/"
-            + "cef_binary_fixture+gabcdefa+chromium-\(version)"
-            + "_linux64_minimal")
-    let automate = source.appendingPathComponent("automate-git.py")
+    let distributor = chromium.appendingPathComponent(
+        "cef/tools/make_distrib.py")
     try FileManager.default.createDirectory(
-        at: automate.deletingLastPathComponent(),
+        at: distributor.deletingLastPathComponent(),
         withIntermediateDirectories: true)
-    let escapedProduced = produced.path.replacingOccurrences(
-        of: "'", with: "\\'")
     try Data(
         """
+        import sys
         from pathlib import Path
-        root = Path('\(escapedProduced)')
+        output = next(
+            argument.split('=', 1)[1]
+            for argument in sys.argv
+            if argument.startswith('--output-dir=')
+        )
+        root = Path(output) / (
+            'cef_binary_fixture+gabcdefa+chromium-\(version)'
+            '_linux64_minimal'
+        )
         for path in [
             root / 'Release',
             root / 'Resources',
@@ -1667,7 +1751,7 @@ import Testing
             path = root / relative
             path.write_text('fixture')
         """.utf8
-    ).write(to: automate)
+    ).write(to: distributor)
     let versionManager = chromium.appendingPathComponent(
         "cef/tools/version_manager.py")
     try FileManager.default.createDirectory(
@@ -1705,12 +1789,10 @@ import Testing
                 ?? "/usr/bin:/bin")
     ]
     let assembly = CEFArtifactAssembly(
-        sourceRoot: FilePath(source.path),
         chromiumSource: FilePath(chromium.path),
         buildOutput: FilePath(output.path),
         depotTools: FilePath(depot.path),
         distributionRoot: FilePath(distribution.path),
-        cefBranch: "fixture",
         cefCheckout: checkout,
         chromiumVersion: version,
         environment: environment)

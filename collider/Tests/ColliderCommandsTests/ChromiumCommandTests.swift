@@ -35,14 +35,19 @@ func chromiumSourceIdentityMatchesThePinnedMetadataContract() throws {
         root: root,
         environment: ProcessInfo.processInfo.environment))
     let sourceIdentifier = try command.sourceIdentifier()
-    #expect(sourceIdentifier == "dd3aa8d9a86e2424505eaf23")
+    #expect(sourceIdentifier == "bb787197253f6bcc61903a0b")
 }
 
 @Test
 func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() throws {
-    let root = FilePath("/workspace")
+    let root = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let workspace = FilePath(root.path)
     let tasks = try ChromiumColliderRecipe.tasks(
-        workspaceRoot: root,
+        workspaceRoot: workspace,
         environment: ["PATH": "/usr/bin"],
         layout: ChromiumRecipeLayout(
             sourceID: "source-identity",
@@ -55,7 +60,6 @@ func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() throws {
     ]).map(\.id.rawValue) == [
         "browser.depot-tools",
         "browser.depot-tools-bootstrap",
-        "browser.cef-automation",
         "browser.source",
         "browser.cef",
         "browser.artifact",
@@ -72,8 +76,29 @@ func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() throws {
     }
     #expect(tasks.flatMap { commands($0.operation) }.allSatisfy {
         if case .path(let path) = $0.executable {
-            return path != root.appending("chromium/build.sh")
+            return path != workspace.appending("chromium/build.sh")
         }
         return true
     })
+
+    func builds(_ operation: TaskOperation) -> [ChromiumProductBuild] {
+        switch operation {
+        case .buildChromiumProduct(let build): [build]
+        case .sequence(let operations):
+            operations.flatMap(builds)
+        default: []
+        }
+    }
+    let products = tasks.flatMap { builds($0.operation) }
+    #expect(products.count == 2)
+    #expect(products.allSatisfy {
+        $0.gnArguments?.contains(#"ffmpeg_branding="Chrome""#) == true
+            && $0.gnArguments?.contains(#"ozone_platform="wayland""#) == true
+    })
+    let cef = try #require(products.first { $0.product == .cef })
+    #expect(cef.gnArguments?.contains("enable_widevine=true") == true)
+    #expect(cef.gnArguments?.contains("use_allocator_shim=false") == true)
+    #expect(
+        cef.gnArguments?.contains("use_partition_alloc_as_malloc=false")
+            == true)
 }
