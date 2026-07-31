@@ -16,8 +16,10 @@ import Testing
     try Data(
         ("sha256:" + String(repeating: "a", count: 64) + "\n").utf8
     ).write(to: imageID)
-    let path = { (name: String) in FilePath(
-        root.appendingPathComponent(name).path) }
+    let path = { (name: String) in
+        FilePath(
+            root.appendingPathComponent(name).path)
+    }
     let build = AOSPProductBuild(
         productSource: path("product"),
         source: path("source"),
@@ -37,7 +39,7 @@ import Testing
         expectedVendorAPILevel: 202604,
         environment: [:])
 
-    let arguments = try aospContainerArguments(
+    let execution = aospOCIExecution(
         build: build,
         writableMounts: [
             (path("output"), "/output"),
@@ -46,7 +48,15 @@ import Testing
         readOnlyMounts: [(path("source"), "/src")],
         environment: ["TZ": "UTC"],
         command: ["/bin/true"])
+    let command = try PodmanExecutor().runCommand(
+        execution,
+        imageID: "sha256:" + String(repeating: "a", count: 64),
+        temporaryDirectory: nil)
+    let arguments = command.arguments
 
+    #expect(execution.executionPlatform == .linuxAMD64OCI)
+    #expect(execution.artifactTarget == .androidX86_64(apiLevel: 37))
+    #expect(execution.processFilesystemPolicy == .unmasked)
     #expect(arguments.contains("--network=none"))
     #expect(arguments.contains("--cap-drop=all"))
     #expect(arguments.contains("--security-opt=no-new-privileges"))
@@ -54,21 +64,26 @@ import Testing
     #expect(arguments.contains("--hostname=android-build"))
     #expect(arguments.contains("--read-only"))
     #expect(arguments.contains("--tmpfs=/tmp:rw,nosuid,nodev,size=8g"))
-    #expect(arguments.contains(
-        "--tmpfs=/home/nucleus-build:rw,nosuid,nodev,noexec,size=1g"))
+    #expect(
+        arguments.contains(
+            "--tmpfs=/home/nucleus-build:rw,nosuid,nodev,noexec,size=1g"))
     #expect(!arguments.contains("--privileged"))
     #expect(!arguments.contains("--security-opt=seccomp=unconfined"))
     #expect(!arguments.contains("--security-opt=unmask=ALL"))
-    #expect(arguments.contains(
-        "type=bind,src=\(path("source").string),target=/src,ro=true"))
-    #expect(arguments.contains(
-        "type=bind,src=\(path("output").string),target=/output,rw=true"))
-    #expect(arguments.contains(
-        "type=bind,src=\(path("ccache").string),"
-            + "target=/src/out/nucleus/.ccache,rw=true"))
-    #expect(!arguments.contains(where: {
-        $0.contains("SSH_AUTH_SOCK") || $0.contains("WAYLAND_DISPLAY")
-    }))
+    #expect(
+        arguments.contains(
+            "type=bind,src=\(path("source").string),target=/src,ro=true"))
+    #expect(
+        arguments.contains(
+            "type=bind,src=\(path("output").string),target=/output,rw=true"))
+    #expect(
+        arguments.contains(
+            "type=bind,src=\(path("ccache").string),"
+                + "target=/src/out/nucleus/.ccache,rw=true"))
+    #expect(
+        !arguments.contains(where: {
+            $0.contains("SSH_AUTH_SOCK") || $0.contains("WAYLAND_DISPLAY")
+        }))
 }
 
 @Test func aospSandboxDegradationIsFatal() throws {
@@ -131,32 +146,33 @@ import Testing
         default_system_dev_certificate=/keys/releasekey
         """
     #expect(aospReleaseSigningMetadataUsesContainerKeys(metadata))
-    #expect(!aospReleaseSigningMetadataUsesContainerKeys(
-        metadata.replacingOccurrences(
-            of: "/keys/releasekey",
-            with: "/home/user/signing/releasekey")))
+    #expect(
+        !aospReleaseSigningMetadataUsesContainerKeys(
+            metadata.replacingOccurrences(
+                of: "/keys/releasekey",
+                with: "/home/user/signing/releasekey")))
 }
 
 @Test func aospFontContractResolvesEveryConfiguredFont() throws {
     let configurations = [
         "SYSTEM/etc/fonts.xml": """
-            <familyset>
-              <family name="sans-serif">
-                <font weight="400">Roboto-Regular.ttf</font>
-              </family>
-              <family>
-                <font>NotoColorEmojiLegacy.ttf</font>
-              </family>
-            </familyset>
-            """,
+        <familyset>
+          <family name="sans-serif">
+            <font weight="400">Roboto-Regular.ttf</font>
+          </family>
+          <family>
+            <font>NotoColorEmojiLegacy.ttf</font>
+          </family>
+        </familyset>
+        """,
         "SYSTEM/etc/font_fallback.xml": """
-            <familyset>
-              <family>
-                <font>NotoColorEmoji.ttf</font>
-                <font>/product/fonts/DisplaySerif.ttf</font>
-              </family>
-            </familyset>
-            """,
+        <familyset>
+          <family>
+            <font>NotoColorEmoji.ttf</font>
+            <font>/product/fonts/DisplaySerif.ttf</font>
+          </family>
+        </familyset>
+        """,
     ]
     try validateAOSPFontContract(
         archiveEntries: Array(configurations.keys) + [
@@ -194,10 +210,10 @@ import Testing
             configurations: [
                 "SYSTEM/etc/fonts.xml": fontsXML,
                 "SYSTEM/etc/font_fallback.xml": """
-                    <familyset>
-                      <family><font>MissingFallback.ttf</font></family>
-                    </familyset>
-                    """,
+                <familyset>
+                  <family><font>MissingFallback.ttf</font></family>
+                </familyset>
+                """,
             ])
     }
 }
@@ -234,9 +250,11 @@ import Testing
         from: FilePath(source.path),
         to: FilePath(destination.path),
         preservingAtRoot: [".nucleus-product-stage.json"])
-    #expect(FileManager.default.fileExists(
-        atPath: destination.appendingPathComponent(
-            ".nucleus-product-stage.json").path))
+    #expect(
+        FileManager.default.fileExists(
+            atPath: destination.appendingPathComponent(
+                ".nucleus-product-stage.json"
+            ).path))
     #expect(
         try FileManager.default.attributesOfItem(atPath: unchanged.path)[
             .systemFileNumber

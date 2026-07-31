@@ -239,7 +239,7 @@ struct ToolchainCommand {
             jobs: UInt32(
                 min(
                     ProcessInfo.processInfo.activeProcessorCount, 16)),
-            builder: SwiftBuildContainerConfiguration(
+            builder: SwiftOCIConfiguration(
                 imageID: FilePath(builderImageID.path),
                 sourceWorkspace: FilePath(sourceWorkspace.path),
                 recipeRoot: FilePath(toolchainRecipe.path),

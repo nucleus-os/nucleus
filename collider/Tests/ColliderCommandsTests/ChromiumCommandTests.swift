@@ -3,6 +3,7 @@ import ColliderCore
 import Foundation
 import SystemPackage
 import Testing
+
 @testable import ColliderCommands
 
 @Test
@@ -31,9 +32,10 @@ func chromiumSourceIdentityMatchesThePinnedMetadataContract() throws {
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
-    let command = ChromiumCommand(context: WorkspaceContext(
-        root: root,
-        environment: ProcessInfo.processInfo.environment))
+    let command = ChromiumCommand(
+        context: WorkspaceContext(
+            root: root,
+            environment: ProcessInfo.processInfo.environment))
     let sourceIdentifier = try command.sourceIdentifier()
     #expect(sourceIdentifier == "65a9fbae8acff64ce6f7cfd6")
 }
@@ -55,17 +57,18 @@ func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() throws {
             installPrefix: FilePath("/home/user/.local"),
             jobs: 16))
     let graph = try TaskGraph(tasks)
-    #expect(try graph.orderedTasks(selecting: [
-        TaskID(rawValue: "browser.retention"),
-    ]).map(\.id.rawValue) == [
-        "browser.depot-tools",
-        "browser.depot-tools-bootstrap",
-        "browser.source",
-        "browser.builder",
-        "browser.cef",
-        "browser.artifact",
-        "browser.retention",
-    ])
+    #expect(
+        try graph.orderedTasks(selecting: [
+            TaskID(rawValue: "browser.retention")
+        ]).map(\.id.rawValue) == [
+            "browser.depot-tools",
+            "browser.depot-tools-bootstrap",
+            "browser.source",
+            "browser.builder",
+            "browser.cef",
+            "browser.artifact",
+            "browser.retention",
+        ])
 
     func commands(_ operation: TaskOperation) -> [CommandSpec] {
         switch operation {
@@ -75,12 +78,13 @@ func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() throws {
         default: []
         }
     }
-    #expect(tasks.flatMap { commands($0.operation) }.allSatisfy {
-        if case .path(let path) = $0.executable {
-            return path != workspace.appending("chromium/build.sh")
-        }
-        return true
-    })
+    #expect(
+        tasks.flatMap { commands($0.operation) }.allSatisfy {
+            if case .path(let path) = $0.executable {
+                return path != workspace.appending("chromium/build.sh")
+            }
+            return true
+        })
 
     func builds(_ operation: TaskOperation) -> [ChromiumProductBuild] {
         switch operation {
@@ -92,10 +96,11 @@ func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() throws {
     }
     let products = tasks.flatMap { builds($0.operation) }
     #expect(products.count == 2)
-    #expect(products.allSatisfy {
-        $0.gnArguments?.contains(#"ffmpeg_branding="Chrome""#) == true
-            && $0.gnArguments?.contains(#"ozone_platform="wayland""#) == true
-    })
+    #expect(
+        products.allSatisfy {
+            $0.gnArguments?.contains(#"ffmpeg_branding="Chrome""#) == true
+                && $0.gnArguments?.contains(#"ozone_platform="wayland""#) == true
+        })
     let cef = try #require(products.first { $0.product == .cef })
     #expect(cef.output == FilePath("/cache/cef/build/source-identity/cef"))
     #expect(
@@ -110,7 +115,7 @@ func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() throws {
     let test = try #require(
         tasks.first { $0.id == TaskID(rawValue: "browser.test") })
     guard case .sequence(let testOperations) = test.operation,
-        case .runBuildContainer(let execution) = testOperations.first
+        case .runOCI(let execution) = testOperations.first
     else {
         Issue.record("Chromium test compilation must use the builder")
         return
@@ -118,21 +123,21 @@ func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() throws {
     #expect(execution.command.first == "build")
     #expect(
         execution.mounts == [
-            BuildContainerMount(
+            OCIMount(
                 source: FilePath(
                     "/cache/cef/source-generations/source-identity"),
                 target: "/source",
                 access: .readOnly),
-            BuildContainerMount(
+            OCIMount(
                 source: FilePath("/cache/cef/depot_tools"),
                 target: "/depot_tools",
                 access: .readOnly),
-            BuildContainerMount(
+            OCIMount(
                 source: FilePath(
                     "/cache/cef/build/source-identity/.inputs"),
                 target: "/inputs",
                 access: .readOnly),
-            BuildContainerMount(
+            OCIMount(
                 source: FilePath(
                     "/cache/cef/build/source-identity/browser"),
                 target: "/build",

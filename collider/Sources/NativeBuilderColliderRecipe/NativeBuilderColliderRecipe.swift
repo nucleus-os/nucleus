@@ -2,17 +2,13 @@ import ColliderCore
 
 public enum NativeBuilderColliderRecipe {
     public static func prepare(
-        _ configuration: NativeBuildContainerConfiguration
-    ) -> TaskDeclaration? {
-        #if os(macOS)
-        return nil
-        #else
+        _ configuration: NativeOCIConfiguration
+    ) -> TaskDeclaration {
         return TaskDeclaration(
             id: TaskID(rawValue: "native.builder"),
             component: ComponentID(rawValue: "native"),
             inputs: [
-                .tree(configuration.context),
-                .tool(.named("podman")),
+                .tree(configuration.context)
             ],
             outputs: [
                 OutputDeclaration(
@@ -21,14 +17,14 @@ public enum NativeBuilderColliderRecipe {
             ],
             locks: [.checkout("native-builder-image")],
             cachePolicy: .contentAddressed,
-            operation: .prepareBuildContainer(
-                BuildContainerPreparation(
+            operation: .prepareOCIImage(
+                OCIImagePreparation(
+                    executionPlatform: .linuxAMD64OCI,
                     context: configuration.context,
                     containerFile: configuration.context.appending(
                         "Containerfile"),
                     imageID: configuration.imageID,
                     imageName: "localhost/nucleus-native-build",
                     environment: configuration.environment)))
-        #endif
     }
 }

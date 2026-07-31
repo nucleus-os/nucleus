@@ -174,7 +174,7 @@ public enum ReactNativeColliderRecipe {
     public static func buildHermes(
         root: FilePath,
         environment: [String: String],
-        builder: NativeBuildContainerConfiguration,
+        builder: NativeOCIConfiguration,
         host: HermesHostDependencies?
     ) -> TaskDeclaration {
         let source = root.appending("third-party/hermes")
@@ -208,8 +208,7 @@ public enum ReactNativeColliderRecipe {
         #else
         let dependencies = [TaskID(rawValue: "native.builder")]
         let nativeInputs: [ArtifactInput] = [
-            .dependencyOutput(builder.imageID),
-            .tool(.named("podman")),
+            .dependencyOutput(builder.imageID)
         ]
         let cmakeArguments: [String] = []
         let ninjaEnvironment = environment
@@ -263,7 +262,7 @@ public enum ReactNativeColliderRecipe {
     public static func buildSupportLibraries(
         root: FilePath,
         environment: [String: String],
-        builder: NativeBuildContainerConfiguration
+        builder: NativeOCIConfiguration
     ) -> TaskDeclaration {
         let fmtBuild = root.appending(".rn-build/fmt")
         let conversionBuild = root.appending(".rn-build/double-conversion")
@@ -329,7 +328,7 @@ public enum ReactNativeColliderRecipe {
     public static func buildCxxRuntime(
         root: FilePath,
         environment: [String: String],
-        builder: NativeBuildContainerConfiguration
+        builder: NativeOCIConfiguration
     ) -> TaskDeclaration {
         let glogBuild = root.appending(".rn-build/glog")
         let nativeBuild = root.appending(".rn-build/reactnative")
@@ -665,7 +664,7 @@ private let commonCMakeArguments = [
 private let nativeBuilderDependencies: [TaskID] = []
 
 private func nativeBuilderInputs(
-    _ builder: NativeBuildContainerConfiguration
+    _ builder: NativeOCIConfiguration
 ) -> [ArtifactInput] {
     [
         .tool(.named("cmake")),
@@ -681,11 +680,10 @@ private func nativePath(_ host: FilePath, _ container: String) -> String {
 private let nativeBuilderDependencies = [TaskID(rawValue: "native.builder")]
 
 private func nativeBuilderInputs(
-    _ builder: NativeBuildContainerConfiguration
+    _ builder: NativeOCIConfiguration
 ) -> [ArtifactInput] {
     [
-        .dependencyOutput(builder.imageID),
-        .tool(.named("podman")),
+        .dependencyOutput(builder.imageID)
     ]
 }
 
@@ -702,7 +700,7 @@ private func nativeCMake(
     arguments: [String],
     root: FilePath,
     environment: [String: String],
-    builder: NativeBuildContainerConfiguration
+    builder: NativeOCIConfiguration
 ) -> TaskOperation {
     #if os(macOS)
     cmake(
@@ -730,7 +728,7 @@ private func nativeNinja(
     targets: [String],
     root: FilePath,
     environment: [String: String],
-    builder: NativeBuildContainerConfiguration
+    builder: NativeOCIConfiguration
 ) -> TaskOperation {
     #if os(macOS)
     ninja(
@@ -750,41 +748,50 @@ private func nativeNinja(
 #if !os(macOS)
 private func nativeContainerOperation(
     root: FilePath,
-    builder: NativeBuildContainerConfiguration,
+    builder: NativeOCIConfiguration,
     command: [String],
     environment: [String: String]
 ) -> TaskOperation {
-    .runBuildContainer(
-        BuildContainerExecution(
+    .runOCI(
+        OCIExecution(
+            executionPlatform: .linuxAMD64OCI,
+            artifactTarget: .linuxX86_64,
             imageID: builder.imageID,
             hostname: "native-react-build",
             workingDirectory: "/src",
             hostWorkingDirectory: root,
             mounts: [
-                BuildContainerMount(
+                OCIMount(
                     source: root,
                     target: "/src",
                     access: .readOnly),
-                BuildContainerMount(
+                OCIMount(
                     source: root.appending(".rn-build"),
                     target: "/build",
                     access: .readWrite),
-                BuildContainerMount(
+                OCIMount(
                     source: root.appending("../core/swiftpm/cmake/reactnative"),
                     target: "/core-cmake",
                     access: .readOnly),
-                BuildContainerMount(
+                OCIMount(
                     source: root.appending("third-party/double-conversion/src"),
                     target: "/include/double-conversion",
                     access: .readOnly),
-                BuildContainerMount(
+                OCIMount(
                     source: builder.ccache,
                     target: "/ccache",
                     access: .readWrite),
             ],
+            networkPolicy: .externalDisabled,
+            userPolicy: .builder,
+            capabilityPolicy: .dropAll,
+            privilegePolicy: .prohibitAcquisition,
+            processFilesystemPolicy: .standard,
+            resourceLimits: .build,
             containerEnvironment: [:],
             command: ["react-native"] + command,
-            environment: environment))
+            environment: environment,
+            output: .logged))
 }
 #endif
 

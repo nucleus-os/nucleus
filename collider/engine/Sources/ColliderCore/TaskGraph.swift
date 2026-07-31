@@ -532,7 +532,8 @@ public struct AOSPSourcePreparation: Hashable, Sendable {
     }
 }
 
-public struct BuildContainerPreparation: Hashable, Sendable {
+public struct OCIImagePreparation: Hashable, Sendable {
+    public let executionPlatform: ExecutionPlatform
     public let context: FilePath
     public let containerFile: FilePath
     public let imageID: FilePath
@@ -540,12 +541,14 @@ public struct BuildContainerPreparation: Hashable, Sendable {
     public let environment: [String: String]
 
     public init(
+        executionPlatform: ExecutionPlatform,
         context: FilePath,
         containerFile: FilePath,
         imageID: FilePath,
         imageName: String,
         environment: [String: String]
     ) {
+        self.executionPlatform = executionPlatform
         self.context = context
         self.containerFile = containerFile
         self.imageID = imageID
@@ -554,7 +557,7 @@ public struct BuildContainerPreparation: Hashable, Sendable {
     }
 }
 
-public struct BuildContainerMount: Hashable, Sendable {
+public struct OCIMount: Hashable, Sendable {
     public enum Access: String, Hashable, Sendable {
         case readOnly
         case readWrite
@@ -571,42 +574,119 @@ public struct BuildContainerMount: Hashable, Sendable {
     }
 }
 
-public struct BuildContainerExecution: Hashable, Sendable {
+public enum OCINetworkPolicy: String, Hashable, Sendable {
+    case externalDisabled = "external-disabled"
+}
+
+public struct OCIUserPolicy: Hashable, Sendable {
+    public let userID: UInt32
+    public let groupID: UInt32
+
+    public init(userID: UInt32, groupID: UInt32) {
+        self.userID = userID
+        self.groupID = groupID
+    }
+
+    public static let builder = OCIUserPolicy(userID: 1000, groupID: 1000)
+}
+
+public enum OCICapabilityPolicy: String, Hashable, Sendable {
+    case dropAll
+}
+
+public enum OCIPrivilegePolicy: String, Hashable, Sendable {
+    case prohibitAcquisition
+}
+
+public enum OCIProcessFilesystemPolicy: String, Hashable, Sendable {
+    case standard
+    case unmasked
+}
+
+public struct OCIResourceLimits: Hashable, Sendable {
+    public let cpuCount: UInt32?
+    public let memoryBytes: UInt64?
+    public let processCount: UInt32
+
+    public init(
+        cpuCount: UInt32?,
+        memoryBytes: UInt64?,
+        processCount: UInt32
+    ) {
+        self.cpuCount = cpuCount
+        self.memoryBytes = memoryBytes
+        self.processCount = processCount
+    }
+
+    public static let build = OCIResourceLimits(
+        cpuCount: nil,
+        memoryBytes: nil,
+        processCount: 32_768)
+}
+
+public struct OCIExecution: Hashable, Sendable {
+    public let executionPlatform: ExecutionPlatform
+    public let artifactTarget: ArtifactTarget
     public let imageID: FilePath
     public let hostname: String
     public let workingDirectory: String
     public let hostWorkingDirectory: FilePath
-    public let mounts: [BuildContainerMount]
+    public let mounts: [OCIMount]
     public let temporaryDirectory: FilePath?
+    public let networkPolicy: OCINetworkPolicy
+    public let userPolicy: OCIUserPolicy
+    public let capabilityPolicy: OCICapabilityPolicy
+    public let privilegePolicy: OCIPrivilegePolicy
+    public let processFilesystemPolicy: OCIProcessFilesystemPolicy
+    public let resourceLimits: OCIResourceLimits
     public let containerEnvironment: [String: String]
     public let command: [String]
     public let environment: [String: String]
+    public let output: CommandSpec.Output
 
     public init(
+        executionPlatform: ExecutionPlatform,
+        artifactTarget: ArtifactTarget,
         imageID: FilePath,
         hostname: String,
         workingDirectory: String,
         hostWorkingDirectory: FilePath,
-        mounts: [BuildContainerMount],
+        mounts: [OCIMount],
         temporaryDirectory: FilePath? = nil,
+        networkPolicy: OCINetworkPolicy,
+        userPolicy: OCIUserPolicy,
+        capabilityPolicy: OCICapabilityPolicy,
+        privilegePolicy: OCIPrivilegePolicy,
+        processFilesystemPolicy: OCIProcessFilesystemPolicy,
+        resourceLimits: OCIResourceLimits,
         containerEnvironment: [String: String],
         command: [String],
-        environment: [String: String]
+        environment: [String: String],
+        output: CommandSpec.Output
     ) {
+        self.executionPlatform = executionPlatform
+        self.artifactTarget = artifactTarget
         self.imageID = imageID
         self.hostname = hostname
         self.workingDirectory = workingDirectory
         self.hostWorkingDirectory = hostWorkingDirectory
         self.mounts = mounts
         self.temporaryDirectory = temporaryDirectory
+        self.networkPolicy = networkPolicy
+        self.userPolicy = userPolicy
+        self.capabilityPolicy = capabilityPolicy
+        self.privilegePolicy = privilegePolicy
+        self.processFilesystemPolicy = processFilesystemPolicy
+        self.resourceLimits = resourceLimits
         self.containerEnvironment = containerEnvironment
         self.command = command
         self.environment = environment
+        self.output = output
     }
 }
 
 /// Shared configuration for the rootless native dependency builder.
-public struct NativeBuildContainerConfiguration: Sendable {
+public struct NativeOCIConfiguration: Sendable {
     public let context: FilePath
     public let imageID: FilePath
     public let ccache: FilePath
@@ -977,8 +1057,8 @@ public enum TaskOperation: Hashable, Sendable {
     case pruneDirectories(DirectoryRetentionPlan)
     case verifyAOSPSourceLock(AOSPSourceLockVerification)
     case prepareAOSPSource(AOSPSourcePreparation)
-    case prepareBuildContainer(BuildContainerPreparation)
-    case runBuildContainer(BuildContainerExecution)
+    case prepareOCIImage(OCIImagePreparation)
+    case runOCI(OCIExecution)
     case prepareAOSPSigningIdentity(AOSPSigningIdentityPreparation)
     case compileAOSPProduct(AOSPProductBuild)
     case signAOSPProduct(AOSPProductBuild)

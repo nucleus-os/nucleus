@@ -37,7 +37,37 @@ privileged self-hosted runner. Build workers contain no signing identities,
 publication credentials, personal credentials, or access to unrelated host
 data.
 
-Status: proposed
+Status: implementation in progress
+
+## Current Progress
+
+The repository has closed the executable pull-request path into self-hosted
+runners. Public pull requests now use a disposable GitHub-hosted verification
+job with read-only permissions, immutable action identities, and no persisted
+checkout credential. Trusted branch and manual events remain the only routes to
+the self-hosted build and hardware jobs. Organization runner-group policy and
+the isolated publisher remain provisioning work.
+
+`ColliderCore` now represents runner, execution, artifact, and backend
+coordinates independently. OCI and AOSP task identities, dry-run plans,
+manifests, and explanations carry those coordinates. Linux amd64 OCI execution
+rejects unsupported runner and execution combinations before launching a child
+process.
+
+Collider now owns one backend-neutral OCI operation model. Product recipes no
+longer construct Podman commands. The rootless Podman executor and Apple
+`container` executor translate the same mount, network, user, capability,
+privilege, process-filesystem, resource, environment, platform, and output
+contract. AOSP compilation, signing, image assembly, and sandbox validation use
+that contract. Behavioral tests cover both translations and planning evidence.
+
+The Apple backend is implemented but not hardware-qualified. The next required
+step is Phase 4 on the M2 Ultra: install and pin Apple `container`, start its
+service noninteractively, establish the declared host-only build network,
+verify Rosetta-backed `linux/amd64` execution and storage, and run Collider's
+backend contract suite there. Recipe-level compiler-host conditionals that
+still select native macOS artifacts must then move behind explicit lane and
+artifact inputs before Phase 5 provisions the persistent development machine.
 
 ## Required Runner Topology
 
@@ -221,6 +251,26 @@ Apple-container VM filesystems and Collider-owned cache volumes hold Chromium,
 AOSP, Swift, Skia, React Native, compiler cache, and OCI storage. Host-shared
 source mounts are admitted only after performance and case-sensitivity
 qualification.
+
+Provision the first M2 Ultra executor in this order:
+
+1. install the selected, immutable Apple `container` release on the selected
+   macOS release;
+2. start its system service and prove it survives logout and restart without an
+   authorization prompt;
+3. install Rosetta through host provisioning and prove an explicit
+   `linux/amd64` container executes an amd64 binary;
+4. create the internal host-only network named
+   `nucleus-build-internal`, with no external routing or DNS;
+5. allocate the case-sensitive Collider storage roots and apply their quotas;
+6. install the selected Swift bootstrap toolchain and build Collider;
+7. run `collider doctor` and the Podman/Apple OCI behavioral contract suite;
+8. build one Linux amd64 fixture through Apple `container`, transfer its
+   declared output to a Linux x86_64 qualifier, and validate the artifact
+   target independently of the runner.
+
+Host provisioning owns steps 1 through 6. Collider only inspects their state
+and emits a precise failure when the contract is absent.
 
 Create separate storage roots for development machines, source snapshots,
 materialized build workspaces, incremental caches, OCI storage, immutable

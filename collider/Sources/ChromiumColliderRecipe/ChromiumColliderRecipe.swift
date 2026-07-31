@@ -32,25 +32,28 @@ public enum ChromiumColliderRecipe {
         let sourceLockFile = chromium.appending("source.lock.json")
         let sourceLock = try JSONDecoder().decode(
             ChromiumSourceLock.self,
-            from: Data(contentsOf: URL(
-                fileURLWithPath: sourceLockFile.string)))
+            from: Data(
+                contentsOf: URL(
+                    fileURLWithPath: sourceLockFile.string)))
         try validateSourceLock(sourceLock)
         var repositories: [String: ChromiumSourceRepository] = [:]
         for repository in sourceLock.repositories {
-            guard repositories.updateValue(
-                repository,
-                forKey: repository.name
-            ) == nil else {
+            guard
+                repositories.updateValue(
+                    repository,
+                    forKey: repository.name
+                ) == nil
+            else {
                 throw ChromiumRecipeFailure.invalidSourceLock
             }
         }
         guard let chromiumRepository = repositories["chromium"],
-              let cefRepository = repositories["cef"],
-              repositories["angle"] != nil,
-              repositories["skia"] != nil,
-              repositories["v8"] != nil,
-              repositories["dawn"] != nil,
-              repositories.count == 6
+            let cefRepository = repositories["cef"],
+            repositories["angle"] != nil,
+            repositories["skia"] != nil,
+            repositories["v8"] != nil,
+            repositories["dawn"] != nil,
+            repositories.count == 6
         else {
             throw ChromiumRecipeFailure.invalidSourceLock
         }
@@ -174,8 +177,7 @@ public enum ChromiumColliderRecipe {
             id: TaskID(rawValue: "browser.builder"),
             component: ComponentID(rawValue: "browser"),
             inputs: [
-                .tree(builderContext),
-                .tool(.named("podman")),
+                .tree(builderContext)
             ],
             outputs: [
                 OutputDeclaration(
@@ -183,8 +185,9 @@ public enum ChromiumColliderRecipe {
                     validation: .regularFile)
             ],
             locks: [.shared(cache.appending("locks/builder.lock"))],
-            operation: .prepareBuildContainer(
-                BuildContainerPreparation(
+            operation: .prepareOCIImage(
+                OCIImagePreparation(
+                    executionPlatform: .linuxAMD64OCI,
                     context: builderContext,
                     containerFile: builderContext.appending("Containerfile"),
                     imageID: builderImageID,
@@ -332,7 +335,7 @@ public enum ChromiumColliderRecipe {
             ],
             cachePolicy: .always,
             operation: .sequence([
-                .runBuildContainer(
+                .runOCI(
                     chromiumBuildExecution(
                         imageID: builderImageID,
                         source: source,
@@ -395,60 +398,61 @@ public enum ChromiumColliderRecipe {
     private static func validateSourceLock(
         _ sourceLock: ChromiumSourceLock
     ) throws {
-        let expected: [String: (
-            path: String,
-            remote: String,
-            upstream: String
-        )] = [
-            "chromium": (
-                "chromium/src",
-                "https://github.com/nucleus-os/chromium.git",
-                "https://chromium.googlesource.com/chromium/src.git"
-            ),
-            "cef": (
-                "chromium/src/cef",
-                "https://github.com/nucleus-os/cef.git",
-                "https://github.com/chromiumembedded/cef.git"
-            ),
-            "angle": (
-                "chromium/src/third_party/angle",
-                "https://github.com/nucleus-os/angle.git",
-                "https://chromium.googlesource.com/angle/angle.git"
-            ),
-            "skia": (
-                "chromium/src/third_party/skia",
-                "https://github.com/nucleus-os/skia.git",
-                "https://skia.googlesource.com/skia.git"
-            ),
-            "v8": (
-                "chromium/src/v8",
-                "https://github.com/nucleus-os/v8.git",
-                "https://chromium.googlesource.com/v8/v8.git"
-            ),
-            "dawn": (
-                "chromium/src/third_party/dawn",
-                "https://github.com/nucleus-os/dawn.git",
-                "https://dawn.googlesource.com/dawn.git"
-            ),
-        ]
+        let expected:
+            [String: (
+                path: String,
+                remote: String,
+                upstream: String
+            )] = [
+                "chromium": (
+                    "chromium/src",
+                    "https://github.com/nucleus-os/chromium.git",
+                    "https://chromium.googlesource.com/chromium/src.git"
+                ),
+                "cef": (
+                    "chromium/src/cef",
+                    "https://github.com/nucleus-os/cef.git",
+                    "https://github.com/chromiumembedded/cef.git"
+                ),
+                "angle": (
+                    "chromium/src/third_party/angle",
+                    "https://github.com/nucleus-os/angle.git",
+                    "https://chromium.googlesource.com/angle/angle.git"
+                ),
+                "skia": (
+                    "chromium/src/third_party/skia",
+                    "https://github.com/nucleus-os/skia.git",
+                    "https://skia.googlesource.com/skia.git"
+                ),
+                "v8": (
+                    "chromium/src/v8",
+                    "https://github.com/nucleus-os/v8.git",
+                    "https://chromium.googlesource.com/v8/v8.git"
+                ),
+                "dawn": (
+                    "chromium/src/third_party/dawn",
+                    "https://github.com/nucleus-os/dawn.git",
+                    "https://dawn.googlesource.com/dawn.git"
+                ),
+            ]
         guard sourceLock.repositories.count == expected.count,
-              sourceLock.cefBranch.allSatisfy(\.isNumber),
-              !sourceLock.cefBranch.isEmpty,
-              sourceLock.chromiumVersion.split(separator: ".").count == 4,
-              sourceLock.depotTools.remote
+            sourceLock.cefBranch.allSatisfy(\.isNumber),
+            !sourceLock.cefBranch.isEmpty,
+            sourceLock.chromiumVersion.split(separator: ".").count == 4,
+            sourceLock.depotTools.remote
                 == "https://chromium.googlesource.com/chromium/tools/depot_tools.git",
-              isGitObjectID(sourceLock.depotTools.commit)
+            isGitObjectID(sourceLock.depotTools.commit)
         else {
             throw ChromiumRecipeFailure.invalidSourceLock
         }
         for repository in sourceLock.repositories {
             guard let requirement = expected[repository.name],
-                  repository.checkoutPath == requirement.path,
-                  repository.remote == requirement.remote,
-                  repository.upstreamRemote == requirement.upstream,
-                  isGitObjectID(repository.upstreamCommit),
-                  isGitObjectID(repository.commit),
-                  isGitObjectID(repository.tree)
+                repository.checkoutPath == requirement.path,
+                repository.remote == requirement.remote,
+                repository.upstreamRemote == requirement.upstream,
+                isGitObjectID(repository.upstreamCommit),
+                isGitObjectID(repository.commit),
+                isGitObjectID(repository.tree)
             else {
                 throw ChromiumRecipeFailure.invalidSourceLock
             }
@@ -456,9 +460,10 @@ public enum ChromiumColliderRecipe {
     }
 
     private static func isGitObjectID(_ value: String) -> Bool {
-        value.utf8.count == 40 && value.utf8.allSatisfy {
-            ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
-        }
+        value.utf8.count == 40
+            && value.utf8.allSatisfy {
+                ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
+            }
     }
 }
 
@@ -470,32 +475,40 @@ private func chromiumBuildExecution(
     jobs: Int,
     targets: [String],
     environment: [String: String]
-) -> BuildContainerExecution {
-    BuildContainerExecution(
+) -> OCIExecution {
+    OCIExecution(
+        executionPlatform: .linuxAMD64OCI,
+        artifactTarget: .linuxX86_64,
         imageID: imageID,
         hostname: "chromium-build",
         workingDirectory: "/source/chromium/src",
         hostWorkingDirectory: source.appending("chromium/src"),
         mounts: [
-            BuildContainerMount(
+            OCIMount(
                 source: source,
                 target: "/source",
                 access: .readOnly),
-            BuildContainerMount(
+            OCIMount(
                 source: depotTools,
                 target: "/depot_tools",
                 access: .readOnly),
-            BuildContainerMount(
+            OCIMount(
                 source: output.removingLastComponent().appending(".inputs"),
                 target: "/inputs",
                 access: .readOnly),
-            BuildContainerMount(
+            OCIMount(
                 source: output,
                 target: "/build",
                 access: .readWrite),
         ],
         temporaryDirectory: output.removingLastComponent().appending(
             ".temporary"),
+        networkPolicy: .externalDisabled,
+        userPolicy: .builder,
+        capabilityPolicy: .dropAll,
+        privilegePolicy: .prohibitAcquisition,
+        processFilesystemPolicy: .standard,
+        resourceLimits: .build,
         containerEnvironment: [
             "DEPOT_TOOLS_UPDATE": "0",
             "HOME": "/tmp/nucleus-home",
@@ -505,7 +518,8 @@ private func chromiumBuildExecution(
             "TZ": "UTC",
         ],
         command: ["build", String(jobs)] + targets,
-        environment: environment)
+        environment: environment,
+        output: .logged)
 }
 
 private enum ChromiumRecipeFailure: Error {

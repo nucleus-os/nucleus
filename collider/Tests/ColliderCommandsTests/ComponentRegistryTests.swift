@@ -494,7 +494,7 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         "PATH": "/usr/bin",
         "NUCLEUS_ANDROID_NDK_HOME": "/opt/android-ndk",
     ]
-    let builder = NativeBuildContainerConfiguration(
+    let builder = NativeOCIConfiguration(
         context: root.appending("build-container"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
@@ -518,8 +518,8 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         #expect(operations.count == 2)
         #else
         let executions = operations.compactMap {
-            operation -> BuildContainerExecution? in
-            guard case .runBuildContainer(let execution) = operation else {
+            operation -> OCIExecution? in
+            guard case .runOCI(let execution) = operation else {
                 return nil
             }
             return execution
@@ -529,7 +529,7 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         #expect(
             executions.allSatisfy {
                 $0.mounts.contains(
-                    BuildContainerMount(
+                    OCIMount(
                         source: root.appending("third-party/skia"),
                         target: "/src",
                         access: .readOnly))
@@ -548,7 +548,7 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
 @Test func reactNativeSupportRecipesUseTheIsolatedNativeBuilder() {
     let root = FilePath("/workspace/react-native")
     let environment = ["PATH": "/usr/bin"]
-    let builder = NativeBuildContainerConfiguration(
+    let builder = NativeOCIConfiguration(
         context: FilePath("/workspace/core/build-container"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
@@ -574,8 +574,8 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
             })
         #else
         let nativeOperations = operations.compactMap {
-            operation -> BuildContainerExecution? in
-            guard case .runBuildContainer(let execution) = operation else {
+            operation -> OCIExecution? in
+            guard case .runOCI(let execution) = operation else {
                 return nil
             }
             return execution
@@ -585,12 +585,12 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
             nativeOperations.allSatisfy {
                 $0.command.first == "react-native"
                     && $0.mounts.contains(
-                        BuildContainerMount(
+                        OCIMount(
                             source: root,
                             target: "/src",
                             access: .readOnly))
                     && $0.mounts.contains(
-                        BuildContainerMount(
+                        OCIMount(
                             source: root.appending(".rn-build"),
                             target: "/build",
                             access: .readWrite))
@@ -609,7 +609,7 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
 @Test func hermesRecipeUsesTypedCommandsAndArchiveMerge() {
     let root = FilePath("/workspace/react-native")
     let environment = ["PATH": "/usr/bin"]
-    let builder = NativeBuildContainerConfiguration(
+    let builder = NativeOCIConfiguration(
         context: FilePath("/workspace/core/build-container"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
@@ -649,8 +649,8 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
     #expect(build.executable == .named("ninja"))
     #expect(build.environment["LD_LIBRARY_PATH"] == "/toolchain/lib")
     #else
-    guard case .runBuildContainer(let configure) = operations[0],
-        case .runBuildContainer(let build) = operations[1]
+    guard case .runOCI(let configure) = operations[0],
+        case .runOCI(let build) = operations[1]
     else {
         Issue.record("Hermes must use the native builder on Linux")
         return
@@ -763,7 +763,7 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
     }
     #expect(
         pipelineIDs.contains(
-            "android-runtime.aosp-build-container"))
+            "android-runtime.aosp-builder-image"))
     #expect(
         pipelineIDs.suffix(5) == [
             "android-runtime.aosp-compile",
@@ -772,13 +772,13 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
             "android-runtime.aosp-validate",
             "android-runtime.aosp-image",
         ])
-    let container = try #require(
+    let builderImage = try #require(
         tasks.first {
-            $0.id.rawValue == "android-runtime.aosp-build-container"
+            $0.id.rawValue == "android-runtime.aosp-builder-image"
         })
     #expect(
         {
-            guard case .prepareBuildContainer = container.operation else {
+            guard case .prepareOCIImage = builderImage.operation else {
                 return false
             }
             return true

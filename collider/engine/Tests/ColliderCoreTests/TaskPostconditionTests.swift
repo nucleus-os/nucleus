@@ -2,6 +2,7 @@ import ColliderCore
 import Foundation
 import SystemPackage
 import Testing
+
 @testable import ColliderRuntime
 
 @Test func sharedPostconditionParticipatesInIdentityAndCleanliness() async throws {
@@ -17,7 +18,7 @@ import Testing
         postconditions: [
             PathPostcondition(
                 path: shared,
-                validation: .nonEmptyDirectory),
+                validation: .nonEmptyDirectory)
         ],
         operation: .sequence([
             .createDirectory(shared),
@@ -45,7 +46,7 @@ import Testing
         id: task.id,
         component: task.component,
         postconditions: [
-            PathPostcondition(path: shared, validation: .exists),
+            PathPostcondition(path: shared, validation: .exists)
         ],
         operation: task.operation)
     let changedPlan = try await runtime.execute(
@@ -59,5 +60,5 @@ import Testing
     #expect(!missing.plan[0].isClean)
     #expect(missing.plan[0].explanation.contains("validation failed"))
     #expect(!changedPlan.plan[0].isClean)
-    #expect(changedPlan.plan[0].explanation == "input identity changed")
+    #expect(changedPlan.plan[0].explanation.hasPrefix("input identity changed "))
 }

@@ -4,7 +4,7 @@ import SwiftPlatformColliderRecipe
 import SystemPackage
 import Testing
 
-private let testBuilder = SwiftBuildContainerConfiguration(
+private let testBuilder = SwiftOCIConfiguration(
     imageID: FilePath("/cache/build-containers/swift/image-id"),
     sourceWorkspace: FilePath("/source"),
     recipeRoot: FilePath("/workspace/swift-toolchain"),
@@ -23,7 +23,23 @@ private let testBuilder = SwiftBuildContainerConfiguration(
             jobs: 8,
             builder: testBuilder,
             environment: ["PATH": "/usr/bin:/bin"]))
-    let ordered = try TaskGraph(taskSet.tasks).orderedTasks(
+    let builder = TaskDeclaration(
+        id: TaskID(rawValue: "toolchain.swift-builder"),
+        component: ComponentID(rawValue: "toolchain"),
+        outputs: [
+            OutputDeclaration(
+                path: testBuilder.imageID,
+                validation: .regularFile)
+        ],
+        operation: .prepareOCIImage(
+            OCIImagePreparation(
+                executionPlatform: .linuxAMD64OCI,
+                context: testBuilder.recipeRoot,
+                containerFile: testBuilder.recipeRoot.appending("Containerfile"),
+                imageID: testBuilder.imageID,
+                imageName: "localhost/nucleus-swift-build",
+                environment: ["PATH": "/usr/bin:/bin"])))
+    let ordered = try TaskGraph([builder] + taskSet.tasks).orderedTasks(
         selecting: taskSet.selected
     ).map(\.id.rawValue)
     let zlib = ordered.firstIndex(
@@ -75,17 +91,17 @@ private func isContainerizedDependencyOperation(
     switch operation {
     case .createDirectory:
         true
-    case .runBuildContainer(let execution):
+    case .runOCI(let execution):
         execution.imageID == testBuilder.imageID
             && execution.command.first == "dependency"
             && execution.workingDirectory.hasPrefix("/candidate/")
             && execution.mounts.contains(
-                BuildContainerMount(
+                OCIMount(
                     source: testBuilder.sourceWorkspace,
                     target: "/src",
                     access: .readOnly))
             && execution.mounts.contains(
-                BuildContainerMount(
+                OCIMount(
                     source: testBuilder.compilerCache,
                     target: "/ccache",
                     access: .readWrite))
@@ -238,9 +254,9 @@ private func isContainerizedDependencyOperation(
     }
     #else
     guard
-        case .runBuildContainer(let hostBuild)? =
+        case .runOCI(let hostBuild)? =
             tasks["toolchain.host-build"]?.operation,
-        case .runBuildContainer(let androidBuild)? =
+        case .runOCI(let androidBuild)? =
             tasks["toolchain.android-sdk-build-aarch64"]?.operation
     else {
         Issue.record("Linux Swift builds must use the builder container")
@@ -277,13 +293,13 @@ private func isContainerizedDependencyOperation(
             == "/opt/android-ndk-r30-beta2")
     #expect(
         androidBuild.mounts.contains(
-            BuildContainerMount(
+            OCIMount(
                 source: FilePath("/source"),
                 target: "/src",
                 access: .readOnly)))
     #expect(
         hostBuild.mounts.contains(
-            BuildContainerMount(
+            OCIMount(
                 source: testBuilder.compilerCache,
                 target: "/ccache",
                 access: .readWrite)))

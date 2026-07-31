@@ -30,19 +30,41 @@ public struct TaskPlanEntry: Codable, Sendable {
     public let isClean: Bool
     public let isSubsumed: Bool
     public let explanation: String
+    public let coordinates: TaskExecutionCoordinates?
 
     public init(
         task: TaskID,
         identity: ArtifactDigest,
         isClean: Bool,
         isSubsumed: Bool = false,
-        explanation: String
+        explanation: String,
+        coordinates: TaskExecutionCoordinates?
     ) {
         self.task = task
         self.identity = identity
         self.isClean = isClean
         self.isSubsumed = isSubsumed
         self.explanation = explanation
+        self.coordinates = coordinates
+    }
+}
+
+public struct TaskExecutionCoordinates: Codable, Hashable, Sendable {
+    public let runner: RunnerPlatform
+    public let execution: ExecutionPlatform
+    public let backend: ExecutionBackend
+    public let artifact: ArtifactTarget?
+
+    public init(
+        runner: RunnerPlatform,
+        execution: ExecutionPlatform,
+        backend: ExecutionBackend,
+        artifact: ArtifactTarget?
+    ) {
+        self.runner = runner
+        self.execution = execution
+        self.backend = backend
+        self.artifact = artifact
     }
 }
 
@@ -120,7 +142,9 @@ extension ColliderRuntime {
             plan.append(
                 TaskPlanEntry(
                     task: task.id, identity: identity,
-                    isClean: assessment.clean, explanation: assessment.reason))
+                    isClean: assessment.clean,
+                    explanation: assessment.reason,
+                    coordinates: try executionCoordinates(task.operation)))
         }
         let subsumedOperations = subsumedOperations(
             in: ordered,
@@ -134,7 +158,8 @@ extension ColliderRuntime {
                 identity: entry.identity,
                 isClean: false,
                 isSubsumed: true,
-                explanation: "operation is subsumed by a selected dirty task")
+                explanation: "operation is subsumed by a selected dirty task",
+                coordinates: entry.coordinates)
         }
         let swiftBuilds = try synthesizedSwiftBuilds(
             in: ordered,
@@ -154,7 +179,9 @@ extension ColliderRuntime {
                     task: build.task.id,
                     identity: identity,
                     isClean: assessment.clean,
-                    explanation: assessment.reason))
+                    explanation: assessment.reason,
+                    coordinates: try executionCoordinates(
+                        build.task.operation)))
         }
         let reportedPlan = swiftBuildPlans + plan
         let planningDuration = elapsedNanoseconds(since: planningStart)
@@ -1018,7 +1045,9 @@ extension ColliderRuntime {
                 encoder.append(tag: 189, string: name)
                 encoder.append(tag: 190, string: value)
             }
-        case .prepareBuildContainer(let preparation):
+        case .prepareOCIImage(let preparation):
+            let executor = try OCIExecutorResolver.resolve(
+                executionPlatform: preparation.executionPlatform)
             for path in [
                 preparation.context,
                 preparation.containerFile,
@@ -1027,12 +1056,19 @@ extension ColliderRuntime {
                 encoder.append(tag: 239, string: path.string)
             }
             encoder.append(tag: 240, string: preparation.imageName)
+            encode(
+                runner: .current,
+                execution: preparation.executionPlatform,
+                backend: executor.backend,
+                into: &encoder)
             let tool = try resolvedToolIdentity(
-                .named("podman"),
+                executor.executable,
                 environment: preparation.environment)
             encoder.append(tag: 241, string: tool.path.string)
             encoder.append(tag: 242, bytes: tool.digest.bytes)
-        case .runBuildContainer(let execution):
+        case .runOCI(let execution):
+            let executor = try OCIExecutorResolver.resolve(
+                executionPlatform: execution.executionPlatform)
             encoder.append(tag: 243, string: execution.imageID.string)
             encoder.append(tag: 244, string: execution.hostname)
             encoder.append(tag: 245, string: execution.workingDirectory)
@@ -1051,8 +1087,52 @@ extension ColliderRuntime {
             for argument in execution.command {
                 encoder.append(tag: 252, string: argument)
             }
+            encode(
+                runner: .current,
+                execution: execution.executionPlatform,
+                backend: executor.backend,
+                into: &encoder)
+            encoder.append(
+                tag: 65,
+                string: execution.artifactTarget.operatingSystem.rawValue)
+            encoder.append(
+                tag: 66,
+                string: execution.artifactTarget.architecture.rawValue)
+            encoder.append(
+                tag: 67,
+                string: execution.artifactTarget.abi ?? "")
+            encoder.append(
+                tag: 68,
+                integer: UInt64(execution.artifactTarget.androidAPILevel ?? 0))
+            encoder.append(tag: 69, string: execution.networkPolicy.rawValue)
+            encoder.append(
+                tag: 70,
+                integer: UInt64(execution.userPolicy.userID))
+            encoder.append(
+                tag: 82,
+                integer: UInt64(execution.userPolicy.groupID))
+            encoder.append(tag: 83, string: execution.capabilityPolicy.rawValue)
+            encoder.append(tag: 84, string: execution.privilegePolicy.rawValue)
+            encoder.append(
+                tag: 120,
+                string: execution.processFilesystemPolicy.rawValue)
+            encoder.append(
+                tag: 85,
+                integer: UInt64(execution.resourceLimits.cpuCount ?? 0))
+            encoder.append(
+                tag: 86,
+                integer: execution.resourceLimits.memoryBytes ?? 0)
+            encoder.append(
+                tag: 87,
+                integer: UInt64(execution.resourceLimits.processCount))
+            encoder.append(
+                tag: 88,
+                string: execution.temporaryDirectory?.string ?? "")
+            encoder.append(
+                tag: 121,
+                string: ociOutputIdentity(execution.output))
             let tool = try resolvedToolIdentity(
-                .named("podman"),
+                executor.executable,
                 environment: execution.environment)
             encoder.append(tag: 253, string: tool.path.string)
             encoder.append(tag: 254, bytes: tool.digest.bytes)
@@ -1122,6 +1202,23 @@ extension ColliderRuntime {
             for (name, value) in artifactEnvironment(build.environment) {
                 encoder.append(tag: 202, string: name)
                 encoder.append(tag: 203, string: value)
+            }
+            if pipelineStage == "compile" || pipelineStage == "sign"
+                || pipelineStage == "assemble-images"
+            {
+                let executionPlatform = ExecutionPlatform.linuxAMD64OCI
+                let executor = try OCIExecutorResolver.resolve(
+                    executionPlatform: executionPlatform)
+                encode(
+                    runner: .current,
+                    execution: executionPlatform,
+                    backend: executor.backend,
+                    into: &encoder)
+                let tool = try resolvedToolIdentity(
+                    executor.executable,
+                    environment: build.environment)
+                encoder.append(tag: 200, string: tool.path.string)
+                encoder.append(tag: 201, bytes: tool.digest.bytes)
             }
         case .prepareChromiumDepotTools(let preparation):
             let tool = try resolvedToolIdentity(
@@ -1285,6 +1382,20 @@ extension ColliderRuntime {
     }
 
     private func encode(
+        runner: RunnerPlatform,
+        execution: ExecutionPlatform,
+        backend: ExecutionBackend,
+        into encoder: inout CanonicalDigestEncoder
+    ) {
+        encoder.append(tag: 4, string: runner.operatingSystem.rawValue)
+        encoder.append(tag: 5, string: runner.architecture.rawValue)
+        encoder.append(tag: 6, string: execution.environment.rawValue)
+        encoder.append(tag: 7, string: execution.operatingSystem.rawValue)
+        encoder.append(tag: 8, string: execution.architecture.rawValue)
+        encoder.append(tag: 9, string: backend.rawValue)
+    }
+
+    private func encode(
         aospSource specification: AOSPSourceSpecification,
         into encoder: inout CanonicalDigestEncoder
     ) {
@@ -1362,7 +1473,8 @@ extension ColliderRuntime {
         guard record.identity == identity else {
             return (
                 false,
-                "input identity changed (recorded \(record.identity), planned \(identity))")
+                "input identity changed (recorded \(record.identity), planned \(identity))"
+            )
         }
         do {
             try validate(task)
@@ -1550,10 +1662,10 @@ extension ColliderRuntime {
             try await prepareAOSPSource(
                 preparation,
                 stage: stage)
-        case .prepareBuildContainer(let preparation):
-            try await prepareBuildContainer(preparation, stage: stage)
-        case .runBuildContainer(let execution):
-            try await runBuildContainer(execution, stage: stage)
+        case .prepareOCIImage(let preparation):
+            try await prepareOCIImage(preparation, stage: stage)
+        case .runOCI(let execution):
+            try await runOCI(execution, stage: stage)
         case .prepareAOSPSigningIdentity(let preparation):
             try await prepareAOSPSigningIdentity(
                 preparation,
@@ -1909,9 +2021,9 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
         verification.environment
     case .prepareAOSPSource(let preparation):
         preparation.environment
-    case .prepareBuildContainer(let preparation):
+    case .prepareOCIImage(let preparation):
         preparation.environment
-    case .runBuildContainer(let execution):
+    case .runOCI(let execution):
         execution.environment
     case .prepareAOSPSigningIdentity(let preparation):
         preparation.environment
@@ -1941,6 +2053,73 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
         operations.lazy.map(operationEnvironment).first(where: { !$0.isEmpty }) ?? [:]
     default:
         [:]
+    }
+}
+
+private func executionCoordinates(
+    _ operation: TaskOperation
+) throws -> TaskExecutionCoordinates? {
+    let runner = RunnerPlatform.current
+    switch operation {
+    case .prepareOCIImage(let preparation):
+        let executor = try OCIExecutorResolver.resolve(
+            runner: runner,
+            executionPlatform: preparation.executionPlatform)
+        return TaskExecutionCoordinates(
+            runner: runner,
+            execution: preparation.executionPlatform,
+            backend: executor.backend,
+            artifact: nil)
+    case .runOCI(let execution):
+        let executor = try OCIExecutorResolver.resolve(
+            runner: runner,
+            executionPlatform: execution.executionPlatform)
+        return TaskExecutionCoordinates(
+            runner: runner,
+            execution: execution.executionPlatform,
+            backend: executor.backend,
+            artifact: execution.artifactTarget)
+    case .compileAOSPProduct(let build),
+        .signAOSPProduct(let build),
+        .assembleAOSPProductImages(let build):
+        let platform = ExecutionPlatform.linuxAMD64OCI
+        let executor = try OCIExecutorResolver.resolve(
+            runner: runner,
+            executionPlatform: platform)
+        return TaskExecutionCoordinates(
+            runner: runner,
+            execution: platform,
+            backend: executor.backend,
+            artifact: .androidX86_64(apiLevel: build.expectedPlatformSDK))
+    case .sequence(let operations):
+        let coordinates = try operations.compactMap {
+            try executionCoordinates($0)
+        }
+        guard let first = coordinates.first else { return nil }
+        guard coordinates.dropFirst().allSatisfy({ $0 == first }) else {
+            throw RuntimeFailure.invalidOutput(
+                "one task sequence cannot cross execution coordinates")
+        }
+        return first
+    default:
+        return nil
+    }
+}
+
+private func ociOutputIdentity(_ output: CommandSpec.Output) -> String {
+    switch output {
+    case .inherited:
+        "inherited"
+    case .logged:
+        "logged"
+    case .terminal:
+        "terminal"
+    case .file(let path):
+        "file:\(path)"
+    case .captured(let limit):
+        "captured:\(limit)"
+    case .combined(let limit):
+        "combined:\(limit)"
     }
 }
 

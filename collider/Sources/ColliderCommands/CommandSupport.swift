@@ -34,26 +34,58 @@ struct TaskControls: Sendable {
     /// their own success line for the plain (non-plan, non-JSON) case.
     func render(_ report: TaskExecutionReport) throws {
         if json {
-            print(String(
-                decoding: try JSONEncoder.sorted.encode(report),
-                as: UTF8.self))
+            print(
+                String(
+                    decoding: try JSONEncoder.sorted.encode(report),
+                    as: UTF8.self))
         } else if dryRun || explain {
             let planningMilliseconds =
                 Double(report.planningDurationNanoseconds) / 1_000_000
-            print(String(
-                format: "planning  %.3f ms",
-                planningMilliseconds))
+            print(
+                String(
+                    format: "planning  %.3f ms",
+                    planningMilliseconds))
             for entry in report.plan {
                 let state =
-                    entry.isClean ? "clean"
-                    : entry.isSubsumed ? "subsumed"
-                    : "dirty"
+                    entry.isClean
+                    ? "clean"
+                    : entry.isSubsumed
+                        ? "subsumed"
+                        : "dirty"
                 print(
                     "\(state)  "
-                        + "\(entry.task.rawValue)  \(entry.explanation)")
+                        + "\(entry.task.rawValue)"
+                        + executionCoordinateSummary(entry.coordinates)
+                        + "  \(entry.explanation)")
             }
         }
     }
+}
+
+private func executionCoordinateSummary(
+    _ coordinates: TaskExecutionCoordinates?
+) -> String {
+    guard let coordinates else { return "" }
+    var values = [
+        "runner=\(coordinates.runner.operatingSystem.rawValue)/"
+            + coordinates.runner.architecture.rawValue,
+        "executor=\(coordinates.backend.rawValue):"
+            + "\(coordinates.execution.operatingSystem.rawValue)/"
+            + coordinates.execution.architecture.rawValue,
+    ]
+    if let artifact = coordinates.artifact {
+        var value =
+            "artifact=\(artifact.operatingSystem.rawValue)/"
+            + artifact.architecture.rawValue
+        if let abi = artifact.abi {
+            value += "/\(abi)"
+        }
+        if let apiLevel = artifact.androidAPILevel {
+            value += "@api\(apiLevel)"
+        }
+        values.append(value)
+    }
+    return "  [\(values.joined(separator: " "))]"
 }
 
 /// The subset of the sourcekit-lsp configuration the package owns. Every other
@@ -73,16 +105,19 @@ extension WorkspaceContext {
         let swiftPM = layout.state.appendingPathComponent(
             "swiftpm",
             isDirectory: true)
-        try DirectoryLifecycle.prune(DirectoryRetentionPlan(
-            safetyRoot: FilePath(layout.state.path),
-            rules: RuntimeSanitizer.allCases.map {
-                DirectoryRetentionRule(
-                    root: FilePath(swiftPM.appendingPathComponent(
-                        $0.rawValue,
-                        isDirectory: true).path),
-                    retain: 2,
-                    naming: .swiftBuildContext)
-            }))
+        try DirectoryLifecycle.prune(
+            DirectoryRetentionPlan(
+                safetyRoot: FilePath(layout.state.path),
+                rules: RuntimeSanitizer.allCases.map {
+                    DirectoryRetentionRule(
+                        root: FilePath(
+                            swiftPM.appendingPathComponent(
+                                $0.rawValue,
+                                isDirectory: true
+                            ).path),
+                        retain: 2,
+                        naming: .swiftBuildContext)
+                }))
     }
 
     /// Every SwiftPM build context is keyed to the compiler that produced it, so
@@ -93,22 +128,25 @@ extension WorkspaceContext {
         let swiftPM = layout.state.appendingPathComponent(
             "swiftpm",
             isDirectory: true)
-        let contents = (try? FileManager.default.contentsOfDirectory(
-            at: swiftPM,
-            includingPropertiesForKeys: [.isDirectoryKey])) ?? []
-        try DirectoryLifecycle.prune(DirectoryRetentionPlan(
-            safetyRoot: FilePath(layout.state.path),
-            rules: contents
-                .filter {
-                    (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?
-                        .isDirectory == true
-                }
-                .map {
-                    DirectoryRetentionRule(
-                        root: FilePath($0.path),
-                        retain: 0,
-                        naming: .swiftBuildContext)
-                }))
+        let contents =
+            (try? FileManager.default.contentsOfDirectory(
+                at: swiftPM,
+                includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+        try DirectoryLifecycle.prune(
+            DirectoryRetentionPlan(
+                safetyRoot: FilePath(layout.state.path),
+                rules:
+                    contents
+                    .filter {
+                        (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?
+                            .isDirectory == true
+                    }
+                    .map {
+                        DirectoryRetentionRule(
+                            root: FilePath($0.path),
+                            retain: 0,
+                            naming: .swiftBuildContext)
+                    }))
     }
 
     /// The user cache root: `$XDG_CACHE_HOME`, else `$HOME/.cache`, else the
@@ -170,7 +208,8 @@ extension WorkspaceContext {
         let invocation = SwiftPMInvocation(
             context: context,
             scratchPath: FilePath(layout.swiftScratch(for: context).path))
-        let isDefaultContext = configuration == .debug
+        let isDefaultContext =
+            configuration == .debug
             && sanitizer == nil
             && target == nil
             && traits.isEmpty
@@ -240,7 +279,6 @@ extension WorkspaceContext {
         try bytes.write(to: path, options: .atomic)
     }
 
-
     /// Build the task graph, execute the selected tasks against the repository
     /// task-state root, render the report, and return it.
     @discardableResult
@@ -263,8 +301,8 @@ extension WorkspaceContext {
     }
 }
 
-private extension WorkspaceContext {
-    func swiftCompilerPath() throws -> FilePath {
+extension WorkspaceContext {
+    fileprivate func swiftCompilerPath() throws -> FilePath {
         if let value = environment["SWIFTC"], !value.isEmpty {
             return FilePath(
                 URL(fileURLWithPath: value).resolvingSymlinksInPath().path)
@@ -276,7 +314,8 @@ private extension WorkspaceContext {
                     .resolvingSymlinksInPath()
                     .path)
         }
-        let searchPath = environment["PATH"]
+        let searchPath =
+            environment["PATH"]
             ?? ProcessInfo.processInfo.environment["PATH"]
             ?? ""
         for directory in searchPath.split(separator: ":") {

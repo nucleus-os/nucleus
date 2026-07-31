@@ -15,13 +15,14 @@ extension ColliderRuntime {
                 "Chromium source manifest is missing: \(sourceManifest)")
         }
         var environment = build.environment
-        environment["PATH"] = build.depotTools.string + ":"
+        environment["PATH"] =
+            build.depotTools.string + ":"
             + (environment["PATH"] ?? "/usr/bin:/bin")
         environment["DEPOT_TOOLS_UPDATE"] = "0"
         let gnArguments = try stagedChromiumGNArguments(
             build,
             chromium: chromium)
-        try await runBuildContainer(
+        try await runOCI(
             chromiumContainerExecution(
                 build,
                 command: ["configure", gnArguments]),
@@ -36,7 +37,7 @@ extension ColliderRuntime {
             environment: environment,
             stage: stage)
         try DurableFile.writeJSON(manifest, to: expected)
-        try await runBuildContainer(
+        try await runOCI(
             chromiumContainerExecution(
                 build,
                 command: ["build", String(build.jobs)] + build.targets),
@@ -99,33 +100,41 @@ extension ColliderRuntime {
     private func chromiumContainerExecution(
         _ build: ChromiumProductBuild,
         command: [String]
-    ) -> BuildContainerExecution {
-        BuildContainerExecution(
+    ) -> OCIExecution {
+        OCIExecution(
+            executionPlatform: .linuxAMD64OCI,
+            artifactTarget: .linuxX86_64,
             imageID: build.containerImageID,
             hostname: "chromium-build",
             workingDirectory: "/source/chromium/src",
             hostWorkingDirectory: build.sourceRoot.appending("chromium/src"),
             mounts: [
-                BuildContainerMount(
+                OCIMount(
                     source: build.sourceRoot,
                     target: "/source",
                     access: .readOnly),
-                BuildContainerMount(
+                OCIMount(
                     source: build.depotTools,
                     target: "/depot_tools",
                     access: .readOnly),
-                BuildContainerMount(
+                OCIMount(
                     source: build.output.removingLastComponent().appending(
                         ".inputs"),
                     target: "/inputs",
                     access: .readOnly),
-                BuildContainerMount(
+                OCIMount(
                     source: build.output,
                     target: "/build",
                     access: .readWrite),
             ],
             temporaryDirectory: build.output.removingLastComponent().appending(
                 ".temporary"),
+            networkPolicy: .externalDisabled,
+            userPolicy: .builder,
+            capabilityPolicy: .dropAll,
+            privilegePolicy: .prohibitAcquisition,
+            processFilesystemPolicy: .standard,
+            resourceLimits: .build,
             containerEnvironment: [
                 "DEPOT_TOOLS_UPDATE": "0",
                 "HOME": "/tmp/nucleus-home",
@@ -135,7 +144,8 @@ extension ColliderRuntime {
                 "TZ": "UTC",
             ],
             command: command,
-            environment: build.environment)
+            environment: build.environment,
+            output: .logged)
     }
 
     private func chromiumBuildManifest(
@@ -146,10 +156,11 @@ extension ColliderRuntime {
         stage: TaskID
     ) async throws -> ChromiumBuildManifest {
         let sourceObject = try JSONSerialization.jsonObject(
-            with: Data(contentsOf: URL(
-                fileURLWithPath: sourceManifest.string)))
+            with: Data(
+                contentsOf: URL(
+                    fileURLWithPath: sourceManifest.string)))
         guard let source = sourceObject as? [String: Any],
-              let sourceID =
+            let sourceID =
                 source["sourceID"] as? String
                 ?? source["source_id"] as? String
         else {
@@ -172,8 +183,9 @@ extension ColliderRuntime {
                 output: .captured(limit: 64 * 1_024)),
             stage: stage)
         guard versionResult.status == 0,
-              let version = versionResult.standardOutput.split(
-                separator: "\n").first
+            let version = versionResult.standardOutput.split(
+                separator: "\n"
+            ).first
         else {
             throw RuntimeFailure.invalidOutput(
                 "could not identify Chromium clang: \(clang)")
@@ -181,11 +193,12 @@ extension ColliderRuntime {
         let args = build.output.appending("args.gn")
         let normalizedArguments = try String(
             contentsOf: URL(fileURLWithPath: args.string),
-            encoding: .utf8)
-            .split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty && !$0.hasPrefix("#") }
-            .sorted()
+            encoding: .utf8
+        )
+        .split(separator: "\n")
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+        .sorted()
         let pgo = try chromiumPGOProfile(chromium)
         let v8 = try chromiumOptionalProfile(
             chromium.appending(
@@ -216,8 +229,9 @@ extension ColliderRuntime {
         guard chromiumRegularFile(descriptor) else { return nil }
         let name = try String(
             contentsOf: URL(fileURLWithPath: descriptor.string),
-            encoding: .utf8)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+            encoding: .utf8
+        )
+        .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, !name.contains("/") else { return nil }
         return try chromiumOptionalProfile(
             chromium.appending("chrome/build/pgo_profiles/\(name)"))

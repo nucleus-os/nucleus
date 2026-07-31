@@ -1,4 +1,5 @@
 import ArgumentParser
+import ColliderCore
 import FoundationEssentials
 
 enum DoctorScope: String, CaseIterable, ExpressibleByArgument {
@@ -50,21 +51,23 @@ struct WorkspaceDoctor {
         var checks: [DoctorCheck] = []
         for prerequisite in prerequisites {
             if dryRun {
-                checks.append(DoctorCheck(
-                    id: prerequisite.id,
-                    scope: prerequisite.scope,
-                    description: prerequisite.description,
-                    status: .planned,
-                    detail: nil))
+                checks.append(
+                    DoctorCheck(
+                        id: prerequisite.id,
+                        scope: prerequisite.scope,
+                        description: prerequisite.description,
+                        status: .planned,
+                        detail: nil))
                 continue
             }
             let detail = await prerequisite.evaluate()
-            checks.append(DoctorCheck(
-                id: prerequisite.id,
-                scope: prerequisite.scope,
-                description: prerequisite.description,
-                status: detail == nil ? .failed : .passed,
-                detail: detail))
+            checks.append(
+                DoctorCheck(
+                    id: prerequisite.id,
+                    scope: prerequisite.scope,
+                    description: prerequisite.description,
+                    status: detail == nil ? .failed : .passed,
+                    detail: detail))
         }
         let report = DoctorReport(
             scope: scope.rawValue,
@@ -74,22 +77,26 @@ struct WorkspaceDoctor {
             // Callers that compose doctor with a machine-readable task report
             // still use the same prerequisite registry without a second payload.
         } else if json {
-            print(String(
-                decoding: try JSONEncoder.sorted.encode(report), as: UTF8.self))
+            print(
+                String(
+                    decoding: try JSONEncoder.sorted.encode(report), as: UTF8.self))
         } else {
             for check in checks {
-                let marker = switch check.status {
-                case .planned: "plan"
-                case .passed: "ok"
-                case .failed: "MISSING"
-                }
-                print("  \(marker.padding(toLength: 7, withPad: " ", startingAt: 0))  \(check.description)"
-                    + (check.detail.map { ": \($0)" } ?? ""))
+                let marker =
+                    switch check.status {
+                    case .planned: "plan"
+                    case .passed: "ok"
+                    case .failed: "MISSING"
+                    }
+                print(
+                    "  \(marker.padding(toLength: 7, withPad: " ", startingAt: 0))  \(check.description)"
+                        + (check.detail.map { ": \($0)" } ?? ""))
             }
             if report.success {
-                print(dryRun
-                    ? "doctor: \(scope) prerequisite plan resolved"
-                    : "doctor: \(scope) host contract satisfied")
+                print(
+                    dryRun
+                        ? "doctor: \(scope) prerequisite plan resolved"
+                        : "doctor: \(scope) host contract satisfied")
             }
         }
         guard report.success else {
@@ -102,9 +109,11 @@ struct WorkspaceDoctor {
     private func selectedPrerequisites(
         scope: DoctorScope
     ) -> [HostPrerequisite] {
-        let all = runtimePrerequisites + toolchainPrerequisites
+        let all =
+            runtimePrerequisites + toolchainPrerequisites
             + androidPrerequisites + browserPrerequisites
-        let selected = scope == .all
+        let selected =
+            scope == .all
             ? all
             : all.filter { $0.scope == scope.rawValue }
         var seen: Set<String> = []
@@ -112,8 +121,11 @@ struct WorkspaceDoctor {
     }
 
     private var runtimePrerequisites: [HostPrerequisite] {
-        [swiftVersion(scope: "runtime"), lavapipe(scope: "runtime"),
-         xwayland(scope: "runtime"), pidfd(scope: "runtime")]
+        [
+            swiftVersion(scope: "runtime"), lavapipe(scope: "runtime"),
+            xwayland(scope: "runtime"), pidfd(scope: "runtime"),
+            ociExecutor(scope: "runtime"),
+        ]
             + executables(
                 [
                     "swift", "swiftc", "git", "cmake", "ninja", "pkg-config",
@@ -140,7 +152,7 @@ struct WorkspaceDoctor {
     }
 
     private var toolchainPrerequisites: [HostPrerequisite] {
-        [swiftVersion(scope: "toolchain")]
+        [swiftVersion(scope: "toolchain"), ociExecutor(scope: "toolchain")]
             + executables(
                 [
                     "swift", "swiftc", "git", "cmake", "ninja", "python3",
@@ -158,7 +170,9 @@ struct WorkspaceDoctor {
     }
 
     private var androidPrerequisites: [HostPrerequisite] {
-        executables(["swift", "swiftc", "java", "ccache"], scope: "android")
+        [ociExecutor(scope: "android")]
+            + executables(
+                ["swift", "swiftc", "java", "ccache"], scope: "android")
             + paths(
                 [
                     "core/android/gradlew", "core/platform-android/Package.swift",
@@ -169,12 +183,12 @@ struct WorkspaceDoctor {
     }
 
     private var browserPrerequisites: [HostPrerequisite] {
-        executables(
-            [
-                "git", "python3", "tar", "timeout", "readelf", "ldd", "cc",
-                "podman",
-            ],
-            scope: "browser")
+        [ociExecutor(scope: "browser")]
+            + executables(
+                [
+                    "git", "python3", "tar", "timeout", "readelf", "ldd", "cc",
+                ],
+                scope: "browser")
             + paths(
                 [
                     "cef/apt-deps.txt", "chromium/source.lock.json",
@@ -183,14 +197,65 @@ struct WorkspaceDoctor {
                 scope: "browser")
     }
 
+    private func ociExecutor(scope: String) -> HostPrerequisite {
+        let runner = RunnerPlatform.current
+        let executable: String
+        let arguments: [String]
+        let backend: String
+        switch (runner.operatingSystem, runner.architecture) {
+        case (.linux, .x86_64):
+            executable = "podman"
+            arguments = ["info", "--format", "json"]
+            backend = ExecutionBackend.podman.rawValue
+        case (.macOS, .arm64):
+            executable = "container"
+            arguments = ["system", "status", "--format", "json"]
+            backend = ExecutionBackend.appleContainer.rawValue
+        default:
+            return HostPrerequisite(
+                id: "oci-executor",
+                scope: scope,
+                description: "supported OCI executor"
+            ) { nil }
+        }
+        return HostPrerequisite(
+            id: "oci-executor:\(backend)",
+            scope: scope,
+            description: "\(backend) OCI executor"
+        ) {
+            guard
+                let output = try? await context.run(
+                    executable,
+                    arguments,
+                    capture: true),
+                !output.isEmpty
+            else { return nil }
+            if runner.operatingSystem == .macOS {
+                guard
+                    let network = try? await context.run(
+                        executable,
+                        [
+                            "network", "inspect",
+                            OCIBackendContract.appleOfflineNetwork,
+                        ],
+                        capture: true),
+                    network.contains("hostOnly")
+                else { return nil }
+            }
+            return "\(runner.operatingSystem.rawValue)/"
+                + "\(runner.architecture.rawValue) via \(backend)"
+        }
+    }
+
     private func swiftVersion(scope: String) -> HostPrerequisite {
         HostPrerequisite(
             id: "swift-6.4",
             scope: scope,
             description: "Swift 6.4 toolchain"
         ) {
-            guard let output = try? await context.run(
-                "swift", ["--version"], capture: true),
+            guard
+                let output = try? await context.run(
+                    "swift", ["--version"], capture: true),
                 let firstLine = output.split(separator: "\n").first,
                 firstLine.hasPrefix("Swift version 6.4")
             else { return nil }
@@ -204,8 +269,9 @@ struct WorkspaceDoctor {
             scope: scope,
             description: "staged Mesa lavapipe Vulkan ICD"
         ) {
-            guard let artifact = try? LavapipeTestArtifact.resolve(
-                context: context),
+            guard
+                let artifact = try? LavapipeTestArtifact.resolve(
+                    context: context),
                 FileManager.default.isReadableFile(
                     atPath: artifact.stagedManifest.string),
                 FileManager.default.isReadableFile(
@@ -281,8 +347,9 @@ struct WorkspaceDoctor {
         guard let path = context.environment["PATH"] else { return nil }
         for directory in path.split(separator: ":", omittingEmptySubsequences: false) {
             let candidate = URL(
-                fileURLWithPath: String(directory), isDirectory: true)
-                .appendingPathComponent(name).path
+                fileURLWithPath: String(directory), isDirectory: true
+            )
+            .appendingPathComponent(name).path
             if FileManager.default.isExecutableFile(atPath: candidate) {
                 return candidate
             }

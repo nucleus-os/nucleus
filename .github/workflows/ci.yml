@@ -4,18 +4,40 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: monorepo-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  pr-verify:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate changed-file whitespace
+        env:
+          BASE_REVISION: ${{ github.event.pull_request.base.sha }}
+        run: git diff --check "$BASE_REVISION" HEAD
+      - name: Validate submodule declarations
+        run: git config --file .gitmodules --get-regexp '^submodule\..*\.path$'
+
   required:
+    if: github.event_name != 'pull_request'
     runs-on: [self-hosted, Linux, X64, nucleus]
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
+          persist-credentials: false
           submodules: recursive
       - name: Install Collider
         run: |
@@ -27,11 +49,13 @@ jobs:
         run: collider test all
 
   gpu-drm:
+    if: github.event_name != 'pull_request'
     runs-on: [self-hosted, Linux, X64, nucleus, render-node]
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
+          persist-credentials: false
           submodules: recursive
       - name: Install Collider
         run: |

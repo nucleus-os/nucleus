@@ -2,6 +2,7 @@ import ColliderCore
 import Foundation
 import SystemPackage
 import Testing
+
 @testable import ColliderRuntime
 
 @Test func runRegistryPublishesManifestEventsAndLatest() async throws {
@@ -17,14 +18,19 @@ import Testing
 
     let manifest = try JSONDecoder().decode(
         RunManifest.self,
-        from: Data(contentsOf: directory
-            .appendingPathComponent("runs/\(run.id.rawValue)/manifest.json")))
+        from: Data(
+            contentsOf:
+                directory
+                .appendingPathComponent("runs/\(run.id.rawValue)/manifest.json")))
     #expect(manifest.status == .succeeded)
-    #expect(try FileManager.default.destinationOfSymbolicLink(
-        atPath: directory.appendingPathComponent("latest").path)
-        == "runs/\(run.id.rawValue)")
-    let events = try String(contentsOf: directory
-        .appendingPathComponent("runs/\(run.id.rawValue)/events.jsonl"), encoding: .utf8)
+    #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+            atPath: directory.appendingPathComponent("latest").path)
+            == "runs/\(run.id.rawValue)")
+    let events = try String(
+        contentsOf:
+            directory
+            .appendingPathComponent("runs/\(run.id.rawValue)/events.jsonl"), encoding: .utf8)
     #expect(events.split(separator: "\n").count == 3)
 }
 
@@ -99,10 +105,12 @@ import Testing
     #expect(decoded.finishedAt == manifest.finishedAt)
     #expect(decoded.status == manifest.status)
     #expect(decoded.failedTask == manifest.failedTask)
-    #expect(decoded.planningDurationNanoseconds
-        == manifest.planningDurationNanoseconds)
-    #expect(decoded.taskDurationsNanoseconds
-        == manifest.taskDurationsNanoseconds)
+    #expect(
+        decoded.planningDurationNanoseconds
+            == manifest.planningDurationNanoseconds)
+    #expect(
+        decoded.taskDurationsNanoseconds
+            == manifest.taskDurationsNanoseconds)
     #expect(decoded.activeArtifacts == manifest.activeArtifacts)
     #expect(decoded.plannedTasks == manifest.plannedTasks)
     #expect(decoded.resumedAt == manifest.resumedAt)
@@ -118,27 +126,36 @@ func unfinishedRunResumptionReusesOnlyMatchingCleanTaskIdentities(
     defer { try? FileManager.default.removeItem(at: directory) }
     let registry = RunRegistry(root: FilePath(directory.path))
     let run = try await registry.begin(command: ["collider", "build", "core"])
-    let original = [TaskPlanEntry(
-        task: TaskID(rawValue: "core.build"),
-        identity: ArtifactDigest(bytes: [UInt8](repeating: 1, count: 32)),
-        isClean: false,
-        explanation: "no prior task state")]
+    let original = [
+        TaskPlanEntry(
+            task: TaskID(rawValue: "core.build"),
+            identity: ArtifactDigest(bytes: [UInt8](repeating: 1, count: 32)),
+            isClean: false,
+            explanation: "no prior task state",
+            coordinates: nil)
+    ]
     try await registry.recordPlan(original, in: run)
     try await registry.finish(run, status: status)
 
     let resumed = try await registry.resume(run.id)
     try await registry.recordPlan(original, in: resumed)
-    let changed = [TaskPlanEntry(
-        task: TaskID(rawValue: "core.build"),
-        identity: ArtifactDigest(bytes: [UInt8](repeating: 2, count: 32)),
-        isClean: false,
-        explanation: "input identity changed")]
+    let changed = [
+        TaskPlanEntry(
+            task: TaskID(rawValue: "core.build"),
+            identity: ArtifactDigest(bytes: [UInt8](repeating: 2, count: 32)),
+            isClean: false,
+            explanation: "input identity changed",
+            coordinates: nil)
+    ]
     try await registry.recordPlan(changed, in: resumed)
-    let incorrectlyClean = [TaskPlanEntry(
-        task: TaskID(rawValue: "core.build"),
-        identity: ArtifactDigest(bytes: [UInt8](repeating: 3, count: 32)),
-        isClean: true,
-        explanation: "fixture incorrectly claims reusable state")]
+    let incorrectlyClean = [
+        TaskPlanEntry(
+            task: TaskID(rawValue: "core.build"),
+            identity: ArtifactDigest(bytes: [UInt8](repeating: 3, count: 32)),
+            isClean: true,
+            explanation: "fixture incorrectly claims reusable state",
+            coordinates: nil)
+    ]
     await #expect(throws: RunRegistryFailure.self) {
         try await registry.recordPlan(incorrectlyClean, in: resumed)
     }

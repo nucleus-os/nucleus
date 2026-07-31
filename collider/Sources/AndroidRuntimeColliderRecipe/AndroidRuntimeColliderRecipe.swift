@@ -121,7 +121,7 @@ public enum AndroidRuntimeColliderRecipe {
         let source = try aospSourceTasks(
             root: root,
             environment: environment)
-        let container = aospBuildContainer(
+        let builderImage = aospBuilderImage(
             root: root,
             environment: environment)
         let signing = aospSigningIdentity(
@@ -130,7 +130,7 @@ public enum AndroidRuntimeColliderRecipe {
         let product = try aospProductImageTasks(
             root: root,
             environment: environment)
-        return source + [container, signing] + product
+        return source + [builderImage, signing] + product
     }
 
     private static func aospRepoLauncher(
@@ -245,7 +245,7 @@ public enum AndroidRuntimeColliderRecipe {
                     environment: environment)))
     }
 
-    private static func aospBuildContainer(
+    private static func aospBuilderImage(
         root: FilePath,
         environment: [String: String]
     ) -> TaskDeclaration {
@@ -253,18 +253,18 @@ public enum AndroidRuntimeColliderRecipe {
         let containerFile = context.appending("Containerfile")
         let imageID = root.appending(".aosp-build/container/image-id")
         return TaskDeclaration(
-            id: TaskID(rawValue: "android-runtime.aosp-build-container"),
+            id: TaskID(rawValue: "android-runtime.aosp-builder-image"),
             component: component,
             inputs: [
-                .tree(context),
-                .tool(.named("podman")),
+                .tree(context)
             ],
             outputs: [
                 OutputDeclaration(path: imageID, validation: .regularFile)
             ],
-            locks: [.checkout("android-runtime-aosp-container")],
-            operation: .prepareBuildContainer(
-                BuildContainerPreparation(
+            locks: [.checkout("android-runtime-aosp-builder-image")],
+            operation: .prepareOCIImage(
+                OCIImagePreparation(
+                    executionPlatform: .linuxAMD64OCI,
                     context: context,
                     containerFile: containerFile,
                     imageID: imageID,
@@ -363,7 +363,7 @@ public enum AndroidRuntimeColliderRecipe {
             dependencies: [
                 TaskID(rawValue: "android-runtime.aosp-repo-launcher"),
                 TaskID(rawValue: "android-runtime.aosp-source"),
-                TaskID(rawValue: "android-runtime.aosp-build-container"),
+                TaskID(rawValue: "android-runtime.aosp-builder-image"),
             ],
             inputs: [
                 .value(
@@ -382,7 +382,6 @@ public enum AndroidRuntimeColliderRecipe {
                 .dependencyOutput(sourceProvenance),
                 .dependencyOutput(containerImageID),
                 .tool(.named("python3")),
-                .tool(.named("podman")),
             ],
             outputs: [
                 OutputDeclaration(
@@ -419,7 +418,6 @@ public enum AndroidRuntimeColliderRecipe {
                         "signing-identity.json")),
                 .dependencyOutput(containerImageID),
                 .tool(.named("openssl")),
-                .tool(.named("podman")),
             ],
             outputs: [
                 OutputDeclaration(
@@ -443,7 +441,6 @@ public enum AndroidRuntimeColliderRecipe {
                 .dependencyOutput(hostTools),
                 .dependencyOutput(containerImageID),
                 .tool(.named("unzip")),
-                .tool(.named("podman")),
             ],
             outputs: [
                 OutputDeclaration(
@@ -487,7 +484,6 @@ public enum AndroidRuntimeColliderRecipe {
                         "ipc/transport/Sources/NucleusIPCTransportC")),
                 .tool(.named("openssl")),
                 .tool(.named("unzip")),
-                .tool(.named("podman")),
             ]
                 + requiredImages.map {
                     .dependencyOutput(stagedImages.appending($0))

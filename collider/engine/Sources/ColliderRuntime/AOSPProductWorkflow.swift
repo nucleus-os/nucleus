@@ -8,15 +8,19 @@ public func aospProductDefinitionDigest(
     sourceOverlays: [AOSPProductSourceOverlay]
 ) throws -> ArtifactDigest {
     var framing = Data()
-    framing.append(contentsOf: try ArtifactHasher.digest(
-        tree: productSource).bytes)
+    framing.append(
+        contentsOf: try ArtifactHasher.digest(
+            tree: productSource
+        ).bytes)
     for overlay in sourceOverlays.sorted(by: {
         $0.relativeDestination < $1.relativeDestination
     }) {
         framing.append(contentsOf: overlay.relativeDestination.utf8)
         framing.append(0)
-        framing.append(contentsOf: try ArtifactHasher.digest(
-            tree: overlay.source).bytes)
+        framing.append(
+            contentsOf: try ArtifactHasher.digest(
+                tree: overlay.source
+            ).bytes)
     }
     return ArtifactHasher.digest(bytes: framing)
 }
@@ -80,7 +84,8 @@ extension ColliderRuntime {
                     "-key", privateKey.string,
                     "-out", certificate.string,
                     "-days", "3650",
-                    "-subj", preparation.subject
+                    "-subj",
+                    preparation.subject
                         + "/CN=Nucleus Android \(alias)",
                 ],
                 in: candidate,
@@ -104,10 +109,12 @@ extension ColliderRuntime {
                     [.posixPermissions: 0o600],
                     ofItemAtPath: path.string)
             }
-            certificates.append(AOSPSigningIdentity.Certificate(
-                alias: alias,
-                x509SHA256: try ArtifactHasher.digest(
-                    file: certificate).sha256Hex))
+            certificates.append(
+                AOSPSigningIdentity.Certificate(
+                    alias: alias,
+                    x509SHA256: try ArtifactHasher.digest(
+                        file: certificate
+                    ).sha256Hex))
         }
 
         try DurableFile.writeJSON(
@@ -130,9 +137,9 @@ extension ColliderRuntime {
         stage: TaskID
     ) async throws {
         guard build.buildJobs > 0,
-              build.expectedPlatformSDK > 0,
-              build.expectedVendorAPILevel > 0,
-              build.variant == "user"
+            build.expectedPlatformSDK > 0,
+            build.expectedVendorAPILevel > 0,
+            build.variant == "user"
         else {
             throw RuntimeFailure.invalidOutput(
                 "AOSP production builds require positive concurrency/API "
@@ -140,8 +147,9 @@ extension ColliderRuntime {
         }
         let sourceProvenance = try JSONDecoder().decode(
             AOSPBuildSourceProvenance.self,
-            from: Data(contentsOf: URL(
-                fileURLWithPath: build.sourceProvenance.string)))
+            from: Data(
+                contentsOf: URL(
+                    fileURLWithPath: build.sourceProvenance.string)))
         guard sourceProvenance.status == "materialized" else {
             throw RuntimeFailure.invalidOutput(
                 "AOSP source provenance is not materialized")
@@ -184,8 +192,10 @@ extension ColliderRuntime {
             )
             .trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
         let currentSourceDigest = ArtifactHasher.digest(
-            bytes: Data(resolvedManifest.utf8)).sha256Hex
-        guard currentSourceDigest
+            bytes: Data(resolvedManifest.utf8)
+        ).sha256Hex
+        guard
+            currentSourceDigest
                 == sourceProvenance.resolvedManifestSHA256
         else {
             throw RuntimeFailure.invalidOutput(
@@ -253,63 +263,53 @@ extension ColliderRuntime {
             environment: environment,
             stage: stage)
 
-        let cleanResult = try await execute(
-            CommandSpec(
-                executable: .named("podman"),
-                arguments: try aospContainerArguments(
-                    build: build,
-                    writableMounts: [
-                        (output, "/src/out/nucleus"),
-                        (distribution, "/src/out/nucleus-dist"),
-                        (
-                            build.ccacheDirectory,
-                            "/src/out/nucleus/.ccache"
-                        ),
-                    ],
-                    readOnlyMounts: [
-                        (build.source, "/src"),
-                    ],
-                    environment: environment,
-                    command: [
-                        "/src/build/soong/soong_ui.bash",
-                        "--make-mode",
-                        "installclean",
-                    ]),
-                workingDirectory: build.source,
-                environment: build.environment,
-                output: .logged),
+        let cleanResult = try await executeOCI(
+            aospOCIExecution(
+                build: build,
+                writableMounts: [
+                    (output, "/src/out/nucleus"),
+                    (distribution, "/src/out/nucleus-dist"),
+                    (
+                        build.ccacheDirectory,
+                        "/src/out/nucleus/.ccache"
+                    ),
+                ],
+                readOnlyMounts: [
+                    (build.source, "/src")
+                ],
+                environment: environment,
+                command: [
+                    "/src/build/soong/soong_ui.bash",
+                    "--make-mode",
+                    "installclean",
+                ]),
             stage: stage)
         try rejectAOSPSandboxDegradation(
             cleanResult.standardOutput,
             status: cleanResult.status)
 
-        let result = try await execute(
-            CommandSpec(
-                executable: .named("podman"),
-                arguments: try aospContainerArguments(
-                    build: build,
-                    writableMounts: [
-                        (output, "/src/out/nucleus"),
-                        (distribution, "/src/out/nucleus-dist"),
-                        (
-                            build.ccacheDirectory,
-                            "/src/out/nucleus/.ccache"
-                        ),
-                    ],
-                    readOnlyMounts: [
-                        (build.source, "/src"),
-                    ],
-                    environment: environment,
-                    command: [
-                        "/src/build/soong/soong_ui.bash",
-                        "--make-mode",
-                        "-j\(build.buildJobs)",
-                        "target-files-package",
-                        "otatools",
-                    ]),
-                workingDirectory: build.source,
-                environment: build.environment,
-                output: .logged),
+        let result = try await executeOCI(
+            aospOCIExecution(
+                build: build,
+                writableMounts: [
+                    (output, "/src/out/nucleus"),
+                    (distribution, "/src/out/nucleus-dist"),
+                    (
+                        build.ccacheDirectory,
+                        "/src/out/nucleus/.ccache"
+                    ),
+                ],
+                readOnlyMounts: [
+                    (build.source, "/src")
+                ],
+                environment: environment,
+                command: [
+                    "/src/build/soong/soong_ui.bash",
+                    "--make-mode",
+                    "-j\(build.buildJobs)",
+                    "target-files-package",
+                    "otatools",
+                ]),
             stage: stage)
         try rejectAOSPSandboxDegradation(
             result.standardOutput,
@@ -324,7 +324,8 @@ extension ColliderRuntime {
             from: builtTargetFiles,
             to: unsignedTargetFiles)
         let unsignedDigest = try ArtifactHasher.digest(
-            file: unsignedTargetFiles).sha256Hex
+            file: unsignedTargetFiles
+        ).sha256Hex
         try DurableFile.write(
             Data(
                 "\(unsignedDigest)  \(build.product)-target_files.zip\n".utf8),
@@ -340,7 +341,8 @@ extension ColliderRuntime {
             AOSPSigningIdentityPreparation(
                 destination: build.signingIdentity,
                 subject: try aospSigningIdentity(
-                    at: build.signingIdentity).subject,
+                    at: build.signingIdentity
+                ).subject,
                 environment: build.environment),
             stage: stage)
         let output = build.buildRoot.appending("out")
@@ -351,7 +353,8 @@ extension ColliderRuntime {
             withIntermediateDirectories: true)
         let hostTools = output.appending("host/linux-x86/bin")
         let signingTool = hostTools.appending("sign_target_files_apks")
-        for tool in [signingTool] where
+        for tool in [signingTool]
+        where
             !FileManager.default.isExecutableFile(atPath: tool.string)
         {
             throw RuntimeFailure.invalidOutput(
@@ -393,9 +396,8 @@ extension ColliderRuntime {
             "/unsigned/\(build.product)-target_files.zip",
             "/staged/\(signedTargetCandidate.lastComponent?.string ?? "")",
         ]
-        try await checkedAOSPProductCommand(
-            .named("podman"),
-            try aospContainerArguments(
+        try await checkedAOSPOCI(
+            aospOCIExecution(
                 build: build,
                 writableMounts: [(staged, "/staged")],
                 readOnlyMounts: [
@@ -407,11 +409,8 @@ extension ColliderRuntime {
                 environment: environment,
                 command: [
                     "/src/out/nucleus/host/linux-x86/bin/"
-                        + "sign_target_files_apks",
+                        + "sign_target_files_apks"
                 ] + signingArguments),
-            in: build.buildRoot,
-            environment: build.environment,
-            output: .logged,
             stage: stage)
         try replaceAOSPProductFile(
             signedTargetCandidate,
@@ -444,9 +443,8 @@ extension ColliderRuntime {
             try? FileManager.default.removeItem(
                 atPath: imageArchiveCandidate.string)
         }
-        try await checkedAOSPProductCommand(
-            .named("podman"),
-            try aospContainerArguments(
+        try await checkedAOSPOCI(
+            aospOCIExecution(
                 build: build,
                 writableMounts: [(staged, "/staged")],
                 readOnlyMounts: [
@@ -460,9 +458,6 @@ extension ColliderRuntime {
                     "/staged/\(signedTargetCandidate.lastComponent?.string ?? "")",
                     "/staged/\(imageArchiveCandidate.lastComponent?.string ?? "")",
                 ]),
-            in: build.buildRoot,
-            environment: build.environment,
-            output: .logged,
             stage: stage)
 
         let imageCandidate = build.buildRoot.appending(
@@ -497,8 +492,9 @@ extension ColliderRuntime {
                     "signed Android image is missing: \(name)")
             }
             if try aospImageIsSparse(image) {
-                guard FileManager.default.isExecutableFile(
-                    atPath: sparseImageTool.string)
+                guard
+                    FileManager.default.isExecutableFile(
+                        atPath: sparseImageTool.string)
                 else {
                     throw RuntimeFailure.invalidOutput(
                         "AOSP simg2img is missing: \(sparseImageTool)")
@@ -508,9 +504,8 @@ extension ColliderRuntime {
                     try? FileManager.default.removeItem(
                         atPath: rawImage.string)
                 }
-                try await checkedAOSPProductCommand(
-                    .named("podman"),
-                    try aospContainerArguments(
+                try await checkedAOSPOCI(
+                    aospOCIExecution(
                         build: build,
                         writableMounts: [(imageCandidate, "/images")],
                         readOnlyMounts: [
@@ -523,8 +518,6 @@ extension ColliderRuntime {
                             "/images/\(name)",
                             "/images/\(name).raw",
                         ]),
-                    in: build.buildRoot,
-                    environment: build.environment,
                     stage: stage)
                 try FileManager.default.removeItem(atPath: image.string)
                 try FileManager.default.moveItem(
@@ -550,8 +543,9 @@ extension ColliderRuntime {
     ) async throws {
         let sourceProvenance = try JSONDecoder().decode(
             AOSPBuildSourceProvenance.self,
-            from: Data(contentsOf: URL(
-                fileURLWithPath: build.sourceProvenance.string)))
+            from: Data(
+                contentsOf: URL(
+                    fileURLWithPath: build.sourceProvenance.string)))
         let productDigest = try aospProductDefinitionDigest(
             productSource: build.productSource,
             sourceOverlays: build.sourceOverlays)
@@ -590,11 +584,12 @@ extension ColliderRuntime {
             }
             let attributes = try FileManager.default.attributesOfItem(
                 atPath: image.string)
-            images.append(AOSPImageProvenance.Image(
-                name: name,
-                size: (attributes[.size] as? NSNumber)?.uint64Value ?? 0,
-                storageFormat: "raw",
-                sha256: try ArtifactHasher.digest(file: image).sha256Hex))
+            images.append(
+                AOSPImageProvenance.Image(
+                    name: name,
+                    size: (attributes[.size] as? NSNumber)?.uint64Value ?? 0,
+                    storageFormat: "raw",
+                    sha256: try ArtifactHasher.digest(file: image).sha256Hex))
         }
         try await checkedAOSPProductCommand(
             .path(avbTool),
@@ -624,18 +619,20 @@ extension ColliderRuntime {
             archive: signedTargetCandidate,
             environment: environment,
             stage: stage)
-        guard systemProperties["ro.build.version.sdk"]
-            == String(build.expectedPlatformSDK)
+        guard
+            systemProperties["ro.build.version.sdk"]
+                == String(build.expectedPlatformSDK)
         else {
             throw RuntimeFailure.invalidOutput(
                 "signed product SDK is "
                     + "\(systemProperties["ro.build.version.sdk"] ?? "missing"); "
                     + "expected \(build.expectedPlatformSDK)")
         }
-        guard vendorProperties["ro.vendor.api_level"]
-            == String(build.expectedVendorAPILevel)
-            || vendorProperties["ro.board.api_level"]
+        guard
+            vendorProperties["ro.vendor.api_level"]
                 == String(build.expectedVendorAPILevel)
+                || vendorProperties["ro.board.api_level"]
+                    == String(build.expectedVendorAPILevel)
         else {
             throw RuntimeFailure.invalidOutput(
                 "signed product does not declare vendor API level "
@@ -644,8 +641,8 @@ extension ColliderRuntime {
         let fingerprint =
             systemProperties["ro.system.build.fingerprint"] ?? ""
         guard fingerprint.contains("/\(build.product):"),
-              fingerprint.hasSuffix(":user/release-keys"),
-              build.variant == "user"
+            fingerprint.hasSuffix(":user/release-keys"),
+            build.variant == "user"
         else {
             throw RuntimeFailure.invalidOutput(
                 "signed production product fingerprint is invalid: "
@@ -660,9 +657,11 @@ extension ColliderRuntime {
             stage: stage)
 
         let targetFilesDigest = try ArtifactHasher.digest(
-            file: signedTargetCandidate).sha256Hex
+            file: signedTargetCandidate
+        ).sha256Hex
         let imageArchiveDigest = try ArtifactHasher.digest(
-            file: imageArchiveCandidate).sha256Hex
+            file: imageArchiveCandidate
+        ).sha256Hex
         let signing = try aospSigningIdentity(
             at: build.signingIdentity)
         try DurableFile.writeJSON(
@@ -737,15 +736,16 @@ extension ColliderRuntime {
         try DirectoryLifecycle.activate(
             target: "generations/\(generationName)",
             link: active)
-        try DirectoryLifecycle.prune(DirectoryRetentionPlan(
-            safetyRoot: aospBuildRoot,
-            rules: [
-                DirectoryRetentionRule(
-                    root: generations,
-                    current: active,
-                    retain: 2,
-                    naming: .aospProduct),
-            ]))
+        try DirectoryLifecycle.prune(
+            DirectoryRetentionPlan(
+                safetyRoot: aospBuildRoot,
+                rules: [
+                    DirectoryRetentionRule(
+                        root: generations,
+                        current: active,
+                        retain: 2,
+                        naming: .aospProduct)
+                ]))
     }
 
     private func validateAOSPSigningIdentity(
@@ -755,8 +755,8 @@ extension ColliderRuntime {
         let identity = try aospSigningIdentity(
             at: preparation.destination)
         guard identity.purpose == "local-development",
-              identity.subject == preparation.subject,
-              identity.certificates.map(\.alias) == aospSigningAliases
+            identity.subject == preparation.subject,
+            identity.certificates.map(\.alias) == aospSigningAliases
         else {
             throw RuntimeFailure.invalidOutput(
                 "AOSP signing identity metadata is invalid")
@@ -775,14 +775,16 @@ extension ColliderRuntime {
             let privateKey = FilePath(base.string + ".pem")
             let certificate = FilePath(base.string + ".x509.pem")
             let pkcs8 = FilePath(base.string + ".pk8")
-            for path in [privateKey, certificate, pkcs8] where
+            for path in [privateKey, certificate, pkcs8]
+            where
                 !path.isRegularFile
             {
                 throw RuntimeFailure.invalidOutput(
                     "AOSP signing key material is missing: \(path)")
             }
-            guard try ArtifactHasher.digest(file: certificate).sha256Hex
-                == item.x509SHA256
+            guard
+                try ArtifactHasher.digest(file: certificate).sha256Hex
+                    == item.x509SHA256
             else {
                 throw RuntimeFailure.invalidOutput(
                     "AOSP signing certificate digest changed: \(certificate)")
@@ -829,8 +831,9 @@ extension ColliderRuntime {
                 in: preparation.destination,
                 environment: preparation.environment,
                 stage: stage)
-            guard try ArtifactHasher.digest(file: certificateDER)
-                == ArtifactHasher.digest(file: privateDER)
+            guard
+                try ArtifactHasher.digest(file: certificateDER)
+                    == ArtifactHasher.digest(file: privateDER)
             else {
                 throw RuntimeFailure.invalidOutput(
                     "AOSP signing certificate does not match its private key: "
@@ -907,7 +910,8 @@ extension ColliderRuntime {
 
         let apksigner = hostTools.appending("apksigner")
         let avbTool = hostTools.appending("avbtool")
-        for tool in [apksigner, avbTool] where
+        for tool in [apksigner, avbTool]
+        where
             !FileManager.default.isExecutableFile(atPath: tool.string)
         {
             throw RuntimeFailure.invalidOutput(
@@ -950,9 +954,10 @@ extension ColliderRuntime {
             ["-Z1", archive.string],
             in: archive.removingLastComponent(),
             environment: environment,
-            stage: stage)
-            .split(whereSeparator: \.isNewline)
-            .map(String.init)
+            stage: stage
+        )
+        .split(whereSeparator: \.isNewline)
+        .map(String.init)
         let archiveExtensions = archiveEntries.map {
             URL(fileURLWithPath: $0).pathExtension.lowercased()
         }
@@ -979,9 +984,10 @@ extension ColliderRuntime {
 
         let packages = try aospProductPackages(
             under: validationDirectory)
-        guard packages.contains(where: {
-            $0.extension?.lowercased() == "apk"
-        }),
+        guard
+            packages.contains(where: {
+                $0.extension?.lowercased() == "apk"
+            }),
             packages.contains(where: {
                 $0.extension?.lowercased() == "apex"
             })
@@ -1100,9 +1106,10 @@ extension ColliderRuntime {
             ["-Z1", archive.string],
             in: archive.removingLastComponent(),
             environment: environment,
-            stage: stage)
-            .split(whereSeparator: \.isNewline)
-            .map(String.init)
+            stage: stage
+        )
+        .split(whereSeparator: \.isNewline)
+        .map(String.init)
         let requiredConfigurations = [
             "SYSTEM/etc/fonts.xml",
             "SYSTEM/etc/font_fallback.xml",
@@ -1130,11 +1137,12 @@ extension ColliderRuntime {
         let root = URL(
             fileURLWithPath: directory.string,
             isDirectory: true)
-        guard let enumerator = FileManager.default.enumerator(
-            at: root,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [],
-            errorHandler: { _, _ in false })
+        guard
+            let enumerator = FileManager.default.enumerator(
+                at: root,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [],
+                errorHandler: { _, _ in false })
         else {
             throw RuntimeFailure.invalidOutput(
                 "could not enumerate signed Android packages")
@@ -1204,6 +1212,20 @@ extension ColliderRuntime {
                 in: .whitespacesAndNewlines)
             throw RuntimeFailure.invalidOutput(
                 "\(arguments.first ?? "command") failed"
+                    + (detail.isEmpty ? "" : ": \(detail)"))
+        }
+    }
+
+    private func checkedAOSPOCI(
+        _ execution: OCIExecution,
+        stage: TaskID
+    ) async throws {
+        let result = try await executeOCI(execution, stage: stage)
+        guard result.status == 0 else {
+            let detail = result.standardOutput.trimmingCharacters(
+                in: .whitespacesAndNewlines)
+            throw RuntimeFailure.invalidOutput(
+                "\(execution.command.first ?? "OCI command") failed"
                     + (detail.isEmpty ? "" : ": \(detail)"))
         }
     }
@@ -1299,8 +1321,9 @@ func validateAOSPFontContract(
         }
         referencesByConfiguration[path] = delegate.references
     }
-    guard referencesByConfiguration["SYSTEM/etc/fonts.xml"]?
-        .contains("Roboto-Regular.ttf") == true
+    guard
+        referencesByConfiguration["SYSTEM/etc/fonts.xml"]?
+            .contains("Roboto-Regular.ttf") == true
     else {
         throw RuntimeFailure.invalidOutput(
             "signed Android font contract has no Roboto default family")
@@ -1319,7 +1342,8 @@ func validateAOSPFontContract(
                 separator: "/",
                 omittingEmptySubsequences: true)
             guard let partition = components.first else { return true }
-            let archivePath = ([partition.uppercased()]
+            let archivePath =
+                ([partition.uppercased()]
                 + components.dropFirst().map(String.init))
                 .joined(separator: "/")
             return !entries.contains(archivePath)
@@ -1354,58 +1378,41 @@ private let aospSigningAliases = [
     "networkstack",
 ]
 
-func aospContainerArguments(
+func aospOCIExecution(
     build: AOSPProductBuild,
     writableMounts: [(FilePath, String)],
     readOnlyMounts: [(FilePath, String)],
     environment: [String: String],
-    command: [String]
-) throws -> [String] {
-    let imageID = try String(
-        contentsOfFile: build.containerImageID.string,
-        encoding: .utf8)
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-    guard imageID.hasPrefix("sha256:"), imageID.count == 71 else {
-        throw RuntimeFailure.invalidOutput(
-            "AOSP build container image ID is missing or invalid")
-    }
-    var arguments = [
-        "run",
-        "--rm",
-        "--network=none",
-        "--userns=keep-id:uid=1000,gid=1000",
-        "--cap-drop=all",
-        "--security-opt=no-new-privileges",
-        "--security-opt=unmask=/proc/*",
-        "--hostname=android-build",
-        "--read-only",
-        "--pids-limit=32768",
-        "--tmpfs=/tmp:rw,nosuid,nodev,size=8g",
-        "--tmpfs=/home/nucleus-build:rw,nosuid,nodev,noexec,size=1g",
-        "--workdir=/src",
-    ]
-    for (name, value) in environment.sorted(by: { $0.key < $1.key }) {
-        arguments += ["--env", "\(name)=\(value)"]
-    }
-    for (source, target) in readOnlyMounts {
-        arguments += [
-            "--mount",
-            "type=bind,src=\(source.string),target=\(target),ro=true",
-        ]
-    }
-    for (source, target) in writableMounts {
-        arguments += [
-            "--mount",
-            "type=bind,src=\(source.string),target=\(target),rw=true",
-        ]
-    }
-    arguments.append(imageID)
-    arguments += command
-    return arguments
+    command: [String],
+    output: CommandSpec.Output = .logged
+) -> OCIExecution {
+    OCIExecution(
+        executionPlatform: .linuxAMD64OCI,
+        artifactTarget: .androidX86_64(apiLevel: build.expectedPlatformSDK),
+        imageID: build.containerImageID,
+        hostname: "android-build",
+        workingDirectory: "/src",
+        hostWorkingDirectory: build.source,
+        mounts: readOnlyMounts.map {
+            OCIMount(source: $0.0, target: $0.1, access: .readOnly)
+        }
+            + writableMounts.map {
+                OCIMount(source: $0.0, target: $0.1, access: .readWrite)
+            },
+        networkPolicy: .externalDisabled,
+        userPolicy: .builder,
+        capabilityPolicy: .dropAll,
+        privilegePolicy: .prohibitAcquisition,
+        processFilesystemPolicy: .unmasked,
+        resourceLimits: .build,
+        containerEnvironment: environment,
+        command: command,
+        environment: build.environment,
+        output: output)
 }
 
-private extension ColliderRuntime {
-    func validateAOSPBuildSandbox(
+extension ColliderRuntime {
+    fileprivate func validateAOSPBuildSandbox(
         _ build: AOSPProductBuild,
         writableMounts: [(FilePath, String)],
         environment: [String: String],
@@ -1485,52 +1492,44 @@ private extension ColliderRuntime {
         let containerEnvironment = aospContainerToolEnvironment().merging(
             environment,
             uniquingKeysWith: { _, requested in requested })
-        let isolation = try await execute(
-            CommandSpec(
-                executable: .named("podman"),
-                arguments: try aospContainerArguments(
-                    build: build,
-                    writableMounts: writableMounts + [
-                        (validation, "/validation"),
-                    ],
-                    readOnlyMounts: [
-                        (build.source, "/src"),
-                    ],
-                    environment: containerEnvironment,
-                    command: [
-                        "/usr/bin/python3",
-                        "-c",
-                        isolationValidation,
-                    ]),
-                workingDirectory: build.source,
-                environment: build.environment,
+        let isolation = try await executeOCI(
+            aospOCIExecution(
+                build: build,
+                writableMounts: writableMounts + [
+                    (validation, "/validation")
+                ],
+                readOnlyMounts: [
+                    (build.source, "/src")
+                ],
+                environment: containerEnvironment,
+                command: [
+                    "/usr/bin/python3",
+                    "-c",
+                    isolationValidation,
+                ],
                 output: .combined(limit: 4 * 1_024 * 1_024)),
             stage: stage)
         try validateAOSPSandboxIsolation(
             isolation.standardOutput,
             status: isolation.status)
 
-        let broken = try await execute(
-            CommandSpec(
-                executable: .named("podman"),
-                arguments: try aospContainerArguments(
-                    build: build,
-                    writableMounts: writableMounts,
-                    readOnlyMounts: [
-                        (build.source, "/src"),
-                        (
-                            brokenNSJail,
-                            "/src/prebuilts/build-tools/linux-x86/bin/nsjail"
-                        ),
-                    ],
-                    environment: containerEnvironment,
-                    command: [
-                        "/src/build/soong/soong_ui.bash",
-                        "--dumpvars-mode",
-                        "--vars=TARGET_PRODUCT",
-                    ]),
-                workingDirectory: build.source,
-                environment: build.environment,
+        let broken = try await executeOCI(
+            aospOCIExecution(
+                build: build,
+                writableMounts: writableMounts,
+                readOnlyMounts: [
+                    (build.source, "/src"),
+                    (
+                        brokenNSJail,
+                        "/src/prebuilts/build-tools/linux-x86/bin/nsjail"
+                    ),
+                ],
+                environment: containerEnvironment,
+                command: [
+                    "/src/build/soong/soong_ui.bash",
+                    "--dumpvars-mode",
+                    "--vars=TARGET_PRODUCT",
+                ],
                 output: .combined(limit: 4 * 1_024 * 1_024)),
             stage: stage)
         try validateAOSPBrokenSandboxBehavior(
@@ -1544,9 +1543,9 @@ func validateAOSPSandboxIsolation(
     status: Int32
 ) throws {
     guard status == 0,
-          output.contains("NUCLEUS_NSJAIL_FILE_HIDDEN"),
-          output.contains("NUCLEUS_NSJAIL_NETWORK_ISOLATED"),
-          output.contains("NUCLEUS_NSJAIL_ISOLATION_OK")
+        output.contains("NUCLEUS_NSJAIL_FILE_HIDDEN"),
+        output.contains("NUCLEUS_NSJAIL_NETWORK_ISOLATED"),
+        output.contains("NUCLEUS_NSJAIL_ISOLATION_OK")
     else {
         throw RuntimeFailure.invalidOutput(
             "nsjail did not prove file and network isolation")
@@ -1559,8 +1558,8 @@ func validateAOSPBrokenSandboxBehavior(
 ) throws {
     let lowercased = output.lowercased()
     guard status != 0,
-          lowercased.contains("nsjail sandbox probe failed"),
-          !lowercased.contains(
+        lowercased.contains("nsjail sandbox probe failed"),
+        !lowercased.contains(
             "build sandboxing disabled due to nsjail error")
     else {
         throw RuntimeFailure.invalidOutput(
@@ -1577,9 +1576,10 @@ func rejectAOSPSandboxDegradation(
             "rootless AOSP container build failed")
     }
     let lowercased = output.lowercased()
-    guard !lowercased.contains(
-        "build sandboxing disabled due to nsjail error"),
-          !lowercased.contains("sandboxing disabled")
+    guard
+        !lowercased.contains(
+            "build sandboxing disabled due to nsjail error"),
+        !lowercased.contains("sandboxing disabled")
     else {
         throw RuntimeFailure.invalidOutput(
             "Soong disabled nsjail; AOSP builds must remain fail-closed")
@@ -1604,7 +1604,7 @@ func aospContainerToolEnvironment() -> [String: String] {
 private func ensureAOSPContainerMountpoint(_ path: FilePath) throws {
     let manager = FileManager.default
     if let attributes = try? manager.attributesOfItem(atPath: path.string),
-       attributes[.type] as? FileAttributeType == .typeSymbolicLink
+        attributes[.type] as? FileAttributeType == .typeSymbolicLink
     {
         try manager.removeItem(atPath: path.string)
     }
@@ -1691,8 +1691,9 @@ private func linkAOSPProductTree(
 }
 
 private func aospImageIsSparse(_ path: FilePath) throws -> Bool {
-    let handle = try FileHandle(forReadingFrom: URL(
-        fileURLWithPath: path.string))
+    let handle = try FileHandle(
+        forReadingFrom: URL(
+            fileURLWithPath: path.string))
     defer { try? handle.close() }
     let prefix = try handle.read(upToCount: 4) ?? Data()
     guard prefix.count == 4 else {
@@ -1707,10 +1708,11 @@ private func locateAOSPTargetFiles(
     under root: FilePath
 ) throws -> FilePath {
     let rootURL = URL(fileURLWithPath: root.string, isDirectory: true)
-    guard let enumerator = FileManager.default.enumerator(
-        at: rootURL,
-        includingPropertiesForKeys: [.isRegularFileKey],
-        options: [.skipsHiddenFiles])
+    guard
+        let enumerator = FileManager.default.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles])
     else {
         throw RuntimeFailure.invalidOutput(
             "could not inspect AOSP build output at \(root)")
@@ -1718,8 +1720,8 @@ private func locateAOSPTargetFiles(
     let expected = "\(product)-target_files.zip"
     let matches = enumerator.compactMap { item -> FilePath? in
         guard let url = item as? URL,
-              url.lastPathComponent == expected,
-              (try? url.resourceValues(
+            url.lastPathComponent == expected,
+            (try? url.resourceValues(
                 forKeys: [.isRegularFileKey]).isRegularFile) == true
         else {
             return nil
@@ -1773,11 +1775,14 @@ func synchronizeAOSPProductTree(
         atPath: destination.string,
         withIntermediateDirectories: true)
 
-    let sourceNames = Set(try manager.contentsOfDirectory(
-        atPath: source.string))
-    let destinationNames = Set(try manager.contentsOfDirectory(
-        atPath: destination.string))
-    for name in destinationNames
+    let sourceNames = Set(
+        try manager.contentsOfDirectory(
+            atPath: source.string))
+    let destinationNames = Set(
+        try manager.contentsOfDirectory(
+            atPath: destination.string))
+    for name
+        in destinationNames
         .subtracting(sourceNames)
         .subtracting(preservedNames)
         .sorted()
@@ -1809,7 +1814,7 @@ func synchronizeAOSPProductTree(
                 destinationEntryMetadata?.permissions
                     .contains(.ownerExecute)
                     == sourceEntryMetadata.permissions
-                        .contains(.ownerExecute)
+                    .contains(.ownerExecute)
             {
                 sameFile =
                     try ArtifactHasher.digest(file: destinationEntry)
@@ -1854,28 +1859,33 @@ private func aospSigningIdentity(
 ) throws -> AOSPSigningIdentity {
     try JSONDecoder().decode(
         AOSPSigningIdentity.self,
-        from: Data(contentsOf: URL(fileURLWithPath: root.appending(
-            "signing-identity.json").string)))
+        from: Data(
+            contentsOf: URL(
+                fileURLWithPath: root.appending(
+                    "signing-identity.json"
+                ).string)))
 }
 
 private func aospProperties(_ contents: String) -> [String: String] {
     Dictionary(
-        uniqueKeysWithValues: contents
+        uniqueKeysWithValues:
+            contents
             .split(whereSeparator: \.isNewline)
             .compactMap { line -> (String, String)? in
                 guard !line.hasPrefix("#"),
-                      let equals = line.firstIndex(of: "=")
+                    let equals = line.firstIndex(of: "=")
                 else {
                     return nil
                 }
                 return (
                     String(line[..<equals]),
-                    String(line[line.index(after: equals)...]))
+                    String(line[line.index(after: equals)...])
+                )
             })
 }
 
-private extension ArtifactDigest {
-    var sha256Hex: String {
+extension ArtifactDigest {
+    fileprivate var sha256Hex: String {
         let prefix = "sha256:"
         precondition(description.hasPrefix(prefix))
         return String(description.dropFirst(prefix.count))

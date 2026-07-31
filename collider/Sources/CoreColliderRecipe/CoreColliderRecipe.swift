@@ -78,7 +78,7 @@ public enum CoreColliderRecipe {
     public static func buildSkia(
         root: FilePath,
         environment: [String: String],
-        builder: NativeBuildContainerConfiguration
+        builder: NativeOCIConfiguration
     ) -> TaskDeclaration {
         skiaTask(
             id: "core.skia.host",
@@ -94,7 +94,7 @@ public enum CoreColliderRecipe {
         root: FilePath,
         minimumAndroidAPI: UInt32,
         environment: [String: String],
-        builder: NativeBuildContainerConfiguration
+        builder: NativeOCIConfiguration
     ) -> TaskDeclaration {
         #if os(macOS)
         let ndk = environment["NUCLEUS_ANDROID_NDK_HOME"] ?? ""
@@ -285,7 +285,7 @@ private func skiaTask(
     buildDirectory: FilePath,
     gnArguments: [String],
     mode: String,
-    builder: NativeBuildContainerConfiguration
+    builder: NativeOCIConfiguration
 ) -> TaskDeclaration {
     let skia = root.appending("third-party/skia")
     #if os(macOS)
@@ -314,35 +314,43 @@ private func skiaTask(
         TaskID(rawValue: "native.builder"),
     ]
     let imageInputs: [ArtifactInput] = [
-        .dependencyOutput(builder.imageID),
-        .tool(.named("podman")),
+        .dependencyOutput(builder.imageID)
     ]
     let containerBuildDirectory = "/build/\(buildDirectory.lastComponent!)"
     let mounts = [
-        BuildContainerMount(
+        OCIMount(
             source: skia,
             target: "/src",
             access: .readOnly),
-        BuildContainerMount(
+        OCIMount(
             source: root.appending(".skia-build"),
             target: "/build",
             access: .readWrite),
-        BuildContainerMount(
+        OCIMount(
             source: builder.ccache,
             target: "/ccache",
             access: .readWrite),
     ]
     func execution(_ command: [String]) -> TaskOperation {
-        .runBuildContainer(
-            BuildContainerExecution(
+        .runOCI(
+            OCIExecution(
+                executionPlatform: .linuxAMD64OCI,
+                artifactTarget: .linuxX86_64,
                 imageID: builder.imageID,
-            hostname: "native-\(mode)-build",
+                hostname: "native-\(mode)-build",
                 workingDirectory: "/src",
                 hostWorkingDirectory: skia,
                 mounts: mounts,
+                networkPolicy: .externalDisabled,
+                userPolicy: .builder,
+                capabilityPolicy: .dropAll,
+                privilegePolicy: .prohibitAcquisition,
+                processFilesystemPolicy: .standard,
+                resourceLimits: .build,
                 containerEnvironment: [:],
                 command: ["skia-\(mode)"] + command,
-                environment: builder.environment))
+                environment: builder.environment,
+                output: .logged))
     }
     let operation = TaskOperation.sequence([
         execution([

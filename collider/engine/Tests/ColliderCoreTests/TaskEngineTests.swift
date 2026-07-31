@@ -430,7 +430,7 @@ import Testing
     let report = try await runtime.execute(
         graph: TaskGraph([changed]), selected: [changed.id], stateRoot: state)
     #expect(report.executed == [changed.id])
-    #expect(report.plan[0].explanation == "input identity changed")
+    #expect(report.plan[0].explanation.hasPrefix("input identity changed "))
 }
 
 @Test func uncommittedSourceContentsInvalidatePriorTaskState() async throws {
@@ -471,7 +471,7 @@ import Testing
     let report = try await runtime.execute(
         graph: graph, selected: [task.id], stateRoot: state)
     #expect(report.executed == [task.id])
-    #expect(report.plan[0].explanation == "input identity changed")
+    #expect(report.plan[0].explanation.hasPrefix("input identity changed "))
     #expect(try String(contentsOf: output, encoding: .utf8) == "second")
 }
 
@@ -1223,7 +1223,7 @@ import Testing
         selected: [changed.id],
         stateRoot: state)
     #expect(report.executed == [changed.id])
-    #expect(report.plan[0].explanation == "input identity changed")
+    #expect(report.plan[0].explanation.hasPrefix("input identity changed "))
 }
 
 @Test func symlinkPublicationPreservesADisplacedMutableInstallation() async throws {

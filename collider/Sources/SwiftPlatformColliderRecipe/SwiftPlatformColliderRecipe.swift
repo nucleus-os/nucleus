@@ -3,7 +3,7 @@ import Foundation
 import FoundationEssentials
 import SystemPackage
 
-public struct SwiftBuildContainerConfiguration: Sendable {
+public struct SwiftOCIConfiguration: Sendable {
     public let imageID: FilePath
     public let sourceWorkspace: FilePath
     public let recipeRoot: FilePath
@@ -35,7 +35,7 @@ public struct SwiftAndroidFoundationConfiguration: Sendable {
     public let architectures: [String]
     public let apiLevel: UInt32
     public let jobs: UInt32
-    public let builder: SwiftBuildContainerConfiguration
+    public let builder: SwiftOCIConfiguration
     public let environment: [String: String]
 
     public init(
@@ -45,7 +45,7 @@ public struct SwiftAndroidFoundationConfiguration: Sendable {
         architectures: [String],
         apiLevel: UInt32,
         jobs: UInt32,
-        builder: SwiftBuildContainerConfiguration,
+        builder: SwiftOCIConfiguration,
         environment: [String: String]
     ) {
         self.downloadCache = downloadCache
@@ -241,13 +241,22 @@ public enum SwiftPlatformColliderRecipe {
                         configuration,
                         toolchain: toolchain)))
             #else
-            let operation = TaskOperation.runBuildContainer(
-                BuildContainerExecution(
+            let operation = TaskOperation.runOCI(
+                OCIExecution(
+                    executionPlatform: .linuxAMD64OCI,
+                    artifactTarget: .androidX86_64(
+                        apiLevel: configuration.foundation.apiLevel),
                     imageID: configuration.builderImageID,
                     hostname: "swift-android-build",
                     workingDirectory: "/src",
                     hostWorkingDirectory: configuration.sourceWorkspace,
                     mounts: swiftBuilderMounts(configuration),
+                    networkPolicy: .externalDisabled,
+                    userPolicy: .builder,
+                    capabilityPolicy: .dropAll,
+                    privilegePolicy: .prohibitAcquisition,
+                    processFilesystemPolicy: .standard,
+                    resourceLimits: .build,
                     containerEnvironment: linuxAndroidBuildEnvironment(
                         configuration,
                         toolchain: toolchain),
@@ -255,7 +264,8 @@ public enum SwiftPlatformColliderRecipe {
                         + arguments.map {
                             containerizedSwiftArgument($0, configuration: configuration)
                         },
-                    environment: configuration.environment))
+                    environment: configuration.environment,
+                    output: .logged))
             #endif
             return TaskDeclaration(
                 id: TaskID(
@@ -272,8 +282,7 @@ public enum SwiftPlatformColliderRecipe {
                 ]
                     + builders.flatMap { builder in
                         [
-                            .dependencyOutput(configuration.builderImageID),
-                            .tool(.named("podman")),
+                            .dependencyOutput(configuration.builderImageID)
                         ]
                     },
                 outputs: [
@@ -445,8 +454,7 @@ public enum SwiftPlatformColliderRecipe {
                 id: TaskID(rawValue: "toolchain.swift-builder"),
                 component: ComponentID(rawValue: "toolchain"),
                 inputs: [
-                    .tree(configuration.builderContext),
-                    .tool(.named("podman")),
+                    .tree(configuration.builderContext)
                 ],
                 outputs: [
                     OutputDeclaration(
@@ -455,8 +463,9 @@ public enum SwiftPlatformColliderRecipe {
                 ],
                 locks: [.checkout("swift-builder-image")],
                 cachePolicy: .contentAddressed,
-                operation: .prepareBuildContainer(
-                    BuildContainerPreparation(
+                operation: .prepareOCIImage(
+                    OCIImagePreparation(
+                        executionPlatform: .linuxAMD64OCI,
                         context: configuration.builderContext,
                         containerFile: containerFile,
                         imageID: configuration.builderImageID,
@@ -538,20 +547,29 @@ public enum SwiftPlatformColliderRecipe {
                     staging: staging,
                     platform: platform)))
         #else
-        let buildOperation = TaskOperation.runBuildContainer(
-            BuildContainerExecution(
+        let buildOperation = TaskOperation.runOCI(
+            OCIExecution(
+                executionPlatform: .linuxAMD64OCI,
+                artifactTarget: .linuxX86_64,
                 imageID: configuration.builderImageID,
                 hostname: "swift-build",
                 workingDirectory: "/src",
                 hostWorkingDirectory: configuration.sourceWorkspace,
                 mounts: swiftBuilderMounts(configuration),
+                networkPolicy: .externalDisabled,
+                userPolicy: .builder,
+                capabilityPolicy: .dropAll,
+                privilegePolicy: .prohibitAcquisition,
+                processFilesystemPolicy: .standard,
+                resourceLimits: .build,
                 containerEnvironment: linuxHostBuildEnvironment(
                     configuration),
                 command: ["host", "python3"]
                     + buildArguments.map {
                         containerizedSwiftArgument($0, configuration: configuration)
                     },
-                environment: configuration.environment))
+                environment: configuration.environment,
+                output: .logged))
         #endif
         let build = TaskDeclaration(
             id: TaskID(rawValue: "toolchain.host-build"),
@@ -564,7 +582,6 @@ public enum SwiftPlatformColliderRecipe {
                 + (platform == .linux
                     ? [
                         .dependencyOutput(configuration.builderImageID),
-                        .tool(.named("podman")),
                         .file(
                             configuration.recipeRoot.appending(
                                 "nucleus-swift-cmake-overrides.cmake")),
@@ -755,25 +772,25 @@ public enum SwiftPlatformColliderRecipe {
 
     private static func swiftBuilderMounts(
         _ configuration: SwiftPlatformGenerationConfiguration
-    ) -> [BuildContainerMount] {
+    ) -> [OCIMount] {
         [
-            BuildContainerMount(
+            OCIMount(
                 source: configuration.sourceWorkspace,
                 target: "/src",
                 access: .readOnly),
-            BuildContainerMount(
+            OCIMount(
                 source: configuration.recipeRoot,
                 target: "/recipe",
                 access: .readOnly),
-            BuildContainerMount(
+            OCIMount(
                 source: configuration.buildWorkspace,
                 target: "/build",
                 access: .readWrite),
-            BuildContainerMount(
+            OCIMount(
                 source: configuration.foundation.builder.compilerCache,
                 target: "/ccache",
                 access: .readWrite),
-            BuildContainerMount(
+            OCIMount(
                 source: configuration.candidate,
                 target: "/candidate",
                 access: .readWrite),
@@ -1246,7 +1263,7 @@ public enum SwiftPlatformColliderRecipe {
         let cmakeToolchain: FilePath
         let apiLevel: UInt32
         let jobs: String
-        let builder: SwiftBuildContainerConfiguration
+        let builder: SwiftOCIConfiguration
         let hostEnvironment: [String: String]
         let environment: [String: String]
 
@@ -1714,8 +1731,7 @@ public enum SwiftPlatformColliderRecipe {
                 ArtifactInput.value(
                     name: "dependency", bytes: Array($0.rawValue.utf8))
             } + [
-                .dependencyOutput(context.builder.imageID),
-                .tool(.named("podman")),
+                .dependencyOutput(context.builder.imageID)
             ]
         let buildOperations = operations.map {
             containerizedAndroidDependencyOperation($0, context: context)
@@ -1750,8 +1766,10 @@ public enum SwiftPlatformColliderRecipe {
                 case .path(let path), .taskOutput(let path):
                     containerizedAndroidDependencyPath(path.string, context: context)
                 }
-            return .runBuildContainer(
-                BuildContainerExecution(
+            return .runOCI(
+                OCIExecution(
+                    executionPlatform: .linuxAMD64OCI,
+                    artifactTarget: .androidX86_64(apiLevel: context.apiLevel),
                     imageID: context.builder.imageID,
                     hostname: "swift-android-dependency",
                     workingDirectory: containerizedAndroidDependencyPath(
@@ -1759,27 +1777,33 @@ public enum SwiftPlatformColliderRecipe {
                         context: context),
                     hostWorkingDirectory: command.workingDirectory,
                     mounts: [
-                        BuildContainerMount(
+                        OCIMount(
                             source: context.builder.sourceWorkspace,
                             target: "/src",
                             access: .readOnly),
-                        BuildContainerMount(
+                        OCIMount(
                             source: context.builder.recipeRoot,
                             target: "/recipe",
                             access: .readOnly),
-                        BuildContainerMount(
+                        OCIMount(
                             source: context.builder.buildWorkspace,
                             target: "/build",
                             access: .readWrite),
-                        BuildContainerMount(
+                        OCIMount(
                             source: context.builder.compilerCache,
                             target: "/ccache",
                             access: .readWrite),
-                        BuildContainerMount(
+                        OCIMount(
                             source: context.builder.candidate,
                             target: "/candidate",
                             access: .readWrite),
                     ],
+                    networkPolicy: .externalDisabled,
+                    userPolicy: .builder,
+                    capabilityPolicy: .dropAll,
+                    privilegePolicy: .prohibitAcquisition,
+                    processFilesystemPolicy: .standard,
+                    resourceLimits: .build,
                     containerEnvironment: androidDependencyContainerEnvironment(
                         command.environment,
                         context: context),
@@ -1787,7 +1811,8 @@ public enum SwiftPlatformColliderRecipe {
                         + command.arguments.map {
                             containerizedAndroidDependencyPath($0, context: context)
                         },
-                    environment: context.hostEnvironment))
+                    environment: context.hostEnvironment,
+                    output: .logged))
         case .sequence(let operations):
             return .sequence(
                 operations.map {
