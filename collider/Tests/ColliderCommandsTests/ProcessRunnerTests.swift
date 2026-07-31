@@ -1,7 +1,8 @@
-import Foundation
 import ColliderCore
 import ColliderRuntime
+import Foundation
 import Testing
+
 @testable import ColliderCommands
 
 @Test func asyncExecutionPreservesTypedRuntimeFailures() async {
@@ -17,24 +18,29 @@ import Testing
 func commandFailuresPreserveRunFinalizationSemantics() {
     let runID = RunID(rawValue: "fixture")
 
-    #expect(commandFailureStatus(
-        WorkspaceFailure.message("failed"),
-        wasInterrupted: false) == .failed)
-    #expect(commandFailureStatus(
-        WorkspaceFailure.message("signal"),
-        wasInterrupted: true) == .interrupted)
-    #expect(commandFailureStatus(
-        CancellationError(),
-        wasInterrupted: false) == .interrupted)
-    #expect(commandFailureStatus(
-        RunRegistryFailure.resumptionIdentityChanged(runID),
-        wasInterrupted: false) == .interrupted)
+    #expect(
+        commandFailureStatus(
+            WorkspaceFailure.message("failed"),
+            wasInterrupted: false) == .failed)
+    #expect(
+        commandFailureStatus(
+            WorkspaceFailure.message("signal"),
+            wasInterrupted: true) == .interrupted)
+    #expect(
+        commandFailureStatus(
+            CancellationError(),
+            wasInterrupted: false) == .interrupted)
+    #expect(
+        commandFailureStatus(
+            RunRegistryFailure.resumptionIdentityChanged(runID),
+            wasInterrupted: false) == .interrupted)
 }
 
 @Test func toolchainPrivilegeBoundaryRejectsEscapingTargets() async {
-    let installation = ToolchainInstallation(context: WorkspaceContext(
-        root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
-        environment: [:]))
+    let installation = ToolchainInstallation(
+        context: WorkspaceContext(
+            root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+            environment: [:]))
 
     await #expect(throws: WorkspaceFailure.self) {
         try await installation.uninstall(
@@ -42,7 +48,44 @@ func commandFailuresPreserveRunFinalizationSemantics() {
     }
     await #expect(throws: WorkspaceFailure.self) {
         try await installation.uninstall(
-            version: "release-6.4.x", prefix: "/opt/..", dryRun: true)
+            version: "0123456789abcdef01234567", prefix: "/opt/..", dryRun: true)
+    }
+}
+
+@Test func privilegedToolchainRequestHasOneStrictInternalShape() throws {
+    let unrelated = try ToolchainSystemRequest.parse(["toolchain", "install"])
+    #expect(unrelated?.version == nil)
+
+    let artifactID = "sha256:" + String(repeating: "a", count: 64)
+    let parsed = try ToolchainSystemRequest.parse([
+        "__toolchain-system-install",
+        "0123456789abcdef01234567",
+        "/opt/nucleus-swift",
+        "/dev/null",
+        artifactID,
+    ])
+    let request = try #require(parsed)
+    #expect(request.operation == .install)
+    #expect(request.version == "0123456789abcdef01234567")
+    #expect(request.prefix.path == "/opt/nucleus-swift")
+    #expect(request.tarball?.path == "/dev/null")
+    #expect(request.artifactID == artifactID)
+
+    #expect(throws: WorkspaceFailure.self) {
+        try ToolchainSystemRequest.parse([
+            "__toolchain-system-install",
+            "0123456789abcdef01234567",
+            "/opt/nucleus-swift",
+            "/dev/null",
+            "not-a-digest",
+        ])
+    }
+    #expect(throws: WorkspaceFailure.self) {
+        try ToolchainSystemRequest.parse([
+            "__toolchain-system-uninstall",
+            "..",
+            "/opt/nucleus-swift",
+        ])
     }
 }
 
@@ -113,8 +156,9 @@ func runningCommandScopeReapsChildAfterSuccessfulBody() async throws {
     }
 
     #expect(value == 42)
-    #expect(FileManager.default.fileExists(
-        atPath: fixture.terminated("child").path))
+    #expect(
+        FileManager.default.fileExists(
+            atPath: fixture.terminated("child").path))
     await context.runtime.shutdown()
 }
 
@@ -142,8 +186,9 @@ func runningCommandScopeReapsChildAfterBodyFailure() async throws {
         }
     }
 
-    #expect(FileManager.default.fileExists(
-        atPath: fixture.terminated("child").path))
+    #expect(
+        FileManager.default.fileExists(
+            atPath: fixture.terminated("child").path))
     await context.runtime.shutdown()
 }
 
@@ -168,8 +213,9 @@ func runningCommandScopeReapsChildWhenOwnerDeadlineExpires() async throws {
         }
     }
 
-    #expect(FileManager.default.fileExists(
-        atPath: fixture.terminated("child").path))
+    #expect(
+        FileManager.default.fileExists(
+            atPath: fixture.terminated("child").path))
     await context.runtime.shutdown()
 }
 
@@ -210,8 +256,9 @@ func nestedRunningCommandScopesReapEveryChildOnCancellation() async throws {
     }
 
     for name in ["inner", "outer"] {
-        #expect(FileManager.default.fileExists(
-            atPath: fixture.terminated(name).path))
+        #expect(
+            FileManager.default.fileExists(
+                atPath: fixture.terminated(name).path))
     }
     await context.runtime.shutdown()
 }

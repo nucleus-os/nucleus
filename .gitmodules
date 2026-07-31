@@ -65,3 +65,162 @@
 [submodule "third-party/swift-syntax"]
 	path = third-party/swift-syntax
 	url = https://github.com/swiftlang/swift-syntax.git
+[submodule "swift-toolchain/source/boringssl"]
+	path = swift-toolchain/source/boringssl
+	url = https://boringssl.googlesource.com/boringssl
+[submodule "swift-toolchain/source/brotli"]
+	path = swift-toolchain/source/brotli
+	url = https://github.com/google/brotli.git
+[submodule "swift-toolchain/source/cmake"]
+	path = swift-toolchain/source/cmake
+	url = https://github.com/KitWare/CMake.git
+[submodule "swift-toolchain/source/cmark"]
+	path = swift-toolchain/source/cmark
+	url = https://github.com/swiftlang/swift-cmark.git
+[submodule "swift-toolchain/source/curl"]
+	path = swift-toolchain/source/curl
+	url = https://github.com/curl/curl.git
+[submodule "swift-toolchain/source/indexstore-db"]
+	path = swift-toolchain/source/indexstore-db
+	url = https://github.com/swiftlang/indexstore-db.git
+[submodule "swift-toolchain/source/libxml2"]
+	path = swift-toolchain/source/libxml2
+	url = https://github.com/gnome/libxml2.git
+[submodule "swift-toolchain/source/llbuild"]
+	path = swift-toolchain/source/llbuild
+	url = https://github.com/swiftlang/swift-llbuild.git
+[submodule "swift-toolchain/source/llvm-project"]
+	path = swift-toolchain/source/llvm-project
+	url = https://github.com/swiftlang/llvm-project.git
+[submodule "swift-toolchain/source/ninja"]
+	path = swift-toolchain/source/ninja
+	url = https://github.com/ninja-build/ninja.git
+[submodule "swift-toolchain/source/sourcekit-lsp"]
+	path = swift-toolchain/source/sourcekit-lsp
+	url = https://github.com/swiftlang/sourcekit-lsp.git
+[submodule "swift-toolchain/source/swift"]
+	path = swift-toolchain/source/swift
+	url = git@github.com:nucleus-os/swift.git
+[submodule "swift-toolchain/source/swift-argument-parser"]
+	path = swift-toolchain/source/swift-argument-parser
+	url = https://github.com/apple/swift-argument-parser.git
+[submodule "swift-toolchain/source/swift-asn1"]
+	path = swift-toolchain/source/swift-asn1
+	url = https://github.com/apple/swift-asn1.git
+[submodule "swift-toolchain/source/swift-async-algorithms"]
+	path = swift-toolchain/source/swift-async-algorithms
+	url = https://github.com/apple/swift-async-algorithms.git
+[submodule "swift-toolchain/source/swift-atomics"]
+	path = swift-toolchain/source/swift-atomics
+	url = https://github.com/apple/swift-atomics.git
+[submodule "swift-toolchain/source/swift-build"]
+	path = swift-toolchain/source/swift-build
+	url = git@github.com:nucleus-os/swift-build.git
+[submodule "swift-toolchain/source/swift-certificates"]
+	path = swift-toolchain/source/swift-certificates
+	url = https://github.com/apple/swift-certificates.git
+[submodule "swift-toolchain/source/swift-collections"]
+	path = swift-toolchain/source/swift-collections
+	url = https://github.com/apple/swift-collections.git
+[submodule "swift-toolchain/source/swift-corelibs-blocksruntime"]
+	path = swift-toolchain/source/swift-corelibs-blocksruntime
+	url = https://github.com/swiftlang/swift-corelibs-blocksruntime.git
+[submodule "swift-toolchain/source/swift-corelibs-foundation"]
+	path = swift-toolchain/source/swift-corelibs-foundation
+	url = git@github.com:nucleus-os/swift-corelibs-foundation.git
+[submodule "swift-toolchain/source/swift-corelibs-libdispatch"]
+	path = swift-toolchain/source/swift-corelibs-libdispatch
+	url = https://github.com/swiftlang/swift-corelibs-libdispatch.git
+[submodule "swift-toolchain/source/swift-corelibs-xctest"]
+	path = swift-toolchain/source/swift-corelibs-xctest
+	url = https://github.com/swiftlang/swift-corelibs-xctest.git
+[submodule "swift-toolchain/source/swift-crypto"]
+	path = swift-toolchain/source/swift-crypto
+	url = https://github.com/apple/swift-crypto.git
+[submodule "swift-toolchain/source/swift-docc"]
+	path = swift-toolchain/source/swift-docc
+	url = https://github.com/swiftlang/swift-docc.git
+[submodule "swift-toolchain/source/swift-docc-render-artifact"]
+	path = swift-toolchain/source/swift-docc-render-artifact
+	url = https://github.com/swiftlang/swift-docc-render-artifact.git
+[submodule "swift-toolchain/source/swift-docc-symbolkit"]
+	path = swift-toolchain/source/swift-docc-symbolkit
+	url = https://github.com/swiftlang/swift-docc-symbolkit.git
+[submodule "swift-toolchain/source/swift-driver"]
+	path = swift-toolchain/source/swift-driver
+	url = git@github.com:nucleus-os/swift-driver.git
+[submodule "swift-toolchain/source/swift-experimental-string-processing"]
+	path = swift-toolchain/source/swift-experimental-string-processing
+	url = https://github.com/swiftlang/swift-experimental-string-processing.git
+[submodule "swift-toolchain/source/swift-format"]
+	path = swift-toolchain/source/swift-format
+	url = https://github.com/swiftlang/swift-format.git
+[submodule "swift-toolchain/source/swift-foundation"]
+	path = swift-toolchain/source/swift-foundation
+	url = https://github.com/swiftlang/swift-foundation.git
+[submodule "swift-toolchain/source/swift-foundation-icu"]
+	path = swift-toolchain/source/swift-foundation-icu
+	url = https://github.com/swiftlang/swift-foundation-icu.git
+[submodule "swift-toolchain/source/swift-installer-scripts"]
+	path = swift-toolchain/source/swift-installer-scripts
+	url = https://github.com/swiftlang/swift-installer-scripts.git
+[submodule "swift-toolchain/source/swift-integration-tests"]
+	path = swift-toolchain/source/swift-integration-tests
+	url = https://github.com/swiftlang/swift-integration-tests.git
+[submodule "swift-toolchain/source/swift-llvm-bindings"]
+	path = swift-toolchain/source/swift-llvm-bindings
+	url = https://github.com/swiftlang/swift-llvm-bindings.git
+[submodule "swift-toolchain/source/swift-lmdb"]
+	path = swift-toolchain/source/swift-lmdb
+	url = https://github.com/swiftlang/swift-lmdb.git
+[submodule "swift-toolchain/source/swift-log"]
+	path = swift-toolchain/source/swift-log
+	url = https://github.com/apple/swift-log.git
+[submodule "swift-toolchain/source/swift-markdown"]
+	path = swift-toolchain/source/swift-markdown
+	url = https://github.com/swiftlang/swift-markdown.git
+[submodule "swift-toolchain/source/swift-nio"]
+	path = swift-toolchain/source/swift-nio
+	url = https://github.com/apple/swift-nio.git
+[submodule "swift-toolchain/source/swift-numerics"]
+	path = swift-toolchain/source/swift-numerics
+	url = https://github.com/apple/swift-numerics.git
+[submodule "swift-toolchain/source/swift-sdk-generator"]
+	path = swift-toolchain/source/swift-sdk-generator
+	url = https://github.com/swiftlang/swift-sdk-generator.git
+[submodule "swift-toolchain/source/swift-stress-tester"]
+	path = swift-toolchain/source/swift-stress-tester
+	url = https://github.com/swiftlang/swift-stress-tester.git
+[submodule "swift-toolchain/source/swift-subprocess"]
+	path = swift-toolchain/source/swift-subprocess
+	url = https://github.com/swiftlang/swift-subprocess.git
+[submodule "swift-toolchain/source/swift-syntax"]
+	path = swift-toolchain/source/swift-syntax
+	url = https://github.com/swiftlang/swift-syntax.git
+[submodule "swift-toolchain/source/swift-system"]
+	path = swift-toolchain/source/swift-system
+	url = https://github.com/apple/swift-system.git
+[submodule "swift-toolchain/source/swift-testing"]
+	path = swift-toolchain/source/swift-testing
+	url = https://github.com/swiftlang/swift-testing.git
+[submodule "swift-toolchain/source/swift-toolchain-sqlite"]
+	path = swift-toolchain/source/swift-toolchain-sqlite
+	url = https://github.com/swiftlang/swift-toolchain-sqlite.git
+[submodule "swift-toolchain/source/swift-tools-protocols"]
+	path = swift-toolchain/source/swift-tools-protocols
+	url = https://github.com/swiftlang/swift-tools-protocols.git
+[submodule "swift-toolchain/source/swift-tools-support-core"]
+	path = swift-toolchain/source/swift-tools-support-core
+	url = https://github.com/swiftlang/swift-tools-support-core.git
+[submodule "swift-toolchain/source/swiftpm"]
+	path = swift-toolchain/source/swiftpm
+	url = https://github.com/swiftlang/swift-package-manager.git
+[submodule "swift-toolchain/source/wasi-libc"]
+	path = swift-toolchain/source/wasi-libc
+	url = https://github.com/WebAssembly/wasi-libc.git
+[submodule "swift-toolchain/source/wasmkit"]
+	path = swift-toolchain/source/wasmkit
+	url = https://github.com/swiftwasm/WasmKit.git
+[submodule "swift-toolchain/source/zlib"]
+	path = swift-toolchain/source/zlib
+	url = https://github.com/madler/zlib.git

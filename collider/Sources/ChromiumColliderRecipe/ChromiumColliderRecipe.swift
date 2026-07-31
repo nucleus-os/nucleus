@@ -58,11 +58,15 @@ public enum ChromiumColliderRecipe {
         let sources = cache.appending("source-generations")
         let source = sources.appending(layout.sourceID)
         let chromiumSource = source.appending("chromium/src")
-        let browserOutput = chromiumSource.appending(
-            "out/NucleusBrowser_GN_x64")
+        let buildGeneration = cache.appending("build").appending(
+            layout.sourceID)
+        let cefOutput = buildGeneration.appending("cef")
+        let browserOutput = buildGeneration.appending("browser")
         let cefDistribution = cache.appending("dist")
         let browserDistribution = cache.appending("browser-dist")
         let depotTools = cache.appending("depot_tools")
+        let builderContext = chromium.appending("build-container")
+        let builderImageID = cache.appending("build-container/image-id")
         let childEnvironment = environment.merging([
             "NUCLEUS_CHROMIUM_ORCHESTRATED": "1",
             "NUCLEUS_CEF_BRANCH": sourceLock.cefBranch,
@@ -166,9 +170,29 @@ public enum ChromiumColliderRecipe {
                 .shared(cache.appending("locks/source.lock"))
             ],
             operation: .prepareChromiumSource(sourcePreparation))
+        let builderTask = TaskDeclaration(
+            id: TaskID(rawValue: "browser.builder"),
+            component: ComponentID(rawValue: "browser"),
+            inputs: [
+                .tree(builderContext),
+                .tool(.named("podman")),
+            ],
+            outputs: [
+                OutputDeclaration(
+                    path: builderImageID,
+                    validation: .regularFile)
+            ],
+            locks: [.shared(cache.appending("locks/builder.lock"))],
+            operation: .prepareBuildContainer(
+                BuildContainerPreparation(
+                    context: builderContext,
+                    containerFile: builderContext.appending("Containerfile"),
+                    imageID: builderImageID,
+                    imageName: "localhost/nucleus-chromium-build",
+                    environment: childEnvironment)))
         let cefAssembly = CEFArtifactAssembly(
             chromiumSource: chromiumSource,
-            buildOutput: chromiumSource.appending("out/Release_GN_x64"),
+            buildOutput: cefOutput,
             depotTools: depotTools,
             distributionRoot: cefDistribution,
             cefCheckout: cefRepository.commit,
@@ -177,8 +201,8 @@ public enum ChromiumColliderRecipe {
         let cefTask = TaskDeclaration(
             id: TaskID(rawValue: "browser.cef"),
             component: ComponentID(rawValue: "browser"),
-            dependencies: [sourceTask.id],
-            inputs: commonInputs,
+            dependencies: [sourceTask.id, builderTask.id],
+            inputs: commonInputs + [.dependencyOutput(builderImageID)],
             outputs: [
                 OutputDeclaration(
                     path: cefDistribution.appending("current"),
@@ -193,8 +217,9 @@ public enum ChromiumColliderRecipe {
                     ChromiumProductBuild(
                         product: .cef,
                         sourceRoot: source,
-                        output: chromiumSource.appending("out/Release_GN_x64"),
+                        output: cefOutput,
                         depotTools: depotTools,
+                        containerImageID: builderImageID,
                         gnArguments: cefGNArguments,
                         targets: ["libcef", "chrome_sandbox"],
                         jobs: UInt32(layout.jobs),
@@ -231,6 +256,7 @@ public enum ChromiumColliderRecipe {
                         sourceRoot: source,
                         output: browserOutput,
                         depotTools: depotTools,
+                        containerImageID: builderImageID,
                         gnArguments: browserGNArguments,
                         targets: ["chrome", "chrome_sandbox"],
                         jobs: UInt32(layout.jobs),
@@ -254,6 +280,11 @@ public enum ChromiumColliderRecipe {
                         DirectoryRetentionRule(
                             root: sources,
                             current: sources.appending("current"),
+                            retain: 1,
+                            naming: .contentIdentity),
+                        DirectoryRetentionRule(
+                            root: cache.appending("build"),
+                            current: nil,
                             retain: 1,
                             naming: .contentIdentity),
                         DirectoryRetentionRule(
@@ -301,18 +332,18 @@ public enum ChromiumColliderRecipe {
             ],
             cachePolicy: .always,
             operation: .sequence([
-                .command(
-                    CommandSpec(
-                        executable: .taskOutput(
-                            depotTools.appending("autoninja")),
-                        arguments: [
-                            "-j", String(layout.jobs),
-                            "-C", browserOutput.string,
+                .runBuildContainer(
+                    chromiumBuildExecution(
+                        imageID: builderImageID,
+                        source: source,
+                        depotTools: depotTools,
+                        output: browserOutput,
+                        jobs: layout.jobs,
+                        targets: [
                             "ui/ozone:ozone_unittests",
                             "components/viz/service:"
                                 + "output_presenter_ozone_unittests",
                         ],
-                        workingDirectory: chromiumSource,
                         environment: childEnvironment)),
                 .command(
                     CommandSpec(
@@ -356,7 +387,7 @@ public enum ChromiumColliderRecipe {
             ]))
         return [
             depotToolsTask, depotBootstrap,
-            sourceTask, cefTask, browserTask, retention,
+            sourceTask, builderTask, cefTask, browserTask, retention,
             bootstrapPackages, bootstrapSource, test, install,
         ]
     }
@@ -429,6 +460,52 @@ public enum ChromiumColliderRecipe {
             ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
         }
     }
+}
+
+private func chromiumBuildExecution(
+    imageID: FilePath,
+    source: FilePath,
+    depotTools: FilePath,
+    output: FilePath,
+    jobs: Int,
+    targets: [String],
+    environment: [String: String]
+) -> BuildContainerExecution {
+    BuildContainerExecution(
+        imageID: imageID,
+        hostname: "chromium-build",
+        workingDirectory: "/source/chromium/src",
+        hostWorkingDirectory: source.appending("chromium/src"),
+        mounts: [
+            BuildContainerMount(
+                source: source,
+                target: "/source",
+                access: .readOnly),
+            BuildContainerMount(
+                source: depotTools,
+                target: "/depot_tools",
+                access: .readOnly),
+            BuildContainerMount(
+                source: output.removingLastComponent().appending(".inputs"),
+                target: "/inputs",
+                access: .readOnly),
+            BuildContainerMount(
+                source: output,
+                target: "/build",
+                access: .readWrite),
+        ],
+        temporaryDirectory: output.removingLastComponent().appending(
+            ".temporary"),
+        containerEnvironment: [
+            "DEPOT_TOOLS_UPDATE": "0",
+            "HOME": "/tmp/nucleus-home",
+            "LANG": "C.UTF-8",
+            "LC_ALL": "C.UTF-8",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "TZ": "UTC",
+        ],
+        command: ["build", String(jobs)] + targets,
+        environment: environment)
 }
 
 private enum ChromiumRecipeFailure: Error {

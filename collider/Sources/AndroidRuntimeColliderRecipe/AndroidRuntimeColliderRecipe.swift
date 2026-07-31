@@ -263,8 +263,8 @@ public enum AndroidRuntimeColliderRecipe {
                 OutputDeclaration(path: imageID, validation: .regularFile)
             ],
             locks: [.checkout("android-runtime-aosp-container")],
-            operation: .prepareAOSPBuildContainer(
-                AOSPBuildContainerPreparation(
+            operation: .prepareBuildContainer(
+                BuildContainerPreparation(
                     context: context,
                     containerFile: containerFile,
                     imageID: imageID,

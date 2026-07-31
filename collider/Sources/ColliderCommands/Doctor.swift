@@ -172,6 +172,7 @@ struct WorkspaceDoctor {
         executables(
             [
                 "git", "python3", "tar", "timeout", "readelf", "ldd", "cc",
+                "podman",
             ],
             scope: "browser")
             + paths(

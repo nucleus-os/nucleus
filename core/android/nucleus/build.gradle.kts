@@ -25,7 +25,8 @@ val ndkHome = providers.gradleProperty("nucleus.androidNdk")
     .orElse(providers.environmentVariable("NUCLEUS_ANDROID_NDK_HOME"))
     .orElse(providers.environmentVariable("ANDROID_NDK_HOME"))
     .orElse(androidSdkRoot.map { "$it/ndk/${libs.versions.ndk.get()}" })
-val nucleusSourceId = providers.gradleProperty("nucleus.swiftSourceId").orElse("release-6.4.x")
+val nucleusSourceId = providers.gradleProperty("nucleus.swiftSourceId")
+    .orElse(providers.environmentVariable("NUCLEUS_SWIFT_SOURCE_ID"))
 // Cross-compile libnucleus-android.so via SwiftPM (the platform-android package)
 // using the paired Swift platform generation selected by the workspace entry
 // point, then verify the JNI export contract.

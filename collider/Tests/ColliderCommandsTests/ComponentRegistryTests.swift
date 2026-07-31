@@ -488,69 +488,114 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         })
 }
 
-@Test func skiaRecipesInvokeGNAndNinjaWithoutACommandPlugin() {
+@Test func skiaRecipesUseTheIsolatedNativeBuilder() {
     let root = FilePath("/workspace/core")
     let environment = [
         "PATH": "/usr/bin",
         "NUCLEUS_ANDROID_NDK_HOME": "/opt/android-ndk",
     ]
+    let builder = NativeBuildContainerConfiguration(
+        context: root.appending("build-container"),
+        imageID: FilePath("/cache/native/image-id"),
+        ccache: FilePath("/cache/ccache/native"),
+        environment: environment)
     for task in [
-        CoreColliderRecipe.buildSkia(root: root, environment: environment),
+        CoreColliderRecipe.buildSkia(
+            root: root,
+            environment: environment,
+            builder: builder),
         CoreColliderRecipe.buildSkiaAndroid(
             root: root,
-            ndk: FilePath("/opt/android-ndk"),
             minimumAndroidAPI: 24,
-            environment: environment),
+            environment: environment,
+            builder: builder),
     ] {
         guard case .sequence(let operations) = task.operation else {
             Issue.record("Skia provisioning must be an ordered task sequence")
             continue
         }
-        let commands = operations.compactMap { operation -> CommandSpec? in
-            guard case .command(let command) = operation else { return nil }
-            return command
+        #if os(macOS)
+        #expect(operations.count == 2)
+        #else
+        let executions = operations.compactMap {
+            operation -> BuildContainerExecution? in
+            guard case .runBuildContainer(let execution) = operation else {
+                return nil
+            }
+            return execution
         }
-        #expect(commands.count == 2)
+        #expect(executions.count == 2)
+        #expect(executions.allSatisfy { $0.imageID == builder.imageID })
         #expect(
-            commands[0].executable
-                == .path(root.appending("third-party/skia/bin/gn")))
-        #expect(commands[1].executable == .named("ninja"))
-        #expect(
-            commands.allSatisfy {
-                !$0.arguments.contains("build-skia")
-                    && $0.executable != .named("sh")
-                    && $0.executable != .named("bash")
+            executions.allSatisfy {
+                $0.mounts.contains(
+                    BuildContainerMount(
+                        source: root.appending("third-party/skia"),
+                        target: "/src",
+                        access: .readOnly))
             })
+        #expect(
+            executions.allSatisfy {
+                $0.mounts.filter { $0.access == .readWrite }
+                    .map(\.target).sorted() == ["/build", "/ccache"]
+            })
+        #expect(executions[0].command.contains("/src/bin/gn"))
+        #expect(executions[1].command.contains("ninja"))
+        #endif
     }
 }
 
-@Test func reactNativeSupportRecipesInvokeCMakeAndNinjaDirectly() {
+@Test func reactNativeSupportRecipesUseTheIsolatedNativeBuilder() {
     let root = FilePath("/workspace/react-native")
     let environment = ["PATH": "/usr/bin"]
+    let builder = NativeBuildContainerConfiguration(
+        context: FilePath("/workspace/core/build-container"),
+        imageID: FilePath("/cache/native/image-id"),
+        ccache: FilePath("/cache/ccache/native"),
+        environment: environment)
     let support = ReactNativeColliderRecipe.buildSupportLibraries(
-        root: root, environment: environment)
+        root: root, environment: environment, builder: builder)
     let runtime = ReactNativeColliderRecipe.buildCxxRuntime(
-        root: root, environment: environment)
+        root: root, environment: environment, builder: builder)
     for task in [support, runtime] {
         guard case .sequence(let operations) = task.operation else {
             Issue.record("RN native provisioning must be an ordered task sequence")
             continue
         }
-        let commands = operations.compactMap { operation -> CommandSpec? in
+        #if os(macOS)
+        let nativeOperations = operations.compactMap { operation -> CommandSpec? in
             guard case .command(let command) = operation else { return nil }
             return command
         }
-        #expect(!commands.isEmpty)
         #expect(
-            commands.allSatisfy {
+            nativeOperations.allSatisfy {
                 $0.executable == .named("cmake")
                     || $0.executable == .named("ninja")
             })
+        #else
+        let nativeOperations = operations.compactMap {
+            operation -> BuildContainerExecution? in
+            guard case .runBuildContainer(let execution) = operation else {
+                return nil
+            }
+            return execution
+        }
+        #expect(!nativeOperations.isEmpty)
         #expect(
-            commands.allSatisfy {
-                !$0.arguments.contains("build-rn-support")
-                    && !$0.arguments.contains("build-rn-cxx")
+            nativeOperations.allSatisfy {
+                $0.command.first == "react-native"
+                    && $0.mounts.contains(
+                        BuildContainerMount(
+                            source: root,
+                            target: "/src",
+                            access: .readOnly))
+                    && $0.mounts.contains(
+                        BuildContainerMount(
+                            source: root.appending(".rn-build"),
+                            target: "/build",
+                            access: .readWrite))
             })
+        #endif
     }
     #expect(
         runtime.dependencies == [
@@ -564,30 +609,56 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
 @Test func hermesRecipeUsesTypedCommandsAndArchiveMerge() {
     let root = FilePath("/workspace/react-native")
     let environment = ["PATH": "/usr/bin"]
+    let builder = NativeBuildContainerConfiguration(
+        context: FilePath("/workspace/core/build-container"),
+        imageID: FilePath("/cache/native/image-id"),
+        ccache: FilePath("/cache/ccache/native"),
+        environment: environment)
+    #if os(macOS)
+    let host = HermesHostDependencies(
+        icuIncludeDirectory: FilePath("/usr/include"),
+        icuUCLibrary: FilePath("/usr/lib/libicuuc.so"),
+        icuI18NLibrary: FilePath("/usr/lib/libicui18n.so"),
+        icuDataLibrary: FilePath("/usr/lib/libicudata.so"),
+        cxxRuntimeLibrary: FilePath("/toolchain/lib/libc++.so.1"))
+    #else
+    let host: HermesHostDependencies? = nil
+    #endif
     let task = ReactNativeColliderRecipe.buildHermes(
         root: root,
         environment: environment,
-        host: HermesHostDependencies(
-            icuIncludeDirectory: FilePath("/usr/include"),
-            icuUCLibrary: FilePath("/usr/lib/libicuuc.so"),
-            icuI18NLibrary: FilePath("/usr/lib/libicui18n.so"),
-            icuDataLibrary: FilePath("/usr/lib/libicudata.so"),
-            cxxRuntimeLibrary: FilePath("/toolchain/lib/libc++.so.1")))
+        builder: builder,
+        host: host)
     guard case .sequence(let operations) = task.operation else {
         Issue.record("Hermes provisioning must be an ordered task sequence")
         return
     }
     #expect(operations.count == 3)
-    guard case .command(let configure) = operations[0],
-        case .command(let build) = operations[1],
-        case .mergeStaticArchives(let merge) = operations[2]
-    else {
+    guard case .mergeStaticArchives(let merge) = operations[2] else {
         Issue.record("Hermes must configure, build, then merge its archives")
+        return
+    }
+    #if os(macOS)
+    guard case .command(let configure) = operations[0],
+        case .command(let build) = operations[1]
+    else {
+        Issue.record("Hermes must use native host commands on macOS")
         return
     }
     #expect(configure.executable == .named("cmake"))
     #expect(build.executable == .named("ninja"))
     #expect(build.environment["LD_LIBRARY_PATH"] == "/toolchain/lib")
+    #else
+    guard case .runBuildContainer(let configure) = operations[0],
+        case .runBuildContainer(let build) = operations[1]
+    else {
+        Issue.record("Hermes must use the native builder on Linux")
+        return
+    }
+    #expect(configure.command.first == "react-native")
+    #expect(configure.command.contains("cmake"))
+    #expect(build.command.contains("ninja"))
+    #endif
     #expect(merge.archiver == .named("ar"))
     #expect(merge.indexer == .named("ranlib"))
     #expect(merge.excludedFilePrefixes == ["libgtest"])
@@ -634,6 +705,47 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
                 ).path))
 }
 
+@Test func reactNativeSDKPublishesContainerArtifactsBeforeTheHostArchive() {
+    let root = FilePath("/workspace/react-native")
+    let sdkRoot = FilePath("/cache/native-sdk")
+    let archive = TaskID(rawValue: "rn.host-archive.debug")
+    let native = ReactNativeColliderRecipe.publishNativeSDK(
+        root: root,
+        sdkRoot: sdkRoot)
+    let host = ReactNativeColliderRecipe.publishHostArchiveSDK(
+        root: root,
+        sdkRoot: sdkRoot,
+        hostArchive: archive)
+
+    #expect(
+        native.dependencies == [
+            TaskID(rawValue: "core.native-sdk"),
+            TaskID(rawValue: "rn.cxx"),
+        ])
+    #expect(!native.dependencies.contains(archive))
+    #expect(
+        native.outputs.allSatisfy {
+            !$0.path.string.contains("nucleus-cxx-libs")
+        })
+    #expect(
+        host.dependencies == [
+            native.id,
+            archive,
+        ])
+    #expect(
+        host.outputs == [
+            OutputDeclaration(
+                path: sdkRoot.appending("rn/lib/nucleus-cxx-libs"),
+                validation: .exists)
+        ])
+    guard case .replaceSymlink(let path, let target) = host.operation else {
+        Issue.record("RN host archive publication must be a typed symlink")
+        return
+    }
+    #expect(path == sdkRoot.appending("rn/lib/nucleus-cxx-libs"))
+    #expect(target == root.appending(".cxx-build").string)
+}
+
 @Test func androidImageRecipeHasIndependentArtifactBoundaries() throws {
     let workspace = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
@@ -666,7 +778,7 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         })
     #expect(
         {
-            guard case .prepareAOSPBuildContainer = container.operation else {
+            guard case .prepareBuildContainer = container.operation else {
                 return false
             }
             return true

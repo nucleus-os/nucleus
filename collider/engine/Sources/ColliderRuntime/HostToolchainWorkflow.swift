@@ -15,8 +15,12 @@ extension ColliderRuntime {
             Data("nucleus\n".utf8),
             to: preparation.stagingRoot.appending(".nucleus-owned"))
         guard preparation.platform == .linux else { return }
-        let llvmLibrary = preparation.workspace.appending(
-            "build/buildbot_linux/llvm-linux-x86_64/lib")
+        // Linux toolchain compilation always runs with `workspace` mounted at
+        // `/build`. These links are consumed inside that container, so their
+        // targets must use its stable namespace rather than the runner's
+        // absolute cache path.
+        let llvmLibrary = FilePath(
+            "/build/build/buildbot_linux/llvm-linux-x86_64/lib")
         let buildSwiftLibrary = preparation.workspace.appending(
             "build/buildbot_linux/swift-linux-x86_64/lib/swift/linux")
         let installSwiftLibrary = preparation.stagingRoot.appending(
@@ -40,9 +44,9 @@ extension ColliderRuntime {
                 at: installSwiftLibrary.appending(library))
         }
         let compilerConfiguration = """
-        -L<CFGDIR>/../lib
+            -L<CFGDIR>/../lib
 
-        """
+            """
         for name in ["clang.cfg", "clang++.cfg"] {
             try DurableFile.write(
                 Data(compilerConfiguration.utf8),
@@ -102,27 +106,27 @@ extension ColliderRuntime {
         if !arguments.contains("-lswift_StringProcessing") {
             if !arguments.hasSuffix("\n") { arguments.append("\n") }
             arguments += """
-            -Xlinker --start-group
-            -lFoundation
-            -lFoundationEssentials
-            -lFoundationInternationalization
-            -lFoundationNetworking
-            -lFoundationXML
-            -l_CFXMLInterface
-            -lCoreFoundation
-            -l_FoundationICU
-            -l_FoundationCShims
-            -l_FoundationCollections
-            -lswift_StringProcessing
-            -lswift_RegexParser
-            -lswiftRegexBuilder
-            -lswift_Concurrency
-            -lswiftObservation
-            -lswiftSynchronization
-            -lswiftSwiftOnoneSupport
-            -Xlinker --end-group
+                -Xlinker --start-group
+                -lFoundation
+                -lFoundationEssentials
+                -lFoundationInternationalization
+                -lFoundationNetworking
+                -lFoundationXML
+                -l_CFXMLInterface
+                -lCoreFoundation
+                -l_FoundationICU
+                -l_FoundationCShims
+                -l_FoundationCollections
+                -lswift_StringProcessing
+                -lswift_RegexParser
+                -lswiftRegexBuilder
+                -lswift_Concurrency
+                -lswiftObservation
+                -lswiftSynchronization
+                -lswiftSwiftOnoneSupport
+                -Xlinker --end-group
 
-            """
+                """
         } else if !arguments.contains("-l_CFXMLInterface") {
             arguments += "\n-l_CFXMLInterface\n"
         }
@@ -207,8 +211,9 @@ extension ColliderRuntime {
         }
         for executable in executables {
             let path = validation.toolchain.appending("bin/\(executable)")
-            guard FileManager.default.isExecutableFile(
-                atPath: path.string)
+            guard
+                FileManager.default.isExecutableFile(
+                    atPath: path.string)
             else {
                 throw RuntimeFailure.invalidOutput(
                     "host toolchain executable is missing: \(path)")
@@ -240,8 +245,10 @@ extension ColliderRuntime {
         environment["PATH"] =
             validation.toolchain.appending("bin").string
             + ":/usr/bin:/bin"
-        environment["SWIFT_EXEC"] = validation.toolchain.appending(
-            "bin/swiftc").string
+        environment["SWIFT_EXEC"] =
+            validation.toolchain.appending(
+                "bin/swiftc"
+            ).string
         environment["SOURCEKIT_TOOLCHAIN_PATH"] =
             validation.toolchain.string
         let commandEnvironment = environment
@@ -254,8 +261,9 @@ extension ColliderRuntime {
         ) async throws -> CommandResult {
             let result = try await execute(
                 CommandSpec(
-                    executable: .path(validation.toolchain.appending(
-                        "bin/\(executable)")),
+                    executable: .path(
+                        validation.toolchain.appending(
+                            "bin/\(executable)")),
                     arguments: arguments,
                     workingDirectory:
                         directory ?? validation.workDirectory,
@@ -366,10 +374,8 @@ extension ColliderRuntime {
             "docc/NucleusSmoke.doccarchive")
         try DurableFile.write(
             Data(
-                (
-                    "# Nucleus Smoke\n\n"
-                        + "A functional Swift-DocC conversion test.\n"
-                ).utf8),
+                ("# Nucleus Smoke\n\n"
+                    + "A functional Swift-DocC conversion test.\n").utf8),
             to: catalog.appending("NucleusSmoke.md"))
         _ = try await checked(
             "docc",
@@ -419,9 +425,11 @@ extension ColliderRuntime {
             contentsOfFile: library.string,
             encoding: .utf8)
         let rootURI = URL(
-            fileURLWithPath: lspPackage.string).absoluteString
+            fileURLWithPath: lspPackage.string
+        ).absoluteString
         let libraryURI = URL(
-            fileURLWithPath: library.string).absoluteString
+            fileURLWithPath: library.string
+        ).absoluteString
         let lspInitialize = try ToolchainValidationFixtures.jsonRPCPayload([
             [
                 "jsonrpc": "2.0",
@@ -432,13 +440,13 @@ extension ColliderRuntime {
                         ProcessInfo.processInfo.processIdentifier,
                     "rootUri": rootURI,
                     "workspaceFolders": [
-                        ["uri": rootURI, "name": "NucleusLSPPackage"],
+                        ["uri": rootURI, "name": "NucleusLSPPackage"]
                     ],
                     "capabilities": [
-                        "textDocument": ["documentSymbol": [:]],
+                        "textDocument": ["documentSymbol": [:]]
                     ],
                 ],
-            ],
+            ]
         ])
         let lspSymbols = try ToolchainValidationFixtures.jsonRPCPayload([
             [
@@ -455,7 +463,7 @@ extension ColliderRuntime {
                         "languageId": "swift",
                         "version": 1,
                         "text": librarySource,
-                    ],
+                    ]
                 ],
             ],
             [
@@ -463,7 +471,7 @@ extension ColliderRuntime {
                 "id": 2,
                 "method": "textDocument/documentSymbol",
                 "params": [
-                    "textDocument": ["uri": libraryURI],
+                    "textDocument": ["uri": libraryURI]
                 ],
             ],
         ])
@@ -473,19 +481,20 @@ extension ColliderRuntime {
                 "id": 3,
                 "method": "shutdown",
                 "params": [:],
-            ],
+            ]
         ])
         let lspExit = try ToolchainValidationFixtures.jsonRPCPayload([
             [
                 "jsonrpc": "2.0",
                 "method": "exit",
                 "params": [:],
-            ],
+            ]
         ])
         let lsp = try await executeJSONRPCSession(
             CommandSpec(
-                executable: .path(validation.toolchain.appending(
-                    "bin/sourcekit-lsp")),
+                executable: .path(
+                    validation.toolchain.appending(
+                        "bin/sourcekit-lsp")),
                 arguments: [],
                 workingDirectory: lspPackage,
                 environment: commandEnvironment,
@@ -504,9 +513,10 @@ extension ColliderRuntime {
         let messages =
             try ToolchainValidationFixtures.jsonRPCMessages(
                 lsp.standardOutput)
-        guard messages.contains(where: {
-            ($0["id"] as? Int) == 1 && $0["result"] != nil
-        }),
+        guard
+            messages.contains(where: {
+                ($0["id"] as? Int) == 1 && $0["result"] != nil
+            }),
             messages.contains(where: {
                 ($0["id"] as? Int) == 2
                     && (($0["result"] as? [Any])?.isEmpty == false)
@@ -533,10 +543,11 @@ extension ColliderRuntime {
         finalInput: [UInt8],
         stage: TaskID
     ) async throws -> JSONRPCSessionOutput {
-        let executable: Subprocess.Executable = switch command.executable {
-        case .named(let name): .name(name)
-        case .path(let path), .taskOutput(let path): .path(path)
-        }
+        let executable: Subprocess.Executable =
+            switch command.executable {
+            case .named(let name): .name(name)
+            case .path(let path), .taskOutput(let path): .path(path)
+            }
         let environment = Subprocess.Environment.custom(
             Dictionary(
                 uniqueKeysWithValues: command.environment.map {
@@ -631,9 +642,10 @@ private func containsJSONRPCResponse(
     let separator = Data("\r\n\r\n".utf8)
     var offset = data.startIndex
     while offset < data.endIndex {
-        guard let headerRange = data.range(
-            of: separator,
-            in: offset..<data.endIndex),
+        guard
+            let headerRange = data.range(
+                of: separator,
+                in: offset..<data.endIndex),
             let header = String(
                 data: data[offset..<headerRange.lowerBound],
                 encoding: .utf8),
@@ -686,8 +698,6 @@ private func hostStatusCode(_ status: TerminationStatus) -> Int32 {
     #endif
     }
 }
-
-
 
 private func hostRemoveExisting(_ path: FilePath) throws {
     if FileManager.default.fileExists(atPath: path.string)

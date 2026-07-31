@@ -64,6 +64,53 @@ import Testing
     #expect(first != reconfigured)
 }
 
+@Test func namedToolIdentityUsesTheCanonicalExecutableBehindTransientShims()
+    async throws
+{
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-tool-shim-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let installation = directory.appendingPathComponent("installation/bin")
+    let firstShim = directory.appendingPathComponent("shim-1")
+    let secondShim = directory.appendingPathComponent("shim-2")
+    for path in [installation, firstShim, secondShim] {
+        try FileManager.default.createDirectory(
+            at: path, withIntermediateDirectories: true)
+    }
+    let tool = installation.appendingPathComponent("fixture-tool")
+    try Data("#!/bin/sh\nexit 0\n".utf8).write(to: tool)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755], ofItemAtPath: tool.path)
+    for shim in [firstShim, secondShim] {
+        try FileManager.default.createSymbolicLink(
+            atPath: shim.appendingPathComponent("fixture-tool").path,
+            withDestinationPath: tool.path)
+    }
+    func identity(searchRoot: URL) async throws -> ArtifactDigest {
+        let task = TaskDeclaration(
+            id: TaskID(rawValue: "fixture.named-tool"),
+            component: ComponentID(rawValue: "fixture"),
+            inputs: [.tool(.named("fixture-tool"))],
+            operation: .command(
+                CommandSpec(
+                    executable: .named("fixture-tool"),
+                    arguments: [],
+                    workingDirectory: FilePath(directory.path),
+                    environment: ["PATH": searchRoot.path])))
+        return try await ColliderRuntime().execute(
+            graph: TaskGraph([task]),
+            selected: [task.id],
+            stateRoot: FilePath(directory.appendingPathComponent("state").path),
+            options: TaskExecutionOptions(dryRun: true)
+        ).plan[0].identity
+    }
+
+    let first = try await identity(searchRoot: firstShim)
+    let second = try await identity(searchRoot: secondShim)
+
+    #expect(first == second)
+}
+
 @Test func taskIdentityEncodingRemainsByteStableAcrossWorkflowMoves() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-engine-identity-\(UUID().uuidString)")
@@ -751,6 +798,12 @@ import Testing
                 "usr/lib/swift/linux/libc++.so.1"
             ).path) == "../../libc++.so.1")
     #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+            atPath: workspace.appendingPathComponent(
+                "build/buildbot_linux/swift-linux-x86_64/lib/swift/linux/libc++.so.1"
+            ).path)
+            == "/build/build/buildbot_linux/llvm-linux-x86_64/lib/libc++.so.1")
+    #expect(
         try String(
             contentsOf: staging.appendingPathComponent("usr/bin/clang.cfg"),
             encoding: .utf8
@@ -1422,24 +1475,29 @@ import Testing
     let manifest: [String: Any] = [
         "sourceID": sourceID,
         "sourceLockSHA256": try ArtifactHasher.digest(
-            file: FilePath(lockFile.path)).description,
+            file: FilePath(lockFile.path)
+        ).description,
         "repositories": repositories.map {
             ["name": $0.name, "commit": $0.commit, "tree": $0.tree]
         },
         "depotToolsCommit": depotRevision.commit,
         "chromiumDEPSSHA256": try ArtifactHasher.digest(
-            file: FilePath(deps.path)).description,
+            file: FilePath(deps.path)
+        ).description,
         "gclientGraphSHA256": try ArtifactHasher.digest(
-            file: FilePath(graph.path)).description,
+            file: FilePath(graph.path)
+        ).description,
         "pgo": [
             "name": pgoName,
             "sha256": try ArtifactHasher.digest(
-                file: FilePath(pgo.path)).description,
+                file: FilePath(pgo.path)
+            ).description,
         ],
         "v8BuiltinsPGO": [
             "name": "x64.profile",
             "sha256": try ArtifactHasher.digest(
-                file: FilePath(v8PGO.path)).description,
+                file: FilePath(v8PGO.path)
+            ).description,
         ],
     ]
     try JSONSerialization.data(
@@ -1486,8 +1544,11 @@ import Testing
     defer { try? FileManager.default.removeItem(at: directory) }
     let source = directory.appendingPathComponent("source")
     let chromium = source.appendingPathComponent("chromium/src")
-    let output = chromium.appendingPathComponent("out/Browser")
+    let output = directory.appendingPathComponent("out/Browser")
     let depot = directory.appendingPathComponent("depot_tools")
+    let imageID = directory.appendingPathComponent("image-id")
+    let tools = directory.appendingPathComponent("tools")
+    let podman = tools.appendingPathComponent("podman")
     let gn = chromium.appendingPathComponent("buildtools/linux64/gn")
     let clang = chromium.appendingPathComponent(
         "third_party/llvm-build/Release+Asserts/bin/clang")
@@ -1499,6 +1560,10 @@ import Testing
     }
     try FileManager.default.createDirectory(
         at: source, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        at: tools, withIntermediateDirectories: true)
+    try Data(("sha256:" + String(repeating: "a", count: 64) + "\n").utf8)
+        .write(to: imageID)
     try JSONSerialization.data(
         withJSONObject: ["sourceID": "source-fixture"],
         options: [.sortedKeys]
@@ -1516,7 +1581,37 @@ import Testing
         "#!/bin/sh\nprintf 'clang fixture 1.0\\n'\n".utf8
     ).write(to: clang)
     try Data("#!/bin/sh\nexit 0\n".utf8).write(to: autoninja)
-    for executable in [gn, clang, autoninja] {
+    try Data(
+        """
+        #!/bin/sh
+        build=
+        while [ "$#" -gt 0 ]; do
+          case "$1" in
+            --mount)
+              specification="$2"
+              case "$specification" in
+                *,target=/build,*)
+                  build="${specification#*src=}"
+                  build="${build%%,target=*}"
+                  ;;
+              esac
+              shift 2
+              ;;
+            sha256:*) shift; break ;;
+            *) shift ;;
+          esac
+        done
+        case "${1:-}" in
+          configure)
+            mkdir -p "$build"
+            printf 'is_official_build=true\ntarget_cpu="x64"\n' > "$build/args.gn"
+            ;;
+          build) ;;
+          *) exit 64 ;;
+        esac
+        """.utf8
+    ).write(to: podman)
+    for executable in [gn, clang, autoninja, podman] {
         try FileManager.default.setAttributes(
             [.posixPermissions: 0o755],
             ofItemAtPath: executable.path)
@@ -1538,12 +1633,14 @@ import Testing
                 sourceRoot: FilePath(source.path),
                 output: FilePath(output.path),
                 depotTools: FilePath(depot.path),
+                containerImageID: FilePath(imageID.path),
                 gnArguments: #"is_official_build=true target_cpu="x64""#,
                 targets: ["chrome", "chrome_sandbox"],
                 jobs: 2,
                 environment: [
-                    "PATH": ProcessInfo.processInfo.environment["PATH"]
-                        ?? "/usr/bin:/bin"
+                    "PATH": tools.path + ":"
+                        + (ProcessInfo.processInfo.environment["PATH"]
+                            ?? "/usr/bin:/bin")
                 ])))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),

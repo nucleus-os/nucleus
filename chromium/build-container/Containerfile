@@ -1,0 +1,43 @@
+FROM docker.io/library/ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG UBUNTU_SNAPSHOT=20260730T000000Z
+
+COPY packages.txt /tmp/chromium-build-packages.txt
+
+RUN sed -Ei \
+        "s#^URIs: .*#URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}#" \
+        /etc/apt/sources.list.d/ubuntu.sources \
+    && apt-get -o Acquire::https::Verify-Peer=false update \
+    && xargs -r apt-get -o Acquire::https::Verify-Peer=false \
+        install --yes --no-install-recommends \
+        < /tmp/chromium-build-packages.txt \
+    && rm -f /tmp/chromium-build-packages.txt \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN usermod \
+        --login nucleus-build \
+        --home /home/nucleus-build \
+        --move-home \
+        --shell /bin/bash \
+        ubuntu \
+    && groupmod --new-name nucleus-build ubuntu \
+    && usermod \
+        --groups '' \
+        --comment 'Nucleus Chromium Build' \
+        nucleus-build
+
+COPY --chmod=0755 entrypoint.sh /usr/local/bin/nucleus-chromium-build
+
+USER nucleus-build
+WORKDIR /source/chromium/src
+
+ENV DEPOT_TOOLS_UPDATE=0 \
+    HOME=/tmp/nucleus-home \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PATH=/depot_tools:/source/chromium/src/third_party/llvm-build/Release+Asserts/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PYTHONDONTWRITEBYTECODE=1 \
+    TZ=UTC
+
+ENTRYPOINT ["/usr/local/bin/nucleus-chromium-build"]

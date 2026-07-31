@@ -33,6 +33,7 @@ extension ColliderRuntime {
                 "--output-dir=\(distributionCandidate)",
                 "--allow-partial",
                 "--ninja-build",
+                "--release-build-dir=\(assembly.buildOutput)",
                 "--x64-build",
                 "--minimal",
                 "--no-archive",

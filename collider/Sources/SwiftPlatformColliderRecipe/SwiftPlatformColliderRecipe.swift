@@ -3,6 +3,31 @@ import Foundation
 import FoundationEssentials
 import SystemPackage
 
+public struct SwiftBuildContainerConfiguration: Sendable {
+    public let imageID: FilePath
+    public let sourceWorkspace: FilePath
+    public let recipeRoot: FilePath
+    public let buildWorkspace: FilePath
+    public let compilerCache: FilePath
+    public let candidate: FilePath
+
+    public init(
+        imageID: FilePath,
+        sourceWorkspace: FilePath,
+        recipeRoot: FilePath,
+        buildWorkspace: FilePath,
+        compilerCache: FilePath,
+        candidate: FilePath
+    ) {
+        self.imageID = imageID
+        self.sourceWorkspace = sourceWorkspace
+        self.recipeRoot = recipeRoot
+        self.buildWorkspace = buildWorkspace
+        self.compilerCache = compilerCache
+        self.candidate = candidate
+    }
+}
+
 public struct SwiftAndroidFoundationConfiguration: Sendable {
     public let downloadCache: FilePath
     public let androidInstallRoot: FilePath
@@ -10,6 +35,7 @@ public struct SwiftAndroidFoundationConfiguration: Sendable {
     public let architectures: [String]
     public let apiLevel: UInt32
     public let jobs: UInt32
+    public let builder: SwiftBuildContainerConfiguration
     public let environment: [String: String]
 
     public init(
@@ -19,6 +45,7 @@ public struct SwiftAndroidFoundationConfiguration: Sendable {
         architectures: [String],
         apiLevel: UInt32,
         jobs: UInt32,
+        builder: SwiftBuildContainerConfiguration,
         environment: [String: String]
     ) {
         self.downloadCache = downloadCache
@@ -27,6 +54,7 @@ public struct SwiftAndroidFoundationConfiguration: Sendable {
         self.architectures = architectures
         self.apiLevel = apiLevel
         self.jobs = jobs
+        self.builder = builder
         self.environment = environment
     }
 }
@@ -42,28 +70,23 @@ public struct SwiftPlatformTaskSet: Sendable {
 }
 
 public struct SwiftPlatformGenerationConfiguration: Sendable {
-    public enum CheckoutMode: String, Sendable {
-        case branch
-        case tag
-    }
-
     public let foundation: SwiftAndroidFoundationConfiguration
     public let candidate: FilePath
     public let generation: FilePath
     public let active: FilePath
     public let recipeRoot: FilePath
+    public let builderContext: FilePath
+    public let builderImageID: FilePath
     public let sourceWorkspace: FilePath
+    public let buildWorkspace: FilePath
+    public let sourceRepositories: [FilePath]
     public let sourceID: String
-    public let sourceRef: String
-    public let sourceScheme: String
-    public let checkoutMode: CheckoutMode
     public let hostCC: FilePath
     public let hostCXX: FilePath
     public let bundleName: String
     public let validationWorkRoot: FilePath
     public let sdkDiscoveryLink: FilePath
     public let sdkDiscoveryDisplacedItem: FilePath
-    public let reconfigureHost: Bool
     public let environment: [String: String]
 
     public init(
@@ -72,18 +95,18 @@ public struct SwiftPlatformGenerationConfiguration: Sendable {
         generation: FilePath,
         active: FilePath,
         recipeRoot: FilePath,
+        builderContext: FilePath,
+        builderImageID: FilePath,
         sourceWorkspace: FilePath,
+        buildWorkspace: FilePath,
+        sourceRepositories: [FilePath],
         sourceID: String,
-        sourceRef: String,
-        sourceScheme: String,
-        checkoutMode: CheckoutMode,
         hostCC: FilePath,
         hostCXX: FilePath,
         bundleName: String,
         validationWorkRoot: FilePath,
         sdkDiscoveryLink: FilePath,
         sdkDiscoveryDisplacedItem: FilePath,
-        reconfigureHost: Bool,
         environment: [String: String]
     ) {
         self.foundation = foundation
@@ -91,18 +114,18 @@ public struct SwiftPlatformGenerationConfiguration: Sendable {
         self.generation = generation
         self.active = active
         self.recipeRoot = recipeRoot
+        self.builderContext = builderContext
+        self.builderImageID = builderImageID
         self.sourceWorkspace = sourceWorkspace
+        self.buildWorkspace = buildWorkspace
+        self.sourceRepositories = sourceRepositories
         self.sourceID = sourceID
-        self.sourceRef = sourceRef
-        self.sourceScheme = sourceScheme
-        self.checkoutMode = checkoutMode
         self.hostCC = hostCC
         self.hostCXX = hostCXX
         self.bundleName = bundleName
         self.validationWorkRoot = validationWorkRoot
         self.sdkDiscoveryLink = sdkDiscoveryLink
         self.sdkDiscoveryDisplacedItem = sdkDiscoveryDisplacedItem
-        self.reconfigureHost = reconfigureHost
         self.environment = environment
     }
 }
@@ -134,9 +157,11 @@ public enum SwiftPlatformColliderRecipe {
         let androidSupport = androidBuildSupportTasks(
             configuration,
             buildRoot: androidBuildRoot)
+        let builders = swiftBuilderTasks(configuration)
         let hostTaskSet = try hostToolchainTasks(
             configuration,
-            toolchain: toolchain)
+            toolchain: toolchain,
+            builderDependencies: builders.map(\.id))
         let hostID = hostTaskSet.selected[0]
         let preflights = configuration.foundation.architectures.map {
             architecture in
@@ -201,20 +226,56 @@ public enum SwiftPlatformColliderRecipe {
             let foundationTask = TaskID(
                 rawValue:
                     "toolchain.android-foundation-\(architecture)-sanitize")
+            let arguments = androidBuildArguments(
+                configuration,
+                architecture: architecture,
+                toolchain: toolchain,
+                install: install)
+            #if os(macOS)
+            let operation = TaskOperation.command(
+                CommandSpec(
+                    executable: .named("python3"),
+                    arguments: arguments,
+                    workingDirectory: configuration.sourceWorkspace,
+                    environment: androidBuildEnvironment(
+                        configuration,
+                        toolchain: toolchain)))
+            #else
+            let operation = TaskOperation.runBuildContainer(
+                BuildContainerExecution(
+                    imageID: configuration.builderImageID,
+                    hostname: "swift-android-build",
+                    workingDirectory: "/src",
+                    hostWorkingDirectory: configuration.sourceWorkspace,
+                    mounts: swiftBuilderMounts(configuration),
+                    containerEnvironment: linuxAndroidBuildEnvironment(
+                        configuration,
+                        toolchain: toolchain),
+                    command: ["android", "python3"]
+                        + arguments.map {
+                            containerizedSwiftArgument($0, configuration: configuration)
+                        },
+                    environment: configuration.environment))
+            #endif
             return TaskDeclaration(
                 id: TaskID(
                     rawValue:
                         "toolchain.android-sdk-build-\(architecture)"),
                 component: ComponentID(rawValue: "toolchain"),
                 dependencies: [hostID, preflight.id, foundationTask]
+                    + builders.map(\.id)
                     + androidSupport.map(\.id),
                 inputs: [
                     .dependencyOutput(toolchain.appending("bin/swift-driver")),
-                    .dependencyOutput(
-                        configuration.sourceWorkspace.appending(
-                            "swift")),
+                    sourceGraphInput(configuration),
                     .dependencyOutput(install.appending("usr/lib/libcurl.a")),
-                ],
+                ]
+                    + builders.flatMap { builder in
+                        [
+                            .dependencyOutput(configuration.builderImageID),
+                            .tool(.named("podman")),
+                        ]
+                    },
                 outputs: [
                     OutputDeclaration(
                         path: install.appending(
@@ -227,18 +288,7 @@ public enum SwiftPlatformColliderRecipe {
                         validation: .regularFile),
                 ],
                 cachePolicy: .contentAddressed,
-                operation: .command(
-                    CommandSpec(
-                        executable: .named("python3"),
-                        arguments: androidBuildArguments(
-                            configuration,
-                            architecture: architecture,
-                            toolchain: toolchain,
-                            install: install),
-                        workingDirectory: configuration.sourceWorkspace,
-                        environment: androidBuildEnvironment(
-                            configuration,
-                            toolchain: toolchain))))
+                operation: operation)
         }
         let linkage = TaskDeclaration(
             id: TaskID(rawValue: "toolchain.android-runtime-linkage"),
@@ -371,6 +421,7 @@ public enum SwiftPlatformColliderRecipe {
                     displacedItem: configuration.sdkDiscoveryDisplacedItem)))
         return SwiftPlatformTaskSet(
             tasks: foundation.tasks
+                + builders
                 + hostTaskSet.tasks
                 + androidSupport
                 + preflights
@@ -381,190 +432,93 @@ public enum SwiftPlatformColliderRecipe {
             selected: [discovery.id])
     }
 
+    private static func swiftBuilderTasks(
+        _ configuration: SwiftPlatformGenerationConfiguration
+    ) -> [TaskDeclaration] {
+        #if os(macOS)
+        return []
+        #else
+        let containerFile = configuration.builderContext.appending(
+            "Containerfile")
+        return [
+            TaskDeclaration(
+                id: TaskID(rawValue: "toolchain.swift-builder"),
+                component: ComponentID(rawValue: "toolchain"),
+                inputs: [
+                    .tree(configuration.builderContext),
+                    .tool(.named("podman")),
+                ],
+                outputs: [
+                    OutputDeclaration(
+                        path: configuration.builderImageID,
+                        validation: .regularFile)
+                ],
+                locks: [.checkout("swift-builder-image")],
+                cachePolicy: .contentAddressed,
+                operation: .prepareBuildContainer(
+                    BuildContainerPreparation(
+                        context: configuration.builderContext,
+                        containerFile: containerFile,
+                        imageID: configuration.builderImageID,
+                        imageName: "localhost/nucleus-swift-build",
+                        environment: configuration.environment)))
+        ]
+        #endif
+    }
+
     private static func hostToolchainTasks(
         _ configuration: SwiftPlatformGenerationConfiguration,
-        toolchain: FilePath
+        toolchain: FilePath,
+        builderDependencies: [TaskID]
     ) throws -> SwiftPlatformTaskSet {
         let component = ComponentID(rawValue: "toolchain")
-        let swiftRepository = configuration.sourceWorkspace.appending("swift")
-        let reference: SwiftSourcePreparation.Reference =
-            switch configuration.checkoutMode
-            {
-            case .branch: .branch(configuration.sourceRef)
-            case .tag: .tag(configuration.sourceRef)
-            }
-        let synchronization = TaskDeclaration(
-            id: TaskID(rawValue: "toolchain.source-sync"),
+        let sourceValidation = TaskDeclaration(
+            id: TaskID(rawValue: "toolchain.source-validate"),
             component: component,
-            inputs: [
-                .value(
-                    name: "source-ref",
-                    bytes: Array(configuration.sourceRef.utf8)),
-                .value(
-                    name: "generation-candidate",
-                    bytes: Array(configuration.candidate.string.utf8)),
-            ],
-            outputs: [
-                OutputDeclaration(
-                    path: swiftRepository,
-                    validation: .nonEmptyDirectory)
-            ],
-            locks: [.checkout("swift-platform-source")],
-            cachePolicy: .contentAddressed,
-            operation: .prepareSwiftSource(
-                SwiftSourcePreparation(
-                    repository: swiftRepository,
-                    remote: "https://github.com/swiftlang/swift.git",
-                    reference: reference,
+            inputs: [sourceGraphInput(configuration)],
+            cachePolicy: .always,
+            operation: .validateSwiftSourceWorkspace(
+                SwiftSourceWorkspaceValidation(
+                    workspaceRoot: configuration.sourceWorkspace,
+                    repositories: configuration.sourceRepositories,
                     environment: configuration.environment)))
-        var updateArguments = [
-            configuration.sourceWorkspace.appending(
-                "swift/utils/update-checkout"
-            ).string,
-            "--clone",
-            "--partial-clone",
-            "--skip-history",
-            "--skip-tags",
-            "--scheme", configuration.sourceScheme,
-            "--source-root", configuration.sourceWorkspace.string,
-        ]
-        switch configuration.checkoutMode {
-        case .branch:
-            updateArguments.append("--reset-to-remote")
-        case .tag:
-            updateArguments += ["--tag", configuration.sourceRef]
-        }
-        let update = TaskDeclaration(
-            id: TaskID(rawValue: "toolchain.source-update"),
-            component: component,
-            dependencies: [synchronization.id],
-            inputs: [
-                .dependencyOutput(swiftRepository),
-                .value(
-                    name: "source-scheme",
-                    bytes: Array(configuration.sourceScheme.utf8)),
-            ],
-            outputs: [
-                OutputDeclaration(
-                    path: configuration.sourceWorkspace.appending(
-                        "swift-driver/.git"),
-                    validation: .exists)
-            ],
-            locks: [.checkout("swift-platform-source")],
-            cachePolicy: .contentAddressed,
-            operation: .command(
-                CommandSpec(
-                    executable: .named("python3"),
-                    arguments: updateArguments,
-                    workingDirectory: configuration.sourceWorkspace,
-                    environment: configuration.environment)))
-        let patchedRepositories = [
-            "swift", "swift-driver", "swift-build", "swiftpm",
-            "indexstore-db", "sourcekit-lsp", "swift-corelibs-foundation",
-        ]
-        let clean = TaskDeclaration(
-            id: TaskID(rawValue: "toolchain.source-clean"),
-            component: component,
-            dependencies: [update.id],
-            inputs: patchedRepositories.map {
-                .dependencyOutput(
-                    configuration.sourceWorkspace.appending($0))
-            },
-            locks: [.checkout("swift-platform-source")],
-            cachePolicy: .contentAddressed,
-            operation: .sequence(
-                patchedRepositories.map { repository in
-                    .command(
-                        CommandSpec(
-                            executable: .named("git"),
-                            arguments: [
-                                "-C",
-                                configuration.sourceWorkspace.appending(
-                                    repository
-                                ).string,
-                                "clean", "-fd",
-                            ],
-                            workingDirectory: configuration.sourceWorkspace,
-                            environment: configuration.environment))
-                }))
-        var tasks = [synchronization, update, clean]
-        var patchDependency = clean.id
-        let patchRoot = configuration.recipeRoot.appending("patches")
-        for repository in patchedRepositories {
-            let directory = patchRoot.appending(repository)
-            guard FileManager.default.fileExists(atPath: directory.string)
-            else { continue }
-            let names = try FileManager.default.contentsOfDirectory(
-                atPath: directory.string
-            )
-            .filter { $0.hasSuffix(".patch") }
-            .sorted()
-            for name in names {
-                let patch = directory.appending(name)
-                let idName =
-                    name
-                    .replacingOccurrences(of: ".patch", with: "")
-                    .replacingOccurrences(of: "_", with: "-")
-                let task = TaskDeclaration(
-                    id: TaskID(
-                        rawValue:
-                            "toolchain.patch-\(repository)-\(idName)"),
-                    component: component,
-                    dependencies: [patchDependency],
-                    inputs: [
-                        .file(patch),
-                        .dependencyOutput(
-                            configuration.sourceWorkspace.appending(
-                                repository)),
-                    ],
-                    locks: [.checkout("swift-platform-source")],
-                    cachePolicy: .contentAddressed,
-                    operation: .applyGitPatch(
-                        GitPatchApplication(
-                            repository: configuration.sourceWorkspace.appending(
-                                repository),
-                            patch: patch,
-                            environment: configuration.environment)))
-                tasks.append(task)
-                patchDependency = task.id
-            }
-        }
-        let staging = configuration.sourceWorkspace.appending(
+        var tasks = [sourceValidation]
+        let staging = configuration.buildWorkspace.appending(
             ".nucleus-candidate-install")
         #if os(macOS)
-            let platform = HostToolchainPlatform.macOS
-            let preset = configuration.recipeRoot.appending(
-                "nucleus-build-presets-macos.ini")
-            let presetName = "nucleus_buildbot_macos,no_test"
-            let packageSuffix = "macos-arm64"
+        let platform = HostToolchainPlatform.macOS
+        let preset = configuration.recipeRoot.appending(
+            "nucleus-build-presets-macos.ini")
+        let presetName = "nucleus_buildbot_macos,no_test"
+        let packageSuffix = "macos-arm64"
         #else
-            let platform = HostToolchainPlatform.linux
-            let preset = configuration.recipeRoot.appending(
-                "nucleus-build-presets.ini")
-            let presetName = "nucleus_buildbot_linux,no_test"
-            let packageSuffix = "linux"
+        let platform = HostToolchainPlatform.linux
+        let preset = configuration.recipeRoot.appending(
+            "nucleus-build-presets.ini")
+        let presetName = "nucleus_buildbot_linux,no_test"
+        let packageSuffix = "linux"
         #endif
         let preparation = TaskDeclaration(
             id: TaskID(rawValue: "toolchain.host-prepare"),
             component: component,
-            dependencies: [patchDependency],
+            dependencies: [sourceValidation.id] + builderDependencies,
             inputs: [
                 .file(preset),
-                .dependencyOutput(swiftRepository),
+                sourceGraphInput(configuration),
             ],
             outputs: [
                 OutputDeclaration(
                     path: staging.appending(".nucleus-owned"),
                     validation: .regularFile)
             ],
-            cachePolicy: .contentAddressed,
+            cachePolicy: .always,
             operation: .prepareHostToolchainBuild(
                 HostToolchainBuildPreparation(
-                    workspace: configuration.sourceWorkspace,
+                    workspace: configuration.buildWorkspace,
                     stagingRoot: staging,
                     platform: platform)))
         tasks.append(preparation)
-        let upstreamPackage = configuration.sourceWorkspace.appending(
+        let upstreamPackage = configuration.buildWorkspace.appending(
             ".nucleus-upstream-toolchain.tar.gz")
         let buildArguments = hostBuildArguments(
             configuration,
@@ -573,19 +527,47 @@ public enum SwiftPlatformColliderRecipe {
             staging: staging,
             upstreamPackage: upstreamPackage,
             platform: platform)
+        #if os(macOS)
+        let buildOperation = TaskOperation.command(
+            CommandSpec(
+                executable: .named("python3"),
+                arguments: buildArguments,
+                workingDirectory: configuration.sourceWorkspace,
+                environment: hostBuildEnvironment(
+                    configuration,
+                    staging: staging,
+                    platform: platform)))
+        #else
+        let buildOperation = TaskOperation.runBuildContainer(
+            BuildContainerExecution(
+                imageID: configuration.builderImageID,
+                hostname: "swift-build",
+                workingDirectory: "/src",
+                hostWorkingDirectory: configuration.sourceWorkspace,
+                mounts: swiftBuilderMounts(configuration),
+                containerEnvironment: linuxHostBuildEnvironment(
+                    configuration),
+                command: ["host", "python3"]
+                    + buildArguments.map {
+                        containerizedSwiftArgument($0, configuration: configuration)
+                    },
+                environment: configuration.environment))
+        #endif
         let build = TaskDeclaration(
             id: TaskID(rawValue: "toolchain.host-build"),
             component: component,
-            dependencies: [preparation.id],
+            dependencies: [preparation.id] + builderDependencies,
             inputs: [
                 .file(preset),
-                .dependencyOutput(swiftRepository),
+                sourceGraphInput(configuration),
             ]
                 + (platform == .linux
                     ? [
+                        .dependencyOutput(configuration.builderImageID),
+                        .tool(.named("podman")),
                         .file(
                             configuration.recipeRoot.appending(
-                                "nucleus-swift-cmake-overrides.cmake"))
+                                "nucleus-swift-cmake-overrides.cmake")),
                     ] : []),
             outputs: [
                 OutputDeclaration(
@@ -593,15 +575,7 @@ public enum SwiftPlatformColliderRecipe {
                     validation: .regularFile)
             ],
             cachePolicy: .contentAddressed,
-            operation: .command(
-                CommandSpec(
-                    executable: .named("python3"),
-                    arguments: buildArguments,
-                    workingDirectory: configuration.sourceWorkspace,
-                    environment: hostBuildEnvironment(
-                        configuration,
-                        staging: staging,
-                        platform: platform))))
+            operation: buildOperation)
         let assemble = TaskDeclaration(
             id: TaskID(rawValue: "toolchain.host-assemble"),
             component: component,
@@ -618,7 +592,7 @@ public enum SwiftPlatformColliderRecipe {
             cachePolicy: .contentAddressed,
             operation: .assembleHostToolchain(
                 HostToolchainAssembly(
-                    workspace: configuration.sourceWorkspace,
+                    workspace: configuration.buildWorkspace,
                     archive: upstreamPackage,
                     toolchain: toolchain,
                     platform: platform,
@@ -690,6 +664,8 @@ public enum SwiftPlatformColliderRecipe {
             "--preset-file", preset.string,
             "-j", String(configuration.foundation.jobs),
             "--preset=\(presetName)",
+            "--build-dir",
+            configuration.buildWorkspace.appending("build").string,
             "host_cc=\(configuration.hostCC)",
             "host_cxx=\(configuration.hostCXX)",
             "install_destdir=\(staging)",
@@ -704,9 +680,7 @@ public enum SwiftPlatformColliderRecipe {
                 "installable_package=\(upstreamPackage)",
             ]
         }
-        if configuration.reconfigureHost {
-            arguments.append("--reconfigure")
-        }
+        arguments.append("--reconfigure")
         return arguments
     }
 
@@ -727,7 +701,7 @@ public enum SwiftPlatformColliderRecipe {
         environment["CXX"] = configuration.hostCXX.string
         environment["SWIFT_EXEC"] = staging.appending("usr/bin/swiftc").string
         environment["XDG_CACHE_HOME"] =
-            configuration.sourceWorkspace.appending(
+            configuration.buildWorkspace.appending(
                 ".xdg-cache"
             ).string
         if environment["CCACHE_DIR"] == nil,
@@ -736,7 +710,7 @@ public enum SwiftPlatformColliderRecipe {
             environment["CCACHE_DIR"] = "\(home)/.cache/ccache"
         }
         if platform == .linux {
-            let llvm = configuration.sourceWorkspace.appending(
+            let llvm = configuration.buildWorkspace.appending(
                 "build/buildbot_linux/llvm-linux-x86_64/lib"
             ).string
             let hostRoot = configuration.hostCXX
@@ -756,6 +730,100 @@ public enum SwiftPlatformColliderRecipe {
         return environment
     }
 
+    private static func linuxHostBuildEnvironment(
+        _ configuration: SwiftPlatformGenerationConfiguration
+    ) -> [String: String] {
+        let staging = "/build/.nucleus-candidate-install/usr"
+        return [
+            "CC": "/usr/bin/clang",
+            "CCACHE_DIR": "/ccache",
+            "CXX": "/usr/bin/clang++",
+            "HOME": "/home/nucleus-build",
+            "LANG": "C.UTF-8",
+            "LC_ALL": "C.UTF-8",
+            "LIBRARY_PATH":
+                "\(staging)/lib:/build/build/buildbot_linux/llvm-linux-x86_64/lib:/usr/lib",
+            "LD_LIBRARY_PATH":
+                "\(staging)/lib:\(staging)/lib/swift/linux:/build/build/buildbot_linux/llvm-linux-x86_64/lib:/usr/lib",
+            "PATH":
+                "/usr/lib/ccache:/opt/cmake/bin:/opt/swift-bootstrap/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "SWIFT_BUILD_ROOT": "/build/build",
+            "TZ": "UTC",
+            "XDG_CACHE_HOME": "/build/.xdg-cache",
+        ]
+    }
+
+    private static func swiftBuilderMounts(
+        _ configuration: SwiftPlatformGenerationConfiguration
+    ) -> [BuildContainerMount] {
+        [
+            BuildContainerMount(
+                source: configuration.sourceWorkspace,
+                target: "/src",
+                access: .readOnly),
+            BuildContainerMount(
+                source: configuration.recipeRoot,
+                target: "/recipe",
+                access: .readOnly),
+            BuildContainerMount(
+                source: configuration.buildWorkspace,
+                target: "/build",
+                access: .readWrite),
+            BuildContainerMount(
+                source: configuration.foundation.builder.compilerCache,
+                target: "/ccache",
+                access: .readWrite),
+            BuildContainerMount(
+                source: configuration.candidate,
+                target: "/candidate",
+                access: .readWrite),
+        ]
+    }
+
+    private static func linuxAndroidBuildEnvironment(
+        _ configuration: SwiftPlatformGenerationConfiguration,
+        toolchain: FilePath
+    ) -> [String: String] {
+        let toolchainPath = containerizedSwiftArgument(
+            toolchain.string,
+            configuration: configuration)
+        return [
+            "ANDROID_NDK_HOME": "/opt/android-ndk-r30-beta2",
+            "CC": "/opt/android-ndk-r30-beta2/toolchains/llvm/prebuilt/linux-x86_64/bin/clang",
+            "CCACHE_DIR": "/ccache",
+            "CCACHE_PATH":
+                "/opt/android-ndk-r30-beta2/toolchains/llvm/prebuilt/linux-x86_64/bin:\(toolchainPath)/bin:/usr/bin:/bin",
+            "CXX": "/opt/android-ndk-r30-beta2/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++",
+            "HOME": "/home/nucleus-build",
+            "LANG": "C.UTF-8",
+            "LC_ALL": "C.UTF-8",
+            "LD_LIBRARY_PATH": "\(toolchainPath)/lib:\(toolchainPath)/lib/swift/linux",
+            "PATH":
+                "/usr/lib/ccache:/opt/cmake/bin:\(toolchainPath)/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "SWIFT_BUILD_ROOT": "/build/build",
+            "TZ": "UTC",
+        ]
+    }
+
+    private static func containerizedSwiftArgument(
+        _ argument: String,
+        configuration: SwiftPlatformGenerationConfiguration
+    ) -> String {
+        var result = argument
+        for (source, destination) in [
+            (configuration.hostCXX.string, "/usr/bin/clang++"),
+            (configuration.hostCC.string, "/usr/bin/clang"),
+            (configuration.buildWorkspace.string, "/build"),
+            (configuration.sourceWorkspace.string, "/src"),
+            (configuration.recipeRoot.string, "/recipe"),
+            (configuration.candidate.string, "/candidate"),
+            (configuration.foundation.ndkRoot.string, "/opt/android-ndk-r30-beta2"),
+        ] {
+            result = result.replacingOccurrences(of: source, with: destination)
+        }
+        return result
+    }
+
     private static func hostValidationEnvironment(
         _ configuration: SwiftPlatformGenerationConfiguration,
         toolchain: FilePath
@@ -765,12 +833,12 @@ public enum SwiftPlatformColliderRecipe {
             toolchain.appending("bin").string
             + ":/usr/bin:/bin"
         #if os(macOS)
-            environment["DYLD_LIBRARY_PATH"] = toolchain.appending("lib").string
+        environment["DYLD_LIBRARY_PATH"] = toolchain.appending("lib").string
         #else
-            environment["LD_LIBRARY_PATH"] = [
-                toolchain.appending("lib").string,
-                toolchain.appending("lib/swift/linux").string,
-            ].joined(separator: ":")
+        environment["LD_LIBRARY_PATH"] = [
+            toolchain.appending("lib").string,
+            toolchain.appending("lib/swift/linux").string,
+        ].joined(separator: ":")
         #endif
         return environment
     }
@@ -796,15 +864,15 @@ public enum SwiftPlatformColliderRecipe {
             environment.removeValue(forKey: key)
         }
         #if os(macOS)
-            let ccache = "/opt/homebrew/opt/ccache/libexec"
-            let ndkHostTag = "darwin-x86_64"
-            let runtimeLibraryVariable = "DYLD_LIBRARY_PATH"
-            let runtimeLibraryDirectory = "macosx"
+        let ccache = "/opt/homebrew/opt/ccache/libexec"
+        let ndkHostTag = "darwin-x86_64"
+        let runtimeLibraryVariable = "DYLD_LIBRARY_PATH"
+        let runtimeLibraryDirectory = "macosx"
         #else
-            let ccache = "/usr/lib/ccache"
-            let ndkHostTag = "linux-x86_64"
-            let runtimeLibraryVariable = "LD_LIBRARY_PATH"
-            let runtimeLibraryDirectory = "linux"
+        let ccache = "/usr/lib/ccache"
+        let ndkHostTag = "linux-x86_64"
+        let runtimeLibraryVariable = "LD_LIBRARY_PATH"
+        let runtimeLibraryDirectory = "linux"
         #endif
         let ndkBin = configuration.foundation.ndkRoot.appending(
             "toolchains/llvm/prebuilt/\(ndkHostTag)/bin")
@@ -838,20 +906,37 @@ public enum SwiftPlatformColliderRecipe {
         configuration.generation.lastComponent?.string ?? "unversioned"
     }
 
-    /// Cross build roots this rebuild will not use. Everything the current
-    /// generation configures is scoped to its own identity, so a root named for
-    /// any other generation describes a toolchain that has been retired.
+    private static func sourceGraphInput(
+        _ configuration: SwiftPlatformGenerationConfiguration
+    ) -> ArtifactInput {
+        .value(
+            name: "swift-source-gitlinks",
+            bytes: Array(configuration.sourceID.utf8))
+    }
+
+    /// Cross-build roots left by the retired generation-scoped layout. Linux
+    /// builds see stable container paths and retain one reusable root per
+    /// architecture. Native macOS builds still require generation-scoped roots
+    /// because their CMake caches contain the candidate's absolute host path.
     public static func supersededAndroidBuildRoots(
         _ configuration: SwiftPlatformGenerationConfiguration
     ) -> [FilePath] {
-        let root = configuration.sourceWorkspace.appending("build")
-        let current = generationIdentity(configuration)
+        let root = configuration.buildWorkspace.appending("build")
         let names =
             (try? FileManager.default.contentsOfDirectory(
                 atPath: root.string)) ?? []
+        #if os(macOS)
+        let current = generationIdentity(configuration)
+        let retained = Set(
+            configuration.foundation.architectures.map {
+                "android-\($0)-macos-\(current)"
+            })
+        #else
+        let retained: Set<String> = ["android-aarch64", "android-x86_64"]
+        #endif
         return
             names
-            .filter { $0.hasPrefix("android-") && !$0.hasSuffix("-\(current)") }
+            .filter { $0.hasPrefix("android-") && !retained.contains($0) }
             .sorted()
             .map { root.appending($0) }
     }
@@ -863,19 +948,21 @@ public enum SwiftPlatformColliderRecipe {
         install: FilePath
     ) -> [String] {
         #if os(macOS)
-            let hostTag = "darwin-x86_64"
-            let platformTag = "\(architecture)-macos"
+        let hostTag = "darwin-x86_64"
+        let platformTag = "\(architecture)-macos"
         #else
-            let hostTag = "linux-x86_64"
-            let platformTag = architecture
+        let hostTag = "linux-x86_64"
+        let platformTag = architecture
         #endif
-        // The cross build configures against the host tools of the generation
-        // being produced, and that path is new on every rebuild. A build root
-        // shared across generations therefore carries a CMake cache describing a
-        // toolchain that no longer exists, and a cache left inconsistent by one
-        // failed configure fails every rebuild after it. Scope the root to the
-        // generation so each rebuild configures against state it produced.
-        let buildSubdirectory = "android-\(platformTag)-\(generationIdentity(configuration))"
+        #if os(macOS)
+        // Native CMake caches retain the generation's absolute candidate path.
+        let buildSubdirectory =
+            "android-\(platformTag)-\(generationIdentity(configuration))"
+        #else
+        // The container presents source, build, and candidate generations at
+        // stable paths, so this root is safely reusable across publications.
+        let buildSubdirectory = "android-\(platformTag)"
+        #endif
         let ndkPrebuilt = configuration.foundation.ndkRoot.appending(
             "toolchains/llvm/prebuilt/\(hostTag)")
         var arguments = [
@@ -912,6 +999,7 @@ public enum SwiftPlatformColliderRecipe {
             "--install-destdir=\(install)",
             "--libdispatch-cmake-options=-DCMAKE_SHARED_LINKER_FLAGS=",
             "--build-subdir=\(buildSubdirectory)",
+            "--build-dir=\(configuration.buildWorkspace.appending("build"))",
             "--jobs=\(configuration.foundation.jobs)",
             "--skip-test-swift",
             "--skip-test-foundation",
@@ -922,40 +1010,40 @@ public enum SwiftPlatformColliderRecipe {
             "--reconfigure",
         ]
         #if os(macOS)
-            let dispatchHeaders = configuration.foundation.androidInstallRoot
-                .appending("build/libdispatch-headers")
-            let foundationOptions = [
-                "-DCMAKE_SHARED_LINKER_FLAGS=",
-                "-DLIBXML2_LIBRARY=\(install.appending("usr/lib/libxml2.a"))",
-                "-DLIBXML2_INCLUDE_DIR=\(install.appending("usr/include/libxml2"))",
-                "-DOPENSSL_CRYPTO_LIBRARY="
-                    + install.appending("usr/lib/libcrypto.a").string,
-                "-DOPENSSL_SSL_LIBRARY="
-                    + install.appending("usr/lib/libssl.a").string,
-                "-DOPENSSL_INCLUDE_DIR=\(install.appending("usr/include"))",
-                "-DDISPATCH_INCLUDE_PATH=\(dispatchHeaders)",
-            ].joined(separator: " ")
-            arguments += [
-                "--stdlib-deployment-targets=android-\(architecture)",
-                "--libdispatch",
-                "--foundation",
-                "--install-prefix=/usr",
-                "--foundation-cmake-options=\(foundationOptions)",
-                "--extra-swift-cmake-options="
-                    + "-DCMAKE_Swift_COMPILER_WORKS:BOOL=TRUE",
-                "--extra-swift-cmake-options="
-                    + "-DCMAKE_SHARED_LIBRARY_SUFFIX_Swift:STRING=.so",
-                "--extra-swift-cmake-options="
-                    + "-DCMAKE_OSX_ARCHITECTURES:STRING=",
-                "--extra-swift-cmake-options=-DCMAKE_OSX_SYSROOT:PATH=",
-                "--extra-swift-cmake-options="
-                    + "-DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=",
-                "--build-swift-dynamic-sdk-overlay",
-                "--build-swift-static-sdk-overlay",
-            ]
+        let dispatchHeaders = configuration.foundation.androidInstallRoot
+            .appending("build/libdispatch-headers")
+        let foundationOptions = [
+            "-DCMAKE_SHARED_LINKER_FLAGS=",
+            "-DLIBXML2_LIBRARY=\(install.appending("usr/lib/libxml2.a"))",
+            "-DLIBXML2_INCLUDE_DIR=\(install.appending("usr/include/libxml2"))",
+            "-DOPENSSL_CRYPTO_LIBRARY="
+                + install.appending("usr/lib/libcrypto.a").string,
+            "-DOPENSSL_SSL_LIBRARY="
+                + install.appending("usr/lib/libssl.a").string,
+            "-DOPENSSL_INCLUDE_DIR=\(install.appending("usr/include"))",
+            "-DDISPATCH_INCLUDE_PATH=\(dispatchHeaders)",
+        ].joined(separator: " ")
+        arguments += [
+            "--stdlib-deployment-targets=android-\(architecture)",
+            "--libdispatch",
+            "--foundation",
+            "--install-prefix=/usr",
+            "--foundation-cmake-options=\(foundationOptions)",
+            "--extra-swift-cmake-options="
+                + "-DCMAKE_Swift_COMPILER_WORKS:BOOL=TRUE",
+            "--extra-swift-cmake-options="
+                + "-DCMAKE_SHARED_LIBRARY_SUFFIX_Swift:STRING=.so",
+            "--extra-swift-cmake-options="
+                + "-DCMAKE_OSX_ARCHITECTURES:STRING=",
+            "--extra-swift-cmake-options=-DCMAKE_OSX_SYSROOT:PATH=",
+            "--extra-swift-cmake-options="
+                + "-DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=",
+            "--build-swift-dynamic-sdk-overlay",
+            "--build-swift-static-sdk-overlay",
+        ]
         #else
-            arguments.append(
-                "--foundation-cmake-options=-DCMAKE_SHARED_LINKER_FLAGS=")
+        arguments.append(
+            "--foundation-cmake-options=-DCMAKE_SHARED_LINKER_FLAGS=")
         #endif
         return arguments
     }
@@ -965,51 +1053,51 @@ public enum SwiftPlatformColliderRecipe {
         buildRoot: FilePath
     ) -> [TaskDeclaration] {
         #if os(macOS)
-            let source = configuration.sourceWorkspace.appending(
-                "swift-corelibs-libdispatch")
-            let destination = buildRoot.appending("libdispatch-headers")
-            let dispatchHeaders = [
-                "base", "block", "data", "dispatch", "group", "introspection",
-                "io", "object", "once", "queue", "semaphore", "source", "time",
-            ]
-            var operations: [TaskOperation] = [
-                .removePath(destination),
-                .createDirectory(destination.appending("dispatch")),
-                .createDirectory(destination.appending("Block")),
-                .createDirectory(destination.appending("os")),
-            ]
-            operations += dispatchHeaders.map {
-                .copyFile(
-                    source: source.appending("dispatch/\($0).h"),
-                    destination: destination.appending("dispatch/\($0).h"))
-            }
-            operations += [
-                .copyFile(
-                    source: source.appending("src/BlocksRuntime/Block.h"),
-                    destination: destination.appending("Block/Block.h"))
-            ]
-            operations += [
-                "generic_base", "generic_unix_base", "generic_win_base", "object",
-            ].map {
-                .copyFile(
-                    source: source.appending("os/\($0).h"),
-                    destination: destination.appending("os/\($0).h"))
-            }
-            let marker = destination.appending(".complete")
-            operations.append(.writeFile(marker, bytes: Array("complete\n".utf8)))
-            return [
-                TaskDeclaration(
-                    id: TaskID(rawValue: "toolchain.android-build-support"),
-                    component: ComponentID(rawValue: "toolchain"),
-                    inputs: [.dependencyOutput(source)],
-                    outputs: [
-                        OutputDeclaration(path: marker, validation: .regularFile)
-                    ],
-                    cachePolicy: .contentAddressed,
-                    operation: .sequence(operations))
-            ]
+        let source = configuration.sourceWorkspace.appending(
+            "swift-corelibs-libdispatch")
+        let destination = buildRoot.appending("libdispatch-headers")
+        let dispatchHeaders = [
+            "base", "block", "data", "dispatch", "group", "introspection",
+            "io", "object", "once", "queue", "semaphore", "source", "time",
+        ]
+        var operations: [TaskOperation] = [
+            .removePath(destination),
+            .createDirectory(destination.appending("dispatch")),
+            .createDirectory(destination.appending("Block")),
+            .createDirectory(destination.appending("os")),
+        ]
+        operations += dispatchHeaders.map {
+            .copyFile(
+                source: source.appending("dispatch/\($0).h"),
+                destination: destination.appending("dispatch/\($0).h"))
+        }
+        operations += [
+            .copyFile(
+                source: source.appending("src/BlocksRuntime/Block.h"),
+                destination: destination.appending("Block/Block.h"))
+        ]
+        operations += [
+            "generic_base", "generic_unix_base", "generic_win_base", "object",
+        ].map {
+            .copyFile(
+                source: source.appending("os/\($0).h"),
+                destination: destination.appending("os/\($0).h"))
+        }
+        let marker = destination.appending(".complete")
+        operations.append(.writeFile(marker, bytes: Array("complete\n".utf8)))
+        return [
+            TaskDeclaration(
+                id: TaskID(rawValue: "toolchain.android-build-support"),
+                component: ComponentID(rawValue: "toolchain"),
+                inputs: [sourceGraphInput(configuration)],
+                outputs: [
+                    OutputDeclaration(path: marker, validation: .regularFile)
+                ],
+                cachePolicy: .contentAddressed,
+                operation: .sequence(operations))
+        ]
         #else
-            return []
+        return []
         #endif
     }
 
@@ -1158,6 +1246,8 @@ public enum SwiftPlatformColliderRecipe {
         let cmakeToolchain: FilePath
         let apiLevel: UInt32
         let jobs: String
+        let builder: SwiftBuildContainerConfiguration
+        let hostEnvironment: [String: String]
         let environment: [String: String]
 
         init(
@@ -1178,15 +1268,17 @@ public enum SwiftPlatformColliderRecipe {
                     architecture)
             }
             self.architecture = architecture
+            builder = configuration.builder
+            hostEnvironment = configuration.environment
             apiLevel = configuration.apiLevel
             sourceRoot = configuration.androidInstallRoot.appending(
                 "build/foundation-sources/\(architecture)")
             staging = configuration.androidInstallRoot.appending(
                 "build/install-\(architecture)")
             #if os(macOS)
-                let hostTag = "darwin-x86_64"
+            let hostTag = "darwin-x86_64"
             #else
-                let hostTag = "linux-x86_64"
+            let hostTag = "linux-x86_64"
             #endif
             ndkPrebuilt = configuration.ndkRoot.appending(
                 "toolchains/llvm/prebuilt/\(hostTag)")
@@ -1607,15 +1699,35 @@ public enum SwiftPlatformColliderRecipe {
         context: ArchitectureContext,
         operations: [TaskOperation]
     ) -> TaskDeclaration {
-        TaskDeclaration(
+        #if os(macOS)
+        let taskDependencies = dependencies
+        let taskInputs = dependencies.map {
+            ArtifactInput.value(
+                name: "dependency", bytes: Array($0.rawValue.utf8))
+        }
+        let buildOperations = operations
+        #else
+        let builderID = TaskID(rawValue: "toolchain.swift-builder")
+        let taskDependencies = dependencies + [builderID]
+        let taskInputs =
+            dependencies.map {
+                ArtifactInput.value(
+                    name: "dependency", bytes: Array($0.rawValue.utf8))
+            } + [
+                .dependencyOutput(context.builder.imageID),
+                .tool(.named("podman")),
+            ]
+        let buildOperations = operations.map {
+            containerizedAndroidDependencyOperation($0, context: context)
+        }
+        #endif
+        return TaskDeclaration(
             id: TaskID(
                 rawValue:
                     "toolchain.android-foundation-\(context.architecture)-\(name)"),
             component: ComponentID(rawValue: "toolchain"),
-            dependencies: dependencies,
-            inputs: dependencies.map {
-                .value(name: "dependency", bytes: Array($0.rawValue.utf8))
-            },
+            dependencies: taskDependencies,
+            inputs: taskInputs,
             outputs: [
                 OutputDeclaration(path: output, validation: .regularFile)
             ],
@@ -1623,7 +1735,113 @@ public enum SwiftPlatformColliderRecipe {
                 [
                     .createDirectory(context.staging.appending("usr/lib")),
                     .createDirectory(context.staging.appending("usr/include")),
-                ] + operations))
+                ] + buildOperations))
+    }
+
+    private static func containerizedAndroidDependencyOperation(
+        _ operation: TaskOperation,
+        context: ArchitectureContext
+    ) -> TaskOperation {
+        switch operation {
+        case .command(let command):
+            let executable: String =
+                switch command.executable {
+                case .named(let name): name
+                case .path(let path), .taskOutput(let path):
+                    containerizedAndroidDependencyPath(path.string, context: context)
+                }
+            return .runBuildContainer(
+                BuildContainerExecution(
+                    imageID: context.builder.imageID,
+                    hostname: "swift-android-dependency",
+                    workingDirectory: containerizedAndroidDependencyPath(
+                        command.workingDirectory.string,
+                        context: context),
+                    hostWorkingDirectory: command.workingDirectory,
+                    mounts: [
+                        BuildContainerMount(
+                            source: context.builder.sourceWorkspace,
+                            target: "/src",
+                            access: .readOnly),
+                        BuildContainerMount(
+                            source: context.builder.recipeRoot,
+                            target: "/recipe",
+                            access: .readOnly),
+                        BuildContainerMount(
+                            source: context.builder.buildWorkspace,
+                            target: "/build",
+                            access: .readWrite),
+                        BuildContainerMount(
+                            source: context.builder.compilerCache,
+                            target: "/ccache",
+                            access: .readWrite),
+                        BuildContainerMount(
+                            source: context.builder.candidate,
+                            target: "/candidate",
+                            access: .readWrite),
+                    ],
+                    containerEnvironment: androidDependencyContainerEnvironment(
+                        command.environment,
+                        context: context),
+                    command: ["dependency", executable]
+                        + command.arguments.map {
+                            containerizedAndroidDependencyPath($0, context: context)
+                        },
+                    environment: context.hostEnvironment))
+        case .sequence(let operations):
+            return .sequence(
+                operations.map {
+                    containerizedAndroidDependencyOperation($0, context: context)
+                })
+        default:
+            return operation
+        }
+    }
+
+    private static func androidDependencyContainerEnvironment(
+        _ environment: [String: String],
+        context: ArchitectureContext
+    ) -> [String: String] {
+        let allowed = Set([
+            "AR", "CC", "CFLAGS", "CPPFLAGS", "CXX", "CXXFLAGS", "LDFLAGS",
+            "NM", "OBJCOPY", "OBJDUMP", "PKG_CONFIG_LIBDIR", "PKG_CONFIG_PATH",
+            "RANLIB", "READELF", "STRIP",
+        ])
+        var result = Dictionary(
+            uniqueKeysWithValues: environment.compactMap {
+                name, value -> (String, String)? in
+                guard allowed.contains(name) else { return nil }
+                return (
+                    name,
+                    containerizedAndroidDependencyPath(value, context: context)
+                )
+            })
+        result["ANDROID_NDK_HOME"] = "/opt/android-ndk-r30-beta2"
+        result["HOME"] = "/home/nucleus-build"
+        result["LANG"] = "C.UTF-8"
+        result["LC_ALL"] = "C.UTF-8"
+        result["PATH"] =
+            "/usr/lib/ccache:/opt/cmake/bin:/opt/android-ndk-r30-beta2/toolchains/llvm/prebuilt/linux-x86_64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        result["SWIFT_BUILD_ROOT"] = "/build/build"
+        result["TZ"] = "UTC"
+        return result
+    }
+
+    private static func containerizedAndroidDependencyPath(
+        _ value: String,
+        context: ArchitectureContext
+    ) -> String {
+        var result = value
+        for (source, destination) in [
+            (context.builder.buildWorkspace.string, "/build"),
+            (context.builder.sourceWorkspace.string, "/src"),
+            (context.builder.recipeRoot.string, "/recipe"),
+            (context.builder.candidate.string, "/candidate"),
+            (context.ndkRoot.string, "/opt/android-ndk-r30-beta2"),
+        ] {
+            result = result.replacingOccurrences(of: source, with: destination)
+        }
+        return result
     }
 
     private static func make(

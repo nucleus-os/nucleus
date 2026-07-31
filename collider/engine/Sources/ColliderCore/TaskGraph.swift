@@ -91,42 +91,18 @@ public struct MatchingFileCopy: Hashable, Sendable {
     }
 }
 
-public struct GitPatchApplication: Hashable, Sendable {
-    public let repository: FilePath
-    public let patch: FilePath
+public struct SwiftSourceWorkspaceValidation: Hashable, Sendable {
+    public let workspaceRoot: FilePath
+    public let repositories: [FilePath]
     public let environment: [String: String]
 
     public init(
-        repository: FilePath,
-        patch: FilePath,
+        workspaceRoot: FilePath,
+        repositories: [FilePath],
         environment: [String: String]
     ) {
-        self.repository = repository
-        self.patch = patch
-        self.environment = environment
-    }
-}
-
-public struct SwiftSourcePreparation: Hashable, Sendable {
-    public enum Reference: Hashable, Sendable {
-        case branch(String)
-        case tag(String)
-    }
-
-    public let repository: FilePath
-    public let remote: String
-    public let reference: Reference
-    public let environment: [String: String]
-
-    public init(
-        repository: FilePath,
-        remote: String,
-        reference: Reference,
-        environment: [String: String]
-    ) {
-        self.repository = repository
-        self.remote = remote
-        self.reference = reference
+        self.workspaceRoot = workspaceRoot
+        self.repositories = repositories
         self.environment = environment
     }
 }
@@ -556,7 +532,7 @@ public struct AOSPSourcePreparation: Hashable, Sendable {
     }
 }
 
-public struct AOSPBuildContainerPreparation: Hashable, Sendable {
+public struct BuildContainerPreparation: Hashable, Sendable {
     public let context: FilePath
     public let containerFile: FilePath
     public let imageID: FilePath
@@ -574,6 +550,77 @@ public struct AOSPBuildContainerPreparation: Hashable, Sendable {
         self.containerFile = containerFile
         self.imageID = imageID
         self.imageName = imageName
+        self.environment = environment
+    }
+}
+
+public struct BuildContainerMount: Hashable, Sendable {
+    public enum Access: String, Hashable, Sendable {
+        case readOnly
+        case readWrite
+    }
+
+    public let source: FilePath
+    public let target: String
+    public let access: Access
+
+    public init(source: FilePath, target: String, access: Access) {
+        self.source = source
+        self.target = target
+        self.access = access
+    }
+}
+
+public struct BuildContainerExecution: Hashable, Sendable {
+    public let imageID: FilePath
+    public let hostname: String
+    public let workingDirectory: String
+    public let hostWorkingDirectory: FilePath
+    public let mounts: [BuildContainerMount]
+    public let temporaryDirectory: FilePath?
+    public let containerEnvironment: [String: String]
+    public let command: [String]
+    public let environment: [String: String]
+
+    public init(
+        imageID: FilePath,
+        hostname: String,
+        workingDirectory: String,
+        hostWorkingDirectory: FilePath,
+        mounts: [BuildContainerMount],
+        temporaryDirectory: FilePath? = nil,
+        containerEnvironment: [String: String],
+        command: [String],
+        environment: [String: String]
+    ) {
+        self.imageID = imageID
+        self.hostname = hostname
+        self.workingDirectory = workingDirectory
+        self.hostWorkingDirectory = hostWorkingDirectory
+        self.mounts = mounts
+        self.temporaryDirectory = temporaryDirectory
+        self.containerEnvironment = containerEnvironment
+        self.command = command
+        self.environment = environment
+    }
+}
+
+/// Shared configuration for the rootless native dependency builder.
+public struct NativeBuildContainerConfiguration: Sendable {
+    public let context: FilePath
+    public let imageID: FilePath
+    public let ccache: FilePath
+    public let environment: [String: String]
+
+    public init(
+        context: FilePath,
+        imageID: FilePath,
+        ccache: FilePath,
+        environment: [String: String]
+    ) {
+        self.context = context
+        self.imageID = imageID
+        self.ccache = ccache
         self.environment = environment
     }
 }
@@ -782,6 +829,7 @@ public struct ChromiumProductBuild: Hashable, Sendable {
     public let sourceRoot: FilePath
     public let output: FilePath
     public let depotTools: FilePath
+    public let containerImageID: FilePath
     public let gnArguments: String?
     public let targets: [String]
     public let jobs: UInt32
@@ -792,6 +840,7 @@ public struct ChromiumProductBuild: Hashable, Sendable {
         sourceRoot: FilePath,
         output: FilePath,
         depotTools: FilePath,
+        containerImageID: FilePath,
         gnArguments: String? = nil,
         targets: [String],
         jobs: UInt32,
@@ -801,6 +850,7 @@ public struct ChromiumProductBuild: Hashable, Sendable {
         self.sourceRoot = sourceRoot
         self.output = output
         self.depotTools = depotTools
+        self.containerImageID = containerImageID
         self.gnArguments = gnArguments
         self.targets = targets
         self.jobs = jobs
@@ -902,7 +952,6 @@ public struct AptPackageValidation: Hashable, Sendable {
 
 public enum TaskOperation: Hashable, Sendable {
     case action(AnyColliderAction)
-    case applyGitPatch(GitPatchApplication)
     case command(CommandSpec)
     case runSwiftTest(SwiftTestExecution)
     case configureMeson(MesonSetup)
@@ -913,7 +962,7 @@ public enum TaskOperation: Hashable, Sendable {
     case removePath(FilePath)
     case replaceSymlink(path: FilePath, target: String)
     case writeFile(FilePath, bytes: [UInt8])
-    case prepareSwiftSource(SwiftSourcePreparation)
+    case validateSwiftSourceWorkspace(SwiftSourceWorkspaceValidation)
     case prepareHostToolchainBuild(HostToolchainBuildPreparation)
     case assembleHostToolchain(HostToolchainAssembly)
     case validateHostToolchain(HostToolchainValidation)
@@ -928,7 +977,8 @@ public enum TaskOperation: Hashable, Sendable {
     case pruneDirectories(DirectoryRetentionPlan)
     case verifyAOSPSourceLock(AOSPSourceLockVerification)
     case prepareAOSPSource(AOSPSourcePreparation)
-    case prepareAOSPBuildContainer(AOSPBuildContainerPreparation)
+    case prepareBuildContainer(BuildContainerPreparation)
+    case runBuildContainer(BuildContainerExecution)
     case prepareAOSPSigningIdentity(AOSPSigningIdentityPreparation)
     case compileAOSPProduct(AOSPProductBuild)
     case signAOSPProduct(AOSPProductBuild)
@@ -1029,9 +1079,10 @@ public struct TaskDeclaration: Hashable, Sendable {
         TaskDeclaration(
             id: id,
             component: component,
-            dependencies: dependencies + additionalDependencies.filter {
-                !dependencies.contains($0)
-            },
+            dependencies: dependencies
+                + additionalDependencies.filter {
+                    !dependencies.contains($0)
+                },
             subsumedDependencies: subsumedDependencies,
             swiftProducts: swiftProducts,
             swiftTests: swiftTests,
@@ -1078,8 +1129,7 @@ public struct TaskGraph: Sendable {
                 throw TaskGraphFailure.missing(task: declaration.id, dependency: dependency)
             }
             for dependency in declaration.subsumedDependencies
-            where !declaration.dependencies.contains(dependency)
-            {
+            where !declaration.dependencies.contains(dependency) {
                 throw TaskGraphFailure.invalidSubsumption(
                     task: declaration.id,
                     dependency: dependency)

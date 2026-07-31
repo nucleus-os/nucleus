@@ -14,13 +14,21 @@ collider toolchain status
 
 Use `--arch aarch64` or `--arch x86_64` to select Android targets. Repeat the
 option to build both. `--dry-run`, `--explain`, `--verbose`, and `--json` use
-the shared Collider execution controls. `--reconfigure` forces the upstream
-host Swift build system to regenerate its projects.
+the shared Collider execution controls. Collider regenerates upstream build
+configuration before reusing compiled products.
 
-Collider owns source synchronization, patch application, task identity,
-locking, logs, staging, validation, packaging, Android SDK wiring, rollback,
-and atomic activation. The upstream Swift `update-checkout` and `build-script`
-programs remain the leaf executors.
+The complete Swift sibling source graph is pinned by root gitlinks under
+`source/`. Collider validates that every top-level and nested submodule is
+initialized at its recorded commit and clean. It never selects, fetches,
+resets, cleans, patches, or materializes Swift source.
+
+On Linux, Collider builds the host toolchain, SwiftAndroid runtimes, and their
+native dependencies through `build-container/`. The resulting Podman image is
+selected by its content-addressed image ID; compilation has no network, mounts
+`source/` read-only, and writes only to external build, cache, candidate, and
+artifact roots. The same upstream `build-script` entry point runs on macOS
+natively. Collider owns task identity, ordering, locking, logs, staging,
+validation, packaging, Android SDK wiring, rollback, and atomic activation.
 
 The active generation is under
 `~/.cache/nucleus/swift-platforms/<platform>/current`. Collider also publishes
@@ -32,8 +40,10 @@ The recipe inputs are:
 - `nucleus-build-presets-macos.ini` for the macOS host product.
 - `nucleus-swift-cmake-overrides.cmake` for Linux libc++ and Blocks runtime
   configuration.
-- `patches/` for the ordered upstream Swift repository changes.
-- `apt-deps.txt` for the Linux host capability set.
+- `build-container/` for the pinned Linux build environment and its single
+  entry point.
+- `source/` for the complete root-owned Swift sibling submodule graph.
 
-`install.sh` is the narrow privileged boundary used by
-`collider toolchain install|uninstall`. Do not invoke it directly.
+`collider toolchain install|uninstall` re-executes the current Collider binary
+through `sudo` for the narrowly validated system mutation. No standalone
+privileged installation script or second publication implementation exists.

@@ -18,16 +18,13 @@ extension ColliderRuntime {
         environment["PATH"] = build.depotTools.string + ":"
             + (environment["PATH"] ?? "/usr/bin:/bin")
         environment["DEPOT_TOOLS_UPDATE"] = "0"
-        let gn = chromium.appending("buildtools/linux64/gn")
-        var gnArguments = ["gen", build.output.string]
-        if let arguments = build.gnArguments {
-            gnArguments.append("--args=\(arguments)")
-        }
-        try await checkedChromiumCommand(
-            .path(gn),
-            gnArguments,
-            directory: chromium,
-            environment: environment,
+        let gnArguments = try stagedChromiumGNArguments(
+            build,
+            chromium: chromium)
+        try await runBuildContainer(
+            chromiumContainerExecution(
+                build,
+                command: ["configure", gnArguments]),
             stage: stage)
         let expected = build.output.appending(
             ".nucleus-expected-build.json")
@@ -39,14 +36,10 @@ extension ColliderRuntime {
             environment: environment,
             stage: stage)
         try DurableFile.writeJSON(manifest, to: expected)
-        try await checkedChromiumCommand(
-            .path(build.depotTools.appending("autoninja")),
-            [
-                "-j", String(build.jobs),
-                "-C", build.output.string,
-            ] + build.targets,
-            directory: chromium,
-            environment: environment,
+        try await runBuildContainer(
+            chromiumContainerExecution(
+                build,
+                command: ["build", String(build.jobs)] + build.targets),
             stage: stage)
         try DurableFile.copy(from: expected, to: built)
         let verification = try await chromiumBuildManifest(
@@ -62,6 +55,87 @@ extension ColliderRuntime {
             throw RuntimeFailure.invalidOutput(
                 "Chromium build metadata changed during the build: \(built)")
         }
+    }
+
+    private func stagedChromiumGNArguments(
+        _ build: ChromiumProductBuild,
+        chromium: FilePath
+    ) throws -> String {
+        let inputRoot = build.output.removingLastComponent().appending(
+            ".inputs")
+        try FileManager.default.createDirectory(
+            atPath: inputRoot.string,
+            withIntermediateDirectories: true)
+        let descriptor = chromium.appending("chrome/build/linux.pgo.txt")
+        guard chromiumRegularFile(descriptor) else {
+            return build.gnArguments ?? ""
+        }
+        let name = try String(
+            contentsOf: URL(fileURLWithPath: descriptor.string),
+            encoding: .utf8
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !name.contains("/") else {
+            throw RuntimeFailure.invalidOutput(
+                "Chromium PGO descriptor is invalid: \(descriptor)")
+        }
+        let source = chromium.appending("chrome/build/pgo_profiles/\(name)")
+        guard chromiumRegularFile(source) else {
+            throw RuntimeFailure.invalidOutput(
+                "Chromium PGO profile is missing: \(source)")
+        }
+        let destination = inputRoot.appending("chrome.profdata")
+        let sourceDigest = try ArtifactHasher.digest(file: source)
+        let destinationDigest = try? ArtifactHasher.digest(file: destination)
+        if destinationDigest != sourceDigest {
+            try FileManager.default.createDirectory(
+                atPath: destination.removingLastComponent().string,
+                withIntermediateDirectories: true)
+            try DurableFile.copy(from: source, to: destination)
+        }
+        return (build.gnArguments ?? "")
+            + #" pgo_data_path="/inputs/chrome.profdata""#
+    }
+
+    private func chromiumContainerExecution(
+        _ build: ChromiumProductBuild,
+        command: [String]
+    ) -> BuildContainerExecution {
+        BuildContainerExecution(
+            imageID: build.containerImageID,
+            hostname: "chromium-build",
+            workingDirectory: "/source/chromium/src",
+            hostWorkingDirectory: build.sourceRoot.appending("chromium/src"),
+            mounts: [
+                BuildContainerMount(
+                    source: build.sourceRoot,
+                    target: "/source",
+                    access: .readOnly),
+                BuildContainerMount(
+                    source: build.depotTools,
+                    target: "/depot_tools",
+                    access: .readOnly),
+                BuildContainerMount(
+                    source: build.output.removingLastComponent().appending(
+                        ".inputs"),
+                    target: "/inputs",
+                    access: .readOnly),
+                BuildContainerMount(
+                    source: build.output,
+                    target: "/build",
+                    access: .readWrite),
+            ],
+            temporaryDirectory: build.output.removingLastComponent().appending(
+                ".temporary"),
+            containerEnvironment: [
+                "DEPOT_TOOLS_UPDATE": "0",
+                "HOME": "/tmp/nucleus-home",
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "TZ": "UTC",
+            ],
+            command: command,
+            environment: build.environment)
     }
 
     private func chromiumBuildManifest(

@@ -11,11 +11,13 @@ collider browser test
 collider browser install
 ```
 
-`bootstrap` reports missing packages from `../cef/apt-deps.txt`, including the
-exact `sudo apt-get install` command the user may run, then materializes the
-source lock. It never mutates the host package database. `build` performs the
-complete production build and publishes both products. Product selectors,
-package-only modes, update bypasses, and ad-hoc GN overrides are unsupported.
+`bootstrap` reports missing host-side source and packaging tools from
+`../cef/apt-deps.txt`, including the exact `sudo apt-get install` command the
+user may run, then materializes the source lock. It never mutates the host
+package database. Chromium compilation dependencies live only in the pinned
+rootless builder image. `build` performs the complete production build and
+publishes both products. Product selectors, package-only modes, update
+bypasses, and ad-hoc GN overrides are unsupported.
 
 ## Source architecture
 
@@ -38,8 +40,10 @@ and both PGO profiles. Existing source directories are verified against that
 provenance and are never repaired or adopted. Nucleus source preparation does
 not run CEF's patcher, apply patches, or use `automate-git.py`.
 
-CEF and Nucleus Browser share this one content-addressed source generation.
-They retain separate GN outputs because their allocator contracts differ. CEF
+CEF and Nucleus Browser share this one content-addressed source generation,
+mounted read-only at compile time. Their separate writable GN outputs live
+under `~/.cache/nucleus/cef/build/<source-id>/` because their allocator
+contracts differ. CEF
 embeds `libcef.so` into another process and disables Chromium's allocator shim
 and BackupRefPtr support. The standalone browser retains PartitionAlloc, the
 allocator shim, and BackupRefPtr. Both are official PGO/ThinLTO builds using
@@ -48,14 +52,16 @@ fallback.
 
 The build order is strictly sequential:
 
-1. verify declared package dependencies and pinned tooling;
+1. verify declared host tools and prepare the pinned Chromium builder;
 2. materialize or verify the source generation;
 3. build, package, and validate CEF;
 4. build, package, and validate Nucleus Browser;
 5. apply cache retention.
 
 Independent CEF and browser link pools never run concurrently. Local Siso work
-is capped at 16 jobs.
+is capped at 16 jobs. GN and Ninja run in the rootless builder with networking
+disabled; packaging, artifact execution, sandbox checks, and GPU/Wayland tests
+run on the host.
 
 ## Identities and publication
 

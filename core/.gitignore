@@ -54,6 +54,8 @@ metro-cache/
 # ─────────────────────────────────────────────────────────────────────────────
 build/
 build-*/
+!build-container/
+!build-container/**
 out/
 cmake-build-*/
 CMakeFiles/

@@ -11,6 +11,7 @@ let environment = ProcessInfo.processInfo.environment
 guard let nativeSDKRoot = environment["NUCLEUS_NATIVE_SDK_ROOT"],
     let generatedModuleMaps = environment["NUCLEUS_SWIFTPM_GENERATED_MODULE_MAPS_PATH"],
     let swiftToolchain = environment["SWIFT_TOOLCHAIN"],
+    let swiftSourceID = environment["NUCLEUS_SWIFT_SOURCE_ID"],
     let homeDirectory = environment["HOME"]
 else {
     fatalError("source tools/host-env.sh before invoking SwiftPM")
@@ -37,6 +38,13 @@ let icuLibraryDirectory =
     ?? "/usr/lib"
 
 let isAndroidTarget = environment["NUCLEUS_TARGET_PLATFORM"] == "android"
+let androidSDKSearchRoot: String = {
+    if let path = environment["NUCLEUS_SWIFT_SDKS_PATH"] { return path }
+    if isAndroidTarget {
+        fatalError("NUCLEUS_SWIFT_SDKS_PATH is required for an Android target")
+    }
+    return homeDirectory + "/.cache/nucleus/swift-platforms/unused"
+}()
 
 let hostProducts: [Product] = [
     .library(name: "NucleusAndroidGraphicsContract", targets: ["NucleusAndroidGraphicsContract"]),
@@ -3544,8 +3552,8 @@ let androidTargets: [Target] = [
             .linkedLibrary("vulkan"),
             .unsafeFlags([
                 "-L",
-                homeDirectory
-                    + "/.cache/nucleus/swift-platforms/release-6.4.x/current/android/swift-release-6.4.x_android.artifactbundle/swift-android/swift-resources/usr/lib/swift-aarch64/android",
+                androidSDKSearchRoot
+                    + "/swift-\(swiftSourceID)_android.artifactbundle/swift-android/swift-resources/usr/lib/swift-aarch64/android",
             ]),
         ]),
     .target(

@@ -39,6 +39,7 @@ let package = Package(
                 "CoreColliderRecipe",
                 "IPCColliderRecipe",
                 "LinuxColliderRecipe",
+                "NativeBuilderColliderRecipe",
                 "ReactNativeColliderRecipe",
                 "ShellColliderRecipe",
                 "SwiftPlatformColliderRecipe",
@@ -71,6 +72,9 @@ let package = Package(
             name: "LinuxColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
         .target(
+            name: "NativeBuilderColliderRecipe",
+            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+        .target(
             name: "ReactNativeColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
         .target(
@@ -96,6 +100,7 @@ let package = Package(
                 "ChromiumColliderRecipe",
                 .product(name: "ColliderCore", package: "engine"),
                 "CoreColliderRecipe",
+                "NativeBuilderColliderRecipe",
                 .product(
                     name: "NucleusSessionProtocol",
                     package: "Nucleus"),

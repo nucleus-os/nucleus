@@ -34,8 +34,10 @@ translator and version manager run as idempotence checks, and publication
 requires the CEF commit, tree, generated API hashes, and worktree to match the
 lock exactly.
 
-CEF builds in `out/Release_GN_x64`. Packaging directly invokes the selected
-checkout's `cef/tools/make_distrib.py` to create a private minimal distribution;
+CEF builds in the external
+`~/.cache/nucleus/cef/build/<source-id>/cef` output through the rootless,
+offline Chromium builder. Packaging directly invokes the selected checkout's
+`cef/tools/make_distrib.py` on the host to create a private minimal distribution;
 Collider then creates the final Nucleus tarball, checksum, build manifest, and
 atomic publication generation.
 

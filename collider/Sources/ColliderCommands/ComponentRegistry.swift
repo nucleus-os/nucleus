@@ -9,6 +9,7 @@ import CoreColliderRecipe
 import IPCColliderRecipe
 import Foundation
 import LinuxColliderRecipe
+import NativeBuilderColliderRecipe
 import ReactNativeColliderRecipe
 import ShellColliderRecipe
 import SystemPackage
@@ -244,8 +245,9 @@ struct ComponentRegistry {
             "all", "runtime", "rn", "compositor", "shell",
         ].contains(name)
         var tasks = try buildTasks()
-        var selected = try selectedBuildTasks(
+        let buildSelected = try selectedBuildTasks(
             selection == .runtime ? nil : selection)
+        var selected: [TaskID] = []
 
         if selection == .all || selection == .runtime
             || selection == .compositor
@@ -257,14 +259,20 @@ struct ComponentRegistry {
 
         if needsCore {
             let coreRoot = FilePath(layout.core.path)
+            let nativeBuilder = nativeBuilderConfiguration(coreRoot: coreRoot)
             let source = CoreColliderRecipe.prepareSkiaDependencies(
                 root: coreRoot, environment: environment)
+            let builder = NativeBuilderColliderRecipe.prepare(nativeBuilder)
             let skia = CoreColliderRecipe.buildSkia(
-                root: coreRoot, environment: environment)
+                root: coreRoot,
+                environment: environment,
+                builder: nativeBuilder)
             let sdk = CoreColliderRecipe.publishRenderSDK(
                 root: coreRoot,
                 sdkRoot: nativeSDKRoot)
-            tasks += [source, skia, sdk]
+            tasks += [source] + [builder].compactMap { $0 } + [skia, sdk]
+            selected += [source.id] + [builder?.id].compactMap { $0 }
+                + [skia.id]
             tasks = addingDependency(
                 sdk.id,
                 to: TaskID(rawValue: "core.build"),
@@ -273,11 +281,16 @@ struct ComponentRegistry {
 
         if needsRN {
             let rnRoot = FilePath(layout.reactNative.path)
+            let nativeBuilder = nativeBuilderConfiguration(
+                coreRoot: FilePath(layout.core.path))
+            #if os(macOS)
+            let hermesHost = try await hermesHostDependencies()
+            #else
+            let hermesHost: HermesHostDependencies? = nil
+            #endif
             let javascript =
                 ReactNativeColliderRecipe.installJavaScriptDependencies(
                     root: rnRoot, environment: environment)
-            let types = ReactNativeColliderRecipe.generateStrictTypes(
-                root: rnRoot, environment: environment)
             let generate = ReactNativeColliderRecipe.generate(
                 root: rnRoot, environment: environment)
             let boost = try ReactNativeColliderRecipe.provisionBoost(
@@ -285,11 +298,16 @@ struct ComponentRegistry {
             let hermes = ReactNativeColliderRecipe.buildHermes(
                 root: rnRoot,
                 environment: environment,
-                host: try await hermesHostDependencies())
+                builder: nativeBuilder,
+                host: hermesHost)
             let support = ReactNativeColliderRecipe.buildSupportLibraries(
-                root: rnRoot, environment: environment)
+                root: rnRoot,
+                environment: environment,
+                builder: nativeBuilder)
             let cxx = ReactNativeColliderRecipe.buildCxxRuntime(
-                root: rnRoot, environment: environment)
+                root: rnRoot,
+                environment: environment,
+                builder: nativeBuilder)
             let swiftCxx = ReactNativeColliderRecipe.buildSwiftCxxFacade(
                 root: rnRoot,
                 environment: environment,
@@ -305,19 +323,35 @@ struct ComponentRegistry {
             let sdk = ReactNativeColliderRecipe.publishNativeSDK(
                 root: rnRoot,
                 sdkRoot: nativeSDKRoot)
+            let hostSDK = ReactNativeColliderRecipe.publishHostArchiveSDK(
+                root: rnRoot,
+                sdkRoot: nativeSDKRoot,
+                hostArchive: stage.id)
             tasks += [
-                javascript, types, generate, boost, hermes, support,
-                cxx, swiftCxx, swiftHost, stage, sdk,
+                javascript, generate, boost, hermes, support,
+                cxx, swiftCxx, swiftHost, stage, sdk, hostSDK,
+            ]
+            selected += [
+                javascript.id, generate.id, boost.id, hermes.id,
+                support.id, cxx.id,
             ]
             tasks = addingDependency(
-                sdk.id,
+                hostSDK.id,
                 to: TaskID(rawValue: "rn.build"),
                 in: tasks)
+
+            selected.append(stage.id)
         }
 
+        if !selected.isEmpty {
+            try await context.execute(
+                tasks: tasks,
+                selected: selected,
+                controls: controls)
+        }
         try await context.execute(
             tasks: tasks,
-            selected: selected,
+            selected: buildSelected,
             controls: controls)
     }
 
@@ -347,12 +381,9 @@ struct ComponentRegistry {
                 ReactNativeColliderRecipe.installJavaScriptDependencies(
                     root: root,
                     environment: environment)
-            let types = ReactNativeColliderRecipe.generateStrictTypes(
-                root: root,
-                environment: environment)
             task = ReactNativeColliderRecipe.generate(
                 root: root, environment: environment)
-            tasks = [dependencies, types, task]
+            tasks = [dependencies, task]
         case .vulkan:
             task = VulkanColliderRecipe.generate(
                 root: FilePath(layout.swiftVulkan.path),
@@ -429,9 +460,7 @@ struct ComponentRegistry {
                 fileURLWithPath: $0,
                 relativeTo: context.root).standardizedFileURL.path)
         }
-        let sourceID =
-            context.taskEnvironment["NUCLEUS_SWIFT_SOURCE_ID"]
-                ?? "release-6.4.x"
+        let sourceID = try requiredSwiftSourceID(context.taskEnvironment)
         let swiftPM = try context.swiftPMInvocation(
             configuration: .release,
             staticSwiftStandardLibrary: true,
@@ -592,19 +621,20 @@ struct ComponentRegistry {
             workspaceRoot: context.root)
         let ndk = FilePath(
             try toolchain.ndkRoot(environment: context.environment).path)
+        let nativeBuilder = nativeBuilderConfiguration(coreRoot: root)
         let source = CoreColliderRecipe.prepareSkiaDependencies(
             root: root, environment: environment)
+        let builder = NativeBuilderColliderRecipe.prepare(nativeBuilder)
         let skia = CoreColliderRecipe.buildSkiaAndroid(
             root: root,
-            ndk: ndk,
             minimumAndroidAPI: toolchain.minimumSDK,
-            environment: environment)
+            environment: environment,
+            builder: nativeBuilder)
         let sdk = CoreColliderRecipe.publishRenderSDK(
             root: root,
             sdkRoot: nativeSDKRoot,
             dependencies: [skia.id])
-        let sourceID =
-            environment["NUCLEUS_SWIFT_SOURCE_ID"] ?? "release-6.4.x"
+        let sourceID = try requiredSwiftSourceID(environment)
         let swiftPM = try context.swiftPMInvocation(
             configuration: .release,
             staticSwiftStandardLibrary: true,
@@ -624,11 +654,35 @@ struct ComponentRegistry {
             ndk: ndk,
             environment: environment,
             dependencies: [build.id])
-        return [source, skia, sdk, build, validate]
+        return [source] + [builder].compactMap { $0 }
+            + [skia, sdk, build, validate]
     }
 
     private var nativeSDKRoot: FilePath {
         FilePath(context.nativeSDKRoot.path)
+    }
+
+    private func nativeBuilderConfiguration(
+        coreRoot: FilePath
+    ) -> NativeBuildContainerConfiguration {
+        let cache = FilePath(context.cacheRoot.path).appending("nucleus")
+        return NativeBuildContainerConfiguration(
+            context: coreRoot.appending("build-container"),
+            imageID: cache.appending("build-containers/native/image-id"),
+            ccache: cache.appending("ccache/native"),
+            environment: context.taskEnvironment)
+    }
+
+    private func requiredSwiftSourceID(
+        _ environment: [String: String]
+    ) throws -> String {
+        guard let sourceID = environment["NUCLEUS_SWIFT_SOURCE_ID"],
+              !sourceID.isEmpty
+        else {
+            throw WorkspaceFailure.message(
+                "NUCLEUS_SWIFT_SOURCE_ID is missing; source tools/host-env.sh")
+        }
+        return sourceID
     }
 
     private func addingDependency(

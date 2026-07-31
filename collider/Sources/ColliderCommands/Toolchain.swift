@@ -1,9 +1,11 @@
 import ArgumentParser
 import ColliderCore
 import ColliderRuntime
+import Foundation
 import FoundationEssentials
 import SwiftPlatformColliderRecipe
 import SystemPackage
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Darwin)
@@ -15,18 +17,79 @@ enum ToolchainArchitecture: String, CaseIterable, ExpressibleByArgument {
     case x86_64
 }
 
+private struct SwiftSourceSelection {
+    let workspace: URL
+    let repositories: [FilePath]
+    let sourceID: String
+}
+
+private func swiftSourceSelection(
+    _ context: WorkspaceContext
+) throws -> SwiftSourceSelection {
+    let root = context.root
+    let workspace = context.layout.swiftToolchain.appendingPathComponent(
+        "source", isDirectory: true)
+    let modules = try gitOutput(
+        ["config", "-f", ".gitmodules", "--get-regexp", "^submodule\\..*\\.path$"],
+        in: root)
+    let prefix = "swift-toolchain/source/"
+    let paths = modules.split(separator: "\n").compactMap { line -> String? in
+        guard let separator = line.firstIndex(where: { $0 == " " || $0 == "\t" })
+        else { return nil }
+        let path = line[line.index(after: separator)...]
+            .trimmingCharacters(in: .whitespaces)
+        return path.hasPrefix(prefix) ? path : nil
+    }.sorted()
+    guard !paths.isEmpty else {
+        throw WorkspaceFailure.message("Swift source submodules are not declared")
+    }
+    let index = try gitOutput(["ls-files", "--stage", "--"] + paths, in: root)
+    let gitlinks = index.split(separator: "\n").filter { $0.hasPrefix("160000 ") }
+    guard gitlinks.count == paths.count else {
+        throw WorkspaceFailure.message("Swift source graph contains missing gitlinks")
+    }
+    let digest = ArtifactHasher.digest(bytes: Array(index.utf8)).description
+    let hex =
+        digest.hasPrefix("sha256:")
+        ? String(digest.dropFirst("sha256:".count))
+        : digest
+    guard hex.count == 64 else {
+        throw WorkspaceFailure.message(
+            "invalid Swift source gitlink digest: \(digest)")
+    }
+    return SwiftSourceSelection(
+        workspace: workspace,
+        repositories: paths.map {
+            FilePath(String($0.dropFirst(prefix.count)))
+        },
+        sourceID: String(hex.prefix(24)))
+}
+
+private func gitOutput(_ arguments: [String], in root: URL) throws -> String {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.arguments = ["-C", root.path] + arguments
+    let output = Pipe()
+    process.standardOutput = output
+    process.standardError = output
+    try process.run()
+    process.waitUntilExit()
+    let bytes = output.fileHandleForReading.readDataToEndOfFile()
+    guard process.terminationStatus == 0 else {
+        throw WorkspaceFailure.message(String(decoding: bytes, as: UTF8.self))
+    }
+    return String(decoding: bytes, as: UTF8.self)
+}
+
 struct RebuildOptions {
     var controls: TaskControls
-    var reconfigure: Bool
     var architectures: [ToolchainArchitecture]
 
     init(
         controls: TaskControls = TaskControls(),
-        reconfigure: Bool = false,
         architectures: [ToolchainArchitecture] = []
     ) {
         self.controls = controls
-        self.reconfigure = reconfigure
         var seen: Set<ToolchainArchitecture> = []
         let selected = architectures.filter {
             seen.insert($0).inserted
@@ -49,8 +112,7 @@ struct ToolchainStatus {
     let context: WorkspaceContext
 
     func run(json: Bool) throws {
-        let sourceID = context.environment["NUCLEUS_SWIFT_SOURCE_ID"]
-            ?? "release-6.4.x"
+        let sourceID = try swiftSourceSelection(context).sourceID
         #if os(macOS)
         let platformID = sourceID + "-macos"
         #else
@@ -67,16 +129,18 @@ struct ToolchainStatus {
         }
         let toolchain = active?.appendingPathComponent("toolchain/usr/bin/swift")
         let android = active?.appendingPathComponent("android")
-        let bundles: [String] = try android.map {
-            guard FileManager.default.fileExists(atPath: $0.path) else {
-                return [String]()
-            }
-            return try FileManager.default.contentsOfDirectory(atPath: $0.path)
-                .filter { $0.hasSuffix(".artifactbundle") }
-                .sorted()
-        } ?? []
+        let bundles: [String] =
+            try android.map {
+                guard FileManager.default.fileExists(atPath: $0.path) else {
+                    return [String]()
+                }
+                return try FileManager.default.contentsOfDirectory(atPath: $0.path)
+                    .filter { $0.hasSuffix(".artifactbundle") }
+                    .sorted()
+            } ?? []
         let generationsURL = root.appendingPathComponent("generations")
-        let generations = try FileManager.default.fileExists(atPath: generationsURL.path)
+        let generations =
+            try FileManager.default.fileExists(atPath: generationsURL.path)
             ? FileManager.default.contentsOfDirectory(atPath: generationsURL.path).sorted()
             : []
         let record = ToolchainStatusRecord(
@@ -90,15 +154,18 @@ struct ToolchainStatus {
             androidBundles: bundles,
             generations: generations)
         if json {
-            print(String(
-                decoding: try JSONEncoder.sorted.encode(record), as: UTF8.self))
+            print(
+                String(
+                    decoding: try JSONEncoder.sorted.encode(record), as: UTF8.self))
             return
         }
         print("platform: \(record.platformID)")
         print("root: \(record.platformRoot)")
         print("active: \(record.activeGeneration ?? "none")")
         print("toolchain: \(record.toolchainExecutable ?? "missing")")
-        print("android SDKs: \(record.androidBundles.isEmpty ? "none" : record.androidBundles.joined(separator: ", "))")
+        print(
+            "android SDKs: \(record.androidBundles.isEmpty ? "none" : record.androidBundles.joined(separator: ", "))"
+        )
         print("generations: \(record.generations.count)")
     }
 }
@@ -111,42 +178,8 @@ struct ToolchainCommand {
             workspaceRoot: context.root)
         let androidNDKHome = try androidToolchain.ndkRoot(
             environment: context.environment)
-        let sourceID = context.environment["NUCLEUS_SWIFT_SOURCE_ID"] ?? "release-6.4.x"
-        let sourceRef: String
-        let sourceScheme: String
-        var checkoutMode: SwiftPlatformGenerationConfiguration.CheckoutMode
-        if let explicitRef = context.environment["NUCLEUS_SWIFT_SOURCE_REF"],
-           !explicitRef.isEmpty
-        {
-            sourceRef = explicitRef
-            sourceScheme = context.environment["NUCLEUS_SWIFT_SOURCE_SCHEME"]
-                ?? explicitRef
-            checkoutMode = .branch
-        } else if let tag = context.environment["NUCLEUS_SWIFT_SOURCE_TAG"],
-                  !tag.isEmpty
-        {
-            sourceRef = tag
-            sourceScheme = context.environment["NUCLEUS_SWIFT_SOURCE_SCHEME"]
-                ?? "main"
-            checkoutMode = .tag
-        } else {
-            sourceRef = "release/6.4.x"
-            sourceScheme = context.environment["NUCLEUS_SWIFT_SOURCE_SCHEME"]
-                ?? sourceRef
-            checkoutMode = .branch
-        }
-        if let mode = context.environment[
-            "NUCLEUS_SWIFT_SOURCE_CHECKOUT_MODE"]
-        {
-            guard let explicitMode =
-                SwiftPlatformGenerationConfiguration.CheckoutMode(
-                    rawValue: mode)
-            else {
-                throw WorkspaceFailure.message(
-                    "unsupported Swift checkout mode '\(mode)'")
-            }
-            checkoutMode = explicitMode
-        }
+        let sourceSelection = try swiftSourceSelection(context)
+        let sourceID = sourceSelection.sourceID
         #if os(macOS)
         let platformID = sourceID + "-macos"
         let bundleName = "swift-\(sourceID)-macos_android.artifactbundle"
@@ -166,14 +199,16 @@ struct ToolchainCommand {
         let toolchainRoot = toolchainInstall.appendingPathComponent("usr")
         let androidInstall = candidate.appendingPathComponent("android")
         let sdkSearchRoot = androidInstall
-        let sourceWorkspace = context.environment[
-            "NUCLEUS_SWIFT_SOURCE_WORKSPACE"
-        ].map {
-            URL(fileURLWithPath: $0, isDirectory: true)
-        } ?? URL(fileURLWithPath: cacheRoot, isDirectory: true)
-            .appendingPathComponent("nucleus/swift-source/\(platformID)")
+        let sourceWorkspace = sourceSelection.workspace
+        let buildWorkspace = platformRoot.appendingPathComponent(
+            "build", isDirectory: true)
         let platformLogs = platformRoot.appendingPathComponent("logs")
         let toolchainRecipe = context.layout.swiftToolchain
+        let builderContext = toolchainRecipe.appendingPathComponent(
+            "build-container", isDirectory: true)
+        let builderImageID = URL(fileURLWithPath: cacheRoot, isDirectory: true)
+            .appendingPathComponent(
+                "nucleus/build-containers/swift/image-id")
         var environment = context.taskEnvironment
         environment.merge([
             "NUCLEUS_SWIFT_SOURCE_INSTALL": toolchainInstall.path,
@@ -184,22 +219,35 @@ struct ToolchainCommand {
             "NUCLEUS_SWIFT_ANDROID_BUNDLE_NAME": bundleName,
             "NUCLEUS_ANDROID_NDK_HOME": androidNDKHome.path,
             "NUCLEUS_SWIFT_PLATFORM_ORCHESTRATED": "1",
-            "NUCLEUS_SWIFT_SOURCE_LOG_DIR": platformLogs
+            "NUCLEUS_SWIFT_SOURCE_LOG_DIR":
+                platformLogs
                 .appendingPathComponent("toolchain").path,
-            "NUCLEUS_SWIFT_ANDROID_LOG_DIR": platformLogs
+            "NUCLEUS_SWIFT_ANDROID_LOG_DIR":
+                platformLogs
                 .appendingPathComponent("android").path,
         ]) { _, selected in selected }
         let foundation = SwiftAndroidFoundationConfiguration(
             downloadCache: FilePath(
                 URL(fileURLWithPath: cacheRoot, isDirectory: true)
                     .appendingPathComponent(
-                        "nucleus/downloads/swift-android-foundation").path),
+                        "nucleus/downloads/swift-android-foundation"
+                    ).path),
             androidInstallRoot: FilePath(androidInstall.path),
             ndkRoot: FilePath(androidNDKHome.path),
             architectures: options.architectures.map(\.rawValue),
             apiLevel: androidToolchain.minimumSDK,
-            jobs: UInt32(min(
-                ProcessInfo.processInfo.activeProcessorCount, 16)),
+            jobs: UInt32(
+                min(
+                    ProcessInfo.processInfo.activeProcessorCount, 16)),
+            builder: SwiftBuildContainerConfiguration(
+                imageID: FilePath(builderImageID.path),
+                sourceWorkspace: FilePath(sourceWorkspace.path),
+                recipeRoot: FilePath(toolchainRecipe.path),
+                buildWorkspace: FilePath(buildWorkspace.path),
+                compilerCache: FilePath(
+                    URL(fileURLWithPath: cacheRoot, isDirectory: true)
+                        .appendingPathComponent("nucleus/ccache/swift").path),
+                candidate: FilePath(candidate.path)),
             environment: environment)
         let discoveryDirectory = homeDirectory.appendingPathComponent(
             ".swiftpm/swift-sdks", isDirectory: true)
@@ -212,24 +260,29 @@ struct ToolchainCommand {
                 active: FilePath(
                     platformRoot.appendingPathComponent("current").path),
                 recipeRoot: FilePath(toolchainRecipe.path),
+                builderContext: FilePath(builderContext.path),
+                builderImageID: FilePath(builderImageID.path),
                 sourceWorkspace: FilePath(sourceWorkspace.path),
+                buildWorkspace: FilePath(buildWorkspace.path),
+                sourceRepositories: sourceSelection.repositories,
                 sourceID: platformID,
-                sourceRef: sourceRef,
-                sourceScheme: sourceScheme,
-                checkoutMode: checkoutMode,
-                hostCC: FilePath(try hostCompiler(
-                    environmentName: "NUCLEUS_HOST_CC",
-                    executable: "clang").path),
-                hostCXX: FilePath(try hostCompiler(
-                    environmentName: "NUCLEUS_HOST_CXX",
-                    executable: "clang++").path),
+                hostCC: FilePath(
+                    try hostCompiler(
+                        environmentName: "NUCLEUS_HOST_CC",
+                        executable: "clang"
+                    ).path),
+                hostCXX: FilePath(
+                    try hostCompiler(
+                        environmentName: "NUCLEUS_HOST_CXX",
+                        executable: "clang++"
+                    ).path),
                 bundleName: bundleName,
                 validationWorkRoot: FilePath(validationWorkRoot.path),
                 sdkDiscoveryLink: FilePath(discoveryLink.path),
                 sdkDiscoveryDisplacedItem: FilePath(
                     discoveryDirectory.appendingPathComponent(
-                        ".legacy-\(bundleName)-\(generationID)").path),
-                reconfigureHost: options.reconfigure,
+                        ".legacy-\(bundleName)-\(generationID)"
+                    ).path),
                 environment: environment)
         let taskSet = try SwiftPlatformColliderRecipe.generation(
             generationConfiguration)
@@ -241,8 +294,9 @@ struct ToolchainCommand {
             selected: taskSet.selected,
             controls: options.controls,
             workflowLocks: [
-                .shared(FilePath(
-                    platformRoot.appendingPathComponent("rebuild.lock").path)),
+                .shared(
+                    FilePath(
+                        platformRoot.appendingPathComponent("rebuild.lock").path))
             ])
         guard !options.controls.dryRun, !options.controls.explain else { return }
         try context.reclaimSwiftBuildContexts()
@@ -258,7 +312,8 @@ struct ToolchainCommand {
     private func reclaimSupersededAndroidBuildRoots(
         _ configuration: SwiftPlatformGenerationConfiguration
     ) throws {
-        for root in SwiftPlatformColliderRecipe
+        for root
+            in SwiftPlatformColliderRecipe
             .supersededAndroidBuildRoots(configuration)
         where FileManager.default.fileExists(atPath: root.string) {
             print("==> reclaiming superseded cross build root: \(root)")
@@ -268,7 +323,7 @@ struct ToolchainCommand {
 
     private var currentRunID: String {
         if let runDirectory = context.environment["NUCLEUS_RUN_DIR"],
-           !runDirectory.isEmpty
+            !runDirectory.isEmpty
         {
             return URL(fileURLWithPath: runDirectory).lastPathComponent
         }
@@ -313,7 +368,7 @@ struct ToolchainCommand {
 
     private var validationWorkRoot: URL {
         if let runDirectory = context.environment["NUCLEUS_RUN_DIR"],
-           !runDirectory.isEmpty
+            !runDirectory.isEmpty
         {
             return URL(fileURLWithPath: runDirectory, isDirectory: true)
                 .appendingPathComponent("work/android-sdk", isDirectory: true)
@@ -334,15 +389,19 @@ struct ToolchainInstallation {
     ) async throws {
         let resolvedVersion = try validatedVersion(version)
         let resolvedPrefix = try validatedPrefix(prefix)
-        let resolvedTarball = URL(fileURLWithPath: tarball ?? defaultTarball(
-            version: resolvedVersion).path).standardizedFileURL
+        let resolvedTarball = URL(
+            fileURLWithPath: tarball
+                ?? defaultTarball(
+                    version: resolvedVersion
+                ).path
+        ).standardizedFileURL
         guard FileManager.default.fileExists(atPath: resolvedTarball.path) else {
             throw WorkspaceFailure.message(
                 "Swift toolchain archive not found: \(resolvedTarball.path)")
         }
         let identity = try ArtifactHasher.digest(file: FilePath(resolvedTarball.path))
         try await invokeHelper(
-            arguments: [],
+            operation: .install,
             version: resolvedVersion,
             prefix: resolvedPrefix,
             tarball: resolvedTarball,
@@ -356,7 +415,7 @@ struct ToolchainInstallation {
         dryRun: Bool
     ) async throws {
         try await invokeHelper(
-            arguments: ["--uninstall"],
+            operation: .uninstall,
             version: try validatedVersion(version),
             prefix: try validatedPrefix(prefix),
             tarball: nil,
@@ -365,30 +424,41 @@ struct ToolchainInstallation {
     }
 
     private func invokeHelper(
-        arguments: [String],
+        operation: ToolchainSystemOperation,
         version: String,
         prefix: URL,
         tarball: URL?,
         identity: ArtifactDigest?,
         dryRun: Bool
     ) async throws {
-        let helper = context.layout.swiftToolchain
-            .appendingPathComponent("install.sh")
-        guard FileManager.default.isExecutableFile(atPath: helper.path) else {
-            throw WorkspaceFailure.message(
-                "privileged toolchain helper is not executable: \(helper.path)")
+        let executable: URL
+        #if os(Linux)
+        executable = URL(fileURLWithPath: "/proc/self/exe")
+            .resolvingSymlinksInPath()
+        #else
+        guard let bundledExecutable = Bundle.main.executableURL else {
+            throw WorkspaceFailure.message("could not resolve the Collider executable")
         }
-        var environmentArguments = [
-            "NUCLEUS_SWIFT_VERSION=\(version)",
-            "NUCLEUS_SWIFT_PREFIX=\(prefix.path)",
+        executable = bundledExecutable.standardizedFileURL
+        #endif
+        guard FileManager.default.isExecutableFile(atPath: executable.path) else {
+            throw WorkspaceFailure.message("could not resolve the Collider executable")
+        }
+        var helperArguments = [
+            operation.entryPoint,
+            version,
+            prefix.path,
         ]
-        if let tarball {
-            environmentArguments.append("NUCLEUS_SWIFT_TARBALL=\(tarball.path)")
+        switch operation {
+        case .install:
+            guard let tarball, let identity else {
+                throw WorkspaceFailure.message("toolchain installation input is incomplete")
+            }
+            helperArguments += [tarball.path, identity.description]
+        case .uninstall:
+            break
         }
-        if let identity {
-            environmentArguments.append("NUCLEUS_SWIFT_ARTIFACT_ID=\(identity)")
-        }
-        let commandArguments = ["env"] + environmentArguments + [helper.path] + arguments
+        let commandArguments = ["--", executable.path] + helperArguments
         if dryRun {
             print((["sudo"] + commandArguments).joined(separator: " "))
             return
@@ -401,28 +471,17 @@ struct ToolchainInstallation {
     }
 
     private func validatedVersion(_ supplied: String?) throws -> String {
-        let value = supplied
-            ?? context.environment["NUCLEUS_SWIFT_SOURCE_ID"]
-            ?? "release-6.4.x"
-        guard !value.isEmpty,
-              value.first?.isLetter == true || value.first?.isNumber == true,
-              !value.contains(".."),
-              value.allSatisfy({ $0.isLetter || $0.isNumber || ".-_".contains($0) })
+        guard let value = supplied ?? context.environment["NUCLEUS_SWIFT_SOURCE_ID"]
         else {
-            throw WorkspaceFailure.message("invalid Swift toolchain version '\(value)'")
+            throw WorkspaceFailure.message(
+                "Swift source identity is missing; source tools/host-env.sh")
         }
-        return value
+        return try ToolchainSystemRequest.validateVersion(value)
     }
 
     private func validatedPrefix(_ supplied: String?) throws -> URL {
         let value = supplied ?? "/opt/nucleus-swift"
-        let resolved = URL(
-            fileURLWithPath: value, isDirectory: true).standardizedFileURL
-        guard value.hasPrefix("/"), resolved.path != "/" else {
-            throw WorkspaceFailure.message(
-                "toolchain install prefix must be an absolute non-root path")
-        }
-        return resolved
+        return try ToolchainSystemRequest.validatePrefix(value)
     }
 
     private func defaultTarball(version: String) -> URL {

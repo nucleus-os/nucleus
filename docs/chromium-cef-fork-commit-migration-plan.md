@@ -19,7 +19,7 @@ contract remain distinct. There is one source path and no patch fallback.
 | Checkout | Genuine fork | Parent | Selected commit | Selected tree |
 | --- | --- | --- | --- | --- |
 | `chromium/src` | `nucleus-os/chromium` | `chromium/chromium` | `3bdd6908edfb2cd047ba1d6fe61ea6217a4bc9e7` | `95ad3bdbb0645db77287053cb4b372044512abcb` |
-| `chromium/src/cef` | `nucleus-os/cef` | `chromiumembedded/cef` | `fed714e8a7c0cf6168720d489cbff4af0e4884a9` | `c7d2bba57546e529a9725016a652ee002077ae29` |
+| `chromium/src/cef` | `nucleus-os/cef` | `chromiumembedded/cef` | `a3b223695c3b1d0867c6e7da27f4c0d4790c4f32` | `3770b40c1257011fdedb593032d402b99386ffe0` |
 | `chromium/src/third_party/angle` | `nucleus-os/angle` | `google/angle` | `48910f210ec32f22ec21e48936afd4a2c547514a` | `3a46f5ef58e547f3a35349a35043c24a0a78c804` |
 | `chromium/src/third_party/skia` | `nucleus-os/skia` | `google/skia` | `fdc1f06fc4bf1721fbb8b36891c192a73be6c2e1` | `231be80a1506ba228e7492af26c9202f5d1faeb1` |
 | `chromium/src/v8` | `nucleus-os/v8` | `v8/v8` | `a5423b52e73a9d651ec9aeefa1cad55c9213e1af` | `e1ce86ae1bcc32893dfaef1d649c96aa6e0315e0` |
@@ -180,6 +180,50 @@ passed. All six selected repositories remain clean, remotely resolvable,
 strictly ahead of their frozen upstream commits, and genuine GitHub forks of
 their canonical parents.
 
+## Phase 8: Isolate Linux Compilation in `chromium-builder` — Implemented, Awaiting Product Qualification
+
+Build one purpose-owned rootless image from the digest-pinned Ubuntu 26.04
+base and the Chromium Linux development dependency closure. Collider records
+the resulting OCI image ID and makes it a build input for both products.
+
+Move CEF, Nucleus Browser, and focused Ozone/Viz test compilation into that
+image. Mount the complete source generation, pinned depot_tools, and staged PGO
+inputs read-only. Mount only the selected product's external GN output
+read-write. Disable networking, drop all capabilities, prohibit privilege
+acquisition, hide the host home directory, and expose no host devices or
+desktop sockets.
+
+Store product outputs under
+`~/.cache/nucleus/cef/build/<source-id>/{cef,browser}`. Stage the exact selected
+PGO profile under the same bounded build generation and pass it to GN
+explicitly; Chromium's local profile-retention access-time mutation never
+touches the source generation.
+
+Keep source materialization and declared downloads outside compilation.
+Package and publish CEF and Nucleus Browser on the host. Run artifact,
+dynamic-link, sandbox, Ozone, Viz, GPU, and Wayland validation on the host
+against the actual runner environment.
+
+## Phase 9: Qualify the Container-Built Products
+
+Run acceptance in this order:
+
+1. build the selected Chromium builder image and record its content identity;
+2. generate the production browser and CEF GN graphs offline with read-only
+   source and depot_tools mounts;
+3. build and publish CEF from an empty external output;
+4. build and publish Nucleus Browser from an empty external output;
+5. run the external CEF consumer and browser artifact validation;
+6. compile the focused Ozone and Viz tests in the builder;
+7. execute those tests on the host;
+8. repeat the complete product build and prove GN, Ninja, and Siso reuse the
+   bounded external output generation;
+9. verify all six selected source repositories remain clean;
+10. verify no build product or generated compiler state exists beneath the
+    source generation;
+11. run browser startup, sandbox, GPU, Wayland, 120 Hz, and media validation on
+    the real runner.
+
 ## Final State
 
 The monorepo owns browser orchestration, product configuration, source lock,
@@ -187,5 +231,8 @@ packaging, validation, launchers, and publication. It owns no downstream
 Chromium-family patch files.
 
 The six `nucleus-os` forks own all downstream source changes. Collider
-materializes exact clean commits, builds both products sequentially, and
-publishes immutable validated artifacts from one source provenance.
+materializes exact clean commits, compiles both products sequentially in the
+content-selected rootless builder, and publishes immutable validated artifacts
+from one source provenance. Source generations remain read-only during
+compilation; product execution and hardware-dependent validation remain native
+runner responsibilities.

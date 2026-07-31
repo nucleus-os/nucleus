@@ -374,13 +374,11 @@ struct Toolchain: AsyncParsableCommand {
 
     struct Rebuild: TaskControlledCommand {
         @OptionGroup var taskOptions: TaskControlOptions
-        @Flag var reconfigure = false
         @Option var arch: [ToolchainArchitecture] = []
 
         var rebuildOptions: RebuildOptions {
             RebuildOptions(
                 controls: taskOptions.controls,
-                reconfigure: reconfigure,
                 architectures: arch)
         }
 

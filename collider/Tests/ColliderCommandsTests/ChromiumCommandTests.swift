@@ -35,7 +35,7 @@ func chromiumSourceIdentityMatchesThePinnedMetadataContract() throws {
         root: root,
         environment: ProcessInfo.processInfo.environment))
     let sourceIdentifier = try command.sourceIdentifier()
-    #expect(sourceIdentifier == "bb787197253f6bcc61903a0b")
+    #expect(sourceIdentifier == "65a9fbae8acff64ce6f7cfd6")
 }
 
 @Test
@@ -61,6 +61,7 @@ func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() throws {
         "browser.depot-tools",
         "browser.depot-tools-bootstrap",
         "browser.source",
+        "browser.builder",
         "browser.cef",
         "browser.artifact",
         "browser.retention",
@@ -96,9 +97,45 @@ func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() throws {
             && $0.gnArguments?.contains(#"ozone_platform="wayland""#) == true
     })
     let cef = try #require(products.first { $0.product == .cef })
+    #expect(cef.output == FilePath("/cache/cef/build/source-identity/cef"))
+    #expect(
+        cef.containerImageID
+            == FilePath("/cache/cef/build-container/image-id"))
     #expect(cef.gnArguments?.contains("enable_widevine=true") == true)
     #expect(cef.gnArguments?.contains("use_allocator_shim=false") == true)
     #expect(
         cef.gnArguments?.contains("use_partition_alloc_as_malloc=false")
             == true)
+
+    let test = try #require(
+        tasks.first { $0.id == TaskID(rawValue: "browser.test") })
+    guard case .sequence(let testOperations) = test.operation,
+        case .runBuildContainer(let execution) = testOperations.first
+    else {
+        Issue.record("Chromium test compilation must use the builder")
+        return
+    }
+    #expect(execution.command.first == "build")
+    #expect(
+        execution.mounts == [
+            BuildContainerMount(
+                source: FilePath(
+                    "/cache/cef/source-generations/source-identity"),
+                target: "/source",
+                access: .readOnly),
+            BuildContainerMount(
+                source: FilePath("/cache/cef/depot_tools"),
+                target: "/depot_tools",
+                access: .readOnly),
+            BuildContainerMount(
+                source: FilePath(
+                    "/cache/cef/build/source-identity/.inputs"),
+                target: "/inputs",
+                access: .readOnly),
+            BuildContainerMount(
+                source: FilePath(
+                    "/cache/cef/build/source-identity/browser"),
+                target: "/build",
+                access: .readWrite),
+        ])
 }

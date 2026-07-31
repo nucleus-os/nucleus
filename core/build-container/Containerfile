@@ -1,0 +1,65 @@
+FROM docker.io/library/ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        ca-certificates \
+        binutils \
+        ccache \
+        clang \
+        curl \
+        libc++-dev \
+        libc++abi-dev \
+        libfontconfig1-dev \
+        libgl-dev \
+        libicu-dev \
+        ninja-build \
+        python3 \
+        unzip \
+    && curl --fail --location --output /tmp/cmake.tar.gz \
+        https://github.com/Kitware/CMake/releases/download/v3.30.2/cmake-3.30.2-linux-x86_64.tar.gz \
+    && echo 'cdd7fb352605cee3ae53b0e18b5929b642900e33d6b0173e19f6d4f2067ebf16  /tmp/cmake.tar.gz' \
+        | sha256sum --check --strict \
+    && mkdir /opt/cmake \
+    && tar xzf /tmp/cmake.tar.gz \
+        --strip-components=1 \
+        -C /opt/cmake \
+    && test "$(/opt/cmake/bin/cmake --version | head -n 1)" = \
+        'cmake version 3.30.2' \
+    && rm -f /tmp/cmake.tar.gz \
+    && curl --fail --location --output /tmp/android-ndk.zip \
+        https://dl.google.com/android/repository/android-ndk-r30-beta2-linux.zip \
+    && echo '069427047d18cc6e44369cd7b8e711bfc2c7a3b5  /tmp/android-ndk.zip' \
+        | sha1sum --check --strict \
+    && unzip -q /tmp/android-ndk.zip -d /opt \
+    && rm -f /tmp/android-ndk.zip \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN usermod \
+        --login nucleus-build \
+        --home /home/nucleus-build \
+        --move-home \
+        --shell /bin/bash \
+        ubuntu \
+    && groupmod --new-name nucleus-build ubuntu \
+    && usermod \
+        --groups '' \
+        --comment 'Nucleus Native Build' \
+        nucleus-build
+
+COPY --chmod=0755 entrypoint.sh /usr/local/bin/nucleus-native-build
+
+USER nucleus-build
+WORKDIR /src
+
+ENV ANDROID_NDK_HOME=/opt/android-ndk-r30-beta2 \
+    CCACHE_COMPILERCHECK=content \
+    CCACHE_DIR=/ccache \
+    HOME=/home/nucleus-build \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PATH=/opt/cmake/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    TZ=UTC
+
+ENTRYPOINT ["/usr/local/bin/nucleus-native-build"]

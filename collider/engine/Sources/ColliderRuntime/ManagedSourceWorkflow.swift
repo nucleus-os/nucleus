@@ -3,23 +3,6 @@ import Foundation
 import SystemPackage
 
 extension ColliderRuntime {
-    func prepareSwiftSource(
-        _ preparation: SwiftSourcePreparation,
-        stage: TaskID
-    ) async throws {
-        let reference: ManagedSourceReference = switch preparation.reference {
-        case .branch(let branch): .branch(branch)
-        case .tag(let tag): .tag(tag)
-        }
-        try await prepareManagedSource(
-            repository: preparation.repository,
-            remote: preparation.remote,
-            reference: reference,
-            partialClone: true,
-            environment: preparation.environment,
-            stage: stage)
-    }
-
     func prepareChromiumDepotTools(
         _ preparation: ChromiumDepotToolsPreparation,
         stage: TaskID
@@ -108,14 +91,16 @@ extension ColliderRuntime {
         switch reference {
         case .branch(let branch):
             try await git(
-                (partialClone ? [
-                    "-C", repository.string,
-                    "fetch", "--filter=blob:none", "--no-tags",
-                    "origin", branch,
-                ] : [
-                    "-C", repository.string,
-                    "fetch", "origin", branch,
-                ]),
+                (partialClone
+                    ? [
+                        "-C", repository.string,
+                        "fetch", "--filter=blob:none", "--no-tags",
+                        "origin", branch,
+                    ]
+                    : [
+                        "-C", repository.string,
+                        "fetch", "origin", branch,
+                    ]),
                 workingDirectory: repository)
             try await git(
                 [
@@ -125,14 +110,16 @@ extension ColliderRuntime {
                 workingDirectory: repository)
         case .tag(let tag):
             try await git(
-                (partialClone ? [
-                    "-C", repository.string,
-                    "fetch", "--filter=blob:none", "--no-tags", "origin",
-                    "refs/tags/\(tag):refs/tags/\(tag)",
-                ] : [
-                    "-C", repository.string,
-                    "fetch", "--tags", "origin", tag,
-                ]),
+                (partialClone
+                    ? [
+                        "-C", repository.string,
+                        "fetch", "--filter=blob:none", "--no-tags", "origin",
+                        "refs/tags/\(tag):refs/tags/\(tag)",
+                    ]
+                    : [
+                        "-C", repository.string,
+                        "fetch", "--tags", "origin", tag,
+                    ]),
                 workingDirectory: repository)
             try await git(
                 [

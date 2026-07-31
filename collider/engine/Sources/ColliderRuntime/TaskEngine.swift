@@ -764,18 +764,6 @@ extension ColliderRuntime {
                 encoder.append(tag: 237, string: name)
                 encoder.append(tag: 238, string: value)
             }
-        case .applyGitPatch(let patch):
-            let tool = try resolvedToolIdentity(
-                .named("git"),
-                environment: patch.environment)
-            encoder.append(tag: 65, string: patch.repository.string)
-            encoder.append(tag: 66, string: patch.patch.string)
-            encoder.append(tag: 67, string: tool.path.string)
-            encoder.append(tag: 68, bytes: tool.digest.bytes)
-            for (name, value) in artifactEnvironment(patch.environment) {
-                encoder.append(tag: 69, string: name)
-                encoder.append(tag: 70, string: value)
-            }
         case .command(let command):
             switch command.executable {
             case .taskOutput(let path):
@@ -868,24 +856,18 @@ extension ColliderRuntime {
         case .writeFile(let path, let bytes):
             encoder.append(tag: 44, string: path.string)
             encoder.append(tag: 45, bytes: bytes)
-        case .prepareSwiftSource(let preparation):
+        case .validateSwiftSourceWorkspace(let validation):
             let tool = try resolvedToolIdentity(
                 .named("git"),
-                environment: preparation.environment)
-            encoder.append(tag: 118, string: preparation.repository.string)
-            encoder.append(tag: 119, string: preparation.remote)
-            switch preparation.reference {
-            case .branch(let branch):
-                encoder.append(tag: 120, string: "branch")
-                encoder.append(tag: 121, string: branch)
-            case .tag(let tag):
-                encoder.append(tag: 120, string: "tag")
-                encoder.append(tag: 121, string: tag)
+                environment: validation.environment)
+            encoder.append(tag: 118, string: validation.workspaceRoot.string)
+            for repository in validation.repositories {
+                encoder.append(tag: 119, string: repository.string)
             }
             encoder.append(tag: 122, string: tool.path.string)
             encoder.append(tag: 123, bytes: tool.digest.bytes)
             for (name, value) in artifactEnvironment(
-                preparation.environment)
+                validation.environment)
             {
                 encoder.append(tag: 124, string: name)
                 encoder.append(tag: 125, string: value)
@@ -1036,20 +1018,44 @@ extension ColliderRuntime {
                 encoder.append(tag: 189, string: name)
                 encoder.append(tag: 190, string: value)
             }
-        case .prepareAOSPBuildContainer(let preparation):
+        case .prepareBuildContainer(let preparation):
             for path in [
                 preparation.context,
                 preparation.containerFile,
                 preparation.imageID,
             ] {
-                encoder.append(tag: 191, string: path.string)
+                encoder.append(tag: 239, string: path.string)
             }
-            encoder.append(tag: 192, string: preparation.imageName)
+            encoder.append(tag: 240, string: preparation.imageName)
             let tool = try resolvedToolIdentity(
                 .named("podman"),
                 environment: preparation.environment)
-            encoder.append(tag: 193, string: tool.path.string)
-            encoder.append(tag: 194, bytes: tool.digest.bytes)
+            encoder.append(tag: 241, string: tool.path.string)
+            encoder.append(tag: 242, bytes: tool.digest.bytes)
+        case .runBuildContainer(let execution):
+            encoder.append(tag: 243, string: execution.imageID.string)
+            encoder.append(tag: 244, string: execution.hostname)
+            encoder.append(tag: 245, string: execution.workingDirectory)
+            encoder.append(tag: 246, string: execution.hostWorkingDirectory.string)
+            for mount in execution.mounts {
+                encoder.append(tag: 247, string: mount.source.string)
+                encoder.append(tag: 248, string: mount.target)
+                encoder.append(tag: 249, string: mount.access.rawValue)
+            }
+            for (name, value) in execution.containerEnvironment.sorted(by: {
+                $0.key < $1.key
+            }) {
+                encoder.append(tag: 250, string: name)
+                encoder.append(tag: 251, string: value)
+            }
+            for argument in execution.command {
+                encoder.append(tag: 252, string: argument)
+            }
+            let tool = try resolvedToolIdentity(
+                .named("podman"),
+                environment: execution.environment)
+            encoder.append(tag: 253, string: tool.path.string)
+            encoder.append(tag: 254, bytes: tool.digest.bytes)
         case .prepareAOSPSigningIdentity(let preparation):
             encoder.append(tag: 191, string: preparation.destination.string)
             encoder.append(tag: 192, string: preparation.subject)
@@ -1143,8 +1149,9 @@ extension ColliderRuntime {
             encoder.append(tag: 152, string: preparation.sourceID)
             encoder.append(
                 tag: 153,
-                bytes: Array(try JSONEncoder().encode(
-                    preparation.sourceLock)))
+                bytes: Array(
+                    try JSONEncoder().encode(
+                        preparation.sourceLock)))
             for repository in preparation.sourceLock.repositories {
                 encoder.append(tag: 154, string: repository.name)
                 encoder.append(tag: 154, string: repository.commit)
@@ -1160,6 +1167,7 @@ extension ColliderRuntime {
             encoder.append(tag: 157, string: build.product.rawValue)
             for path in [
                 build.sourceRoot, build.output, build.depotTools,
+                build.containerImageID,
             ] {
                 encoder.append(tag: 158, string: path.string)
             }
@@ -1330,7 +1338,9 @@ extension ColliderRuntime {
             guard let resolved = resolveExecutable(name, path: environment["PATH"]) else {
                 throw RuntimeFailure.toolNotFound(name)
             }
-            path = resolved
+            path = FilePath(
+                URL(fileURLWithPath: resolved.string)
+                    .resolvingSymlinksInPath().path)
         }
         let digest = try ArtifactHasher.digest(file: path)
         toolIdentityCache[cacheKey] = (path, digest)
@@ -1349,7 +1359,11 @@ extension ColliderRuntime {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: path.string)),
             let record = try? JSONDecoder().decode(TaskStateRecord.self, from: data)
         else { return (false, "no prior task state") }
-        guard record.identity == identity else { return (false, "input identity changed") }
+        guard record.identity == identity else {
+            return (
+                false,
+                "input identity changed (recorded \(record.identity), planned \(identity))")
+        }
         do {
             try validate(task)
             return (true, "identity and outputs are valid")
@@ -1379,35 +1393,6 @@ extension ColliderRuntime {
         switch operation {
         case .action(let action):
             try await execute(action, stage: stage)
-        case .applyGitPatch(let patch):
-            func command(_ arguments: [String]) -> CommandSpec {
-                CommandSpec(
-                    executable: .named("git"),
-                    arguments: ["-C", patch.repository.string, "apply"]
-                        + arguments + [patch.patch.string],
-                    workingDirectory: patch.repository,
-                    environment: patch.environment,
-                    output: .logged)
-            }
-            let forwardCheck = try await execute(
-                command(["--check"]),
-                stage: stage)
-            if forwardCheck.status == 0 {
-                let application = try await execute(command([]), stage: stage)
-                guard application.status == 0 else {
-                    throw RuntimeFailure.commandFailed(
-                        status: application.status)
-                }
-            } else {
-                let reverseCheck = try await execute(
-                    command(["--reverse", "--check"]),
-                    stage: stage)
-                guard reverseCheck.status == 0 else {
-                    throw RuntimeFailure.invalidOutput(
-                        "patch is neither applicable nor already applied: "
-                            + patch.patch.string)
-                }
-            }
         case .command(let command):
             if options.verbose {
                 let line = rendered(command) + "\n"
@@ -1531,8 +1516,8 @@ extension ColliderRuntime {
                 withDestinationPath: target)
         case .writeFile(let path, let bytes):
             try DurableFile.write(Data(bytes), to: path)
-        case .prepareSwiftSource(let preparation):
-            try await prepareSwiftSource(preparation, stage: stage)
+        case .validateSwiftSourceWorkspace(let validation):
+            try await validateSwiftSourceWorkspace(validation, stage: stage)
         case .prepareHostToolchainBuild(let preparation):
             try prepareHostToolchainBuild(preparation)
         case .assembleHostToolchain(let assembly):
@@ -1565,10 +1550,10 @@ extension ColliderRuntime {
             try await prepareAOSPSource(
                 preparation,
                 stage: stage)
-        case .prepareAOSPBuildContainer(let preparation):
-            try await prepareAOSPBuildContainer(
-                preparation,
-                stage: stage)
+        case .prepareBuildContainer(let preparation):
+            try await prepareBuildContainer(preparation, stage: stage)
+        case .runBuildContainer(let execution):
+            try await runBuildContainer(execution, stage: stage)
         case .prepareAOSPSigningIdentity(let preparation):
             try await prepareAOSPSigningIdentity(
                 preparation,
@@ -1888,8 +1873,6 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
     switch operation {
     case .action(let action):
         action.environment
-    case .applyGitPatch(let patch):
-        patch.environment
     case .command(let command):
         command.environment
     case .runSwiftTest(let execution):
@@ -1898,8 +1881,8 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
         setup.environment
     case .mergeStaticArchives(let merge):
         merge.environment
-    case .prepareSwiftSource(let preparation):
-        preparation.environment
+    case .validateSwiftSourceWorkspace(let validation):
+        validation.environment
     case .prepareHostToolchainBuild:
         [:]
     case .assembleHostToolchain(let assembly):
@@ -1926,8 +1909,10 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
         verification.environment
     case .prepareAOSPSource(let preparation):
         preparation.environment
-    case .prepareAOSPBuildContainer(let preparation):
+    case .prepareBuildContainer(let preparation):
         preparation.environment
+    case .runBuildContainer(let execution):
+        execution.environment
     case .prepareAOSPSigningIdentity(let preparation):
         preparation.environment
     case .compileAOSPProduct(let build),

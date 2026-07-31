@@ -48,13 +48,10 @@ public enum CoreColliderRecipe {
         environment: [String: String]
     ) -> TaskDeclaration {
         let skia = root.appending("third-party/skia")
-        let patch = root.appending(
-            "third-party/patches/skia-graphite-vulkan-render-pass-dependencies.patch")
         return TaskDeclaration(
             id: TaskID(rawValue: "core.sources"),
             component: ComponentID(rawValue: "core"),
             inputs: [
-                .file(patch),
                 .tree(skia),
                 .tool(.named("git")),
                 .tool(.named("python3")),
@@ -68,41 +65,42 @@ public enum CoreColliderRecipe {
                     validation: .nonEmptyDirectory),
             ],
             locks: [.checkout("core-sources")],
-            operation: .sequence([
-                .command(
-                    CommandSpec(
-                        executable: .named("python3"),
-                        arguments: [
-                            skia.appending("tools/git-sync-deps").string
-                        ],
-                        workingDirectory: root,
-                        environment: environment)),
-                .applyGitPatch(
-                    GitPatchApplication(
-                        repository: skia,
-                        patch: patch,
-                        environment: environment)),
-            ]))
+            operation: .command(
+                CommandSpec(
+                    executable: .named("python3"),
+                    arguments: [
+                        skia.appending("tools/git-sync-deps").string
+                    ],
+                    workingDirectory: root,
+                    environment: environment)))
     }
 
     public static func buildSkia(
         root: FilePath,
-        environment: [String: String]
+        environment: [String: String],
+        builder: NativeBuildContainerConfiguration
     ) -> TaskDeclaration {
         skiaTask(
             id: "core.skia.host",
             root: root,
             environment: environment,
             buildDirectory: root.appending(".skia-build/graphite"),
-            gnArguments: hostGNArguments)
+            gnArguments: hostGNArguments,
+            mode: "host",
+            builder: builder)
     }
 
     public static func buildSkiaAndroid(
         root: FilePath,
-        ndk: FilePath,
         minimumAndroidAPI: UInt32,
-        environment: [String: String]
+        environment: [String: String],
+        builder: NativeBuildContainerConfiguration
     ) -> TaskDeclaration {
+        #if os(macOS)
+        let ndk = environment["NUCLEUS_ANDROID_NDK_HOME"] ?? ""
+        #else
+        let ndk = "/opt/android-ndk-r30-beta2"
+        #endif
         return skiaTask(
             id: "core.skia.android-arm64",
             root: root,
@@ -111,10 +109,12 @@ public enum CoreColliderRecipe {
             gnArguments: [
                 #"target_os="android""#,
                 #"target_cpu="arm64""#,
-                #"ndk="\#(ndk.string)""#,
+                #"ndk="\#(ndk)""#,
                 "ndk_api=\(minimumAndroidAPI)",
                 "skia_use_fontconfig=false",
-            ] + commonGNArguments)
+            ] + commonGNArguments,
+            mode: "android",
+            builder: builder)
     }
 
     public static func buildAndroidHost(
@@ -263,15 +263,16 @@ private let hostGNArguments =
     [
         "skia_use_partition_alloc=false",
         "skia_use_fontconfig=true",
+        #"extra_cflags_cc=["-stdlib=libc++"]"#,
         #"cc="clang""#,
         #"cxx="clang++""#,
     ] + commonGNArguments
 
 private func androidNDKReadELFPath(_ ndk: FilePath) -> FilePath {
     #if os(macOS)
-        let host = "darwin-x86_64"
+    let host = "darwin-x86_64"
     #else
-        let host = "linux-x86_64"
+    let host = "linux-x86_64"
     #endif
     return ndk.appending(
         "toolchains/llvm/prebuilt/\(host)/bin/llvm-readelf")
@@ -282,44 +283,93 @@ private func skiaTask(
     root: FilePath,
     environment: [String: String],
     buildDirectory: FilePath,
-    gnArguments: [String]
+    gnArguments: [String],
+    mode: String,
+    builder: NativeBuildContainerConfiguration
 ) -> TaskDeclaration {
     let skia = root.appending("third-party/skia")
+    #if os(macOS)
+    let dependencies = [TaskID(rawValue: "core.sources")]
+    let imageInputs: [ArtifactInput] = []
+    let operation = TaskOperation.sequence([
+        .command(
+            CommandSpec(
+                executable: .path(skia.appending("bin/gn")),
+                arguments: [
+                    "gen", buildDirectory.string,
+                    "--args=" + gnArguments.joined(separator: " "),
+                ],
+                workingDirectory: skia,
+                environment: environment)),
+        .command(
+            CommandSpec(
+                executable: .named("ninja"),
+                arguments: ["-C", buildDirectory.string] + ninjaTargets,
+                workingDirectory: skia,
+                environment: environment)),
+    ])
+    #else
+    let dependencies = [
+        TaskID(rawValue: "core.sources"),
+        TaskID(rawValue: "native.builder"),
+    ]
+    let imageInputs: [ArtifactInput] = [
+        .dependencyOutput(builder.imageID),
+        .tool(.named("podman")),
+    ]
+    let containerBuildDirectory = "/build/\(buildDirectory.lastComponent!)"
+    let mounts = [
+        BuildContainerMount(
+            source: skia,
+            target: "/src",
+            access: .readOnly),
+        BuildContainerMount(
+            source: root.appending(".skia-build"),
+            target: "/build",
+            access: .readWrite),
+        BuildContainerMount(
+            source: builder.ccache,
+            target: "/ccache",
+            access: .readWrite),
+    ]
+    func execution(_ command: [String]) -> TaskOperation {
+        .runBuildContainer(
+            BuildContainerExecution(
+                imageID: builder.imageID,
+            hostname: "native-\(mode)-build",
+                workingDirectory: "/src",
+                hostWorkingDirectory: skia,
+                mounts: mounts,
+                containerEnvironment: [:],
+                command: ["skia-\(mode)"] + command,
+                environment: builder.environment))
+    }
+    let operation = TaskOperation.sequence([
+        execution([
+            "/src/bin/gn", "gen", containerBuildDirectory,
+            "--args=" + gnArguments.joined(separator: " "),
+        ]),
+        execution(
+            ["ninja", "-C", containerBuildDirectory] + ninjaTargets),
+    ])
+    #endif
     return TaskDeclaration(
         id: TaskID(rawValue: id),
         component: ComponentID(rawValue: "core"),
-        dependencies: [TaskID(rawValue: "core.sources")],
+        dependencies: dependencies,
         inputs: [
             .dependencyOutput(skia),
             .value(
                 name: "gn-arguments",
                 bytes: Array(gnArguments.joined(separator: "\u{0}").utf8)),
-            .tool(.named("ninja")),
-            .tool(.named("ccache")),
-        ],
+        ] + imageInputs,
         outputs: requiredArchives.map {
             OutputDeclaration(
                 path: buildDirectory.appending($0),
                 validation: .regularFile)
         },
         locks: [.checkout("core-skia")],
-        operation: .sequence([
-            .command(
-                CommandSpec(
-                    executable: .path(skia.appending("bin/gn")),
-                    arguments: [
-                        "gen", buildDirectory.string,
-                        "--args=" + gnArguments.joined(separator: " "),
-                    ],
-                    workingDirectory: skia,
-                    environment: environment)),
-            .command(
-                CommandSpec(
-                    executable: .named("ninja"),
-                    arguments: ["-C", buildDirectory.string] + ninjaTargets,
-                    workingDirectory: skia,
-                    environment: environment)),
-        ]))
+        operation: operation)
 }
 
 private func task(
