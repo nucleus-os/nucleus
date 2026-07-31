@@ -1,12 +1,19 @@
-# GitHub Actions macOS Builder and Self-Hosted Runner Plan
+# Remote Development, macOS Builder, and Self-Hosted Runner Plan
 
 ## Invariant
 
-The M2 Ultra is the primary Nucleus build host. Linux products compile in
-digest-selected `linux/amd64` OCI images through Apple `container` and Rosetta.
-macOS products compile natively as `macOS/arm64`. Build artifacts are qualified
-on the operating system, architecture, kernel, graphics stack, and hardware
-they claim to support.
+The M2 Ultra is the primary Nucleus development and build host. The
+authoritative development workspace lives on M2-owned storage in a persistent,
+digest-selected `linux/amd64` development machine. Developer computers are
+replaceable editor and terminal clients; their packages, paths, caches, and
+operating systems never enter a Nucleus build identity.
+
+Linux products compile in separate digest-selected `linux/amd64` OCI images
+through Apple `container` and Rosetta. macOS products compile natively as
+`macOS/arm64`. The persistent development machine never produces a candidate or
+release artifact directly. Build artifacts are qualified on the operating
+system, architecture, kernel, graphics stack, and hardware they claim to
+support.
 
 Runner platform, artifact target, and execution backend are independent values.
 No recipe infers one from another through compile-time host conditionals. GitHub
@@ -14,10 +21,16 @@ Actions routes trusted work into Collider lanes; it does not become a second
 build system.
 
 Development builds use the same lanes without GitHub. Collider snapshots the
-local source graph, transfers only missing content to the M2 Ultra, schedules
-the work through the same host-wide resource coordinator, and returns artifacts
-and durable logs by content identity. A developer does not commit or push work
-to use the builder.
+M2-owned development workspace, schedules work through the same host-wide
+resource coordinator, and returns artifacts and durable logs by content
+identity. A developer does not commit or push work to use the builder. Importing
+a snapshot from another computer remains supported, but it is not the primary
+development path.
+
+The development environment is persistent and interactive. Product build
+executors are disposable and hermetic. Native qualification workers are
+replaceable implementations of declared capability contracts. The current
+Ubuntu computer is neither a source authority nor a build dependency.
 
 The public repository never executes pull-request code on a persistent or
 privileged self-hosted runner. Build workers contain no signing identities,
@@ -33,19 +46,24 @@ The final topology contains these distinct roles:
 | Role | Environment | Purpose |
 | --- | --- | --- |
 | Hosted verification | Disposable GitHub-hosted worker | Untrusted pull-request formatting, policy, source-lock, and focused unit validation |
+| Development gateway | Native service on the M2 Ultra | Authenticated remote access, editor tunneling, and development-machine lifecycle |
+| Development machine | Persistent `linux/amd64` Apple container machine | Source checkout, uncommitted work, shell, editor server, language services, and Collider client |
 | macOS builder | Native `macOS/arm64` environment on the M2 Ultra | macOS Swift toolchain, Apple-platform products, and native macOS validation |
 | Linux builder | Apple `container` on the M2 Ultra | All Linux compilation in pinned `linux/amd64` OCI images through Rosetta |
 | Linux qualifier | Real `Linux/x86_64` worker | Loader, libc, sandbox, io_uring, process, integration, and performance qualification |
 | GPU/DRM qualifier | Real `Linux/x86_64` Nucleus target hardware | Vulkan, DRM, GBM, DMA-BUF, synchronization, scanout, input, display, and session qualification |
 | Publisher | Protected isolated environment | Signing, provenance attestation, release publication, and channel advancement |
 
-The M2 Ultra also runs one local Collider worker service. Local development
-clients and the GitHub runner submit work to that service; neither starts heavy
-build processes independently.
+The M2 Ultra also runs one native Collider worker service. The development
+machine, imported development clients, and the GitHub runner submit work to
+that service; none starts heavy build processes independently. The persistent
+development machine does not host nested build containers.
 
 The Linux qualifier may be an on-demand worker. The GPU/DRM qualifier is a
 dedicated hardware role. Neither role is replaced by Rosetta, QEMU, software
-Vulkan, or a Linux VM on the Mac.
+Vulkan, or a Linux VM on the Mac. No particular Ubuntu installation is
+required: any worker satisfying the declared x86_64 or GPU/DRM capability
+contract can perform the corresponding qualification.
 
 ## Platform Contract
 
@@ -159,6 +177,12 @@ It requests `linux/amd64` explicitly and requires Rosetta availability before
 building. Collider does not implement a custom Virtualization.framework or
 Containerization.framework VM manager.
 
+Pin the exact Apple `container` release used by provisioning and CI. Keep every
+CLI argument and output parser behind `AppleContainerExecutor` and a separate
+`AppleContainerMachine` adapter. A change to the selected release is an
+explicit infrastructure update with contract qualification; no recipe or
+development command consumes the backend CLI directly.
+
 The Linux backend continues to use rootless Podman. Both backends disable
 networking during compilation, drop capabilities, prohibit privilege
 acquisition, hide the runner home, expose no desktop or device sockets, and
@@ -172,6 +196,8 @@ mount source inputs read-only.
 - The same digest-selected image produces equivalent declared outputs through
   Apple `container` and Podman.
 - Backend command lines do not appear in product recipes.
+- Upgrading Apple `container` cannot change execution without updating and
+  passing the backend contract suite.
 
 ## Phase 4: Qualify the macOS ARM64 Host Contract
 
@@ -183,7 +209,6 @@ Define a read-only macOS builder doctor lane. It requires:
 - sufficient CPU, memory, and disk allocation;
 - a case-sensitive build volume;
 - the selected Swift bootstrap compiler;
-- the selected Android SDK and NDK;
 - content-addressed cache and artifact roots;
 - noninteractive execution with no pending license or authorization prompt.
 
@@ -197,6 +222,12 @@ AOSP, Swift, Skia, React Native, compiler cache, and OCI storage. Host-shared
 source mounts are admitted only after performance and case-sensitivity
 qualification.
 
+Create separate storage roots for development machines, source snapshots,
+materialized build workspaces, incremental caches, OCI storage, immutable
+artifacts, and logs. Each root has an owner, quota, retention policy, and
+recoverability classification. The development workspace and uncommitted source
+snapshots are protected data. Build trees and caches are reconstructible data.
+
 ### Exit Gate
 
 - `collider doctor ci-macos-builder` is entirely read-only and passes without
@@ -205,8 +236,170 @@ qualification.
   package installation, license acceptance, or credential discovery.
 - All build and cache roots reside on declared case-sensitive storage.
 - No build path refers to a developer-specific absolute path.
+- All storage status reports ownership, quota usage, retention, and explicit
+  safe reclamation candidates.
 
-## Phase 5: Introduce Collider-Owned CI Lanes
+## Phase 5: Provision the Persistent Remote Development Environment
+
+Add a source-controlled development-machine image under `development/`. It is
+a digest-selected `linux/amd64` OCI image. It contains the interactive shell,
+Git and SSH clients, Collider
+client, Swift and C/C++ language services, TypeScript and React Native editor
+tooling, Android inspection tools, debuggers, and editor-server prerequisites.
+It does not replace any product builder image or supply undeclared product
+libraries, SDKs, sysroots, or compilers.
+
+Provision one named Apple container machine from that image with explicit CPU,
+memory, platform, and storage limits. Set `home-mount=none`. Create the
+development user and stable `/workspace/nucleus` path inside the machine. The
+source checkout, submodule worktrees, editor indexes, and uncommitted changes
+live on its persistent filesystem rather than in the Mac user's home or a
+developer computer's filesystem.
+
+Add an `AppleContainerMachine` adapter to Collider for create, inspect, start,
+stop, update, and recovery operations. The adapter requires the selected
+`linux/amd64` image and rejects host-architecture fallback. Updating the image
+recreates the environment from its declaration while restoring workspace
+content from a content-addressed source snapshot.
+
+Do not run product build containers inside the development machine. The M2
+Ultra does not provide the nested-virtualization contract required for that
+architecture. The native macOS Collider worker remains the sole owner of Apple
+container build execution.
+
+### Exit Gate
+
+- A newly provisioned development machine opens the repository at the same
+  stable Linux path without mounting the macOS home directory.
+- Its image identity, platform, resources, and lifecycle state are visible in
+  Collider diagnostics.
+- Recreating the machine restores source and uncommitted work without restoring
+  build products or mutable tool installations.
+- No product recipe resolves a dependency from the development-machine image.
+- No nested container runtime or privileged host socket is exposed inside the
+  development machine.
+
+## Phase 6: Add Secure Remote Access and Editor Integration
+
+Run a development gateway under a dedicated native macOS identity. Admit
+developers through SSH over a private network or VPN. The gateway is the only
+remote entry point; the development machine and Collider worker bind no public
+listener. Tunnel the development machine's SSH endpoint and editor protocol
+through the gateway.
+
+Run the editor server, language servers, terminals, Git operations, and source
+tools inside the development machine. Editor clients on Linux or macOS display
+the interface only. Support standard SSH-based clients without making the plan
+dependent on VS Code, Zed, JetBrains, or one terminal implementation.
+
+Personal SSH and Git credentials remain outside the persistent machine. Use
+session-scoped agent forwarding or a narrowly scoped credential broker. Never
+mount private-key directories, cloud credentials, signing identities, GitHub
+runner credentials, or publication credentials. A development identity can
+submit development lanes and read its artifacts; it cannot administer runners,
+read CI secrets, qualify releases, or publish products.
+
+Provide these lifecycle commands:
+
+```text
+collider dev provision
+collider dev start
+collider dev shell
+collider dev status
+collider dev update
+collider dev stop
+```
+
+### Exit Gate
+
+- A clean client computer can open the remote workspace with only its admitted
+  SSH identity and editor or terminal client.
+- Disconnecting the client leaves the workspace and active tasks intact.
+- No development service is reachable directly from the public network.
+- Removing a developer identity terminates future access without rotating CI,
+  qualification, signing, or publication credentials.
+- The persistent machine contains no private key or reusable GitHub credential.
+
+## Phase 7: Add Source Snapshots and Development Dispatch
+
+Add a content-addressed `SourceSnapshot` model to Collider. A snapshot records:
+
+- the root repository and nested repository base commit identities;
+- tracked file content at the developer's current worktree state;
+- modified and deleted tracked files;
+- non-ignored untracked source files;
+- exact submodule selections and nested worktree overlays;
+- source-lock and builder configuration content;
+- exclusions derived from Collider-owned build, cache, candidate, artifact,
+  signing, and run-record roots;
+- the digest of the complete materialized source tree.
+
+Snapshot creation never requires a commit. It previews included untracked files,
+rejects known credential and signing-key paths, and never traverses ignored or
+declared generated roots. The primary snapshot source is the persistent M2
+development workspace. An imported client workspace uses the same model and
+sends only blobs absent from the worker's private content-addressed store. The
+worker materializes every snapshot as a new read-only source generation; it
+never mutates or overlays the persistent development checkout.
+
+Add a dedicated Collider worker service on the M2 Ultra and an authenticated
+client transport. The development machine submits through a private worker
+endpoint exposed by the native macOS gateway. Imported clients use SSH and
+expose Collider operations rather than an unrestricted worker shell. The worker
+binds no public network listener and requires an explicitly admitted identity.
+
+Provide these commands:
+
+```text
+collider worker serve
+collider dev snapshot
+collider dev explain <lane>
+collider dev run <lane>
+collider dev cancel <run-id>
+collider dev logs <run-id>
+collider dev artifacts <run-id>
+collider remote explain <lane> --worker <name>
+collider remote run <lane> --worker <name>
+collider remote cancel <run-id> --worker <name>
+collider remote logs <run-id> --worker <name>
+collider remote artifacts <run-id> --worker <name>
+```
+
+The development command snapshots the M2-owned workspace and submits its content
+identity to the native worker. The imported-client command resolves the same
+lane, creates the same snapshot model, uploads missing content, and submits the
+run. Both stream structured events and record the run identity. Cancellation
+uses Collider's normal transaction and lock cleanup. Reconnection resumes the
+durable event stream rather than starting another run.
+
+Every product task executes against the worker's immutable snapshot in its
+declared native or OCI executor. It clears the ambient environment and rejects
+undeclared host binaries, SDKs, `PATH` entries, `pkg-config` paths, CMake package
+roots, Swift toolchains, writable source mounts, mutable image tags, compilation
+network access, and developer-specific paths. Interactive formatting, indexing,
+and editor diagnostics may run in the declared development machine, but they do
+not emit distributable artifacts.
+
+Local artifacts remain on the M2 Ultra's artifact store by default. The client
+downloads only requested products or manifests. Development source snapshots,
+logs, and artifacts never transit GitHub and never require a GitHub token.
+
+### Exit Gate
+
+- An uncommitted edit and a newly created source file in the M2 development
+  workspace build without a commit, push, or transfer from another computer.
+- An imported uncommitted workspace produces the same snapshot identity as the
+  equivalent M2-owned workspace.
+- The snapshot excludes every declared generated, cache, signing, and credential
+  root.
+- Repeating an unchanged local build transfers no source blobs and reuses the
+  same task identities.
+- Local and Actions requests enter the same worker queue and lock domain.
+- Disconnecting the client does not terminate or duplicate the build.
+- A host-contamination test fails a task that discovers an undeclared tool,
+  package, path, network fallback, or writable source input.
+
+## Phase 8: Introduce Collider-Owned Development and CI Lanes
 
 Add `collider ci run <lane>` and `collider ci doctor <lane>`. Each lane owns a
 strict task graph and capability contract:
@@ -223,77 +416,38 @@ strict task graph and capability contract:
 7. `publish` verifies qualification evidence, signs products, records
    provenance, and advances distribution channels.
 
+Classify every result as one of these states:
+
+- an interactive result is an editor diagnostic, index, format result, or
+  lightweight check produced inside the declared development machine;
+- a development artifact is an isolated build from any content-addressed source
+  snapshot, including uncommitted work;
+- a candidate artifact is an isolated clean build from immutable repository and
+  submodule identities;
+- a release artifact is a candidate with every required native qualification
+  and publication record.
+
+Only development, candidate, and release builds emit distributable bundles.
+Only candidate and release artifacts satisfy final-product gates. Publication
+never promotes an interactive result or an artifact built from an uncommitted
+snapshot.
+
 The workflow files select a lane and route it to a matching runner group. They
 contain no component dependency logic, package-manager commands, build flags,
 or artifact-layout knowledge.
 
 ### Exit Gate
 
-- Each lane can be explained and dry-run locally.
+- Each lane can be explained and dry-run from the remote development machine.
 - Each lane has a distinct doctor scope and directed capability failures.
 - Workflow YAML contains only checkout, Collider bootstrap, lane invocation,
   log preservation, and artifact-reference handoff.
-- Local and CI invocation resolve the same task graph for the same coordinates.
+- Development and CI invocation resolve the same task graph for the same
+  coordinates and source identity.
+- Result classification prevents an uncommitted or ambient build from entering
+  candidate qualification or publication.
 
-## Phase 6: Add Local Development Dispatch
-
-Add a content-addressed `SourceSnapshot` model to Collider. A snapshot records:
-
-- the root repository and nested repository base commit identities;
-- tracked file content at the developer's current worktree state;
-- modified and deleted tracked files;
-- non-ignored untracked source files;
-- exact submodule selections and nested worktree overlays;
-- source-lock and builder configuration content;
-- exclusions derived from Collider-owned build, cache, candidate, artifact,
-  signing, and run-record roots;
-- the digest of the complete materialized source tree.
-
-Snapshot creation never requires a commit. It previews included untracked files,
-rejects known credential and signing-key paths, and never traverses ignored or
-declared generated roots. The transfer protocol sends only blobs absent from the
-worker's private content-addressed store. The worker materializes each snapshot
-as a new read-only source generation; it never mutates or overlays a persistent
-checkout.
-
-Add a dedicated Collider worker service on the M2 Ultra and an authenticated
-local client transport. The initial transport runs over SSH and exposes Collider
-operations rather than an unrestricted remote shell. It binds no public network
-listener and requires an explicitly admitted developer identity.
-
-Provide these commands:
-
-```text
-collider worker serve
-collider remote explain <lane> --worker <name>
-collider remote run <lane> --worker <name>
-collider remote cancel <run-id> --worker <name>
-collider remote logs <run-id> --worker <name>
-collider remote artifacts <run-id> --worker <name>
-```
-
-The remote command resolves the same lane locally, creates the source snapshot,
-uploads missing content, submits the run, streams structured events, and records
-the remote run identity locally. Cancellation uses Collider's normal transaction
-and lock cleanup. Reconnection resumes the durable event stream rather than
-starting another run.
-
-Local artifacts remain on the M2 Ultra's artifact store by default. The client
-downloads only requested products or manifests. Development source snapshots,
-logs, and artifacts never transit GitHub and never require a GitHub token.
-
-### Exit Gate
-
-- An uncommitted source edit and a newly created source file build remotely
-  without a commit or push.
-- The snapshot excludes every declared generated, cache, signing, and credential
-  root.
-- Repeating an unchanged local build transfers no source blobs and reuses the
-  same task identities.
-- Local and Actions requests enter the same worker queue and lock domain.
-- Disconnecting the client does not terminate or duplicate the build.
-
-## Phase 7: Split Build, Qualification, and Publication
+## Phase 9: Split Build, Qualification, and Publication
 
 Remove assumptions that the builder, validator, and publisher share a
 filesystem. Every product build emits an immutable artifact bundle and a
@@ -324,7 +478,7 @@ artifacts. Publishers do not compile source.
 - Publication rejects missing, stale, emulated, or wrong-platform evidence.
 - Signing material is absent from build and qualification workers.
 
-## Phase 8: Add Remote Artifact and Cache Boundaries
+## Phase 10: Add Remote Artifact and Cache Boundaries
 
 Add a backend-neutral content-addressed artifact store. Support a local
 filesystem backend for development and an OCI registry or object-store backend
@@ -337,8 +491,10 @@ Collider-owned runner volumes. Treat it as reconstructible and untrusted.
 
 Separate storage namespaces by trust class:
 
+- protected development workspaces and recoverable uncommitted snapshots;
 - untrusted pull-request cache;
 - trusted branch incremental cache;
+- development artifacts;
 - immutable candidate artifacts;
 - qualified artifacts;
 - published artifacts;
@@ -346,7 +502,10 @@ Separate storage namespaces by trust class:
 
 Content verification occurs on every cache admission and artifact retrieval.
 No cache contains credentials. Collider lifecycle locks protect the same roots
-in local and CI execution.
+in development and CI execution. Back up development workspaces and uncommitted
+source snapshots to encrypted storage. Do not back up reconstructible build
+trees or caches. A workspace restore never imports executables into a build
+cache or candidate namespace.
 
 ### Exit Gate
 
@@ -355,26 +514,33 @@ in local and CI execution.
 - A cache miss rebuilds successfully without changing the artifact contract.
 - Storage status identifies ownership, trust class, activity, and safe
   reclamation candidates.
+- Destroying and recreating the development machine preserves committed and
+  uncommitted source while reconstructing editor indexes and build state.
 
-## Phase 9: Enforce Host-Wide Resource Admission
+## Phase 11: Enforce Host-Wide Resource Admission
 
 Define resource classes for lightweight verification, native macOS compilation,
 Chromium, AOSP, Swift toolchain, native SDKs, qualification, and publication.
-The M2 Ultra exposes 20 CPU cores and 96 GiB of memory to the build scheduler,
-reserving four CPU cores and 32 GiB for macOS, the worker service, storage, and
-interactive development. The M2 Ultra admits only one heavy build at a time.
-Chromium, AOSP, and the Swift toolchain never overlap on the 128 GB host.
+The M2 Ultra reserves four CPU cores and 16 GiB exclusively for macOS, the
+worker service, storage, and remote access. The coordinator owns the remaining
+20 CPU cores and 112 GiB. While the development machine is running, it receives
+a floor of four CPU cores and 24 GiB; a heavy build receives at most 16 CPU
+cores and 88 GiB. Idle capacity above those floors may be borrowed by interactive
+work but is reclaimed before admitting a heavy task. The M2 Ultra admits only
+one heavy build at a time. Chromium, AOSP, and the Swift toolchain never overlap
+on the 128 GB host.
 
-One persistent coordinator owns a weighted CPU and memory semaphore plus the
-existing workflow locks. Local development and GitHub Actions are clients of
-that coordinator. They cannot maintain separate resource counters. Lightweight
-tasks may accompany a heavy build only when their declared reservation fits
-inside the remaining scheduler capacity.
+One persistent coordinator owns development-machine allocation, a weighted CPU
+and memory semaphore, storage admission, and the existing workflow locks.
+Development and GitHub Actions are clients of that coordinator. They cannot
+maintain separate resource counters. Lightweight tasks may accompany a heavy
+build only when their declared reservation fits inside the remaining scheduler
+capacity.
 
-Local interactive requests have admission priority over queued Actions work.
-They do not preempt an active build or corrupt an incremental tree. Trusted
-publication has priority once its transaction begins. All other work uses FIFO
-order within its priority class.
+Interactive development requests have admission priority over queued Actions
+work. They do not preempt an active build or corrupt an incremental tree.
+Trusted publication has priority once its transaction begins. All other work
+uses FIFO order within its priority class.
 
 Every OCI execution receives an enforced CPU and memory limit derived from its
 reservation. Native macOS commands receive bounded job counts and process
@@ -385,10 +551,13 @@ Acquire locks outside the checkout so separate Actions workspaces cannot evade
 them. Bound CPU, memory, temporary storage, and OCI storage per lane. Record
 resource selections in run manifests.
 
-Use a dedicated case-sensitive build volume with separate roots for OCI storage,
-source snapshots, incremental products, compiler caches, artifacts, and logs.
-Collider never deletes data merely to admit a task. Storage lifecycle status and
-explicit pruning identify reclaimable state before capacity becomes constrained.
+Use dedicated case-sensitive storage with separate roots for development-machine
+disks, protected workspace backups, OCI storage, source snapshots, incremental
+products, compiler caches, artifacts, and logs. Set hard quotas for every
+reconstructible namespace and reserve emergency capacity for workspace backup
+and service operation. Collider never deletes data merely to admit a task.
+Storage lifecycle status and explicit pruning identify reclaimable state before
+capacity becomes constrained.
 
 Use one active GitHub runner per heavy environment. Do not register multiple
 runner processes merely to increase queue throughput on the same hardware.
@@ -396,15 +565,18 @@ runner processes merely to increase queue throughput on the same hardware.
 ### Exit Gate
 
 - Independent checkouts cannot start conflicting heavy builds.
-- Local development and Actions submissions cannot overcommit aggregate CPU or
-  memory.
-- macOS retains four CPU cores and 32 GiB outside all build reservations.
+- Development and Actions submissions cannot overcommit aggregate CPU, memory,
+  temporary storage, or persistent storage.
+- macOS retains four CPU cores and 16 GiB outside the coordinator, and the
+  running development machine retains its four-core and 24 GiB floor.
+- A heavy build cannot reduce the development machine below its interactive
+  floor or make an editor session unresponsive.
 - Cancellation releases locks and leaves reusable build roots consistent.
 - Resource exhaustion produces a directed preflight failure rather than a
   compiler, linker, or disk corruption symptom.
 - Lightweight hosted verification remains independent of the builder queue.
 
-## Phase 10: Provision Disposable Runner Environments
+## Phase 12: Provision Disposable Runner Environments
 
 Run the GitHub runner under a dedicated identity with no personal login data,
 SSH agent, browser profile, cloud credentials, iCloud data, development signing
@@ -434,10 +606,14 @@ configuration service. Registration credentials never enter job environments.
 - The physical Mac contains no personal or release secret reachable by build
   code.
 
-## Phase 11: Establish Native x86_64 and Hardware Qualification
+## Phase 13: Establish Native x86_64 and Hardware Qualification
 
 Provision a real Linux x86_64 qualifier for every Linux product built through
-Rosetta. It validates:
+Rosetta. Define it through a `QualifierCapabilityManifest` containing the
+distribution image, architecture, kernel, loader, system libraries, CPU
+features, sandbox capabilities, test tools, and permitted devices. Provision
+the operating-system state from that declaration; never encode the current
+Ubuntu machine identity or filesystem layout. It validates:
 
 - ELF architecture, interpreter, and dynamic-library closure;
 - glibc and C++ ABI requirements;
@@ -448,8 +624,9 @@ Rosetta. It validates:
 - performance-sensitive smoke thresholds.
 
 Provision separate GPU/DRM workers for each supported hardware class. These
-workers run the existing loader, headless, DRM, GBM, DMA-BUF, explicit-sync,
-scanout, display, input, suspend, and session gates.
+workers add pinned hardware, firmware, kernel, and driver identities to the same
+capability model. They run the existing loader, headless, DRM, GBM, DMA-BUF,
+explicit-sync, scanout, display, input, suspend, and session gates.
 
 Rosetta results are build evidence only. They never satisfy a native x86_64,
 kernel, GPU, DRM, sandbox-performance, or hardware qualification requirement.
@@ -462,8 +639,10 @@ kernel, GPU, DRM, sandbox-performance, or hardware qualification requirement.
   firmware, and driver identities.
 - Emulated or software-rendered execution is labeled explicitly and cannot
   satisfy a native gate.
+- Replacing the current Ubuntu qualifier with another conforming x86_64 worker
+  does not change a build graph, artifact identity, or qualification procedure.
 
-## Phase 12: Land the GitHub Actions Workflows
+## Phase 14: Land the GitHub Actions Workflows
 
 Create thin workflows in this order:
 
@@ -486,50 +665,80 @@ and reclaimable storage.
 
 ### Exit Gate
 
-- Workflow behavior is reproducible through the corresponding local Collider
-  lane.
+- Workflow behavior is reproducible through the corresponding Collider lane
+  from the remote development machine without GitHub Actions.
 - Trusted and untrusted jobs cannot route to the same runner group or cache
   namespace.
 - A failed build or qualification leaves no partially published product.
 - Required checks represent hosted verification plus every product-specific
   native qualification gate.
 
-## Phase 13: Final Qualification
+## Phase 15: Final Qualification
 
 Run acceptance in this order:
 
 1. provision a clean macOS ARM64 runner image on the M2 Ultra;
-2. start the Collider worker and submit an uncommitted development source
-   snapshot without GitHub;
-3. prove the worker reserves four CPU cores and 32 GiB for macOS while one
-   heavy development build occupies the declared build capacity;
-4. queue an Actions build concurrently and prove it cannot bypass the local
-   coordinator or overcommit the host;
-5. validate Apple `container`, Rosetta, case-sensitive storage, and the complete
-   noninteractive host contract;
-6. build every Linux builder image for the explicit `linux/amd64` platform;
-7. build the Linux Swift host toolchain and both supported SwiftAndroid SDKs;
-8. build host and Android Skia;
-9. build React Native native dependencies and host archives;
-10. build Chromium and CEF;
-11. build the AOSP Nucleus image;
-12. repeat every heavy build and prove bounded incremental reuse;
-13. transfer immutable artifact bundles to a clean native Linux x86_64 worker;
-14. pass every native Linux product qualification lane;
-15. pass physical GPU/DRM qualification on each claimed hardware class;
-16. verify all selected source repositories and submodules remain clean;
-17. verify every build output exists only in a declared writable root;
-18. verify no build task used an ARM Linux image, undeclared host compiler,
-    host package, mutable tag, network fallback, or developer-specific path;
-19. execute the protected publication lane against qualified candidate
+2. validate the pinned Apple `container`, Rosetta, case-sensitive storage, and
+   complete noninteractive host contract;
+3. provision the digest-selected `linux/amd64` development machine with no
+   macOS home mount or privileged host socket;
+4. connect from a clean remote client, open the editor workspace, and prove the
+   shell, language servers, Git, and Collider client execute in Linux on the
+   M2-owned workspace;
+5. create modified and untracked source, disconnect the client, reconnect, and
+   prove the complete workspace remains intact;
+6. snapshot the uncommitted workspace and submit a development build to the
+   native Collider worker without GitHub;
+7. create the equivalent snapshot from an imported client workspace and prove
+   both source identities are identical;
+8. destroy and recreate the development machine from its pinned image and
+   encrypted workspace backup, proving source is restored while indexes, build
+   trees, and caches are reconstructed;
+9. prove macOS retains four CPU cores and 16 GiB, the development machine
+   retains four CPU cores and 24 GiB, and one heavy development build cannot
+   exhaust either reserve;
+10. queue an Actions build concurrently and prove it cannot bypass the shared
+    coordinator or overcommit CPU, memory, temporary storage, or persistent
+    storage;
+11. build every Linux builder image for the explicit `linux/amd64` platform;
+12. build the Linux Swift host toolchain and both supported SwiftAndroid SDKs;
+13. build host and Android Skia;
+14. build React Native native dependencies and host archives;
+15. build Chromium and CEF;
+16. build the AOSP Nucleus image;
+17. repeat every heavy build and prove bounded incremental reuse;
+18. rebuild a selected source identity on a clean worker and prove no output or
+    dependency closure was inherited from the development machine or the
+    original builder host;
+19. transfer immutable artifact bundles to a clean native Linux x86_64 worker;
+20. pass every native Linux product qualification lane on a worker provisioned
+    from its capability manifest;
+21. replace that qualifier with another conforming x86_64 worker and reproduce
+    the qualification procedure without changing the artifact;
+22. pass physical GPU/DRM qualification on each claimed hardware class;
+23. verify all selected source repositories and submodules remain clean;
+24. verify every build output exists only in a declared writable root;
+25. verify no build task used an ARM Linux image, undeclared host compiler,
+    host package, mutable tag, network fallback, writable source mount, or
+    developer-specific path;
+26. verify the current Ubuntu development computer can be unavailable for the
+    complete development, build, candidate, and publication sequence;
+27. execute the protected publication lane against qualified candidate
     artifacts without rebuilding them.
 
 ## Final State
 
-The M2 Ultra supplies the primary CPU and memory capacity for Nucleus builds.
-Apple `container` presents the existing Linux build systems with ordinary
-`linux/amd64` OCI environments through Rosetta, preserving one x86_64 product
-architecture and one build graph. macOS artifacts remain native ARM64 products.
+The M2 Ultra owns the authoritative Nucleus development workspace and supplies
+the primary CPU, memory, and storage capacity for builds. A persistent,
+digest-selected `linux/amd64` development machine holds source, uncommitted
+work, editor services, and interactive tools. Developer computers are thin
+clients and may be replaced or disconnected without affecting source or work.
+
+Apple `container` presents the existing Linux build systems with separate
+ordinary `linux/amd64` OCI environments through Rosetta, preserving one x86_64
+product architecture and one build graph. The persistent development machine
+never supplies ambient dependencies to those executors. macOS artifacts remain
+native ARM64 products.
 
 Collider owns platform selection, container policy, task ordering, artifact
 identity, storage lifecycle, qualification requirements, and publication
@@ -537,14 +746,18 @@ admission. Apple `container` and Podman are interchangeable executors of the
 same declared OCI contract. GitHub Actions owns event handling, trust routing,
 and job presentation only.
 
-The local Collider worker accepts content-addressed snapshots directly from
-development workspaces, so the same M2 Ultra capacity is available before code
-is committed or pushed. Local and Actions builds share one queue, one resource
-budget, one lock domain, and one artifact model. The 128 GB host always retains
-32 GiB and four CPU cores outside build reservations.
+The native Collider worker accepts content-addressed snapshots directly from the
+M2-owned workspace and from explicitly imported workspaces, so the same capacity
+is available before code is committed or pushed. Development and Actions builds
+share one queue, one resource budget, one lock domain, and one artifact model.
+The 128 GB host always retains four CPU cores and 16 GiB for macOS while a
+running development machine retains four CPU cores and 24 GiB for interactive
+work.
 
 Public pull requests never execute on Nucleus infrastructure. Build workers
 hold no release authority. Native x86_64 and physical hardware runners provide
-the evidence that translated builds cannot provide. Every published product is
-traceable from exact source and builder identities through native
-qualification to its final signed artifact.
+the evidence that translated builds cannot provide. Those qualifiers are
+replaceable implementations of declared capability manifests rather than
+dependencies on one Ubuntu installation. Every published product is traceable
+from exact source and builder identities through native qualification to its
+final signed artifact.
