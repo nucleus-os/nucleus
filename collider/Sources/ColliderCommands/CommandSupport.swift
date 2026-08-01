@@ -39,12 +39,17 @@ struct TaskControls: Sendable {
                     decoding: try JSONEncoder.sorted.encode(report),
                     as: UTF8.self))
         } else if dryRun || explain {
-            let planningMilliseconds =
-                Double(report.planningDurationNanoseconds) / 1_000_000
-            print(
+            let planningMicroseconds =
+                report.planningDurationNanoseconds / 1_000
+            let fractionalMilliseconds = String(planningMicroseconds % 1_000)
+            let paddedFraction =
                 String(
-                    format: "planning  %.3f ms",
-                    planningMilliseconds))
+                    repeating: "0",
+                    count: 3 - fractionalMilliseconds.count)
+                + fractionalMilliseconds
+            print(
+                "planning  \(planningMicroseconds / 1_000)."
+                    + "\(paddedFraction) ms")
             for entry in report.plan {
                 let state =
                     entry.isClean

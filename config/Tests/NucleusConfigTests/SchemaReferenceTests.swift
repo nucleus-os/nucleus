@@ -1,5 +1,6 @@
-import FoundationEssentials
+import Foundation
 import Testing
+
 @testable import NucleusConfig
 
 // Guards on the value the unknown-key audit derives its key set from.
@@ -34,23 +35,29 @@ import Testing
         switch mirror.displayStyle {
         case .optional:
             guard let wrapped = mirror.children.first?.value else {
-                return [Gap(
-                    path: path,
-                    problem: "is nil, so its key is absent from the audit")]
+                return [
+                    Gap(
+                        path: path,
+                        problem: "is nil, so its key is absent from the audit")
+                ]
             }
             return gaps(in: wrapped, path: path, depth: depth + 1)
         case .collection, .set:
             guard let first = mirror.children.first?.value else {
-                return [Gap(
-                    path: path,
-                    problem: "is empty, so its element keys are unaudited")]
+                return [
+                    Gap(
+                        path: path,
+                        problem: "is empty, so its element keys are unaudited")
+                ]
             }
             return gaps(in: first, path: path + "[0]", depth: depth + 1)
         case .dictionary:
             guard mirror.children.first != nil else {
-                return [Gap(
-                    path: path,
-                    problem: "is empty, so its entry keys are unaudited")]
+                return [
+                    Gap(
+                        path: path,
+                        problem: "is empty, so its entry keys are unaudited")
+                ]
             }
             return []
         default:

@@ -1,6 +1,9 @@
-import FoundationEssentials
-import FoundationInternationalization
+import Foundation
 import NucleusBenchmarkMetricsC
+
+#if canImport(FoundationInternationalization)
+import FoundationInternationalization
+#endif
 
 public struct BenchmarkResourceSnapshot: Sendable, Equatable {
     public var heapLiveBytes: UInt64
@@ -409,7 +412,8 @@ enum BenchmarkReportWriter {
     }
 
     private static func atomicWrite(_ data: Data, to destination: URL) throws {
-        let temporary = destination
+        let temporary =
+            destination
             .deletingLastPathComponent()
             .appendingPathComponent(".\(destination.lastPathComponent).tmp")
         try data.write(to: temporary, options: .atomic)
@@ -447,20 +451,23 @@ enum BenchmarkReportWriter {
             "maximum_resident_bytes_delta",
             "open_file_descriptors_delta",
         ]
-        return " resources=" + preferred.compactMap { metric in
-            measurements[metric].map { "\(metric):\($0.median)" }
-        }.joined(separator: ",")
+        return " resources="
+            + preferred.compactMap { metric in
+                measurements[metric].map { "\(metric):\($0.median)" }
+            }.joined(separator: ",")
     }
 
     private static func phaseSummary(
         _ timings: [String: BenchmarkTiming]
     ) -> String {
         guard !timings.isEmpty else { return "" }
-        return " phases_ms=" + timings.keys.sorted().map { phase in
-            let milliseconds = Double(
-                timings[phase]?.medianNanoseconds ?? 0) / 1_000_000
-            return "\(phase):" + milliseconds.formatted(millisecondFormat)
-        }.joined(separator: ",")
+        return " phases_ms="
+            + timings.keys.sorted().map { phase in
+                let milliseconds =
+                    Double(
+                        timings[phase]?.medianNanoseconds ?? 0) / 1_000_000
+                return "\(phase):" + milliseconds.formatted(millisecondFormat)
+            }.joined(separator: ",")
     }
 
     private static let millisecondFormat = FloatingPointFormatStyle<Double>.number
@@ -480,12 +487,13 @@ public enum BenchmarkProgram {
             arguments,
             productName: productName)
         let results = try await BenchmarkRunner(
-            iterations: options.iterations).run(workloads)
+            iterations: options.iterations
+        ).run(workloads)
         let report = BenchmarkReport(
             metricSchema: "nucleus.headless.v3",
             deterministicSeedPolicy:
                 "Every workload uses the recorded fixed seed; repeated structural "
-                    + "samples must be byte-for-byte equivalent.",
+                + "samples must be byte-for-byte equivalent.",
             environment: .init(
                 architecture: architecture,
                 buildConfiguration: buildConfiguration,
@@ -494,14 +502,14 @@ public enum BenchmarkProgram {
             metricSemantics: .init(
                 resourceMeasurements:
                     "Per-iteration glibc allocator live/mapped bytes, process "
-                        + "maximum RSS, and /proc/self/fd descriptor counts. "
-                        + "Reported as physical diagnostics, not exact budgets.",
+                    + "maximum RSS, and /proc/self/fd descriptor counts. "
+                    + "Reported as physical diagnostics, not exact budgets.",
                 copiedBytes:
                     "Payload bytes deliberately materialized or copied by the "
-                        + "workload's first-party algorithm.",
+                    + "workload's first-party algorithm.",
                 timing:
                     "ContinuousClock diagnostics only; wall-clock values never fail "
-                        + "a benchmark budget."),
+                    + "a benchmark budget."),
             workloads: results)
         try BenchmarkReportWriter.write(
             report,
@@ -518,10 +526,11 @@ public enum BenchmarkProgram {
         ) throws -> Self {
             var output = URL(
                 fileURLWithPath:
-                    FileManager.default.currentDirectoryPath)
-                .appendingPathComponent(
-                    ".build/nucleus-benchmarks",
-                    isDirectory: true)
+                    FileManager.default.currentDirectoryPath
+            )
+            .appendingPathComponent(
+                ".build/nucleus-benchmarks",
+                isDirectory: true)
             var iterations = 3
             var index = 0
             while index < arguments.count {
@@ -538,8 +547,8 @@ public enum BenchmarkProgram {
                 case "--iterations":
                     index += 1
                     guard index < arguments.count,
-                          let value = Int(arguments[index]),
-                          value > 1
+                        let value = Int(arguments[index]),
+                        value > 1
                     else {
                         throw BenchmarkFailure.argument(
                             "--iterations requires an integer greater than one")
@@ -624,8 +633,8 @@ private func durationNanoseconds(_ duration: Duration) -> UInt64 {
     return total.overflow ? .max : total.partialValue
 }
 
-public extension UInt64 {
-    mutating func mix(_ value: UInt64) {
+extension UInt64 {
+    public mutating func mix(_ value: UInt64) {
         self ^= value &+ 0x9e37_79b9_7f4a_7c15 &+ (self << 6) &+ (self >> 2)
     }
 }

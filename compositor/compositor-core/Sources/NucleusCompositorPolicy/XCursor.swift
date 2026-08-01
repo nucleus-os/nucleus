@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 
 struct XCursorImage: Sendable {
     var width: UInt32
@@ -9,8 +9,8 @@ struct XCursorImage: Sendable {
 }
 
 enum XCursor {
-    private static let magic: UInt32 = 0x72756358
-    private static let imageType: UInt32 = 0xFFFD0002
+    private static let magic: UInt32 = 0x7275_6358
+    private static let imageType: UInt32 = 0xFFFD_0002
     private static let fileHeaderByteCount = 16
     private static let tocEntryByteCount = 12
     private static let imageHeaderByteCount = 36
@@ -50,8 +50,9 @@ enum XCursor {
         var bestDiff = UInt32.max
         for _ in 0..<count {
             guard let chunkType = reader.u32(from: bytes),
-                  let subtype = reader.u32(from: bytes),
-                  let position = reader.u32(from: bytes) else { return nil }
+                let subtype = reader.u32(from: bytes),
+                let position = reader.u32(from: bytes)
+            else { return nil }
             guard chunkType == imageType else { continue }
             let diff = subtype >= targetSize ? subtype - targetSize : targetSize - subtype
             if diff < bestDiff {
@@ -71,9 +72,10 @@ enum XCursor {
         guard reader.u32(from: bytes) == best.subtype else { return nil }
         _ = reader.u32(from: bytes)
         guard let width = reader.u32(from: bytes),
-              let height = reader.u32(from: bytes),
-              let hotSpotX = reader.u32(from: bytes),
-              let hotSpotY = reader.u32(from: bytes) else { return nil }
+            let height = reader.u32(from: bytes),
+            let hotSpotX = reader.u32(from: bytes),
+            let hotSpotY = reader.u32(from: bytes)
+        else { return nil }
         _ = reader.u32(from: bytes)
         guard width > 0, height > 0, width <= 256, height <= 256 else { return nil }
         guard
@@ -89,7 +91,8 @@ enum XCursor {
             !byteCountOverflow,
             let pixels = reader.data(byteCount, from: bytes)
         else { return nil }
-        return XCursorImage(width: width, height: height, hotSpotX: hotSpotX, hotSpotY: hotSpotY, pixels: pixels)
+        return XCursorImage(
+            width: width, height: height, hotSpotX: hotSpotX, hotSpotY: hotSpotY, pixels: pixels)
     }
 
     private struct Reader {

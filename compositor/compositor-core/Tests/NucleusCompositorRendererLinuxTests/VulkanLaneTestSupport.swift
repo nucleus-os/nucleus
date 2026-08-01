@@ -1,10 +1,11 @@
-import FoundationEssentials
+import Foundation
 import Glibc
 import NucleusSkiaGraphiteBridge
-@testable import NucleusRenderer
 import Testing
 import Vulkan
 import VulkanC
+
+@testable import NucleusRenderer
 
 /// The process Vulkan loader and installed ICDs are shared by every suite in this
 /// test product. Swift Testing runs suites concurrently, but concurrent loader
@@ -72,7 +73,8 @@ func requireProvisionedDrmRenderNode() throws -> String {
         !path.isEmpty
     else {
         try Test.cancel(
-            "NUCLEUS_TEST_DRM_RENDER_NODE is not provisioned; the DRM lane runs only under Collider on a machine with a render node")
+            "NUCLEUS_TEST_DRM_RENDER_NODE is not provisioned; the DRM lane runs only under Collider on a machine with a render node"
+        )
     }
     return path
 }
@@ -101,9 +103,11 @@ func keepAlive<T: ~Copyable>(_ value: borrowing T) {}
 func withRequiredVulkanGraphite<Result>(
     presentation: VkRequirements.PresentationMode,
     applicationName: String,
-    queueFamilyQualification: ((
-        VkInstance, VkPhysicalDevice, UInt32
-    ) -> Bool)? = nil,
+    queueFamilyQualification: (
+        (
+            VkInstance, VkPhysicalDevice, UInt32
+        ) -> Bool
+    )? = nil,
     _ body: (
         borrowing DeviceOwner,
         DeviceOwner.PhysicalSelection,
@@ -123,9 +127,11 @@ func withRequiredVulkanGraphite<Result>(
 private func withExclusiveRequiredVulkanGraphite<Result>(
     presentation: VkRequirements.PresentationMode,
     applicationName: String,
-    queueFamilyQualification: ((
-        VkInstance, VkPhysicalDevice, UInt32
-    ) -> Bool)?,
+    queueFamilyQualification: (
+        (
+            VkInstance, VkPhysicalDevice, UInt32
+        ) -> Bool
+    )?,
     _ body: (
         borrowing DeviceOwner,
         DeviceOwner.PhysicalSelection,
@@ -134,27 +140,33 @@ private func withExclusiveRequiredVulkanGraphite<Result>(
     ) throws -> Result
 ) throws -> Result {
     let contract = VkRequirements.contract(for: presentation)
-    guard let instance = unsafe InstanceOwner.create(
-        base: VK.loadBaseDispatch(),
-        applicationName: applicationName,
-        contract: contract,
-        enableValidation: false
-    ) else {
+    guard
+        let instance = unsafe InstanceOwner.create(
+            base: VK.loadBaseDispatch(),
+            applicationName: applicationName,
+            contract: contract,
+            enableValidation: false
+        )
+    else {
         throw VulkanLaneTestFailure.instance(presentation)
     }
-    guard let selection = unsafe DeviceOwner.selectPhysicalDevice(
-        instance: instance.handle,
-        dispatch: instance.dispatch,
-        contract: contract,
-        queueFamilyPresentationSupport: queueFamilyQualification
-    ) else {
+    guard
+        let selection = unsafe DeviceOwner.selectPhysicalDevice(
+            instance: instance.handle,
+            dispatch: instance.dispatch,
+            contract: contract,
+            queueFamilyPresentationSupport: queueFamilyQualification
+        )
+    else {
         throw VulkanLaneTestFailure.physicalDevice(presentation)
     }
-    guard let device = unsafe DeviceOwner.create(
-        selection: selection,
-        instanceDispatch: instance.dispatch,
-        contract: contract
-    ) else {
+    guard
+        let device = unsafe DeviceOwner.create(
+            selection: selection,
+            instanceDispatch: instance.dispatch,
+            contract: contract
+        )
+    else {
         throw VulkanLaneTestFailure.logicalDevice(presentation)
     }
     guard let queue = unsafe device.queue(family: selection.graphicsQueueFamily) else {

@@ -234,13 +234,14 @@ import Testing
     #expect(!build.arguments.contains("--iidfile"))
 
     let digest = "sha256:" + String(repeating: "d", count: 64)
+    let name = "localhost/nucleus-build:latest"
     let inspection = """
-        [{"configuration":{"descriptor":{"digest":"\(digest)"}}}]
+        [{"configuration":{"descriptor":{"digest":"\(digest)"},"name":"\(name)"}}]
         """
     #expect(
         try executor.imageIdentifier(
             candidate: root.appending("candidate"),
-            inspectionOutput: inspection) == digest)
+            inspectionOutput: inspection) == "\(name)\n\(digest)")
 
     let execution = OCIExecution(
         executionPlatform: .linuxAMD64OCI,

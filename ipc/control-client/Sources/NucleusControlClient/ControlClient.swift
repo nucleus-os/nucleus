@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 import Glibc
 public import NucleusControlProtocol
 import NucleusIPCTransport
@@ -17,7 +17,8 @@ public enum ControlSocket {
         guard let runtimeDirectory = environment["XDG_RUNTIME_DIR"],
             !runtimeDirectory.isEmpty
         else { return nil }
-        let sessionID = environment["NUCLEUS_SESSION_ID"]
+        let sessionID =
+            environment["NUCLEUS_SESSION_ID"]
             ?? environment["WAYLAND_DISPLAY"]
             ?? "wayland-0"
         return "\(runtimeDirectory)/nucleus/\(sessionID)/control.sock"
@@ -109,8 +110,9 @@ public struct ControlClient: Sendable {
             let responseEnvelope = try ControlCoding.decoder().decode(
                 ControlResponseEnvelope.self,
                 from: Data(packet.bytes))
-            guard responseEnvelope.protocolVersion
-                == ControlProtocolVersion.current
+            guard
+                responseEnvelope.protocolVersion
+                    == ControlProtocolVersion.current
             else {
                 throw ControlProtocolError.unsupportedVersion(
                     expected: ControlProtocolVersion.current,

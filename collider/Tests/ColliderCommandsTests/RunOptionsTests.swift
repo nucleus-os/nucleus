@@ -1,3 +1,4 @@
+#if os(Linux)
 import Foundation
 import NucleusSessionProtocol
 import Testing
@@ -50,16 +51,17 @@ func androidRuntimeLogWindowFollowsTheProductionDiagnostics() {
             isDirectory: true))
 
     #expect(invocation.executable == "kitty")
-    #expect(invocation.arguments == [
-        "--class", "nucleus.android.runtime-log",
-        "--title", "Nucleus Android Runtime",
-        "--", "tail", "--lines=200", "--follow=name", "--retry",
-        "/runs/current/android-runtime/android-kmsg.log",
-        "/runs/current/android-runtime/android-logcat.log",
-        "/runs/current/android-runtime/android-gfxstream-broker.log",
-        "/runs/current/android-runtime/android-display-host.log",
-        "/runs/current/android-runtime/android-progress.jsonl",
-    ])
+    #expect(
+        invocation.arguments == [
+            "--class", "nucleus.android.runtime-log",
+            "--title", "Nucleus Android Runtime",
+            "--", "tail", "--lines=200", "--follow=name", "--retry",
+            "/runs/current/android-runtime/android-kmsg.log",
+            "/runs/current/android-runtime/android-logcat.log",
+            "/runs/current/android-runtime/android-gfxstream-broker.log",
+            "/runs/current/android-runtime/android-display-host.log",
+            "/runs/current/android-runtime/android-progress.jsonl",
+        ])
 }
 
 @Test
@@ -85,8 +87,9 @@ func runProducesOneTypedConfigurationForBothSessionChildren() throws {
     #expect(configuration.drmDevicePath == "/dev/dri/renderD129")
     #expect(configuration.wallpaperPath == "~/Pictures/typed.jpeg")
     #expect(configuration.xwaylandExecutablePath == "/usr/bin/Xwayland")
-    #expect(try SessionConfiguration(encoded: configuration.encoded)
-        == configuration)
+    #expect(
+        try SessionConfiguration(encoded: configuration.encoded)
+            == configuration)
 }
 
 @Test
@@ -186,3 +189,4 @@ private func parsedRunOptions(_ arguments: [String]) throws -> RunOptions {
     let command = try Run.parse(arguments)
     return try command.resolvedOptions().validated()
 }
+#endif

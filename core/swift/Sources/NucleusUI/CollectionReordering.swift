@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 
 package let collectionReorderContentType =
     "application/x-nucleus-collection-item-v1"

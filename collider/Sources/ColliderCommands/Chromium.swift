@@ -37,7 +37,8 @@ struct ChromiumCommand {
         }
         let root = context.layout.rootPath
         let cache = context.cacheRoot.path
-        let prefix = installPrefix
+        let prefix =
+            installPrefix
             ?? context.environment["PREFIX"]
             ?? context.environment["HOME"].map { $0 + "/.local" }
             ?? "/tmp/nucleus-browser"
@@ -49,13 +50,14 @@ struct ChromiumCommand {
                 cacheRoot: FilePath(cache).appending("nucleus/cef"),
                 installPrefix: FilePath(prefix),
                 jobs: min(ProcessInfo.processInfo.activeProcessorCount, 16)))
-        let selectedName = switch operation {
-        case .doctor: preconditionFailure("doctor handled by capability registry")
-        case .bootstrap: "browser.bootstrap-source"
-        case .build: "browser.retention"
-        case .test: "browser.test"
-        case .install: "browser.install"
-        }
+        let selectedName =
+            switch operation {
+            case .doctor: preconditionFailure("doctor handled by capability registry")
+            case .bootstrap: "browser.bootstrap-source"
+            case .build: "browser.retention"
+            case .test: "browser.test"
+            case .install: "browser.install"
+            }
         try await context.execute(
             tasks: tasks,
             selected: [TaskID(rawValue: selectedName)],
@@ -66,9 +68,8 @@ struct ChromiumCommand {
         let digest = try ArtifactHasher.digest(
             file: FilePath(
                 context.root.appendingPathComponent(
-                    "chromium/source.lock.json").path))
-        return digest.bytes.prefix(12).map {
-            String(format: "%02x", $0)
-        }.joined()
+                    "chromium/source.lock.json"
+                ).path))
+        return String(digest.hexadecimal.prefix(24))
     }
 }

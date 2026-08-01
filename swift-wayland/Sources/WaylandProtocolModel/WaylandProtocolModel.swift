@@ -1,5 +1,8 @@
 import Foundation
+
+#if canImport(FoundationXML)
 import FoundationXML
+#endif
 
 public struct WaylandDescription: Equatable, Sendable {
     public let summary: String?
@@ -159,13 +162,13 @@ public enum WaylandProtocolParseError: Error, Equatable, CustomStringConvertible
 
     public var description: String {
         switch self {
-        case let .invalidXML(path, message):
+        case .invalidXML(let path, let message):
             return "\(path): invalid Wayland protocol XML: \(message)"
-        case let .missingAttribute(path, element, attribute):
+        case .missingAttribute(let path, let element, let attribute):
             return "\(path): <\(element)> is missing required '\(attribute)'"
-        case let .invalidInteger(path, element, attribute, value):
+        case .invalidInteger(let path, let element, let attribute, let value):
             return "\(path): <\(element)> has invalid \(attribute) value '\(value)'"
-        case let .nestedMessage(path, interface):
+        case .nestedMessage(let path, let interface):
             return "\(path): \(interface) contains nested request/event elements"
         }
     }
@@ -356,9 +359,9 @@ private final class ParserDelegate: NSObject, XMLParserDelegate {
             throw WaylandProtocolParseError.invalidXML(
                 path: path,
                 message: "<arg> appears outside a request or event")
-        case let .request(interface, message):
+        case .request(let interface, let message):
             protocolDocument.interfaces[interface].requests[message].arguments.append(argument)
-        case let .event(interface, message):
+        case .event(let interface, let message):
             protocolDocument.interfaces[interface].events[message].arguments.append(argument)
         }
     }
@@ -372,7 +375,8 @@ private final class ParserDelegate: NSObject, XMLParserDelegate {
         protocolDocument.interfaces[interface].enumerations.append(enumeration)
         currentEnumeration = (
             interface,
-            protocolDocument.interfaces[interface].enumerations.count - 1)
+            protocolDocument.interfaces[interface].enumerations.count - 1
+        )
     }
 
     private func appendEntry(_ attributes: [String: String]) throws {
@@ -404,9 +408,9 @@ private final class ParserDelegate: NSObject, XMLParserDelegate {
     private func beginDescription(_ attributes: [String: String]) {
         let target: DescriptionTarget?
         switch messageScope {
-        case let .request(interface, message):
+        case .request(let interface, let message):
             target = .request(interface: interface, message: message)
-        case let .event(interface, message):
+        case .event(let interface, let message):
             target = .event(interface: interface, message: message)
         case .none:
             if let currentEnumeration {
@@ -426,20 +430,21 @@ private final class ParserDelegate: NSObject, XMLParserDelegate {
 
     private func finishDescription() {
         guard let descriptionTarget else { return }
-        let normalizedBody = descriptionBody
+        let normalizedBody =
+            descriptionBody
             .split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
         let description = WaylandDescription(
             summary: descriptionSummary,
             body: normalizedBody.isEmpty ? nil : normalizedBody)
         switch descriptionTarget {
-        case let .interface(interface):
+        case .interface(let interface):
             protocolDocument.interfaces[interface].description = description
-        case let .request(interface, message):
+        case .request(let interface, let message):
             protocolDocument.interfaces[interface].requests[message].description = description
-        case let .event(interface, message):
+        case .event(let interface, let message):
             protocolDocument.interfaces[interface].events[message].description = description
-        case let .enumeration(interface, enumeration):
+        case .enumeration(let interface, let enumeration):
             protocolDocument.interfaces[interface]
                 .enumerations[enumeration].description = description
         }

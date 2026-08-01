@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 
 /// Server-owned XCursor asset loader. Theme preference originates in ShellKit;
 /// parsing, validation, fallback pixels, and renderer publication stay here.
@@ -9,13 +9,15 @@ public final class CursorImageLoader: Sendable {
     public init(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) {
-        theme = environment["XCURSOR_THEME"].flatMap { $0.isEmpty ? nil : $0 }
+        theme =
+            environment["XCURSOR_THEME"].flatMap { $0.isEmpty ? nil : $0 }
             ?? "default"
         paths = Self.libraryPath(environment: environment)
     }
 
     func load(name: String, size: UInt32) -> XCursorImage {
-        let names = ([name] + ["left_ptr", "arrow", "top_left_arrow"]).reduce(into: [String]()) { result, candidate in
+        let names = ([name] + ["left_ptr", "arrow", "top_left_arrow"]).reduce(into: [String]()) {
+            result, candidate in
             if !result.contains(candidate) { result.append(candidate) }
         }
         for candidate in names {
@@ -33,7 +35,8 @@ public final class CursorImageLoader: Sendable {
             let themeURL = directory.appendingPathComponent(theme, isDirectory: true)
             let cursorURL = themeURL.appendingPathComponent("cursors").appendingPathComponent(name)
             if let data = try? Data(contentsOf: cursorURL),
-               let image = XCursor.parse(data, targetSize: size) {
+                let image = XCursor.parse(data, targetSize: size)
+            {
                 return image
             }
             if inherits.isEmpty {
@@ -107,10 +110,9 @@ public final class CursorImageLoader: Sendable {
             for col in start..<end {
                 let prev = row > 0 ? arrow[row - 1] : (0, 0)
                 let next = row + 1 < arrow.count ? arrow[row + 1] : (0, 0)
-                let edge = row == 0 || col == start || col == end - 1 ||
-                    row == arrow.count - 1 ||
-                    col < prev.0 || col >= prev.1 ||
-                    col < next.0 || col >= next.1
+                let edge =
+                    row == 0 || col == start || col == end - 1 || row == arrow.count - 1
+                    || col < prev.0 || col >= prev.1 || col < next.0 || col >= next.1
                 let index = (row * width + col) * 4
                 bytes[index + 0] = edge ? 0x00 : 0xFF
                 bytes[index + 1] = edge ? 0x00 : 0xFF
@@ -137,4 +139,5 @@ private func trimmedWhitespace(_ value: Substring) -> Substring {
     return value[lowerBound..<upperBound]
 }
 
-private let defaultPaths = "~/.icons:/usr/share/icons:/usr/share/pixmaps:~/.cursors:/usr/share/cursors/xorg-x11:/usr/X11R6/lib/X11/icons"
+private let defaultPaths =
+    "~/.icons:/usr/share/icons:/usr/share/pixmaps:~/.cursors:/usr/share/cursors/xorg-x11:/usr/X11R6/lib/X11/icons"

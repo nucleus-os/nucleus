@@ -2,11 +2,12 @@ import ColliderCore
 import ColliderPlatformC
 import Crypto
 import Foundation
+import Synchronization
+import SystemPackage
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import Synchronization
-import SystemPackage
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Darwin)
@@ -222,23 +223,24 @@ public actor ColliderDownloads {
         specification: DownloadSpec
     ) throws {
         guard result.finalURL.scheme?.lowercased() == "https",
-              result.finalURL.user == nil,
-              result.finalURL.password == nil
+            result.finalURL.user == nil,
+            result.finalURL.password == nil
         else { throw DownloadFailure.redirectRejected }
         if result.finalURL != specification.url,
-           let finalOrigin = origin(of: result.finalURL),
-           !specification.permittedRedirectOrigins.contains(finalOrigin)
+            let finalOrigin = origin(of: result.finalURL),
+            !specification.permittedRedirectOrigins.contains(finalOrigin)
         {
             throw DownloadFailure.redirectRejected
         }
         if let encoding = result.contentEncoding,
-           encoding.lowercased() != "identity" {
+            encoding.lowercased() != "identity"
+        {
             throw DownloadFailure.contentEncoding(encoding)
         }
         guard let mediaType = result.mediaType?.lowercased(),
-              specification.acceptedMediaTypes.contains(where: {
-                  $0.lowercased() == mediaType
-              })
+            specification.acceptedMediaTypes.contains(where: {
+                $0.lowercased() == mediaType
+            })
         else { throw DownloadFailure.mediaType(result.mediaType ?? "<missing>") }
         let size = try fileSize(result.file)
         guard size <= specification.maximumResponseSize else {
@@ -266,13 +268,13 @@ public actor ColliderDownloads {
     ) throws {
         let received = try fileSize(result.file)
         guard specification.resumption == .validatorRequired,
-              result.status == 200,
-              priorPartial == nil,
-              received > 0,
-              let total = result.contentLength,
-              received < total,
-              total <= specification.maximumResponseSize,
-              result.etag != nil || result.lastModified != nil
+            result.status == 200,
+            priorPartial == nil,
+            received > 0,
+            let total = result.contentLength,
+            received < total,
+            total <= specification.maximumResponseSize,
+            result.etag != nil || result.lastModified != nil
         else {
             throw DownloadFailure.interruptedTransfer
         }
@@ -300,12 +302,12 @@ public actor ColliderDownloads {
     ) throws -> PartialMetadata {
         let segmentSize = try fileSize(result.file)
         guard let range = parseContentRange(result.contentRange),
-              range.start == prior.receivedBytes,
-              range.end >= range.start,
-              range.total == prior.totalSize,
-              range.total <= specification.maximumResponseSize,
-              range.end - range.start + 1 == segmentSize,
-              matchingValidator(result, prior: prior)
+            range.start == prior.receivedBytes,
+            range.end >= range.start,
+            range.total == prior.totalSize,
+            range.total <= specification.maximumResponseSize,
+            range.end - range.start + 1 == segmentSize,
+            matchingValidator(result, prior: prior)
         else { throw DownloadFailure.invalidRangeResponse }
         try appendFile(result.file, to: paths.partial)
         let received = try fileSize(paths.partial)
@@ -366,15 +368,15 @@ public actor ColliderDownloads {
         paths: DownloadStatePaths
     ) throws -> PartialMetadata? {
         guard specification.resumption == .validatorRequired,
-              let data = try? Data(contentsOf: URL(fileURLWithPath: paths.metadata.string)),
-              let metadata = try? JSONDecoder().decode(PartialMetadata.self, from: data),
-              metadata.originalURL == specification.url,
-              metadata.receivedBytes > 0,
-              metadata.receivedBytes < metadata.totalSize,
-              metadata.totalSize <= specification.maximumResponseSize,
-              metadata.validator.isEmpty == false,
-              (try? fileSize(paths.partial)) == metadata.receivedBytes,
-              permittedFinalURL(metadata.finalURL, specification: specification)
+            let data = try? Data(contentsOf: URL(fileURLWithPath: paths.metadata.string)),
+            let metadata = try? JSONDecoder().decode(PartialMetadata.self, from: data),
+            metadata.originalURL == specification.url,
+            metadata.receivedBytes > 0,
+            metadata.receivedBytes < metadata.totalSize,
+            metadata.totalSize <= specification.maximumResponseSize,
+            metadata.validator.isEmpty == false,
+            (try? fileSize(paths.partial)) == metadata.receivedBytes,
+            permittedFinalURL(metadata.finalURL, specification: specification)
         else {
             discardPartial(paths)
             return nil
@@ -387,8 +389,8 @@ public actor ColliderDownloads {
         specification: DownloadSpec
     ) -> Bool {
         guard url.scheme?.lowercased() == "https",
-              url.user == nil,
-              url.password == nil
+            url.user == nil,
+            url.password == nil
         else { return false }
         if url == specification.url { return true }
         guard let value = origin(of: url) else { return false }
@@ -415,8 +417,8 @@ public actor ColliderDownloads {
         }
         switch error {
         case DownloadFailure.requestTimedOut,
-             DownloadFailure.interruptedTransfer,
-             DownloadFailure.incompleteTransfer:
+            DownloadFailure.interruptedTransfer,
+            DownloadFailure.incompleteTransfer:
             return true
         case DownloadFailure.httpStatus(let status):
             return status == 408 || status == 429 || (500...599).contains(status)
@@ -437,8 +439,8 @@ public actor ColliderDownloads {
     }
 
     private func statePaths(for digest: ArtifactDigest) -> DownloadStatePaths {
-        let hex = digest.bytes.map { String(format: "%02x", $0) }.joined()
-        let directory = cacheRoot.appending("sha256").appending(hex)
+        let directory = cacheRoot.appending("sha256").appending(
+            digest.hexadecimal)
         return DownloadStatePaths(
             directory: directory,
             partial: directory.appending("partial"),
@@ -616,9 +618,7 @@ private final class DownloadDelegate: NSObject, URLSessionDataDelegate,
         _ session: URLSession,
         didBecomeInvalidWithError error: (any Error)?
     ) {
-        let waiters = invalidation.withLock { state -> [
-            CheckedContinuation<Void, Never>
-        ] in
+        let waiters = invalidation.withLock { state -> [CheckedContinuation<Void, Never>] in
             state.completed = true
             let waiters = state.waiters
             state.waiters.removeAll()
@@ -664,10 +664,11 @@ private final class DownloadDelegate: NSObject, URLSessionDataDelegate,
                 return false
             }
             state.redirects.append(url)
-            guard DownloadRedirectPolicy.permits(
-                url,
-                redirectCount: state.redirects.count,
-                specification: state.specification)
+            guard
+                DownloadRedirectPolicy.permits(
+                    url,
+                    redirectCount: state.redirects.count,
+                    specification: state.specification)
             else {
                 state.policyError = DownloadFailure.redirectRejected
                 return false
@@ -688,13 +689,14 @@ private final class DownloadDelegate: NSObject, URLSessionDataDelegate,
         _ session: URLSession,
         dataTask: URLSessionDataTask,
         didReceive response: URLResponse,
-        completionHandler: @escaping @Sendable (
-            URLSession.ResponseDisposition
-        ) -> Void
+        completionHandler:
+            @escaping @Sendable (
+                URLSession.ResponseDisposition
+            ) -> Void
     ) {
         let disposition = states.withLock { states -> URLSession.ResponseDisposition in
             guard let state = states[dataTask.taskIdentifier],
-                  let response = response as? HTTPURLResponse
+                let response = response as? HTTPURLResponse
             else { return .cancel }
             state.response = response
             if response.expectedContentLength
@@ -716,8 +718,8 @@ private final class DownloadDelegate: NSObject, URLSessionDataDelegate,
     ) {
         let update = states.withLock { states -> DownloadProgress? in
             guard let state = states[dataTask.taskIdentifier],
-                  state.policyError == nil,
-                  let descriptor = state.descriptor
+                state.policyError == nil,
+                let descriptor = state.descriptor
             else { return nil }
             state.receivedBytes += Int64(data.count)
             guard state.receivedBytes <= state.specification.maximumResponseSize else {
@@ -749,23 +751,24 @@ private final class DownloadDelegate: NSObject, URLSessionDataDelegate,
         task: URLSessionTask,
         didCompleteWithError error: (any Error)?
     ) {
-        let completion = states.withLock { states -> (
-            CheckedContinuation<TransferResult, any Error>,
-            Result<TransferResult, any Error>
-        )? in
+        let completion = states.withLock {
+            states -> (
+                CheckedContinuation<TransferResult, any Error>,
+                Result<TransferResult, any Error>
+            )? in
             guard let state = states.removeValue(forKey: task.taskIdentifier),
-                  let continuation = state.continuation
+                let continuation = state.continuation
             else { return nil }
             if let descriptor = state.descriptor {
                 if state.policyError == nil,
-                   collider_sync_file(descriptor.rawValue) != 0
+                    collider_sync_file(descriptor.rawValue) != 0
                 {
                     state.policyError = Errno(rawValue: errno)
                 }
                 do {
                     try descriptor.close()
                     state.transferComplete = state.policyError == nil
-                } catch where state.policyError == nil {
+                } catch  where state.policyError == nil {
                     state.policyError = error
                 } catch {}
                 state.descriptor = nil
@@ -774,33 +777,38 @@ private final class DownloadDelegate: NSObject, URLSessionDataDelegate,
                 return (continuation, .failure(policyError))
             }
             guard state.transferComplete,
-                  let response = state.response,
-                  let finalURL = response.url
+                let response = state.response,
+                let finalURL = response.url
             else {
                 if let error { return (continuation, .failure(error)) }
                 return (continuation, .failure(DownloadFailure.missingResponse))
             }
-            let interrupted = if let error = error as? URLError {
-                error.code == .networkConnectionLost
-            } else {
-                false
-            }
+            let interrupted =
+                if let error = error as? URLError {
+                    error.code == .networkConnectionLost
+                } else {
+                    false
+                }
             if let error, !interrupted {
                 return (continuation, .failure(error))
             }
-            return (continuation, .success(TransferResult(
-                status: response.statusCode,
-                file: state.transfer,
-                finalURL: finalURL,
-                mediaType: response.mimeType,
-                contentEncoding: response.value(forHTTPHeaderField: "Content-Encoding"),
-                contentLength: response.expectedContentLength >= 0
-                    ? response.expectedContentLength : nil,
-                contentRange: response.value(forHTTPHeaderField: "Content-Range"),
-                etag: response.value(forHTTPHeaderField: "ETag"),
-                lastModified: response.value(forHTTPHeaderField: "Last-Modified"),
-                redirects: state.redirects,
-                transportInterrupted: interrupted)))
+            return (
+                continuation,
+                .success(
+                    TransferResult(
+                        status: response.statusCode,
+                        file: state.transfer,
+                        finalURL: finalURL,
+                        mediaType: response.mimeType,
+                        contentEncoding: response.value(forHTTPHeaderField: "Content-Encoding"),
+                        contentLength: response.expectedContentLength >= 0
+                            ? response.expectedContentLength : nil,
+                        contentRange: response.value(forHTTPHeaderField: "Content-Range"),
+                        etag: response.value(forHTTPHeaderField: "ETag"),
+                        lastModified: response.value(forHTTPHeaderField: "Last-Modified"),
+                        redirects: state.redirects,
+                        transportInterrupted: interrupted))
+            )
         }
         if let (continuation, result) = completion { continuation.resume(with: result) }
         _ = session
@@ -814,10 +822,10 @@ package enum DownloadRedirectPolicy {
         specification: DownloadSpec
     ) -> Bool {
         guard redirectCount <= specification.maximumRedirects,
-              url.scheme?.lowercased() == "https",
-              url.user == nil,
-              url.password == nil,
-              let redirectOrigin = origin(of: url)
+            url.scheme?.lowercased() == "https",
+            url.user == nil,
+            url.password == nil,
+            let redirectOrigin = origin(of: url)
         else { return false }
         return specification.permittedRedirectOrigins.contains(redirectOrigin)
     }
@@ -876,20 +884,20 @@ private func parseContentRange(_ value: String?) -> ByteRange? {
     guard let value, value.hasPrefix("bytes ") else { return nil }
     let fields = value.dropFirst(6).split(separator: "/", omittingEmptySubsequences: false)
     guard fields.count == 2,
-          let total = Int64(fields[1])
+        let total = Int64(fields[1])
     else { return nil }
     let bounds = fields[0].split(separator: "-", omittingEmptySubsequences: false)
     guard bounds.count == 2,
-          let start = Int64(bounds[0]),
-          let end = Int64(bounds[1])
+        let start = Int64(bounds[0]),
+        let end = Int64(bounds[1])
     else { return nil }
     return ByteRange(start: start, end: end, total: total)
 }
 
 private func origin(of url: URL?) -> String? {
     guard let url,
-          let scheme = url.scheme?.lowercased(),
-          let host = url.host?.lowercased()
+        let scheme = url.scheme?.lowercased(),
+        let host = url.host?.lowercased()
     else { return nil }
     let port = url.port.map { ":\($0)" } ?? ""
     return "\(scheme)://\(host)\(port)"

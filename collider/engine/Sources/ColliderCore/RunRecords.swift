@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 
 public struct RunID: RawRepresentable, Hashable, Codable, Sendable,
     CustomStringConvertible

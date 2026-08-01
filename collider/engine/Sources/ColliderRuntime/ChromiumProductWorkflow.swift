@@ -216,9 +216,7 @@ extension ColliderRuntime {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         let digest = ArtifactHasher.digest(bytes: try encoder.encode(identity))
-        let buildID = digest.bytes.prefix(12).map {
-            String(format: "%02x", $0)
-        }.joined()
+        let buildID = String(digest.hexadecimal.prefix(24))
         return ChromiumBuildManifest(identity: identity, buildID: buildID)
     }
 

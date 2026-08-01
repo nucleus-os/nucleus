@@ -1,6 +1,6 @@
 import ArgumentParser
 import ColliderCore
-import FoundationEssentials
+import Foundation
 
 enum DoctorScope: String, CaseIterable, ExpressibleByArgument {
     case all
@@ -8,6 +8,7 @@ enum DoctorScope: String, CaseIterable, ExpressibleByArgument {
     case toolchain
     case android
     case browser
+    case ciMacOSBuilder = "ci-macos-builder"
 }
 
 private struct DoctorReport: Codable {
@@ -30,11 +31,26 @@ private struct DoctorCheck: Codable {
     let detail: String?
 }
 
-private struct HostPrerequisite {
+struct HostPrerequisite {
     let id: String
     let scope: String
     let description: String
+    let remediation: String?
     let evaluate: () async -> String?
+
+    init(
+        id: String,
+        scope: String,
+        description: String,
+        remediation: String? = nil,
+        evaluate: @escaping () async -> String?
+    ) {
+        self.id = id
+        self.scope = scope
+        self.description = description
+        self.remediation = remediation
+        self.evaluate = evaluate
+    }
 }
 
 /// Read-only validation for the host contracts consumed by Collider workflows.
@@ -67,7 +83,7 @@ struct WorkspaceDoctor {
                     scope: prerequisite.scope,
                     description: prerequisite.description,
                     status: detail == nil ? .failed : .passed,
-                    detail: detail))
+                    detail: detail ?? prerequisite.remediation))
         }
         let report = DoctorReport(
             scope: scope.rawValue,
@@ -109,15 +125,27 @@ struct WorkspaceDoctor {
     private func selectedPrerequisites(
         scope: DoctorScope
     ) -> [HostPrerequisite] {
-        let all =
+        var all =
             runtimePrerequisites + toolchainPrerequisites
             + androidPrerequisites + browserPrerequisites
+        if RunnerPlatform.current
+            == RunnerPlatform(
+                operatingSystem: .macOS,
+                architecture: .arm64)
+            || scope == .ciMacOSBuilder
+        {
+            all += macOSBuilderPrerequisites
+        }
         let selected =
             scope == .all
             ? all
             : all.filter { $0.scope == scope.rawValue }
         var seen: Set<String> = []
         return selected.filter { seen.insert($0.id).inserted }
+    }
+
+    private var macOSBuilderPrerequisites: [HostPrerequisite] {
+        MacOSBuilderDoctor(context: context).prerequisites
     }
 
     private var runtimePrerequisites: [HostPrerequisite] {
@@ -163,7 +191,6 @@ struct WorkspaceDoctor {
                 [
                     "swift-toolchain/Package.swift",
                     "swift-toolchain/nucleus-build-presets.ini",
-                    "swift-toolchain/nucleus-build-presets-macos.ini",
                 ],
                 under: context.root,
                 scope: "toolchain")
@@ -257,7 +284,7 @@ struct WorkspaceDoctor {
                 let output = try? await context.run(
                     "swift", ["--version"], capture: true),
                 let firstLine = output.split(separator: "\n").first,
-                firstLine.hasPrefix("Swift version 6.4")
+                firstLine.contains("Swift version 6.4")
             else { return nil }
             return String(firstLine)
         }

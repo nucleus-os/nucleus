@@ -70,7 +70,9 @@ struct RepositoryCache {
             print(String(decoding: try JSONEncoder.sorted.encode(result), as: UTF8.self))
         } else {
             let action = result.dryRun ? "would remove" : "removed"
-            print("cache prune: \(action) \(result.removedRuns.count) run(s), \(formatted(result.reclaimedBytes))")
+            print(
+                "cache prune: \(action) \(result.removedRuns.count) run(s), \(formatted(result.reclaimedBytes))"
+            )
             for run in result.removedRuns { print("  \(run)") }
         }
     }
@@ -79,11 +81,12 @@ struct RepositoryCache {
 private func allocatedSize(_ root: URL) throws -> UInt64 {
     guard FileManager.default.fileExists(atPath: root.path) else { return 0 }
     let keys: [URLResourceKey] = [.isRegularFileKey, .fileAllocatedSizeKey, .fileSizeKey]
-    guard let enumerator = FileManager.default.enumerator(
-        at: root,
-        includingPropertiesForKeys: keys,
-        options: [.skipsPackageDescendants],
-        errorHandler: { _, _ in false })
+    guard
+        let enumerator = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: keys,
+            options: [.skipsPackageDescendants],
+            errorHandler: { _, _ in false })
     else { return 0 }
     var total: UInt64 = 0
     for case let url as URL in enumerator {
@@ -102,5 +105,7 @@ private func formatted(_ bytes: UInt64) -> String {
         value /= 1_024
         index += 1
     }
-    return String(format: index == 0 ? "%.0f %@" : "%.1f %@", value, units[index])
+    guard index > 0 else { return "\(bytes) \(units[index])" }
+    let tenths = Int((value * 10).rounded())
+    return "\(tenths / 10).\(tenths % 10) \(units[index])"
 }

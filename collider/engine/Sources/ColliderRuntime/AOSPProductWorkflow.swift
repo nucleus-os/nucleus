@@ -1,7 +1,10 @@
 import ColliderCore
 import Foundation
-import FoundationXML
 import SystemPackage
+
+#if canImport(FoundationXML)
+import FoundationXML
+#endif
 
 public func aospProductDefinitionDigest(
     productSource: FilePath,
@@ -1312,7 +1315,9 @@ func validateAOSPFontContract(
         }
         let parser = XMLParser(data: Data(contents.utf8))
         let delegate = AOSPFontReferenceParser()
-        parser.delegate = delegate
+        // XMLParser keeps this reference unowned; the local strong reference
+        // outlives the synchronous parse below.
+        unsafe parser.delegate = delegate
         guard parser.parse() else {
             throw RuntimeFailure.invalidOutput(
                 "signed Android font configuration \(path) is invalid: "

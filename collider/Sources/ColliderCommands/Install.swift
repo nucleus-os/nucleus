@@ -1,18 +1,11 @@
+#if os(Linux)
 import ArgumentParser
 import ColliderCore
 import ColliderRuntime
-import FoundationEssentials
+import Foundation
 import NucleusSessionProtocol
 import ShellColliderRecipe
 import SystemPackage
-
-enum RuntimeSanitizer: String, CaseIterable, Equatable,
-    ExpressibleByArgument
-{
-    case address
-    case undefined
-    case thread
-}
 
 struct RuntimeBuildOptions: Equatable {
     var optimization: OptimizationMode = .debug
@@ -368,7 +361,8 @@ struct RuntimeInstaller {
         let declaration = try SessionCapabilityDeclaration(
             identifier: "android",
             executable: publishedPrefix.appendingPathComponent(
-                "libexec/nucleus-android-runtime").path,
+                "libexec/nucleus-android-runtime"
+            ).path,
             arguments: [
                 "--android-root",
                 context.layout.androidRuntime.path,
@@ -487,3 +481,4 @@ struct InstallCommand {
         return context.layout.installPrefix
     }
 }
+#endif

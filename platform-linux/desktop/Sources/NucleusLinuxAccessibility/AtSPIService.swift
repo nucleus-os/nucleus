@@ -1,8 +1,12 @@
-import FoundationEssentials
-import FoundationInternationalization
+import Foundation
 import NucleusLinuxDBus
 public import NucleusLinuxReactor
 public import NucleusUI
+
+#if canImport(FoundationInternationalization)
+import FoundationInternationalization
+#endif
+
 #if canImport(Glibc)
 import Glibc
 #endif
@@ -33,10 +37,8 @@ public final class AtSPIService: LinuxReactorSource {
     private(set) static var liveResourceCounts =
         AtSPILiveResourceCounts()
 
-    public var onAction:
-        (@MainActor (AccessibilityActionRequest) -> Bool)?
-    public var diagnosticHandler:
-        (@MainActor @Sendable (AtSPIServiceError, UInt64) -> Void)?
+    public var onAction: (@MainActor (AccessibilityActionRequest) -> Bool)?
+    public var diagnosticHandler: (@MainActor @Sendable (AtSPIServiceError, UInt64) -> Void)?
 
     enum ConnectionPhase {
         case idle
@@ -132,8 +134,9 @@ public final class AtSPIService: LinuxReactorSource {
         do {
             return try connection.process() || changed
         } catch {
-            transitionToReconnect(after: serviceFailure(
-                error, operation: "processing accessibility bus"))
+            transitionToReconnect(
+                after: serviceFailure(
+                    error, operation: "processing accessibility bus"))
             return true
         }
     }
@@ -161,9 +164,10 @@ public final class AtSPIService: LinuxReactorSource {
         code: Int32
     ) {
         guard !isClosed else { return }
-        transitionToReconnect(after: AtSPIServiceError(
-            operation: operation,
-            code: code))
+        transitionToReconnect(
+            after: AtSPIServiceError(
+                operation: operation,
+                code: code))
     }
 
     // MARK: - Connection and registration
@@ -207,21 +211,24 @@ public final class AtSPIService: LinuxReactorSource {
         pendingCall = nil
         switch result {
         case .failure(let error):
-            transitionToReconnect(after: serviceFailure(
-                error, operation: "querying AT-SPI bus address"))
+            transitionToReconnect(
+                after: serviceFailure(
+                    error, operation: "querying AT-SPI bus address"))
         case .success(let message):
             guard let address = message.readString(), !address.isEmpty else {
-                transitionToReconnect(after: AtSPIServiceError(
-                    operation: "decoding AT-SPI bus address",
-                    code: -EBADMSG))
+                transitionToReconnect(
+                    after: AtSPIServiceError(
+                        operation: "decoding AT-SPI bus address",
+                        code: -EBADMSG))
                 return
             }
             closeConnection(flush: false)
             do {
                 try connectAccessibilityBus(address: address)
             } catch {
-                transitionToReconnect(after: serviceFailure(
-                    error, operation: "connecting to accessibility bus"))
+                transitionToReconnect(
+                    after: serviceFailure(
+                        error, operation: "connecting to accessibility bus"))
             }
         }
     }
@@ -270,14 +277,16 @@ public final class AtSPIService: LinuxReactorSource {
         pendingCall = nil
         switch result {
         case .failure(let error):
-            transitionToReconnect(after: serviceFailure(
-                error, operation: "registering with AT-SPI registry"))
+            transitionToReconnect(
+                after: serviceFailure(
+                    error, operation: "registering with AT-SPI registry"))
             return
         case .success(let message):
             guard let reference = readObjectReference(message) else {
-                transitionToReconnect(after: AtSPIServiceError(
-                    operation: "decoding AT-SPI registry reference",
-                    code: -EBADMSG))
+                transitionToReconnect(
+                    after: AtSPIServiceError(
+                        operation: "decoding AT-SPI registry reference",
+                        code: -EBADMSG))
                 return
             }
             registryName = reference.0
@@ -384,13 +393,13 @@ public final class AtSPIService: LinuxReactorSource {
 
 }
 
-private extension UInt64 {
-    func saturatingAdd(_ other: UInt64) -> UInt64 {
+extension UInt64 {
+    fileprivate func saturatingAdd(_ other: UInt64) -> UInt64 {
         let result = addingReportingOverflow(other)
         return result.overflow ? .max : result.partialValue
     }
 
-    func saturatingMultiply(_ other: UInt64) -> UInt64 {
+    fileprivate func saturatingMultiply(_ other: UInt64) -> UInt64 {
         let result = multipliedReportingOverflow(by: other)
         return result.overflow ? .max : result.partialValue
     }

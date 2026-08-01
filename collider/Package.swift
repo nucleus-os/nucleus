@@ -3,9 +3,9 @@ import PackageDescription
 
 let package = Package(
     name: "collider-cli",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS("27")],
     products: [
-        .executable(name: "collider", targets: ["Collider"]),
+        .executable(name: "collider", targets: ["Collider"])
     ],
     dependencies: [
         .package(path: "engine"),
@@ -24,13 +24,12 @@ let package = Package(
                 .product(name: "ColliderRuntime", package: "engine"),
                 .product(
                     name: "NucleusSessionProtocol",
-                    package: "Nucleus"),
-                .product(
-                    name: "NucleusAndroidContainerContract",
-                    package: "Nucleus"),
+                    package: "Nucleus",
+                    condition: .when(platforms: [.linux])),
                 .product(
                     name: "NucleusAndroidRuntimeCore",
-                    package: "Nucleus"),
+                    package: "Nucleus",
+                    condition: .when(platforms: [.linux])),
                 "AndroidRuntimeColliderRecipe",
                 "ChromiumColliderRecipe",
                 "CompositorAppColliderRecipe",
@@ -103,10 +102,12 @@ let package = Package(
                 "NativeBuilderColliderRecipe",
                 .product(
                     name: "NucleusSessionProtocol",
-                    package: "Nucleus"),
+                    package: "Nucleus",
+                    condition: .when(platforms: [.linux])),
                 .product(
                     name: "NucleusAndroidRuntimeCore",
-                    package: "Nucleus"),
+                    package: "Nucleus",
+                    condition: .when(platforms: [.linux])),
                 "ReactNativeColliderRecipe",
                 "TracyColliderRecipe",
                 "VulkanColliderRecipe",
@@ -134,19 +135,22 @@ for target in package.targets {
     default:
         continue
     }
-    var swiftSettings = (target.swiftSettings ?? []) + [
-        .strictMemorySafety(),
-        .unsafeFlags(["-warnings-as-errors"]),
-        .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-    ]
+    var swiftSettings =
+        (target.swiftSettings ?? []) + [
+            .strictMemorySafety(),
+            .unsafeFlags(["-warnings-as-errors"]),
+            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+        ]
     if let feature = Context.environment["NUCLEUS_SWIFT_DIAGNOSTIC_FEATURE"] {
         swiftSettings.append(.unsafeFlags(["-enable-upcoming-feature", feature]))
     }
     target.swiftSettings = swiftSettings
-    target.cSettings = (target.cSettings ?? []) + [
-        .unsafeFlags(["-Werror"]),
-    ]
-    target.cxxSettings = (target.cxxSettings ?? []) + [
-        .unsafeFlags(["-Werror"]),
-    ]
+    target.cSettings =
+        (target.cSettings ?? []) + [
+            .unsafeFlags(["-Werror"])
+        ]
+    target.cxxSettings =
+        (target.cxxSettings ?? []) + [
+            .unsafeFlags(["-Werror"])
+        ]
 }

@@ -1,9 +1,8 @@
+import Foundation
 import Glibc
-import FoundationEssentials
-public import NucleusWindowClientRuntime
-@_spi(NucleusWindowClientImplementation)
-public import NucleusWindowClientWayland
 public import NucleusUI
+public import NucleusWindowClientRuntime
+@_spi(NucleusWindowClientImplementation) public import NucleusWindowClientWayland
 public import WaylandClientDispatch
 
 public struct NucleusDesktopTransferLimits: Sendable, Equatable {
@@ -141,7 +140,7 @@ struct NucleusDesktopPasteboardResourceCounts: Equatable {
         diagnosticHandler: @escaping DiagnosticHandler = { _, _ in }
     ) {
         guard let manager = client.dataControl,
-              let device = try? manager.getDataDevice(seat: seat.protocolSeat)
+            let device = try? manager.getDataDevice(seat: seat.protocolSeat)
         else {
             return nil
         }
@@ -345,15 +344,18 @@ struct NucleusDesktopPasteboardResourceCounts: Equatable {
             CheckedContinuation<Result<[UInt8], DataTransferFailure>, Never>
     ) {
         guard !isShutdown else {
-            continuation.resume(returning: .failure(
-                .transport("pasteboard adapter is unavailable")))
+            continuation.resume(
+                returning: .failure(
+                    .transport("pasteboard adapter is unavailable")))
             return
         }
         var descriptors = [Int32](repeating: -1, count: 2)
         guard unsafe pipe2(&descriptors, O_CLOEXEC | O_NONBLOCK) == 0 else {
-            continuation.resume(returning: .failure(.transport(
-                "failed to create selection pipe: "
-                    + (unsafe String(cString: strerror(errno))))))
+            continuation.resume(
+                returning: .failure(
+                    .transport(
+                        "failed to create selection pipe: "
+                            + (unsafe String(cString: strerror(errno))))))
             return
         }
         let readDescriptor = TransferFileDescriptor(owning: descriptors[0])
@@ -363,8 +365,9 @@ struct NucleusDesktopPasteboardResourceCounts: Equatable {
                 mime_type: mime,
                 fd: WaylandClientOwnedFileDescriptor(writeDescriptor.release()))
         } catch {
-            continuation.resume(returning: .failure(
-                .transport("failed to request the Wayland selection payload")))
+            continuation.resume(
+                returning: .failure(
+                    .transport("failed to request the Wayland selection payload")))
             return
         }
         let deadline = monotonicNowNanoseconds().saturatingAdd(
@@ -415,9 +418,9 @@ struct NucleusDesktopPasteboardResourceCounts: Equatable {
         let statusFlags = fcntl(fileDescriptor, F_GETFL)
         let descriptorFlags = fcntl(fileDescriptor, F_GETFD)
         guard statusFlags >= 0,
-              descriptorFlags >= 0,
-              fcntl(fileDescriptor, F_SETFL, statusFlags | O_NONBLOCK) == 0,
-              fcntl(fileDescriptor, F_SETFD, descriptorFlags | FD_CLOEXEC) == 0
+            descriptorFlags >= 0,
+            fcntl(fileDescriptor, F_SETFL, statusFlags | O_NONBLOCK) == 0,
+            fcntl(fileDescriptor, F_SETFD, descriptorFlags | FD_CLOEXEC) == 0
         else {
             let failure = PasteboardFailure.transport(
                 "failed to configure selection descriptor: "
@@ -428,8 +431,8 @@ struct NucleusDesktopPasteboardResourceCounts: Equatable {
         }
         let descriptor = TransferFileDescriptor(owning: fileDescriptor)
         guard !isShutdown,
-              let mime,
-              Self.preferredPlainTextMIMETypes.contains(mime)
+            let mime,
+            Self.preferredPlainTextMIMETypes.contains(mime)
         else {
             return
         }
@@ -531,7 +534,7 @@ extension NucleusDesktopPasteboardAdapter: ExtDataControlDeviceV1Events {
             rawID = nil
         }
         guard let rawID,
-              let offer = offers.removeValue(forKey: rawID)
+            let offer = offers.removeValue(forKey: rawID)
         else { return }
         try? offer.proxy.destroy()
     }

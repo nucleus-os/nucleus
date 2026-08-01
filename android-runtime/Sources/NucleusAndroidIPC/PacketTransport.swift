@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 import NucleusAndroidGraphicsContract
 import NucleusIPCTransport
 
@@ -62,7 +62,8 @@ public final class BrokerPacketConnection: @unchecked Sendable {
             let pair = try PacketConnection.socketPair()
             return (
                 BrokerPacketConnection(pair.0),
-                BrokerPacketConnection(pair.1))
+                BrokerPacketConnection(pair.1)
+            )
         } catch {
             throw Self.mapTransportError(error)
         }

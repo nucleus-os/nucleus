@@ -1,5 +1,4 @@
-public import FoundationEssentials
-public import FoundationInternationalization
+public import Foundation
 
 public enum ShellFormatting {
     public static func clockStyle(
@@ -26,7 +25,8 @@ public enum ShellFormatting {
         homeDirectory: URL
     ) -> String {
         guard let configuredPath else {
-            return homeDirectory
+            return
+                homeDirectory
                 .appendingPathComponent("Pictures", isDirectory: true)
                 .appendingPathComponent("Wallpapers", isDirectory: true)
                 .appendingPathComponent("q2zr6juo2rch1.jpeg")
@@ -36,7 +36,8 @@ public enum ShellFormatting {
             return homeDirectory.path
         }
         if configuredPath.hasPrefix("~/") {
-            return homeDirectory
+            return
+                homeDirectory
                 .appendingPathComponent(String(configuredPath.dropFirst(2)))
                 .path
         }

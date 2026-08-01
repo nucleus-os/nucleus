@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 
 public enum NucleusConfigSnapshotCodec {
     public static func encode(

@@ -5,7 +5,7 @@ import SystemPackage
 import Testing
 
 private let testBuilder = SwiftOCIConfiguration(
-    imageID: FilePath("/cache/build-containers/swift/image-id"),
+    imageID: FilePath("/cache/build-containers/swift/image-reference"),
     sourceWorkspace: FilePath("/source"),
     recipeRoot: FilePath("/workspace/swift-toolchain"),
     buildWorkspace: FilePath("/platform/candidate/toolchain-build"),
@@ -56,7 +56,6 @@ private let testBuilder = SwiftOCIConfiguration(
 }
 
 @Test func linuxAndroidFoundationCompilationUsesOnlyTheSwiftBuilder() throws {
-    #if !os(macOS)
     let taskSet = try SwiftPlatformColliderRecipe.androidFoundationDependencies(
         SwiftAndroidFoundationConfiguration(
             downloadCache: FilePath("/cache"),
@@ -82,7 +81,6 @@ private let testBuilder = SwiftOCIConfiguration(
         #expect(!buildOperations.isEmpty)
         #expect(buildOperations.allSatisfy(isContainerizedDependencyOperation))
     }
-    #endif
 }
 
 private func isContainerizedDependencyOperation(
@@ -145,7 +143,7 @@ private func isContainerizedDependencyOperation(
             active: FilePath("/platform/current"),
             recipeRoot: FilePath("/workspace/swift-toolchain"),
             builderContext: FilePath("/workspace/swift-toolchain/build-container"),
-            builderImageID: FilePath("/cache/build-containers/swift/image-id"),
+            builderImageID: FilePath("/cache/build-containers/swift/image-reference"),
             sourceWorkspace: FilePath("/source"),
             buildWorkspace: FilePath("/platform/candidate/toolchain-build"),
             sourceRepositories: [FilePath("swift")],
@@ -153,7 +151,6 @@ private func isContainerizedDependencyOperation(
             hostCC: FilePath("/usr/bin/clang"),
             hostCXX: FilePath("/usr/bin/clang++"),
             bundleName: "swift-test_android.artifactbundle",
-            validationWorkRoot: FilePath("/runs/test/work"),
             sdkDiscoveryLink: FilePath(
                 "/home/.swiftpm/swift-sdks/swift-test_android.artifactbundle"),
             sdkDiscoveryDisplacedItem: FilePath(
@@ -242,29 +239,33 @@ private func isContainerizedDependencyOperation(
     #expect(
         tasks["toolchain.android-sdk-test-aarch64"]?.inputs.contains(
             .dependencyOutput(installedDriver)) == true)
-    #if os(macOS)
-    if case .command(let androidBuild) =
-        tasks["toolchain.android-sdk-build-aarch64"]?.operation
-    {
-        let ndkBin = "/ndk/toolchains/llvm/prebuilt/darwin-x86_64/bin"
-        #expect(androidBuild.environment["CC"] == "\(ndkBin)/clang")
-        #expect(androidBuild.environment["CXX"] == "\(ndkBin)/clang++")
-    } else {
-        Issue.record("macOS Android SDK build is not a native command task")
-    }
-    #else
     guard
         case .runOCI(let hostBuild)? =
             tasks["toolchain.host-build"]?.operation,
         case .runOCI(let androidBuild)? =
-            tasks["toolchain.android-sdk-build-aarch64"]?.operation
+            tasks["toolchain.android-sdk-build-aarch64"]?.operation,
+        case .runOCI(let hostValidation)? =
+            tasks["toolchain.host-validate"]?.operation,
+        case .runOCI(let androidValidation)? =
+            tasks["toolchain.android-sdk-test-aarch64"]?.operation
     else {
-        Issue.record("Linux Swift builds must use the builder container")
+        Issue.record("Swift generation and validation must use the Linux builder")
         return
     }
-    #expect(hostBuild.imageID == FilePath("/cache/build-containers/swift/image-id"))
+    #expect(hostBuild.imageID == FilePath("/cache/build-containers/swift/image-reference"))
     #expect(hostBuild.command.prefix(2) == ["host", "python3"])
     #expect(androidBuild.command.prefix(2) == ["android", "python3"])
+    #expect(
+        hostValidation.command.prefix(3)
+            == [
+                "host", "/recipe/build-container/validate-artifacts.sh", "host",
+            ])
+    #expect(
+        androidValidation.command.prefix(3)
+            == [
+                "android", "/recipe/build-container/validate-artifacts.sh",
+                "android-sdk",
+            ])
     #expect(hostBuild.containerEnvironment["CCACHE_DIR"] == "/ccache")
     #expect(hostBuild.containerEnvironment["SWIFTC"] == nil)
     #expect(hostBuild.containerEnvironment["SWIFT_EXEC"] == nil)
@@ -303,7 +304,6 @@ private func isContainerizedDependencyOperation(
                 source: testBuilder.compilerCache,
                 target: "/ccache",
                 access: .readWrite)))
-    #endif
     for (id, task) in tasks
     where id != "toolchain.activate-generation"
         && id != "toolchain.publish-sdk-discovery"
@@ -338,7 +338,7 @@ private func generationConfiguration(
         active: FilePath("/platform/current"),
         recipeRoot: FilePath("/workspace/swift-toolchain"),
         builderContext: FilePath("/workspace/swift-toolchain/build-container"),
-        builderImageID: FilePath("/cache/build-containers/swift/image-id"),
+        builderImageID: FilePath("/cache/build-containers/swift/image-reference"),
         sourceWorkspace: sourceWorkspace,
         buildWorkspace: buildWorkspace,
         sourceRepositories: [FilePath("swift")],
@@ -346,7 +346,6 @@ private func generationConfiguration(
         hostCC: FilePath("/usr/bin/clang"),
         hostCXX: FilePath("/usr/bin/clang++"),
         bundleName: "swift-test_android.artifactbundle",
-        validationWorkRoot: FilePath("/runs/test/work"),
         sdkDiscoveryLink: FilePath("/home/.swiftpm/swift-sdks/bundle"),
         sdkDiscoveryDisplacedItem: FilePath("/home/.swiftpm/swift-sdks/.legacy"),
         environment: [:])
@@ -381,17 +380,6 @@ private func generationConfiguration(
             generation: current))
 
     let names = superseded.map(\.lastComponent?.string)
-    #if os(macOS)
-    #expect(
-        names == [
-            "android-aarch64",
-            "android-aarch64-\(retired)",
-            "android-aarch64-\(current)",
-            "android-aarch64-macos-\(retired)",
-            "android-x86_64",
-            "android-x86_64-\(current)",
-        ])
-    #else
     #expect(
         names == [
             "android-aarch64-\(retired)",
@@ -399,5 +387,4 @@ private func generationConfiguration(
             "android-aarch64-macos-\(retired)",
             "android-x86_64-\(current)",
         ])
-    #endif
 }

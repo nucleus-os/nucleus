@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 
 /// Modifiers a chord can require.
 ///
@@ -105,9 +105,10 @@ extension KeyChord: Codable {
         do {
             self = try KeyChord.parse(text)
         } catch {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: container.codingPath,
-                debugDescription: error.message))
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: container.codingPath,
+                    debugDescription: error.message))
         }
     }
 
@@ -121,8 +122,8 @@ extension KeyChord: CustomStringConvertible {
     public var description: String { text }
 }
 
-private extension StringProtocol {
-    func trimmed() -> String {
+extension StringProtocol {
+    fileprivate func trimmed() -> String {
         var view = Substring(self)
         while let first = view.first, first == " " || first == "\t" {
             view = view.dropFirst()

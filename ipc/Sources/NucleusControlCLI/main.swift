@@ -1,5 +1,5 @@
 import ArgumentParser
-import FoundationEssentials
+import Foundation
 import Glibc
 import NucleusConfig
 import NucleusControlClient
@@ -96,9 +96,8 @@ private func writeStandardError(_ text: String) {
 }
 
 private func describe(_ output: ControlOutput) -> String {
-    // Millihertz divided down rather than formatted, because
-    // FoundationEssentials has no String(format:) and the interesting rates
-    // (59.94, 143.998) survive plain interpolation intact.
+    // Millihertz keeps the interesting rates (59.94, 143.998) intact through
+    // plain interpolation without locale-sensitive formatting.
     let refresh = Double(output.refreshMillihertz) / 1000
     let state = output.enabled ? "" : "\t(disabled)"
     return "\(output.name)\t\(output.width)x\(output.height)@\(refresh)Hz"
@@ -198,7 +197,7 @@ struct Tile: ParsableCommand {
             throw ValidationError(
                 "unknown direction '\(direction)'; expected one of "
                     + TileDirection.allCases.map(\.rawValue)
-                        .joined(separator: ", "))
+                    .joined(separator: ", "))
         }
         try perform(.action(.tile(resolved)))
     }

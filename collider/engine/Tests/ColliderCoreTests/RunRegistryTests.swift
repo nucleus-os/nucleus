@@ -57,10 +57,14 @@ import Testing
     var oldest: [String] = []
     for index in 0..<existing {
         let id = "2026-01-01T00-00-00Z-\(1_000 + index)"
+        let milliseconds = String(index)
+        let paddedMilliseconds =
+            String(repeating: "0", count: max(0, 3 - milliseconds.count))
+            + milliseconds
         // The oldest run of all did not succeed, so it outlives newer successes.
         try record(
             id,
-            startedAt: String(format: "2026-01-01T00:00:00.%03dZ", index),
+            startedAt: "2026-01-01T00:00:00.\(paddedMilliseconds)Z",
             status: index == 0 ? .failed : .succeeded)
         oldest.append(id)
     }

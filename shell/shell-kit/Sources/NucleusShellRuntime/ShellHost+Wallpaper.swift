@@ -1,9 +1,8 @@
-import FoundationEssentials
+import Foundation
 import NucleusShellProduct
-@_spi(NucleusWindowClientImplementation)
-import NucleusWindowClientWayland
 import NucleusUI
 import NucleusUIEmbedder
+@_spi(NucleusWindowClientImplementation) import NucleusWindowClientWayland
 
 @MainActor
 struct NativeWallpaperSurface {
@@ -18,7 +17,7 @@ struct NativeWallpaperSurface {
 extension ShellHost {
     func reconcileWallpaperSurfaces() {
         guard let productController, let nativePublicationContext,
-              let surfaceRegistry
+            let surfaceRegistry
         else { return }
 
         guard FileManager.default.isReadableFile(atPath: wallpaperPath) else {
@@ -33,35 +32,35 @@ extension ShellHost {
 
         let liveOutputIDs = Set(client.outputs.keys)
         for outputID in Array(wallpaperSurfaces.keys)
-            where !liveOutputIDs.contains(outputID)
-        {
+        where !liveOutputIDs.contains(outputID) {
             destroyWallpaperSurface(outputID: outputID)
         }
 
         for output in client.outputs.values
-            where wallpaperSurfaces[output.registryName] == nil
-        {
+        where wallpaperSurfaces[output.registryName] == nil {
             let outputID = output.registryName
-            let (wallpaperProduct, window) = nativePublicationContext
+            let (wallpaperProduct, window) =
+                nativePublicationContext
                 .withSemanticContext {
-                let wallpaperProduct = productController.makeWallpaper(
-                    forOutput: outputID,
-                    sourcePath: wallpaperPath,
-                    sourceSize: Size(width: 16, height: 9))
-                let window = Window(
-                    title: "Nucleus Wallpaper",
-                    role: .layer,
-                    level: .desktop,
-                    participatesInHitTesting: false)
-                window.setContentView(wallpaperProduct.imageView)
-                return (wallpaperProduct, window)
-            }
+                    let wallpaperProduct = productController.makeWallpaper(
+                        forOutput: outputID,
+                        sourcePath: wallpaperPath,
+                        sourceSize: Size(width: 16, height: 9))
+                    let window = Window(
+                        title: "Nucleus Wallpaper",
+                        role: .layer,
+                        level: .desktop,
+                        participatesInHitTesting: false)
+                    window.setContentView(wallpaperProduct.imageView)
+                    return (wallpaperProduct, window)
+                }
             let config = NucleusDesktopLayerSurfaceConfiguration.shellWallpaper(
                 namespace: "nucleus-shell.wallpaper.\(outputID)")
-            guard let layerSurface = NucleusDesktopLayerSurface(
-                client: client,
-                config: config,
-                output: output)
+            guard
+                let layerSurface = NucleusDesktopLayerSurface(
+                    client: client,
+                    config: config,
+                    output: output)
             else {
                 productController.removeWallpaper(forOutput: outputID)
                 writeErr(
@@ -104,16 +103,18 @@ extension ShellHost {
         height: UInt32
     ) {
         guard let record = wallpaperSurfaces[outputID],
-              let output = client.outputs[outputID],
-              let surfaceRegistry
+            let output = client.outputs[outputID],
+            let surfaceRegistry
         else { return }
 
-        let logicalWidth = Double(width != 0
-            ? width
-            : UInt32(max(1, output.logicalWidth)))
-        let logicalHeight = Double(height != 0
-            ? height
-            : UInt32(max(1, output.logicalHeight)))
+        let logicalWidth = Double(
+            width != 0
+                ? width
+                : UInt32(max(1, output.logicalWidth)))
+        let logicalHeight = Double(
+            height != 0
+                ? height
+                : UInt32(max(1, output.logicalHeight)))
         let configured = surfaceRegistry.configure(
             surfaceID: record.surfaceID,
             logicalOrigin: Point(

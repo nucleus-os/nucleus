@@ -1,9 +1,10 @@
 # Nucleus Swift Platform Recipe
 
-This component owns the Swift 6.4 host-toolchain and Android SDK recipes used
-by Collider. The host compiler, Android runtime libraries, Foundation
-dependencies, SDK artifact bundle, validation products, and distributable host
-archive are one immutable platform generation.
+This component owns the generated Linux amd64 Swift 6.4 toolchain and Android
+SDK recipes used by Collider. The Linux compiler, Android runtime libraries,
+Foundation dependencies, SDK artifact bundle, builder validation products, and
+distributable Linux archive are one immutable platform generation. Native
+macOS builds use the Swift toolchain supplied by the selected Xcode 27.
 
 Run the workflow from the repository root:
 
@@ -22,22 +23,23 @@ The complete Swift sibling source graph is pinned by root gitlinks under
 initialized at its recorded commit and clean. It never selects, fetches,
 resets, cleans, patches, or materializes Swift source.
 
-On Linux, Collider builds the host toolchain, SwiftAndroid runtimes, and their
-native dependencies through `build-container/`. The resulting Podman image is
-selected by its content-addressed image ID; compilation has no network, mounts
-`source/` read-only, and writes only to external build, cache, candidate, and
-artifact roots. The same upstream `build-script` entry point runs on macOS
-natively. Collider owns task identity, ordering, locking, logs, staging,
-validation, packaging, Android SDK wiring, rollback, and atomic activation.
+Collider builds the Linux host toolchain, SwiftAndroid runtimes, their native
+dependencies, and builder-time smoke tests through `build-container/` on every
+orchestration host. The digest-selected image runs as `linux/amd64` through
+Apple `container` on macOS ARM64 and Podman on Linux x86_64. Compilation has no
+network, mounts `source/` read-only, and writes only to external build, cache,
+candidate, and artifact roots. Collider owns task identity, ordering, locking,
+logs, staging, validation, packaging, Android SDK wiring, rollback, and atomic
+activation. Native Linux x86_64 qualification is a separate downstream gate.
 
 The active generation is under
-`~/.cache/nucleus/swift-platforms/<platform>/current`. Collider also publishes
-the validated Android artifact bundle through `~/.swiftpm/swift-sdks`.
+`~/.cache/nucleus/swift-platforms/<source>-linux-amd64/current`. Collider also
+publishes the validated Android artifact bundle through
+`~/.swiftpm/swift-sdks`.
 
 The recipe inputs are:
 
 - `nucleus-build-presets.ini` for the Linux host product.
-- `nucleus-build-presets-macos.ini` for the macOS host product.
 - `nucleus-swift-cmake-overrides.cmake` for Linux libc++ and Blocks runtime
   configuration.
 - `build-container/` for the pinned Linux build environment and its single

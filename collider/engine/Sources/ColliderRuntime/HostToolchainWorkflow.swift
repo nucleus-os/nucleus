@@ -546,7 +546,8 @@ extension ColliderRuntime {
         let executable: Subprocess.Executable =
             switch command.executable {
             case .named(let name): .name(name)
-            case .path(let path), .taskOutput(let path): .path(path)
+            case .path(let path), .taskOutput(let path):
+                .path(.init(path.string))
             }
         let environment = Subprocess.Environment.custom(
             Dictionary(
@@ -566,7 +567,7 @@ extension ColliderRuntime {
             executable,
             arguments: Arguments(command.arguments),
             environment: environment,
-            workingDirectory: command.workingDirectory,
+            workingDirectory: .init(command.workingDirectory.string),
             platformOptions: platform,
             input: CustomWriteInput.inputWriter,
             output: SequenceOutput.sequence,

@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 import Glibc
 import NucleusControlProtocol
 import NucleusIPCTransport
@@ -109,16 +109,18 @@ private final class ControlServiceProcess {
                     events: Int16(POLLIN)),
             ]
             if configurationAvailable {
-                interests.append(LinuxReactorInterest(
-                    token: 2,
-                    fileDescriptor: configuration.fileDescriptor,
-                    events: Int16(POLLIN)))
+                interests.append(
+                    LinuxReactorInterest(
+                        token: 2,
+                        fileDescriptor: configuration.fileDescriptor,
+                        events: Int16(POLLIN)))
             }
             if renderServerAvailable {
-                interests.append(LinuxReactorInterest(
-                    token: 3,
-                    fileDescriptor: renderServer.fileDescriptor,
-                    events: Int16(POLLIN)))
+                interests.append(
+                    LinuxReactorInterest(
+                        token: 3,
+                        fileDescriptor: renderServer.fileDescriptor,
+                        events: Int16(POLLIN)))
             }
             interests += clients.map {
                 LinuxReactorInterest(
@@ -159,9 +161,11 @@ private final class ControlServiceProcess {
                         return 0
                     }
                 default:
-                    guard let index = clients.firstIndex(where: {
-                        Self.clientToken($0.fileDescriptor) == event.token
-                    }) else { continue }
+                    guard
+                        let index = clients.firstIndex(where: {
+                            Self.clientToken($0.fileDescriptor) == event.token
+                        })
+                    else { continue }
                     let connection = clients.remove(at: index)
                     if result.isReadable { processClient(connection) }
                 }
@@ -202,7 +206,7 @@ private final class ControlServiceProcess {
                     available: false)
                 renderIdentity = nil
             case .renderServerConfigurationSubscriber,
-                 .shellConfigurationSubscriber:
+                .shellConfigurationSubscriber:
                 diagnostic(
                     "configuration subscriber sent to control service")
             }
@@ -228,7 +232,7 @@ private final class ControlServiceProcess {
                 clients.append(connection)
             } catch let error as IPCTransportError {
                 if case .systemCall(_, let code) = error,
-                   code == EAGAIN || code == EWOULDBLOCK
+                    code == EAGAIN || code == EWOULDBLOCK
                 {
                     return
                 }
@@ -258,9 +262,10 @@ private final class ControlServiceProcess {
         }
         guard envelope.protocolVersion == ControlProtocolVersion.current else {
             respond(
-                .error(ControlFailure(
-                    code: .unsupportedVersion,
-                    message: "unsupported control protocol version")),
+                .error(
+                    ControlFailure(
+                        code: .unsupportedVersion,
+                        message: "unsupported control protocol version")),
                 requestID: envelope.requestID,
                 to: connection)
             return
@@ -273,19 +278,21 @@ private final class ControlServiceProcess {
         }
         guard packet.descriptors.count == (needsElevation ? 1 : 0) else {
             respond(
-                .error(ControlFailure(
-                    code: packet.descriptors.isEmpty
-                        ? .unauthorized : .invalidRequest,
-                    message: packet.descriptors.isEmpty
-                        ? "request requires an elevated capability"
-                        : "request carried unexpected descriptors")),
+                .error(
+                    ControlFailure(
+                        code: packet.descriptors.isEmpty
+                            ? .unauthorized : .invalidRequest,
+                        message: packet.descriptors.isEmpty
+                            ? "request requires an elevated capability"
+                            : "request carried unexpected descriptors")),
                 requestID: envelope.requestID,
                 to: connection)
             return
         }
-        let elevated = packet.descriptors.first.map {
-            capabilityMatches($0.rawValue)
-        } ?? false
+        let elevated =
+            packet.descriptors.first.map {
+                capabilityMatches($0.rawValue)
+            } ?? false
         let route = ControlRouting.route(
             envelope.request,
             configurationAvailability: configurationAvailability,
@@ -296,9 +303,10 @@ private final class ControlServiceProcess {
             respond(response, requestID: envelope.requestID, to: connection)
         case .unauthorized:
             respond(
-                .error(ControlFailure(
-                    code: .unauthorized,
-                    message: "elevated capability was not granted")),
+                .error(
+                    ControlFailure(
+                        code: .unauthorized,
+                        message: "elevated capability was not granted")),
                 requestID: envelope.requestID,
                 to: connection)
         case .configuration(let request):
@@ -329,10 +337,11 @@ private final class ControlServiceProcess {
             let ownerID = OwnerControlRequestID(rawValue: nextOwnerRequestID)
             nextOwnerRequestID &+= 1
             do {
-                try renderServer.send(OwnerControlCodec.encode(
-                    RenderServerControlRequestEnvelope(
-                        requestID: ownerID,
-                        request: request)))
+                try renderServer.send(
+                    OwnerControlCodec.encode(
+                        RenderServerControlRequestEnvelope(
+                            requestID: ownerID,
+                            request: request)))
                 pendingRenderServer = PendingRequest(
                     connection: connection,
                     requestID: envelope.requestID,
@@ -398,25 +407,28 @@ private final class ControlServiceProcess {
     ) -> ControlResponse {
         switch publication.kind {
         case .exported:
-            return .configuration(ControlConfigurationSnapshot(
-                canonicalSource: publication.exportedSource ?? "",
-                configuredEpochHigh: publication.epoch.high,
-                configuredEpochLow: publication.epoch.low,
-                configuredGeneration: publication.generation.rawValue,
-                renderServerAppliedGeneration:
-                    renderIdentity?.appliedConfigurationGeneration.rawValue))
+            return .configuration(
+                ControlConfigurationSnapshot(
+                    canonicalSource: publication.exportedSource ?? "",
+                    configuredEpochHigh: publication.epoch.high,
+                    configuredEpochLow: publication.epoch.low,
+                    configuredGeneration: publication.generation.rawValue,
+                    renderServerAppliedGeneration:
+                        renderIdentity?.appliedConfigurationGeneration.rawValue))
         case .validated:
             return .validation(publication.diagnostics.map(\.message))
         case .accepted:
             return .completed
         case .rejected:
-            return .error(ControlFailure(
-                code: .rejected,
-                message: publication.rejection ?? "request rejected"))
+            return .error(
+                ControlFailure(
+                    code: .rejected,
+                    message: publication.rejection ?? "request rejected"))
         case .ready, .snapshot, .diagnostics:
-            return .error(ControlFailure(
-                code: .internalTransport,
-                message: "configuration owner returned an invalid response"))
+            return .error(
+                ControlFailure(
+                    code: .internalTransport,
+                    message: "configuration owner returned an invalid response"))
         }
     }
 
@@ -439,8 +451,8 @@ private final class ControlServiceProcess {
                 version: publication.version ?? renderAvailability.version)
             if publication.result == .ready { return }
             guard let pending = pendingRenderServer,
-                  case .renderServer(let expectedID) = pending.owner,
-                  publication.requestID == expectedID
+                case .renderServer(let expectedID) = pending.owner,
+                publication.requestID == expectedID
             else {
                 renderServerUnavailable("unexpected owner response identity")
                 return
@@ -463,48 +475,54 @@ private final class ControlServiceProcess {
             return .accepted
         case .completed:
             if let outputs = publication.outputs {
-                return .outputs(ControlOutputSnapshot(
-                    outputs: outputs.map {
-                        ControlOutput(
-                            id: .init(rawValue: $0.id),
-                            name: $0.name,
-                            width: $0.width,
-                            height: $0.height,
-                            refreshMillihertz: $0.refreshMillihertz,
-                            scale: $0.scale,
-                            x: $0.x,
-                            y: $0.y,
-                            enabled: $0.enabled)
-                    },
-                    appliedConfigurationGeneration:
-                        publication.appliedConfigurationGeneration.rawValue))
+                return .outputs(
+                    ControlOutputSnapshot(
+                        outputs: outputs.map {
+                            ControlOutput(
+                                id: .init(rawValue: $0.id),
+                                name: $0.name,
+                                width: $0.width,
+                                height: $0.height,
+                                refreshMillihertz: $0.refreshMillihertz,
+                                scale: $0.scale,
+                                x: $0.x,
+                                y: $0.y,
+                                enabled: $0.enabled)
+                        },
+                        appliedConfigurationGeneration:
+                            publication.appliedConfigurationGeneration.rawValue))
             }
             if let binds = publication.activeBindings {
-                return .binds(ControlBindingSnapshot(
-                    binds: binds,
-                    appliedConfigurationGeneration:
-                        publication.appliedConfigurationGeneration.rawValue))
+                return .binds(
+                    ControlBindingSnapshot(
+                        binds: binds,
+                        appliedConfigurationGeneration:
+                            publication.appliedConfigurationGeneration.rawValue))
             }
             if let version = publication.version {
-                return .version(ControlVersionInfo(
-                    configurationService: configurationAvailability,
-                    renderServer: ControlOwnerAvailability(
-                        available: true, version: version)))
+                return .version(
+                    ControlVersionInfo(
+                        configurationService: configurationAvailability,
+                        renderServer: ControlOwnerAvailability(
+                            available: true, version: version)))
             }
             return .completed
         case .unavailable:
-            return .error(ControlRouting.failure(
-                code: publication.failureCode ?? .unavailable,
-                message: publication.rejection
-                    ?? "render-server operation is unavailable"))
+            return .error(
+                ControlRouting.failure(
+                    code: publication.failureCode ?? .unavailable,
+                    message: publication.rejection
+                        ?? "render-server operation is unavailable"))
         case .rejected:
-            return .error(ControlRouting.failure(
-                code: publication.failureCode,
-                message: publication.rejection))
+            return .error(
+                ControlRouting.failure(
+                    code: publication.failureCode,
+                    message: publication.rejection))
         case .ready:
-            return .error(ControlFailure(
-                code: .internalTransport,
-                message: "render server returned an invalid response"))
+            return .error(
+                ControlFailure(
+                    code: .internalTransport,
+                    message: "render server returned an invalid response"))
         }
     }
 
@@ -523,7 +541,7 @@ private final class ControlServiceProcess {
     private func expirePendingRequests() {
         let now = Self.now()
         if let pendingConfiguration,
-           pendingConfiguration.deadlineNanoseconds <= now
+            pendingConfiguration.deadlineNanoseconds <= now
         {
             respondUnavailable(
                 requestID: pendingConfiguration.requestID,
@@ -531,7 +549,7 @@ private final class ControlServiceProcess {
             self.pendingConfiguration = nil
         }
         if let pendingRenderServer,
-           pendingRenderServer.deadlineNanoseconds <= now
+            pendingRenderServer.deadlineNanoseconds <= now
         {
             respondUnavailable(
                 requestID: pendingRenderServer.requestID,
@@ -562,9 +580,10 @@ private final class ControlServiceProcess {
         to connection: PacketConnection
     ) {
         respond(
-            .error(ControlFailure(
-                code: .ownerUnavailable,
-                message: "request owner is busy")),
+            .error(
+                ControlFailure(
+                    code: .ownerUnavailable,
+                    message: "request owner is busy")),
             requestID: requestID,
             to: connection)
     }
@@ -574,18 +593,20 @@ private final class ControlServiceProcess {
         to connection: PacketConnection
     ) {
         respond(
-            .error(ControlFailure(
-                code: .ownerUnavailable,
-                message: "request owner is unavailable")),
+            .error(
+                ControlFailure(
+                    code: .ownerUnavailable,
+                    message: "request owner is unavailable")),
             requestID: requestID,
             to: connection)
     }
 
     private func respondInternal(request: PendingRequest) {
         respond(
-            .error(ControlFailure(
-                code: .internalTransport,
-                message: "owner protocol mismatch")),
+            .error(
+                ControlFailure(
+                    code: .internalTransport,
+                    message: "owner protocol mismatch")),
             requestID: request.requestID,
             to: request.connection)
     }
@@ -616,9 +637,9 @@ private final class ControlServiceProcess {
     ) throws {
         var metadata = stat()
         guard unsafe lstat(path, &metadata) == 0,
-              metadata.st_uid == geteuid(),
-              metadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR),
-              metadata.st_mode & 0o077 == 0
+            metadata.st_uid == geteuid(),
+            metadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR),
+            metadata.st_mode & 0o077 == 0
         else {
             throw ControlServiceFailure.argument(
                 "control socket directory must be an owner-only directory")
@@ -660,8 +681,8 @@ private func descriptor(
         return nil
     }
     guard arguments.indices.contains(index + 1),
-          let descriptor = Int32(arguments[index + 1]),
-          descriptor >= 3
+        let descriptor = Int32(arguments[index + 1]),
+        descriptor >= 3
     else { throw ControlServiceFailure.argument("invalid \(argument)") }
     return descriptor
 }
@@ -671,8 +692,8 @@ private func value(
     arguments: [String]
 ) throws -> String {
     guard let index = arguments.firstIndex(of: argument),
-          arguments.indices.contains(index + 1),
-          !arguments[index + 1].isEmpty
+        arguments.indices.contains(index + 1),
+        !arguments[index + 1].isEmpty
     else { throw ControlServiceFailure.argument("missing \(argument)") }
     return arguments[index + 1]
 }
@@ -682,8 +703,9 @@ public func runControlService(
     arguments: [String] = CommandLine.arguments
 ) async -> Int32 {
     do {
-        guard try SessionProcessRole.inherited(arguments: arguments)
-            == .controlService
+        guard
+            try SessionProcessRole.inherited(arguments: arguments)
+                == .controlService
         else {
             throw ControlServiceFailure.argument(
                 "control service requires its supervised role")

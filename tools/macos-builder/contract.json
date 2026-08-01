@@ -1,0 +1,100 @@
+{
+  "operatingSystem": {
+    "productVersion": "27.0",
+    "buildVersion": "26A5388g"
+  },
+  "xcode": {
+    "developerDirectory": "/Applications/Xcode-beta.app/Contents/Developer",
+    "version": "27.0",
+    "buildVersion": "27A5228h",
+    "swiftVersionFragment": "Apple Swift version 6.4",
+    "testingMacroPluginRelativePath": "Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing/libTestingMacros.dylib"
+  },
+  "appleContainer": {
+    "version": "1.2.0",
+    "commit": "6e65319fe476ffe8db8ddaf828a537ed36fe2859",
+    "installerURL": "https://github.com/apple/container/releases/download/1.2.0/container-1.2.0-installer-signed.pkg",
+    "installerSHA256": "d140d4076ff0593d6b4f7c58722717b2abe87d75452cfe0a203792ba7f48f07c",
+    "executable": "/usr/local/bin/container",
+    "apiServerExecutable": "/usr/local/bin/container-apiserver",
+    "appRoot": "/Volumes/NucleusOCI/apple-container",
+    "installRoot": "/usr/local",
+    "network": "nucleus-build-internal"
+  },
+  "launchd": {
+    "label": "com.nucleus.container-system-start",
+    "plistRelativePath": "Library/LaunchAgents/com.nucleus.container-system-start.plist",
+    "starterPath": "/usr/local/libexec/nucleus/container-system-start",
+    "standardOutPath": "/Volumes/NucleusLogs/apple-container-apiserver.log",
+    "standardErrorPath": "/Volumes/NucleusLogs/apple-container-apiserver.error.log"
+  },
+  "resources": {
+    "physicalCPUCount": 24,
+    "memoryBytes": 137438953472
+  },
+  "storage": [
+    {
+      "name": "NucleusDev",
+      "mountPath": "/Volumes/NucleusDev",
+      "quotaBytes": 300000000000,
+      "reserveBytes": 100000000000,
+      "recoverability": "protected",
+      "retention": "until explicitly deprovisioned",
+      "reclaimable": false
+    },
+    {
+      "name": "NucleusSnapshots",
+      "mountPath": "/Volumes/NucleusSnapshots",
+      "quotaBytes": 150000000000,
+      "reserveBytes": 50000000000,
+      "recoverability": "protected",
+      "retention": "content-addressed source retention policy",
+      "reclaimable": false
+    },
+    {
+      "name": "NucleusBuild",
+      "mountPath": "/Volumes/NucleusBuild",
+      "quotaBytes": 500000000000,
+      "reserveBytes": 0,
+      "recoverability": "reconstructible",
+      "retention": "inactive materializations are explicit prune candidates",
+      "reclaimable": true
+    },
+    {
+      "name": "NucleusCache",
+      "mountPath": "/Volumes/NucleusCache",
+      "quotaBytes": 350000000000,
+      "reserveBytes": 0,
+      "recoverability": "reconstructible",
+      "retention": "least-recently-used entries are explicit prune candidates",
+      "reclaimable": true
+    },
+    {
+      "name": "NucleusOCI",
+      "mountPath": "/Volumes/NucleusOCI",
+      "quotaBytes": 250000000000,
+      "reserveBytes": 0,
+      "recoverability": "reconstructible",
+      "retention": "unreferenced images and snapshots are explicit prune candidates",
+      "reclaimable": true
+    },
+    {
+      "name": "NucleusArtifacts",
+      "mountPath": "/Volumes/NucleusArtifacts",
+      "quotaBytes": 120000000000,
+      "reserveBytes": 0,
+      "recoverability": "immutable",
+      "retention": "artifact lifecycle policy",
+      "reclaimable": false
+    },
+    {
+      "name": "NucleusLogs",
+      "mountPath": "/Volumes/NucleusLogs",
+      "quotaBytes": 30000000000,
+      "reserveBytes": 0,
+      "recoverability": "diagnostic",
+      "retention": "bounded run-log policy",
+      "reclaimable": true
+    }
+  ]
+}

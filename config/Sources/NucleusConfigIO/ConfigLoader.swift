@@ -1,6 +1,6 @@
-import NucleusConfigSyntax
+import Foundation
 import NucleusConfig
-import FoundationEssentials
+import NucleusConfigSyntax
 
 /// The result of reading one configuration source.
 public enum ConfigLoadOutcome: Sendable {
@@ -39,20 +39,23 @@ public enum ConfigLoader {
         } catch let error as DecodingError {
             return .failed([diagnostic(for: error, in: source)])
         } catch {
-            return .failed([ConfigDiagnostic(
-                severity: .error, message: "\(error)")])
+            return .failed([
+                ConfigDiagnostic(
+                    severity: .error, message: "\(error)")
+            ])
         }
 
         var warnings = auditUnknownKeys(in: data)
         if let declared = part.configVersion,
             declared > NucleusConfiguration.currentVersion
         {
-            warnings.append(ConfigDiagnostic(
-                severity: .warning,
-                message: "config_version \(declared) is newer than this build "
-                    + "understands (\(NucleusConfiguration.currentVersion)); "
-                    + "unrecognized settings are ignored",
-                keyPath: ["config_version"]))
+            warnings.append(
+                ConfigDiagnostic(
+                    severity: .warning,
+                    message: "config_version \(declared) is newer than this build "
+                        + "understands (\(NucleusConfiguration.currentVersion)); "
+                        + "unrecognized settings are ignored",
+                    keyPath: ["config_version"]))
         }
         let resolved = NucleusConfiguration.defaults.applying(part)
         warnings.append(
@@ -145,8 +148,9 @@ public enum ConfigLoader {
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
         let decoder = JSONDecoder()
-        guard let referenceData = try? encoder.encode(
-            NucleusConfiguration.schemaReference),
+        guard
+            let referenceData = try? encoder.encode(
+                NucleusConfiguration.schemaReference),
             let reference = try? decoder.decode(
                 JSONValue.self, from: referenceData),
             let actual = try? decoder.decode(JSONValue.self, from: data)
@@ -167,10 +171,11 @@ public enum ConfigLoader {
         case (.object(let actualObject), .object(let referenceObject)):
             for key in actualObject.keys.sorted() {
                 guard let referenceChild = referenceObject[key] else {
-                    diagnostics.append(ConfigDiagnostic(
-                        severity: .warning,
-                        message: "unknown setting; ignored",
-                        keyPath: path + [key]))
+                    diagnostics.append(
+                        ConfigDiagnostic(
+                            severity: .warning,
+                            message: "unknown setting; ignored",
+                            keyPath: path + [key]))
                     continue
                 }
                 guard let actualChild = actualObject[key] else { continue }

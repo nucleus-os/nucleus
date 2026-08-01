@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 
 public enum SessionCapabilityRestartPolicy:
     String, Codable, Equatable, Sendable
@@ -64,15 +64,15 @@ public struct SessionCapabilityDeclaration:
             throw SessionCapabilityDeclarationFailure.invalidIdentifier
         }
         guard executable.first == "/",
-              !executable.contains("\0"),
-              executable.utf8.count <= 4_096
+            !executable.contains("\0"),
+            executable.utf8.count <= 4_096
         else {
             throw SessionCapabilityDeclarationFailure.invalidExecutable
         }
         guard arguments.count <= 64,
-              arguments.allSatisfy({
-                  !$0.contains("\0") && $0.utf8.count <= 4_096
-              })
+            arguments.allSatisfy({
+                !$0.contains("\0") && $0.utf8.count <= 4_096
+            })
         else {
             throw SessionCapabilityDeclarationFailure.invalidArguments
         }

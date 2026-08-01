@@ -33,6 +33,10 @@ without inventing additional lifecycle values.
   trust routing and backend-neutral OCI foundations have landed; M2 host,
   remote development, resource admission, qualification, and publication
   remain.
+- [Manifest Portability and Swift SDK](manifest-portability-and-swift-sdk-plan.md) —
+  the root manifest still requires a provisioned environment to evaluate; target
+  settings collapse, host Swift SDK bundling, guard deletion, package-graph
+  settling, and bootstrap closure all remain.
 - [Nucleus Browser](nucleus-browser-plan.md) — fork-backed source,
   Graphite/Dawn/Vulkan presentation, and packaging are advanced; optimized
   builds and live hardware acceptance remain.

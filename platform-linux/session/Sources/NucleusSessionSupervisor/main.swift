@@ -1,8 +1,8 @@
-import FoundationEssentials
+import Foundation
 import Glibc
 import NucleusDiagnostics
-import NucleusSessionProtocol
 import NucleusLinuxSessionC
+import NucleusSessionProtocol
 
 private enum SupervisorFailure: Error, CustomStringConvertible {
     case usage(String)
@@ -102,9 +102,10 @@ private struct SupervisorArguments {
                         contentsOf: URL(fileURLWithPath: arguments[index]))
                     let decoder = JSONDecoder()
                     decoder.keyDecodingStrategy = .convertFromSnakeCase
-                    capabilities.append(try decoder.decode(
-                        SessionCapabilityDeclaration.self,
-                        from: data))
+                    capabilities.append(
+                        try decoder.decode(
+                            SessionCapabilityDeclaration.self,
+                            from: data))
                 } catch {
                     throw SupervisorFailure.usage(
                         "invalid session capability manifest "
@@ -112,9 +113,9 @@ private struct SupervisorArguments {
                 }
             case "--startup-timeout-seconds":
                 guard index + 1 < arguments.count,
-                      let seconds = Int32(arguments[index + 1]),
-                      seconds > 0,
-                      seconds <= 600
+                    let seconds = Int32(arguments[index + 1]),
+                    seconds > 0,
+                    seconds <= 600
                 else {
                     throw SupervisorFailure.usage(
                         "--startup-timeout-seconds must be between 1 and 600")
@@ -124,9 +125,9 @@ private struct SupervisorArguments {
             case "--":
                 let compositor = Array(arguments.dropFirst(index + 1))
                 guard let configService, !configService.isEmpty,
-                      let controlService, !controlService.isEmpty,
-                      let shell, !shell.isEmpty, !compositor.isEmpty,
-                      Set(capabilities.map(\.identifier)).count
+                    let controlService, !controlService.isEmpty,
+                    let shell, !shell.isEmpty, !compositor.isEmpty,
+                    Set(capabilities.map(\.identifier)).count
                         == capabilities.count
                 else {
                     throw SupervisorFailure.usage(Self.usage)
@@ -151,8 +152,8 @@ private struct SupervisorArguments {
     }
 
     static let usage = """
-    usage: nucleus-session-supervisor [--status-file PATH] [--configuration HEX] [--startup-timeout-seconds N] [--capability-manifest PATH]... --config-service PATH --control-service PATH --shell PATH -- COMMAND [ARGS...]
-    """
+        usage: nucleus-session-supervisor [--status-file PATH] [--configuration HEX] [--startup-timeout-seconds N] [--capability-manifest PATH]... --config-service PATH --control-service PATH --shell PATH -- COMMAND [ARGS...]
+        """
 }
 
 private struct SupervisedChild {
@@ -206,12 +207,13 @@ private final class SupervisorSessionRuntime {
         }
 
         guard let parent = environment["XDG_RUNTIME_DIR"],
-              parent.hasPrefix("/"), !parent.isEmpty
+            parent.hasPrefix("/"), !parent.isEmpty
         else {
             throw SupervisorFailure.usage(
                 "XDG_RUNTIME_DIR is required")
         }
-        let sessionID = environment["NUCLEUS_SESSION_ID"]
+        let sessionID =
+            environment["NUCLEUS_SESSION_ID"]
             ?? String(getpid())
         guard !sessionID.isEmpty, !sessionID.contains("/") else {
             throw SupervisorFailure.usage(
@@ -223,9 +225,9 @@ private final class SupervisorSessionRuntime {
                 "creating the session runtime directory", errno)
         }
         guard unsafe setenv("XDG_RUNTIME_DIR", directory, 1) == 0,
-              unsafe setenv(
+            unsafe setenv(
                 "NUCLEUS_SESSION_RUNTIME_DIR", directory, 1) == 0,
-              unsafe setenv("NUCLEUS_SESSION_ID", sessionID, 1) == 0
+            unsafe setenv("NUCLEUS_SESSION_ID", sessionID, 1) == 0
         else {
             try? FileManager.default.removeItem(atPath: directory)
             throw SupervisorFailure.system(
@@ -421,9 +423,10 @@ private final class SessionSupervisor {
             log("shell ready pid=\(shell.processID)")
             for declaration in arguments.capabilities {
                 do {
-                    capabilities.append(try spawnCapability(
-                        declaration,
-                        restartCount: 0))
+                    capabilities.append(
+                        try spawnCapability(
+                            declaration,
+                            restartCount: 0))
                 } catch {
                     log(
                         "capability \(declaration.identifier) failed to "
@@ -437,24 +440,27 @@ private final class SessionSupervisor {
                     children,
                     capabilities: capabilities)
                 if case .capability(let identifier, let status) = processExit {
-                    guard let index = capabilities.firstIndex(where: {
-                        $0.declaration.identifier == identifier
-                    }) else {
+                    guard
+                        let index = capabilities.firstIndex(where: {
+                            $0.declaration.identifier == identifier
+                        })
+                    else {
                         throw SupervisorFailure.channel(
                             "unknown capability process exited: \(identifier)")
                     }
                     let exited = capabilities.remove(at: index)
                     let shouldRestart =
                         exited.restartCount
-                            < exited.declaration.maximumRestarts
+                        < exited.declaration.maximumRestarts
                         && (exited.declaration.restartPolicy == .always
                             || exited.declaration.restartPolicy == .onFailure
                                 && status != 0)
                     if shouldRestart {
                         do {
-                            capabilities.append(try spawnCapability(
-                                exited.declaration,
-                                restartCount: exited.restartCount + 1))
+                            capabilities.append(
+                                try spawnCapability(
+                                    exited.declaration,
+                                    restartCount: exited.restartCount + 1))
                         } catch {
                             log(
                                 "capability \(identifier) failed to restart: "
@@ -473,11 +479,12 @@ private final class SessionSupervisor {
                 }
                 switch unexpectedExit.role {
                 case .controlService:
-                    try statusPublisher.publish(SessionReadinessMessage(
-                        role: .supervisor,
-                        milestone: .failed,
-                        detail: SessionFailureReason
-                            .controlServiceExitedAfterReady.rawValue))
+                    try statusPublisher.publish(
+                        SessionReadinessMessage(
+                            role: .supervisor,
+                            milestone: .failed,
+                            detail: SessionFailureReason
+                                .controlServiceExitedAfterReady.rawValue))
                     revokePublicControlAccess()
                     terminateCapabilities(capabilities)
                     capabilities.removeAll()
@@ -701,19 +708,21 @@ private final class SessionSupervisor {
                 }
             }
         } catch SupervisorFailure.interrupted(let signal) {
-            try? statusPublisher.publish(SessionReadinessMessage(
-                role: .supervisor,
-                milestone: .terminating,
-                detail: signal))
+            try? statusPublisher.publish(
+                SessionReadinessMessage(
+                    role: .supervisor,
+                    milestone: .terminating,
+                    detail: signal))
             terminateCapabilities(capabilities)
             terminateSession(children)
             return 128 + signal
         } catch {
             log("\(error)")
-            try? statusPublisher.publish(SessionReadinessMessage(
-                role: .supervisor,
-                milestone: .failed,
-                detail: failureReason(error).rawValue))
+            try? statusPublisher.publish(
+                SessionReadinessMessage(
+                    role: .supervisor,
+                    milestone: .failed,
+                    detail: failureReason(error).rawValue))
             terminateCapabilities(capabilities)
             terminateSession(children)
             return 1
@@ -758,14 +767,14 @@ private final class SessionSupervisor {
         case .startupTimedOut(.controlService):
             return .controlServiceStartupTimedOut
         case .usage, .system, .channel, .interrupted,
-             .childExited(.supervisor, _),
-             .childExited(.capability, _),
-             .readinessClosed(.supervisor),
-             .readinessClosed(.capability),
-             .invalidReadiness(.supervisor),
-             .invalidReadiness(.capability),
-             .startupTimedOut(.supervisor),
-             .startupTimedOut(.capability):
+            .childExited(.supervisor, _),
+            .childExited(.capability, _),
+            .readinessClosed(.supervisor),
+            .readinessClosed(.capability),
+            .invalidReadiness(.supervisor),
+            .invalidReadiness(.capability),
+            .startupTimedOut(.supervisor),
+            .startupTimedOut(.capability):
             return .internalFailure
         }
     }
@@ -816,7 +825,7 @@ private final class SessionSupervisor {
     private func createControlSocketDirectory() throws -> String {
         let environment = ProcessInfo.processInfo.environment
         guard let runtime = environment["XDG_RUNTIME_DIR"],
-              runtime.hasPrefix("/"), !runtime.isEmpty
+            runtime.hasPrefix("/"), !runtime.isEmpty
         else {
             throw SupervisorFailure.usage(
                 "XDG_RUNTIME_DIR is required for the control service")
@@ -824,7 +833,8 @@ private final class SessionSupervisor {
         if environment["NUCLEUS_SESSION_RUNTIME_DIR"] == runtime {
             return runtime
         }
-        let sessionID = environment["NUCLEUS_SESSION_ID"]
+        let sessionID =
+            environment["NUCLEUS_SESSION_ID"]
             ?? environment["WAYLAND_DISPLAY"]
             ?? "wayland-0"
         guard !sessionID.isEmpty, !sessionID.contains("/") else {
@@ -840,9 +850,9 @@ private final class SessionSupervisor {
             }
             var metadata = stat()
             guard unsafe lstat(directory, &metadata) == 0,
-                  metadata.st_uid == geteuid(),
-                  metadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR),
-                  metadata.st_mode & 0o077 == 0
+                metadata.st_uid == geteuid(),
+                metadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR),
+                metadata.st_mode & 0o077 == 0
             else {
                 throw SupervisorFailure.usage(
                     "control socket directory is not owner-only: \(directory)")
@@ -917,7 +927,7 @@ private final class SessionSupervisor {
         var actions = unsafe posix_spawn_file_actions_t()
         var attributes = posix_spawnattr_t()
         guard unsafe posix_spawn_file_actions_init(&actions) == 0,
-              unsafe posix_spawnattr_init(&attributes) == 0
+            unsafe posix_spawnattr_init(&attributes) == 0
         else {
             if let pipeDescriptors {
                 _ = close(pipeDescriptors.0)
@@ -954,7 +964,7 @@ private final class SessionSupervisor {
             readinessActionsAdded = true
         }
         guard readinessActionsAdded,
-              unsafe addDescriptorActions(
+            unsafe addDescriptorActions(
                 &actions,
                 configurationPair.map {
                     InheritedDescriptor(
@@ -963,10 +973,10 @@ private final class SessionSupervisor {
                         argument: SessionConfiguration.descriptorArgument)
                 },
                 closingPeer: configurationPair?.1),
-              inheritedDescriptors.allSatisfy({
-                  unsafe addDescriptorActions(
+            inheritedDescriptors.allSatisfy({
+                unsafe addDescriptorActions(
                     &actions, $0, closingPeer: nil)
-              })
+            })
         else {
             if let pipeDescriptors {
                 _ = close(pipeDescriptors.0)
@@ -987,17 +997,18 @@ private final class SessionSupervisor {
         for signal in [SIGCHLD, SIGINT, SIGQUIT, SIGTERM, SIGHUP, SIGPIPE] {
             unsafe sigaddset(&defaultSignals, signal)
         }
-        guard unsafe posix_spawnattr_setsigdefault(
-            &attributes,
-            &defaultSignals) == 0,
-              unsafe posix_spawnattr_setsigmask(&attributes, &emptyMask) == 0,
-              unsafe posix_spawnattr_setflags(
+        guard
+            unsafe posix_spawnattr_setsigdefault(
+                &attributes,
+                &defaultSignals) == 0,
+            unsafe posix_spawnattr_setsigmask(&attributes, &emptyMask) == 0,
+            unsafe posix_spawnattr_setflags(
                 &attributes,
                 Int16(
                     POSIX_SPAWN_SETSIGDEF
                         | POSIX_SPAWN_SETSIGMASK
                         | POSIX_SPAWN_SETPGROUP)) == 0,
-              unsafe posix_spawnattr_setpgroup(&attributes, 0) == 0
+            unsafe posix_spawnattr_setpgroup(&attributes, 0) == 0
         else {
             if let pipeDescriptors {
                 _ = close(pipeDescriptors.0)
@@ -1011,7 +1022,8 @@ private final class SessionSupervisor {
             throw SupervisorFailure.system("child signal attributes", errno)
         }
 
-        var childArguments = [command[0],
+        var childArguments = [
+            command[0],
             SessionProcessRole.argument,
             String(role.rawValue),
         ]
@@ -1090,9 +1102,10 @@ private final class SessionSupervisor {
         closingPeer: Int32?
     ) -> Bool {
         guard let inherited else { return true }
-        guard unsafe posix_spawn_file_actions_adddup2(
-            &actions, inherited.source, inherited.target) == 0,
-              unsafe posix_spawn_file_actions_addclose(
+        guard
+            unsafe posix_spawn_file_actions_adddup2(
+                &actions, inherited.source, inherited.target) == 0,
+            unsafe posix_spawn_file_actions_addclose(
                 &actions, inherited.source) == 0
         else { return false }
         if let closingPeer {
@@ -1109,7 +1122,8 @@ private final class SessionSupervisor {
         timeoutMilliseconds: Int32? = nil
     ) throws -> SessionReadinessMessage {
         defer { _ = close(child.readinessDescriptor) }
-        let deadline = Self.monotonicNanoseconds()
+        let deadline =
+            Self.monotonicNanoseconds()
             + UInt64(
                 timeoutMilliseconds
                     ?? arguments.startupTimeoutMilliseconds) * 1_000_000
@@ -1130,9 +1144,10 @@ private final class SessionSupervisor {
             }
             let remainingMilliseconds = max(
                 1,
-                Int32(min(
-                    UInt64(Int32.max),
-                    (deadline - now + 999_999) / 1_000_000)))
+                Int32(
+                    min(
+                        UInt64(Int32.max),
+                        (deadline - now + 999_999) / 1_000_000)))
             let pollResult = unsafe poll(
                 &descriptors,
                 nfds_t(descriptors.count),
@@ -1157,8 +1172,8 @@ private final class SessionSupervisor {
                     throw SupervisorFailure.readinessClosed(child.role)
                 }
                 guard let message = SessionReadinessMessage(encoded: bytes),
-                      message.role == child.role,
-                      message.milestone == milestone
+                    message.role == child.role,
+                    message.milestone == milestone
                 else {
                     throw SupervisorFailure.invalidReadiness(child.role)
                 }
@@ -1175,8 +1190,7 @@ private final class SessionSupervisor {
     private func waitForSessionExit(
         _ children: [SupervisedChild],
         capabilities: [SupervisedCapability]
-    ) throws -> UnexpectedProcessExit
-    {
+    ) throws -> UnexpectedProcessExit {
         while true {
             if let exit = reapExitedProcess(
                 children,
@@ -1212,9 +1226,10 @@ private final class SessionSupervisor {
             let waited = unsafe waitpid(
                 child.processID, &waitStatus, WNOHANG)
             guard waited == child.processID else { continue }
-            return .session(UnexpectedSessionExit(
-                role: child.role,
-                status: Self.exitStatus(waitStatus)))
+            return .session(
+                UnexpectedSessionExit(
+                    role: child.role,
+                    status: Self.exitStatus(waitStatus)))
         }
         for capability in capabilities {
             var waitStatus: Int32 = 0
@@ -1271,10 +1286,11 @@ private final class SessionSupervisor {
                 SIGTERM)
         }
 
-        let deadline = Self.monotonicNanoseconds()
+        let deadline =
+            Self.monotonicNanoseconds()
             + graceMilliseconds * 1_000_000
         while !remaining.isEmpty,
-              Self.monotonicNanoseconds() < deadline
+            Self.monotonicNanoseconds() < deadline
         {
             for processID in Array(remaining) {
                 var waitStatus: Int32 = 0
@@ -1307,17 +1323,19 @@ private final class SessionSupervisor {
         _ capabilities: [SupervisedCapability]
     ) {
         let graceMilliseconds =
-            UInt64(capabilities.map {
-                $0.declaration.shutdownTimeoutSeconds
-            }.max() ?? 1) * 1_000
-        terminate(capabilities.map {
-            SupervisedChild(
-                role: .capability,
-                processID: $0.processID,
-                readinessDescriptor: -1)
-        },
-        graceMilliseconds: graceMilliseconds,
-        gracefulRootOnly: true)
+            UInt64(
+                capabilities.map {
+                    $0.declaration.shutdownTimeoutSeconds
+                }.max() ?? 1) * 1_000
+        terminate(
+            capabilities.map {
+                SupervisedChild(
+                    role: .capability,
+                    processID: $0.processID,
+                    readinessDescriptor: -1)
+            },
+            graceMilliseconds: graceMilliseconds,
+            gracefulRootOnly: true)
     }
 
     private func terminateSession(_ children: [SupervisedChild]) {

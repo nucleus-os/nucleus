@@ -1,12 +1,13 @@
-import Testing
-import FoundationEssentials
+import Foundation
 import Glibc
 import NucleusCompositorDrmC
-import VulkanC
-import Vulkan
 import NucleusSkiaGraphiteBridge
-@testable import NucleusRenderer
+import Testing
+import Vulkan
+import VulkanC
+
 @testable import NucleusCompositorRendererLinux
+@testable import NucleusRenderer
 
 // scanout-usage constraint is wired into the descriptor and that the plane-layout
 // packing behaves. The mandatory GPU+GBM lane opens a DRM render node, creates
@@ -17,8 +18,9 @@ import NucleusSkiaGraphiteBridge
 // teardown.
 @Suite struct DRMScanoutBufferAllocationTests {
     @Test func scanoutUsageAndPlanePacking() {
-        #expect(DrmFramebuffer.explicitModifierFlags == UInt32(DRM_MODE_FB_MODIFIERS),
-                "explicit framebuffer modifiers must opt in through the addfb2 flag")
+        #expect(
+            DrmFramebuffer.explicitModifierFlags == UInt32(DRM_MODE_FB_MODIFIERS),
+            "explicit framebuffer modifiers must opt in through the addfb2 flag")
         // render-target constraints (color + input attachment) plus transfer-src.
         let scanoutUsage = DmaBufImageDescriptor.scanoutUsage
         #expect(scanoutUsage.contains(.colorAttachmentBit), "scanout-usage-color-attachment")
@@ -30,14 +32,21 @@ import NucleusSkiaGraphiteBridge
             modifier: 0,  // DRM_FORMAT_MOD_LINEAR == fourcc_mod_code(NONE, 0) == 0
             planes: [DmaBufPlane(offset: 0, rowPitch: 256)],
             usage: DmaBufImageDescriptor.scanoutUsage)
-        #expect(probeDesc.usage.contains(.colorAttachmentBit) && probeDesc.usage.contains(.inputAttachmentBit),
-                "probe-desc-usage-wired")
+        #expect(
+            probeDesc.usage.contains(.colorAttachmentBit)
+                && probeDesc.usage.contains(.inputAttachmentBit),
+            "probe-desc-usage-wired")
 
         // Plane-layout packing: a single-plane XRGB layout marshals offset/stride.
         let layout = GbmPlaneLayout(offset: 0, stride: 256, handle: 7)
-        #expect(layout.offset == 0 && layout.stride == 256 && layout.handle == 7, "plane-layout-fields")
-        let planesAsDmaBuf = [layout].map { DmaBufPlane(offset: UInt64($0.offset), rowPitch: UInt64($0.stride)) }
-        #expect(planesAsDmaBuf.count == 1 && planesAsDmaBuf[0].rowPitch == 256, "plane-layout-to-dmabuf")
+        #expect(
+            layout.offset == 0 && layout.stride == 256 && layout.handle == 7, "plane-layout-fields")
+        let planesAsDmaBuf = [layout].map {
+            DmaBufPlane(offset: UInt64($0.offset), rowPitch: UInt64($0.stride))
+        }
+        #expect(
+            planesAsDmaBuf.count == 1 && planesAsDmaBuf[0].rowPitch == 256, "plane-layout-to-dmabuf"
+        )
     }
 
     @Test func gpuDRM_gbmRoundTrip() throws {
@@ -94,14 +103,16 @@ import NucleusSkiaGraphiteBridge
         // Allocate the scanout buffer. A render node has no DRM master, so use the
         // renderable-only fallback (no GBM_BO_USE_SCANOUT) and no negotiated
         // modifier (LINEAR). The GPU half is fully exercised without KMS master.
-        guard let buffer = unsafe DRMScanoutBufferAllocation.allocate(
-            gbmDevice: gbmHandle,
-            drmFormat: DrmFourcc.xrgb8888,
-            width: width, height: height,
-            modifiers: [],
-            usage: .renderableOnly,
-            device: device.handle, dispatch: device.dispatch
-        ) else {
+        guard
+            let buffer = unsafe DRMScanoutBufferAllocation.allocate(
+                gbmDevice: gbmHandle,
+                drmFormat: DrmFourcc.xrgb8888,
+                width: width, height: height,
+                modifiers: [],
+                usage: .renderableOnly,
+                device: device.handle, dispatch: device.dispatch
+            )
+        else {
             throw VulkanLaneTestFailure.requirement(
                 "GBM allocation or DMA-BUF Vulkan import failed")
         }
@@ -131,7 +142,10 @@ import NucleusSkiaGraphiteBridge
 
             let canvas = unsafe surface.getCanvas()
             var color = nucleus.skia.Color()
-            color.r = 0.25; color.g = 0.5; color.b = 0.75; color.a = 1
+            color.r = 0.25
+            color.g = 0.5
+            color.b = 0.75
+            color.a = 1
             unsafe canvas.clear(color)
             var paint = nucleus.skia.Paint()
             paint.color = color
@@ -173,7 +187,8 @@ import NucleusSkiaGraphiteBridge
         let deviceID = UInt64(deviceStat.st_rdev)
         return (
             Int64(((deviceID >> 8) & 0xfff) | ((deviceID >> 32) & ~0xfff)),
-            Int64((deviceID & 0xff) | ((deviceID >> 12) & ~0xff)))
+            Int64((deviceID & 0xff) | ((deviceID >> 12) & ~0xff))
+        )
     }
 
     static func physicalDevice(
@@ -181,8 +196,9 @@ import NucleusSkiaGraphiteBridge
         belongsToRenderNode identity: (major: Int64, minor: Int64),
         instance: VkInstance
     ) -> Bool {
-        guard let raw = unsafe vkGetInstanceProcAddr(
-            instance, "vkGetPhysicalDeviceProperties2")
+        guard
+            let raw = unsafe vkGetInstanceProcAddr(
+                instance, "vkGetPhysicalDeviceProperties2")
         else { return false }
         let getProperties = unsafe unsafeBitCast(
             raw, to: PFN_vkGetPhysicalDeviceProperties2.self)

@@ -1,5 +1,6 @@
-import FoundationEssentials
+import Foundation
 import Testing
+
 @testable import NucleusConfig
 @testable import NucleusConfigIO
 
@@ -60,12 +61,14 @@ import Testing
     }
 
     @Test func aRealFileResolvesThroughTheSamePipelineAsText() throws {
-        try withTemporaryFile("""
-        {
-          // written by hand, comments and all
-          "input": { "touchpad": { "tap": false, "accel_speed": 0.5 } }
-        }
-        """) { path in
+        try withTemporaryFile(
+            """
+            {
+              // written by hand, comments and all
+              "input": { "touchpad": { "tap": false, "accel_speed": 0.5 } }
+            }
+            """
+        ) { path in
             switch ConfigFile.load(path: path) {
             case .loaded(let configuration, let warnings):
                 #expect(configuration.input.touchpad.tap == false)
@@ -92,9 +95,11 @@ import Testing
     }
 
     @Test func anOutOfRangeAccelSpeedLoadsButWarns() throws {
-        try withTemporaryFile(#"""
-        { "input": { "mouse": { "accel_speed": 7 } } }
-        """#) { path in
+        try withTemporaryFile(
+            #"""
+            { "input": { "mouse": { "accel_speed": 7 } } }
+            """#
+        ) { path in
             switch ConfigFile.load(path: path) {
             case .loaded(_, let warnings):
                 let warning = try #require(warnings.first)

@@ -1,0 +1,20 @@
+#!/bin/bash
+set -euo pipefail
+
+readonly container_executable="/usr/local/bin/container"
+readonly app_root="/Volumes/NucleusOCI/apple-container"
+
+if [[ ! -x "$container_executable" ]]; then
+  echo "error: pinned Apple container executable is absent: $container_executable" >&2
+  exit 69
+fi
+
+if [[ ! -d "$app_root" ]]; then
+  echo "error: Apple container application root is not mounted: $app_root" >&2
+  exit 75
+fi
+
+exec "$container_executable" system start \
+  --app-root "$app_root" \
+  --disable-kernel-install \
+  --timeout 300

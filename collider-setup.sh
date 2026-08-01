@@ -3,11 +3,11 @@
 #
 #   ./collider-setup.sh
 #
-# It provisions the Swift toolchain if missing, builds the optimized `collider`
-# binary, installs the `collider` launcher on your PATH, and provisions the
-# workspace. Re-run it any time to verify and repair the installation. This
-# script performs setup only; use the installed `collider` command for
-# everything else.
+# It selects Xcode on macOS or provisions the generated Swift toolchain on
+# Linux, builds the optimized `collider` binary, installs the `collider`
+# launcher on your PATH, and provisions the workspace. Re-run it any time to
+# verify and repair the installation. This script performs setup only; use the
+# installed `collider` command for everything else.
 set -euo pipefail
 
 case "${1:-}" in
@@ -27,6 +27,8 @@ export NUCLEUS_NATIVE_SDK_ROOT
 host_env="$root/tools/host-env.sh"
 pkg="$root/collider"
 bin="$pkg/.build/release/collider"
+
+source "$root/tools/host-platform-env.sh"
 
 # Collider builds a complete monorepo checkout. Initialize only absent
 # submodules before compiling Collider itself. Existing checkouts are user
@@ -48,13 +50,19 @@ initialize_missing_submodules() {
 }
 initialize_missing_submodules
 
-# True when a Nucleus toolchain resolves; host-env exits nonzero otherwise.
+# True when the native host compiler resolves. macOS uses the selected Xcode;
+# Linux uses the active generated Linux amd64 toolchain.
 toolchain_present() { ( source "$host_env" ) >/dev/null 2>&1; }
 
-# 1. Provision the Nucleus toolchain if absent. The first generation is built by
-#    a Swift 6.4 bootstrap compiler on PATH; every later build uses host-env's
-#    active toolchain.
+# 1. Provision the generated Linux toolchain when setup itself runs on Linux.
+#    macOS builds Collider and native products with the selected Xcode toolchain;
+#    `collider toolchain rebuild` separately creates Linux/Android artifacts in
+#    the pinned linux/amd64 builder image.
 if ! toolchain_present; then
+  if [[ "$(uname -s)" == Darwin ]]; then
+    echo "error: full Xcode 27 with Swift 6.4 must be selected" >&2
+    exit 127
+  fi
   if ! command -v swift >/dev/null 2>&1; then
     echo "error: Swift 6.4 must be on PATH to create the first Nucleus toolchain generation." >&2
     exit 127
@@ -64,7 +72,7 @@ if ! toolchain_present; then
   "$bin" toolchain rebuild
 fi
 
-# 2. Build the optimized collider binary under the Nucleus toolchain.
+# 2. Build the optimized collider binary with the native host compiler.
 source "$host_env"
 echo "collider-setup: building collider (release)..." >&2
 swift build --package-path "$pkg" -c release >&2
@@ -76,7 +84,7 @@ install_launcher() {
   mkdir -p "$bin_dir"
 
   local desired
-  desired="$(cat <<'LAUNCHER'
+  IFS= read -r -d '' desired <<'LAUNCHER' || true
 #!/usr/bin/env bash
 # collider launcher — installed by collider-setup.sh. Discovers the Nucleus
 # clone from the current directory, keeps the optimized binary current, and runs
@@ -100,7 +108,7 @@ fi
 export NUCLEUS_WORKSPACE_ROOT="$root"
 host_env="$root/tools/host-env.sh"
 if ! ( source "$host_env" ) >/dev/null 2>&1; then
-  echo "collider: the Nucleus toolchain is not installed; run $root/collider-setup.sh" >&2
+  echo "collider: the native host compiler is unavailable; run $root/collider-setup.sh" >&2
   exit 1
 fi
 source "$host_env"
@@ -135,7 +143,7 @@ fi
 swift build --package-path "$pkg" -c release >&2
 exec "$bin" "$@"
 LAUNCHER
-)"
+  desired="${desired%$'\n'}"
 
   if [[ -f "$target" ]] && [[ "$(cat "$target")" == "$desired" ]] \
      && [[ -x "$target" ]]; then

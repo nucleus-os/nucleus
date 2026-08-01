@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 import SystemPackage
 
 public struct TaskID: RawRepresentable, Hashable, Codable, Sendable,
@@ -50,12 +50,16 @@ public struct ArtifactDigest: Hashable, Codable, Sendable,
         self.init(bytes: bytes)
     }
 
-    public var description: String {
+    public var hexadecimal: String {
         let digits = Array("0123456789abcdef".utf8)
         let encoded = bytes.flatMap { byte in
             [digits[Int(byte >> 4)], digits[Int(byte & 0x0f)]]
         }
-        return algorithm.rawValue + ":" + String(decoding: encoded, as: UTF8.self)
+        return String(decoding: encoded, as: UTF8.self)
+    }
+
+    public var description: String {
+        algorithm.rawValue + ":" + hexadecimal
     }
 
     public init(from decoder: any Decoder) throws {

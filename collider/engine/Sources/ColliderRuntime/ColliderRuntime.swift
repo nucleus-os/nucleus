@@ -266,8 +266,8 @@ public actor ColliderRuntime {
         let executable: Subprocess.Executable =
             switch command.executable {
             case .named(let name): .name(name)
-            case .path(let path): .path(path)
-            case .taskOutput(let path): .path(path)
+            case .path(let path): .path(.init(path.string))
+            case .taskOutput(let path): .path(.init(path.string))
             }
         let environment = Subprocess.Environment.custom(
             Dictionary(
@@ -333,7 +333,7 @@ public actor ColliderRuntime {
                 executable,
                 arguments: Arguments(command.arguments),
                 environment: environment,
-                workingDirectory: command.workingDirectory,
+                workingDirectory: .init(command.workingDirectory.string),
                 platformOptions: platform,
                 input: input,
                 output: .currentStandardOutput,
@@ -387,7 +387,7 @@ public actor ColliderRuntime {
                     executable,
                     arguments: Arguments(command.arguments),
                     environment: environment,
-                    workingDirectory: command.workingDirectory,
+                    workingDirectory: .init(command.workingDirectory.string),
                     platformOptions: platform,
                     input: input,
                     output: .sequence,
@@ -425,7 +425,7 @@ public actor ColliderRuntime {
                     executable,
                     arguments: Arguments(command.arguments),
                     environment: environment,
-                    workingDirectory: command.workingDirectory,
+                    workingDirectory: .init(command.workingDirectory.string),
                     platformOptions: platform,
                     input: input,
                     output: .sequence,
@@ -507,8 +507,8 @@ enum TaskOutputPresentation: Sendable {
     }
 }
 
-private extension CommandSpec {
-    func withOutput(_ output: Output) -> CommandSpec {
+extension CommandSpec {
+    fileprivate func withOutput(_ output: Output) -> CommandSpec {
         guard output != self.output else { return self }
         return CommandSpec(
             executable: executable,

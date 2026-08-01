@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 import NucleusConfig
 import NucleusIPCTransport
 
@@ -181,9 +181,9 @@ public final class RenderServerControlChannel: @unchecked Sendable {
         arguments: [String] = CommandLine.arguments
     ) throws -> RenderServerControlChannel {
         guard let index = arguments.firstIndex(of: descriptorArgument),
-              arguments.indices.contains(index + 1),
-              let descriptor = Int32(arguments[index + 1]),
-              descriptor >= 3
+            arguments.indices.contains(index + 1),
+            let descriptor = Int32(arguments[index + 1]),
+            descriptor >= 3
         else {
             throw ConfigurationChannelFailure.invalidDescriptor(
                 arguments.firstIndex(of: descriptorArgument).flatMap {

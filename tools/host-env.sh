@@ -8,6 +8,8 @@ else
 fi
 nucleus_workspace_root="$(cd "$(dirname "$nucleus_host_env_source")/.." && pwd)"
 
+source "$nucleus_workspace_root/tools/host-platform-env.sh"
+
 if ! command -v fnm >/dev/null 2>&1; then
   echo "error: fnm is required to activate the Nucleus Node.js toolchain" >&2
   return 127 2>/dev/null || exit 127
@@ -43,16 +45,24 @@ else
   nucleus_source_id="${nucleus_source_id:0:24}"
 fi
 export NUCLEUS_SWIFT_SOURCE_ID="$nucleus_source_id"
-nucleus_platform_id="$nucleus_source_id"
-if [[ "$(uname -s)" == Darwin ]]; then nucleus_platform_id="$nucleus_source_id-macos"; fi
-if [[ -n "${NUCLEUS_SWIFT_TOOLCHAIN:-}" && -x "$NUCLEUS_SWIFT_TOOLCHAIN/bin/swift-build" ]]; then
+nucleus_platform_id="$nucleus_source_id-linux-amd64"
+if [[ "$(uname -s)" == Darwin ]]; then
+  nucleus_swiftc="$(xcrun --find swiftc 2>/dev/null)" || {
+    echo "error: full Xcode 27 with Swift 6.4 must be selected" >&2
+    return 127 2>/dev/null || exit 127
+  }
+  if ! "$nucleus_swiftc" --version 2>/dev/null \
+      | grep -Fq "Apple Swift version 6.4"; then
+    echo "error: the selected Xcode does not provide Apple Swift 6.4" >&2
+    return 127 2>/dev/null || exit 127
+  fi
+  nucleus_toolchain="$(cd "$(dirname "$nucleus_swiftc")/.." && pwd)"
+elif [[ -n "${NUCLEUS_SWIFT_TOOLCHAIN:-}" && -x "$NUCLEUS_SWIFT_TOOLCHAIN/bin/swift-build" ]]; then
   nucleus_toolchain="$NUCLEUS_SWIFT_TOOLCHAIN"
 elif [[ -x "${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/swift-platforms/$nucleus_platform_id/current/toolchain/usr/bin/swift-build" ]]; then
   nucleus_toolchain="${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/swift-platforms/$nucleus_platform_id/current/toolchain/usr"
-fi
-
-if [[ -z "$nucleus_toolchain" ]]; then
-  echo "error: the Nucleus Swift 6.4 toolchain is not installed" >&2
+else
+  echo "error: the Nucleus Linux amd64 Swift 6.4 toolchain is not installed" >&2
   echo "       run ./collider-setup.sh or set NUCLEUS_SWIFT_TOOLCHAIN" >&2
   return 127 2>/dev/null || exit 127
 fi
@@ -60,9 +70,7 @@ fi
 export SWIFT_TOOLCHAIN="$nucleus_toolchain"
 export SWIFT="$nucleus_toolchain/bin/swift"
 export SWIFTC="$nucleus_toolchain/bin/swiftc"
-if [[ "$(uname -s)" == Darwin ]]; then
-  export SWIFT_LIBRARY_PATH="$nucleus_toolchain/lib/swift/macosx"
-else
+if [[ "$(uname -s)" != Darwin ]]; then
   export SWIFT_LIBRARY_PATH="$nucleus_toolchain/lib/swift/linux"
 fi
 export PATH="$nucleus_toolchain/bin:$PATH"
@@ -85,7 +93,9 @@ export SWIFT_JAVA_JNI_CORE_PATH="$nucleus_workspace_root/third-party/swift-java-
 if [[ -r "$nucleus_workspace_root/.nucleus/swiftpm/environment.sh" ]]; then
   source "$nucleus_workspace_root/.nucleus/swiftpm/environment.sh"
 fi
+: "${NUCLEUS_SWIFTPM_GENERATED_MODULE_MAPS_PATH:=$nucleus_workspace_root/.nucleus/swiftpm/generated-module-maps}"
+export NUCLEUS_SWIFTPM_GENERATED_MODULE_MAPS_PATH
 
 unset nucleus_host_env_source nucleus_workspace_root
 unset nucleus_fnm_environment nucleus_source_index nucleus_source_digest
-unset nucleus_toolchain nucleus_source_id nucleus_platform_id
+unset nucleus_toolchain nucleus_swiftc nucleus_source_id nucleus_platform_id

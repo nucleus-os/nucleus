@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 
 /// Where a window goes when tiled.
 public enum TileDirection: String, Codable, Sendable, CaseIterable {
@@ -65,10 +65,10 @@ public enum BindAction: Equatable, Sendable {
     public var runtimeOwner: RuntimeOwner {
         switch self {
         case .launch, .toggleHotkeyOverlay, .dismissHotkeyOverlay,
-             .showWindowMenu:
+            .showWindowMenu:
             .shell
         case .closeWindow, .tile, .adjustBackdropIntensity,
-             .activateWorkspace, .moveWindowToWorkspace:
+            .activateWorkspace, .moveWindowToWorkspace:
             .renderServer
         }
     }
@@ -108,22 +108,26 @@ extension BindAction: Codable {
             self = .moveWindowToWorkspace(
                 try Self.workspaceIndex(from: container))
         case "launch":
-            let appIDs = try container.decodeIfPresent(
-                [String].self, forKey: .appIDs) ?? []
-            let command = try container.decodeIfPresent(
-                [String].self, forKey: .command) ?? []
+            let appIDs =
+                try container.decodeIfPresent(
+                    [String].self, forKey: .appIDs) ?? []
+            let command =
+                try container.decodeIfPresent(
+                    [String].self, forKey: .command) ?? []
             guard !appIDs.isEmpty || !command.isEmpty else {
-                throw DecodingError.dataCorrupted(DecodingError.Context(
-                    codingPath: container.codingPath,
-                    debugDescription:
-                        "launch needs at least one of app_ids or command"))
+                throw DecodingError.dataCorrupted(
+                    DecodingError.Context(
+                        codingPath: container.codingPath,
+                        debugDescription:
+                            "launch needs at least one of app_ids or command"))
             }
             self = .launch(appIDs: appIDs, command: command)
         default:
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: container.codingPath + [CodingKeys.action],
-                debugDescription: "unknown action '\(name)'; expected one of "
-                    + BindAction.allNames.joined(separator: ", ")))
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: container.codingPath + [CodingKeys.action],
+                    debugDescription: "unknown action '\(name)'; expected one of "
+                        + BindAction.allNames.joined(separator: ", ")))
         }
     }
 
@@ -134,9 +138,10 @@ extension BindAction: Codable {
     ) throws -> UInt32 {
         let index = try container.decode(UInt32.self, forKey: .index)
         guard index >= 1 else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: container.codingPath + [CodingKeys.index],
-                debugDescription: "workspace index is 1-based; got 0"))
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: container.codingPath + [CodingKeys.index],
+                    debugDescription: "workspace index is 1-based; got 0"))
         }
         return index
     }

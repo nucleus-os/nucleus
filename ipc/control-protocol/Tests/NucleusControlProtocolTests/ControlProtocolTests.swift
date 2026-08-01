@@ -1,7 +1,8 @@
-import FoundationEssentials
+import Foundation
 import NucleusConfig
 import NucleusFoundation
 import Testing
+
 @testable import NucleusControlProtocol
 
 @Suite struct ControlProtocolTests {
@@ -61,30 +62,37 @@ import Testing
         let responses: [ControlResponse] = [
             .accepted,
             .completed,
-            .version(ControlVersionInfo(
-                configurationService: .init(available: true),
-                renderServer: .init(
-                    available: true, version: "nucleus-render-server 1"))),
-            .configuration(ControlConfigurationSnapshot(
-                canonicalSource: "{\"config_version\":1}",
-                configuredEpochHigh: 1,
-                configuredEpochLow: 2,
-                configuredGeneration: 3,
-                renderServerAppliedGeneration: 3)),
+            .version(
+                ControlVersionInfo(
+                    configurationService: .init(available: true),
+                    renderServer: .init(
+                        available: true, version: "nucleus-render-server 1"))),
+            .configuration(
+                ControlConfigurationSnapshot(
+                    canonicalSource: "{\"config_version\":1}",
+                    configuredEpochHigh: 1,
+                    configuredEpochLow: 2,
+                    configuredGeneration: 3,
+                    renderServerAppliedGeneration: 3)),
             .validation([]),
-            .binds(ControlBindingSnapshot(
-                binds: DefaultBinds.table,
-                appliedConfigurationGeneration: 3)),
-            .outputs(ControlOutputSnapshot(
-                outputs: [ControlOutput(
-                    id: OutputID(rawValue: 1),
-                    name: "DP-1", width: 2560, height: 1440,
-                    refreshMillihertz: 143_998, scale: 1.5,
-                    x: 0, y: 0, enabled: true)],
-                appliedConfigurationGeneration: 3)),
-            .error(ControlFailure(
-                code: .rejected,
-                message: "no focused window")),
+            .binds(
+                ControlBindingSnapshot(
+                    binds: DefaultBinds.table,
+                    appliedConfigurationGeneration: 3)),
+            .outputs(
+                ControlOutputSnapshot(
+                    outputs: [
+                        ControlOutput(
+                            id: OutputID(rawValue: 1),
+                            name: "DP-1", width: 2560, height: 1440,
+                            refreshMillihertz: 143_998, scale: 1.5,
+                            x: 0, y: 0, enabled: true)
+                    ],
+                    appliedConfigurationGeneration: 3)),
+            .error(
+                ControlFailure(
+                    code: .rejected,
+                    message: "no focused window")),
         ]
         for response in responses {
             #expect(try roundTrip(response) == response, "\(response)")
@@ -98,10 +106,12 @@ import Testing
             id: OutputID(rawValue: 2),
             name: "HDMI-A-1", width: 1920, height: 1080,
             refreshMillihertz: 59_940, scale: 1, x: 0, y: 0, enabled: true)
-        guard case .outputs(let decoded) = try roundTrip(.outputs(
-            ControlOutputSnapshot(
-                outputs: [output],
-                appliedConfigurationGeneration: 5)))
+        guard
+            case .outputs(let decoded) = try roundTrip(
+                .outputs(
+                    ControlOutputSnapshot(
+                        outputs: [output],
+                        appliedConfigurationGeneration: 5)))
         else {
             Issue.record("expected outputs")
             return
@@ -113,12 +123,13 @@ import Testing
     @Test func aConfigurationResponseUsesTheFileSpelling() throws {
         // Keys match config.json so a response can be pasted back into it.
         let data = try ControlCoding.encoder().encode(
-            ControlResponse.configuration(ControlConfigurationSnapshot(
-                canonicalSource: "{\"config_version\":1,\"input\":{\"natural_scroll\":true}}",
-                configuredEpochHigh: 1,
-                configuredEpochLow: 2,
-                configuredGeneration: 3,
-                renderServerAppliedGeneration: 3)))
+            ControlResponse.configuration(
+                ControlConfigurationSnapshot(
+                    canonicalSource: "{\"config_version\":1,\"input\":{\"natural_scroll\":true}}",
+                    configuredEpochHigh: 1,
+                    configuredEpochLow: 2,
+                    configuredGeneration: 3,
+                    renderServerAppliedGeneration: 3)))
         let text = String(decoding: data, as: UTF8.self)
         #expect(text.contains("config_version"))
         #expect(text.contains("natural_scroll"))
@@ -142,9 +153,10 @@ import Testing
     @Test func packetCodingIsDeterministic() throws {
         let envelope = ControlResponseEnvelope(
             requestID: ControlRequestID(rawValue: 7),
-            response: .binds(ControlBindingSnapshot(
-                binds: DefaultBinds.table,
-                appliedConfigurationGeneration: 7)))
+            response: .binds(
+                ControlBindingSnapshot(
+                    binds: DefaultBinds.table,
+                    appliedConfigurationGeneration: 7)))
         #expect(
             try ControlCoding.packet(envelope)
                 == ControlCoding.packet(envelope))

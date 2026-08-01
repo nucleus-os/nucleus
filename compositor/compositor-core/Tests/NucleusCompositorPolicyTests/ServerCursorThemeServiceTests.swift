@@ -1,7 +1,8 @@
 import Dispatch
-import FoundationEssentials
+import Foundation
 import NucleusCompositorServer
 import Testing
+
 @testable import NucleusCompositorPolicy
 
 @Suite

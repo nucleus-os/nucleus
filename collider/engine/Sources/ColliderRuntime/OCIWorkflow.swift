@@ -53,15 +53,14 @@ extension ColliderRuntime {
         let imageID = try executor.imageIdentifier(
             candidate: candidate,
             inspectionOutput: inspectionOutput)
-        guard imageID.hasPrefix("sha256:"), imageID.count == 71 else {
+        guard validOCIImageDigest(in: imageID) != nil else {
             throw RuntimeFailure.invalidOutput(
                 "OCI executor did not produce a content-addressed builder image ID")
         }
         try DurableFile.write(Data("\(imageID)\n".utf8), to: preparation.imageID)
         if let previousImageID,
             previousImageID != imageID,
-            previousImageID.hasPrefix("sha256:"),
-            previousImageID.count == 71
+            validOCIImageDigest(in: previousImageID) != nil
         {
             _ = try? await execute(
                 executor.removeImageCommand(
@@ -92,7 +91,7 @@ extension ColliderRuntime {
             encoding: .utf8
         )
         .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard imageID.hasPrefix("sha256:"), imageID.count == 71 else {
+        guard validOCIImageDigest(in: imageID) != nil else {
             throw RuntimeFailure.invalidOutput(
                 "builder image ID is missing or invalid")
         }
@@ -150,4 +149,12 @@ extension ColliderRuntime {
                 temporaryDirectory: temporaryDirectory),
             stage: stage)
     }
+}
+
+private func validOCIImageDigest(in identifier: String) -> String? {
+    let digest = identifier.split(whereSeparator: \.isNewline).last.map(String.init)
+    guard let digest, digest.hasPrefix("sha256:"), digest.count == 71 else {
+        return nil
+    }
+    return digest
 }

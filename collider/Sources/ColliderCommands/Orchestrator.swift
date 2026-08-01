@@ -1,5 +1,5 @@
 import ColliderCore
-import FoundationEssentials
+import Foundation
 import SystemPackage
 
 enum WorkspaceComponent: String, Hashable, Sendable {

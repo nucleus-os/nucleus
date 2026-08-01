@@ -1,6 +1,14 @@
 import ArgumentParser
 import ColliderCore
-import FoundationEssentials
+import Foundation
+
+enum RuntimeSanitizer: String, CaseIterable, Equatable,
+    ExpressibleByArgument
+{
+    case address
+    case undefined
+    case thread
+}
 
 enum SanitizerSelection: String, CaseIterable, ExpressibleByArgument {
     case all

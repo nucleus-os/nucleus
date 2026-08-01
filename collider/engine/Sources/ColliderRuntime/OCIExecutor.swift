@@ -215,7 +215,8 @@ struct AppleContainerExecutor: OCIExecutor {
         else {
             throw OCIExecutorFailure.invalidAppleImageInspection
         }
-        return images[0].configuration.descriptor.digest
+        let image = images[0].configuration
+        return image.name + "\n" + image.descriptor.digest
     }
 
     func removeImageCommand(
@@ -224,7 +225,9 @@ struct AppleContainerExecutor: OCIExecutor {
     ) -> CommandSpec {
         CommandSpec(
             executable: executable,
-            arguments: ["image", "delete", "--force", imageID],
+            arguments: [
+                "image", "delete", "--force", appleImageReference(imageID),
+            ],
             workingDirectory: preparation.context,
             environment: preparation.environment,
             output: .logged)
@@ -280,7 +283,7 @@ struct AppleContainerExecutor: OCIExecutor {
             }
             arguments += ["--mount", specification]
         }
-        arguments.append(imageID)
+        arguments.append(appleImageReference(imageID))
         arguments += execution.command
         return CommandSpec(
             executable: executable,
@@ -298,9 +301,14 @@ private struct AppleImageInspection: Decodable {
         }
 
         let descriptor: Descriptor
+        let name: String
     }
 
     let configuration: Configuration
+}
+
+private func appleImageReference(_ identifier: String) -> String {
+    String(identifier.split(separator: "\n", maxSplits: 1)[0])
 }
 
 private func validateOCIPlatform(

@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 import NucleusSessionProtocol
 import Testing
 
@@ -12,9 +12,10 @@ import Testing
         let data = try encoder.encode(declaration)
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        #expect(try decoder.decode(
-            SessionCapabilityDeclaration.self,
-            from: data) == declaration)
+        #expect(
+            try decoder.decode(
+                SessionCapabilityDeclaration.self,
+                from: data) == declaration)
         #expect(declaration.restartPolicy == .onFailure)
         #expect(declaration.maximumRestarts == 3)
         #expect(declaration.shutdownTimeoutSeconds == 10)
@@ -54,7 +55,8 @@ import Testing
     @Test func decodingEnforcesTheSameValidation() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let bytes = Data("""
+        let bytes = Data(
+            """
             {
               "identifier": "android/runtime",
               "executable": "/usr/bin/true"

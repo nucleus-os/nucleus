@@ -97,11 +97,11 @@ All builder invocations enforce the same boundary:
    output mounts.
 
 The container entry point is the single Linux toolchain-build implementation.
-First-run setup uses a Swift 6.4 bootstrap compiler only to compile Collider,
-then asks Collider to invoke that same container entry point. Subsequent builds
-use the active Nucleus toolchain to compile Collider and retain the identical
-containerized build graph. The bootstrap compiler never compiles the Nucleus
-toolchain or SwiftAndroid products, so there is no second build pipeline.
+On macOS, first-run setup and subsequent native builds compile Collider with
+the selected Xcode 27 Swift 6.4 compiler. On Linux, setup uses the active
+generated Nucleus toolchain. Collider invokes the identical pinned Linux amd64
+container graph from either host. The Xcode compiler never compiles the Linux
+toolchain or SwiftAndroid products, so there is no second generation pipeline.
 
 ## Phase 6: Move Linux Swift and SwiftAndroid Into `swift-builder` — In Progress
 

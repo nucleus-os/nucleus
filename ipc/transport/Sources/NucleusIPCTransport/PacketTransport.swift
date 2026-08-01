@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 import Glibc
 import NucleusIPCTransportC
 
@@ -89,13 +89,15 @@ public final class PacketConnection: @unchecked Sendable {
         }
         return (
             PacketConnection(owning: pair[0]),
-            PacketConnection(owning: pair[1]))
+            PacketConnection(owning: pair[1])
+        )
     }
 
     public var peerCredentials: IPCPeerCredentials? {
         var credentials = nucleus_ipc_peer_credentials()
-        guard unsafe nucleus_ipc_peer_credentials(
-            fileDescriptor, &credentials) == 0
+        guard
+            unsafe nucleus_ipc_peer_credentials(
+                fileDescriptor, &credentials) == 0
         else { return nil }
         return IPCPeerCredentials(
             processID: credentials.pid,
@@ -217,9 +219,11 @@ public final class PacketListener: @unchecked Sendable {
             }
         }
         var metadata = stat()
-        guard path.withCString({
-            unsafe Glibc.lstat($0, &metadata)
-        }) == 0 else {
+        guard
+            path.withCString({
+                unsafe Glibc.lstat($0, &metadata)
+            }) == 0
+        else {
             let code = errno
             _ = Glibc.close(descriptor)
             _ = path.withCString { unsafe Glibc.unlink($0) }
@@ -252,9 +256,10 @@ public final class PacketListener: @unchecked Sendable {
         _ = Glibc.close(fileDescriptor)
         if removesPathOnDeinit {
             var metadata = stat()
-            let stillOwnsPath = path.withCString {
-                unsafe Glibc.lstat($0, &metadata)
-            } == 0
+            let stillOwnsPath =
+                path.withCString {
+                    unsafe Glibc.lstat($0, &metadata)
+                } == 0
                 && metadata.st_dev == pathDevice
                 && metadata.st_ino == pathInode
             if stillOwnsPath {

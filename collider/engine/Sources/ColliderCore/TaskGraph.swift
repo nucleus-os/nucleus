@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 import SystemPackage
 
 public enum ArtifactInput: Hashable, Sendable {
@@ -619,8 +619,8 @@ public struct OCIResourceLimits: Hashable, Sendable {
     }
 
     public static let build = OCIResourceLimits(
-        cpuCount: nil,
-        memoryBytes: nil,
+        cpuCount: 20,
+        memoryBytes: 96 * 1_024 * 1_024 * 1_024,
         processCount: 32_768)
 }
 

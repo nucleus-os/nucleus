@@ -1,4 +1,4 @@
-public import FoundationEssentials
+public import Foundation
 
 public struct DragSessionID: Hashable, Sendable, Comparable {
     public let context: UInt32
@@ -32,8 +32,10 @@ public struct DragOfferMetadata: Sendable, Equatable {
         contentTypes: some Sequence<String>,
         allowedOperations: Set<DragOperation>
     ) {
-        self.contentTypes = Array(Set(
-            contentTypes.filter { !$0.isEmpty })).sorted()
+        self.contentTypes = Array(
+            Set(
+                contentTypes.filter { !$0.isEmpty })
+        ).sorted()
         self.allowedOperations = allowedOperations
     }
 }
@@ -94,8 +96,7 @@ public struct DragSourceConfiguration {
     public let maximumPayloadBytes: Int
     public let preview: View?
     public let payloadProviders: [String: PayloadProvider]
-    public let completion:
-        (@MainActor (DragCompletionOutcome) -> Void)?
+    public let completion: (@MainActor (DragCompletionOutcome) -> Void)?
 
     public init(
         payloadProviders: [String: PayloadProvider],
@@ -121,13 +122,11 @@ public struct DragSourceConfiguration {
 @MainActor
 public struct DropDestinationConfiguration {
     public let acceptedContentTypes: Set<String>
-    public let proposal:
-        @MainActor (DragDropInfo) -> DragDropProposal?
+    public let proposal: @MainActor (DragDropInfo) -> DragDropProposal?
     public let entered: (@MainActor (DragDropInfo) -> Void)?
     public let updated: (@MainActor (DragDropInfo) -> Void)?
     public let exited: (@MainActor (DragDropInfo) -> Void)?
-    public let perform:
-        @MainActor (DragDropInfo, DragPayload) -> Bool
+    public let perform: @MainActor (DragDropInfo, DragPayload) -> Bool
 
     public init(
         acceptedContentTypes: Set<String>,
@@ -200,7 +199,7 @@ extension View {
         }
         setAccessibilityAction(.cancelDrag) { [weak self] _ in
             guard let scene = self?.window?.windowScene,
-                  scene.activeDragSession != nil
+                scene.activeDragSession != nil
             else {
                 return false
             }
@@ -223,7 +222,7 @@ extension View {
         }
         setAccessibilityAction(.performDrop) { [weak self] _ in
             guard let self, let scene = window?.windowScene,
-                  scene.activeDragSession != nil
+                scene.activeDragSession != nil
             else {
                 return false
             }
@@ -260,9 +259,9 @@ extension WindowScene {
         at sceneLocation: Point
     ) -> DragSessionID? {
         guard activationState != .disconnected,
-              sourceView.uiContext === uiContext,
-              sourceView.window?.windowScene === self,
-              let source = sourceView.storedDragSource
+            sourceView.uiContext === uiContext,
+            sourceView.window?.windowScene === self,
+            let source = sourceView.storedDragSource
         else {
             return nil
         }
@@ -281,8 +280,8 @@ extension WindowScene {
         at sceneLocation: Point
     ) -> DragSessionID? {
         guard activationState != .disconnected,
-              sourceView.uiContext === uiContext,
-              sourceView.window?.windowScene === self
+            sourceView.uiContext === uiContext,
+            sourceView.window?.windowScene === self
         else {
             return nil
         }
@@ -302,7 +301,7 @@ extension WindowScene {
         at sceneLocation: Point
     ) -> DragSessionID? {
         guard activationState != .disconnected,
-              source.preview == nil
+            source.preview == nil
         else {
             return nil
         }
@@ -323,8 +322,8 @@ extension WindowScene {
         at sceneLocation: Point
     ) -> DragSessionID? {
         guard activationState != .disconnected,
-              sourceView.uiContext === uiContext,
-              sourceView.window?.windowScene === self
+            sourceView.uiContext === uiContext,
+            sourceView.window?.windowScene === self
         else {
             return nil
         }
@@ -366,8 +365,8 @@ extension WindowScene {
     @discardableResult
     public func updateDrag(at sceneLocation: Point) -> DragDropProposal? {
         guard let session = activeDragSession,
-              !session.isTerminal,
-              session.sourceView == nil
+            !session.isTerminal,
+            session.sourceView == nil
                 || session.sourceView?.window?.windowScene === self
         else {
             cancelDrag()
@@ -409,16 +408,16 @@ extension WindowScene {
         at sceneLocation: Point
     ) async -> DragCompletionOutcome {
         guard let session = activeDragSession,
-              !session.isTerminal
+            !session.isTerminal
         else {
             return .cancelled
         }
         guard updateDrag(at: sceneLocation) != nil,
-              let target = session.targetView,
-              let proposal = session.proposal,
-              let info = session.lastInfo,
-              let destination = target.storedDropDestination,
-              let provider =
+            let target = session.targetView,
+            let proposal = session.proposal,
+            let info = session.lastInfo,
+            let destination = target.storedDropDestination,
+            let provider =
                 session.source.payloadProviders[proposal.contentType]
         else {
             finish(session, outcome: .rejected, notifyExit: true)
@@ -448,14 +447,14 @@ extension WindowScene {
             return .failed
         }
         guard activeDragSession === session,
-              !session.isTerminal,
-              session.sourceView?.id == sourceID,
-              (session.sourceView == nil
-                || session.sourceView?.window?.windowScene === self),
-              session.targetView?.id == targetID,
-              target.window?.windowScene === self,
-              target.storedDropDestinationGeneration == targetGeneration,
-              session.proposal == proposal
+            !session.isTerminal,
+            session.sourceView?.id == sourceID,
+            session.sourceView == nil
+                || session.sourceView?.window?.windowScene === self,
+            session.targetView?.id == targetID,
+            target.window?.windowScene === self,
+            target.storedDropDestinationGeneration == targetGeneration,
+            session.proposal == proposal
         else {
             if activeDragSession === session {
                 finish(session, outcome: .cancelled, notifyExit: true)
@@ -483,7 +482,7 @@ extension WindowScene {
         outcome: DragCompletionOutcome
     ) {
         guard let session = activeDragSession,
-              session.id == sessionID
+            session.id == sessionID
         else {
             return
         }
@@ -492,8 +491,8 @@ extension WindowScene {
 
     package func dropFromInput(at sceneLocation: Point) {
         guard let session = activeDragSession,
-              session.kind != .outgoingPlatform,
-              session.pendingDrop == nil
+            session.kind != .outgoingPlatform,
+            session.pendingDrop == nil
         else { return }
         session.pendingDrop = Task { @MainActor [weak self, weak session] in
             guard let self, let session else { return }
@@ -547,9 +546,9 @@ extension WindowScene {
                         location: local,
                         proposal: nil)
                     if let proposal = destination.proposal(base),
-                       commonTypes.contains(proposal.contentType),
-                       session.source.offer.allowedOperations.contains(
-                           proposal.operation)
+                        commonTypes.contains(proposal.contentType),
+                        session.source.offer.allowedOperations.contains(
+                            proposal.operation)
                     {
                         let info = DragDropInfo(
                             sessionID: session.id,
@@ -557,7 +556,8 @@ extension WindowScene {
                             location: local,
                             proposal: proposal)
                         return (
-                            current, destination, proposal, info)
+                            current, destination, proposal, info
+                        )
                     }
                 }
             }
@@ -568,8 +568,8 @@ extension WindowScene {
 
     private func notifyExit(_ session: DragSession) {
         guard let target = session.targetView,
-              let info = session.lastInfo,
-              let destination = target.storedDropDestination
+            let info = session.lastInfo,
+            let destination = target.storedDropDestination
         else {
             return
         }
@@ -601,8 +601,8 @@ extension WindowScene {
         at sceneLocation: Point
     ) {
         guard let preview = session.source.preview,
-              let window = session.sourceView?.window,
-              let root = window.root
+            let window = session.sourceView?.window,
+            let root = window.root
         else {
             return
         }

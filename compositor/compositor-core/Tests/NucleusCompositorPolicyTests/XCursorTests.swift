@@ -1,14 +1,17 @@
-import FoundationEssentials
+import Foundation
 import Testing
+
 @testable import NucleusCompositorPolicy
 
 @Suite struct XCursorTests {
     @Test func selectsTheClosestImageAndOwnsItsPixels() {
         var data = cursorFile([
-            .init(size: 16, width: 1, height: 1, hotSpotX: 0, hotSpotY: 0,
-                  pixels: [1, 2, 3, 4]),
-            .init(size: 32, width: 2, height: 1, hotSpotX: 1, hotSpotY: 0,
-                  pixels: [10, 20, 30, 40, 50, 60, 70, 80]),
+            .init(
+                size: 16, width: 1, height: 1, hotSpotX: 0, hotSpotY: 0,
+                pixels: [1, 2, 3, 4]),
+            .init(
+                size: 32, width: 2, height: 1, hotSpotX: 1, hotSpotY: 0,
+                pixels: [10, 20, 30, 40, 50, 60, 70, 80]),
         ])
 
         let image = XCursor.parse(data, targetSize: 28)
@@ -23,8 +26,9 @@ import Testing
 
     @Test func rejectsTruncatedHeadersTablesAndPayloads() {
         let valid = cursorFile([
-            .init(size: 24, width: 1, height: 1, hotSpotX: 0, hotSpotY: 0,
-                  pixels: [1, 2, 3, 4])
+            .init(
+                size: 24, width: 1, height: 1, hotSpotX: 0, hotSpotY: 0,
+                pixels: [1, 2, 3, 4])
         ])
 
         #expect(XCursor.parse(Data(valid.prefix(15)), targetSize: 24) == nil)
@@ -34,25 +38,30 @@ import Testing
 
     @Test func rejectsOffsetsOutsideTheInput() {
         var data = cursorFile([
-            .init(size: 24, width: 1, height: 1, hotSpotX: 0, hotSpotY: 0,
-                  pixels: [1, 2, 3, 4])
+            .init(
+                size: 24, width: 1, height: 1, hotSpotX: 0, hotSpotY: 0,
+                pixels: [1, 2, 3, 4])
         ])
         replaceUInt32(at: 24, with: .max, in: &data)
         #expect(XCursor.parse(data, targetSize: 24) == nil)
     }
 
     @Test func rejectsInvalidHeaderLengthsAndEmptyImages() {
-        let shortFileHeader = cursorFile([
-            .init(size: 24, width: 1, height: 1, hotSpotX: 0, hotSpotY: 0,
-                  pixels: [1, 2, 3, 4])
-        ], fileHeaderLength: 12)
+        let shortFileHeader = cursorFile(
+            [
+                .init(
+                    size: 24, width: 1, height: 1, hotSpotX: 0, hotSpotY: 0,
+                    pixels: [1, 2, 3, 4])
+            ], fileHeaderLength: 12)
         let shortChunkHeader = cursorFile([
-            .init(size: 24, width: 1, height: 1, hotSpotX: 0, hotSpotY: 0,
-                  pixels: [1, 2, 3, 4], headerLength: 35)
+            .init(
+                size: 24, width: 1, height: 1, hotSpotX: 0, hotSpotY: 0,
+                pixels: [1, 2, 3, 4], headerLength: 35)
         ])
         let emptyImage = cursorFile([
-            .init(size: 24, width: 0, height: 1, hotSpotX: 0, hotSpotY: 0,
-                  pixels: [])
+            .init(
+                size: 24, width: 0, height: 1, hotSpotX: 0, hotSpotY: 0,
+                pixels: [])
         ])
 
         #expect(XCursor.parse(shortFileHeader, targetSize: 24) == nil)

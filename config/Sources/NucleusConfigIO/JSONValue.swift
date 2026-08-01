@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 
 /// A decoded JSON tree, used only for key auditing.
 ///

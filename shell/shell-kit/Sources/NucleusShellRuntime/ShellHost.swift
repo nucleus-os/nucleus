@@ -1,29 +1,32 @@
-public import NucleusUI
-import NucleusDiagnostics
-@_spi(NucleusWindowClientImplementation) import NucleusWindowClientHost
-import NucleusUIEmbedder
-import NucleusRenderModel
-import NucleusConfig
+import Foundation
 import NucleusAppHostBundle
-@_spi(NucleusWindowClientImplementation)
-import NucleusWindowClientWayland
-import NucleusWindowClientPasteboard
-public import NucleusWindowClientInput
-import NucleusShellAuth
-import NucleusLinuxDBus
+import NucleusConfig
+import NucleusDiagnostics
 import NucleusLinuxAccessibility
-public import NucleusShellServices
+import NucleusLinuxDBus
 import NucleusLinuxEnvironment
 import NucleusLinuxReactor
+import NucleusRenderModel
+import NucleusRenderer
 public import NucleusSessionProtocol
+import NucleusShellAuth
 import NucleusShellProduct
+public import NucleusShellServices
+import NucleusShellSignalC
+public import NucleusUI
+import NucleusUIEmbedder
+@_spi(NucleusWindowClientImplementation) import NucleusWindowClientHost
+public import NucleusWindowClientInput
+import NucleusWindowClientPasteboard
 import NucleusWindowClientRender
 import NucleusWindowClientRuntime
-import NucleusRenderer
-import NucleusShellSignalC
-import FoundationEssentials
-import FoundationInternationalization
+@_spi(NucleusWindowClientImplementation) import NucleusWindowClientWayland
 import Tracy
+
+#if canImport(FoundationInternationalization)
+import FoundationInternationalization
+#endif
+
 #if canImport(Glibc)
 import Glibc
 #endif
@@ -163,14 +166,15 @@ public final class ShellHost {
         let clockFormatStyle = ShellFormatting.clockStyle()
         let actionDispatcher = ShellActionDispatcher()
         guard let renderWake = ShellRenderWakeSink() else { return nil }
-        guard let desktopHost = NucleusDesktopHost(
-            configuration: .init(
-                waylandSocketName: socketName,
-                connectedWaylandFileDescriptor:
-                    waylandDescriptor,
-                enableVulkanValidation:
-                    configuration.enableVulkanValidation),
-            asyncRenderWakeSink: renderWake)
+        guard
+            let desktopHost = NucleusDesktopHost(
+                configuration: .init(
+                    waylandSocketName: socketName,
+                    connectedWaylandFileDescriptor:
+                        waylandDescriptor,
+                    enableVulkanValidation:
+                        configuration.enableVulkanValidation),
+                asyncRenderWakeSink: renderWake)
         else {
             return nil
         }

@@ -73,6 +73,7 @@ func boundedCommandValuesRejectUnknownSpellingsDuringParsing() {
     }
 }
 
+#if os(Linux)
 @Test
 func compositorPassthroughRequiresTheTerminatorAndRemainsOpaque() throws {
     let command = try Run.parse([
@@ -135,3 +136,4 @@ func runtimeInstallationUsesTheRelocatableFrameworkLayout() {
         installation.pamHelper.path
             == "/runtime/libexec/NucleusShellPamHelper")
 }
+#endif

@@ -12,33 +12,41 @@ extension ColliderRuntime {
             .resolvingSymlinksInPath()
         let artifact = FilePath(artifactURL.path)
         guard browserInstallationDirectory(artifact),
-              browserInstallationDirectory(artifact.appending("runtime"))
+            browserInstallationDirectory(artifact.appending("runtime"))
         else {
             throw RuntimeFailure.invalidOutput(
                 "validated browser artifact is missing: \(artifactLink)")
         }
         let buildID = try chromiumBuildID(
             artifact.appending("nucleus-build-manifest.json"))
-        let widevineCandidates = [
-            artifact.appending("runtime/WidevineCdm"),
-        ] + installation.widevineCandidates
-        guard let widevine = widevineCandidates.first(where: {
-            browserInstallationFile($0.appending("manifest.json"))
-                && browserInstallationFile($0.appending(
-                    "_platform_specific/linux_x64/libwidevinecdm.so"))
-        }) else {
+        let widevineCandidates =
+            [
+                artifact.appending("runtime/WidevineCdm")
+            ] + installation.widevineCandidates
+        guard
+            let widevine = widevineCandidates.first(where: {
+                browserInstallationFile($0.appending("manifest.json"))
+                    && browserInstallationFile(
+                        $0.appending(
+                            "_platform_specific/linux_x64/libwidevinecdm.so"))
+            })
+        else {
             throw RuntimeFailure.invalidOutput(
                 "a complete Linux x64 WidevineCdm installation is required")
         }
         let widevineManifestDigest = try ArtifactHasher.digest(
-            file: widevine.appending("manifest.json")).description
+            file: widevine.appending("manifest.json")
+        ).description
         let widevineLibraryDigest = try ArtifactHasher.digest(
             file: widevine.appending(
                 "_platform_specific/linux_x64/"
-                    + "libwidevinecdm.so")).description
-        let widevineID = ArtifactHasher.digest(bytes: Array(
-            (widevineManifestDigest + widevineLibraryDigest).utf8))
-            .description
+                    + "libwidevinecdm.so")
+        ).description
+        let widevineID = ArtifactHasher.digest(
+            bytes: Array(
+                (widevineManifestDigest + widevineLibraryDigest).utf8)
+        )
+        .description
 
         let sandboxSource = artifact.appending("runtime/chrome_sandbox")
         let systemSandbox = installation.systemSandboxDirectory.appending(
@@ -76,21 +84,25 @@ extension ColliderRuntime {
                     environment: installation.environment,
                     stage: stage)
             }
-            guard validSystemSandbox(
-                directory: installation.systemSandboxDirectory,
-                sandbox: systemSandbox,
-                source: sandboxSource)
+            guard
+                validSystemSandbox(
+                    directory: installation.systemSandboxDirectory,
+                    sandbox: systemSandbox,
+                    source: sandboxSource)
             else {
                 throw RuntimeFailure.invalidOutput(
                     "setuid sandbox installation is invalid: "
                         + systemSandbox.string)
             }
             sandboxID = try ArtifactHasher.digest(
-                file: systemSandbox).description
+                file: systemSandbox
+            ).description
         }
 
-        let prefix = FilePath(URL(
-            fileURLWithPath: installation.prefix.string)
+        let prefix = FilePath(
+            URL(
+                fileURLWithPath: installation.prefix.string
+            )
             .standardizedFileURL.path)
         guard prefix.string != "/" else {
             throw RuntimeFailure.invalidOutput(
@@ -113,9 +125,7 @@ extension ColliderRuntime {
         ].joined(separator: "\n")
         let installDigest = ArtifactHasher.digest(
             bytes: Array(identityBytes.utf8))
-        let installID = installDigest.bytes.prefix(12).map {
-            String(format: "%02x", $0)
-        }.joined()
+        let installID = String(installDigest.hexadecimal.prefix(24))
         let runtimeRoot = prefix.appending("lib/nucleus-browser")
         let generations = runtimeRoot.appending("generations")
         try FileManager.default.createDirectory(
@@ -149,19 +159,24 @@ extension ColliderRuntime {
         let desktop = candidate.appending(
             "share/applications/dev.nucleus.Browser.desktop")
         let template = try String(
-            contentsOf: URL(fileURLWithPath: candidate.appending(
-                "share/applications/"
-                    + "dev.nucleus.Browser.desktop.in").string),
+            contentsOf: URL(
+                fileURLWithPath: candidate.appending(
+                    "share/applications/"
+                        + "dev.nucleus.Browser.desktop.in"
+                ).string),
             encoding: .utf8)
         try DurableFile.write(
-            Data(template.replacingOccurrences(
-                of: "@NUCLEUS_BROWSER_LAUNCHER@",
-                with: launcherPath).utf8),
+            Data(
+                template.replacingOccurrences(
+                    of: "@NUCLEUS_BROWSER_LAUNCHER@",
+                    with: launcherPath
+                ).utf8),
             to: desktop)
         try FileManager.default.removeItem(
             atPath: candidate.appending(
                 "share/applications/"
-                    + "dev.nucleus.Browser.desktop.in").string)
+                    + "dev.nucleus.Browser.desktop.in"
+            ).string)
         try await checkedBrowserInstallCommand(
             .named("bash"),
             ["-n", candidate.appending("bin/nucleus-browser").string],
@@ -182,14 +197,15 @@ extension ColliderRuntime {
                 executable: .named("ldd"),
                 arguments: [
                     candidate.appending(
-                        "runtime/nucleus-browser-bin").string,
+                        "runtime/nucleus-browser-bin"
+                    ).string
                 ],
                 workingDirectory: candidate,
                 environment: installation.environment,
                 output: .captured(limit: 4 * 1_024 * 1_024)),
             stage: stage)
         guard linker.status == 0,
-              !linker.standardOutput.contains("not found")
+            !linker.standardOutput.contains("not found")
         else {
             throw RuntimeFailure.invalidOutput(
                 "installed browser has unresolved dynamic libraries")
@@ -235,15 +251,16 @@ extension ColliderRuntime {
                             + "dev.nucleus.Browser.png"))
             }
         }
-        try DirectoryLifecycle.prune(DirectoryRetentionPlan(
-            safetyRoot: runtimeRoot,
-            rules: [
-                DirectoryRetentionRule(
-                    root: generations,
-                    current: runtimeRoot.appending("current"),
-                    retain: 2,
-                    naming: .contentIdentity),
-            ]))
+        try DirectoryLifecycle.prune(
+            DirectoryRetentionPlan(
+                safetyRoot: runtimeRoot,
+                rules: [
+                    DirectoryRetentionRule(
+                        root: generations,
+                        current: runtimeRoot.appending("current"),
+                        retain: 2,
+                        naming: .contentIdentity)
+                ]))
         if browserExecutable(
             "update-desktop-database",
             environment: installation.environment)
@@ -252,7 +269,7 @@ extension ColliderRuntime {
                 CommandSpec(
                     executable: .named("update-desktop-database"),
                     arguments: [
-                        prefix.appending("share/applications").string,
+                        prefix.appending("share/applications").string
                     ],
                     workingDirectory: prefix,
                     environment: installation.environment),
@@ -313,28 +330,29 @@ private func validSystemSandbox(
     sandbox: FilePath,
     source: FilePath
 ) -> Bool {
-    guard let directoryMetadata = try? directory.stat(
-        followTargetSymlink: false),
-          directoryMetadata.type == .directory,
-          let sandboxAttributes =
+    guard
+        let directoryMetadata = try? directory.stat(
+            followTargetSymlink: false),
+        directoryMetadata.type == .directory,
+        let sandboxAttributes =
             try? FileManager.default.attributesOfItem(
                 atPath: sandbox.string),
-          let directoryAttributes =
+        let directoryAttributes =
             try? FileManager.default.attributesOfItem(
                 atPath: directory.string),
-          (directoryAttributes[.ownerAccountID] as? NSNumber)?.uint32Value == 0,
-          (directoryAttributes[.groupOwnerAccountID] as? NSNumber)?
+        (directoryAttributes[.ownerAccountID] as? NSNumber)?.uint32Value == 0,
+        (directoryAttributes[.groupOwnerAccountID] as? NSNumber)?
             .uint32Value == 0,
-          (directoryAttributes[.posixPermissions] as? NSNumber)?
+        (directoryAttributes[.posixPermissions] as? NSNumber)?
             .uint16Value == 0o755,
-          (sandboxAttributes[.ownerAccountID] as? NSNumber)?.uint32Value == 0,
-          (sandboxAttributes[.groupOwnerAccountID] as? NSNumber)?
+        (sandboxAttributes[.ownerAccountID] as? NSNumber)?.uint32Value == 0,
+        (sandboxAttributes[.groupOwnerAccountID] as? NSNumber)?
             .uint32Value == 0,
-          (sandboxAttributes[.posixPermissions] as? NSNumber)?
+        (sandboxAttributes[.posixPermissions] as? NSNumber)?
             .uint16Value == 0o4755,
-          let installed = try? Data(
+        let installed = try? Data(
             contentsOf: URL(fileURLWithPath: sandbox.string)),
-          let expected = try? Data(
+        let expected = try? Data(
             contentsOf: URL(fileURLWithPath: source.string))
     else { return false }
     return installed == expected

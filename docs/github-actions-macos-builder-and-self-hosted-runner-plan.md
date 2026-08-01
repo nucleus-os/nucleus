@@ -61,13 +61,28 @@ privilege, process-filesystem, resource, environment, platform, and output
 contract. AOSP compilation, signing, image assembly, and sandbox validation use
 that contract. Behavioral tests cover both translations and planning evidence.
 
-The Apple backend is implemented but not hardware-qualified. The next required
-step is Phase 4 on the M2 Ultra: install and pin Apple `container`, start its
-service noninteractively, establish the declared host-only build network,
-verify Rosetta-backed `linux/amd64` execution and storage, and run Collider's
-backend contract suite there. Recipe-level compiler-host conditionals that
-still select native macOS artifacts must then move behind explicit lane and
-artifact inputs before Phase 5 provisions the persistent development machine.
+The Apple backend is implemented but not hardware-qualified. The M2 Ultra now
+runs macOS 27.0 build `26A5388g`, Xcode 27 beta 4 build `27A5228h`, Apple
+`container` 1.2.0, and Rosetta. Explicit `linux/amd64` execution passes on the
+host-only `nucleus-build-internal` network, and the declared case-sensitive
+APFS volumes are provisioned. Collider's macOS graph compiles through the
+public Apple Swift surface and the focused builder-doctor suite passes under
+the selected Xcode. Native macOS builds now use that Xcode toolchain directly.
+The generated Linux amd64 Swift toolchain, Foundation, SwiftAndroid runtimes,
+native dependencies, and builder smoke tests use only the pinned Linux amd64
+OCI image on both Apple `container` and Podman. Full Xcode is required because
+Command Line Tools does not ship the Swift Testing macro plugin used by the
+repository tests.
+
+Apple `container` does not restore its dynamically bootstrapped launchd
+registration after reboot. Its API server and helpers are launch agents that
+are intentionally scoped to a logged-in user and cannot serve clients from the
+system bootstrap namespace. Nucleus now declares the complete host contract and
+persistent login-session bootstrap under `tools/macos-builder/`; installing
+that bootstrap now restores Apple `container` successfully in the active
+builder login session. Passing `collider doctor ci-macos-builder` and repeating
+the reboot-and-login gate are the remaining Phase 4 host work. Phase 5 then
+provisions the persistent development machine.
 
 ## Required Runner Topology
 
@@ -233,12 +248,15 @@ mount source inputs read-only.
 
 Define a read-only macOS builder doctor lane. It requires:
 
-- the selected macOS and Xcode releases;
-- Apple `container` and its system service;
+- the selected macOS release and Xcode 27 beta 4 build `27A5228h`; full Xcode
+  supplies the Swift Testing macro plugin required by the repository test
+  targets, so Command Line Tools alone does not satisfy the lane;
+- Apple `container` and its persistent builder-login launch agent;
 - Rosetta availability for Linux VMs;
 - sufficient CPU, memory, and disk allocation;
 - a case-sensitive build volume;
-- the selected Swift bootstrap compiler;
+- the selected Xcode Swift compiler for native macOS work and the pinned Linux
+  amd64 bootstrap compiler inside the Swift builder image;
 - content-addressed cache and artifact roots;
 - noninteractive execution with no pending license or authorization prompt.
 
@@ -254,16 +272,17 @@ qualification.
 
 Provision the first M2 Ultra executor in this order:
 
-1. install the selected, immutable Apple `container` release on the selected
-   macOS release;
-2. start its system service and prove it survives logout and restart without an
-   authorization prompt;
+1. install Apple `container` 1.2.0 from the selected signed package on macOS
+   27.0 build `26A5388g`;
+2. register its builder-login launch agent and prove it restores the complete
+   service set after restart and builder login without an authorization prompt;
 3. install Rosetta through host provisioning and prove an explicit
    `linux/amd64` container executes an amd64 binary;
 4. create the internal host-only network named
    `nucleus-build-internal`, with no external routing or DNS;
 5. allocate the case-sensitive Collider storage roots and apply their quotas;
-6. install the selected Swift bootstrap toolchain and build Collider;
+6. install and select Xcode 27 beta 4 build `27A5228h`, verify its Swift 6.4
+   compiler and Swift Testing macro plugin, and build Collider;
 7. run `collider doctor` and the Podman/Apple OCI behavioral contract suite;
 8. build one Linux amd64 fixture through Apple `container`, transfer its
    declared output to a Linux x86_64 qualifier, and validate the artifact
@@ -638,8 +657,9 @@ explicit content-addressed caches and immutable artifacts. Forward runner
 service logs and Collider durable run records to external storage before the
 environment is destroyed.
 
-The macOS runner image owns Xcode, Apple `container`, Rosetta, the bootstrap
-Swift compiler, and host tools. The Linux qualifier image owns the selected
+The macOS runner image owns Xcode, Apple `container`, Rosetta, and host tools.
+The pinned Linux amd64 Swift builder image owns its bootstrap compiler. The
+Linux qualifier image owns the selected
 distribution, kernel contract, loader, system libraries, and test tools. The
 GPU worker additionally owns its pinned kernel, firmware, and driver stack.
 

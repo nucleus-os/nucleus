@@ -1,5 +1,5 @@
+import Foundation
 public import NucleusConfig
-import FoundationEssentials
 public import NucleusFoundation
 
 public enum ControlProtocolVersion {
@@ -95,9 +95,10 @@ public enum ControlRequest: Codable, Equatable, Sendable {
             self = .action(
                 try container.decode(BindAction.self, forKey: .action))
         default:
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: container.codingPath + [CodingKeys.request],
-                debugDescription: "unknown request '\(name)'"))
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: container.codingPath + [CodingKeys.request],
+                    debugDescription: "unknown request '\(name)'"))
         }
     }
 
@@ -285,31 +286,38 @@ public enum ControlResponse: Codable, Equatable, Sendable {
         case "accepted": self = .accepted
         case "completed": self = .completed
         case "version":
-            self = .version(try container.decode(
-                ControlVersionInfo.self, forKey: .version))
+            self = .version(
+                try container.decode(
+                    ControlVersionInfo.self, forKey: .version))
         case "configuration":
-            self = .configuration(try container.decode(
-                ControlConfigurationSnapshot.self,
-                forKey: .configuration))
+            self = .configuration(
+                try container.decode(
+                    ControlConfigurationSnapshot.self,
+                    forKey: .configuration))
         case "validation":
-            self = .validation(try container.decode(
-                [String].self, forKey: .diagnostics))
+            self = .validation(
+                try container.decode(
+                    [String].self, forKey: .diagnostics))
         case "outputs":
-            self = .outputs(try container.decode(
-                ControlOutputSnapshot.self, forKey: .outputs))
+            self = .outputs(
+                try container.decode(
+                    ControlOutputSnapshot.self, forKey: .outputs))
         case "binds":
-            self = .binds(try container.decode(
-                ControlBindingSnapshot.self, forKey: .binds))
+            self = .binds(
+                try container.decode(
+                    ControlBindingSnapshot.self, forKey: .binds))
         case "error":
-            self = .error(ControlFailure(
-                code: try container.decode(
-                    ControlErrorCode.self, forKey: .errorCode),
-                message: try container.decode(
-                    String.self, forKey: .message)))
+            self = .error(
+                ControlFailure(
+                    code: try container.decode(
+                        ControlErrorCode.self, forKey: .errorCode),
+                    message: try container.decode(
+                        String.self, forKey: .message)))
         default:
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: container.codingPath + [CodingKeys.response],
-                debugDescription: "unknown response '\(name)'"))
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: container.codingPath + [CodingKeys.response],
+                    debugDescription: "unknown response '\(name)'"))
         }
     }
 

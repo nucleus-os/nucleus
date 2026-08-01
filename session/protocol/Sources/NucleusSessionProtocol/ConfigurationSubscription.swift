@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 import Glibc
 public import NucleusConfig
 import NucleusIPCTransport
@@ -380,14 +380,15 @@ public final class ConfigurationClientChannel {
         }
         guard !indices.isEmpty else { return nil }
         guard indices.count == 1, let index = indices.first,
-              arguments.indices.contains(index + 1),
-              let descriptor = Int32(arguments[index + 1]),
-              descriptor >= 3
+            arguments.indices.contains(index + 1),
+            let descriptor = Int32(arguments[index + 1]),
+            descriptor >= 3
         else {
-            let value = indices.first.flatMap { index in
-                arguments.indices.contains(index + 1)
-                    ? arguments[index + 1] : nil
-            } ?? "<missing>"
+            let value =
+                indices.first.flatMap { index in
+                    arguments.indices.contains(index + 1)
+                        ? arguments[index + 1] : nil
+                } ?? "<missing>"
             throw ConfigurationChannelFailure.invalidDescriptor(value)
         }
         return ConfigurationClientChannel(descriptor: descriptor)
@@ -438,13 +439,14 @@ public final class ConfigurationClientChannel {
     public func acknowledge(
         _ publication: ConfigurationPublication
     ) throws {
-        try send(.acknowledge(
-            epoch: publication.epoch,
-            generation: publication.generation))
+        try send(
+            .acknowledge(
+                epoch: publication.epoch,
+                generation: publication.generation))
         let response = try receive()
         guard response.kind == .accepted,
-              response.epoch == publication.epoch,
-              response.generation == publication.generation
+            response.epoch == publication.epoch,
+            response.generation == publication.generation
         else {
             throw ConfigurationChannelFailure.unexpectedPublication
         }

@@ -1,5 +1,5 @@
 import ColliderCore
-import FoundationEssentials
+import Foundation
 
 struct BenchmarkCommand {
     private struct Suite {
@@ -13,9 +13,10 @@ struct BenchmarkCommand {
     func run() async throws {
         let swiftPM = try context.swiftPMInvocation(configuration: .release)
         let toolchain = try await context.run(
-            "swift", ["--version"], capture: true)
-            .split(whereSeparator: \Character.isNewline)
-            .joined(separator: " | ")
+            "swift", ["--version"], capture: true
+        )
+        .split(whereSeparator: \Character.isNewline)
+        .joined(separator: " | ")
         var environment = context.environment
         environment["NUCLEUS_BENCHMARK_SWIFT_VERSION"] = toolchain
         let benchmarkContext = WorkspaceContext(

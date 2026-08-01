@@ -57,12 +57,14 @@ Nucleus is one monorepo containing independently buildable Swift packages:
 - [`swift-wayland`](swift-wayland) — Swift Wayland protocol bindings (server + client C façades + Swift dispatch).
 - [`swift-tracy`](swift-tracy) — Swift bindings for the Tracy profiler.
 - [`swift-toolchain`](swift-toolchain) — the Collider recipe that publishes the
-  host compiler and Android Swift SDK as one user-level platform generation.
+  generated Linux amd64 compiler and Android Swift SDK as one user-level
+  platform generation.
 
 The bindings are first-party SwiftPM path dependencies and participate in
 `collider build all` and `collider test all`. Swift platform rebuilds remain
-explicit and publish the host toolchain and Android SDK together; ordinary workspace builds
-consume the active generation.
+explicit and publish the Linux toolchain and Android SDK together. Native macOS
+workspace builds use the selected Xcode 27 toolchain; Linux workspace builds
+consume the active generated generation.
 
 ## Building
 
@@ -73,8 +75,9 @@ git clone --recurse-submodules git@github.com:nucleus-os/nucleus.git
 cd nucleus
 ```
 
-Run the setup script once on a fresh clone. It provisions the Nucleus Swift
-toolchain if needed, builds the optimized `collider` binary, installs the
+Run the setup script once on a fresh clone. On macOS it uses the selected full
+Xcode 27 toolchain; on Linux it provisions the generated Nucleus toolchain if
+needed. It builds the optimized `collider` binary, installs the
 `collider` command on your PATH, and provisions the workspace (initializing the
 required third-party submodules if the clone omitted `--recurse-submodules`).
 Re-run it any time to verify and repair the installation.
@@ -91,8 +94,8 @@ collider build all
 collider test all
 ```
 
-It selects the installed Nucleus Swift toolchain and runs the component
-bootstrap sequence. SwiftPM, CMake, Ninja, Yarn, and the package generators own
+It selects the native host compiler and runs the component bootstrap sequence.
+SwiftPM, CMake, Ninja, Yarn, and the package generators own
 their normal incremental state; the workspace does not maintain a second
 fingerprint/cache layer around them.
 

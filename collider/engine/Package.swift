@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "engine",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS("27")],
     products: [
         .library(name: "ColliderCore", targets: ["ColliderCore"]),
         .library(name: "ColliderRuntime", targets: ["ColliderRuntime"]),
@@ -17,7 +17,7 @@ let package = Package(
         .target(
             name: "ColliderCore",
             dependencies: [
-                .product(name: "SystemPackage", package: "swift-system"),
+                .product(name: "SystemPackage", package: "swift-system")
             ]),
         .target(
             name: "ColliderDownloads",
@@ -32,7 +32,7 @@ let package = Package(
             path: "Sources/ColliderPlatformC",
             publicHeadersPath: "include",
             linkerSettings: [
-                .linkedLibrary("dl", .when(platforms: [.linux])),
+                .linkedLibrary("dl", .when(platforms: [.linux]))
             ]),
         .target(
             name: "ColliderRuntime",
@@ -40,12 +40,14 @@ let package = Package(
                 "ColliderCore",
                 "ColliderDownloads",
                 "ColliderPlatformC",
-                .product(name: "Subprocess", package: "swift-subprocess"),
+                .product(
+                    name: "Subprocess",
+                    package: "swift-subprocess"),
                 .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "SystemPackage", package: "swift-system"),
             ],
             resources: [
-                .copy("Resources/ToolchainValidationFixtures"),
+                .copy("Resources/ToolchainValidationFixtures")
             ]),
         .testTarget(
             name: "ColliderCoreTests",
@@ -56,10 +58,11 @@ let package = Package(
 )
 
 for target in package.targets {
-    target.swiftSettings = (target.swiftSettings ?? []) + [
-        .strictMemorySafety(),
-        .unsafeFlags(["-warnings-as-errors"]),
-        .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-    ]
+    target.swiftSettings =
+        (target.swiftSettings ?? []) + [
+            .strictMemorySafety(),
+            .unsafeFlags(["-warnings-as-errors"]),
+            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+        ]
     target.cSettings = (target.cSettings ?? []) + [.unsafeFlags(["-Werror"])]
 }

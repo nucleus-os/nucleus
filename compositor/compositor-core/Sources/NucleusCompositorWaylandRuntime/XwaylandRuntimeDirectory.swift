@@ -1,5 +1,5 @@
+import Foundation
 import Glibc
-import FoundationEssentials
 
 enum XwaylandRuntimeDirectoryError: Error, Equatable {
     case missingPath
@@ -49,7 +49,7 @@ final class XwaylandRuntimeDirectory {
         defer { _ = close(base) }
         var metadata = stat()
         guard unsafe fstat(base, &metadata) == 0,
-              metadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR)
+            metadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR)
         else {
             throw XwaylandRuntimeDirectoryError.invalidDirectory
         }
@@ -77,9 +77,9 @@ final class XwaylandRuntimeDirectory {
         }
         var childMetadata = stat()
         guard unsafe fstat(child, &childMetadata) == 0,
-              childMetadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR),
-              childMetadata.st_uid == expectedUID,
-              childMetadata.st_mode & 0o777 == 0o700
+            childMetadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR),
+            childMetadata.st_uid == expectedUID,
+            childMetadata.st_mode & 0o777 == 0o700
         else {
             _ = close(child)
             throw XwaylandRuntimeDirectoryError.invalidChildDirectory
@@ -185,7 +185,7 @@ final class XwaylandTraceSink {
             activeIndex = (activeIndex + 1) % Self.fileLimit
             let descriptor = files[activeIndex]
             guard ftruncate(descriptor, 0) == 0,
-                  lseek(descriptor, 0, SEEK_SET) == 0
+                lseek(descriptor, 0, SEEK_SET) == 0
             else {
                 return false
             }

@@ -1,3 +1,4 @@
+#if os(Linux)
 import ColliderCore
 import ColliderRuntime
 import Foundation
@@ -84,3 +85,4 @@ extension WorkspaceContext: AndroidRuntimeHost {
         }
     }
 }
+#endif

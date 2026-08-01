@@ -1,9 +1,8 @@
-import FoundationEssentials
+import Foundation
 import Glibc
-public import NucleusWindowClientRuntime
-@_spi(NucleusWindowClientImplementation)
-public import NucleusWindowClientWayland
 public import NucleusUI
+public import NucleusWindowClientRuntime
+@_spi(NucleusWindowClientImplementation) public import NucleusWindowClientWayland
 public import WaylandClientDispatch
 import WaylandProtocolTypes
 
@@ -16,7 +15,7 @@ import WaylandProtocolTypes
 @safe public final class NucleusDesktopDragDropAdapter {
     public typealias DestinationResolver =
         @MainActor (_ surfaceID: UInt, _ surfaceLocation: Point)
-            -> (scene: WindowScene, sceneLocation: Point)?
+        -> (scene: WindowScene, sceneLocation: Point)?
     public typealias DiagnosticHandler =
         @MainActor @Sendable (_ operation: String, _ message: String) -> Void
 
@@ -76,8 +75,7 @@ import WaylandProtocolTypes
         var selectedAction: DragOperation?
         var didPerformDrop = false
         var providerTasks: [UInt64: Task<Void, Never>] = [:]
-        var pendingDescriptors:
-            [UInt64: StoredTransferFileDescriptor] = [:]
+        var pendingDescriptors: [UInt64: StoredTransferFileDescriptor] = [:]
         var transferTokens: Set<UInt64> = []
         var isDestroyed = false
 
@@ -199,7 +197,7 @@ import WaylandProtocolTypes
         diagnosticHandler: @escaping DiagnosticHandler = { _, _ in }
     ) {
         guard let manager = client.dataDeviceManager,
-              let device = try? manager.getDataDevice(seat: seat.protocolSeat)
+            let device = try? manager.getDataDevice(seat: seat.protocolSeat)
         else {
             return nil
         }
@@ -259,14 +257,14 @@ import WaylandProtocolTypes
         at sceneLocation: Point
     ) -> DragSessionID? {
         guard !isShutdown,
-              let device,
-              let authorization = seat.takeDragAuthorization(
+            let device,
+            let authorization = seat.takeDragAuthorization(
                 for: originSurface),
-              let scene = sourceView.window?.windowScene,
-              let sessionID = scene.beginProjectedDrag(
-                  from: sourceView,
-                  source: source,
-                  at: sceneLocation)
+            let scene = sourceView.window?.windowScene,
+            let sessionID = scene.beginProjectedDrag(
+                from: sourceView,
+                source: source,
+                at: sceneLocation)
         else {
             return nil
         }
@@ -364,9 +362,9 @@ import WaylandProtocolTypes
     ) {
         cancelIncoming()
         guard serial != 0,
-              !offer.mimeTypes.isEmpty,
-              !offer.sourceActions.isEmpty,
-              let destination = destinationResolver(
+            !offer.mimeTypes.isEmpty,
+            !offer.sourceActions.isEmpty,
+            let destination = destinationResolver(
                 surfaceID,
                 surfaceLocation)
         else {
@@ -396,9 +394,10 @@ import WaylandProtocolTypes
                 guard let self, let offer else { return }
                 self.incomingDidComplete(offer: offer, outcome: outcome)
             })
-        guard let sessionID = destination.scene.beginExternalDrag(
-            source: configuration,
-            at: destination.sceneLocation)
+        guard
+            let sessionID = destination.scene.beginExternalDrag(
+                source: configuration,
+                at: destination.sceneLocation)
         else {
             reject(offer, serial: serial)
             destroyOffer(offer)
@@ -416,10 +415,10 @@ import WaylandProtocolTypes
         surfaceLocation: Point
     ) {
         guard let incoming,
-              let destination = destinationResolver(
+            let destination = destinationResolver(
                 incoming.offer.surfaceID,
                 surfaceLocation),
-              destination.scene === incoming.scene
+            destination.scene === incoming.scene
         else {
             cancelIncoming()
             return
@@ -448,8 +447,8 @@ import WaylandProtocolTypes
 
     private func performIncomingDrop() {
         guard let incoming,
-              !incoming.isDropping,
-              let scene = incoming.scene
+            !incoming.isDropping,
+            let scene = incoming.scene
         else {
             cancelIncoming()
             return
@@ -461,7 +460,7 @@ import WaylandProtocolTypes
             guard let self, let scene else { return }
             let outcome = await scene.drop(at: location)
             guard let current = self.incoming,
-                  current.sessionID == sessionID
+                current.sessionID == sessionID
             else {
                 return
             }
@@ -478,8 +477,8 @@ import WaylandProtocolTypes
         mime: String
     ) async throws -> Data {
         guard !isShutdown,
-              incoming?.offer === offer,
-              offer.mimeTypes.contains(mime)
+            incoming?.offer === offer,
+            offer.mimeTypes.contains(mime)
         else {
             throw DataTransferFailure.cancelled
         }
@@ -517,9 +516,11 @@ import WaylandProtocolTypes
         }
         var descriptors = [Int32](repeating: -1, count: 2)
         guard unsafe pipe2(&descriptors, O_CLOEXEC | O_NONBLOCK) == 0 else {
-            continuation.resume(returning: .failure(.transport(
-                "failed to create drag pipe: "
-                    + (unsafe String(cString: strerror(errno))))))
+            continuation.resume(
+                returning: .failure(
+                    .transport(
+                        "failed to create drag pipe: "
+                            + (unsafe String(cString: strerror(errno))))))
             return
         }
         let readDescriptor = TransferFileDescriptor(owning: descriptors[0])
@@ -529,8 +530,9 @@ import WaylandProtocolTypes
                 mime_type: mime,
                 fd: WaylandClientOwnedFileDescriptor(writeDescriptor.release()))
         } catch {
-            continuation.resume(returning: .failure(
-                .transport("failed to request the Wayland drag payload")))
+            continuation.resume(
+                returning: .failure(
+                    .transport("failed to request the Wayland drag payload")))
             return
         }
         let token = transferExecutor.installRead(
@@ -576,9 +578,9 @@ import WaylandProtocolTypes
         let stored = StoredTransferFileDescriptor(
             owning: TransferFileDescriptor(owning: fileDescriptor))
         guard !isShutdown,
-              sources[source.proxy.identity] === source,
-              let mime,
-              let provider = source.configuration.payloadProviders[mime]
+            sources[source.proxy.identity] === source,
+            let mime,
+            let provider = source.configuration.payloadProviders[mime]
         else {
             stored.close()
             return
@@ -623,7 +625,7 @@ import WaylandProtocolTypes
     ) {
         source.providerTasks.removeValue(forKey: requestID)
         guard sources[source.proxy.identity] === source,
-              let descriptor = source.pendingDescriptors.removeValue(
+            let descriptor = source.pendingDescriptors.removeValue(
                 forKey: requestID)
         else {
             source.pendingDescriptors.removeValue(
@@ -723,12 +725,12 @@ import WaylandProtocolTypes
         let statusFlags = fcntl(descriptor, F_GETFL)
         let descriptorFlags = fcntl(descriptor, F_GETFD)
         guard statusFlags >= 0,
-              descriptorFlags >= 0,
-              fcntl(
+            descriptorFlags >= 0,
+            fcntl(
                 descriptor,
                 F_SETFL,
                 statusFlags | O_NONBLOCK) == 0,
-              fcntl(
+            fcntl(
                 descriptor,
                 F_SETFD,
                 descriptorFlags | FD_CLOEXEC) == 0
@@ -765,9 +767,10 @@ import WaylandProtocolTypes
     fileprivate nonisolated static func operations(
         from mask: UInt32
     ) -> Set<DragOperation> {
-        Set(DragOperation.allCases.filter {
-            mask & $0.rawValue != 0
-        })
+        Set(
+            DragOperation.allCases.filter {
+                mask & $0.rawValue != 0
+            })
     }
 
     fileprivate nonisolated static func operation(
@@ -876,8 +879,8 @@ extension NucleusDesktopDragDropAdapter: WlDataDeviceEvents {
         // Clipboard selection is owned by ext-data-control. Destroy the
         // corresponding core data-device offer without touching drag state.
         guard let offerID,
-              let offer = offers[offerID],
-              incoming?.offer !== offer
+            let offer = offers[offerID],
+            incoming?.offer !== offer
         else {
             return
         }

@@ -1,5 +1,5 @@
-import Glibc // process isolation for the render-server launch
-import FoundationEssentials
+import Foundation
+import Glibc  // process isolation for the render-server launch
 import NucleusDiagnostics
 
 // Compositor-side session-runtime isolation, Swift-owned. Production session
@@ -62,9 +62,11 @@ final class SessionIsolation {
 
         let parent = resolveParentRuntimeDir(config.xdgRuntimeDir)
         let runtimeDir = try makeRuntimeDir(parent)
-        guard runtimeDir.withCString({
-            unsafe setenv("XDG_RUNTIME_DIR", $0, 1)
-        }) == 0 else {
+        guard
+            runtimeDir.withCString({
+                unsafe setenv("XDG_RUNTIME_DIR", $0, 1)
+            }) == 0
+        else {
             deleteTreeBestEffort(runtimeDir)
             throw SessionIsolationError.setenvFailed
         }

@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 import NucleusConfig
 
 /// Writes resolved configuration back out as JSON.

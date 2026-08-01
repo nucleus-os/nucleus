@@ -1,8 +1,12 @@
 import ArgumentParser
 import ColliderCore
-import NucleusAndroidRuntimeCore
 import Testing
+
 @testable import ColliderCommands
+
+#if os(Linux)
+import NucleusAndroidRuntimeCore
+#endif
 
 private let taskControlledLeaves: [[String]] = [
     ["bootstrap"],
@@ -43,25 +47,30 @@ private let dryRunLeaves: [[String]] = [
     ["toolchain", "uninstall"],
 ]
 
-private let controlFreeLeaves: [[String]] = [
-    ["run"],
-    ["sanitize"],
-    ["benchmark"],
-    ["logs", "show"],
-    ["logs", "tail"],
-    ["install", "session"],
-]
+private let controlFreeLeaves: [[String]] = {
+    var leaves = [
+        ["sanitize"],
+        ["benchmark"],
+        ["logs", "show"],
+        ["logs", "tail"],
+    ]
+    #if os(Linux)
+    leaves += [["run"], ["install", "session"]]
+    #endif
+    return leaves
+}()
 
 @Test
 func everyTaskControlledLeafParsesTheCompleteControlSet() throws {
     for path in taskControlledLeaves {
-        let parsed = try ColliderCommand.parseAsRoot(path + [
-            "--dry-run",
-            "--explain",
-            "--verbose",
-            "--json",
-            "--run-id", "run-capability-test",
-        ])
+        let parsed = try ColliderCommand.parseAsRoot(
+            path + [
+                "--dry-run",
+                "--explain",
+                "--verbose",
+                "--json",
+                "--run-id", "run-capability-test",
+            ])
         let command = try #require(parsed as? any TaskControlledCommand)
         #expect(command.taskOptions.dryRun)
         #expect(command.taskOptions.explain)
@@ -99,46 +108,54 @@ func quietAndVerboseTaskOutputAreMutuallyExclusive() {
 func nonTaskLeavesExposeOnlyTheirDeclaredControls() throws {
     for path in reportLeaves {
         _ = try ColliderCommand.parseAsRoot(path + ["--json"])
-        awaitRejects(path, options: [
-            "--dry-run",
-            "--explain",
-            "--verbose",
-            "--quiet",
-            "--run-id", "not-supported",
-        ])
+        awaitRejects(
+            path,
+            options: [
+                "--dry-run",
+                "--explain",
+                "--verbose",
+                "--quiet",
+                "--run-id", "not-supported",
+            ])
     }
 
     for path in diagnosticLeaves {
         _ = try ColliderCommand.parseAsRoot(
             path + ["--dry-run", "--json"])
-        awaitRejects(path, options: [
-            "--explain",
-            "--verbose",
-            "--quiet",
-            "--run-id", "not-supported",
-        ])
+        awaitRejects(
+            path,
+            options: [
+                "--explain",
+                "--verbose",
+                "--quiet",
+                "--run-id", "not-supported",
+            ])
     }
 
     for path in dryRunLeaves {
         _ = try ColliderCommand.parseAsRoot(path + ["--dry-run"])
-        awaitRejects(path, options: [
-            "--explain",
-            "--verbose",
-            "--quiet",
-            "--json",
-            "--run-id", "not-supported",
-        ])
+        awaitRejects(
+            path,
+            options: [
+                "--explain",
+                "--verbose",
+                "--quiet",
+                "--json",
+                "--run-id", "not-supported",
+            ])
     }
 
     for path in controlFreeLeaves {
-        awaitRejects(path, options: [
-            "--dry-run",
-            "--explain",
-            "--verbose",
-            "--quiet",
-            "--json",
-            "--run-id", "not-supported",
-        ])
+        awaitRejects(
+            path,
+            options: [
+                "--dry-run",
+                "--explain",
+                "--verbose",
+                "--quiet",
+                "--json",
+                "--run-id", "not-supported",
+            ])
     }
 }
 
@@ -157,18 +174,24 @@ func installationAndBrowserHelpExposeOneBrowserInstallLeaf() throws {
     #expect(!browserHelp.contains("install"))
 }
 
+#if os(Linux)
 @Test
 func privilegedAndroidOperationsStayOutOfColliderRootHelp() {
     let rootHelp = ColliderCommand.message(for: CleanExit.helpRequest())
-    #expect(!rootHelp.contains(
-        AndroidRuntimePrivilegedOperation.apexMountCommandName))
-    #expect(!rootHelp.contains(
-        AndroidRuntimePrivilegedOperation.bpfBrokerCommandName))
-    #expect(!rootHelp.contains(
-        AndroidRuntimePrivilegedOperation.bpfMountCommandName))
-    #expect(!rootHelp.contains(
-        AndroidRuntimePrivilegedOperation.cgroupDelegateCommandName))
+    #expect(
+        !rootHelp.contains(
+            AndroidRuntimePrivilegedOperation.apexMountCommandName))
+    #expect(
+        !rootHelp.contains(
+            AndroidRuntimePrivilegedOperation.bpfBrokerCommandName))
+    #expect(
+        !rootHelp.contains(
+            AndroidRuntimePrivilegedOperation.bpfMountCommandName))
+    #expect(
+        !rootHelp.contains(
+            AndroidRuntimePrivilegedOperation.cgroupDelegateCommandName))
 }
+#endif
 
 private func awaitRejects(_ path: [String], options: [String]) {
     for option in optionInvocations(options) {

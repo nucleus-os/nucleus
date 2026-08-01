@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 
 struct TracyTools {
     let context: WorkspaceContext
@@ -8,9 +8,11 @@ struct TracyTools {
         let relativeSource = "swift-tracy/third-party/tracy"
         let source = context.layout.root
             .appendingPathComponent(relativeSource)
-        guard FileManager.default.fileExists(
-            atPath: source.appendingPathComponent(
-                "public/TracyClient.cpp").path)
+        guard
+            FileManager.default.fileExists(
+                atPath: source.appendingPathComponent(
+                    "public/TracyClient.cpp"
+                ).path)
         else {
             throw WorkspaceFailure.message(
                 "Tracy sources are absent; rerun ./collider-setup.sh")
@@ -25,15 +27,26 @@ struct TracyTools {
             }
         }
         try FileManager.default.createDirectory(at: build, withIntermediateDirectories: true)
-        for (name, subdirectory) in [("tracy-capture", "capture"), ("tracy-csvexport", "csvexport")] {
+        for (name, subdirectory) in [
+            ("tracy-capture", "capture"), ("tracy-csvexport", "csvexport"),
+        ] {
             let toolBuild = build.appendingPathComponent("build-submodule-" + name)
             var environment = context.environment
             environment["CPM_SOURCE_CACHE"] = build.appendingPathComponent(".cpm-cache").path
             let environmentContext = WorkspaceContext(root: context.root, environment: environment)
-            try await environmentContext.run("cmake", ["-S", source.appendingPathComponent(subdirectory).path, "-B", toolBuild.path, "-DCMAKE_BUILD_TYPE=Release", "-DDOWNLOAD_CAPSTONE=ON", "-DCMAKE_EXE_LINKER_FLAGS=-static-libstdc++ -static-libgcc"])
-            try await environmentContext.run("cmake", ["--build", toolBuild.path, "--parallel", "--target", name])
+            try await environmentContext.run(
+                "cmake",
+                [
+                    "-S", source.appendingPathComponent(subdirectory).path, "-B", toolBuild.path,
+                    "-DCMAKE_BUILD_TYPE=Release", "-DDOWNLOAD_CAPSTONE=ON",
+                    "-DCMAKE_EXE_LINKER_FLAGS=-static-libstdc++ -static-libgcc",
+                ])
+            try await environmentContext.run(
+                "cmake", ["--build", toolBuild.path, "--parallel", "--target", name])
             let output = build.appendingPathComponent(name)
-            if FileManager.default.fileExists(atPath: output.path) { try FileManager.default.removeItem(at: output) }
+            if FileManager.default.fileExists(atPath: output.path) {
+                try FileManager.default.removeItem(at: output)
+            }
             try FileManager.default.copyItem(at: toolBuild.appendingPathComponent(name), to: output)
         }
         print("built Tracy receivers at \(build.path)")

@@ -1,11 +1,10 @@
+#if os(Linux)
 import ArgumentParser
 import Foundation
 import NucleusSessionProtocol
 import SystemPackage
 
-#if os(Linux)
 import Glibc
-#endif
 
 enum OptimizationMode: String, Equatable, ExpressibleByArgument {
     case debug
@@ -124,8 +123,8 @@ struct RunCommand {
                     options: options.buildOptions)
             } else {
                 try installer.existingSession(
-                prefix: prefix,
-                options: options.buildOptions)
+                    prefix: prefix,
+                    options: options.buildOptions)
             }
 
         var environment = context.environment
@@ -153,19 +152,21 @@ struct RunCommand {
         if options.valgrind {
             let directory = try createOutputDirectory(options)
             let log = directory.appendingPathComponent("valgrind.log")
-            compositorCommand = [
-                "valgrind",
-                "--tool=memcheck",
-                "--error-exitcode=70",
-                "--log-file=\(log.path)",
-                "--num-callers=40",
-                "--track-origins=yes",
-                "--leak-check=no",
-                installation.compositor.path,
-            ] + options.compositorArguments
+            compositorCommand =
+                [
+                    "valgrind",
+                    "--tool=memcheck",
+                    "--error-exitcode=70",
+                    "--log-file=\(log.path)",
+                    "--num-callers=40",
+                    "--track-origins=yes",
+                    "--leak-check=no",
+                    installation.compositor.path,
+                ] + options.compositorArguments
             print("valgrind log: \(log.path)")
         } else {
-            compositorCommand = [installation.compositor.path]
+            compositorCommand =
+                [installation.compositor.path]
                 + options.compositorArguments
         }
         try await authenticateAndroidRuntimeIfNeeded(options)
@@ -185,11 +186,12 @@ struct RunCommand {
 
     private func requireLaunchableSeatEnvironment() throws {
         if context.environment["WAYLAND_DISPLAY"] != nil
-            || context.environment["DISPLAY"] != nil {
+            || context.environment["DISPLAY"] != nil
+        {
             throw WorkspaceFailure.message(
                 "cannot launch the DRM compositor inside an existing Wayland/X11 "
-                + "desktop session; switch to a free virtual terminal or a "
-                + "display-manager session")
+                    + "desktop session; switch to a free virtual terminal or a "
+                    + "display-manager session")
         }
     }
 
@@ -201,8 +203,8 @@ struct RunCommand {
         let values = try? manifest.resourceValues(
             forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
         guard values?.isRegularFile == true,
-              values?.isSymbolicLink != true,
-              FileManager.default.isExecutableFile(
+            values?.isSymbolicLink != true,
+            FileManager.default.isExecutableFile(
                 atPath: installation.androidRuntime.path)
         else {
             throw WorkspaceFailure.message(
@@ -279,9 +281,11 @@ struct RunCommand {
                 terminal: true)
             return
         }
-        guard let runDirectory = environment["NUCLEUS_RUN_DIR"].map({
-            URL(fileURLWithPath: $0, isDirectory: true)
-        }) else {
+        guard
+            let runDirectory = environment["NUCLEUS_RUN_DIR"].map({
+                URL(fileURLWithPath: $0, isDirectory: true)
+            })
+        else {
             throw WorkspaceFailure.message(
                 "Android runtime logging requires NUCLEUS_RUN_DIR")
         }
@@ -316,8 +320,9 @@ struct RunCommand {
             ) { kitty in
                 try await kitty.waitUntilReady()
                 let result = try await session.wait()
-                guard result.status == 0
-                    || result.timedOut && options.seconds != nil
+                guard
+                    result.status == 0
+                        || result.timedOut && options.seconds != nil
                 else {
                     throw WorkspaceFailure.process(
                         [installation.session.path] + arguments,
@@ -372,3 +377,4 @@ func runtimeTimestamp() -> String {
     formatter.formatOptions = [.withYear, .withMonth, .withDay, .withTime]
     return formatter.string(from: Date())
 }
+#endif

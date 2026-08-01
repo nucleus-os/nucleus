@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 import NucleusConfig
 
 /// Locating and reading the session configuration file.
@@ -38,9 +38,11 @@ public enum ConfigFile {
         {
             return .loaded(.defaults, warnings: [])
         } catch {
-            return .failed([ConfigDiagnostic(
-                severity: .error,
-                message: "could not read configuration: \(error)")])
+            return .failed([
+                ConfigDiagnostic(
+                    severity: .error,
+                    message: "could not read configuration: \(error)")
+            ])
         }
         return ConfigLoader.load(text: String(decoding: data, as: UTF8.self))
     }

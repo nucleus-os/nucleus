@@ -13,6 +13,7 @@ RUN apt-get update \
         curl \
         git \
         libblocksruntime-dev \
+        libarchive-tools \
         libbsd-dev \
         libcurl4-openssl-dev \
         libedit-dev \
@@ -49,7 +50,7 @@ RUN curl --fail --location --output /tmp/cmake.tar.gz \
     && echo 'cdd7fb352605cee3ae53b0e18b5929b642900e33d6b0173e19f6d4f2067ebf16  /tmp/cmake.tar.gz' \
         | sha256sum --check --strict \
     && mkdir -p /opt/cmake \
-    && tar --extract --gzip \
+    && bsdtar --extract --gzip \
         --file /tmp/cmake.tar.gz \
         --directory /opt/cmake \
         --strip-components=1 \
@@ -62,7 +63,7 @@ RUN curl --fail --location --output /tmp/swift-bootstrap.tar.gz \
     && echo '05670a1487e907e732ca701bfda153e5f02aeac801dd3b07686f2aae4e0c6ad5  /tmp/swift-bootstrap.tar.gz' \
         | sha256sum --check --strict \
     && mkdir -p /opt/swift-bootstrap \
-    && tar --extract --gzip \
+    && bsdtar --extract --gzip \
         --file /tmp/swift-bootstrap.tar.gz \
         --directory /opt/swift-bootstrap \
         --strip-components=1 \

@@ -1,0 +1,22 @@
+{"event": "start", "command": "Building earlyswiftdriver", "duration": "0.00"}
+{"event": "end", "command": "Building earlyswiftdriver", "duration": "6.22"}
+{"event": "start", "command": "Building cmark", "duration": "0.00"}
+{"event": "end", "command": "Building cmark", "duration": "19.84"}
+{"event": "start", "command": "Building llvm", "duration": "0.00"}
+{"event": "end", "command": "Building llvm", "duration": "9175.51"}
+{"event": "start", "command": "Installing llvm", "duration": "0.00"}
+{"event": "end", "command": "Installing llvm", "duration": "8.43"}
+{"event": "start", "command": "Building cmark", "duration": "0.00"}
+{"event": "end", "command": "Building cmark", "duration": "2.00"}
+{"event": "start", "command": "Building llvm", "duration": "0.00"}
+{"event": "end", "command": "Building llvm", "duration": "3514.93"}
+{"event": "start", "command": "Installing llvm", "duration": "0.00"}
+{"event": "end", "command": "Installing llvm", "duration": "1.75"}
+{"event": "start", "command": "macosx-arm64-swift-build", "duration": "0.00"}
+{"event": "end", "command": "macosx-arm64-swift-build", "duration": "6147.05"}
+{"event": "start", "command": "macosx-arm64-lldb-build", "duration": "0.00"}
+{"event": "end", "command": "macosx-arm64-lldb-build", "duration": "1115.02"}
+{"event": "start", "command": "macosx-x86_64-swift-build", "duration": "0.00"}
+{"event": "end", "command": "macosx-x86_64-swift-build", "duration": "1524.58"}
+{"event": "start", "command": "macosx-x86_64-lldb-build", "duration": "0.00"}
+{"event": "end", "command": "macosx-x86_64-lldb-build", "duration": "136.67"}

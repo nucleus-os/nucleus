@@ -2,7 +2,6 @@ import ArgumentParser
 import ColliderCore
 import ColliderRuntime
 import Foundation
-import FoundationEssentials
 import SwiftPlatformColliderRecipe
 import SystemPackage
 
@@ -113,11 +112,7 @@ struct ToolchainStatus {
 
     func run(json: Bool) throws {
         let sourceID = try swiftSourceSelection(context).sourceID
-        #if os(macOS)
-        let platformID = sourceID + "-macos"
-        #else
-        let platformID = sourceID
-        #endif
+        let platformID = sourceID + "-linux-amd64"
         let root = context.cacheRoot.appendingPathComponent(
             "nucleus/swift-platforms/\(platformID)",
             isDirectory: true)
@@ -180,13 +175,8 @@ struct ToolchainCommand {
             environment: context.environment)
         let sourceSelection = try swiftSourceSelection(context)
         let sourceID = sourceSelection.sourceID
-        #if os(macOS)
-        let platformID = sourceID + "-macos"
-        let bundleName = "swift-\(sourceID)-macos_android.artifactbundle"
-        #else
-        let platformID = sourceID
+        let platformID = sourceID + "-linux-amd64"
         let bundleName = "swift-\(sourceID)_android.artifactbundle"
-        #endif
         let cacheRoot = context.cacheRoot.path
         let platformRoot = URL(fileURLWithPath: cacheRoot)
             .appendingPathComponent("nucleus/swift-platforms/\(platformID)")
@@ -208,7 +198,7 @@ struct ToolchainCommand {
             "build-container", isDirectory: true)
         let builderImageID = URL(fileURLWithPath: cacheRoot, isDirectory: true)
             .appendingPathComponent(
-                "nucleus/build-containers/swift/image-id")
+                "nucleus/build-containers/swift/image-reference")
         var environment = context.taskEnvironment
         environment.merge([
             "NUCLEUS_SWIFT_SOURCE_INSTALL": toolchainInstall.path,
@@ -265,7 +255,7 @@ struct ToolchainCommand {
                 sourceWorkspace: FilePath(sourceWorkspace.path),
                 buildWorkspace: FilePath(buildWorkspace.path),
                 sourceRepositories: sourceSelection.repositories,
-                sourceID: platformID,
+                sourceID: sourceID,
                 hostCC: FilePath(
                     try hostCompiler(
                         environmentName: "NUCLEUS_HOST_CC",
@@ -277,7 +267,6 @@ struct ToolchainCommand {
                         executable: "clang++"
                     ).path),
                 bundleName: bundleName,
-                validationWorkRoot: FilePath(validationWorkRoot.path),
                 sdkDiscoveryLink: FilePath(discoveryLink.path),
                 sdkDiscoveryDisplacedItem: FilePath(
                     discoveryDirectory.appendingPathComponent(
@@ -366,16 +355,6 @@ struct ToolchainCommand {
         return FileManager.default.homeDirectoryForCurrentUser
     }
 
-    private var validationWorkRoot: URL {
-        if let runDirectory = context.environment["NUCLEUS_RUN_DIR"],
-            !runDirectory.isEmpty
-        {
-            return URL(fileURLWithPath: runDirectory, isDirectory: true)
-                .appendingPathComponent("work/android-sdk", isDirectory: true)
-        }
-        return context.layout.work.appendingPathComponent(
-            "android-sdk", isDirectory: true)
-    }
 }
 
 struct ToolchainInstallation {

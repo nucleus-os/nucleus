@@ -1,21 +1,29 @@
 import ArgumentParser
 import ColliderCore
 import ColliderRuntime
-import FoundationEssentials
+import Foundation
 import SystemPackage
+
+private func colliderCommandSubcommands() -> [ParsableCommand.Type] {
+    var commands: [ParsableCommand.Type] = [
+        Doctor.self, Bootstrap.self, Build.self, Test.self,
+        Install.self, Toolchain.self, Android.self, AndroidRuntime.self,
+        Browser.self,
+        Generate.self, Sanitize.self, Benchmark.self,
+        Validate.self, Cache.self, Logs.self, Status.self,
+    ]
+    #if os(Linux)
+    commands.insert(Run.self, at: 4)
+    #endif
+    return commands
+}
 
 public struct ColliderCommand: AsyncParsableCommand {
     public static let configuration = CommandConfiguration(
         commandName: "collider",
         abstract: "Build, validate, and operate the Nucleus repository.",
         version: "0.1.0",
-        subcommands: [
-            Doctor.self, Bootstrap.self, Build.self, Test.self, Run.self,
-            Install.self, Toolchain.self, Android.self, AndroidRuntime.self,
-            Browser.self,
-            Generate.self, Sanitize.self, Benchmark.self,
-            Validate.self, Cache.self, Logs.self, Status.self,
-        ])
+        subcommands: colliderCommandSubcommands())
 
     public init() {}
 
@@ -169,7 +177,9 @@ struct Doctor: AsyncParsableCommand {
     var dryRun = false
     @Flag(help: "Emit stable machine-readable records.")
     var json = false
-    @Argument(help: "Prerequisite group: all, runtime, toolchain, android, or browser.")
+    @Argument(
+        help:
+            "Prerequisite group: all, runtime, toolchain, android, browser, or ci-macos-builder.")
     var scope: DoctorScope = .all
 
     mutating func run() async throws {
@@ -263,6 +273,7 @@ struct Test: TaskControlledCommand {
     }
 }
 
+#if os(Linux)
 struct Run: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Build, install, and launch a compositor session.")
@@ -339,21 +350,29 @@ struct Run: AsyncParsableCommand {
         return options
     }
 }
+#endif
 
 struct Install: AsyncParsableCommand {
+    private static func subcommands() -> [ParsableCommand.Type] {
+        var commands: [ParsableCommand.Type] = [Browser.self]
+        #if os(Linux)
+        commands.insert(Session.self, at: 0)
+        #endif
+        return commands
+    }
+
     static let configuration = CommandConfiguration(
         abstract: "Install Nucleus runtime and browser products.",
-        subcommands: [
-            Session.self,
-            Browser.self,
-        ])
+        subcommands: subcommands())
 
+    #if os(Linux)
     struct Session: AsyncParsableCommand {
         @Option var prefix: String?
         mutating func run() async throws {
             try await InstallCommand(context: context()).run(prefix: prefix)
         }
     }
+    #endif
 
     struct Browser: TaskControlledCommand {
         @OptionGroup var taskOptions: TaskControlOptions
@@ -583,7 +602,9 @@ struct Benchmark: AsyncParsableCommand {
 }
 
 struct Generate: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(subcommands: [RNSpec.self, Vulkan.self, Wayland.self])
+    static let configuration = CommandConfiguration(subcommands: [
+        RNSpec.self, Vulkan.self, Wayland.self,
+    ])
     struct RNSpec: TaskControlledCommand {
         @OptionGroup var taskOptions: TaskControlOptions
         mutating func run() async throws {

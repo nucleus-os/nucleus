@@ -1,12 +1,14 @@
-import FoundationEssentials
-import FoundationInternationalization
+import Foundation
 import NucleusLinuxDBus
 import NucleusShellProduct
 import NucleusShellServices
-@_spi(NucleusWindowClientImplementation)
-import NucleusWindowClientWayland
 import NucleusUI
 import NucleusUIEmbedder
+@_spi(NucleusWindowClientImplementation) import NucleusWindowClientWayland
+
+#if canImport(FoundationInternationalization)
+import FoundationInternationalization
+#endif
 
 @MainActor
 struct NativeBarSurface {
@@ -51,11 +53,12 @@ extension ShellHost {
 
         let upower = UPowerService(connection: bus)
         upower.onChange = { [weak self] reading in
-            self?.productController?.updateBattery(BatteryLevel(
-                fraction: reading.percentage / 100,
-                isCharging: reading.state.isPluggedIn,
-                isPresent: reading.isPresent,
-                secondsRemaining: reading.secondsRemaining))
+            self?.productController?.updateBattery(
+                BatteryLevel(
+                    fraction: reading.percentage / 100,
+                    isCharging: reading.state.isPluggedIn,
+                    isPresent: reading.isPresent,
+                    secondsRemaining: reading.secondsRemaining))
             self?.requestRender(nativeSceneChanged: true)
         }
         do {
@@ -70,39 +73,39 @@ extension ShellHost {
 
     func reconcileBarSurfaces() {
         guard let productController, let nativePublicationContext,
-              let surfaceRegistry
+            let surfaceRegistry
         else { return }
 
         let liveOutputIDs = Set(client.outputs.keys)
         for outputID in Array(barSurfaces.keys)
-            where !liveOutputIDs.contains(outputID)
-        {
+        where !liveOutputIDs.contains(outputID) {
             destroyBarSurface(outputID: outputID)
         }
 
         for output in client.outputs.values
-            where barSurfaces[output.registryName] == nil
-        {
+        where barSurfaces[output.registryName] == nil {
             let outputID = output.registryName
-            let (barProduct, window) = nativePublicationContext
+            let (barProduct, window) =
+                nativePublicationContext
                 .withSemanticContext {
-                let barProduct = productController.makeBar(
-                    forOutput: outputID)
-                barProduct.barView.thickness = Double(barHeight)
-                let window = Window(
-                    title: "Nucleus Bar",
-                    role: .layer,
-                    level: .shellChrome)
-                window.setContentView(barProduct.barView)
-                return (barProduct, window)
-            }
+                    let barProduct = productController.makeBar(
+                        forOutput: outputID)
+                    barProduct.barView.thickness = Double(barHeight)
+                    let window = Window(
+                        title: "Nucleus Bar",
+                        role: .layer,
+                        level: .shellChrome)
+                    window.setContentView(barProduct.barView)
+                    return (barProduct, window)
+                }
             let config = NucleusDesktopLayerSurfaceConfiguration.shellBar(
                 height: barHeight,
                 namespace: "nucleus-shell.bar.\(outputID)")
-            guard let layerSurface = NucleusDesktopLayerSurface(
-                client: client,
-                config: config,
-                output: output)
+            guard
+                let layerSurface = NucleusDesktopLayerSurface(
+                    client: client,
+                    config: config,
+                    output: output)
             else {
                 productController.removeBar(forOutput: outputID)
                 writeErr("shell: failed to create bar for output \(outputID)")
@@ -142,13 +145,14 @@ extension ShellHost {
         height: UInt32
     ) {
         guard let record = barSurfaces[outputID],
-              let output = client.outputs[outputID],
-              let surfaceRegistry
+            let output = client.outputs[outputID],
+            let surfaceRegistry
         else { return }
 
-        let logicalWidth = Double(width != 0
-            ? width
-            : UInt32(max(1, output.logicalWidth)))
+        let logicalWidth = Double(
+            width != 0
+                ? width
+                : UInt32(max(1, output.logicalWidth)))
         let logicalHeight = Double(height != 0 ? height : barHeight)
         let scale = Double(max(1, output.scale))
         record.product.barView.thickness = logicalHeight
@@ -233,7 +237,7 @@ extension ShellHost {
         force: Bool = false
     ) {
         if !force, let deadline = nextClockUpdateNanoseconds,
-           nowNanoseconds < deadline
+            nowNanoseconds < deadline
         {
             return
         }
@@ -265,14 +269,15 @@ extension ShellHost {
     }
 
     func publishWindowSnapshots() {
-        let snapshots = toplevels?.windows.map {
-            ShellWindowSnapshot(
-                id: $0.id,
-                title: $0.title,
-                applicationID: $0.appID,
-                isActive: $0.activated,
-                isMinimized: $0.minimized)
-        } ?? []
+        let snapshots =
+            toplevels?.windows.map {
+                ShellWindowSnapshot(
+                    id: $0.id,
+                    title: $0.title,
+                    applicationID: $0.appID,
+                    isActive: $0.activated,
+                    isMinimized: $0.minimized)
+            } ?? []
         if let productController, let nativePublicationContext {
             nativePublicationContext.withSemanticContext {
                 productController.updateWindows(snapshots)

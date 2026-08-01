@@ -1,4 +1,4 @@
-import FoundationEssentials
+import Foundation
 import NucleusConfig
 import NucleusIPCTransport
 
@@ -122,8 +122,8 @@ public final class ShellPolicyChannel: @unchecked Sendable {
             throw ShellPolicyChannelFailure.invalidDescriptor("<duplicate>")
         }
         guard arguments.indices.contains(index + 1),
-              let descriptor = Int32(arguments[index + 1]),
-              descriptor >= 3
+            let descriptor = Int32(arguments[index + 1]),
+            descriptor >= 3
         else {
             throw ShellPolicyChannelFailure.invalidDescriptor(
                 arguments.indices.contains(index + 1)
@@ -204,8 +204,8 @@ public final class ShellPolicyAttachmentChannel: @unchecked Sendable {
             throw ShellPolicyChannelFailure.invalidDescriptor("<duplicate>")
         }
         guard arguments.indices.contains(index + 1),
-              let descriptor = Int32(arguments[index + 1]),
-              descriptor >= 3
+            let descriptor = Int32(arguments[index + 1]),
+            descriptor >= 3
         else {
             throw ShellPolicyChannelFailure.invalidDescriptor(
                 arguments.indices.contains(index + 1)
