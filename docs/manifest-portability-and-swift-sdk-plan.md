@@ -5,84 +5,75 @@ Status: active.
 ## Invariant
 
 The root [`Package.swift`](../Package.swift) evaluates on a bare clone with a
-stock Swift 6.4 toolchain and an empty environment. Manifest evaluation reads no
-environment variables, spawns no processes, and names no absolute host paths.
-Host and target configuration reaches the compiler through Swift SDK artifact
-bundles at build-invocation time, never through manifest-time string
-interpolation.
+stock Swift 6.4 toolchain and no Nucleus environment. Manifest evaluation reads
+no environment variables, spawns no processes, and embeds no absolute host
+paths. The manifest describes repository topology and target-specific build
+semantics only.
 
-Both compilation targets — Linux host and Android — are Swift SDKs. There is no
-host special case.
+Every Nucleus runtime product compiles through an explicitly selected Swift SDK
+and target triple. The supported runtime destinations are Linux amd64, Android
+arm64, and Android amd64. Collider itself remains a native host tool: Xcode 27
+builds it on macOS, and the generated Swift 6.4 toolchain builds it on Linux.
+The pure-Swift contract tier may compile natively when Collider consumes it.
+There is no implicit host destination for a Nucleus runtime build.
 
-## Why the Current Manifest Is Not Portable
+Configuration has exactly three owners:
 
-The root manifest is a serialized host configuration expressed in Swift. It
-carries 3,584 lines across 216 targets, of which:
+- A Swift SDK owns a target sysroot, Swift runtime resources, stable native
+  headers and libraries, compiler and linker tool configuration, and SDK-local
+  `pkg-config` search roots.
+- `Package.swift` owns products, targets, dependencies, checked-in module maps
+  and shims, platform conditions, target-specific defines, library names, and
+  linker grouping semantics.
+- Collider owns invocation-derived state: SDK identity and search path, target
+  triple, scratch path, generated-header path, configuration, sanitizer,
+  diagnostics, compiler identity, and task identity.
 
-- A `guard` over five environment variables terminates evaluation with
-  `fatalError("source tools/host-env.sh before invoking SwiftPM")`
-  ([`Package.swift:11`](../Package.swift)).
-- 326 interpolations thread environment-derived absolute paths into
-  `unsafeFlags`, dominated by roughly 300 `nativeSDKRoot + "/render/include/..."`
-  Skia and Vulkan include and link paths.
-- A `pkg-config` subprocess resolves the icu library directory during manifest
-  evaluation, with `try!` and `fatalError` on failure
-  ([`Package.swift:20`](../Package.swift)).
-- The Swift runtime search path is interpolated as `swiftToolchain + "/lib"`
-  ([`Package.swift:317`](../Package.swift)).
-- `NUCLEUS_SWIFTPM_GENERATED_MODULE_MAPS_PATH` supplies a module-map directory
-  that Collider itself generates
-  ([`SwiftBuildContext.swift:210`](../collider/engine/Sources/ColliderCore/SwiftBuildContext.swift)).
+No value crosses those boundaries through manifest-time environment lookup.
 
-The last item states the defect precisely: the manifest consumes artifacts
-produced by the tool whose own build requires that manifest to evaluate. The
-`collider` package declares `.package(name: "Nucleus", path: "..")`
-([`collider/Package.swift:13`](../collider/Package.swift)), so resolving the
-Collider graph evaluates the root manifest. Verified directly:
+## Current State
 
-```sh
-swift package --package-path collider show-dependencies --manifest-cache none
-```
+The root manifest is a serialized host configuration expressed in Swift. It is
+3,584 lines and declares 230 targets: 216 regular, executable, or test targets
+and 14 system-library targets. The current host-evaluated graph contains 227
+targets because three Android declarations are admitted only when an environment
+branch selects Android.
 
-with the guarded variables unset terminates at
-`main/Package.swift:17: Fatal error: source tools/host-env.sh before invoking SwiftPM`.
+The concrete portability defects are:
 
-This defeats the documented fresh-clone path. When no toolchain is present,
-`toolchain_present` in [`collider-setup.sh`](../collider-setup.sh) fails at
-[`host-env.sh:66`](../tools/host-env.sh), so the bootstrap branch runs
-`swift build --package-path collider -c release` without sourcing `host-env.sh`.
-That build evaluates the root manifest, which terminates before Collider can
-reach `collider toolchain rebuild`.
+- A guard over `NUCLEUS_NATIVE_SDK_ROOT`,
+  `NUCLEUS_SWIFTPM_GENERATED_MODULE_MAPS_PATH`, `SWIFT_TOOLCHAIN`,
+  `NUCLEUS_SWIFT_SOURCE_ID`, and `HOME` terminates manifest evaluation with
+  `fatalError("source tools/host-env.sh before invoking SwiftPM")`.
+- `NUCLEUS_TARGET_PLATFORM` changes the package's products, dependencies, and
+  targets. `NUCLEUS_SWIFT_SDKS_PATH` and `NUCLEUS_SWIFT_SOURCE_ID` construct an
+  Android runtime-library search path inside the manifest.
+- 326 interpolations thread environment-derived absolute paths through
+  `unsafeFlags`, dominated by Skia, Vulkan, Hermes, React Native, and generated
+  Swift-to-C++ header paths.
+- A `pkg-config` subprocess resolves the ICU library directory during manifest
+  evaluation and terminates manifest loading when it fails.
+- The manifest injects the active toolchain's `lib` directory as an rpath.
+- The manifest consumes SwiftPM's build-derived
+  `GeneratedModuleMaps-*` directory. Collider computes and exports the expected
+  directory, but SwiftPM generates its module maps and `*-Swift.h` files during
+  that exact build.
 
-Every remaining symptom follows from the same property: the launcher pays for
-manifest evaluation on every invocation, the Collider engine exists as a
-separate package solely to obtain a toolchain-independent floor, and the
-manifest is too large and too coupled for prose in [`AGENTS.md`](../AGENTS.md)
-to be checked against it.
+Collider declares `.package(name: "Nucleus", path: "..")`. Resolving Collider
+therefore evaluates the root manifest before Collider can provision the
+toolchain, native SDK, or generated-header directory demanded by that manifest.
+This makes the documented fresh-clone bootstrap graph cyclic.
 
-## The Mechanism Already Exists
+The existing Swift SDK path also has a correctness defect. `SwiftBuildTarget`
+stores `.swiftSDK(name:targetTriple:)`, but `SwiftPMInvocation` emits only
+`--swift-sdk`. The Android artifact contains SDK entries for both arm64 and
+amd64, so selection by artifact ID is ambiguous unless the invocation also
+passes `--triple`.
 
-`SwiftBuildTarget` already models Swift SDKs and applies them to Android
-([`SwiftBuildContext.swift:13`](../collider/engine/Sources/ColliderCore/SwiftBuildContext.swift)):
+## The Contract Tier
 
-```swift
-case host(identity: String)
-case triple(String)
-case swiftSDK(name: String, targetTriple: String)
-```
-
-The Android lane emits `--swift-sdk swift-release-6.4.x_android`, and
-[`ComponentRegistry.swift:482`](../collider/Sources/ColliderCommands/ComponentRegistry.swift)
-and [`Toolchain.swift:243`](../collider/Sources/ColliderCommands/Toolchain.swift)
-already assemble and install artifact bundles into `.swiftpm/swift-sdks`. This
-plan generalizes that machinery to the host lane and deletes the environment
-side channel that the host lane uses instead.
-
-## The Non-Cxx Contract Tier Is Real
-
-[`AGENTS.md`](../AGENTS.md) states that every Swift target sets
-`.interoperabilityMode(.Cxx)` and that no non-cxx tier exists. The manifest
-declares 196 targets with Cxx interop and 16 without:
+The manifest applies the strict Swift compilation contract to 212 targets. Of
+those, 196 enable C++ interoperability and these 16 deliberately do not:
 
 `NucleusConfig`, `NucleusIPCTransport`, `NucleusSessionProtocol`,
 `NucleusAndroidContainerContract`, `NucleusAndroidRuntimeCore`,
@@ -90,106 +81,207 @@ declares 196 targets with Cxx interop and 16 without:
 `NucleusAndroidRuntimeHostLinux`, the `NucleusAndroidRuntime` and
 `NucleusAndroidRuntimePrivileged` executables, and their six test targets.
 
-That set is not an oversight. It is the closure of the pure-Swift contract
-modules that orchestration and the Android runtime consume without pulling in
-Skia or C++ interop, and it is exactly what makes the Collider edge into the
-root package cheap. This plan names it the contract tier, declares it
-explicitly, and holds it as an invariant rather than an accident.
+This set is the pure-Swift contract tier shared by orchestration and the Android
+runtime without importing Skia or enabling C++ interop. The manifest declares
+the set once and excludes it from the repository-wide C++ interop default.
+Membership is an explicit architectural decision.
 
-## Phase 1 — Collapse Repeated Target Settings
+## Phase 1 — Make Swift SDK Selection Exact
 
-The manifest repeats `.strictMemorySafety()`, `-warnings-as-errors`, and
-`-Werror StrictLanguageFeatures` across 212 targets, and
-`.interoperabilityMode(.Cxx)` across 196. The root manifest has no
-`for target in package.targets` loop; [`collider/Package.swift:126`](../collider/Package.swift)
-already applies settings this way and is the pattern to adopt.
+`SwiftPMInvocation` emits both parts of every Swift SDK destination:
 
-The root manifest gains a post-hoc settings loop that applies the repository
-compilation contract to every regular, executable, and test target, and applies
-`-Werror` to every C and C++ target. Cxx interop is applied by default. The
-contract tier named above is declared as an explicit set in the manifest and
-excluded from Cxx interop by that loop, so membership is a single readable
-declaration rather than 196 present and 16 absent settings blocks.
-
-Genuine per-target flags — Skia include paths, linker groups, Android
-conditions — remain on their targets untouched. This phase removes repetition
-only; it changes no compiler input. That is the verification: the built product
-set and every task fingerprint are unchanged.
-
-The manifest shrinks substantially, which is what makes the interpolation
-removal in Phases 2 and 3 reviewable.
-
-## Phase 2 — The Native Stack Becomes a Swift SDK Bundle
-
-`~/.cache/nucleus/nucleus-native-sdk`, split into `render` and `rn`, already
-holds precisely what a Swift SDK artifact bundle carries: sysroot, header search
-paths, library search paths, and extra `swiftc` and `clang` flags.
-
-Bootstrap stops populating a loose directory that the manifest reads by absolute
-path. It assembles a host artifact bundle and installs it into
-`.swiftpm/swift-sdks` alongside the Android bundle, using the installation path
-that [`Toolchain.swift:243`](../collider/Sources/ColliderCommands/Toolchain.swift)
-already owns. The generated module maps move into that bundle.
-
-The roughly 300 Skia and Vulkan include and link interpolations leave the
-manifest as part of this phase. `SwiftBuildTarget.host` is deleted and every
-lane resolves to `.swiftSDK`. `commandEnvironment` loses
-`NUCLEUS_SWIFTPM_GENERATED_MODULE_MAPS_PATH` and `NUCLEUS_TARGET_PLATFORM`,
-because the bundle's `swift-sdk.json` carries both; the Android branch at
-[`SwiftBuildContext.swift:216`](../collider/engine/Sources/ColliderCore/SwiftBuildContext.swift)
-is deleted with it.
-
-Verification is a full host build and test run driven through the bundle,
-compared against the pre-phase artifact fingerprints.
-
-## Phase 3 — System Libraries Become Declarative and the Guard Is Deleted
-
-The icu dependency becomes a `.systemLibrary` target with `pkgConfig:`, which
-SwiftPM resolves itself. This removes the last process spawn from manifest
-evaluation. The Swift runtime search path comes from the bundle's runtime paths
-rather than an interpolated toolchain string, removing the
-`swiftToolchain + "/lib"` rpath.
-
-With no remaining consumers, the five-variable `guard` and its `fatalError` are
-deleted, along with the `repoRoot` derivation from `#filePath` and the absolute
-paths built from it. Target paths become repository-relative.
-
-The verification gate for this phase is the invariant itself, run in an empty
-environment on a clean checkout:
-
-```sh
-env -i PATH=/usr/bin:/bin swift package dump-package --manifest-cache none
+```text
+--swift-sdk <artifact-id> --triple <target-triple>
 ```
 
-## Phase 4 — The Package Graph Settles at Two Packages
+The target triple remains part of `SwiftBuildContext.identityBytes`, product
+directory naming, and task identity. Tests install a fixture artifact containing
+multiple target triples and prove that arm64 and amd64 select different entries
+under the same artifact ID. A request for an absent or ambiguous destination
+fails before task execution.
 
-`collider/engine` merges into `collider` as targets. `ColliderCore`,
-`ColliderRuntime`, `ColliderDownloads`, and `ColliderPlatformC` remain a library
-layer beneath `ColliderCommands`, which is a target boundary and never required
-a package boundary. The engine exists as a separate package only to provide a
-toolchain-independent floor, and Phase 3 makes the entire repository that floor.
+The runtime destination inventory becomes explicit:
 
-The repository settles at two packages:
+- Linux: `x86_64-unknown-linux-gnu`.
+- Android arm64: `aarch64-unknown-linux-android<api>`.
+- Android amd64: `x86_64-unknown-linux-android<api>`.
 
-- `nucleus` at the root, owning every first-party runtime, library, executable,
-  benchmark, generator, sanitizer harness, and test target.
-- `collider`, owning orchestration, the task engine, and the component recipes.
+This phase records the current product inventory, normalized compiler and linker
+commands, exported-symbol inventories, and runtime smoke results. Those records
+are behavioral comparison inputs for later phases. Task fingerprints are not a
+comparison contract because changing `Package.swift` or the destination model
+necessarily changes them.
 
-Collider depends on the root package. The root package has no reference to
-Collider. Two packages rather than one, for two reasons that survive the
-cleanup: SwiftPM makes "the runtime graph never depends on orchestration" a
-resolution error rather than a review rule, and `swift build --package-path
-collider` stays a fast, SDK-free build, which is what the installed launcher
-runs on every invocation.
+## Phase 2 — Centralize the Compilation Contract
 
-The `.package(name: "Nucleus", path: "..")` edge stays exactly as declared.
-`NucleusSessionProtocol` and `NucleusAndroidRuntimeCore` do not move. The
-fresh-clone bootstrap defect is resolved by Phase 3 rather than by relocating
-contracts.
+The root manifest gains a post-construction settings loop over regular,
+executable, and test targets. It applies `.strictMemorySafety()`,
+`-warnings-as-errors`, and `-Werror StrictLanguageFeatures` once. It enables
+`.interoperabilityMode(.Cxx)` unless the target name belongs to the declared
+contract tier.
 
-## Phase 5 — Bootstrap and Documentation Close
+The same loop applies `-Werror` to C and C++ compilation. This deliberately
+normalizes the five existing targets that declare C++ settings without C++
+`-Werror`; it is a warning-policy correction, not an input-neutral refactor.
+All repeated copies of the centralized settings leave individual target
+declarations.
 
-Bootstrap becomes linear, with no step depending on a later step's output:
+Target-specific settings remain local to their targets: platform conditions,
+feature defines, include requirements, sanitizer behavior, library names, and
+linker grouping. Verification compares the recorded product inventory and
+normalized commands, then builds and tests the affected five-target warning
+policy delta explicitly.
+
+## Phase 3 — Make the Package Graph Destination-Independent
+
+The manifest declares the Android product, Android targets, and the pinned local
+`swift-java` package dependency unconditionally. Android-only dependencies and
+settings use `PackageDescription` platform conditions such as
+`.when(platforms: [.android])`. Selecting a product controls which target closure
+builds; manifest evaluation never adds or removes declarations.
+
+The `nucleus-os/swift-java` fork hard-wires its sibling
+`../swift-java-jni-core` package dependency. The
+`SWIFT_JAVA_JNI_CORE_PATH` manifest override and the corresponding export in
+`tools/host-env.sh` are deleted, so dependency resolution always uses the pinned
+root submodule graph.
+
+`NUCLEUS_TARGET_PLATFORM`, `isAndroidTarget`, `hostProducts`,
+`androidProducts`, `hostDependencies`, `androidDependencies`, `hostTargets`,
+and `androidTargets` leave the root manifest. The package is constructed from
+one product list, one dependency list, and one target list.
+
+Verification dumps and resolves the same declaration graph when invoked for
+Linux and Android. Linux product builds do not select the Android product
+closure. Android arm64 and amd64 builds select the same target closure with
+different SDK triples.
+
+## Phase 4 — Assemble Complete Runtime Swift SDKs
+
+Collider assembles immutable SDK generations instead of exposing a loose
+`nucleus-native-sdk` directory to the manifest.
+
+The Linux amd64 SDK contains:
+
+- The pinned Linux amd64 sysroot.
+- Dynamic and static Swift runtime resources from the generated Swift 6.4
+  platform generation.
+- The render and React Native headers and libraries produced by the pinned
+  linux/amd64 OCI builders.
+- SDK-local module maps and `pkg-config` metadata for stable native artifacts.
+- Compiler, C compiler, C++ compiler, and linker toolset configuration.
+
+The Android SDK contains one entry for each supported Android triple and
+contains:
+
+- The pinned NDK sysroot.
+- Architecture-specific dynamic and static Swift runtime resources.
+- Android render artifacts and stable native headers.
+- SDK-local module maps and toolset configuration.
+- The 16 KiB maximum-page-size linker contract.
+
+SDK generations live under Collider's immutable platform-generation cache.
+Collider passes their containing directory with `--swift-sdks-path`; it does not
+depend on a mutable user-global discovery symlink. Publication validates every
+declared path, target triple, runtime directory, header root, library root, and
+tool executable before switching the active generation.
+
+Build-derived SwiftPM module maps and `*-Swift.h` headers are explicitly absent
+from both SDKs.
+
+## Phase 5 — Move Stable Native Topology Out of Absolute Flags
+
+Repository-owned headers and module maps become ordinary SwiftPM C or C++
+targets with repository-relative paths. Checked-in React Native shims remain in
+the repository and depend on those targets. No checked-in source or module map
+moves into a generated SDK.
+
+SDK-owned headers and libraries reach the compiler through SDK include and
+library search paths. Individual targets retain semantic linkage by library
+name, required linker ordering, and `--start-group`/`--end-group` boundaries.
+The SDK supplies where a library resides; the manifest continues to state which
+target links it and why.
+
+Absolute archive filenames, `nativeSDKRoot` interpolations, and absolute
+repository paths leave target settings. The emitted commands may contain
+absolute paths resolved by SwiftPM and Collider, but no absolute path originates
+as a value embedded by `Package.swift`.
+
+Verification builds each render and React Native product separately before the
+complete product closure. This catches accidental global linkage, missing
+per-target library edges, and static archive ordering regressions.
+
+## Phase 6 — Move Build-Derived Headers to the Invocation
+
+`SwiftPMInvocation` remains the owner of the scratch directory and derives the
+matching `GeneratedModuleMaps-*` directory. It passes that directory through
+the SwiftPM command line using the required `-Xcxx` and Swift Clang-importer
+flags. The path becomes part of the build context identity.
+
+`NucleusReactRuntimeHostCxx` continues to include the checked-in
+`NucleusReactRuntimeCxx.h` shim, which includes SwiftPM's generated
+`NucleusReactRuntimeCxx-Swift.h`. The task graph guarantees that the Swift module
+emits the header before the C++ bridge consumes it. A clean-scratch build proves
+that no stale generated header or editor build directory is required.
+
+`NUCLEUS_SWIFTPM_GENERATED_MODULE_MAPS_PATH` and
+`NUCLEUS_SWIFTPM_SCRATCH_PATH` leave the command environment. The generated
+module-map export also leaves `tools/host-env.sh`. Any other SwiftPM environment
+entry without a non-manifest consumer is deleted in the same phase.
+
+## Phase 7 — Make System Libraries Declarative
+
+ICU becomes a repository-owned `.systemLibrary` target with checked-in module
+map metadata and `pkgConfig: "icu-uc"`. Its target dependencies and linked
+library names replace the manifest-time `pkg-config` subprocess and the
+interpolated ICU rpath. SDK configuration supplies the appropriate
+`pkg-config` and library search roots for each destination that consumes ICU.
+
+The generated Swift SDK supplies Swift runtime resource and library paths. The
+manifest's `swiftToolchain + "/lib"` rpath leaves without replacement.
+
+Every other system dependency follows the same rule: the manifest declares the
+library relationship, the selected SDK supplies target-owned search roots, and
+the host environment supplies neither.
+
+## Phase 8 — Delete Manifest Environment and Process Access
+
+After the preceding consumers are gone, the root manifest deletes:
+
+- `Foundation`.
+- `ProcessInfo.processInfo.environment`.
+- The five-variable guard and its `fatalError`.
+- The `pkgConfig` process helper.
+- `repoRoot` derived from `#filePath`.
+- `nativeSDKRoot`, `generatedModuleMaps`, `swiftToolchain`, `swiftSourceID`,
+  `homeDirectory`, `androidSDKSearchRoot`, and every string derived from them.
+
+Target source paths are repository-relative. Manifest evaluation requires only
+`PackageDescription` and the checked-out source tree.
+
+The behavioral gate runs with an isolated home and no Nucleus variables on both
+Xcode 27 and the generated Linux Swift 6.4 toolchain:
+
+```sh
+env -i HOME="$isolated_home" PATH="$swift_bin_dir:/usr/bin:/bin" \
+  "$swift_bin" package dump-package --manifest-cache none
+
+env -i HOME="$isolated_home" PATH="$swift_bin_dir:/usr/bin:/bin" \
+  "$swift_bin" package --package-path collider show-dependencies \
+  --manifest-cache none
+```
+
+The second command runs after the pinned submodules are initialized and proves
+the fresh-clone Collider edge, not merely the root manifest in isolation.
+
+## Phase 9 — Route Builds and Linearize Bootstrap
+
+Every Collider-driven Nucleus runtime invocation selects an SDK directory,
+artifact ID, and target triple explicitly. `SwiftBuildTarget.host` and
+`SwiftBuildTarget.triple` are deleted after their final runtime callers migrate.
+The native Collider bootstrap build remains outside that model.
+
+Bootstrap becomes a strict dependency chain:
 
 ```sh
 swift build --package-path collider -c release
@@ -198,33 +290,73 @@ collider bootstrap
 collider build
 ```
 
-The `toolchain_present` fork in [`collider-setup.sh`](../collider-setup.sh) is
-deleted. It exists only because the first step currently requires the second
-step's output.
+The first command builds Collider with the native compiler and can evaluate the
+root dependency graph without provisioned SDKs. `toolchain rebuild` publishes
+the Linux and Android Swift runtime generations. `bootstrap` builds the native
+render/RN artifacts and assembles the complete runtime SDKs. `build` consumes
+only those published SDK generations.
 
-[`tools/host-env.sh`](../tools/host-env.sh) stops being a contract. Its absence
-is currently fatal for every SwiftPM invocation; afterward it is optional
-convenience for running raw `swift` commands by hand, and Collider passes
-toolchain and SDK selection as arguments.
+The `toolchain_present` bootstrap fork is deleted. `tools/host-env.sh` stops
+being a SwiftPM manifest contract and remains only an optional convenience for
+interactive raw-tool invocation. Collider passes every compiler and SDK choice
+as an argument.
 
-[`AGENTS.md`](../AGENTS.md) is corrected as part of this phase. Its build-system
-section currently describes four first-party package manifests — `core/`,
-`react-native/`, `compositor/compositor-core`, and `shell/` — that do not exist,
-states that the repository root is not a Swift package, and names the
-`core/.skia-build`, `react-native/.rn-build`, and `react-native/.cxx-build`
-output directories, none of which exist. It also asserts that no non-cxx tier
-exists. The corrected section states the two-package graph, the contract tier,
-the Swift SDK build contract, and `collider build` as the verification command.
+## Phase 10 — Settle the Package Graph and Documentation
+
+`collider/engine` merges into `collider` as targets. `ColliderCore`,
+`ColliderRuntime`, `ColliderDownloads`, and `ColliderPlatformC` remain a library
+layer beneath `ColliderCommands`. The repository settles at two first-party
+packages:
+
+- `nucleus` owns runtime libraries, executables, benchmarks, generators,
+  sanitizer harnesses, and tests.
+- `collider` owns orchestration, the task engine, and component recipes.
+
+Collider depends on the root package. The root package has no reference to
+Collider. The package boundary makes a runtime-to-orchestration dependency a
+resolution error. The target boundary inside Collider preserves the engine's
+independent library architecture without retaining a third package manifest.
+
+`AGENTS.md`, `README.md`, the toolchain documentation, and the macOS builder
+plan are updated to state the two-package graph, the contract tier, the runtime
+Swift SDK contract, the native Collider bootstrap exception, and `collider
+build` as the complete product verification entry point.
+
+## Final Verification Gates
+
+The migration is complete only when all of these gates pass in order:
+
+1. Root manifest dump and Collider dependency resolution pass with an isolated
+   home and no Nucleus environment on macOS and Linux.
+2. Xcode 27 builds and tests Collider natively on macOS.
+3. The generated Linux Swift 6.4 toolchain builds and tests Collider natively in
+   the pinned linux/amd64 environment.
+4. The Linux amd64 SDK builds and tests every selected Nucleus product from a
+   clean scratch directory.
+5. The Android arm64 and amd64 SDK entries compile and link their complete
+   product closures from clean scratch directories.
+6. Generated Swift-to-C++ header bridge tests pass without a prior editor or
+   host build.
+7. Exported-symbol inventories and runtime smoke tests match the Phase 1
+   behavioral baseline, except for reviewed intentional changes.
+8. SDK publication validation proves that every runtime, sysroot, header,
+   library, module-map, toolset, and `pkg-config` path belongs to the published
+   immutable generation.
+9. `collider doctor`, `collider bootstrap`, `collider build`, and `collider test`
+   pass from the documented fresh-clone sequence.
+
+Task or artifact fingerprints are expected to change when manifest contents,
+SDK identity, destination identity, or command arguments change. Cache misses
+are accepted once; product behavior and declared provenance are the contracts.
 
 ## Out of Scope
 
 The `@_spi(NucleusCompositor)` seam, the C++ bridge patterns including
-`extern "C"` guards and `noexcept` entry points, the placement of component
-recipe modules under `collider/Sources`, and the AOSP Repo-manifest exception to
-submodule ownership are all load-bearing and correct. This plan changes only how
-host and target configuration reaches the compiler.
+`extern "C"` guards and `noexcept` entry points, component recipe placement
+under `collider/Sources`, and the AOSP Repo-manifest exception to submodule
+ownership remain unchanged.
 
-Generating the root manifest from the component recipes is rejected. It breaks
-editor and language-server integration and contradicts the standing position
-that stock SwiftPM owns one first-party package graph. The manifest remains
-hand-maintained; Phase 1 is what makes that sustainable.
+The root manifest remains hand-maintained. Generating it from Collider recipes
+would break editor and language-server integration and reverse the required
+dependency direction. The centralized compilation contract and explicit
+configuration ownership make the maintained manifest sustainable.
