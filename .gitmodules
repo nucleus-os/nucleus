@@ -40,7 +40,7 @@
 	url = https://github.com/google/double-conversion
 [submodule "swift-tracy/third-party/tracy"]
 	path = swift-tracy/third-party/tracy
-	url = https://github.com/wolfpld/tracy.git
+	url = https://github.com/nucleus-os/tracy.git
 [submodule "third-party/swift-argument-parser"]
 	path = third-party/swift-argument-parser
 	url = https://github.com/apple/swift-argument-parser.git
