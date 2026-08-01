@@ -98,7 +98,7 @@ The target triple remains part of `SwiftBuildContext.identityBytes`, product
 directory naming, and task identity. Tests install a fixture artifact containing
 multiple target triples and prove that arm64 and amd64 select different entries
 under the same artifact ID. A request for an absent or ambiguous destination
-fails before task execution.
+fails during SwiftPM destination planning before compilation.
 
 The runtime destination inventory becomes explicit:
 

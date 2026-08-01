@@ -239,8 +239,8 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         if case .triple(let triple) = context.target {
             arguments += ["--triple", triple]
         }
-        if case .swiftSDK(let name, _) = context.target {
-            arguments += ["--swift-sdk", name]
+        if case .swiftSDK(let name, let targetTriple) = context.target {
+            arguments += ["--swift-sdk", name, "--triple", targetTriple]
         }
         if context.staticSwiftStandardLibrary {
             arguments.append("--static-swift-stdlib")

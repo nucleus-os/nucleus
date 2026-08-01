@@ -1,3 +1,4 @@
+import NucleusUITestSupport
 import Testing
 import NucleusTextBackend
 @_spi(NucleusRenderServer) @testable import NucleusUI

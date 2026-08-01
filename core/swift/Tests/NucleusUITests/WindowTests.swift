@@ -1,3 +1,4 @@
+import NucleusUITestSupport
 @_spi(NucleusRenderServer) @testable import NucleusUI
 import class NucleusLayers.Context
 import struct NucleusLayers.ContextID

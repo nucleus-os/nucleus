@@ -146,6 +146,7 @@ private let fixturePackageRoot = FilePath("/workspace")
             "--scratch-path", "/workspace/.nucleus/swiftpm/android",
             "--package-path", fixturePackageRoot.string,
             "--swift-sdk", "swift-release-6.4.x_android",
+            "--triple", "aarch64-unknown-linux-android24",
             "--static-swift-stdlib",
         ])
     #expect(
@@ -153,4 +154,37 @@ private let fixturePackageRoot = FilePath("/workspace")
             == FilePath(
                 "/workspace/.nucleus/swiftpm/android/out/Products/"
                     + "Release-android-aarch64"))
+}
+
+@Test func swiftSDKTargetTripleSelectsDistinctContextAndProductIdentity() {
+    let arm64 = SwiftBuildContext(
+        packageRoot: fixturePackageRoot,
+        configuration: .release,
+        target: .swiftSDK(
+            name: "swift-release-6.4.x_android",
+            targetTriple: "aarch64-unknown-linux-android24"),
+        toolchainIdentity: "swiftc@fixture")
+    let amd64 = SwiftBuildContext(
+        packageRoot: fixturePackageRoot,
+        configuration: .release,
+        target: .swiftSDK(
+            name: "swift-release-6.4.x_android",
+            targetTriple: "x86_64-unknown-linux-android24"),
+        toolchainIdentity: "swiftc@fixture")
+
+    let scratch = FilePath("/workspace/.nucleus/swiftpm/android")
+    let arm64Invocation = SwiftPMInvocation(
+        context: arm64,
+        scratchPath: scratch)
+    let amd64Invocation = SwiftPMInvocation(
+        context: amd64,
+        scratchPath: scratch)
+
+    #expect(arm64.identityBytes != amd64.identityBytes)
+    #expect(
+        arm64Invocation.configurationProducts
+            == scratch.appending("out/Products/Release-android-aarch64"))
+    #expect(
+        amd64Invocation.configurationProducts
+            == scratch.appending("out/Products/Release-android-x86_64"))
 }

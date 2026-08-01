@@ -37,6 +37,10 @@ without inventing additional lifecycle values.
   the root manifest still requires a provisioned environment to evaluate; target
   settings collapse, host Swift SDK bundling, guard deletion, package-graph
   settling, and bootstrap closure all remain.
+- [Render Value Vocabulary Unification](render-value-vocabulary-unification-plan.md) —
+  four modules describe the same render vocabulary; encoding corrections,
+  the NucleusUI and NucleusRenderModel collapses, raw-value bridge deletion, and
+  conditional-compilation removal all remain.
 - [Nucleus Browser](nucleus-browser-plan.md) — fork-backed source,
   Graphite/Dawn/Vulkan presentation, and packaging are advanced; optimized
   builds and live hardware acceptance remain.

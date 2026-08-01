@@ -1,3 +1,4 @@
+import NucleusUITestSupport
 import Testing
 import class NucleusUI.GraphicsContext
 import enum NucleusUI.LineCap

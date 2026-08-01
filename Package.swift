@@ -1685,6 +1685,15 @@ let hostTargets: [Target] = [
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
+    .target(
+        name: "NucleusUITestSupport",
+        dependencies: ["NucleusTextBackend", "NucleusUI"],
+        path: "core/swift/Tests/Support/UIContext",
+        swiftSettings: [
+            .interoperabilityMode(.Cxx), .strictMemorySafety(),
+            .unsafeFlags(["-warnings-as-errors"]),
+            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+        ]),
     .testTarget(
         name: "NucleusUmbrellaTests", dependencies: ["Nucleus"],
         path: "core/swift/Tests/NucleusUmbrellaTests", cSettings: [.unsafeFlags(["-Werror"])],
@@ -1720,7 +1729,7 @@ let hostTargets: [Target] = [
             "NucleusSkiaGraphiteBridge", "NucleusRenderHost", "NucleusRenderModel",
             "NucleusRetainedSceneTestSupport", "NucleusHostProjectionTestSupport",
             "NucleusRendererTestSupport", "NucleusResourceTestSupport",
-            "NucleusTextRenderingTestSupport",
+            "NucleusTextRenderingTestSupport", "NucleusUITestSupport",
             "NucleusFoundation",
         ], path: "core/swift/Tests/NucleusUITests", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
@@ -1877,7 +1886,7 @@ let hostTargets: [Target] = [
             "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
             "NucleusCompositorWaylandRuntime", "NucleusRenderServerTestSupport",
-            "NucleusCompositorWindowScene",
+            "NucleusCompositorWindowScene", "NucleusUITestSupport",
         ],
         path:
             "integration-tests/window-client-conformance/Tests/NucleusWindowClientPasteboardIntegrationTests",
@@ -1906,7 +1915,7 @@ let hostTargets: [Target] = [
             "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
             "NucleusCompositorWaylandRuntime", "NucleusRenderServerTestSupport",
-            "NucleusCompositorWindowScene",
+            "NucleusCompositorWindowScene", "NucleusUITestSupport",
         ],
         path:
             "integration-tests/window-client-conformance/Tests/NucleusWindowClientInputIntegrationTests",
@@ -2199,6 +2208,7 @@ let hostTargets: [Target] = [
             "NucleusRenderHost", "NucleusRenderModel", "NucleusRenderer",
             "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
+            "NucleusUITestSupport",
         ], path: "platform-linux/desktop/Tests/NucleusLinuxAccessibilityTests",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
@@ -3150,7 +3160,7 @@ let hostTargets: [Target] = [
             "NucleusRenderHost", "NucleusRenderModel", "NucleusRenderer",
             "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
-            "NucleusFoundation",
+            "NucleusFoundation", "NucleusUITestSupport",
         ], path: "shell/shell-kit/Tests/NucleusShellProductTests",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [

@@ -1,3 +1,4 @@
+import NucleusUITestSupport
 import NucleusHostProjectionTestSupport
 import NucleusRendererTestSupport
 import NucleusResourceTestSupport

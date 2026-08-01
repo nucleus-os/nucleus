@@ -1,3 +1,4 @@
+import NucleusUITestSupport
 import Testing
 // A selective import: NucleusLayers carries its own `Size`/`Rect`, and a plain
 // import would make every geometry mention below ambiguous. Qualifying does not

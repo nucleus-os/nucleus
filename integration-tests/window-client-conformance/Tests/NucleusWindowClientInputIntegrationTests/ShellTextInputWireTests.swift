@@ -1,3 +1,4 @@
+import NucleusUITestSupport
 import Glibc
 import NucleusRenderServerTestSupport
 import NucleusWindowClientContracts
