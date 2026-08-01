@@ -1,256 +1,273 @@
-# Render Value Vocabulary Unification Plan
+# Render Value Model Simplification Plan
 
 Status: active.
 
 ## Invariant
 
-One concept in the render stack has one Swift type. `NucleusTypes` owns the
-value vocabulary that crosses the render boundary. A module may narrow or
-enrich that vocabulary when it carries information the wire type cannot, and it
-may extend the wire types with behavior. No module redeclares a wire type whose
-fields and cases it reproduces exactly.
+The render path is an in-process Swift pipeline, not a binary wire protocol.
+Types model semantic state, not an obsolete cross-language ABI.
 
-Where a module does declare a narrowed or enriched type, conversion to and from
-the wire vocabulary is an exhaustive `switch` over cases or an explicit field
-mapping. No conversion reinterprets a raw value, and no type documents raw-value
-compatibility with a type it is not compiled against.
+A value used unchanged by multiple stages has one Swift type, owned by the
+lowest dependency module that all users can import. A stage owns a distinct
+type only when it changes the value's meaning, precision, lifetime, ownership,
+validation state, or representation. Conversion between distinct stage types
+is explicit semantic lowering.
+
+Same-build Swift contracts do not preserve raw-value correspondence, reserved
+padding, fixed C layout, unknown-discriminator fallback, or packet-shaped
+storage. Those constraints exist only beside an actual byte encoder, socket
+protocol, kernel ABI, Wayland protocol, D-Bus contract, or C/C++ entry point
+that requires them.
+
+## Target Architecture
+
+The render path has three semantic stages:
+
+1. `NucleusUI` owns AppKit- and UIKit-shaped authoring behavior.
+2. `NucleusLayers` owns committed layer mutations and resource references.
+3. `NucleusRenderModel` owns renderer-retained state and presentation state.
+
+`NucleusTypes` remains the dependency-leaf module for values genuinely shared
+unchanged across those stages and for values required by leaf host protocols.
+It is a normal hand-maintained Swift module. It is not generated, does not own
+an implied wire format, and does not define a second packet representation of
+`NucleusLayers` transactions.
+
+Ownership follows these rules:
+
+- `NucleusTypes` owns shared geometry, color, transform, handle, paint-command,
+  paint-payload, coordinate-space, and small shared discriminator values.
+- `NucleusLayers` owns layer descriptors, sparse property mutations, layer
+  transaction batches, layer content, content sampling, background-effect
+  regions, and other producer-side composites.
+- `NucleusRenderModel` owns float-domain renderer geometry, retained nodes,
+  presentation overrides, renderer animation slots, and enriched renderer
+  values.
+- `NucleusUI` owns semantic colors, palette roles, visual-effect API enums,
+  affine drawing transforms, edge insets, and other UI concepts that do not
+  pass through the render path unchanged.
+
+An actual encoded format keeps an explicitly scoped name such as
+`PaintPayload`, `WireEventRecord`, or a Wayland protocol record. Its encoder and
+decoder live together and its representation constraints do not propagate into
+unrelated Swift values.
 
 ## Current State
 
-Four modules describe the same render vocabulary.
+`NucleusLayers.LayerTransaction` constructs an `EncodedTransaction` containing
+Swift arrays, tuples, optionals, and domain objects, then invokes a Swift
+`CommitSink` directly. `RenderCommitSink` immediately lowers that value into a
+`NucleusRenderModel.Transaction`. No bytes are serialized and no independent
+implementation consumes the intermediate value.
 
-[`NucleusTypes`](../foundation/Sources/NucleusTypes/Types.swift) is the
-generated wire vocabulary: 1,148 lines declaring `Point`, `Size`, `Rect`,
-`Color`, `Transform`, `Shadow`, `LayerRole`, `ActionPolicy`, the backdrop
-enums, the animation enums, and the layer records.
+`foundation/Sources/NucleusTypes/Types.swift` still has the shape of its retired
+ABI source: raw integer backing fields, computed enum accessors with fallback
+cases, reserved padding, presence masks, fixed-capacity records, and packet
+records for layer operations. There is no generator over this file and no C
+header or cross-language consumer requiring those layouts.
 
-[`NucleusLayers`](../core/swift/Sources/NucleusLayers) is the reference
-implementation of this invariant. It declares 30 `public typealias`
-declarations onto `NucleusTypes` and states the rule in
-[`Geometry.swift`](../core/swift/Sources/NucleusLayers/Geometry.swift): the
-geometry value types are the wire types themselves, the `.zero` conveniences
-are the only relocated logic, and no domain-to-wire adapter remains.
+This obsolete representation has two costs. It creates duplicate types and
+conversion code, and it makes layout artifacts look like current architectural
+requirements. The existing `NucleusUI` duplicates are one symptom; preserving
+the fictional wire owner would consolidate around the wrong abstraction.
 
-[`NucleusUI`](../core/swift/Sources/NucleusUI) does not follow it. It
-redeclares `Point`, `Size`, `Rect`, `Color`, `Transform`, `Shadow`,
-`ActionPolicy`, and `LayerRole`, and wraps `ImageHandle`. It carries 19
-converter members — `wireValue`, `layersPolicy`, `layersRole`, `layersColor`,
-`layersShadow`, `layersAppearance`, `layersTransform`, `cValue` — and those
-converters are called from 75 sites across 16 files.
+## Phase 1 — Delete the Obsolete Layer Packet Model
 
-[`NucleusRenderModel`](../core/swift/Sources/NucleusRenderModel) redeclares a
-further 20 names. Some are genuine enrichment. Several are not.
+The unused transaction packet declarations are removed from `NucleusTypes`:
+`LayerDescriptor`, `LayerPropertyUpdate`, `LayerCreatedRecord`,
+`LayerInsertRecord`, `LayerRemoveRecord`, `LayerDetachRecord`,
+`LayerPropertyRecord`, `AnimationRecord`, and `AnimationRemoveRecord`.
 
-The result is that `Rect` names four distinct types across
-`NucleusTypes`, `NucleusUI`, `NucleusRenderModel`, and
-`NucleusCompositorWindowManager`, and `LayerRole`, `Shadow`, `LayerContent`,
-`ContentSample`, `BackgroundEffectRegions`, and `LayerPropertyUpdate` each name
-three.
+The associated property-mask constants, reserved fields, raw discriminator
+storage, and record adapters are deleted with them. `NucleusLayers` already
+owns the live transaction representation, so no replacement packet types are
+introduced.
 
-## Classification
+`NucleusLayers.DirectBridge` is reduced to conversions that still bridge
+genuinely distinct concepts. Field-copy adapters for the deleted packet model
+are removed. `EncodedTransaction` is renamed to `LayerTransactionBatch` to
+state what it is: an owned Swift batch handed to a commit sink. `encoded()` and
+`CommitEncoder` are renamed around materializing that batch; no API in this
+path uses encoding terminology.
 
-Every duplicated declaration falls into exactly one of three categories, and
-each category has a different disposition.
+Verification exercises transaction creation, in-memory commit sinks,
+`RenderCommitSink`, render-model ingestion, resource lifetime, and completion
+delivery. These tests assert the committed behavior, not the removed packet
+shape.
 
-### Category A — Exact redeclaration
+## Phase 2 — Make `NucleusTypes` an Idiomatic Shared-Value Module
 
-Fields and cases reproduce the wire type with no narrowing and no added
-information. These carry a converter that is pure ceremony.
+The remaining declarations in `Types.swift` are classified by ownership. A
+type used only by one semantic stage moves to that stage. A type shared
+unchanged remains in `NucleusTypes`. `Types.swift` is split into files named for
+their concepts, including geometry, layer values, animation values, backdrop
+values, paint commands, handles, and host values.
 
-In `NucleusUI`: `Point` and `Size` (identical `Double` fields), `Rect` (the
-same rectangle, stored nested as `origin`/`size` rather than flat
-`x`/`y`/`width`/`height`), `Color` (identical `Float` RGBA), `Transform`
-(identical 4×4 `Double` matrix), `Shadow` (identical six fields),
-`ActionPolicy` and `LayerRole` (identical cases in identical order),
-`ImageHandle` (a wrapper holding `NucleusTypes.ImageHandle` as its storage).
+Shared composites store Swift enums directly. `_kind`, `_role`, `_state`, and
+similar raw backing fields disappear. Accessors that turn an unknown integer
+into an arbitrary default disappear. Reserved padding disappears. Raw types
+and explicit numeric values remain only where an active algorithm requires
+them, such as an `OptionSet`, table index, or encoded paint-payload field; the
+requirement is documented beside the declaration.
 
-In `NucleusRenderModel`: `ForegroundVibrancyMode` (`inherit`, `none`, `light`,
-`dark`), `ImplicitActionKind` (`spring = 1`, `scalar = 2`), and
-`ImplicitActionKeyPath` (`frame = 1`, `opacity = 2`).
+`ClipOp` stores its semantic rectangle, radii, antialias flag, and transform
+without padding fields. `VisualEffect` stores its enum properties directly and
+uses semantic defaults. `ImplicitActionRow` stores `LayerRole`,
+`ImplicitActionKeyPath`, and `ImplicitActionKind` directly and carries no
+reserved ABI fields.
 
-`ImplicitActionKeyPath` additionally exists a third time as the nested
-`ImplicitActionEntry.KeyPath` in
-[`NucleusLayers/ImplicitActionPolicy.swift`](../core/swift/Sources/NucleusLayers/ImplicitActionPolicy.swift),
-with the same two cases and the same raw values.
+The old fixed transaction-oriented `LayerContent`, `ContentSample`, and
+`BackgroundEffectRegions` declarations in `NucleusTypes` are deleted after
+their live `NucleusLayers` equivalents become the sole producer-side types.
+Fixed capacity is retained only where a renderer or protocol limit is active;
+otherwise an array expresses a collection.
 
-### Category B — Divergent encoding of the same concept
+The constants representing historical C status codes are deleted when no
+active C/C++ entry point consumes them. Constants still used by a real foreign
+entry point move beside that entry point.
 
-The same concept declared twice with encodings that do not agree. This is the
-category that carries risk.
+Verification covers construction, equality, mutation, invalid-input handling,
+paint recording and rasterization, implicit-action registration, and backdrop
+publication.
 
-`BackdropBlendingMode` is declared in `NucleusRenderModel` as
-`behindWindow = 0`, `withinWindow = 1`. The wire enum is `none = 0`,
-`behindWindow = 1`, `withinWindow = 2`. The render-model declaration is
-preceded by a comment stating its raw values are pinned to the wire encoding.
-They are not. `RenderLayerStyleTests` asserts
-`behindWindow.rawValue == 0 && withinWindow.rawValue == 1` under the name
-`blending-wire-values`, so a test currently locks in the mismatch and names it
-after the invariant it violates.
+## Phase 3 — Establish Canonical Shared Value Semantics
 
-`BackdropState` is declared in `NucleusRenderModel` as `active`, `inactive`,
-`followsWindowActive`; the wire enum's third case is
-`followsWindowActiveState`. The ordinals coincide; the names do not.
+Shared values become complete public Swift APIs rather than generated storage
+containers.
 
-`AnimationKeyPath` is declared in `NucleusRenderModel` as `UInt8` beginning
-`positionX`, `positionY`, `opacity`; the wire enum is `UInt32` beginning
-`none = 0`, `opacity = 1`, `cornerRadius = 2`, `positionX = 3`, `positionY = 4`.
-Both the width and the numbering differ.
+`Point`, `Size`, and `Rect` use flat `Double` fields. They own `.zero`, finite
+checks, rectangle emptiness, inset, union, corners, containment,
+`Rect(origin:size:)`, and computed `origin` and `size` views. The existing
+NucleusUI rectangle semantics remain authoritative: nonpositive dimensions are
+empty, over-insetting collapses instead of inverting, and union ignores empty
+or nonfinite rectangles.
 
-Nothing crosses these boundaries by raw value today —
-[`RenderTransactionLowering`](../core/swift/Sources/NucleusRenderHost/RenderTransactionLowering.swift)
-converts through eight explicit `…FromWire` functions over 616 lines. The
-defect is that the declarations claim an alignment the code does not rely on
-and does not have, so the next reader who trusts the comment and reaches for
-`rawValue` introduces a silent miscompilation of backdrop blending.
+`Color` represents finite normalized RGBA. Construction clamps every component
+to `[0, 1]` and maps nonfinite input to zero. Components cannot be mutated into
+an invalid state; operations such as replacing opacity return a new value. If
+the renderer later needs extended-range color, that is introduced as a
+distinct renderer color type rather than weakening the normalized UI/render
+color contract.
 
-One raw-value bridge already exists.
-[`ImplicitActionPolicy.swift`](../core/swift/Sources/NucleusLayers/ImplicitActionPolicy.swift)
-constructs `NucleusTypes.ImplicitActionKeyPath(rawValue: entry.keyPath.rawValue)!`
-at two sites. It is correct today only because two independently maintained
-declarations happen to agree, and it force-unwraps in a codebase that otherwise
-contains four `fatalError` sites and two `try!` sites across 1,021 non-test
-source files.
+`Transform` owns identity, finiteness, translation, rotation, scale, and its 2D
+affine projection. Default construction is made semantically explicit: callers
+use `.identity` or an initializer that supplies all matrix elements rather than
+depending on a generated all-zero default.
 
-### Category C — Genuine enrichment
+`Shadow` becomes one shared value used by `NucleusUI` and `NucleusLayers`. It
+owns the existing UI validation and CALayer-shaped defaults: finite offsets,
+nonnegative radii, normalized opacity, opaque black color, and the documented
+default offset and blur. `.none` remains the explicit absent-shadow value.
+`NucleusLayers.Shadow` and its field-copy bridge are deleted.
 
-The module type carries information the flat wire discriminator cannot, and the
-two must stay distinct.
+`ImageHandle` directly stores its identifier and conforms to `Hashable` in its
+owning module. The NucleusUI wrapper is deleted.
 
-`NucleusRenderModel.LayerKind` carries `backdrop(BackdropKindParams)` and
-`remoteHost(ContextID)` against a flat `none`/`container`/`backdrop`/`host`
-wire enum. `NucleusRenderModel.BackdropMask` carries `roundedRect(Float)` and
-`image(SnapshotHandle)`. `NucleusRenderModel.EffectShape` carries
-`rect(Float4)` and `rrect(rect:radii:)`. These stay as they are.
+Behavior tests pin these semantic contracts, including invalid colors and
+shadows, geometry edge cases, transform composition, and handle identity.
 
-## Phase 1 — Correct the Divergent Encodings
+## Phase 4 — Collapse the NucleusUI Render Vocabulary
 
-The false claims are removed before any mechanical replacement, because a
-subsequent phase that collapses a type must not inherit a documented invariant
-that was never true.
+`NucleusUI.Point`, `Size`, `Rect`, `Color`, `Transform`, `Shadow`,
+`ActionPolicy`, `LayerRole`, and `ImageHandle` become public typealiases to the
+canonical shared values. Their relocated behavior is already present from
+Phase 3, so this phase removes declarations and adapters without changing
+semantics.
 
-The comment asserting wire-pinned raw values is deleted from
-`NucleusRenderModel.BackdropBlendingMode`. The `blending-wire-values`
-assertions in `RenderLayerStyleTests` are replaced by a round-trip test: every
-`NucleusLayers.BackdropBlendingMode` case lowers through
-`blendingModeFromWire` and the result maps back to the originating case. That
-test asserts the property the renderer actually depends on, and it fails if
-either declaration gains, loses, or reorders a case.
+`wireValue`, `layersColor`, `layersShadow`, `layersTransform`, `layersPolicy`,
+and `layersRole` are deleted. Callers pass the shared values directly.
 
-`NucleusRenderModel.BackdropState.followsWindowActive` is renamed to
-`followsWindowActiveState` to match the wire vocabulary. The name divergence is
-the only thing that makes the two enums look like different concepts.
+`EdgeInsets` and `AffineTransform` remain NucleusUI types. `SemanticColor`,
+`ColorSpec`, palettes, and visual-effect API enums remain NucleusUI concepts.
+Their conversions into shared render values remain exhaustive semantic
+mappings and are renamed for their destination rather than called `cValue`.
+`Appearance` stays distinct from the shared backdrop appearance because UI
+appearance has no automatic state.
 
-`AnimationKeyPath` in `NucleusRenderModel` keeps its narrower case set and its
-`UInt8` width — the render model has no representation for the wire `none` —
-and gains the same round-trip test. Its declaration states that it is a
-narrowing of the wire enum and that no raw-value correspondence exists.
+Verification runs the NucleusUI layout, hit-testing, painting, damage,
+publication, animation, image, palette, and visual-effect suites, followed by
+the render-host apply suites.
 
-## Phase 2 — Collapse the NucleusUI Geometry Vocabulary
+## Phase 5 — Align Shared and Renderer-Retained Vocabulary
 
-`Point`, `Size`, and `Rect` stop being NucleusUI declarations and become the
-`NucleusTypes` types, following the pattern already established in
-`NucleusLayers`.
+Exact enum duplicates in `NucleusRenderModel` are replaced by shared values:
+`LayerRole`, `ForegroundVibrancyMode`, `ImplicitActionKind`, and
+`ImplicitActionKeyPath`.
 
-NucleusUI's geometry *behavior* is preserved and moves to extensions on the
-wire types: `isFinite` on all three, and `isEmpty`, `insetBy(dx:dy:)`,
-`insetBy(_:)`, `union(_:)`, `corners`, and `contains(_:)` on `Rect`. The
-documented semantics stay with them — that a rectangle with either nonpositive
-dimension is empty, that a rectangle inset past its own size collapses to zero
-rather than inverting, and that `union` ignores an empty rectangle rather than
-including it.
+Backdrop absence is represented by the absence of a backdrop attachment or a
+material of `.none`, not by a second sentinel in every property. The shared
+`BackdropBlendingMode` contains `behindWindow` and `withinWindow` only.
+`BackdropState` uses `followsWindowActiveState`. `BackdropAppearance` contains
+`auto`, `light`, and `dark`. Renderer declarations that become exact after
+these corrections are replaced by the shared types.
 
-`Rect.origin` and `Rect.size` become computed properties over the flat wire
-fields, so NucleusUI call sites that compose and decompose rectangles are
-unaffected. `Rect(origin:size:)` is retained as an initializer.
+`NucleusRenderModel.AnimationKeyPath` remains distinct. It is not a narrowing
+of the producer key path: it contains renderer-owned transform-component and
+compound-frame slots, while the producer path contains authored properties
+that may not lower to renderer animations. The types are renamed
+`LayerAnimationKeyPath` and `RenderAnimationKeyPath` so their stage ownership
+is explicit. Lowering is an exhaustive switch returning `nil` for intentionally
+unsupported producer properties. No raw-value relationship exists or is
+tested.
 
-The six `wireValue` members in
-[`NucleusUI/Geometry.swift`](../core/swift/Sources/NucleusUI/Geometry.swift)
-are deleted along with all 75 call sites that invoke them. `EdgeInsets` and
-`AffineTransform` remain NucleusUI declarations: neither has a wire
-counterpart, and `AffineTransform` is the six-scalar `GraphicsContext`
-vocabulary, distinct from the 4×4 `Transform`.
+Renderer geometry remains distinct where it changes precision or meaning.
+Generic duplicate names are replaced with semantic names such as
+`RenderRect`, `Bounds`, `Point2D`, `Frame`, and `M44`. Conversion from shared
+`Double` geometry to renderer `Float` geometry stays in
+`RenderTransactionLowering` and is tested for the accepted finite range.
 
-Verification is the existing `NucleusUITests` layout, paint, and damage suites,
-which exercise this geometry directly, plus the render-model apply tests that
-consume the lowered output.
+Enriched renderer types remain renderer-owned, including associated-value
+layer kinds, backdrop masks, effect shapes, content deltas, retained animation
+records, and presentation overrides.
 
-## Phase 3 — Collapse the Remaining Exact Redeclarations
+Verification covers every supported producer-to-renderer animation property,
+every explicitly rejected property, backdrop creation and removal, implicit
+actions, geometry precision conversion, and retained-tree application.
 
-The Category A types that are not geometry follow the same treatment.
+## Phase 6 — Remove Wire and Generated Vocabulary
 
-In NucleusUI: `Color`, `Transform`, `Shadow`, `ActionPolicy`, and `LayerRole`
-become the `NucleusTypes` types. `Color`'s component clamping moves to a
-factory initializer on the wire type so the invariant survives the collapse —
-the clamping is real behavior, not ceremony, and is the one piece of NucleusUI
-`Color` that is not a field copy. `ImageHandle` stops wrapping
-`NucleusTypes.ImageHandle` and becomes it.
+Comments and APIs in the in-process render path stop using `wire`, `ABI`,
+`generated`, `C-compatible`, `pinned`, and `encoded` when those words do not
+describe a real boundary. `RenderTransactionLowering` remains a lowering
+surface because it performs genuine semantic transformation.
 
-The converter members deleted with them are `layersColor`, `layersShadow`,
-`layersAppearance`, `layersTransform`, `layersPolicy`, `layersRole`, and both
-`cValue` properties in `MaterialBridge`.
+Conversion names state direction and meaning: `lowerBackdrop`,
+`makeRenderShadow`, `makeRenderGeometry`, or similarly specific names. A
+conversion that has become identity is deleted instead of renamed.
 
-In NucleusRenderModel: `ForegroundVibrancyMode`, `ImplicitActionKind`, and
-`ImplicitActionKeyPath` become the `NucleusTypes` types.
+`NUCLEUS_LAYERS_PUBLIC_NAMES` is removed from the package manifest. Its
+always-taken conditional blocks are made unconditional, and the public aliases
+they provide remain ordinary declarations.
 
-In NucleusLayers: the nested `ImplicitActionEntry.KeyPath` becomes
-`NucleusTypes.ImplicitActionKeyPath`, which removes the third declaration of
-that two-case enum.
+Repository documentation is updated to describe the direct Swift commit path.
+References to a generated render schema or wire-stable render discriminants are
+deleted. Documentation for actual encoded formats remains scoped to those
+formats.
 
-## Phase 4 — Delete the Force-Unwrapped Raw-Value Bridge
-
-With `ImplicitActionEntry.KeyPath` collapsed in Phase 3, both
-`NucleusTypes.ImplicitActionKeyPath(rawValue: entry.keyPath.rawValue)!`
-constructions in `ImplicitActionPolicy.wireRow` become the identity and are
-replaced by `entry.keyPath`. This removes the only raw-value reinterpretation
-across a vocabulary boundary in the render stack, and with it two force
-unwraps.
-
-The lowering surface in `RenderTransactionLowering` is then re-examined against
-what remains. The converters that survive are exactly those bridging Category C
-enrichment — `backdropMaskFromWire`, `effectShapeFromWire`,
-`effectShapeRadiiFromWire`, `backdropAttachmentFromWire`, and
-`materialRoleFromWire`. `blendingModeFromWire`, `backdropStateFromWire`, and
-`appearanceModeFromWire` reduce to a narrowing switch that rejects the wire
-`none` case explicitly rather than mapping it silently.
-
-## Phase 5 — Remove the Always-On Conditional Compilation
-
-`NUCLEUS_LAYERS_PUBLIC_NAMES` is defined unconditionally for the `NucleusLayers`
-target in the root manifest and guards two blocks, in
-[`Geometry.swift`](../core/swift/Sources/NucleusLayers/Geometry.swift) and
-[`LayerTransaction.swift`](../core/swift/Sources/NucleusLayers/LayerTransaction.swift).
-A define that is always set is not a configuration point; it is a permanently
-taken branch that reads as one. The `#if` and `#endif` are deleted, the guarded
-`public typealias` declarations are kept, and the `.define` is removed from the
-target's settings.
-
-This lands after Phase 2, because the guarded block exports
-`NucleusLayers.Rect` and `NucleusLayers.Size` and the collapse changes what
-those names resolve to.
+Verification includes a complete build and test run through Collider after
+sourcing `tools/host-env.sh`, plus formatting of every touched Swift file with
+the pinned toolchain's `swift-format` and the root `.swift-format` contract.
 
 ## Enforcement
 
-The invariant is held by round-trip behavior tests at each vocabulary boundary,
-not by assertions about which declarations exist. Every enum that narrows or
-enriches a wire enum carries a test that lowers each wire case and maps the
-result back, so a case added on either side fails a test rather than
-silently widening a `default` branch.
+Behavior and exhaustive semantic lowering enforce the architecture.
 
-`NucleusTypes` itself is generated. Its correspondence to the wire encoding is
-the responsibility of the generator and its own verification, not of the
-modules downstream of it.
+- Shared values have tests for their public invariants.
+- Distinct stage types have exhaustive conversions with no raw-value casts.
+- Unsupported lowering is represented explicitly by `nil`, a typed error, or a
+  documented precondition chosen by the caller's contract.
+- New enum cases force all relevant switches to be reconsidered.
+- Tests do not inspect source shape or assert that declarations are absent.
+- Actual byte formats test encoding, decoding, malformed input, and exact
+  representation only within the module that owns the format.
 
 ## Out of Scope
 
-The Category C enrichment types stay distinct, and this plan does not flatten
-them.
+This plan does not remove or weaken real protocol boundaries. Wayland records,
+compositor-server event records, shell IPC, D-Bus payloads, kernel and Vulkan
+structures, C/C++ entry points, and the paint payload byte blob retain the
+representation rules required by their consumers.
 
-The remaining duplicate public type names surfaced by a repository-wide scan
-are coincidental reuse in unrelated domains — `Kind`, `State`, `Severity`,
-`Phase`, `Settings`, `Snapshot`, `Host`, `Event`, and `Image` are nested or
-domain-local types in modules that never meet. They are not renamed.
-
-`NucleusCompositorWindowManager.Rect` and `NucleusCompositorWindowScene.WindowScene`
-are compositor-side declarations reached through the
-`@_spi(NucleusCompositor)` seam. They are governed by the compositor's own
-boundary and are not part of this unification.
+The plan does not flatten renderer-retained state into producer state. Types
+whose distinct representation carries renderer semantics remain distinct even
+when they share similar field names.
