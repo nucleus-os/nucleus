@@ -112,6 +112,30 @@ are behavioral comparison inputs for later phases. Task fingerprints are not a
 comparison contract because changing `Package.swift` or the destination model
 necessarily changes them.
 
+### Progress — 2026-08-01
+
+Exact SDK selection is implemented. Collider now emits `--swift-sdk` and
+`--triple` together, and behavioral tests prove distinct invocation, task, and
+product identities for the Android arm64 and amd64 entries in one real artifact
+bundle.
+
+The starting host graph contains 77 products and 227 targets. Its normalized
+product-and-target inventory hashes to
+`a4757e0881c837fa2d0e5ff54024320826efe4db64797b325956235352585977`.
+The environment-selected Android graph contains 78 products and 230 targets and
+hashes to
+`37715ac42e8900a208a5d13aae8210b2c6c5814faa2a442f0f405e0b6537bea1`.
+Normalized compiler and linker commands, exported symbols, and runtime smoke
+results remain to be captured from the generated Linux toolchain.
+
+The first Linux amd64 toolchain build reached the final auxiliary-tool phase
+and exposed an upstream DocC adapter that unconditionally ran
+`swift package update` against the read-only pinned source graph. The
+`nucleus-os/swift` fork now builds DocC directly from the pinned local sibling
+dependencies without mutating `Package.resolved`. A read-only container probe
+and the 141-test `swift_build_support` suite verify the correction. The cached
+toolchain rebuild must complete before the remaining baselines are recorded.
+
 ## Phase 2 — Centralize the Compilation Contract
 
 The root manifest gains a post-construction settings loop over regular,
