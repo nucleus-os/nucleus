@@ -1,5 +1,5 @@
-public import NucleusTypes
 public import NucleusAppHostProtocols
+public import NucleusTypes
 
 public struct Settings: Sendable, Equatable {
     public var reduceMotion: Bool
@@ -60,15 +60,33 @@ public enum ImplicitActionPolicy {
         // to settle than the prior critically damped 784/56. Tune speed by
         // changing stiffness and keeping damping near 2·sqrt(stiffness).
         return [
-            .init(role: .windowRoot, keyPath: .frame, template: .spring(mass: 1, stiffness: 1100, damping: 68)),
-            .init(role: .windowContentViewport, keyPath: .frame, template: .spring(mass: 1, stiffness: 1100, damping: 68)),
-            .init(role: .notification, keyPath: .frame, template: .spring(mass: 1, stiffness: 900, damping: 60)),
-            .init(role: .hotkeyOverlay, keyPath: .frame, template: .spring(mass: 1, stiffness: 900, damping: 60)),
-            .init(role: .windowRoot, keyPath: .opacity, template: .scalar(duration: 0.18, timingFunction: .init(0, 0, 0.58, 1))),
-            .init(role: .notification, keyPath: .opacity, template: .scalar(duration: 0.2, timingFunction: .init(0.42, 0, 0.58, 1))),
-            .init(role: .hotkeyOverlay, keyPath: .opacity, template: .scalar(duration: 0.2, timingFunction: .init(0.42, 0, 0.58, 1))),
-            .init(role: .wallpaper, keyPath: .opacity, template: .scalar(duration: 0.2, timingFunction: .init(0.42, 0, 0.58, 1))),
-            .init(role: .dock, keyPath: .opacity, template: .scalar(duration: 0.2, timingFunction: .init(0.42, 0, 0.58, 1))),
+            .init(
+                role: .windowRoot, keyPath: .frame,
+                template: .spring(mass: 1, stiffness: 1100, damping: 68)),
+            .init(
+                role: .windowContentViewport, keyPath: .frame,
+                template: .spring(mass: 1, stiffness: 1100, damping: 68)),
+            .init(
+                role: .notification, keyPath: .frame,
+                template: .spring(mass: 1, stiffness: 900, damping: 60)),
+            .init(
+                role: .hotkeyOverlay, keyPath: .frame,
+                template: .spring(mass: 1, stiffness: 900, damping: 60)),
+            .init(
+                role: .windowRoot, keyPath: .opacity,
+                template: .scalar(duration: 0.18, timingFunction: .init(0, 0, 0.58, 1))),
+            .init(
+                role: .notification, keyPath: .opacity,
+                template: .scalar(duration: 0.2, timingFunction: .init(0.42, 0, 0.58, 1))),
+            .init(
+                role: .hotkeyOverlay, keyPath: .opacity,
+                template: .scalar(duration: 0.2, timingFunction: .init(0.42, 0, 0.58, 1))),
+            .init(
+                role: .wallpaper, keyPath: .opacity,
+                template: .scalar(duration: 0.2, timingFunction: .init(0.42, 0, 0.58, 1))),
+            .init(
+                role: .dock, keyPath: .opacity,
+                template: .scalar(duration: 0.2, timingFunction: .init(0.42, 0, 0.58, 1))),
         ]
     }
 
@@ -78,22 +96,20 @@ public enum ImplicitActionPolicy {
 
     private static func wireRow(_ entry: ImplicitActionEntry) -> NucleusTypes.ImplicitActionRow {
         switch entry.template {
-        case let .spring(mass, stiffness, damping):
+        case .spring(let mass, let stiffness, let damping):
             return .init(
                 role: entry.role,
                 keyPath: NucleusTypes.ImplicitActionKeyPath(rawValue: entry.keyPath.rawValue)!,
                 kind: .spring,
-                reserved: 0,
-                mass: mass, stiffness: stiffness, damping: damping, reserved2: 0,
+                mass: mass, stiffness: stiffness, damping: damping,
                 duration: 0, c1x: 0, c1y: 0, c2x: 0, c2y: 0
             )
-        case let .scalar(duration, timingFunction):
+        case .scalar(let duration, let timingFunction):
             return .init(
                 role: entry.role,
                 keyPath: NucleusTypes.ImplicitActionKeyPath(rawValue: entry.keyPath.rawValue)!,
                 kind: .scalar,
-                reserved: 0,
-                mass: 0, stiffness: 0, damping: 0, reserved2: 0, duration: duration,
+                mass: 0, stiffness: 0, damping: 0, duration: duration,
                 c1x: timingFunction.c1x, c1y: timingFunction.c1y,
                 c2x: timingFunction.c2x, c2y: timingFunction.c2y
             )

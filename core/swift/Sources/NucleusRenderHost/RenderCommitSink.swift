@@ -1,7 +1,7 @@
 // The Swift-direct producer commit sink.
 //
 // `RenderCommitSink` is the `NucleusLayers.CommitSink` the layers `Context`
-// writes to. Each `commit(_:)` lowers the encoded layers transaction through
+// writes to. Each `commit(_:)` lowers the materialized layer batch through
 // `RenderTransactionLowering` and folds the result into an owned
 // `RetainedTreeStore`. Nothing wires this live yet; it lands additive +
 // fixture-proven.
@@ -65,10 +65,12 @@ public final class RenderCommitSink: NucleusLayers.CommitSink {
         }
     }
 
-    public func commit(_ transaction: NucleusLayers.EncodedTransaction) throws(NucleusLayers.LayerError) {
+    public func commit(
+        _ transaction: NucleusLayers.LayerTransactionBatch
+    ) throws(NucleusLayers.LayerError) {
         let lowered = RenderTransactionLowering.lower(transaction)
         lastLowered = lowered
-        if case let .failure(error) = store.ingest(lowered) {
+        if case .failure(let error) = store.ingest(lowered) {
             var tokens = Set(
                 transaction.animationsAdded.map { $0.animation.completionToken }
             )

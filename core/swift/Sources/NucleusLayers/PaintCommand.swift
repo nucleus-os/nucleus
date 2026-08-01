@@ -9,21 +9,5 @@ public typealias PaintCommand = NucleusTypes.PaintCommand
 public typealias PaintCommandFlags = NucleusTypes.PaintCommandFlags
 public typealias PaintBlendMode = NucleusTypes.PaintBlendMode
 
-// `Color` is the generated wire color itself (r/g/b/a: Float, Equatable,
-// Sendable). The positional initializer and `opacity(_:)` are the only
-// relocated conveniences; the labeled `init(r:g:b:a:)` is already memberwise.
+// `Color` is the normalized shared render color.
 public typealias Color = NucleusTypes.Color
-
-extension NucleusTypes.Color {
-    public init(_ r: Float, _ g: Float, _ b: Float, _ a: Float) {
-        self.init(r: r, g: g, b: b, a: a)
-    }
-
-    /// Returns this color with its alpha replaced. Corresponds to
-    /// `NSColor.withAlphaComponent`. Used to derive faded variants of a
-    /// semantic color (e.g. an accent fill at 0.22 alpha for a status pill)
-    /// without introducing per-variant tokens.
-    public func opacity(_ alpha: Float) -> Color {
-        Color(r, g, b, alpha)
-    }
-}

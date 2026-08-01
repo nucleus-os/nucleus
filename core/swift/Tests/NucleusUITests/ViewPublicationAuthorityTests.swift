@@ -1,21 +1,22 @@
-import NucleusUITestSupport
 import NucleusRenderHost
 import NucleusRenderModel
-@_spi(NucleusRenderServer) @testable import NucleusUI
 import NucleusUIEmbedder
-@_spi(NucleusRenderServer) @testable import NucleusLayers
+import NucleusUITestSupport
 import Testing
+
+@_spi(NucleusRenderServer) @testable import NucleusLayers
+@_spi(NucleusRenderServer) @testable import NucleusUI
 
 @MainActor
 private final class ApplyingCommitSink: CommitSink {
     var resourceHostHandle: UInt64 { 0 }
     let runtimeHost = LayerRuntimeHost.inMemory()
-    private(set) var transactions: [EncodedTransaction] = []
+    private(set) var transactions: [LayerTransactionBatch] = []
     private(set) var tree = LayerTree()
     var rejectsCommits = false
     private(set) var rejectedCommitCount = 0
 
-    func commit(_ transaction: EncodedTransaction) throws(LayerError) {
+    func commit(_ transaction: LayerTransactionBatch) throws(LayerError) {
         if rejectsCommits {
             rejectedCommitCount += 1
             throw .backendFailure(detail: "injected publication failure")
@@ -71,16 +72,16 @@ private final class DamagePaintView: View {
 
         let transaction = try #require(sink.transactions.first)
         #expect(!transaction.created.isEmpty)
-        #expect(transaction.inserted.allSatisfy { insertion in
-            transaction.created.contains { $0.0 == insertion.layer } &&
-                (
-                    insertion.parent == nil ||
-                    transaction.created.contains { $0.0 == insertion.parent }
-                )
-        })
-        #expect(transaction.propertyUpdates.allSatisfy { update in
-            transaction.created.contains { $0.0 == update.layer }
-        })
+        #expect(
+            transaction.inserted.allSatisfy { insertion in
+                transaction.created.contains { $0.0 == insertion.layer }
+                    && (insertion.parent == nil
+                        || transaction.created.contains { $0.0 == insertion.parent })
+            })
+        #expect(
+            transaction.propertyUpdates.allSatisfy { update in
+                transaction.created.contains { $0.0 == update.layer }
+            })
         #expect(sink.tree.get(published[0].rootLayerID) != nil)
     }
 
@@ -152,12 +153,14 @@ private final class DamagePaintView: View {
         #expect(retainedLayer.descriptor.initialContent == originalContent)
         #expect(sink.transactions.count == transactionCount + 1)
         let reparent = try #require(sink.transactions.last)
-        #expect(reparent.inserted.contains {
-            $0.layer == retainedLayer.id && $0.parent == rightLayer.id
-        })
-        #expect(!reparent.propertyUpdates.contains {
-            $0.layer == retainedLayer.id && $0.properties.content != nil
-        })
+        #expect(
+            reparent.inserted.contains {
+                $0.layer == retainedLayer.id && $0.parent == rightLayer.id
+            })
+        #expect(
+            !reparent.propertyUpdates.contains {
+                $0.layer == retainedLayer.id && $0.properties.content != nil
+            })
     }
 
     @Test func hideShowRetainsLayerContentAndAnimationState() throws {
@@ -175,9 +178,10 @@ private final class DamagePaintView: View {
         label.isHidden = true
         _ = try publisher.publish(roots: [label])
         let hideTransaction = try #require(sink.transactions.last)
-        #expect(hideTransaction.propertyUpdates.contains {
-            $0.layer == layer.id && $0.properties.opacity == 0
-        })
+        #expect(
+            hideTransaction.propertyUpdates.contains {
+                $0.layer == layer.id && $0.properties.opacity == 0
+            })
         #expect(hideTransaction.removed.isEmpty)
         #expect(hideTransaction.animationsRemoved.isEmpty)
 
@@ -187,9 +191,10 @@ private final class DamagePaintView: View {
         let showTransaction = try #require(sink.transactions.last)
         #expect(shownLayer === layer)
         #expect(shownLayer.descriptor.initialContent == content)
-        #expect(showTransaction.propertyUpdates.contains {
-            $0.layer == layer.id && $0.properties.opacity == 1
-        })
+        #expect(
+            showTransaction.propertyUpdates.contains {
+                $0.layer == layer.id && $0.properties.opacity == 1
+            })
         #expect(showTransaction.removed.isEmpty)
         #expect(showTransaction.animationsRemoved.isEmpty)
     }
@@ -305,11 +310,13 @@ private final class DamagePaintView: View {
             sink.transactions.last?.propertyUpdates.first {
                 $0.properties.content != nil
             })
-        #expect(update.properties.contentDamage == GeometryRect(
-            x: 10,
-            y: 12,
-            width: 20,
-            height: 16))
+        #expect(
+            update.properties.contentDamage
+                == GeometryRect(
+                    x: 10,
+                    y: 12,
+                    width: 20,
+                    height: 16))
         #expect(publisher.lastMetrics.localizedPaintUpdates == 1)
         #expect(publisher.lastMetrics.damageRegions == 1)
     }
@@ -390,18 +397,18 @@ private final class DamagePaintView: View {
         let standaloneTransaction = try #require(standaloneSink.transactions.first)
         let embedderTransaction = try #require(embedderSink.transactions.first)
         #expect(
-            standaloneTransaction.created.map { $0.1.kind } ==
-                embedderTransaction.created.map { $0.1.kind }
+            standaloneTransaction.created.map { $0.1.kind }
+                == embedderTransaction.created.map { $0.1.kind }
         )
         #expect(
-            normalizedParents(in: standaloneTransaction) ==
-                normalizedParents(in: embedderTransaction)
+            normalizedParents(in: standaloneTransaction)
+                == normalizedParents(in: embedderTransaction)
         )
         #expect(
             standaloneTransaction.propertyUpdates.map {
                 $0.properties.content?.kind
-            } ==
-                embedderTransaction.propertyUpdates.map {
+            }
+                == embedderTransaction.propertyUpdates.map {
                     $0.properties.content?.kind
                 }
         )
@@ -425,8 +432,9 @@ private final class DamagePaintView: View {
         _ = try publisher.publish(roots: [root])
         let leafLayer = try #require(publisher.visualLayer(for: leaf))
         let leftLayer = try #require(publisher.visualLayer(for: left))
-        #expect(sink.tree.get(leafLayer.id.rawValue)?.parent
-            == leftLayer.id.rawValue)
+        #expect(
+            sink.tree.get(leafLayer.id.rawValue)?.parent
+                == leftLayer.id.rawValue)
 
         var completion: TransactionOutcome?
         _ = try Transaction.run(
@@ -443,20 +451,23 @@ private final class DamagePaintView: View {
             rawToken: sink.transactions.last?.completionToken ?? 0,
             result: .completed)
         #expect(completion == .completed)
-        #expect(sink.tree.get(leafLayer.id.rawValue)?.model.properties.opacity
-            == 0.75)
+        #expect(
+            sink.tree.get(leafLayer.id.rawValue)?.model.properties.opacity
+                == 0.75)
 
         leaf.isHidden = true
         _ = try publisher.publish(roots: [root])
-        #expect(sink.tree.get(leafLayer.id.rawValue)?.model.properties.opacity
-            == 0)
+        #expect(
+            sink.tree.get(leafLayer.id.rawValue)?.model.properties.opacity
+                == 0)
         leaf.isHidden = false
         right.addSubview(leaf)
         _ = try publisher.publish(roots: [root])
         let rightLayer = try #require(publisher.visualLayer(for: right))
         #expect(publisher.visualLayer(for: leaf) === leafLayer)
-        #expect(sink.tree.get(leafLayer.id.rawValue)?.parent
-            == rightLayer.id.rawValue)
+        #expect(
+            sink.tree.get(leafLayer.id.rawValue)?.parent
+                == rightLayer.id.rawValue)
 
         try publisher.invalidate()
         #expect(sink.tree.layers.isEmpty)
@@ -539,7 +550,7 @@ private final class DamagePaintView: View {
             let render = tree.get(layer.id.rawValue)
             #expect(render != nil)
             if let parent = view.superview,
-               let parentLayer = publisher.visualLayer(for: parent)
+                let parentLayer = publisher.visualLayer(for: parent)
             {
                 #expect(
                     render?.parent == parentLayer.id.rawValue,
@@ -578,10 +589,11 @@ private final class DamagePaintView: View {
     }
 
     private func normalizedParents(
-        in transaction: EncodedTransaction
+        in transaction: LayerTransactionBatch
     ) -> [Int?] {
-        let indices = Dictionary(uniqueKeysWithValues:
-            transaction.created.enumerated().map { ($0.element.0, $0.offset) })
+        let indices = Dictionary(
+            uniqueKeysWithValues:
+                transaction.created.enumerated().map { ($0.element.0, $0.offset) })
         return transaction.inserted.map { insertion in
             insertion.parent.flatMap { indices[$0] }
         }

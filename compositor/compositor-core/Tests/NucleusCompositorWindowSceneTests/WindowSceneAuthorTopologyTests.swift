@@ -1,8 +1,8 @@
+import NucleusCompositorWindowScene
 import NucleusLayers
 import NucleusRenderHost
 import NucleusRenderModel
 import Testing
-import NucleusCompositorWindowScene
 
 // Behavioral coverage for the compositor-root self-hosting topology that the
 // scene feeder drives at the Wayland cutover (`WindowSceneAuthor.ensureCompositorRoot`
@@ -12,7 +12,7 @@ import NucleusCompositorWindowScene
 // the live compositor.
 //
 // The author is driven through an injected `InMemoryCommitSink` per context (the
-// `commitSinkFactory`), so assertions read the real encoded transactions — no
+// `commitSinkFactory`), so assertions read the real transaction batches — no
 // production `HostCommitSink`, no C round-trip, no stubbed commit path. A stub
 // layers host supplies the context-id allocator the self-allocating attach needs.
 
@@ -32,7 +32,7 @@ final class SinkRegistry {
     /// (`ensureCompositorRoot` runs before any window context is created).
     var rootSink: InMemoryCommitSink? { sinks.first }
 
-    var allTransactions: [EncodedTransaction] { sinks.flatMap(\.transactions) }
+    var allTransactions: [LayerTransactionBatch] { sinks.flatMap(\.transactions) }
 
     func created(context id: NucleusLayers.ContextID) -> [(LayerID, LayerDescriptor)] {
         allTransactions.filter { $0.contextID == id }.flatMap(\.created)
@@ -43,10 +43,10 @@ final class SinkRegistry {
 final class RejectingCommitSink: CommitSink {
     let resourceHostHandle: UInt64 = 0
     let runtimeHost = LayerRuntimeHost.inMemory()
-    private(set) var transactions: [EncodedTransaction] = []
+    private(set) var transactions: [LayerTransactionBatch] = []
     var rejectNext = false
 
-    func commit(_ transaction: EncodedTransaction) throws(LayerError) {
+    func commit(_ transaction: LayerTransactionBatch) throws(LayerError) {
         if rejectNext {
             rejectNext = false
             throw .backendFailure(detail: "fixture rejection")
@@ -239,7 +239,7 @@ final class RejectingCommitSink: CommitSink {
         let rootCreated = registry.created(context: .compositor)
         let rootContainers = rootCreated.filter { $0.1.kind == .container }
         let rootHosts = rootCreated.filter { $0.1.kind == .host }
-        #expect(rootContainers.count == 2) // compositor-root container + per-window container
+        #expect(rootContainers.count == 2)  // compositor-root container + per-window container
         #expect(rootHosts.count == 1)
 
         // The window owns its own context; the host layer points back at it.
@@ -271,8 +271,10 @@ final class RejectingCommitSink: CommitSink {
 
     @Test func setWindowOrderReindexesContainers() throws {
         let (author, registry) = makeAuthor()
-        try author.surfaceAttached(surfaceID: 1, frame: GeometryRect(x: 0, y: 0, width: 100, height: 100))
-        try author.surfaceAttached(surfaceID: 2, frame: GeometryRect(x: 0, y: 0, width: 100, height: 100))
+        try author.surfaceAttached(
+            surfaceID: 1, frame: GeometryRect(x: 0, y: 0, width: 100, height: 100))
+        try author.surfaceAttached(
+            surfaceID: 2, frame: GeometryRect(x: 0, y: 0, width: 100, height: 100))
 
         let rootSink = try #require(registry.rootSink)
         let attachInserts = rootSink.transactions.flatMap(\.inserted)
@@ -280,7 +282,7 @@ final class RejectingCommitSink: CommitSink {
         // Per-window containers attach into the compositor root, in attach order.
         let windowContainers = attachInserts.filter { $0.parent == rootContainerID }.map(\.layer)
         #expect(windowContainers.count == 2)
-        let container1 = windowContainers[0] // surface 1 attached first
+        let container1 = windowContainers[0]  // surface 1 attached first
         let container2 = windowContainers[1]
 
         // Reorder so surface 2 is back-most (index 0) and surface 1 front (index 1).
@@ -289,7 +291,8 @@ final class RejectingCommitSink: CommitSink {
         let reorderInserts = rootSink.transactions[mark...].flatMap(\.inserted)
         let reorderedContainers = reorderInserts.filter { $0.parent == rootContainerID }
         #expect(reorderedContainers.count == 2)
-        let byIndex = Dictionary(uniqueKeysWithValues: reorderedContainers.map { ($0.index, $0.layer) })
+        let byIndex = Dictionary(
+            uniqueKeysWithValues: reorderedContainers.map { ($0.index, $0.layer) })
         #expect(byIndex[0] == container2)
         #expect(byIndex[1] == container1)
 
@@ -297,18 +300,21 @@ final class RejectingCommitSink: CommitSink {
         let mark2 = rootSink.transactions.count
         try author.setWindowOrder([1, 2])
         let reorder2 = rootSink.transactions[mark2...].flatMap(\.inserted)
-        let byIndex2 = Dictionary(uniqueKeysWithValues:
-            reorder2.filter { $0.parent == rootContainerID }.map { ($0.index, $0.layer) })
+        let byIndex2 = Dictionary(
+            uniqueKeysWithValues:
+                reorder2.filter { $0.parent == rootContainerID }.map { ($0.index, $0.layer) })
         #expect(byIndex2[0] == container1)
         #expect(byIndex2[1] == container2)
     }
 
     @Test func destroyTearsDownHostingAndScene() throws {
         let (author, registry) = makeAuthor()
-        try author.surfaceAttached(surfaceID: 1, frame: GeometryRect(x: 0, y: 0, width: 100, height: 100))
+        try author.surfaceAttached(
+            surfaceID: 1, frame: GeometryRect(x: 0, y: 0, width: 100, height: 100))
 
         let rootSink = try #require(registry.rootSink)
-        let hostID = try #require(rootSink.transactions.flatMap(\.created).first { $0.1.kind == .host }?.0)
+        let hostID = try #require(
+            rootSink.transactions.flatMap(\.created).first { $0.1.kind == .host }?.0)
         let containerID = try #require(
             rootSink.transactions.flatMap(\.inserted).first { $0.layer == hostID }?.parent
         )

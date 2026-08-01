@@ -1,6 +1,6 @@
 public import NucleusTypes
 
-public struct EncodedTransaction: Sendable {
+public struct LayerTransactionBatch: Sendable {
     public var contextID: ContextID
     public var transactionID: UInt64
     public var groupID: UInt64
@@ -23,12 +23,12 @@ public protocol CommitSink: AnyObject {
     var resourceHostHandle: UInt64 { get }
     var runtimeHost: LayerRuntimeHost { get }
 
-    func commit(_ transaction: EncodedTransaction) throws(LayerError)
+    func commit(_ transaction: LayerTransactionBatch) throws(LayerError)
 }
 
 @MainActor
 public final class InMemoryCommitSink: CommitSink, ~Sendable {
-    public private(set) var transactions: [EncodedTransaction] = []
+    public private(set) var transactions: [LayerTransactionBatch] = []
     public let resourceHostHandle: UInt64 = 0
     public let runtimeHost: LayerRuntimeHost
 
@@ -36,7 +36,7 @@ public final class InMemoryCommitSink: CommitSink, ~Sendable {
         self.runtimeHost = runtimeHost
     }
 
-    public func commit(_ transaction: EncodedTransaction) throws(LayerError) {
+    public func commit(_ transaction: LayerTransactionBatch) throws(LayerError) {
         transactions.append(transaction)
     }
 }
@@ -44,10 +44,12 @@ public final class InMemoryCommitSink: CommitSink, ~Sendable {
 // The production render commit sink lives outside NucleusLayers so consumers
 // that don't bridge to the compositor never reference production host wiring.
 
-public enum CommitEncoder {
+public enum TransactionBatchMaterializer {
     @MainActor
-    public static func encode(_ transaction: borrowing LayerTransaction) -> EncodedTransaction {
-        transaction.encoded()
+    public static func materialize(
+        _ transaction: borrowing LayerTransaction
+    ) -> LayerTransactionBatch {
+        transaction.materializedBatch()
     }
 }
 
@@ -77,7 +79,8 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
         completionToken: UInt64 = 0
     ) {
         self.context = context
-        self.transactionID = transactionID == 0
+        self.transactionID =
+            transactionID == 0
             ? context.nextTransactionID()
             : transactionID
         if groupID == 0, let activeGroup = context.activeGroup {
@@ -105,7 +108,9 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
         return layer
     }
 
-    public mutating func createLayer(id: LayerID, _ descriptor: LayerDescriptor = LayerDescriptor()) -> Layer {
+    public mutating func createLayer(id: LayerID, _ descriptor: LayerDescriptor = LayerDescriptor())
+        -> Layer
+    {
         let layer = context.makeLayer(id: id, descriptor)
         mutations.append(.created(layer.id, descriptor))
         return layer
@@ -116,7 +121,9 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
         mutations.append(.created(layer.id, layer.descriptor))
     }
 
-    public mutating func insert(_ layer: Layer, into parent: Layer? = nil, at index: UInt32 = UInt32.max) throws(LayerError) {
+    public mutating func insert(
+        _ layer: Layer, into parent: Layer? = nil, at index: UInt32 = UInt32.max
+    ) throws(LayerError) {
         try requireSameContext(layer)
         if let parent {
             try requireSameContext(parent)
@@ -125,7 +132,9 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
         mutations.append(.inserted(layer: layer.id, parent: parent?.id, index: index))
     }
 
-    public mutating func setProperties(_ properties: LayerPropertyUpdate, for layer: Layer) throws(LayerError) {
+    public mutating func setProperties(_ properties: LayerPropertyUpdate, for layer: Layer)
+        throws(LayerError)
+    {
         try requireSameContext(layer)
         layer.apply(properties)
         mutations.append(.properties(layer: layer.id, properties))
@@ -149,7 +158,9 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
         mutations.append(.animationAdded(layer: layer.id, animation))
     }
 
-    public mutating func removeAnimation(for keyPath: AnimationKeyPath, from layer: Layer) throws(LayerError) {
+    public mutating func removeAnimation(for keyPath: AnimationKeyPath, from layer: Layer)
+        throws(LayerError)
+    {
         try requireSameContext(layer)
         mutations.append(.animationRemoved(layer: layer.id, keyPath))
     }
@@ -174,9 +185,9 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
     }
 
     public mutating func commit() throws(LayerError) {
-        let encoded = self.encoded()
+        let batch = self.materializedBatch()
         _ = context.nextRevision()
-        try context.commitSink.commit(encoded)
+        try context.commitSink.commit(batch)
         completed = true
     }
 
@@ -201,7 +212,9 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
     /// is only responsible for journaling the mutation so the FFI layer
     /// learns about it on the next commit / flush.
     @MainActor
-    @_spi(NucleusRenderServer) public static func appendAmbient(_ mutation: LayerMutation, in context: Context) {
+    @_spi(NucleusRenderServer) public static func appendAmbient(
+        _ mutation: LayerMutation, in context: Context
+    ) {
         context.transactionStack.append(mutation)
     }
 
@@ -224,7 +237,7 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
         try t.commit()
     }
 
-    package func encoded() -> EncodedTransaction {
+    package func materializedBatch() -> LayerTransactionBatch {
         var created: [(LayerID, LayerDescriptor)] = []
         var inserted: [(layer: LayerID, parent: LayerID?, index: UInt32)] = []
         var removed: [LayerID] = []
@@ -252,7 +265,7 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
             }
         }
 
-        return EncodedTransaction(
+        return LayerTransactionBatch(
             contextID: context.id,
             transactionID: transactionID,
             groupID: groupID,
@@ -281,5 +294,3 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
 
 // C-side wire transaction interop was deleted with the old host bridge; this
 // module owns only the app-facing transaction model.
-
-// Animation.wireValue(layerID:) is defined — see DirectBridge.swift.

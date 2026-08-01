@@ -1,15 +1,17 @@
 import NucleusUITestSupport
 import Testing
+
 // A selective import: NucleusLayers carries its own `Size`/`Rect`, and a plain
 // import would make every geometry mention below ambiguous. Qualifying does not
 // help — NucleusUI declares an inner `NucleusUI` enum that shadows the module
 // name, so `NucleusUI.Size` does not resolve either.
 import protocol NucleusLayers.CommitSink
-import struct NucleusLayers.EncodedTransaction
-import enum NucleusLayers.LayerError
 import class NucleusLayers.Context
 import struct NucleusLayers.ContextID
+import enum NucleusLayers.LayerError
 import class NucleusLayers.LayerRuntimeHost
+import struct NucleusLayers.LayerTransactionBatch
+
 @testable import NucleusUI
 
 /// A commit sink that reports a real resource host, which is what registration
@@ -18,7 +20,7 @@ import class NucleusLayers.LayerRuntimeHost
 private final class HostedCommitSink: CommitSink {
     let resourceHostHandle: UInt64 = 42
     let runtimeHost = LayerRuntimeHost.inMemory()
-    func commit(_ transaction: EncodedTransaction) throws(LayerError) {}
+    func commit(_ transaction: LayerTransactionBatch) throws(LayerError) {}
 }
 
 /// Build a view inside a context with a resource host. A view captures its
@@ -81,7 +83,8 @@ private func withHostedContext<T>(_ body: () throws -> T) rethrows -> T {
 
     @Test func aMatchingAspectRatioIsUnchangedByEitherMode() {
         for mode in [ImageContentMode.contain, .cover] {
-            let view = makeView(image: Size(width: 50, height: 50), frame: Size(width: 25, height: 25))
+            let view = makeView(
+                image: Size(width: 50, height: 50), frame: Size(width: 25, height: 25))
             view.contentMode = mode
             #expect(view.destinationRect() == Rect(x: 0, y: 0, width: 25, height: 25))
         }
@@ -200,10 +203,10 @@ private func withHostedContext<T>(_ body: () throws -> T) rethrows -> T {
 
     @Test func theConvenienceInitializerTakesAPath() {
         withHostedContext {
-                let view = ImageView(
-                    source: .resource("/icons/app.png"))
-                #expect(
-                    view.source == .resource("/icons/app.png"))
+            let view = ImageView(
+                source: .resource("/icons/app.png"))
+            #expect(
+                view.source == .resource("/icons/app.png"))
         }
     }
 }

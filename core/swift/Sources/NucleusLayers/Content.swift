@@ -1,11 +1,12 @@
-public import NucleusTypes
 import NucleusAppHostProtocols
+public import NucleusTypes
 
-// `ContentKind` is wire-owned (the generated discriminant enum). The domain
-// `LayerContent` is kept (it carries the non-wire `resourceHostHandle` plus
-// retain/release lifecycle); its `.wireValue`/`init(wireValue:)` live in
-// DirectBridge.swift.
-public typealias ContentKind = NucleusTypes.ContentKind
+public enum ContentKind: Sendable, Equatable {
+    case none
+    case paint
+    case external
+    case snapshot
+}
 
 public struct LayerContent: Sendable, Equatable {
     public var kind: ContentKind
@@ -28,7 +29,9 @@ public struct LayerContent: Sendable, Equatable {
     }
 
     public init(_ snapshot: SnapshotContent) {
-        self.init(kind: .snapshot, handle: snapshot.handle, resourceHostHandle: snapshot.resourceHostHandle)
+        self.init(
+            kind: .snapshot, handle: snapshot.handle,
+            resourceHostHandle: snapshot.resourceHostHandle)
         resourceLifetime = snapshot.resourceLifetime
     }
 
@@ -50,12 +53,14 @@ public struct LayerContent: Sendable, Equatable {
         switch kind {
         case .paint:
             guard resourceHostHandle != 0 else { return }
-            resourceLifetime?.lifecycle.paintContentLifecycle.retain(resourceHostHandle: resourceHostHandle, handle: handle)
+            resourceLifetime?.lifecycle.paintContentLifecycle.retain(
+                resourceHostHandle: resourceHostHandle, handle: handle)
         case .external:
             resourceLifetime?.lifecycle.iosurfaceLifecycle.retain(handle: handle)
         case .snapshot:
             guard resourceHostHandle != 0 else { return }
-            resourceLifetime?.lifecycle.snapshotLifecycle.retain(resourceHostHandle: resourceHostHandle, handle: handle)
+            resourceLifetime?.lifecycle.snapshotLifecycle.retain(
+                resourceHostHandle: resourceHostHandle, handle: handle)
         case .none:
             break
         }
@@ -68,12 +73,14 @@ public struct LayerContent: Sendable, Equatable {
         switch kind {
         case .paint:
             guard resourceHostHandle != 0 else { return }
-            resourceLifetime?.lifecycle.paintContentLifecycle.release(resourceHostHandle: resourceHostHandle, handle: handle)
+            resourceLifetime?.lifecycle.paintContentLifecycle.release(
+                resourceHostHandle: resourceHostHandle, handle: handle)
         case .external:
             resourceLifetime?.lifecycle.iosurfaceLifecycle.release(handle: handle)
         case .snapshot:
             guard resourceHostHandle != 0 else { return }
-            resourceLifetime?.lifecycle.snapshotLifecycle.release(resourceHostHandle: resourceHostHandle, handle: handle)
+            resourceLifetime?.lifecycle.snapshotLifecycle.release(
+                resourceHostHandle: resourceHostHandle, handle: handle)
         case .none:
             break
         }
@@ -94,13 +101,15 @@ public final class PaintContent: Sendable {
         self.resourceHostHandle = resourceHostHandle
         self.resourceLifetime = resourceLifetime
         if retain && handle != 0 && resourceHostHandle != 0 {
-            resourceLifetime?.lifecycle.paintContentLifecycle.retain(resourceHostHandle: resourceHostHandle, handle: handle)
+            resourceLifetime?.lifecycle.paintContentLifecycle.retain(
+                resourceHostHandle: resourceHostHandle, handle: handle)
         }
     }
 
     deinit {
         if handle != 0 && resourceHostHandle != 0 {
-            resourceLifetime?.lifecycle.paintContentLifecycle.release(resourceHostHandle: resourceHostHandle, handle: handle)
+            resourceLifetime?.lifecycle.paintContentLifecycle.release(
+                resourceHostHandle: resourceHostHandle, handle: handle)
         }
     }
 
@@ -137,7 +146,8 @@ public final class PaintContent: Sendable {
             } catch let err as PaintContentRegistrationError {
                 error = paintContentLayerError(from: err)
             } catch let unexpected {
-                error = .backendFailure(detail: "register paint content: unexpected error \(unexpected)")
+                error = .backendFailure(
+                    detail: "register paint content: unexpected error \(unexpected)")
             }
         }
         if let error {
@@ -176,13 +186,15 @@ public final class SnapshotContent: Sendable {
         self.resourceHostHandle = resourceHostHandle
         self.resourceLifetime = resourceLifetime
         if retain && handle != 0 && resourceHostHandle != 0 {
-            resourceLifetime?.lifecycle.snapshotLifecycle.retain(resourceHostHandle: resourceHostHandle, handle: handle)
+            resourceLifetime?.lifecycle.snapshotLifecycle.retain(
+                resourceHostHandle: resourceHostHandle, handle: handle)
         }
     }
 
     deinit {
         if handle != 0 && resourceHostHandle != 0 {
-            resourceLifetime?.lifecycle.snapshotLifecycle.release(resourceHostHandle: resourceHostHandle, handle: handle)
+            resourceLifetime?.lifecycle.snapshotLifecycle.release(
+                resourceHostHandle: resourceHostHandle, handle: handle)
         }
     }
 

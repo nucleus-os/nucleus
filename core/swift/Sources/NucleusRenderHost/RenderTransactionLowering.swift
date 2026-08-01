@@ -1,6 +1,6 @@
 // The layers→render producer feed (Swift-direct).
 //
-// `RenderTransactionLowering` lowers a `NucleusLayers.EncodedTransaction` into a
+// `RenderTransactionLowering` lowers a `NucleusLayers.LayerTransactionBatch` into a
 // `NucleusRenderModel.Transaction` ready to fold into a `RetainedTreeStore`.
 //
 // Scope mirrors the retained-model `Transaction` boundary (see
@@ -11,65 +11,71 @@
 // backdrop-attachment derivation, and the content/shadow/visual-style deltas
 // cover create/insert/property-update. Numeric narrowing is `Float(_:)`.
 
-import NucleusTypes
 public import NucleusLayers
 public import NucleusRenderModel
+import NucleusTypes
 
 public enum RenderTransactionLowering {
     /// Lower one committed layers transaction into a render-model transaction
     /// (minus the commit-sink push, which the `RenderCommitSink` performs).
-    public static func lower(_ encoded: NucleusLayers.EncodedTransaction) -> NucleusRenderModel.Transaction {
-        let contextId = NucleusRenderModel.ContextID(raw: encoded.contextID.rawValue)
+    public static func lower(
+        _ batch: NucleusLayers.LayerTransactionBatch
+    ) -> NucleusRenderModel.Transaction {
+        let contextId = NucleusRenderModel.ContextID(raw: batch.contextID.rawValue)
         var txn = NucleusRenderModel.Transaction(contextId: contextId)
-        txn.revision = UInt64(encoded.revision)
-        txn.groupId = encoded.groupID
-        txn.groupSeq = encoded.groupSequence
-        txn.completionToken = encoded.completionToken
+        txn.revision = UInt64(batch.revision)
+        txn.groupId = batch.groupID
+        txn.groupSeq = batch.groupSequence
+        txn.completionToken = batch.completionToken
 
-        for (id, descriptor) in encoded.created {
+        for (id, descriptor) in batch.created {
             txn.created.append(lowerCreated(id, descriptor, contextId: contextId))
         }
-        for entry in encoded.inserted {
-            txn.inserted.append(NucleusRenderModel.LayerInserted(
-                nodeId: entry.layer.rawValue,
-                parentId: entry.parent?.rawValue ?? 0,
-                index: entry.index
-            ))
+        for entry in batch.inserted {
+            txn.inserted.append(
+                NucleusRenderModel.LayerInserted(
+                    nodeId: entry.layer.rawValue,
+                    parentId: entry.parent?.rawValue ?? 0,
+                    index: entry.index
+                ))
         }
-        for id in encoded.removed {
+        for id in batch.removed {
             txn.removed.append(NucleusRenderModel.LayerRemoved(nodeId: id.rawValue))
         }
-        for id in encoded.detached {
+        for id in batch.detached {
             txn.detached.append(NucleusRenderModel.LayerDetached(nodeId: id.rawValue))
         }
-        for (layer, properties) in encoded.propertyUpdates {
+        for (layer, properties) in batch.propertyUpdates {
             txn.propertyUpdates.append(lowerPropertyUpdate(layer, properties, contextId: contextId))
         }
         let beginTimeNanoseconds =
-            encoded.targetPresentationNanoseconds != 0
-                ? encoded.targetPresentationNanoseconds
-                : encoded.predictedPresentationNanoseconds
+            batch.targetPresentationNanoseconds != 0
+            ? batch.targetPresentationNanoseconds
+            : batch.predictedPresentationNanoseconds
         let beginTimeSeconds = Double(beginTimeNanoseconds) / 1_000_000_000
         txn.animationBeginTimeSeconds = beginTimeSeconds
         txn.animationBeginTimePending = beginTimeNanoseconds == 0
-        for (layer, animation) in encoded.animationsAdded {
-            guard let lowered = lowerAnimation(
-                animation,
-                layerID: layer.rawValue,
-                transactionID: encoded.transactionID,
-                inheritedCompletionToken: encoded.completionToken,
-                beginTimeSeconds: beginTimeSeconds
-            ) else {
+        for (layer, animation) in batch.animationsAdded {
+            guard
+                let lowered = lowerAnimation(
+                    animation,
+                    layerID: layer.rawValue,
+                    transactionID: batch.transactionID,
+                    inheritedCompletionToken: batch.completionToken,
+                    beginTimeSeconds: beginTimeSeconds
+                )
+            else {
                 continue
             }
             txn.animationsAdded.append(lowered)
         }
-        for removal in encoded.animationsRemoved {
+        for removal in batch.animationsRemoved {
             guard let keyPath = lowerAnimationKeyPath(removal.keyPath) else { continue }
-            txn.animationsRemoved.append(NucleusRenderModel.AnimationRemoval(
-                layerId: removal.layer.rawValue,
-                keyPath: keyPath
-            ))
+            txn.animationsRemoved.append(
+                NucleusRenderModel.AnimationRemoval(
+                    layerId: removal.layer.rawValue,
+                    keyPath: keyPath
+                ))
         }
         return txn
     }
@@ -123,34 +129,37 @@ public enum RenderTransactionLowering {
             let to = Float(animation.toEndpoint.scalar)
             switch animation.curve.kind {
             case .spring:
-                loweredAnimation = .spring(NucleusRenderModel.SpringAnimation(
-                    keyPath: keyPath,
-                    fromValue: from,
-                    toValue: to,
-                    mass: animation.curve.springMass,
-                    stiffness: animation.curve.springStiffness,
-                    damping: animation.curve.springDamping,
-                    initialVelocity: animation.curve.springInitialVelocity,
-                    beginTime: beginTimeSeconds
-                ))
+                loweredAnimation = .spring(
+                    NucleusRenderModel.SpringAnimation(
+                        keyPath: keyPath,
+                        fromValue: from,
+                        toValue: to,
+                        mass: animation.curve.springMass,
+                        stiffness: animation.curve.springStiffness,
+                        damping: animation.curve.springDamping,
+                        initialVelocity: animation.curve.springInitialVelocity,
+                        beginTime: beginTimeSeconds
+                    ))
             case .linear:
-                loweredAnimation = .basic(NucleusRenderModel.BasicAnimation(
-                    keyPath: keyPath,
-                    fromValue: from,
-                    toValue: to,
-                    duration: animation.duration,
-                    timingFunction: .linear,
-                    beginTime: beginTimeSeconds
-                ))
+                loweredAnimation = .basic(
+                    NucleusRenderModel.BasicAnimation(
+                        keyPath: keyPath,
+                        fromValue: from,
+                        toValue: to,
+                        duration: animation.duration,
+                        timingFunction: .linear,
+                        beginTime: beginTimeSeconds
+                    ))
             case .bezier:
-                loweredAnimation = .basic(NucleusRenderModel.BasicAnimation(
-                    keyPath: keyPath,
-                    fromValue: from,
-                    toValue: to,
-                    duration: animation.duration,
-                    timingFunction: timingFunction(animation.curve),
-                    beginTime: beginTimeSeconds
-                ))
+                loweredAnimation = .basic(
+                    NucleusRenderModel.BasicAnimation(
+                        keyPath: keyPath,
+                        fromValue: from,
+                        toValue: to,
+                        duration: animation.duration,
+                        timingFunction: timingFunction(animation.curve),
+                        beginTime: beginTimeSeconds
+                    ))
             }
         }
         return NucleusRenderModel.AnimationRecord(
@@ -195,7 +204,7 @@ public enum RenderTransactionLowering {
         case .scrollOffsetY: .scrollOffsetY
         case .transform: .transform
         case .borderTopWidth, .borderRightWidth,
-             .borderBottomWidth, .borderLeftWidth:
+            .borderBottomWidth, .borderLeftWidth:
             nil
         }
     }
@@ -294,13 +303,14 @@ public enum RenderTransactionLowering {
 
         if let effect = p.backdropMaterial {
             update.visualStyle = .set(visualStyle(effect))
-            update.backdropAttachment = .some(backdropAttachmentFromWire(
-                contextId: contextId,
-                effect: effect,
-                groupId: p.backdropGroupID ?? 0,
-                frameWidth: Float(p.bounds?.width ?? 0),
-                frameHeight: Float(p.bounds?.height ?? 0)
-            ))
+            update.backdropAttachment = .some(
+                backdropAttachmentFromWire(
+                    contextId: contextId,
+                    effect: effect,
+                    groupId: p.backdropGroupID ?? 0,
+                    frameWidth: Float(p.bounds?.width ?? 0),
+                    frameHeight: Float(p.bounds?.height ?? 0)
+                ))
         }
 
         if let shadow = p.shadow {
@@ -319,10 +329,12 @@ public enum RenderTransactionLowering {
             update.usesDefaultFrameAction = true
         } else {
             if let position = p.position {
-                update.position = NucleusRenderModel.Point2D(x: Float(position.x), y: Float(position.y))
+                update.position = NucleusRenderModel.Point2D(
+                    x: Float(position.x), y: Float(position.y))
             }
             if let bounds = p.bounds {
-                update.bounds = NucleusRenderModel.Bounds(w: Float(bounds.width), h: Float(bounds.height))
+                update.bounds = NucleusRenderModel.Bounds(
+                    w: Float(bounds.width), h: Float(bounds.height))
             }
         }
 
@@ -366,14 +378,21 @@ public enum RenderTransactionLowering {
     // MARK: - Content
 
     /// Mirrors `initialContent`. A zero handle in any content kind → `.none`.
-    private static func initialContent(_ content: NucleusLayers.LayerContent) -> NucleusRenderModel.InitialContent {
+    private static func initialContent(_ content: NucleusLayers.LayerContent)
+        -> NucleusRenderModel.InitialContent
+    {
         switch content.kind {
         case .paint:
-            return content.handle == 0 ? .none : .paint(NucleusRenderModel.PaintContentHandle(raw: content.handle))
+            return content.handle == 0
+                ? .none : .paint(NucleusRenderModel.PaintContentHandle(raw: content.handle))
         case .external:
-            return content.handle == 0 ? .none : .external(NucleusRenderModel.IOSurfaceID(raw: UInt32(truncatingIfNeeded: content.handle)))
+            return content.handle == 0
+                ? .none
+                : .external(
+                    NucleusRenderModel.IOSurfaceID(raw: UInt32(truncatingIfNeeded: content.handle)))
         case .snapshot:
-            return content.handle == 0 ? .none : .snapshot(NucleusRenderModel.SnapshotHandle(raw: content.handle))
+            return content.handle == 0
+                ? .none : .snapshot(NucleusRenderModel.SnapshotHandle(raw: content.handle))
         case .none:
             return .none
         @unknown default:
@@ -382,22 +401,31 @@ public enum RenderTransactionLowering {
     }
 
     /// Mirrors `contentDelta`. A zero handle → `.none`; `.none` kind → `.none`.
-    private static func contentDelta(_ content: NucleusLayers.LayerContent) -> NucleusRenderModel.ContentDelta {
+    private static func contentDelta(_ content: NucleusLayers.LayerContent)
+        -> NucleusRenderModel.ContentDelta
+    {
         switch content.kind {
         case .none:
             return .none
         case .paint:
-            return content.handle == 0 ? .none : .paint(NucleusRenderModel.PaintContentHandle(raw: content.handle))
+            return content.handle == 0
+                ? .none : .paint(NucleusRenderModel.PaintContentHandle(raw: content.handle))
         case .external:
-            return content.handle == 0 ? .none : .external(NucleusRenderModel.IOSurfaceID(raw: UInt32(truncatingIfNeeded: content.handle)))
+            return content.handle == 0
+                ? .none
+                : .external(
+                    NucleusRenderModel.IOSurfaceID(raw: UInt32(truncatingIfNeeded: content.handle)))
         case .snapshot:
-            return content.handle == 0 ? .none : .snapshot(NucleusRenderModel.SnapshotHandle(raw: content.handle))
+            return content.handle == 0
+                ? .none : .snapshot(NucleusRenderModel.SnapshotHandle(raw: content.handle))
         @unknown default:
             return .none
         }
     }
 
-    private static func contentSample(_ s: NucleusLayers.ContentSample) -> NucleusRenderModel.ContentSample {
+    private static func contentSample(_ s: NucleusLayers.ContentSample)
+        -> NucleusRenderModel.ContentSample
+    {
         NucleusRenderModel.ContentSample(
             sourceSurfaceId: s.sourceSurfaceID,
             srcOrigin: (s.srcX, s.srcY),
@@ -407,13 +435,16 @@ public enum RenderTransactionLowering {
         )
     }
 
-    private static func backgroundEffectRegions(_ wire: NucleusLayers.BackgroundEffectRegions) -> NucleusRenderModel.BackgroundEffectRegions {
+    private static func backgroundEffectRegions(_ wire: NucleusLayers.BackgroundEffectRegions)
+        -> NucleusRenderModel.BackgroundEffectRegions
+    {
         let maxRects = NucleusRenderModel.BackgroundEffectRegions.maxRects
         let count = min(wire.rects.count, maxRects)
         var rects = Array(repeating: NucleusRenderModel.BackgroundEffectRect(), count: maxRects)
         for i in 0..<count {
             let r = wire.rects[i]
-            rects[i] = NucleusRenderModel.BackgroundEffectRect(x: r.x, y: r.y, w: r.width, h: r.height)
+            rects[i] = NucleusRenderModel.BackgroundEffectRect(
+                x: r.x, y: r.y, w: r.width, h: r.height)
         }
         return NucleusRenderModel.BackgroundEffectRegions(
             rects: rects,
@@ -426,25 +457,31 @@ public enum RenderTransactionLowering {
 
     /// Mirrors `shadowDelta`. CALayer-style effective alpha = opacity × color.a;
     /// `<= 0` lowers to a CLEAR so the decoration cache frees the texture.
-    private static func shadowDelta(_ shadow: NucleusLayers.Shadow) -> NucleusRenderModel.ShadowDelta {
+    private static func shadowDelta(_ shadow: NucleusLayers.Shadow)
+        -> NucleusRenderModel.ShadowDelta
+    {
         let effectiveAlpha = Float(shadow.opacity * Double(shadow.color.a))
         if effectiveAlpha <= 0 { return .clear }
-        return .set(NucleusRenderModel.LayerShadow(
-            offsetX: Float(shadow.offsetX),
-            offsetY: Float(shadow.offsetY),
-            blurRadius: Float(shadow.blurRadius),
-            spreadRadius: 0,
-            cornerRadius: Float(shadow.cornerRadius),
-            color: (shadow.color.r, shadow.color.g, shadow.color.b, effectiveAlpha)
-        ))
+        return .set(
+            NucleusRenderModel.LayerShadow(
+                offsetX: Float(shadow.offsetX),
+                offsetY: Float(shadow.offsetY),
+                blurRadius: Float(shadow.blurRadius),
+                spreadRadius: 0,
+                cornerRadius: Float(shadow.cornerRadius),
+                color: (shadow.color.r, shadow.color.g, shadow.color.b, effectiveAlpha)
+            ))
     }
 
     /// Mirrors `visualStyleDelta`. The fill rounds to the same per-corner shape as
     /// the backdrop: prefer explicit per-corner shape radii, else the uniform
     /// scalar `cornerRadius`. Background fill is `(0, 0, 0, opacity)`.
-    private static func visualStyle(_ effect: NucleusLayers.BackdropMaterial) -> NucleusRenderModel.VisualStyle {
+    private static func visualStyle(_ effect: NucleusLayers.BackdropMaterial)
+        -> NucleusRenderModel.VisualStyle
+    {
         let shapeRadii = effectShapeRadiiFromWire(effect)
-        let hasShapeRadii = shapeRadii.0 > 0 || shapeRadii.1 > 0 || shapeRadii.2 > 0 || shapeRadii.3 > 0
+        let hasShapeRadii =
+            shapeRadii.0 > 0 || shapeRadii.1 > 0 || shapeRadii.2 > 0 || shapeRadii.3 > 0
         let cornerRadii = hasShapeRadii ? shapeRadii : uniformRadii(Float(effect.cornerRadius))
         return NucleusRenderModel.VisualStyle(
             backgroundColor: (0, 0, 0, Float(effect.opacity)),
@@ -510,7 +547,9 @@ public enum RenderTransactionLowering {
         }
     }
 
-    private static func blendingModeFromWire(_ mode: NucleusLayers.BackdropBlendingMode) -> NucleusRenderModel.BackdropBlendingMode {
+    private static func blendingModeFromWire(_ mode: NucleusLayers.BackdropBlendingMode)
+        -> NucleusRenderModel.BackdropBlendingMode
+    {
         switch mode {
         case .withinWindow: return .withinWindow
         case .none, .behindWindow: return .behindWindow
@@ -518,7 +557,9 @@ public enum RenderTransactionLowering {
         }
     }
 
-    private static func backdropStateFromWire(_ state: NucleusLayers.BackdropState) -> NucleusRenderModel.BackdropState {
+    private static func backdropStateFromWire(_ state: NucleusLayers.BackdropState)
+        -> NucleusRenderModel.BackdropState
+    {
         switch state {
         case .inactive: return .inactive
         case .followsWindowActiveState: return .followsWindowActive
@@ -527,7 +568,9 @@ public enum RenderTransactionLowering {
         }
     }
 
-    private static func appearanceModeFromWire(_ appearance: NucleusLayers.BackdropAppearance) -> NucleusRenderModel.AppearanceMode {
+    private static func appearanceModeFromWire(_ appearance: NucleusLayers.BackdropAppearance)
+        -> NucleusRenderModel.AppearanceMode
+    {
         switch appearance {
         case .light: return .light
         case .dark: return .dark
@@ -536,10 +579,14 @@ public enum RenderTransactionLowering {
         }
     }
 
-    private static func backdropMaskFromWire(_ effect: NucleusLayers.BackdropMaterial) -> NucleusRenderModel.BackdropMask {
+    private static func backdropMaskFromWire(_ effect: NucleusLayers.BackdropMaterial)
+        -> NucleusRenderModel.BackdropMask
+    {
         switch effect.maskKind {
         case .roundedRect: return .roundedRect(Float(effect.cornerRadius))
-        case .image: return effect.maskImageHandle == 0 ? .none : .image(NucleusRenderModel.SnapshotHandle(raw: effect.maskImageHandle))
+        case .image:
+            return effect.maskImageHandle == 0
+                ? .none : .image(NucleusRenderModel.SnapshotHandle(raw: effect.maskImageHandle))
         case .none: return .none
         @unknown default: return .none
         }
@@ -553,7 +600,8 @@ public enum RenderTransactionLowering {
         frameHeight: Float
     ) -> NucleusRenderModel.EffectShape {
         let shapeRect = effect.shapeRect
-        let rect: NucleusRenderModel.Float4 = (shapeRect.z > 0 && shapeRect.w > 0)
+        let rect: NucleusRenderModel.Float4 =
+            (shapeRect.z > 0 && shapeRect.w > 0)
             ? (shapeRect.x, shapeRect.y, shapeRect.z, shapeRect.w)
             : (0, 0, frameWidth, frameHeight)
         let radii = effectShapeRadiiFromWire(effect)
@@ -575,7 +623,9 @@ public enum RenderTransactionLowering {
     /// Mirrors `effectShapeRadiiFromWire`. The explicit per-corner shape radius
     /// run wins if any lane is positive; otherwise the uniform scalar `cornerRadius`
     /// (clamped to `>= 0`).
-    private static func effectShapeRadiiFromWire(_ effect: NucleusLayers.BackdropMaterial) -> NucleusRenderModel.Float4 {
+    private static func effectShapeRadiiFromWire(_ effect: NucleusLayers.BackdropMaterial)
+        -> NucleusRenderModel.Float4
+    {
         let r = effect.shapeRadius
         if r.x > 0 || r.y > 0 || r.z > 0 || r.w > 0 {
             return (r.x, r.y, r.z, r.w)
@@ -602,11 +652,7 @@ public enum RenderTransactionLowering {
             rect: (value.rect.x, value.rect.y, value.rect.z, value.rect.w),
             radii: (value.radii.x, value.radii.y, value.radii.z, value.radii.w),
             antiAlias: value.antiAlias,
-            transform: [
-                value.xform00, value.xform01, value.xform02,
-                value.xform10, value.xform11, value.xform12,
-                value.xform20, value.xform21, value.xform22,
-            ]
+            transform: value.transform
         )
     }
 

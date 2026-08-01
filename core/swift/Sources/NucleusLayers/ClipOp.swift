@@ -5,11 +5,10 @@ public import NucleusTypes
 /// `SkRRect` clips. The 3×3 transform applies to the clip path before it
 /// is intersected with the layer's content; identity is the common case.
 ///
-/// This is the generated wire type itself (`rect`/`radii` are `SIMD4<Float>`,
-/// `antiAlias` is a `Bool`; the 3×3 `xform**` run stays scalar). The
-/// named-field initializer — which restores the identity-transform defaults the
-/// memberwise init zeroes — and the `GeometryRect` convenience are the
-/// relocated conveniences.
+/// This is the shared semantic value (`rect`/`radii` are `SIMD4<Float>`,
+/// `antiAlias` is a `Bool`, and `transform` contains the row-major 3×3 matrix).
+/// The named-field initializer and `GeometryRect` convenience live here with
+/// the layer-authoring API.
 public typealias ClipOp = NucleusTypes.ClipOp
 
 extension NucleusTypes.ClipOp {
@@ -25,9 +24,11 @@ extension NucleusTypes.ClipOp {
             rect: SIMD4<Float>(rectX, rectY, rectW, rectH),
             radii: SIMD4<Float>(radiusTL, radiusTR, radiusBR, radiusBL),
             antiAlias: antiAlias,
-            xform00: xform00, xform01: xform01, xform02: xform02,
-            xform10: xform10, xform11: xform11, xform12: xform12,
-            xform20: xform20, xform21: xform21, xform22: xform22
+            transform: [
+                xform00, xform01, xform02,
+                xform10, xform11, xform12,
+                xform20, xform21, xform22,
+            ]
         )
     }
 
