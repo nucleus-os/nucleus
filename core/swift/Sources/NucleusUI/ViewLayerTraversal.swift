@@ -1,5 +1,6 @@
-@_spi(NucleusRenderServer) internal import NucleusLayers
-internal import enum NucleusTypes.AnimationKeyPath
+internal import NucleusLayers
+
+internal import enum NucleusTypes.LayerAnimationKeyPath
 internal import struct NucleusTypes.Rect
 
 extension ViewLayerPublisher {
@@ -90,17 +91,16 @@ extension ViewLayerPublisher {
             let state = visualLayers[view.id]
             let hierarchyChanged =
                 state?.parentViewID != item.parentViewID
-                    || state?.rootPlacementID != item.rootPlacementID
-                    || state?.siblingIndex != item.siblingIndex
+                || state?.rootPlacementID != item.rootPlacementID
+                || state?.siblingIndex != item.siblingIndex
             let ownChanged =
                 state == nil || state?.dirtyGenerations != view.dirtyGenerations
             let subtreeChanged =
                 state == nil
-                    || state?.subtreeDirtyGenerations
-                        != view.subtreeDirtyGenerations
+                || state?.subtreeDirtyGenerations
+                    != view.subtreeDirtyGenerations
 
-            guard item.forceSnapshot || hierarchyChanged || ownChanged ||
-                    subtreeChanged
+            guard item.forceSnapshot || hierarchyChanged || ownChanged || subtreeChanged
             else {
                 metrics.cleanSubtreesSkipped &+= 1
                 continue
@@ -108,8 +108,8 @@ extension ViewLayerPublisher {
 
             let structureChanged =
                 state == nil
-                    || state?.dirtyGenerations.structure
-                        != view.dirtyGenerations.structure
+                || state?.dirtyGenerations.structure
+                    != view.dirtyGenerations.structure
             let childIDs: [ViewID]?
             if structureChanged {
                 let ids = view.childViews.map(\.id)
@@ -132,25 +132,25 @@ extension ViewLayerPublisher {
                 current: view.dirtyGenerations,
                 metrics: &metrics)
 
-            if item.forceSnapshot || hierarchyChanged || ownChanged ||
-                    state == nil
-            {
-                snapshots.append(makeSnapshot(
-                    view,
-                    parentViewID: item.parentViewID,
-                    rootPlacementID: item.rootPlacementID,
-                    siblingIndex: item.siblingIndex))
+            if item.forceSnapshot || hierarchyChanged || ownChanged || state == nil {
+                snapshots.append(
+                    makeSnapshot(
+                        view,
+                        parentViewID: item.parentViewID,
+                        rootPlacementID: item.rootPlacementID,
+                        siblingIndex: item.siblingIndex))
                 metrics.snapshotsAuthored &+= 1
             }
 
             if structureChanged {
                 for index in view.childViews.indices.reversed() {
-                    work.append(TraversalWorkItem(
-                        view: view.childViews[index],
-                        parentViewID: view.id,
-                        rootPlacementID: nil,
-                        siblingIndex: UInt32(clamping: index),
-                        forceSnapshot: true))
+                    work.append(
+                        TraversalWorkItem(
+                            view: view.childViews[index],
+                            parentViewID: view.id,
+                            rootPlacementID: nil,
+                            siblingIndex: UInt32(clamping: index),
+                            forceSnapshot: true))
                 }
                 continue
             }
@@ -158,7 +158,7 @@ extension ViewLayerPublisher {
             dirtyChildren.removeAll(keepingCapacity: true)
             for childID in view.dirtyChildViewIDs {
                 guard let child = view.childViewsByID[childID],
-                      let index = view.childViewIndices[childID]
+                    let index = view.childViewIndices[childID]
                 else {
                     continue
                 }
@@ -166,12 +166,13 @@ extension ViewLayerPublisher {
             }
             dirtyChildren.sort { $0.index > $1.index }
             for child in dirtyChildren {
-                work.append(TraversalWorkItem(
-                    view: child.view,
-                    parentViewID: view.id,
-                    rootPlacementID: nil,
-                    siblingIndex: UInt32(clamping: child.index),
-                    forceSnapshot: false))
+                work.append(
+                    TraversalWorkItem(
+                        view: child.view,
+                        parentViewID: view.id,
+                        rootPlacementID: nil,
+                        siblingIndex: UInt32(clamping: child.index),
+                        forceSnapshot: false))
             }
         }
     }
@@ -198,8 +199,8 @@ extension ViewLayerPublisher {
             if $0.generation != $1.generation {
                 return $0.generation < $1.generation
             }
-            return animationKeyPath(of: $0).rawValue
-                < animationKeyPath(of: $1).rawValue
+            return animationKeyPathOrder(animationKeyPath(of: $0))
+                < animationKeyPathOrder(animationKeyPath(of: $1))
         }
 
         return ViewLayerSnapshot(
@@ -253,9 +254,10 @@ extension ViewLayerPublisher {
         metrics: inout ViewPublicationMetrics
     ) {
         for domain in ViewDirtyDomain.allCases {
-            let changed = previous.map {
-                $0[domain] != current[domain]
-            } ?? (current[domain] != 0)
+            let changed =
+                previous.map {
+                    $0[domain] != current[domain]
+                } ?? (current[domain] != 0)
             guard changed else { continue }
             switch domain {
             case .structure:
@@ -286,7 +288,7 @@ extension ViewLayerPublisher {
         var removed = Set<ViewID>()
         var pending = Array(roots)
         while let viewID = pending.popLast(),
-              removed.insert(viewID).inserted
+            removed.insert(viewID).inserted
         {
             pending.append(
                 contentsOf: visualLayers[viewID]?.childViewIDs ?? [])
@@ -319,8 +321,8 @@ extension ViewLayerPublisher {
         to desired: [ViewID]
     ) -> [(viewID: ViewID, index: UInt32)]? {
         guard old.count == desired.count,
-              Set(old) == Set(desired),
-              old != desired
+            Set(old) == Set(desired),
+            old != desired
         else {
             return nil
         }
@@ -380,8 +382,9 @@ extension ViewLayerPublisher {
             current.remove(at: currentIndex)
             let insertionIndex: Int
             if desiredIndex + 1 < desired.endIndex {
-                guard let anchor = current.firstIndex(
-                    of: desired[desiredIndex + 1])
+                guard
+                    let anchor = current.firstIndex(
+                        of: desired[desiredIndex + 1])
                 else {
                     preconditionFailure("retained sibling reorder lost its anchor")
                 }
@@ -398,10 +401,31 @@ extension ViewLayerPublisher {
 
     func animationKeyPath(
         of request: ViewAnimationRequest
-    ) -> AnimationKeyPath {
+    ) -> LayerAnimationKeyPath {
         switch request.operation {
         case .add(let animation): animation.keyPath
         case .remove(let keyPath): keyPath
+        }
+    }
+
+    func animationKeyPathOrder(_ keyPath: LayerAnimationKeyPath) -> Int {
+        switch keyPath {
+        case .none: 0
+        case .opacity: 1
+        case .cornerRadius: 2
+        case .positionX: 3
+        case .positionY: 4
+        case .boundsW: 5
+        case .boundsH: 6
+        case .anchorPointX: 7
+        case .anchorPointY: 8
+        case .transform: 9
+        case .scrollOffsetX: 10
+        case .scrollOffsetY: 11
+        case .borderTopWidth: 12
+        case .borderRightWidth: 13
+        case .borderBottomWidth: 14
+        case .borderLeftWidth: 15
         }
     }
 }

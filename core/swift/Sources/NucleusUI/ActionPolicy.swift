@@ -1,19 +1,3 @@
-package import NucleusLayers
-internal import enum NucleusTypes.ActionPolicy
+public import NucleusTypes
 
-public enum ActionPolicy: Sendable, Equatable {
-    case none
-    case `default`
-    case explicit
-
-    package var layersPolicy: NucleusLayers.ActionPolicy {
-        switch self {
-        case .none:
-            .none
-        case .default:
-            .default
-        case .explicit:
-            .explicit
-        }
-    }
-}
+public typealias ActionPolicy = NucleusTypes.ActionPolicy

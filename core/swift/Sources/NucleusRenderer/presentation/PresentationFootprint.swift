@@ -10,6 +10,7 @@
 
 /// Composition-plan rect (`composition_plan.Rect`): f32 target-physical space.
 internal import NucleusRenderModel
+
 internal import struct NucleusTypes.Rect
 
 struct PlanRect: Equatable {
@@ -42,8 +43,10 @@ struct LayerFootprintInput {
     var clip: ClipState
     var decorationSlot: DecorationFootprintSlot?
 
-    init(layer: Layer, bounds: Bounds, layerRect: LogicalRect, clip: ClipState,
-         decorationSlot: DecorationFootprintSlot? = nil) {
+    init(
+        layer: Layer, bounds: Bounds, layerRect: LogicalRect, clip: ClipState,
+        decorationSlot: DecorationFootprintSlot? = nil
+    ) {
         self.layer = layer
         self.bounds = bounds
         self.layerRect = layerRect
@@ -91,7 +94,8 @@ func computeLayerFootprint(_ input: LayerFootprintInput) -> LayerFootprint {
 
 /// The per-side logical outset a layer's decoration adds. Mirrors
 /// `layerVisualOutset`.
-func layerVisualOutset(_ layer: Layer?, _ decorationSlot: DecorationFootprintSlot?) -> LogicalOutset {
+func layerVisualOutset(_ layer: Layer?, _ decorationSlot: DecorationFootprintSlot?) -> LogicalOutset
+{
     var outset = LogicalOutset()
     if let slot = decorationSlot, slot.hasShadow {
         outset.x = max(outset.x, Double(slot.shadowMarginX))
@@ -109,15 +113,17 @@ func layerVisualOutset(_ layer: Layer?, _ decorationSlot: DecorationFootprintSlo
 /// parent matrix. Mirrors `stableLayerModelLogicalRect`.
 func stableLayerModelLogicalRect(_ parentMatrix: M44, _ layer: Layer) -> LogicalRect {
     let bounds = layer.model.properties.bounds
-    let modelMatrix = parentMatrix.concat(ComposeHelpers.localCompositionMatrix(
-        position: layer.model.properties.position,
-        anchorPoint: layer.model.properties.anchorPoint,
-        transform: layer.model.properties.transform,
-        presentationTransform: nil,
-        width: bounds.w, height: bounds.h))
+    let modelMatrix = parentMatrix.concat(
+        ComposeHelpers.localCompositionMatrix(
+            position: layer.model.properties.position,
+            anchorPoint: layer.model.properties.anchorPoint,
+            transform: layer.model.properties.transform,
+            presentationTransform: nil,
+            width: bounds.w, height: bounds.h))
     let mapped = modelMatrix.mapRect(0, 0, bounds.w, bounds.h)
-    return LogicalRect(x: Double(mapped.x), y: Double(mapped.y),
-                       width: Double(mapped.w), height: Double(mapped.h))
+    return LogicalRect(
+        x: Double(mapped.x), y: Double(mapped.y),
+        width: Double(mapped.w), height: Double(mapped.h))
 }
 
 /// Project a logical rect into a composition-plan rect. Mirrors
@@ -133,7 +139,8 @@ func planRectFromLogicalRect(_ target: RenderTarget, _ rect: LogicalRect) -> Pla
 /// Project a logical rect to a target-physical integer damage rect, rounding
 /// outward (floor/ceil). Nil when degenerate. Mirrors
 /// `physicalDamageRectFromLogicalRect`.
-func physicalDamageRectFromLogicalRect(_ target: RenderTarget, _ rect: LogicalRect) -> PhysicalRect? {
+func physicalDamageRectFromLogicalRect(_ target: RenderTarget, _ rect: LogicalRect) -> PhysicalRect?
+{
     if rect.width <= 0 || rect.height <= 0 { return nil }
     let left = logicalToTargetPhysicalX(target, rect.x).rounded(.down)
     let top = logicalToTargetPhysicalY(target, rect.y).rounded(.down)
@@ -145,7 +152,9 @@ func physicalDamageRectFromLogicalRect(_ target: RenderTarget, _ rect: LogicalRe
         width: UInt32(right - left), height: UInt32(bottom - top))
 }
 
-private func scaleOutset(_ outset: LogicalOutset, _ bounds: Bounds, _ layerRect: LogicalRect) -> LogicalOutset {
+private func scaleOutset(_ outset: LogicalOutset, _ bounds: Bounds, _ layerRect: LogicalRect)
+    -> LogicalOutset
+{
     let scaleX: Double = bounds.w > 0 ? abs(layerRect.width / Double(bounds.w)) : 1.0
     let scaleY: Double = bounds.h > 0 ? abs(layerRect.height / Double(bounds.h)) : 1.0
     return LogicalOutset(x: outset.x * scaleX, y: outset.y * scaleY)

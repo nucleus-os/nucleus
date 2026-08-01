@@ -4,8 +4,8 @@ import NucleusUIEmbedder
 import NucleusUITestSupport
 import Testing
 
-@_spi(NucleusRenderServer) @testable import NucleusLayers
-@_spi(NucleusRenderServer) @testable import NucleusUI
+@testable import NucleusLayers
+@testable import NucleusUI
 
 @MainActor
 private final class ApplyingCommitSink: CommitSink {

@@ -13,12 +13,12 @@
 // the wire bytes now flow through libwayland's own wl_*_send_* inlines (Rule 7)
 // rather than a handwritten codec.
 
-@unsafe import WaylandServerC
 internal import NucleusCompositorServer
 import NucleusLinuxPrimitives
-@unsafe import WaylandServer
-import WaylandServerDispatch
 import WaylandProtocolTypes
+@unsafe import WaylandServer
+@unsafe import WaylandServerC
+import WaylandServerDispatch
 
 /// Owner bound to each wl_seat resource (Rule 9). Routes get_pointer / get_keyboard
 /// / get_touch back to the shared WlSeat.
@@ -97,12 +97,14 @@ import WaylandProtocolTypes
     @safe private struct Inhibitor {
         let clientKey: WaylandClientID
         let surfaceId: UInt32
-        let resource:
-            WaylandResourceHandle<ZwpKeyboardShortcutsInhibitorV1Server>
+        let resource: WaylandResourceHandle<ZwpKeyboardShortcutsInhibitorV1Server>
         var active: Bool
     }
     private var inhibitors: [InhibitorKey: Inhibitor] = [:]
-    private struct InhibitorKey: Hashable { let clientKey: WaylandClientID; let objectId: UInt32 }
+    private struct InhibitorKey: Hashable {
+        let clientKey: WaylandClientID
+        let objectId: UInt32
+    }
 
     init(host: RouterHost, display: WaylandDisplay) {
         self.host = host
@@ -175,7 +177,8 @@ import WaylandProtocolTypes
     }
 
     func updateCapabilities(pointer: Bool, keyboard: Bool, touch: Bool) {
-        let next = (pointer ? UInt32(1) : 0)
+        let next =
+            (pointer ? UInt32(1) : 0)
             | (keyboard ? UInt32(2) : 0)
             | (touch ? UInt32(4) : 0)
         guard next != capabilities else { return }
@@ -416,7 +419,10 @@ import WaylandProtocolTypes
             clientKey: key, timestampUs: UInt64(timeMsec) &* 1000,
             dx: dx, dy: dy, dxUnaccel: dxUnaccel, dyUnaccel: dyUnaccel)
         if let constraints = pointerConstraints,
-            constraints.activeConstraintKind(for: surface) == .locked { return }
+            constraints.activeConstraintKind(for: surface) == .locked
+        {
+            return
+        }
         for pointer in resources {
             pointer.sendMotion(
                 time: timeMsec,
@@ -530,7 +536,9 @@ import WaylandProtocolTypes
         serials.invalidate(kind: .touchDown, clientKey: key)
     }
 
-    func touchMotion(clientKey key: WaylandClientID, timeMsec: UInt32, id: Int32, x: Double, y: Double) {
+    func touchMotion(
+        clientKey key: WaylandClientID, timeMsec: UInt32, id: Int32, x: Double, y: Double
+    ) {
         guard let resources = touches[key] else { return }
         for touch in resources {
             touch.sendMotion(time: timeMsec, id: id, x: x, y: y)
@@ -587,7 +595,9 @@ import WaylandProtocolTypes
         serials.invalidate(kind: .keyboardKey, clientKey: key)
     }
 
-    func keyboardKey(clientKey key: WaylandClientID, timeMsec: UInt32, keycode: UInt32, keyState: UInt32) {
+    func keyboardKey(
+        clientKey key: WaylandClientID, timeMsec: UInt32, keycode: UInt32, keyState: UInt32
+    ) {
         guard let resources = keyboards[key] else { return }
         let serial = nextSerial()
         if keyState != 0 {
@@ -606,7 +616,8 @@ import WaylandProtocolTypes
     }
 
     func keyboardModifiers(
-        clientKey key: WaylandClientID, depressed: UInt32, latched: UInt32, locked: UInt32, group: UInt32
+        clientKey key: WaylandClientID, depressed: UInt32, latched: UInt32, locked: UInt32,
+        group: UInt32
     ) {
         guard let resources = keyboards[key] else { return }
         let serial = nextSerial()
@@ -649,7 +660,9 @@ import WaylandProtocolTypes
         inhibitors.values.contains { $0.clientKey == key && $0.surfaceId == surfaceId && $0.active }
     }
 
-    private func setInhibitorActive(clientKey key: WaylandClientID, surfaceId: UInt32, _ active: Bool) {
+    private func setInhibitorActive(
+        clientKey key: WaylandClientID, surfaceId: UInt32, _ active: Bool
+    ) {
         // Collect the slots that actually change first, so the mutation pass isn't
         // iterating `inhibitors` while writing it.
         let staleKeys = inhibitors.compactMap { k, e in
@@ -681,7 +694,8 @@ extension SeatBinding: WlSeatRequests {
     ) {
         let me = seat
         guard me.hasEverAdvertised(1) else {
-            request.postError(.missingCapability, message: "seat has never advertised pointer capability")
+            request.postError(
+                .missingCapability, message: "seat has never advertised pointer capability")
             return
         }
         _ = id.create(
@@ -701,7 +715,8 @@ extension SeatBinding: WlSeatRequests {
     ) {
         let me = seat
         guard me.hasEverAdvertised(2) else {
-            request.postError(.missingCapability, message: "seat has never advertised keyboard capability")
+            request.postError(
+                .missingCapability, message: "seat has never advertised keyboard capability")
             return
         }
         _ = id.create(
@@ -727,7 +742,8 @@ extension SeatBinding: WlSeatRequests {
     ) {
         let me = seat
         guard me.hasEverAdvertised(4) else {
-            request.postError(.missingCapability, message: "seat has never advertised touch capability")
+            request.postError(
+                .missingCapability, message: "seat has never advertised touch capability")
             return
         }
         _ = id.create(
@@ -882,8 +898,7 @@ extension WlPointer: WlPointerRequests {
 /// entry on destruction.
 @MainActor
 final class WlShortcutsInhibitor {
-    fileprivate let resource:
-        WaylandResourceHandle<ZwpKeyboardShortcutsInhibitorV1Server>
+    fileprivate let resource: WaylandResourceHandle<ZwpKeyboardShortcutsInhibitorV1Server>
     private weak var seat: WlSeat?
     private let clientKey: WaylandClientID
     private let objectId: UInt32

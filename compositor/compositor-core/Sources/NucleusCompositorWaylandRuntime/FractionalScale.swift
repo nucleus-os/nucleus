@@ -7,10 +7,10 @@
 // The object dedups repeated scales
 // and a second get_fractional_scale for one surface raises fractional_scale_exists.
 
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
 import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 @MainActor
 @safe final class WpFractionalScaleManager {
@@ -24,18 +24,21 @@ extension WpFractionalScaleManager: WpFractionalScaleManagerV1Requests {
     ) {
         guard let surface = surfaceRes.owner(as: WlSurface.self) else { return }
         guard surface.claimAux(.fractionalScale) else {
-            request.postError(.fractionalScaleExists, message: "wl_surface already has a fractional scale")
+            request.postError(
+                .fractionalScaleExists, message: "wl_surface already has a fractional scale")
             return
         }
-        guard id.create(
-            owner: { handle in
-                WpFractionalScale(resource: handle, surface: surface)
-            },
-            installed: { object in
-                surface.fractionalScaleSink = object
-                object.sendPreferredScale(surface.preferredFractionalScale120)
-            }
-        ) != nil else {
+        guard
+            id.create(
+                owner: { handle in
+                    WpFractionalScale(resource: handle, surface: surface)
+                },
+                installed: { object in
+                    surface.fractionalScaleSink = object
+                    object.sendPreferredScale(surface.preferredFractionalScale120)
+                }
+            ) != nil
+        else {
             surface.releaseAux(.fractionalScale)
             return
         }

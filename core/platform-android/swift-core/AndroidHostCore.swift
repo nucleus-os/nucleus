@@ -6,7 +6,7 @@
 
 import NucleusAndroidHostLifecycle
 
-public enum AndroidErrorCode: Int32 {
+package enum AndroidErrorCode: Int32 {
     case none = 0
     case invalid_handle = 1
     case allocation_failed = 2
@@ -169,7 +169,7 @@ enum Diagnostic {
 
     mutating func detach() -> UnsafeMutableRawPointer? {
         guard unsafe native_window != nil,
-              let previous = unsafe ownership.detach()
+            let previous = unsafe ownership.detach()
         else { return nil }
         width = 0
         height = 0
@@ -258,7 +258,7 @@ struct LifecycleStats {
     var ime_change_count: UInt64 = 0
 }
 
-public final class AndroidHostCore {
+package final class AndroidHostCore {
     var platform = PlatformContext()
     var surface = SurfaceState()
     var frame_clock = FrameClock()
@@ -268,9 +268,9 @@ public final class AndroidHostCore {
     var lifecycle = LifecycleStats()
     var last_error: AndroidErrorCode = .none
 
-    public init() {}
+    package init() {}
 
-    public func teardown() -> UnsafeMutableRawPointer? {
+    package func teardown() -> UnsafeMutableRawPointer? {
         let window = unsafe surface.detach()
         unsafe runtime.host.updateSurface(nil, 0, 0, 0, surface.generation)
         if runtime.host.started {
@@ -283,7 +283,7 @@ public final class AndroidHostCore {
         return unsafe window
     }
 
-    public func start() -> Bool {
+    package func start() -> Bool {
         frame_clock.started = true
         lifecycle.start_count &+= 1
         events.push(AndroidEvent(kind: .host_start))
@@ -291,7 +291,7 @@ public final class AndroidHostCore {
         return true
     }
 
-    public func stop() -> Bool {
+    package func stop() -> Bool {
         frame_clock.started = false
         lifecycle.stop_count &+= 1
         events.push(AndroidEvent(kind: .host_stop))
@@ -299,7 +299,7 @@ public final class AndroidHostCore {
         return true
     }
 
-    public func configureContext(
+    package func configureContext(
         _ assetManager: UnsafeMutableRawPointer,
         _ density: Float,
         _ sdkInt: Int32,
@@ -323,7 +323,7 @@ public final class AndroidHostCore {
         return true
     }
 
-    public func attachSurface(
+    package func attachSurface(
         _ window: UnsafeMutableRawPointer,
         _ width: Int32,
         _ height: Int32,
@@ -343,7 +343,7 @@ public final class AndroidHostCore {
         return unsafe previous
     }
 
-    public func updateSurface(_ width: Int32, _ height: Int32, _ format: Int32) -> Bool {
+    package func updateSurface(_ width: Int32, _ height: Int32, _ format: Int32) -> Bool {
         if !surface.update(width, height, format) {
             last_error = .no_surface
             return false
@@ -361,7 +361,7 @@ public final class AndroidHostCore {
         return true
     }
 
-    public func detachSurface() -> UnsafeMutableRawPointer? {
+    package func detachSurface() -> UnsafeMutableRawPointer? {
         guard let previous = unsafe surface.detach() else {
             last_error = .no_surface
             return nil
@@ -378,7 +378,7 @@ public final class AndroidHostCore {
         return unsafe previous
     }
 
-    public func frame(_ frameTimeNanos: Int64) -> Bool {
+    package func frame(_ frameTimeNanos: Int64) -> Bool {
         if !frame_clock.started {
             last_error = .not_started
             return false
@@ -394,7 +394,7 @@ public final class AndroidHostCore {
         return true
     }
 
-    public func windowAttached() -> Bool {
+    package func windowAttached() -> Bool {
         input.attached_to_window = true
         lifecycle.window_attach_count &+= 1
         events.push(AndroidEvent(kind: .window_attached))
@@ -402,7 +402,7 @@ public final class AndroidHostCore {
         return true
     }
 
-    public func windowDetached() -> Bool {
+    package func windowDetached() -> Bool {
         input.attached_to_window = false
         input.has_window_focus = false
         lifecycle.window_detach_count &+= 1
@@ -411,7 +411,7 @@ public final class AndroidHostCore {
         return true
     }
 
-    public func windowFocusChanged(_ hasFocus: Bool) -> Bool {
+    package func windowFocusChanged(_ hasFocus: Bool) -> Bool {
         input.has_window_focus = hasFocus
         lifecycle.window_focus_count &+= 1
         events.push(AndroidEvent(kind: .window_focus, flag: hasFocus))
@@ -419,7 +419,7 @@ public final class AndroidHostCore {
         return true
     }
 
-    public func configurationChanged(_ width: Int32, _ height: Int32, _ density: Float) -> Bool {
+    package func configurationChanged(_ width: Int32, _ height: Int32, _ density: Float) -> Bool {
         input.configureView(width, height, density)
         platform.density = density
         events.push(AndroidEvent(kind: .configuration, i0: width, i1: height, f0: density))
@@ -427,7 +427,7 @@ public final class AndroidHostCore {
         return true
     }
 
-    public func touchEvent(
+    package func touchEvent(
         _ action: Int32,
         _ pointerId: Int32,
         _ pointerCount: Int32,
@@ -436,56 +436,60 @@ public final class AndroidHostCore {
         _ pressure: Float,
         _ eventTimeNanos: Int64
     ) -> Bool {
-        input.touch(TouchEvent(
-            action: action,
-            pointer_id: pointerId,
-            pointer_count: pointerCount,
-            x: x,
-            y: y,
-            pressure: pressure,
-            event_time_nanos: eventTimeNanos
-        ))
-        events.push(AndroidEvent(
-            kind: .touch,
-            i0: action,
-            i1: pointerId,
-            i2: pointerCount,
-            f0: x,
-            f1: y,
-            f2: pressure,
-            time_nanos: eventTimeNanos
-        ))
+        input.touch(
+            TouchEvent(
+                action: action,
+                pointer_id: pointerId,
+                pointer_count: pointerCount,
+                x: x,
+                y: y,
+                pressure: pressure,
+                event_time_nanos: eventTimeNanos
+            ))
+        events.push(
+            AndroidEvent(
+                kind: .touch,
+                i0: action,
+                i1: pointerId,
+                i2: pointerCount,
+                f0: x,
+                f1: y,
+                f2: pressure,
+                time_nanos: eventTimeNanos
+            ))
         last_error = .none
         return true
     }
 
-    public func keyEvent(
+    package func keyEvent(
         _ action: Int32,
         _ keyCode: Int32,
         _ repeatCount: Int32,
         _ metaState: Int32,
         _ eventTimeNanos: Int64
     ) -> Bool {
-        input.key(KeyEvent(
-            action: action,
-            key_code: keyCode,
-            repeat_count: repeatCount,
-            meta_state: metaState,
-            event_time_nanos: eventTimeNanos
-        ))
-        events.push(AndroidEvent(
-            kind: .key,
-            i0: action,
-            i1: keyCode,
-            i2: repeatCount,
-            i3: metaState,
-            time_nanos: eventTimeNanos
-        ))
+        input.key(
+            KeyEvent(
+                action: action,
+                key_code: keyCode,
+                repeat_count: repeatCount,
+                meta_state: metaState,
+                event_time_nanos: eventTimeNanos
+            ))
+        events.push(
+            AndroidEvent(
+                kind: .key,
+                i0: action,
+                i1: keyCode,
+                i2: repeatCount,
+                i3: metaState,
+                time_nanos: eventTimeNanos
+            ))
         last_error = .none
         return true
     }
 
-    public func imeStateChanged(_ active: Bool) -> Bool {
+    package func imeStateChanged(_ active: Bool) -> Bool {
         input.ime_active = active
         lifecycle.ime_change_count &+= 1
         events.push(AndroidEvent(kind: .ime, flag: active))
@@ -493,7 +497,7 @@ public final class AndroidHostCore {
         return true
     }
 
-    public func assetManager() -> UnsafeMutableRawPointer? {
+    package func assetManager() -> UnsafeMutableRawPointer? {
         if !platform.configured {
             last_error = .context_null
             return nil
@@ -507,32 +511,33 @@ public final class AndroidHostCore {
     }
 
     @discardableResult
-    public func recordAssetSmoke(_ value: Int32) -> Bool {
+    package func recordAssetSmoke(_ value: Int32) -> Bool {
         runtime.asset_smoke_value = value
         runtime.asset_smoke_count &+= 1
         last_error = .none
         return true
     }
 
-    public func drainEventQueueSmokeValue() -> Int32 {
+    package func drainEventQueueSmokeValue() -> Int32 {
         let value = events.drainSmokeValue()
         last_error = .none
         return value
     }
 
-    public func runtimeAttach() -> Bool {
-        let attached = unsafe runtime.host.attach(AttachSnapshot(
-            platform_configured: platform.configured,
-            asset_provider_available: platform.asset_manager != nil,
-            surface_window: surface.native_window,
-            surface_width: surface.width,
-            surface_height: surface.height,
-            surface_format: surface.format,
-            surface_generation: surface.generation,
-            density: platform.density,
-            sdk_int: platform.sdk_int,
-            queued_events: events.queuedCount()
-        ))
+    package func runtimeAttach() -> Bool {
+        let attached = unsafe runtime.host.attach(
+            AttachSnapshot(
+                platform_configured: platform.configured,
+                asset_provider_available: platform.asset_manager != nil,
+                surface_window: surface.native_window,
+                surface_width: surface.width,
+                surface_height: surface.height,
+                surface_format: surface.format,
+                surface_generation: surface.generation,
+                density: platform.density,
+                sdk_int: platform.sdk_int,
+                queued_events: events.queuedCount()
+            ))
         if !attached {
             last_error = .runtime_not_attached
             return false
@@ -542,7 +547,7 @@ public final class AndroidHostCore {
         return true
     }
 
-    public func runtimeStart() -> Bool {
+    package func runtimeStart() -> Bool {
         if !runtime.host.start() {
             last_error = .runtime_not_attached
             return false
@@ -552,7 +557,7 @@ public final class AndroidHostCore {
         return true
     }
 
-    public func runtimeFrame(_ frameTimeNanos: Int64) -> Bool {
+    package func runtimeFrame(_ frameTimeNanos: Int64) -> Bool {
         let drainedEvents = events.drainStats()
         if !runtime.host.frame(frameTimeNanos, drainedEvents) {
             last_error = .render_not_started
@@ -563,7 +568,7 @@ public final class AndroidHostCore {
         return true
     }
 
-    public func runtimeStop() -> Bool {
+    package func runtimeStop() -> Bool {
         if !runtime.host.stop() {
             last_error = .runtime_not_attached
             return false
@@ -573,7 +578,7 @@ public final class AndroidHostCore {
         return true
     }
 
-    public func runtimeDetach() -> Bool {
+    package func runtimeDetach() -> Bool {
         if !runtime.host.detach() {
             last_error = .runtime_not_attached
             return false
@@ -583,27 +588,27 @@ public final class AndroidHostCore {
         return true
     }
 
-    public func runtimeSmokeValue() -> Int32 {
+    package func runtimeSmokeValue() -> Int32 {
         last_error = .none
         return runtime.host.smokeValue()
     }
 
-    public func runtimeVerificationValue() -> Int32 {
+    package func runtimeVerificationValue() -> Int32 {
         last_error = .none
         return runtime.host.verificationValue()
     }
 
-    public func renderSmokeValue() -> Int32 {
+    package func renderSmokeValue() -> Int32 {
         last_error = .none
         return runtime.host.renderSmokeValue()
     }
 
-    public func renderStatusCode() -> Int32 {
+    package func renderStatusCode() -> Int32 {
         last_error = .none
         return runtime.host.renderStatusCode()
     }
 
-    public func diagnosticValue(_ code: Int32) -> Int64 {
+    package func diagnosticValue(_ code: Int32) -> Int64 {
         last_error = .none
         let renderer = runtime.host.renderer
         switch code {
@@ -629,7 +634,8 @@ public final class AndroidHostCore {
         case Diagnostic.last_touch_pointer_count: return intValue(input.last_touch.pointer_count)
         case Diagnostic.last_touch_x_milli: return intValue(scaleMilli(input.last_touch.x))
         case Diagnostic.last_touch_y_milli: return intValue(scaleMilli(input.last_touch.y))
-        case Diagnostic.last_touch_pressure_milli: return intValue(scaleMilli(input.last_touch.pressure))
+        case Diagnostic.last_touch_pressure_milli:
+            return intValue(scaleMilli(input.last_touch.pressure))
         case Diagnostic.last_touch_time_nanos: return input.last_touch.event_time_nanos
         case Diagnostic.key_event_count: return u64Value(input.key_event_count)
         case Diagnostic.last_key_action: return intValue(input.last_key.action)
@@ -656,11 +662,13 @@ public final class AndroidHostCore {
         case Diagnostic.runtime_attach_count: return u64Value(runtime.host.attach_count)
         case Diagnostic.runtime_start_count: return u64Value(runtime.host.start_count)
         case Diagnostic.runtime_frame_count: return u64Value(runtime.host.frame_count)
-        case Diagnostic.runtime_drained_event_count: return u64Value(runtime.host.drained_event_count)
+        case Diagnostic.runtime_drained_event_count:
+            return u64Value(runtime.host.drained_event_count)
         case Diagnostic.runtime_stop_count: return u64Value(runtime.host.stop_count)
         case Diagnostic.runtime_detach_count: return u64Value(runtime.host.detach_count)
         case Diagnostic.runtime_last_frame_time_nanos: return runtime.host.last_frame_time_nanos
-        case Diagnostic.runtime_last_event_hash: return intValue(Int32(bitPattern: runtime.host.last_event_hash))
+        case Diagnostic.runtime_last_event_hash:
+            return intValue(Int32(bitPattern: runtime.host.last_event_hash))
         case Diagnostic.render_attached: return boolValue(renderer.attached)
         case Diagnostic.render_started: return boolValue(renderer.started)
         case Diagnostic.render_attempt_count: return u64Value(renderer.render_attempt_count)
@@ -677,11 +685,11 @@ public final class AndroidHostCore {
         }
     }
 
-    public func setError(_ code: AndroidErrorCode) {
+    package func setError(_ code: AndroidErrorCode) {
         last_error = code
     }
 
-    public func lastErrorCode() -> Int32 {
+    package func lastErrorCode() -> Int32 {
         return last_error.rawValue
     }
 

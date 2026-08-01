@@ -25,7 +25,7 @@ struct AndroidRuntimeHost {
     var stop_count: UInt64 = 0
     var detach_count: UInt64 = 0
     var last_frame_time_nanos: Int64 = 0
-    var last_event_hash: UInt32 = 2166136261
+    var last_event_hash: UInt32 = 2_166_136_261
     var snapshot: AttachSnapshot = AttachSnapshot()
     var renderer: AndroidRenderer = AndroidRenderer()
 
@@ -108,7 +108,7 @@ struct AndroidRuntimeHost {
     }
 
     func smokeValue() -> Int32 {
-        var hash: UInt32 = 2166136261
+        var hash: UInt32 = 2_166_136_261
         hash = nucMix(hash, attached ? 1 : 0)
         hash = nucMix(hash, started ? 1 : 0)
         hash = nucMixU64(hash, attach_count)
@@ -121,11 +121,11 @@ struct AndroidRuntimeHost {
         hash = nucMix(hash, snapshot.queued_events)
         hash = nucMix(hash, last_event_hash)
         hash = nucMix(hash, UInt32(bitPattern: renderer.smokeValue()))
-        return Int32(hash & 0x7fffffff)
+        return Int32(hash & 0x7fff_ffff)
     }
 
     func verificationValue() -> Int32 {
-        var hash: UInt32 = 2166136261
+        var hash: UInt32 = 2_166_136_261
         hash = nucMix(hash, snapshot.platform_configured ? 1 : 0)
         hash = nucMix(hash, snapshot.asset_provider_available ? 1 : 0)
         hash = nucMix(hash, renderer.surface_available_at_attach ? 1 : 0)
@@ -134,7 +134,7 @@ struct AndroidRuntimeHost {
         hash = nucMixU64(hash, drained_event_count)
         hash = nucMix(hash, last_event_hash)
         hash = nucMix(hash, UInt32(bitPattern: renderer.smokeValue()))
-        return Int32(hash & 0x7fffffff)
+        return Int32(hash & 0x7fff_ffff)
     }
 
     func renderSmokeValue() -> Int32 {

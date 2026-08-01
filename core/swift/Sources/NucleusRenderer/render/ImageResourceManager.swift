@@ -1,3 +1,4 @@
+internal import NucleusAppHostProtocols
 internal import NucleusRenderModel
 import NucleusSkiaGraphiteBridge
 import Tracy
@@ -11,16 +12,15 @@ enum ImageResourcePhase: Sendable, Equatable, Hashable {
     var generation: UInt64 {
         switch self {
         case .registered(let generation),
-             .decoding(let generation),
-             .ready(let generation),
-             .failed(let generation, _):
+            .decoding(let generation),
+            .ready(let generation),
+            .failed(let generation, _):
             generation
         }
     }
 }
 
-@_spi(NucleusPlatform)
-public enum RenderImageResidency: Sendable, Equatable {
+package enum RenderImageResidency: Sendable, Equatable {
     case unknown
     case pending
     case resident
@@ -88,18 +88,19 @@ struct ImageResidencyLedger {
     }
 
     func dependencies(for handles: [UInt64]) -> PaintImageDependencies {
-        PaintImageDependencies(versions: handles.map { handle in
-            guard let entry = entries[handle] else {
+        PaintImageDependencies(
+            versions: handles.map { handle in
+                guard let entry = entries[handle] else {
+                    return ImageDependencyVersion(
+                        handle: handle,
+                        version: 0,
+                        phase: .registered(generation: 0))
+                }
                 return ImageDependencyVersion(
                     handle: handle,
-                    version: 0,
-                    phase: .registered(generation: 0))
-            }
-            return ImageDependencyVersion(
-                handle: handle,
-                version: entry.version,
-                phase: entry.phase)
-        })
+                    version: entry.version,
+                    phase: entry.phase)
+            })
     }
 
     @discardableResult
@@ -107,7 +108,8 @@ struct ImageResidencyLedger {
         handle: UInt64,
         generation: UInt64
     ) -> Bool {
-        guard entries[handle]?.phase
+        guard
+            entries[handle]?.phase
                 == .registered(generation: generation)
         else { return false }
         entries[handle]!.phase = .decoding(generation: generation)
@@ -119,7 +121,8 @@ struct ImageResidencyLedger {
         handle: UInt64,
         generation: UInt64
     ) -> Set<UInt64> {
-        guard entries[handle]?.phase
+        guard
+            entries[handle]?.phase
                 == .decoding(generation: generation)
         else { return [] }
         entries[handle]!.phase = .ready(generation: generation)
@@ -132,7 +135,8 @@ struct ImageResidencyLedger {
         generation: UInt64,
         reason: ImageDecodeFailure
     ) -> Set<UInt64> {
-        guard entries[handle]?.phase
+        guard
+            entries[handle]?.phase
                 == .decoding(generation: generation)
         else { return [] }
         entries[handle]!.phase = .failed(
@@ -346,14 +350,16 @@ struct ImageResidencyLedger {
         ledger.consume(handle: handle, outputID: outputID)
         switch ledger.phase(for: handle)! {
         case .registered(let generation):
-            guard ledger.beginDecoding(
-                handle: handle,
-                generation: generation)
+            guard
+                ledger.beginDecoding(
+                    handle: handle,
+                    generation: generation)
             else { return nil }
-            guard decodeQueue.submit(
-                handle: handle,
-                generation: generation,
-                source: source)
+            guard
+                decodeQueue.submit(
+                    handle: handle,
+                    generation: generation,
+                    source: source)
             else {
                 _ = finishFailure(
                     handle: handle,
@@ -366,7 +372,7 @@ struct ImageResidencyLedger {
             return nil
         case .ready:
             guard let resident = unsafe records[handle]?.resident,
-                  unsafe resident.isValid()
+                unsafe resident.isValid()
             else { return nil }
             return unsafe resident
         }
@@ -377,8 +383,9 @@ struct ImageResidencyLedger {
     /// dropping a stale success releases its immutable raster image here.
     @discardableResult
     func drainCompletions() -> Set<UInt64> {
-        deferredCompletions.append(contentsOf: decodeQueue.drain(
-            maxCount: Self.maximumCompletionDrainPerFrame))
+        deferredCompletions.append(
+            contentsOf: decodeQueue.drain(
+                maxCount: Self.maximumCompletionDrainPerFrame))
 
         var changed: Set<UInt64> = []
         var uploads = 0
@@ -386,9 +393,10 @@ struct ImageResidencyLedger {
         var consumed = 0
 
         for completion in deferredCompletions {
-            guard ledger.phase(for: completion.handle)?.generation
+            guard
+                ledger.phase(for: completion.handle)?.generation
                     == completion.generation,
-                  case .decoding? = ledger.phase(for: completion.handle)
+                case .decoding? = ledger.phase(for: completion.handle)
             else {
                 consumed += 1
                 continue
@@ -396,10 +404,11 @@ struct ImageResidencyLedger {
 
             switch completion.result {
             case .failure(let reason):
-                changed.formUnion(finishFailure(
-                    handle: completion.handle,
-                    generation: completion.generation,
-                    reason: reason))
+                changed.formUnion(
+                    finishFailure(
+                        handle: completion.handle,
+                        generation: completion.generation,
+                        reason: reason))
                 consumed += 1
             case .success(let decoded):
                 let bytes = decodedByteCount(decoded)
@@ -412,17 +421,19 @@ struct ImageResidencyLedger {
                     break
                 }
                 if let resident = unsafe uploadOperation(decoded.image),
-                   unsafe resident.isValid()
+                    unsafe resident.isValid()
                 {
                     unsafe records[completion.handle]?.resident = resident
-                    changed.formUnion(ledger.finishReady(
-                        handle: completion.handle,
-                        generation: completion.generation))
+                    changed.formUnion(
+                        ledger.finishReady(
+                            handle: completion.handle,
+                            generation: completion.generation))
                 } else {
-                    changed.formUnion(finishFailure(
-                        handle: completion.handle,
-                        generation: completion.generation,
-                        reason: .uploadFailure))
+                    changed.formUnion(
+                        finishFailure(
+                            handle: completion.handle,
+                            generation: completion.generation,
+                            reason: .uploadFailure))
                 }
                 uploads += 1
                 uploadBytes += bytes
@@ -465,7 +476,8 @@ struct ImageResidencyLedger {
         generation: UInt64,
         reason: ImageDecodeFailure
     ) -> Set<UInt64> {
-        guard ledger.phase(for: handle)
+        guard
+            ledger.phase(for: handle)
                 == .decoding(generation: generation)
         else { return [] }
         let changed = ledger.finishFailed(

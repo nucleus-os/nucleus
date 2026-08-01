@@ -1,9 +1,10 @@
 import NucleusAppHostBundle
 import NucleusAppHostProtocols
+package import NucleusLayers
 import NucleusRenderHost
 import NucleusRenderModel
-@_spi(NucleusRenderServer) import NucleusLayers
 import Testing
+
 @testable import NucleusUI
 
 @MainActor
@@ -95,23 +96,29 @@ struct RuntimeGraphIsolationTests {
         #expect(secondGlyph.resolvedCharacter == "\u{e202}")
 
         var firstActions = ImplicitActionTable()
-        firstActions.replace([ImplicitActionRow(
-            role: .notification,
-            keyPath: .opacity,
-            kind: .scalar,
-            duration: 1)])
+        firstActions.replace([
+            ImplicitActionRow(
+                role: .notification,
+                keyPath: .opacity,
+                kind: .scalar,
+                duration: 1)
+        ])
         var secondActions = ImplicitActionTable()
-        secondActions.replace([ImplicitActionRow(
-            role: .notification,
-            keyPath: .opacity,
-            kind: .scalar,
-            duration: 2)])
+        secondActions.replace([
+            ImplicitActionRow(
+                role: .notification,
+                keyPath: .opacity,
+                kind: .scalar,
+                duration: 2)
+        ])
         first!.resourceHost.replaceImplicitActions(firstActions)
         second.resourceHost.replaceImplicitActions(secondActions)
-        #expect(first!.resourceHost.implicitActions
-            .opacityFor(.notification)?.duration == 1)
-        #expect(second.resourceHost.implicitActions
-            .opacityFor(.notification)?.duration == 2)
+        #expect(
+            first!.resourceHost.implicitActions
+                .opacityFor(.notification)?.duration == 1)
+        #expect(
+            second.resourceHost.implicitActions
+                .opacityFor(.notification)?.duration == 2)
 
         var firstImage: ImageResource? = ImageResource(
             path: "/same.png",
@@ -132,11 +139,13 @@ struct RuntimeGraphIsolationTests {
         #expect(duplicateFirstImage?.handle.id == firstHandle)
         #expect(first!.resourceHost.images.count == 1)
         #expect(second.resourceHost.images.count == 1)
-        #expect(RuntimeResourceIdentity(
-            host: first!.resourceHost.identity,
-            handle: firstHandle) != RuntimeResourceIdentity(
-                host: second.resourceHost.identity,
-                handle: try #require(secondImage?.handle.id)))
+        #expect(
+            RuntimeResourceIdentity(
+                host: first!.resourceHost.identity,
+                handle: firstHandle)
+                != RuntimeResourceIdentity(
+                    host: second.resourceHost.identity,
+                    handle: try #require(secondImage?.handle.id)))
 
         var firstCompletion: PresentationCompletionResult?
         let firstToken = first!.bundle.layersHost.presentationCompletions

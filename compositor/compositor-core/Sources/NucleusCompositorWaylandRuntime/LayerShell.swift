@@ -9,12 +9,13 @@
 // math (anchor/margin/fill) is router-owned; output selection for a null output arg,
 // exclusive-zone publication, and the layer Window model use LayerShellDelegate.
 
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
-import NucleusDiagnostics
-import WaylandProtocolTypes
 import Glibc
+import NucleusDiagnostics
+import NucleusRenderModel
+import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 // MARK: - Delegate seam
 
@@ -248,7 +249,9 @@ extension ZwlrLayerShell: ZwlrLayerShellV1Requests {
             }
             applyAndArrange()
             sendConfigure()
-            diagnostic("configure surface=\(surfaceObjectID) output=\(outputID) layer=\(layer) size=\(configuredWidth)x\(configuredHeight) namespace=\(namespace)")
+            diagnostic(
+                "configure surface=\(surfaceObjectID) output=\(outputID) layer=\(layer) size=\(configuredWidth)x\(configuredHeight) namespace=\(namespace)"
+            )
             configured = true
         } else if !surface.hasCurrentBuffer {
             // Committing a null buffer unmaps the layer surface.
@@ -265,7 +268,9 @@ extension ZwlrLayerShell: ZwlrLayerShellV1Requests {
             applyAndArrange()
             if !reportedMap {
                 reportedMap = true
-                diagnostic("commit-buffer surface=\(surfaceObjectID) output=\(outputID) layer=\(layer) size=\(configuredWidth)x\(configuredHeight) namespace=\(namespace)")
+                diagnostic(
+                    "commit-buffer surface=\(surfaceObjectID) output=\(outputID) layer=\(layer) size=\(configuredWidth)x\(configuredHeight) namespace=\(namespace)"
+                )
             }
             shell.delegate?.layerSurfaceMapped(self)
         }
@@ -375,16 +380,26 @@ extension ZwlrLayerShell: ZwlrLayerShellV1Requests {
         h = max(1, h)
 
         var x: Int32
-        if aLeft && aRight { x = marginLeft }
-        else if aLeft { x = marginLeft }
-        else if aRight { x = ow - w - marginRight }
-        else { x = (ow - w) / 2 }
+        if aLeft && aRight {
+            x = marginLeft
+        } else if aLeft {
+            x = marginLeft
+        } else if aRight {
+            x = ow - w - marginRight
+        } else {
+            x = (ow - w) / 2
+        }
 
         var y: Int32
-        if aTop && aBottom { y = marginTop }
-        else if aTop { y = marginTop }
-        else if aBottom { y = oh - h - marginBottom }
-        else { y = (oh - h) / 2 }
+        if aTop && aBottom {
+            y = marginTop
+        } else if aTop {
+            y = marginTop
+        } else if aBottom {
+            y = oh - h - marginBottom
+        } else {
+            y = (oh - h) / 2
+        }
 
         arrangedX = outputRect.x + x
         arrangedY = outputRect.y + y
@@ -406,12 +421,16 @@ extension ZwlrLayerShell: ZwlrLayerShellV1Requests {
 // MARK: requests
 
 extension ZwlrLayerSurface: ZwlrLayerSurfaceV1Requests {
-    func setSize(_ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, width w: UInt32, height h: UInt32) {
+    func setSize(
+        _ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, width w: UInt32, height h: UInt32
+    ) {
         pendingWidth = Int32(bitPattern: w)
         pendingHeight = Int32(bitPattern: h)
     }
 
-    func setAnchor(_ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, anchor a: ZwlrLayerSurfaceV1Anchor) {
+    func setAnchor(
+        _ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, anchor a: ZwlrLayerSurfaceV1Anchor
+    ) {
         // anchor is a bitfield of top=1|bottom=2|left=4|right=8; any other bit is
         // invalid_anchor (value 2 on the layer_surface).
         guard a.rawValue & ~UInt32(0xF) == 0 else {
@@ -426,13 +445,19 @@ extension ZwlrLayerSurface: ZwlrLayerSurfaceV1Requests {
     }
 
     func setMargin(
-        _ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, top: Int32, right: Int32, bottom: Int32, left: Int32
+        _ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, top: Int32, right: Int32,
+        bottom: Int32, left: Int32
     ) {
-        pendingMarginTop = top; pendingMarginRight = right
-        pendingMarginBottom = bottom; pendingMarginLeft = left
+        pendingMarginTop = top
+        pendingMarginRight = right
+        pendingMarginBottom = bottom
+        pendingMarginLeft = left
     }
 
-    func setKeyboardInteractivity(_ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, keyboard_interactivity ki: ZwlrLayerSurfaceV1KeyboardInteractivity) {
+    func setKeyboardInteractivity(
+        _ request: WaylandRequest<ZwlrLayerSurfaceV1Server>,
+        keyboard_interactivity ki: ZwlrLayerSurfaceV1KeyboardInteractivity
+    ) {
         guard ki.rawValue <= 2 else {
             request.postError(.invalidKeyboardInteractivity, message: "bad keyboard interactivity")
             return
@@ -440,7 +465,8 @@ extension ZwlrLayerSurface: ZwlrLayerSurfaceV1Requests {
         pendingKeyboard = ki.rawValue
     }
 
-    func setLayer(_ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, layer: ZwlrLayerShellV1Layer) {
+    func setLayer(_ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, layer: ZwlrLayerShellV1Layer)
+    {
         guard layer.rawValue <= 3 else {
             // invalid_layer belongs to the zwlr_layer_shell_v1 error enum (value 1);
             // wlroots posts it on the layer_surface resource, matching get_layer_surface.
@@ -451,13 +477,16 @@ extension ZwlrLayerSurface: ZwlrLayerSurfaceV1Requests {
         pendingLayer = layer.rawValue
     }
 
-    func setExclusiveEdge(_ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, edge: ZwlrLayerSurfaceV1Anchor) {
+    func setExclusiveEdge(
+        _ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, edge: ZwlrLayerSurfaceV1Anchor
+    ) {
         // Unreachable while the global advertises v4. Restore v5 only with
         // validated, double-buffered exclusive-edge layout behavior.
     }
 
     func getPopup(
-        _ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, popup popupRes: WaylandBorrowedObject<XdgPopupServer>
+        _ request: WaylandRequest<ZwlrLayerSurfaceV1Server>,
+        popup popupRes: WaylandBorrowedObject<XdgPopupServer>
     ) {
         // Adopt a same-client xdg popup: re-drive its configure so it maps under the
         // layer surface. libwayland hands the popup as a live resource — the retired
@@ -467,10 +496,13 @@ extension ZwlrLayerSurface: ZwlrLayerSurfaceV1Requests {
     }
 
     func ackConfigure(_ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, serial: UInt32) {
-        guard let index = outstandingConfigureSerials.firstIndex(
-            of: serial)
+        guard
+            let index = outstandingConfigureSerials.firstIndex(
+                of: serial)
         else {
-            request.postError(.invalidSurfaceState, message: "configure serial was not issued by this layer surface")
+            request.postError(
+                .invalidSurfaceState,
+                message: "configure serial was not issued by this layer surface")
             return
         }
         acknowledgedConfigureSerial = serial
@@ -478,4 +510,3 @@ extension ZwlrLayerSurface: ZwlrLayerSurfaceV1Requests {
             ...index)
     }
 }
-import NucleusRenderModel

@@ -1,5 +1,5 @@
-internal import NucleusTypes
 package import NucleusLayers
+public import NucleusTypes
 
 /// AppKit-shaped semantic backdrop view. Apps name the
 /// material role (`.popover`, `.sidebar`, `.titlebar`, ...); the framework's
@@ -92,7 +92,10 @@ public final class VisualEffectView: View, ~Sendable {
     /// the current `material`/`blendingMode`/`isEmphasized`; setter
     /// derives those back through `MaterialBridge`.
     public var effect: (any VisualEffect)? {
-        get { MaterialBridge.effect(material: material, blendingMode: blendingMode, isEmphasized: isEmphasized) }
+        get {
+            MaterialBridge.effect(
+                material: material, blendingMode: blendingMode, isEmphasized: isEmphasized)
+        }
         set {
             if let blur = newValue as? BlurEffect {
                 let mapped = MaterialBridge.material(for: blur.style)
@@ -128,19 +131,20 @@ public final class VisualEffectView: View, ~Sendable {
         self.isEmphasized = isEmphasized
         self.maskImage = nil
         self.materialOpacity = min(max(0, materialOpacity), 1)
-        super.init(layerDescriptor: LayerDescriptor(
-            kind: .backdrop,
-            backdropMaterial: MaterialBridge.backdropMaterial(
-                material: material,
-                blendingMode: blendingMode,
-                state: state,
-                isEmphasized: isEmphasized,
-                cornerRadius: max(0, cornerRadius),
-                opacity: min(max(0, materialOpacity), 1),
-                appearance: resolvedAppearance,
-                maskImage: nil
-            )
-        ))
+        super.init(
+            layerDescriptor: LayerDescriptor(
+                kind: .backdrop,
+                backdropMaterial: MaterialBridge.backdropMaterial(
+                    material: material,
+                    blendingMode: blendingMode,
+                    state: state,
+                    isEmphasized: isEmphasized,
+                    cornerRadius: max(0, cornerRadius),
+                    opacity: min(max(0, materialOpacity), 1),
+                    appearance: resolvedAppearance,
+                    maskImage: nil
+                )
+            ))
         self.appearance = appearance
         self.cornerRadius = max(0, cornerRadius)
         isAccessibilityElement = false
@@ -161,7 +165,8 @@ public final class VisualEffectView: View, ~Sendable {
 
     private func applyBackdrop() {
         setProperties(ViewProperties(backdropMaterial: resolvedBackdropMaterial()))
-        backgroundColor = uiContext.environment.reducesTransparency
+        backgroundColor =
+            uiContext.environment.reducesTransparency
             ? effectivePalette.surface
             : nil
     }
@@ -183,7 +188,8 @@ public final class VisualEffectView: View, ~Sendable {
     }
 
     public override var properties: ViewProperties {
-        ViewProperties(frame: frame, isHidden: isHidden, backdropMaterial: resolvedBackdropMaterial())
+        ViewProperties(
+            frame: frame, isHidden: isHidden, backdropMaterial: resolvedBackdropMaterial())
     }
 
     public override var environmentDependencies: UIEnvironmentChanges {

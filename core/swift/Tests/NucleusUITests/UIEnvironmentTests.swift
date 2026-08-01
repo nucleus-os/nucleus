@@ -1,7 +1,8 @@
 import NucleusUITestSupport
 import Testing
-@_spi(NucleusRenderServer) @testable import NucleusLayers
-@_spi(NucleusRenderServer) @testable import NucleusUI
+
+@testable import NucleusLayers
+@testable import NucleusUI
 
 @MainActor
 @Suite(.uiContext) struct UIEnvironmentTests {
@@ -60,12 +61,13 @@ import Testing
             let originalBackdrop = effect.resolvedBackdropMaterial()
             #expect(originalBackdrop != .none)
 
-            context.updateEnvironment(UIEnvironment(
-                reducesMotion: true,
-                reducesTransparency: true,
-                increasesContrast: true,
-                appearance: .light,
-                textScale: 2))
+            context.updateEnvironment(
+                UIEnvironment(
+                    reducesMotion: true,
+                    reducesTransparency: true,
+                    increasesContrast: true,
+                    appearance: .light,
+                    textScale: 2))
 
             #expect(context.environment.textScale == 2)
             #expect(label.intrinsicContentSize.width > originalSize.width)
@@ -74,9 +76,12 @@ import Testing
             #expect(effect.resolvedBackdropMaterial() == .none)
             #expect(effect.backgroundColor == effect.effectivePalette.surface)
             #expect(motionProbe.received == [.reducedMotion])
-            #expect(appearanceProbe.received == [[
-                .appearance, .increasedContrast,
-            ]])
+            #expect(
+                appearanceProbe.received == [
+                    [
+                        .appearance, .increasedContrast,
+                    ]
+                ])
 
             let owner = EnvironmentProbe(dependencies: [])
             let handle = context.animateValue(
@@ -134,8 +139,9 @@ import Testing
 
             #expect(value == 42)
             #expect(handle.outcome == .skippedReducedMotion)
-            #expect(!context.advanceAnimations(
-                predictedPresentationNanoseconds: 1))
+            #expect(
+                !context.advanceAnimations(
+                    predictedPresentationNanoseconds: 1))
         }
     }
 

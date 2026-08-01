@@ -1,3 +1,5 @@
+package import NucleusAppHostProtocols
+
 // The platform-agnostic render core: the Vulkan instance/device, the Graphite
 // context + `FrameDriver`, the authoritative `RetainedTreeStore`, client
 // surface/texture registration, and per-output frame recording into a borrowed
@@ -15,11 +17,12 @@
 // drops those before device teardown, and `teardownDevice()` explicitly releases
 // Graphite before dropping the borrowed Vulkan device/instance.
 
+package import NucleusRenderModel
 import NucleusSkiaGraphiteBridge
-public import VulkanC
-public import Vulkan
 import Tracy
-public import NucleusRenderModel
+package import Vulkan
+package import VulkanC
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Android)
@@ -34,7 +37,7 @@ import Android
 @MainActor
 /// Main-actor isolation serializes every raw handle and C++ RAII value; teardown
 /// releases child resources before the Graphite context and Vulkan owners.
-@safe public final class RenderCore {
+@safe package final class RenderCore {
     nonisolated static func shouldRenderOutput(
         hasPendingDamage: Bool, forced: Bool, wantsPresent: Bool, needsInitialFrame: Bool
     ) -> Bool {
@@ -42,23 +45,23 @@ import Android
     }
 
     /// The authoritative retained tree; the commit sink folds transactions in.
-    public let store: RetainedTreeStore
-    public let resourceHost: SwiftResourceHost
+    package let store: RetainedTreeStore
+    package let resourceHost: SwiftResourceHost
 
     // Vulkan ownership (boxed noncopyable owners kept alive; their Copyable
     // handles/dispatch are copied out for per-frame use).
     var instanceLifetime: VulkanInstanceLifetime?
     var deviceBox: DeviceOwner?
-    public let instanceHandle: VkInstance
-    public let physicalDevice: VkPhysicalDevice
-    public let instanceDispatch: VK.InstanceDispatch
-    public let deviceHandle: VkDevice
-    public let deviceDispatch: VK.DeviceDispatch
-    public let graphicsFamily: UInt32
+    package let instanceHandle: VkInstance
+    package let physicalDevice: VkPhysicalDevice
+    package let instanceDispatch: VK.InstanceDispatch
+    package let deviceHandle: VkDevice
+    package let deviceDispatch: VK.DeviceDispatch
+    package let graphicsFamily: UInt32
     /// The graphics+present queue (borrowed from the device). A presentation backend
     /// that shares this device (the Android swapchain presenter) submits + presents
     /// on it.
-    public let graphicsQueue: VkQueue
+    package let graphicsQueue: VkQueue
     let vulkanContract: VkRequirements.Contract
     let asyncRenderWakeSink: any AsyncRenderWakeSink
 
@@ -73,9 +76,9 @@ import Android
     var outputsNeedingInitialFrame: Set<UInt64> = []
     var outputPresentationLedger = OutputPresentationLedger()
     var frameSerial: UInt64 = 0
-    public internal(set) var lastSubmittedSerial: UInt64 = 0
-    @_spi(NucleusPlatform) public internal(set) var lastFrameTelemetry = RenderFrameTelemetry()
-    @_spi(NucleusPlatform) public internal(set) var lastFrameAcquiredSurfaceIDs: [UInt64] = []
+    package internal(set) var lastSubmittedSerial: UInt64 = 0
+    package internal(set) var lastFrameTelemetry = RenderFrameTelemetry()
+    package internal(set) var lastFrameAcquiredSurfaceIDs: [UInt64] = []
     var pendingFrameTelemetry: [RenderFrameTelemetry] = []
     let telemetryClock = ContinuousClock()
     var lastFrameRenderStarted: ContinuousClock.Instant?
@@ -112,44 +115,43 @@ import Android
     }
     var stagedShmUploads: [UInt64: StagedShmUpload] = [:]
     var clientUploadTextures: [UInt64: nucleus.skia.UploadTexture] = unsafe [:]
-    var retiredClientUploadTextures:
-        [(serial: UInt64, texture: nucleus.skia.UploadTexture)] = unsafe []
+    var retiredClientUploadTextures: [(serial: UInt64, texture: nucleus.skia.UploadTexture)] =
+        unsafe []
     var nextSnapshotContentRevision: UInt64 = 1
-    public struct SnapshotTelemetry: Sendable, Equatable {
-        public var captureAttempts: UInt64 = 0
-        public var capturesSucceeded: UInt64 = 0
-        public var capturesFailed: UInt64 = 0
-        public var retirements: UInt64 = 0
+    package struct SnapshotTelemetry: Sendable, Equatable {
+        package var captureAttempts: UInt64 = 0
+        package var capturesSucceeded: UInt64 = 0
+        package var capturesFailed: UInt64 = 0
+        package var retirements: UInt64 = 0
 
-        public init() {}
+        package init() {}
     }
-    public internal(set) var snapshotTelemetry = SnapshotTelemetry()
-    public internal(set) var outputAcquisitionCount: UInt64 = 0
-    public struct ClientUploadStats: Sendable, Equatable {
-        public var enqueued: UInt64 = 0
-        public var coalesced: UInt64 = 0
-        public var uploaded: UInt64 = 0
-        public var failed: UInt64 = 0
-        public var pendingBytes: UInt64 = 0
-        public var fullSizeOwnedAllocations: UInt64 = 0
-        public var ownedAllocationBytes: UInt64 = 0
-        public var bytesCopied: UInt64 = 0
+    package internal(set) var snapshotTelemetry = SnapshotTelemetry()
+    package internal(set) var outputAcquisitionCount: UInt64 = 0
+    package struct ClientUploadStats: Sendable, Equatable {
+        package var enqueued: UInt64 = 0
+        package var coalesced: UInt64 = 0
+        package var uploaded: UInt64 = 0
+        package var failed: UInt64 = 0
+        package var pendingBytes: UInt64 = 0
+        package var fullSizeOwnedAllocations: UInt64 = 0
+        package var ownedAllocationBytes: UInt64 = 0
+        package var bytesCopied: UInt64 = 0
     }
-    public internal(set) var clientUploadStats = ClientUploadStats()
+    package internal(set) var clientUploadStats = ClientUploadStats()
     let sampleableDmaBufFormats: [DmaBufFormatModifier]
     var nextSurfaceId: UInt32 = 1
     var nextContentGeneration: UInt64 = 1
     var nextCaptureRequestID: UInt64 = 1
 
-    @_spi(NucleusPlatform)
-    public struct PixelCapture: Sendable, Equatable {
-        public var pixels: [UInt8]
-        public let width: Int
-        public let height: Int
-        public let originX: Int
-        public let originY: Int
+    package struct PixelCapture: Sendable, Equatable {
+        package var pixels: [UInt8]
+        package let width: Int
+        package let height: Int
+        package let originX: Int
+        package let originY: Int
 
-        public init(
+        package init(
             pixels: [UInt8], width: Int, height: Int,
             originX: Int = 0, originY: Int = 0
         ) {
@@ -263,8 +265,7 @@ import Android
         RenderCore.capturePollMinimumNanoseconds
     var coalescedPixelCaptureCount: UInt64 = 0
     var rejectedCaptureCount: UInt64 = 0
-    @_spi(NucleusPlatform)
-    public internal(set) var captureWorkStalled = false
+    package internal(set) var captureWorkStalled = false
 
     // Snapshot registry: refcounted snapshot handles over the texture registry.
     let snapshots: SnapshotService
@@ -272,7 +273,7 @@ import Android
     /// Hook the presentation backend installs so the core can tell it a client
     /// surface's previous backing is no longer referenced (the backend signals the
     /// buffer's release syncobj). No-op when no backend uses release sync (Android).
-    public var onSurfaceReleaseSync: ((UInt64) -> Void)?
+    package var onSurfaceReleaseSync: ((UInt64) -> Void)?
 
     /// Session-lock composition, per output. `nil` is the normal unlocked path. When
     /// non-nil the compositor is locked and `recordFrame` composites only the listed
@@ -282,7 +283,7 @@ import Android
     /// glass regardless of which scene authority authored it (see `PresentationWalk`).
     /// Set through `setLockComposition` by the composition root each frame from the
     /// authoritative window model.
-    public internal(set) var lockComposition: [UInt64: Set<ContextID>]?
+    package internal(set) var lockComposition: [UInt64: Set<ContextID>]?
     /// The retained layer contexts each presentation target is allowed to walk.
     ///
     /// A compositor output defaults to the compositor context. Standalone
@@ -312,7 +313,7 @@ import Android
     ) {
         // Copy the Copyable handles/dispatch out (borrow) before boxing the owners.
         guard let ownedInstanceHandle = unsafe instanceLifetime.owner?.handle,
-              let ownedInstanceDispatch = instanceLifetime.owner?.dispatch
+            let ownedInstanceDispatch = instanceLifetime.owner?.dispatch
         else {
             preconditionFailure("finalized Vulkan bootstrap lost its instance")
         }

@@ -1,6 +1,6 @@
-import NucleusUITestSupport
+package import NucleusLayers
 import NucleusTypes
-@_spi(NucleusRenderServer) import NucleusLayers
+import NucleusUITestSupport
 import Testing
 
 @MainActor
@@ -9,10 +9,11 @@ import Testing
     @Test func contextLayerTransactionAppliesPropertiesThroughInMemorySink() throws {
         let sink = InMemoryCommitSink()
         let context = try Context(contextID: 1, commitSink: sink)
-        let layer = context.makeLayer(.init(
-            frame: .init(x: 1, y: 2, width: 3, height: 4),
-            opacity: 0.5
-        ))
+        let layer = context.makeLayer(
+            .init(
+                frame: .init(x: 1, y: 2, width: 3, height: 4),
+                opacity: 0.5
+            ))
 
         #expect(layer.frame == .init(x: 1, y: 2, width: 3, height: 4))
         #expect(layer.opacity == 0.5)
@@ -46,12 +47,13 @@ import Testing
         let layer = context.makeLayer(.init(frame: .init(x: 1, y: 1, width: 20, height: 20)))
 
         var transaction = Transaction(context: context)
-        try transaction.setProperties(.decomposedFrame(.init(x: 50, y: 60, width: 70, height: 80)), for: layer)
+        try transaction.setProperties(
+            .decomposedFrame(.init(x: 50, y: 60, width: 70, height: 80)), for: layer)
         transaction.abort()
 
         // Mirrors CATransaction: aborting does not undo property writes.
         #expect(layer.frame == .init(x: 50, y: 60, width: 70, height: 80))
-        // The FFI sink was not called.
+        // The commit sink was not called.
         #expect(sink.transactions.count == 0)
     }
 
@@ -83,6 +85,6 @@ import Testing
         #expect(report.nextPresentID > 0)
     }
 
-    // Layout drift is pinned by the generated `NucleusTypes` module, so a
-    // separate Swift MemoryLayout sweep is redundant.
+    // Shared transaction values are covered by their behavioral round trips;
+    // a separate Swift MemoryLayout sweep is not part of the contract.
 }

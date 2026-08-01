@@ -5,9 +5,9 @@
 // renderer reads at frame time. The host-bundle install wires these into the
 // resource-host slots.
 
-import NucleusTypes
 import NucleusAppHostProtocols
 import NucleusRenderModel
+import NucleusTypes
 
 // MARK: - Images
 
@@ -20,7 +20,9 @@ final class SwiftImageRegistrar: ImageRegistrar {
         self.resourceHost = resourceHost
     }
 
-    func register(path: String, maxWidth: UInt32, maxHeight: UInt32) throws(ImageRegistrationError) -> UInt64 {
+    func register(path: String, maxWidth: UInt32, maxHeight: UInt32) throws(ImageRegistrationError)
+        -> UInt64
+    {
         guard !path.isEmpty, maxWidth > 0, maxHeight > 0
         else { throw ImageRegistrationError.invalidArgument }
         guard resourceHost.isLive else { throw .invalidHandle }
@@ -45,7 +47,7 @@ final class SwiftImageRegistrar: ImageRegistrar {
         channelOrder: UInt8, isPremultiplied: Bool
     ) throws(ImageRegistrationError) -> UInt64 {
         guard !pixels.isEmpty, width > 0, height > 0,
-              let order = PixelChannelOrder(rawValue: channelOrder)
+            let order = PixelChannelOrder(rawValue: channelOrder)
         else { throw ImageRegistrationError.invalidArgument }
 
         var bytes = [UInt8](repeating: 0, count: pixels.count)
@@ -127,7 +129,7 @@ func copyContiguousSpan<Element>(
     didInitialize: (Int) -> Void = { _ in }
 ) -> [Element] {
     source.withUnsafeBufferPointer { source in
-        unsafe Array<Element>(
+        unsafe [Element](
             unsafeUninitializedCapacity: source.count
         ) { destination, initializedCount in
             guard source.count > 0 else {
@@ -166,7 +168,7 @@ final class SwiftPaintContentRegistrar: PaintContentRegistrar {
         for i in 0..<commands.count {
             let command = commands[i]
             guard command.hasValidFlags,
-                  command.hasValidPayloadRange(count: payload.count)
+                command.hasValidPayloadRange(count: payload.count)
             else {
                 throw PaintContentRegistrationError.invalidArgument
             }
@@ -176,7 +178,8 @@ final class SwiftPaintContentRegistrar: PaintContentRegistrar {
         let payloadBytes = copyContiguousSpan(payload)
         return resourceHost.paintContents.register(
             storedCommands, payload: payloadBytes,
-            width: width, height: height).raw
+            width: width, height: height
+        ).raw
     }
 }
 
@@ -222,8 +225,7 @@ final class SwiftSnapshotLifecycle: SnapshotLifecycle {
 
 // MARK: - Implicit actions
 
-/// `ImplicitActionRegistrar` over `SwiftResourceHost.implicitActions`. Decodes
-/// the wire rows into the model's implicit-action template table.
+/// `ImplicitActionRegistrar` over `SwiftResourceHost.implicitActions`.
 final class SwiftImplicitActionRegistrar: ImplicitActionRegistrar {
     private let resourceHost: SwiftResourceHost
 
@@ -232,20 +234,13 @@ final class SwiftImplicitActionRegistrar: ImplicitActionRegistrar {
     }
 
     func register(rows: Span<NucleusTypes.ImplicitActionRow>) {
-        var decoded: [NucleusRenderModel.ImplicitActionRow] = []
-        decoded.reserveCapacity(rows.count)
+        var values: [NucleusRenderModel.ImplicitActionRow] = []
+        values.reserveCapacity(rows.count)
         for i in 0..<rows.count {
-            let r = rows[i]
-            guard let role = NucleusRenderModel.LayerRole(rawValue: r.role.rawValue),
-                  let keyPath = NucleusRenderModel.ImplicitActionKeyPath(rawValue: r.keyPath.rawValue),
-                  let kind = NucleusRenderModel.ImplicitActionKind(rawValue: r.kind.rawValue) else { continue }
-            decoded.append(NucleusRenderModel.ImplicitActionRow(
-                role: role, keyPath: keyPath, kind: kind,
-                mass: r.mass, stiffness: r.stiffness, damping: r.damping, duration: r.duration,
-                c1x: r.c1x, c1y: r.c1y, c2x: r.c2x, c2y: r.c2y))
+            values.append(rows[i])
         }
         var table = ImplicitActionTable()
-        table.replace(decoded)
+        table.replace(values)
         guard resourceHost.isLive else { return }
         resourceHost.replaceImplicitActions(table)
     }

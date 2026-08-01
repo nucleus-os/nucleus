@@ -1,5 +1,6 @@
-@testable import NucleusRenderModel
 import Testing
+
+@testable import NucleusRenderModel
 
 @MainActor
 @Suite struct RenderModelSmokeTests {
@@ -12,7 +13,7 @@ import Testing
         #expect(!store.presentDirty, "initial-clean")
         #expect(store.snapshot().layers.isEmpty, "initial-empty")
 
-        // Ingest a non-empty transaction: create a root + child, wire them.
+        // Ingest a non-empty transaction: create a root + child, then link them.
         var txn = Transaction(contextId: ctx)
         var root = LayerCreated(nodeId: 1, kind: .container)
         root.bounds = Bounds(w: 320, h: 240)
@@ -32,8 +33,12 @@ import Testing
         #expect(store.snapshot().roots(for: ctx) == [1], "ingest-root")
         #expect(store.snapshot().get(2)?.parent == 1, "ingest-child-parent")
         #expect(store.snapshot().get(1)?.children == [2], "ingest-parent-children")
-        #expect(store.snapshot().get(2)?.model.content == .paint(PaintContentHandle(raw: 7)), "ingest-content")
-        #expect(store.snapshot().get(1)?.model.properties.bounds == Bounds(w: 320, h: 240), "ingest-bounds")
+        #expect(
+            store.snapshot().get(2)?.model.content == .paint(PaintContentHandle(raw: 7)),
+            "ingest-content")
+        #expect(
+            store.snapshot().get(1)?.model.properties.bounds == Bounds(w: 320, h: 240),
+            "ingest-bounds")
 
         // markPresented clears the present-dirty + per-node damage.
         store.markPresented()

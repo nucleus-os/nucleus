@@ -16,12 +16,12 @@ import WaylandServerC
 
 /// A request-scoped carrier of borrowed libwayland pointers. The client and
 /// interface must remain valid until one create method returns.
-@safe public struct WlNewId<Interface: WaylandServerInterface>: ~Escapable {
+@safe package struct WlNewId<Interface: WaylandServerInterface>: ~Escapable {
     @unsafe package let client: OpaquePointer
-    public let id: UInt32
-    public let version: Int32
+    package let id: UInt32
+    package let version: Int32
 
-    public var clientID: WaylandClientID {
+    package var clientID: WaylandClientID {
         unsafe WaylandClientID(client)!
     }
 

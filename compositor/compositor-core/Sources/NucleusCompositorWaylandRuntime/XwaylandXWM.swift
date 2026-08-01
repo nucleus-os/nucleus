@@ -15,10 +15,10 @@
 // intentionally dropped.
 
 @unsafe import Glibc
-@unsafe import NucleusCompositorXcbC
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowManager
+@unsafe import NucleusCompositorXcbC
 import NucleusDiagnostics
 
 private func xwmLog(_ s: String) {
@@ -54,7 +54,10 @@ private func xwmLog(_ s: String) {
     /// Take ownership of `wmFd`, connect via XCB, claim the WM role + EWMH, enable
     /// Composite redirect, and expose the XCB fd. Returns nil on any bring-up failure.
     init?(wmFd: Int32, host: RouterHost) {
-        guard let c = unsafe xcb_connect_to_fd(wmFd, nil) else { close(wmFd); return nil }
+        guard let c = unsafe xcb_connect_to_fd(wmFd, nil) else {
+            close(wmFd)
+            return nil
+        }
         if unsafe xcb_connection_has_error(c) != 0 {
             unsafe xcb_disconnect(c)
             return nil
@@ -90,7 +93,9 @@ private func xwmLog(_ s: String) {
         refreshDesktopState()
         initXfixes()
         _ = unsafe xcb_flush(c)
-        xwmLog("ready on root 0x\(String(rootWindow, radix: 16)), wm_window 0x\(String(wmWindow, radix: 16))")
+        xwmLog(
+            "ready on root 0x\(String(rootWindow, radix: 16)), wm_window 0x\(String(wmWindow, radix: 16))"
+        )
     }
 
     /// Full teardown. The Xwayland wl connection is a router client (the router
@@ -134,7 +139,9 @@ private func xwmLog(_ s: String) {
             0, 0, 10, 10, 0,
             UInt16(XCB_WINDOW_CLASS_INPUT_OUTPUT.rawValue), rootVisual, 0, nil)
         wmWindow = wid
-        changeProperty8(window: wid, property: atoms[._NET_WM_NAME], type: atoms[.UTF8_STRING], bytes: Array("Nucleus".utf8))
+        changeProperty8(
+            window: wid, property: atoms[._NET_WM_NAME], type: atoms[.UTF8_STRING],
+            bytes: Array("Nucleus".utf8))
     }
 
     private func claimWmSelection() {
@@ -154,12 +161,15 @@ private func xwmLog(_ s: String) {
         check.withUnsafeBytes { raw in
             _ = unsafe xcb_change_property(
                 conn, UInt8(XCB_PROP_MODE_REPLACE.rawValue), rootWindow,
-                atoms[._NET_SUPPORTING_WM_CHECK], xcb_atom_t(XCB_ATOM_WINDOW.rawValue), 32, 1, raw.baseAddress)
+                atoms[._NET_SUPPORTING_WM_CHECK], xcb_atom_t(XCB_ATOM_WINDOW.rawValue), 32, 1,
+                raw.baseAddress)
             _ = unsafe xcb_change_property(
                 conn, UInt8(XCB_PROP_MODE_REPLACE.rawValue), wmWindow,
                 atoms[._NET_SUPPORTING_WM_CHECK], atoms[.ATOM], 32, 1, raw.baseAddress)
         }
-        changeProperty8(window: wmWindow, property: atoms[._NET_WM_NAME], type: atoms[.UTF8_STRING], bytes: Array("Nucleus".utf8))
+        changeProperty8(
+            window: wmWindow, property: atoms[._NET_WM_NAME], type: atoms[.UTF8_STRING],
+            bytes: Array("Nucleus".utf8))
 
         let supported: [xcb_atom_t] = [
             atoms[._NET_ACTIVE_WINDOW], atoms[._NET_SUPPORTING_WM_CHECK],
@@ -217,10 +227,12 @@ private func xwmLog(_ s: String) {
         writeCardinals(rootWindow, atoms[._NET_DESKTOP_VIEWPORT], cardinal, [0, 0])
         writeCardinals(
             rootWindow, atoms[._NET_WORKAREA], cardinal,
-            [logicalOffsetToCardinal(workarea.x),
-             logicalOffsetToCardinal(workarea.y),
-             logicalExtentToCardinal(workarea.w),
-             logicalExtentToCardinal(workarea.h)])
+            [
+                logicalOffsetToCardinal(workarea.x),
+                logicalOffsetToCardinal(workarea.y),
+                logicalExtentToCardinal(workarea.w),
+                logicalExtentToCardinal(workarea.h),
+            ])
     }
 
     private func desktopWorkarea() -> (
@@ -236,7 +248,8 @@ private func xwmLog(_ s: String) {
         var maxY = -Double.greatestFiniteMagnitude
         for display in layout.displays {
             let frame = display.logicalRect
-            let zones = host.windowManager.layerShellPolicy
+            let zones =
+                host.windowManager.layerShellPolicy
                 .recalcZones(outputID: display.id)
                 ?? LayerExclusiveZones()
             let x = frame.x + Double(zones.left)
@@ -251,7 +264,8 @@ private func xwmLog(_ s: String) {
         return (
             minX, minY,
             max(0, maxX - minX),
-            max(0, maxY - minY))
+            max(0, maxY - minY)
+        )
     }
 
     private func publishDpiSettings() {
@@ -294,16 +308,19 @@ private func xwmLog(_ s: String) {
 
     private func initXfixes() {
         let verCookie = unsafe xcb_xfixes_query_version(conn, 4, 0)
-        guard let verReply = unsafe xcb_xfixes_query_version_reply(
-            conn, verCookie, nil)
+        guard
+            let verReply = unsafe xcb_xfixes_query_version_reply(
+                conn, verCookie, nil)
         else {
-            xwmLog("XFixes query_version failed — cursor bridge disabled"); return
+            xwmLog("XFixes query_version failed — cursor bridge disabled")
+            return
         }
         unsafe free(verReply)
         var present: UInt8 = 0
         let base = unsafe nucleus_xcb_xfixes_event_base(conn, &present)
         guard present != 0 else {
-            xwmLog("XFixes not present — cursor bridge disabled"); return
+            xwmLog("XFixes not present — cursor bridge disabled")
+            return
         }
         xfixesEventBase = base
         xfixesOK = true
@@ -314,8 +331,9 @@ private func xwmLog(_ s: String) {
 
     private func fetchCursorOnly() {
         let cookie = unsafe xcb_xfixes_get_cursor_image_and_name(conn)
-        guard let reply = unsafe xcb_xfixes_get_cursor_image_and_name_reply(
-            conn, cookie, nil)
+        guard
+            let reply = unsafe xcb_xfixes_get_cursor_image_and_name_reply(
+                conn, cookie, nil)
         else { return }
         defer { unsafe free(reply) }
         unsafe storeCursor(reply)
@@ -326,7 +344,9 @@ private func xwmLog(_ s: String) {
         applyCurrentCursor()
     }
 
-    private func storeCursor(_ reply: UnsafeMutablePointer<xcb_xfixes_get_cursor_image_and_name_reply_t>) {
+    private func storeCursor(
+        _ reply: UnsafeMutablePointer<xcb_xfixes_get_cursor_image_and_name_reply_t>
+    ) {
         let w = unsafe UInt32(reply.pointee.width)
         let h = unsafe UInt32(reply.pointee.height)
         guard w != 0, h != 0 else { return }
@@ -368,7 +388,9 @@ private func xwmLog(_ s: String) {
         return true
     }
 
-    private func bind<T>(_ raw: UnsafeMutablePointer<xcb_generic_event_t>, _ t: T.Type) -> UnsafeMutablePointer<T> {
+    private func bind<T>(_ raw: UnsafeMutablePointer<xcb_generic_event_t>, _ t: T.Type)
+        -> UnsafeMutablePointer<T>
+    {
         unsafe UnsafeMutableRawPointer(raw).assumingMemoryBound(to: T.self)
     }
 
@@ -384,9 +406,12 @@ private func xwmLog(_ s: String) {
         case XCB_UNMAP_NOTIFY: unsafe onUnmapNotify(bind(raw, xcb_unmap_notify_event_t.self))
         case XCB_MAP_NOTIFY: unsafe onMapNotify(bind(raw, xcb_map_notify_event_t.self))
         case XCB_MAP_REQUEST: unsafe onMapRequest(bind(raw, xcb_map_request_event_t.self))
-        case XCB_CONFIGURE_NOTIFY: unsafe onConfigureNotify(bind(raw, xcb_configure_notify_event_t.self))
-        case XCB_CONFIGURE_REQUEST: unsafe onConfigureRequest(bind(raw, xcb_configure_request_event_t.self))
-        case XCB_PROPERTY_NOTIFY: unsafe onPropertyNotify(bind(raw, xcb_property_notify_event_t.self))
+        case XCB_CONFIGURE_NOTIFY:
+            unsafe onConfigureNotify(bind(raw, xcb_configure_notify_event_t.self))
+        case XCB_CONFIGURE_REQUEST:
+            unsafe onConfigureRequest(bind(raw, xcb_configure_request_event_t.self))
+        case XCB_PROPERTY_NOTIFY:
+            unsafe onPropertyNotify(bind(raw, xcb_property_notify_event_t.self))
         case XCB_CLIENT_MESSAGE: unsafe onClientMessage(bind(raw, xcb_client_message_event_t.self))
         default: break
         }
@@ -397,7 +422,8 @@ private func xwmLog(_ s: String) {
     private func onCreateNotify(_ ev: UnsafeMutablePointer<xcb_create_notify_event_t>) {
         let e = unsafe ev.pointee
         if e.window == wmWindow { return }
-        let surface = XwaylandSurface(windowID: e.window, overrideRedirect: e.override_redirect != 0)
+        let surface = XwaylandSurface(
+            windowID: e.window, overrideRedirect: e.override_redirect != 0)
         surface.x = e.x
         surface.y = e.y
         surface.width = e.width
@@ -426,7 +452,9 @@ private func xwmLog(_ s: String) {
         if !surface.overrideRedirect {
             unsafe setWmState(conn, atoms, surface, .normal)
         }
-        if surface.routerWindowID != 0 { driver?.setMapped(windowID: surface.routerWindowID, mapped: true) }
+        if surface.routerWindowID != 0 {
+            driver?.setMapped(windowID: surface.routerWindowID, mapped: true)
+        }
         syncWindowNetState(surface)
     }
 
@@ -436,7 +464,9 @@ private func xwmLog(_ s: String) {
         if !surface.overrideRedirect {
             unsafe setWmState(conn, atoms, surface, .withdrawn)
         }
-        if surface.routerWindowID != 0 { driver?.setMapped(windowID: surface.routerWindowID, mapped: false) }
+        if surface.routerWindowID != 0 {
+            driver?.setMapped(windowID: surface.routerWindowID, mapped: false)
+        }
         if unsafe host.windowManager.activeXwaylandXID() == UInt64(ev.pointee.window) {
             clearFocus()
         }
@@ -457,7 +487,8 @@ private func xwmLog(_ s: String) {
     private func onConfigureRequest(_ ev: UnsafeMutablePointer<xcb_configure_request_event_t>) {
         let e = unsafe ev.pointee
         let surfaceOpt = windowMap[e.window]
-        let isPaired = (surfaceOpt?.routerWindowID ?? 0) != 0 && !(surfaceOpt?.overrideRedirect ?? true)
+        let isPaired =
+            (surfaceOpt?.routerWindowID ?? 0) != 0 && !(surfaceOpt?.overrideRedirect ?? true)
 
         var outX = e.x
         var outY = e.y
@@ -494,7 +525,9 @@ private func xwmLog(_ s: String) {
             return
         }
         if e.type == atoms[.WL_SURFACE_ID], e.format == 32 {
-            xwmLog("legacy WL_SURFACE_ID ClientMessage win=0x\(String(e.window, radix: 16)) (shell_v1 not bound?)")
+            xwmLog(
+                "legacy WL_SURFACE_ID ClientMessage win=0x\(String(e.window, radix: 16)) (shell_v1 not bound?)"
+            )
             return
         }
         if e.type == atoms[._NET_ACTIVE_WINDOW] {
@@ -573,7 +606,8 @@ private func xwmLog(_ s: String) {
     private func applyFocusPlan(_ plan: XwaylandFocusPlan) {
         if plan.actions & UInt32(xwaylandFocusDenied) != 0 {
             if plan.focusedX11Window != 0, plan.deniedSyncState != 0,
-                let focused = windowMap[xcb_window_t(truncatingIfNeeded: plan.focusedX11Window)] {
+                let focused = windowMap[xcb_window_t(truncatingIfNeeded: plan.focusedX11Window)]
+            {
                 unsafe writeNetWmStateMask(
                     conn, atoms, focused,
                     XwaylandNetState(rawValue: plan.deniedSyncState))
@@ -602,11 +636,13 @@ private func xwmLog(_ s: String) {
                 raw.baseAddress)
         }
         if plan.previousX11Window != 0, plan.previousX11Window != plan.focusedX11Window,
-            let old = windowMap[xcb_window_t(truncatingIfNeeded: plan.previousX11Window)] {
+            let old = windowMap[xcb_window_t(truncatingIfNeeded: plan.previousX11Window)]
+        {
             syncWindowNetState(old)
         }
         if plan.focusedX11Window != 0,
-            let new = windowMap[xcb_window_t(truncatingIfNeeded: plan.focusedX11Window)] {
+            let new = windowMap[xcb_window_t(truncatingIfNeeded: plan.focusedX11Window)]
+        {
             syncWindowNetState(new)
         }
         refreshClientLists()
@@ -632,7 +668,9 @@ private func xwmLog(_ s: String) {
 
     // ── outbound configure (reverse crossing target) ─────────────────────────────
 
-    private func configureWindowRaw(_ window: xcb_window_t, _ x: Int16, _ y: Int16, _ w: UInt16, _ h: UInt16) {
+    private func configureWindowRaw(
+        _ window: xcb_window_t, _ x: Int16, _ y: Int16, _ w: UInt16, _ h: UInt16
+    ) {
         let values: [UInt32] = [
             UInt32(bitPattern: Int32(x)), UInt32(bitPattern: Int32(y)), UInt32(w), UInt32(h),
         ]
@@ -645,7 +683,9 @@ private func xwmLog(_ s: String) {
 
     /// Tell an X11 window where/how big to be (interactive move/resize of a managed
     /// window). Sends a _NET_WM_SYNC_REQUEST first if the client supports it.
-    func configureWindow(_ surface: XwaylandSurface, _ x: Int16, _ y: Int16, _ w: UInt16, _ h: UInt16) {
+    func configureWindow(
+        _ surface: XwaylandSurface, _ x: Int16, _ y: Int16, _ w: UInt16, _ h: UInt16
+    ) {
         surface.x = x
         surface.y = y
         surface.width = w
@@ -658,7 +698,9 @@ private func xwmLog(_ s: String) {
         _ = unsafe xcb_flush(conn)
     }
 
-    func configureWindowById(_ windowID: xcb_window_t, _ x: Int16, _ y: Int16, _ w: UInt16, _ h: UInt16) {
+    func configureWindowById(
+        _ windowID: xcb_window_t, _ x: Int16, _ y: Int16, _ w: UInt16, _ h: UInt16
+    ) {
         guard let surface = windowMap[windowID] else { return }
         configureWindow(surface, x, y, w, h)
     }
@@ -666,7 +708,8 @@ private func xwmLog(_ s: String) {
     // ── ClientMessage senders ────────────────────────────────────────────────────
 
     private func sendClientMessage32(
-        _ window: xcb_window_t, type: xcb_atom_t, _ d0: UInt32, _ d1: UInt32, _ d2: UInt32, _ d3: UInt32
+        _ window: xcb_window_t, type: xcb_atom_t, _ d0: UInt32, _ d1: UInt32, _ d2: UInt32,
+        _ d3: UInt32
     ) {
         var ev = xcb_client_message_event_t()
         ev.response_type = UInt8(XCB_CLIENT_MESSAGE)
@@ -706,13 +749,16 @@ private func xwmLog(_ s: String) {
 
     /// Promote a paired X11 window + router surface (by object id) to a model Window.
     private func associateRouter(_ surface: XwaylandSurface, _ surfaceObjectId: UInt64) {
-        let handle = driver?.createWindow(
-            surfaceObjectId: UInt32(truncatingIfNeeded: surfaceObjectId),
-            x11WindowID: UInt64(surface.windowID), overrideRedirect: surface.overrideRedirect,
-            x: Int32(surface.x), y: Int32(surface.y),
-            w: UInt32(max(1, Int(surface.width))), h: UInt32(max(1, Int(surface.height)))) ?? 0
+        let handle =
+            driver?.createWindow(
+                surfaceObjectId: UInt32(truncatingIfNeeded: surfaceObjectId),
+                x11WindowID: UInt64(surface.windowID), overrideRedirect: surface.overrideRedirect,
+                x: Int32(surface.x), y: Int32(surface.y),
+                w: UInt32(max(1, Int(surface.width))), h: UInt32(max(1, Int(surface.height)))) ?? 0
         guard handle != 0 else {
-            xwmLog("router xwayland window creation failed for win=0x\(String(surface.windowID, radix: 16))")
+            xwmLog(
+                "router xwayland window creation failed for win=0x\(String(surface.windowID, radix: 16))"
+            )
             return
         }
         surface.routerWindowID = handle
@@ -746,7 +792,8 @@ private func xwmLog(_ s: String) {
         let wm = host.windowManager
         if let title = surface.title { wm.xwaylandSetTitle(windowID: windowID, title: title) }
         if let cls = surface.className {
-            wm.xwaylandSetClass(windowID: windowID, windowClass: cls, instance: surface.instance ?? "")
+            wm.xwaylandSetClass(
+                windowID: windowID, windowClass: cls, instance: surface.instance ?? "")
         }
         wm.xwaylandApplyMetadata(
             windowID: windowID,
@@ -766,7 +813,9 @@ private func xwmLog(_ s: String) {
 
     // ── small property helpers ───────────────────────────────────────────────────
 
-    private func changeProperty8(window: xcb_window_t, property: xcb_atom_t, type: xcb_atom_t, bytes: [UInt8]) {
+    private func changeProperty8(
+        window: xcb_window_t, property: xcb_atom_t, type: xcb_atom_t, bytes: [UInt8]
+    ) {
         bytes.withUnsafeBytes { raw in
             _ = unsafe xcb_change_property(
                 conn, UInt8(XCB_PROP_MODE_REPLACE.rawValue), window, property, type, 8,
@@ -774,7 +823,9 @@ private func xwmLog(_ s: String) {
         }
     }
 
-    private func writeCardinals(_ window: xcb_window_t, _ property: xcb_atom_t, _ type: xcb_atom_t, _ values: [UInt32]) {
+    private func writeCardinals(
+        _ window: xcb_window_t, _ property: xcb_atom_t, _ type: xcb_atom_t, _ values: [UInt32]
+    ) {
         values.withUnsafeBytes { raw in
             _ = unsafe xcb_change_property(
                 conn, UInt8(XCB_PROP_MODE_REPLACE.rawValue), window, property, type, 32,

@@ -75,20 +75,21 @@ final class SeatSerialLedger {
     func invalidate(kind: SeatSerialKind, clientKey: WaylandClientID? = nil) {
         let rejected = Set<SeatInputSerial>(
             records.values.compactMap { record -> SeatInputSerial? in
-            guard record.kind == kind,
-                clientKey == nil || record.clientKey == clientKey
-            else { return nil }
-            return record.serial
-        })
+                guard record.kind == kind,
+                    clientKey == nil || record.clientKey == clientKey
+                else { return nil }
+                return record.serial
+            })
         guard !rejected.isEmpty else { return }
         for serial in rejected { records[serial] = nil }
         order.removeAll { rejected.contains($0) }
     }
 
     func invalidate(clientKey: WaylandClientID) {
-        let rejected = Set<SeatInputSerial>(records.values.compactMap {
-            $0.clientKey == clientKey ? $0.serial : nil
-        })
+        let rejected = Set<SeatInputSerial>(
+            records.values.compactMap {
+                $0.clientKey == clientKey ? $0.serial : nil
+            })
         for serial in rejected { records[serial] = nil }
         order.removeAll { rejected.contains($0) }
     }

@@ -1,3 +1,5 @@
+public import NucleusTypes
+
 public enum ScrollAxis: Sendable, Equatable {
     case horizontal
     case vertical
@@ -45,13 +47,16 @@ public final class ScrollIndicator: View, ~Sendable {
 
     public override func handleEvent(_ event: Event) -> EventHandling {
         let coordinate = axis == .vertical ? event.location.y : event.location.x
-        let thumbOrigin = axis == .vertical
+        let thumbOrigin =
+            axis == .vertical
             ? thumbRect.origin.y
             : thumbRect.origin.x
-        let thumbLength = axis == .vertical
+        let thumbLength =
+            axis == .vertical
             ? thumbRect.size.height
             : thumbRect.size.width
-        let trackLength = axis == .vertical
+        let trackLength =
+            axis == .vertical
             ? bounds.size.height
             : bounds.size.width
 
@@ -68,7 +73,8 @@ public final class ScrollIndicator: View, ~Sendable {
         case .pointerDragged:
             guard let dragAnchor else { return .notHandled }
             let travel = max(0, trackLength - thumbLength)
-            let progress = travel > 0
+            let progress =
+                travel > 0
                 ? min(max(0, (coordinate - dragAnchor) / travel), 1)
                 : 0
             onDragProgress?(progress)

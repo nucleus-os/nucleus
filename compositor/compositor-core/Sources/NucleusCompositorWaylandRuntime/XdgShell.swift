@@ -14,10 +14,10 @@
 // model a request mutates — is the XdgShellDelegate seam, wired to WindowManager /
 // ConfigurePolicy by the production router.
 
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
 internal import NucleusCompositorWindowManager
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 // MARK: - WindowManager / ConfigurePolicy / PopupPolicy seam
 
@@ -114,8 +114,7 @@ protocol XdgShellDelegate: AnyObject {
 @safe final class XdgShell {
     weak var delegate: (any XdgShellDelegate)?
     private let display: WaylandDisplay
-    private var popupStacks:
-        [WaylandClientID: WeakObjectList<XdgPopup>] = [:]
+    private var popupStacks: [WaylandClientID: WeakObjectList<XdgPopup>] = [:]
     private var toplevels = WeakObjectList<XdgToplevel>()
     private var nextToplevelRawID: UInt64 = 1
 
@@ -203,7 +202,8 @@ protocol XdgShellDelegate: AnyObject {
     /// direct child is reparented to the disappearing toplevel's own mapped
     /// parent, exactly as xdg-shell specifies.
     func toplevelDidUnmap(_ toplevel: XdgToplevel) {
-        let replacement = toplevel.protocolParent?.isMapped == true
+        let replacement =
+            toplevel.protocolParent?.isMapped == true
             ? toplevel.protocolParent
             : nil
         for child in toplevels.liveValues()

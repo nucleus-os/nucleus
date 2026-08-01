@@ -1,9 +1,10 @@
-import VulkanC
 import Vulkan
+import VulkanC
 
 /// The per-frame outcome exposed to platform adapters.
-public enum SwapchainStatus: Sendable {
-    case none, noSurface, invalidSurface, recreated, acquireFailed, renderFailed, presentFailed, posted
+package enum SwapchainStatus: Sendable {
+    case none, noSurface, invalidSurface, recreated, acquireFailed, renderFailed, presentFailed,
+        posted
 }
 
 /// Generic Vulkan WSI backend shared by Android and the Wayland client shell.
@@ -17,8 +18,8 @@ public enum SwapchainStatus: Sendable {
 @MainActor
 /// Main-actor isolation serializes every handle access. The presenter owns all
 /// synchronization objects and generations until their completion fences signal.
-@safe public final class SwapchainPresenter: PresentationBackend {
-    public let outputID: UInt64
+@safe package final class SwapchainPresenter: PresentationBackend {
+    package let outputID: UInt64
 
     /// Graphite requires input-attachment usage on every Vulkan color render
     /// target in addition to ordinary color-attachment usage.
@@ -89,11 +90,11 @@ public enum SwapchainStatus: Sendable {
     private var hasAlpha = false
     private var didTeardown = false
 
-    public private(set) var lastStatus: SwapchainStatus = .none
-    public private(set) var lastExtentWidth: Int32 = 0
-    public private(set) var lastExtentHeight: Int32 = 0
+    package private(set) var lastStatus: SwapchainStatus = .none
+    package private(set) var lastExtentWidth: Int32 = 0
+    package private(set) var lastExtentHeight: Int32 = 0
 
-    public init?(
+    package init?(
         core: RenderCore, outputID: UInt64 = 1,
         surface: VulkanSurface
     ) {
@@ -116,7 +117,7 @@ public enum SwapchainStatus: Sendable {
 
     isolated deinit { teardown() }
 
-    public func teardown() {
+    package func teardown() {
         guard !didTeardown else { return }
         didTeardown = true
 
@@ -139,7 +140,7 @@ public enum SwapchainStatus: Sendable {
 
     private func createFrameSlots(count: Int) -> Bool {
         guard let createSemaphore = unsafe deviceDispatch.vkCreateSemaphore,
-              let createFence = unsafe deviceDispatch.vkCreateFence
+            let createFence = unsafe deviceDispatch.vkCreateFence
         else { return false }
         var semaphoreInfo = unsafe VkSemaphoreCreateInfo()
         unsafe semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
@@ -151,9 +152,9 @@ public enum SwapchainStatus: Sendable {
             var semaphore: VkSemaphore? = nil
             var fence: VkFence? = nil
             guard unsafe createSemaphore(device, &semaphoreInfo, nil, &semaphore) == VK_SUCCESS,
-                  let semaphore = unsafe semaphore,
-                  unsafe createFence(device, &fenceInfo, nil, &fence) == VK_SUCCESS,
-                  let fence = unsafe fence
+                let semaphore = unsafe semaphore,
+                unsafe createFence(device, &fenceInfo, nil, &fence) == VK_SUCCESS,
+                let fence = unsafe fence
             else {
                 if let semaphore = unsafe semaphore {
                     unsafe deviceDispatch.vkDestroySemaphore?(device, semaphore, nil)
@@ -177,27 +178,36 @@ public enum SwapchainStatus: Sendable {
     }
 
     @discardableResult
-    public func configure(
+    package func configure(
         width: Int32, height: Int32, hasAlpha: Bool
     ) -> Bool {
         self.hasAlpha = hasAlpha
-        guard unsafe surface != nil else { lastStatus = .noSurface; return false }
+        guard unsafe surface != nil else {
+            lastStatus = .noSurface
+            return false
+        }
         return createSwapchain(width: width, height: height)
     }
 
     private func createSwapchain(width: Int32, height: Int32) -> Bool {
         guard acquired == nil, let surface = unsafe surface,
-              let getCaps = unsafe instanceDispatch.vkGetPhysicalDeviceSurfaceCapabilitiesKHR,
-              let getFormats = unsafe instanceDispatch.vkGetPhysicalDeviceSurfaceFormatsKHR,
-              let getSupport = unsafe instanceDispatch.vkGetPhysicalDeviceSurfaceSupportKHR,
-              let createSwapchain = unsafe deviceDispatch.vkCreateSwapchainKHR,
-              let getImages = unsafe deviceDispatch.vkGetSwapchainImagesKHR
-        else { lastStatus = .invalidSurface; return false }
+            let getCaps = unsafe instanceDispatch.vkGetPhysicalDeviceSurfaceCapabilitiesKHR,
+            let getFormats = unsafe instanceDispatch.vkGetPhysicalDeviceSurfaceFormatsKHR,
+            let getSupport = unsafe instanceDispatch.vkGetPhysicalDeviceSurfaceSupportKHR,
+            let createSwapchain = unsafe deviceDispatch.vkCreateSwapchainKHR,
+            let getImages = unsafe deviceDispatch.vkGetSwapchainImagesKHR
+        else {
+            lastStatus = .invalidSurface
+            return false
+        }
 
         var supported: VkBool32 = 0
         guard unsafe getSupport(physicalDevice, queueFamily, surface, &supported) == VK_SUCCESS,
-              supported != 0
-        else { lastStatus = .invalidSurface; return false }
+            supported != 0
+        else {
+            lastStatus = .invalidSurface
+            return false
+        }
 
         var caps = VkSurfaceCapabilitiesKHR()
         guard unsafe getCaps(physicalDevice, surface, &caps) == VK_SUCCESS else {
@@ -206,24 +216,32 @@ public enum SwapchainStatus: Sendable {
         }
         var formatCount: UInt32 = 0
         guard unsafe getFormats(physicalDevice, surface, &formatCount, nil) == VK_SUCCESS,
-              formatCount > 0
-        else { lastStatus = .invalidSurface; return false }
-        var formats = [VkSurfaceFormatKHR](repeating: VkSurfaceFormatKHR(), count: Int(formatCount))
-        guard unsafe getFormats(physicalDevice, surface, &formatCount, &formats) == VK_SUCCESS else {
+            formatCount > 0
+        else {
             lastStatus = .invalidSurface
             return false
         }
-        let newFormat = formats.first {
-            $0.format == VK_FORMAT_B8G8R8A8_UNORM && $0.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
-        } ?? formats[0]
+        var formats = [VkSurfaceFormatKHR](repeating: VkSurfaceFormatKHR(), count: Int(formatCount))
+        guard unsafe getFormats(physicalDevice, surface, &formatCount, &formats) == VK_SUCCESS
+        else {
+            lastStatus = .invalidSurface
+            return false
+        }
+        let newFormat =
+            formats.first {
+                $0.format == VK_FORMAT_B8G8R8A8_UNORM
+                    && $0.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
+            } ?? formats[0]
 
         let newExtent: VkExtent2D
         if caps.currentExtent.width != UInt32.max {
             newExtent = caps.currentExtent
         } else {
             newExtent = VkExtent2D(
-                width: clampU32(UInt32(max(0, width)), caps.minImageExtent.width, caps.maxImageExtent.width),
-                height: clampU32(UInt32(max(0, height)), caps.minImageExtent.height, caps.maxImageExtent.height))
+                width: clampU32(
+                    UInt32(max(0, width)), caps.minImageExtent.width, caps.maxImageExtent.width),
+                height: clampU32(
+                    UInt32(max(0, height)), caps.minImageExtent.height, caps.maxImageExtent.height))
         }
         var imageCount = caps.minImageCount + 1
         if caps.maxImageCount > 0 { imageCount = min(imageCount, caps.maxImageCount) }
@@ -233,8 +251,10 @@ public enum SwapchainStatus: Sendable {
             return false
         }
 
-        let wantPremultiplied = hasAlpha
-            && (caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR.rawValue) != 0
+        let wantPremultiplied =
+            hasAlpha
+            && (caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR.rawValue)
+                != 0
         var info = unsafe VkSwapchainCreateInfoKHR()
         unsafe info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR
         unsafe info.surface = surface
@@ -246,7 +266,8 @@ public enum SwapchainStatus: Sendable {
         unsafe info.imageUsage = requiredUsage
         unsafe info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE
         unsafe info.preTransform = caps.currentTransform
-        unsafe info.compositeAlpha = wantPremultiplied
+        unsafe info.compositeAlpha =
+            wantPremultiplied
             ? VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR : VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
         unsafe info.presentMode = VK_PRESENT_MODE_FIFO_KHR
         unsafe info.clipped = 1
@@ -254,7 +275,7 @@ public enum SwapchainStatus: Sendable {
 
         var handle: VkSwapchainKHR? = nil
         guard unsafe createSwapchain(device, &info, nil, &handle) == VK_SUCCESS,
-              let handle = unsafe handle
+            let handle = unsafe handle
         else {
             lastStatus = .invalidSurface
             return false
@@ -279,10 +300,12 @@ public enum SwapchainStatus: Sendable {
         swapchain: VkSwapchainKHR, getImages: PFN_vkGetSwapchainImagesKHR
     ) -> Generation? {
         guard let createSemaphore = unsafe deviceDispatch.vkCreateSemaphore,
-              let createFence = unsafe deviceDispatch.vkCreateFence
+            let createFence = unsafe deviceDispatch.vkCreateFence
         else { return nil }
         var count: UInt32 = 0
-        guard unsafe getImages(device, swapchain, &count, nil) == VK_SUCCESS, count > 0 else { return nil }
+        guard unsafe getImages(device, swapchain, &count, nil) == VK_SUCCESS, count > 0 else {
+            return nil
+        }
         var images = unsafe [VkImage?](repeating: nil, count: Int(count))
         guard unsafe getImages(device, swapchain, &count, &images) == VK_SUCCESS else { return nil }
 
@@ -297,9 +320,9 @@ public enum SwapchainStatus: Sendable {
             var semaphore: VkSemaphore? = nil
             var fence: VkFence? = nil
             guard unsafe createSemaphore(device, &semaphoreInfo, nil, &semaphore) == VK_SUCCESS,
-                  let semaphore = unsafe semaphore,
-                  unsafe createFence(device, &fenceInfo, nil, &fence) == VK_SUCCESS,
-                  let fence = unsafe fence
+                let semaphore = unsafe semaphore,
+                unsafe createFence(device, &fenceInfo, nil, &fence) == VK_SUCCESS,
+                let fence = unsafe fence
             else {
                 if let semaphore = unsafe semaphore {
                     unsafe deviceDispatch.vkDestroySemaphore?(device, semaphore, nil)
@@ -323,23 +346,23 @@ public enum SwapchainStatus: Sendable {
             presentSemaphores: semaphores, presentFences: fences)
     }
 
-    public func presentableOutputIDs() -> [UInt64] {
+    package func presentableOutputIDs() -> [UInt64] {
         unsafe surface != nil && activeGeneration != nil ? [outputID] : []
     }
 
-    public func isReadyToPresent(_ outputID: UInt64) -> Bool {
+    package func isReadyToPresent(_ outputID: UInt64) -> Bool {
         guard outputID == self.outputID, acquired == nil, activeGeneration != nil,
-              !frameSlots.isEmpty, let getFenceStatus = unsafe deviceDispatch.vkGetFenceStatus
+            !frameSlots.isEmpty, let getFenceStatus = unsafe deviceDispatch.vkGetFenceStatus
         else { return false }
         let slot = frameSlots[nextFrameSlot]
         return unsafe !slot.inFlight || getFenceStatus(device, slot.completionFence) == VK_SUCCESS
     }
 
-    public func acquireTarget(_ outputID: UInt64) -> AcquiredFrameTarget? {
+    package func acquireTarget(_ outputID: UInt64) -> AcquiredFrameTarget? {
         guard outputID == self.outputID, acquired == nil,
-              let generation = activeGeneration,
-              let acquireNextImage = unsafe deviceDispatch.vkAcquireNextImageKHR,
-              isReadyToPresent(outputID)
+            let generation = activeGeneration,
+            let acquireNextImage = unsafe deviceDispatch.vkAcquireNextImageKHR,
+            isReadyToPresent(outputID)
         else { return nil }
         collectRetiredGenerations()
 
@@ -358,15 +381,22 @@ public enum SwapchainStatus: Sendable {
             return nil
         }
         guard result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR,
-              unsafe Int(imageIndex) < generation.images.count,
-              let image = unsafe generation.images[Int(imageIndex)],
-              let resetFences = unsafe deviceDispatch.vkResetFences
-        else { lastStatus = .acquireFailed; return nil }
+            unsafe Int(imageIndex) < generation.images.count,
+            let image = unsafe generation.images[Int(imageIndex)],
+            let resetFences = unsafe deviceDispatch.vkResetFences
+        else {
+            lastStatus = .acquireFailed
+            return nil
+        }
 
         var completionFence: VkFence? = unsafe slot.completionFence
-        guard withUnsafePointer(to: &completionFence, {
-            unsafe resetFences(device, 1, $0) == VK_SUCCESS
-        }) else {
+        guard
+            withUnsafePointer(
+                to: &completionFence,
+                {
+                    unsafe resetFences(device, 1, $0) == VK_SUCCESS
+                })
+        else {
             releaseImage(generation: generation, imageIndex: imageIndex)
             lastStatus = .acquireFailed
             return nil
@@ -388,9 +418,9 @@ public enum SwapchainStatus: Sendable {
             signalSemaphore: generation.presentSemaphores[Int(imageIndex)])
     }
 
-    public func didSubmitTarget(_ outputID: UInt64) -> Bool {
+    package func didSubmitTarget(_ outputID: UInt64) -> Bool {
         guard outputID == self.outputID, var acquired,
-              let submit = unsafe deviceDispatch.vkQueueSubmit
+            let submit = unsafe deviceDispatch.vkQueueSubmit
         else { return false }
         let slot = frameSlots[acquired.slotIndex]
         acquired.rendererSubmitted = true
@@ -404,10 +434,13 @@ public enum SwapchainStatus: Sendable {
         return true
     }
 
-    public func present(_ outputID: UInt64) -> Bool {
+    package func present(_ outputID: UInt64) -> Bool {
         guard outputID == self.outputID, let acquired, acquired.completionEnqueued,
-              let present = unsafe deviceDispatch.vkQueuePresentKHR
-        else { lastStatus = .presentFailed; return false }
+            let present = unsafe deviceDispatch.vkQueuePresentKHR
+        else {
+            lastStatus = .presentFailed
+            return false
+        }
         self.acquired = nil
 
         let generation = acquired.generation
@@ -423,9 +456,12 @@ public enum SwapchainStatus: Sendable {
         }
         var presentFenceOptional: VkFence? = unsafe presentFence
         guard let resetFences = unsafe deviceDispatch.vkResetFences,
-              withUnsafePointer(to: &presentFenceOptional, {
-            unsafe resetFences(device, 1, $0) == VK_SUCCESS
-        }) else {
+            withUnsafePointer(
+                to: &presentFenceOptional,
+                {
+                    unsafe resetFences(device, 1, $0) == VK_SUCCESS
+                })
+        else {
             unsafe waitForFence(frameSlots[acquired.slotIndex].completionFence)
             releaseImage(generation: generation, imageIndex: acquired.imageIndex)
             lastStatus = .presentFailed
@@ -482,7 +518,7 @@ public enum SwapchainStatus: Sendable {
         return true
     }
 
-    public func discardAcquiredTarget(_ outputID: UInt64) {
+    package func discardAcquiredTarget(_ outputID: UInt64) {
         guard outputID == self.outputID, let acquired else { return }
         self.acquired = nil
         let slot = frameSlots[acquired.slotIndex]
@@ -510,15 +546,18 @@ public enum SwapchainStatus: Sendable {
                     return unsafe submit(queue, 1, &info, slot.completionFence) == VK_SUCCESS
                 }
             }
-            guard submitted else { lastStatus = .renderFailed; return }
+            guard submitted else {
+                lastStatus = .renderFailed
+                return
+            }
         }
         if slot.inFlight { unsafe waitForFence(slot.completionFence) }
         releaseImage(generation: acquired.generation, imageIndex: acquired.imageIndex)
     }
 
-    public func didPresentFrame() { collectRetiredGenerations() }
-    public func pauseSession() {}
-    public func resumeSession() {}
+    package func didPresentFrame() { collectRetiredGenerations() }
+    package func pauseSession() {}
+    package func resumeSession() {}
 
     private func releaseImage(generation: Generation, imageIndex: UInt32) {
         guard let release = unsafe deviceDispatch.vkReleaseSwapchainImagesKHR else {
@@ -565,8 +604,7 @@ public enum SwapchainStatus: Sendable {
 
     private func waitForPresentations(_ generation: Generation) {
         for index in unsafe generation.presentFences.indices
-        where generation.presentFenceArmed[index]
-        {
+        where generation.presentFenceArmed[index] {
             unsafe waitForFence(generation.presentFences[index])
         }
     }

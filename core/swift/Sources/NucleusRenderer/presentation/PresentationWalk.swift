@@ -9,6 +9,8 @@
 // handles are the content's own id within its role's space; the renderer resolves
 
 internal import NucleusRenderModel
+
+internal import struct NucleusTypes.Color
 internal import struct NucleusTypes.Rect
 
 enum PresentationWalk {
@@ -34,9 +36,10 @@ enum PresentationWalk {
         for rootContext in rootContexts {
             guard !contextStack.contains(rootContext) else { continue }
             contextStack.append(rootContext)
-            let entryRoots = rootLayerIDs?.filter {
-                tree.contains($0, in: rootContext)
-            } ?? tree.roots(for: rootContext)
+            let entryRoots =
+                rootLayerIDs?.filter {
+                    tree.contains($0, in: rootContext)
+                } ?? tree.roots(for: rootContext)
             for rootId in entryRoots {
                 walk(
                     tree, rootId, .identity, 1.0, .none, [], target, plan,
@@ -63,10 +66,12 @@ enum PresentationWalk {
     ) {
         guard let layer = tree.get(layerId) else { return }
         let layerOpacity = layer.effectiveOpacity()
-        guard let input = lowerLayerInput(
-            layerId: layerId, layer: layer, parentMatrix: parentMatrix,
-            parentOpacity: parentOpacity, parentClip: parentClip, layerOpacity: layerOpacity
-        ) else { return }
+        guard
+            let input = lowerLayerInput(
+                layerId: layerId, layer: layer, parentMatrix: parentMatrix,
+                parentOpacity: parentOpacity, parentClip: parentClip, layerOpacity: layerOpacity
+            )
+        else { return }
 
         if case .remoteHost(let targetContextId) = layer.kind {
             expandRemoteHost(
@@ -81,24 +86,29 @@ enum PresentationWalk {
         // authored directly into the root or a non-lock context is suppressed while
         // locked. Content inside an allowed lock context (entered through its host in
         // `expandRemoteHost`) still emits.
-        let emitting = lockContexts.map { $0.contains(contextStack.last ?? compositorContextId) } ?? true
+        let emitting =
+            lockContexts.map { $0.contains(contextStack.last ?? compositorContextId) } ?? true
 
         if emitting {
-            let footprint = computeLayerFootprint(LayerFootprintInput(
-                layer: input.layer, bounds: input.bounds,
-                layerRect: input.layerRect, clip: input.clip))
+            let footprint = computeLayerFootprint(
+                LayerFootprintInput(
+                    layer: input.layer, bounds: input.bounds,
+                    layerRect: input.layerRect, clip: input.clip))
             if let rect = footprint.physicalDamageRect(target) {
-                plan.recordLayerSnapshot(layerId, LayerFrameSnapshot(
-                    rect: rect,
-                    visualSignature: nativeLayerVisualSignature(input.layer, input.combinedOpacity),
-                    compositeSignature: nativeLayerCompositeSignature(
-                        input.layer,
-                        input.combinedOpacity),
-                    structural: input.layer.damage.flags.structure,
-                    contentDamaged: input.layer.damage.flags.content,
-                    localizedContentDamage: projectedContentDamage(
-                        input,
-                        target)))
+                plan.recordLayerSnapshot(
+                    layerId,
+                    LayerFrameSnapshot(
+                        rect: rect,
+                        visualSignature: nativeLayerVisualSignature(
+                            input.layer, input.combinedOpacity),
+                        compositeSignature: nativeLayerCompositeSignature(
+                            input.layer,
+                            input.combinedOpacity),
+                        structural: input.layer.damage.flags.structure,
+                        contentDamaged: input.layer.damage.flags.content,
+                        localizedContentDamage: projectedContentDamage(
+                            input,
+                            target)))
             }
         }
 
@@ -131,7 +141,9 @@ enum PresentationWalk {
         // content, drawn above, does not.
         let childMatrix = layerContentMatrix(input.worldMatrix, layer)
         for childId in layer.children {
-            walk(tree, childId, childMatrix, input.combinedOpacity, input.clip, childStack, target, plan, &contextStack, lockContexts)
+            walk(
+                tree, childId, childMatrix, input.combinedOpacity, input.clip, childStack, target,
+                plan, &contextStack, lockContexts)
         }
     }
 
@@ -165,7 +177,9 @@ enum PresentationWalk {
 
     /// The layer's visible footprint projected to target-physical pixels.
     private static func physicalRect(_ input: LayerInput, _ target: RenderTarget) -> PlanRect? {
-        guard let visible = input.visibleRect, visible.width > 0, visible.height > 0 else { return nil }
+        guard let visible = input.visibleRect, visible.width > 0, visible.height > 0 else {
+            return nil
+        }
         let frac = target.fractionalScale
         return PlanRect(
             x: Float(logicalToTargetPhysicalX(target, visible.x)),
@@ -175,7 +189,9 @@ enum PresentationWalk {
     }
 
     /// The rounded-clip mask for a layer's content (nil when no corner is rounded).
-    private static func maskRRect(_ input: LayerInput, _ dst: PlanRect, _ target: RenderTarget) -> RRectMask? {
+    private static func maskRRect(_ input: LayerInput, _ dst: PlanRect, _ target: RenderTarget)
+        -> RRectMask?
+    {
         let radii = input.layer.effectiveCornerRadii()
         if radii.0 == 0 && radii.1 == 0 && radii.2 == 0 && radii.3 == 0 { return nil }
         let s = Float(target.fractionalScale)
@@ -183,7 +199,9 @@ enum PresentationWalk {
     }
 
     /// Map the layer's content to a (role, texture handle); nil for `.none`.
-    private static func contentTexture(_ content: LayerContent) -> (role: TextureQuadRole, handle: TextureHandle)? {
+    private static func contentTexture(_ content: LayerContent) -> (
+        role: TextureQuadRole, handle: TextureHandle
+    )? {
         switch content {
         case .none: return nil
         case .paint(let h): return (.paint, TextureHandle(raw: h.raw))
@@ -210,14 +228,18 @@ enum PresentationWalk {
         guard let content = contentTexture(input.layer.presentedContent()) else { return }
         let sample = input.layer.presentation.contentSample
         if sample.srcSize.0 > 0, sample.srcSize.1 > 0,
-           sample.logicalSize.w > 0, sample.logicalSize.h > 0 {
-            let kind: TextureContentKind = content.role == .content ? .waylandExternal : .compositorExternal
-            var quad = lowerTextureQuad(target, input, TextureContent(
-                texture: content.handle, kind: kind, role: content.role,
-                srcOriginX: Double(sample.srcOrigin.0), srcOriginY: Double(sample.srcOrigin.1),
-                srcWidth: Double(sample.srcSize.0), srcHeight: Double(sample.srcSize.1),
-                logicalSize: sample.logicalSize,
-                opaqueFullSurface: sample.opaqueFullSurface))
+            sample.logicalSize.w > 0, sample.logicalSize.h > 0
+        {
+            let kind: TextureContentKind =
+                content.role == .content ? .waylandExternal : .compositorExternal
+            var quad = lowerTextureQuad(
+                target, input,
+                TextureContent(
+                    texture: content.handle, kind: kind, role: content.role,
+                    srcOriginX: Double(sample.srcOrigin.0), srcOriginY: Double(sample.srcOrigin.1),
+                    srcWidth: Double(sample.srcSize.0), srcHeight: Double(sample.srcSize.1),
+                    logicalSize: sample.logicalSize,
+                    opaqueFullSurface: sample.opaqueFullSurface))
             if content.role == .paint {
                 quad?.localPaintDamage = input.layer.damage.localContentRect
             }
@@ -227,15 +249,16 @@ enum PresentationWalk {
         }
 
         guard let dst = physicalRect(input, target) else { return }
-        plan.appendTextureQuad(TextureQuad(
-            layerId: input.layerId, role: content.role, texture: content.handle,
-            dst: dst, src: PlanRect(x: 0, y: 0, w: 0, h: 0),
-            alpha: input.combinedOpacity,
-            maskRRect: maskRRect(input, dst, target),
-            foregroundVibrancy: vibrancy(input.layer, vibrancyStack),
-            localPaintDamage: content.role == .paint
-                ? input.layer.damage.localContentRect
-                : nil))
+        plan.appendTextureQuad(
+            TextureQuad(
+                layerId: input.layerId, role: content.role, texture: content.handle,
+                dst: dst, src: PlanRect(x: 0, y: 0, w: 0, h: 0),
+                alpha: input.combinedOpacity,
+                maskRRect: maskRRect(input, dst, target),
+                foregroundVibrancy: vibrancy(input.layer, vibrancyStack),
+                localPaintDamage: content.role == .paint
+                    ? input.layer.damage.localContentRect
+                    : nil))
     }
 
     /// Project safe layer-local paint damage through the exact presentation
@@ -245,9 +268,9 @@ enum PresentationWalk {
         _ target: RenderTarget
     ) -> PhysicalRect? {
         guard input.layer.damage.flags.content,
-              let damage = input.layer.damage.localContentRect,
-              damage.w > 0,
-              damage.h > 0
+            let damage = input.layer.damage.localContentRect,
+            damage.w > 0,
+            damage.h > 0
         else {
             return nil
         }
@@ -279,21 +302,26 @@ enum PresentationWalk {
         guard let region = physicalRect(input, target) else { return }
         let radii = input.layer.effectiveCornerRadii()
         let s = Float(target.fractionalScale)
-        let shape: EffectShape = (radii.0 == 0 && radii.1 == 0 && radii.2 == 0 && radii.3 == 0)
+        let shape: EffectShape =
+            (radii.0 == 0 && radii.1 == 0 && radii.2 == 0 && radii.3 == 0)
             ? .rect((region.x, region.y, region.w, region.h))
-            : .rrect(rect: (region.x, region.y, region.w, region.h),
-                     radii: (radii.0 * s, radii.1 * s, radii.2 * s, radii.3 * s))
-        plan.appendBackdropExecSpec(ExecSpec(
-            layerId: input.layerId,
-            groupId: groupId,
-            blendingMode: attachment.blendingMode,
-            region: region,
-            shape: shape,
-            mask: attachment.mask,
-            tintRgba: (attachment.tint.r, attachment.tint.g, attachment.tint.b, attachment.tint.a),
-            tintBlend: attachment.tint.a,
-            alpha: attachment.opacity * input.combinedOpacity,
-            foregroundVariant: attachment.appearance == .dark ? .dark : .light))
+            : .rrect(
+                rect: (region.x, region.y, region.w, region.h),
+                radii: (radii.0 * s, radii.1 * s, radii.2 * s, radii.3 * s))
+        plan.appendBackdropExecSpec(
+            ExecSpec(
+                layerId: input.layerId,
+                groupId: groupId,
+                blendingMode: attachment.blendingMode,
+                region: region,
+                shape: shape,
+                mask: attachment.mask,
+                tintRgba: (
+                    attachment.tint.r, attachment.tint.g, attachment.tint.b, attachment.tint.a
+                ),
+                tintBlend: attachment.tint.a,
+                alpha: attachment.opacity * input.combinedOpacity,
+                foregroundVariant: attachment.appearance == .dark ? .dark : .light))
     }
 
     private static func emitSurfaceBackgroundEffect(
@@ -321,27 +349,30 @@ enum PresentationWalk {
                 x: Double(mapped.x), y: Double(mapped.y),
                 width: Double(mapped.w), height: Double(mapped.h))
             guard let visible = clipLayerRect(input.clip, logical),
-                  visible.width > 0, visible.height > 0 else { continue }
+                visible.width > 0, visible.height > 0
+            else { continue }
             let physical = PlanRect(
                 x: Float(logicalToTargetPhysicalX(target, visible.x)),
                 y: Float(logicalToTargetPhysicalY(target, visible.y)),
                 w: Float(visible.width * scale), h: Float(visible.height * scale))
             let effectLayerId = surfaceBackdropLayerId(
                 input.layerId, .kdeSurface, UInt32(index))
-            plan.appendBackdropExecSpec(ExecSpec(
-                layerId: effectLayerId,
-                groupId: effectLayerId,
-                region: physical,
-                shape: .rect((physical.x, physical.y, physical.w, physical.h)),
-                mask: .none,
-                alpha: input.combinedOpacity))
+            plan.appendBackdropExecSpec(
+                ExecSpec(
+                    layerId: effectLayerId,
+                    groupId: effectLayerId,
+                    region: physical,
+                    shape: .rect((physical.x, physical.y, physical.w, physical.h)),
+                    mask: .none,
+                    alpha: input.combinedOpacity))
         }
     }
 
     private static func emitShadow(_ input: LayerInput, _ target: RenderTarget, _ plan: FramePlan) {
         guard let shadow = input.layer.model.visualStyle?.shadow,
-              shadow.color.a > 0,
-              let dst = physicalRect(input, target) else { return }
+            shadow.color.a > 0,
+            let dst = physicalRect(input, target)
+        else { return }
         let s = Float(target.fractionalScale)
         let spread = max(0, shadow.spreadRadius * s)
         let sigma = max(0, shadow.blurRadius * 0.5 * s)
@@ -362,48 +393,59 @@ enum PresentationWalk {
         } else {
             radii = (
                 max(0, styleRadii.0 * s + spread), max(0, styleRadii.1 * s + spread),
-                max(0, styleRadii.2 * s + spread), max(0, styleRadii.3 * s + spread))
+                max(0, styleRadii.2 * s + spread), max(0, styleRadii.3 * s + spread)
+            )
         }
-        plan.appendShadowQuad(ShadowQuad(
-            texture: nil,
-            material: ShadowMaterial(
-                layerId: input.layerId, revision: input.layer.model.visualRevision,
-                rasterWidth: rasterWidth, rasterHeight: rasterHeight,
-                shapeRect: PlanRect(x: padding, y: padding, w: shapeWidth, h: shapeHeight),
-                cornerRadii: radii, blurSigma: sigma, color: shadow.color),
-            dst: expanded,
-            src: PlanRect(x: 0, y: 0, w: Float(rasterWidth), h: Float(rasterHeight)),
-            alpha: input.combinedOpacity))
+        plan.appendShadowQuad(
+            ShadowQuad(
+                texture: nil,
+                material: ShadowMaterial(
+                    layerId: input.layerId, revision: input.layer.model.visualRevision,
+                    rasterWidth: rasterWidth, rasterHeight: rasterHeight,
+                    shapeRect: PlanRect(x: padding, y: padding, w: shapeWidth, h: shapeHeight),
+                    cornerRadii: radii, blurSigma: sigma, color: float4(shadow.color)),
+                dst: expanded,
+                src: PlanRect(x: 0, y: 0, w: Float(rasterWidth), h: Float(rasterHeight)),
+                alpha: input.combinedOpacity))
     }
 
     private static func emitVisualStyle(
         _ input: LayerInput, _ target: RenderTarget, _ plan: FramePlan
     ) {
         guard let style = input.layer.model.visualStyle,
-              let dst = physicalRect(input, target) else { return }
-        let visible = style.backgroundColor.a > 0 ||
-            (style.borderTop.width > 0 && style.borderTop.color.a > 0) ||
-            (style.borderRight.width > 0 && style.borderRight.color.a > 0) ||
-            (style.borderBottom.width > 0 && style.borderBottom.color.a > 0) ||
-            (style.borderLeft.width > 0 && style.borderLeft.color.a > 0)
+            let dst = physicalRect(input, target)
+        else { return }
+        let visible =
+            style.backgroundColor.a > 0
+            || (style.borderTop.width > 0 && style.borderTop.color.a > 0)
+            || (style.borderRight.width > 0 && style.borderRight.color.a > 0)
+            || (style.borderBottom.width > 0 && style.borderBottom.color.a > 0)
+            || (style.borderLeft.width > 0 && style.borderLeft.color.a > 0)
         guard visible else { return }
         let scale = Float(target.fractionalScale)
         let radii = input.layer.effectiveCornerRadii()
-        plan.appendVisualStyle(VisualStyleQuad(
-            dst: dst,
-            backgroundColor: style.backgroundColor,
-            borderWidths: (
-                max(0, style.borderTop.width * scale),
-                max(0, style.borderRight.width * scale),
-                max(0, style.borderBottom.width * scale),
-                max(0, style.borderLeft.width * scale)),
-            borderTopColor: style.borderTop.color,
-            borderRightColor: style.borderRight.color,
-            borderBottomColor: style.borderBottom.color,
-            borderLeftColor: style.borderLeft.color,
-            cornerRadii: (
-                max(0, radii.0 * scale), max(0, radii.1 * scale),
-                max(0, radii.2 * scale), max(0, radii.3 * scale)),
-            alpha: input.combinedOpacity))
+        plan.appendVisualStyle(
+            VisualStyleQuad(
+                dst: dst,
+                backgroundColor: float4(style.backgroundColor),
+                borderWidths: (
+                    max(0, style.borderTop.width * scale),
+                    max(0, style.borderRight.width * scale),
+                    max(0, style.borderBottom.width * scale),
+                    max(0, style.borderLeft.width * scale)
+                ),
+                borderTopColor: float4(style.borderTop.color),
+                borderRightColor: float4(style.borderRight.color),
+                borderBottomColor: float4(style.borderBottom.color),
+                borderLeftColor: float4(style.borderLeft.color),
+                cornerRadii: (
+                    max(0, radii.0 * scale), max(0, radii.1 * scale),
+                    max(0, radii.2 * scale), max(0, radii.3 * scale)
+                ),
+                alpha: input.combinedOpacity))
+    }
+
+    private static func float4(_ color: Color) -> Float4 {
+        (color.r, color.g, color.b, color.a)
     }
 }

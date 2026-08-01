@@ -47,12 +47,13 @@ struct XkbRules: Equatable, Sendable {
                 try unsafe withOptionalCString(layout) { layout in
                     try unsafe withOptionalCString(variant) { variant in
                         try unsafe withOptionalCString(options) { options in
-                            try unsafe body(xkb_rule_names(
-                                rules: rules,
-                                model: model,
-                                layout: layout,
-                                variant: variant,
-                                options: options))
+                            try unsafe body(
+                                xkb_rule_names(
+                                    rules: rules,
+                                    model: model,
+                                    layout: layout,
+                                    variant: variant,
+                                    options: options))
                         }
                     }
                 }
@@ -108,13 +109,14 @@ private func withOptionalCString<R>(
 
     init?(rules: XkbRules) {
         guard let ctx = unsafe xkb_context_new(XKB_CONTEXT_NO_FLAGS) else { return nil }
-        guard let km = unsafe rules.withNativeNames({ names in
-            withUnsafePointer(to: names) { pointer in
-                unsafe xkb_keymap_new_from_names(
-                    ctx, rules.isEmpty ? nil : pointer,
-                    XKB_KEYMAP_COMPILE_NO_FLAGS)
-            }
-        })
+        guard
+            let km = unsafe rules.withNativeNames({ names in
+                withUnsafePointer(to: names) { pointer in
+                    unsafe xkb_keymap_new_from_names(
+                        ctx, rules.isEmpty ? nil : pointer,
+                        XKB_KEYMAP_COMPILE_NO_FLAGS)
+                }
+            })
         else {
             unsafe xkb_context_unref(ctx)
             return nil
@@ -140,8 +142,9 @@ private func withOptionalCString<R>(
     /// (the wl_keyboard.keymap contract). Best-effort: a missing string leaves the
     /// fd at -1 and clients simply do not receive a keymap.
     private func buildKeymapMemfd() {
-        guard let cstr = unsafe xkb_keymap_get_as_string(
-            keymap, XKB_KEYMAP_FORMAT_TEXT_V1)
+        guard
+            let cstr = unsafe xkb_keymap_get_as_string(
+                keymap, XKB_KEYMAP_FORMAT_TEXT_V1)
         else { return }
         defer { unsafe free(cstr) }
         let byteCount = unsafe strlen(cstr) + 1
@@ -279,13 +282,14 @@ private func withOptionalCString<R>(
             unsafe xkb_state_key_get_utf8(
                 state, xkbKeycode, out.baseAddress, out.count)
         }
-        let text = String(decoding: buffer.prefix(Int(needed)).map { UInt8(bitPattern: $0) },
-                          as: UTF8.self)
+        let text = String(
+            decoding: buffer.prefix(Int(needed)).map { UInt8(bitPattern: $0) },
+            as: UTF8.self)
         // Control characters are key *actions*, not text: Return, Escape, and
         // Backspace all produce one, and inserting it would put a control
         // character into a text field.
         guard let scalar = text.unicodeScalars.first,
-              text.unicodeScalars.count > 1 || !(scalar.value < 0x20 || scalar.value == 0x7F)
+            text.unicodeScalars.count > 1 || !(scalar.value < 0x20 || scalar.value == 0x7F)
         else { return nil }
         return text
     }

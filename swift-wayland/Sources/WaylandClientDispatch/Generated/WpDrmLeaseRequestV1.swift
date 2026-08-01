@@ -2,22 +2,29 @@
 // Typed client descriptor and event dispatch for wp_drm_lease_request_v1.
 
 import WaylandClientC
-public enum WpDrmLeaseRequestV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum WpDrmLeaseRequestV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_drm_lease_request_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == WpDrmLeaseRequestV1Client {
-    func requestConnector(connector: WaylandProxy<WpDrmLeaseConnectorV1Client>) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpDrmLeaseRequestV1Client {
+    package func requestConnector(connector: WaylandProxy<WpDrmLeaseConnectorV1Client>)
+        throws(WaylandProxyError)
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _connectorProxy = try unsafe connector.requireNativeProxy()
-        unsafe swift_wayland_client_request_wp_drm_lease_request_v1_request_connector(_proxy, _connectorProxy)
+        unsafe swift_wayland_client_request_wp_drm_lease_request_v1_request_connector(
+            _proxy, _connectorProxy)
         return
     }
-    func submit() throws(WaylandProxyError) -> WaylandProxy<WpDrmLeaseV1Client> {
+    package func submit() throws(WaylandProxyError) -> WaylandProxy<WpDrmLeaseV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _result = try { () throws(WaylandProxyError) -> WaylandProxy<WpDrmLeaseV1Client> in
-            guard let _created = unsafe swift_wayland_client_request_wp_drm_lease_request_v1_submit(_proxy) else {
+            guard
+                let _created = unsafe swift_wayland_client_request_wp_drm_lease_request_v1_submit(
+                    _proxy)
+            else {
                 throw WaylandProxyError.proxyCreationFailed
             }
             return unsafe makeOwnedProxy(

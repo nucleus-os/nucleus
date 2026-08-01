@@ -1,8 +1,8 @@
-import VulkanC
-import Vulkan
-import NucleusCompositorDrmC
-@_spi(NucleusPlatform) import NucleusRenderer
 import Glibc
+import NucleusCompositorDrmC
+package import NucleusRenderer
+import Vulkan
+import VulkanC
 
 /// Owns a diagnostic duplicate of a sync_file. The live synchronization fd is
 /// consumed by Vulkan or KMS; this duplicate exists only for telemetry.
@@ -19,13 +19,16 @@ final class DiagnosticSyncFile {
     func signalTimestampNs() -> UInt64? {
         var snapshot = nucleus_drm_sync_file_snapshot()
         guard unsafe nucleus_drm_get_sync_file_snapshot(fd, &snapshot) == 0,
-              snapshot.status > 0, snapshot.latest_timestamp_ns > 0
+            snapshot.status > 0, snapshot.latest_timestamp_ns > 0
         else { return nil }
         return snapshot.latest_timestamp_ns
     }
 
     deinit {
-        if fd >= 0 { close(fd); fd = -1 }
+        if fd >= 0 {
+            close(fd)
+            fd = -1
+        }
     }
 }
 
@@ -114,7 +117,10 @@ final class DiagnosticSyncFile {
     }
 
     func closeSyncFd() {
-        if syncFd >= 0 { close(syncFd); syncFd = -1 }
+        if syncFd >= 0 {
+            close(syncFd)
+            syncFd = -1
+        }
     }
 
     deinit {

@@ -3,8 +3,8 @@
 // The shared generated-global binder recovers per-protocol state through userdata.
 // Binds reach Swift through libwayland's own vtables directly.
 
-import WaylandServerC
 import WaylandServer
+import WaylandServerC
 
 @MainActor
 final class NucleusWaylandRouter {
@@ -47,9 +47,10 @@ final class NucleusWaylandRouter {
     func addGlobal<Interface: WaylandServerInterface>(
         _ specification: WaylandGlobalSpecification<Interface>
     ) -> GlobalHandle? {
-        guard let registration = WaylandGlobalRegistration(
-            display: display,
-            specification: specification)
+        guard
+            let registration = WaylandGlobalRegistration(
+                display: display,
+                specification: specification)
         else { return nil }
         registrations.append(registration)
         return GlobalHandle(router: self, registration: registration)

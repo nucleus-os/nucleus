@@ -1,5 +1,5 @@
-import NucleusWindowClientContracts
-import WaylandClientDispatch
+public import NucleusWindowClientContracts
+package import WaylandClientDispatch
 
 /// One independently backed child in a synchronized Wayland surface tree.
 ///
@@ -10,8 +10,7 @@ import WaylandClientDispatch
 public final class NucleusDesktopSubsurface {
     let surface: WaylandProxy<WlSurfaceClient>
     private let role: WaylandProxy<WlSubsurfaceClient>
-    private var alpha:
-        WaylandProxy<WpAlphaModifierSurfaceV1Client>?
+    private var alpha: WaylandProxy<WpAlphaModifierSurfaceV1Client>?
     private var closed = false
 
     init(
@@ -84,7 +83,8 @@ public final class NucleusDesktopSubsurface {
         guard let alpha else {
             throw .capabilityUnavailable
         }
-        let factor = value == 1
+        let factor =
+            value == 1
             ? UInt32.max
             : UInt32(
                 (value * Double(UInt32.max)).rounded())
@@ -118,8 +118,7 @@ public final class NucleusDesktopSubsurface {
         try? surface.destroy()
     }
 
-    @_spi(NucleusWindowClientImplementation)
-    public func withUnsafeNativeSurface<Result>(
+    package func withUnsafeNativeSurface<Result>(
         _ body: (OpaquePointer) throws -> Result
     ) throws -> Result {
         try unsafe surface.withUnsafeNativeProxy(body)

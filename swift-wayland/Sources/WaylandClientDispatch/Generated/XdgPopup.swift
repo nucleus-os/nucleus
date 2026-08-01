@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for xdg_popup.
 
 import WaylandClientC
-public enum XdgPopupClient: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum XdgPopupClient: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_xdg_popup())
-    public nonisolated static let maximumVersion: UInt32 = 7
+    package nonisolated static let maximumVersion: UInt32 = 7
 }
-public extension WaylandProxy where Interface == XdgPopupClient {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == XdgPopupClient {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_xdg_popup_destroy(_proxy)
@@ -17,13 +18,15 @@ public extension WaylandProxy where Interface == XdgPopupClient {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func grab(seat: WaylandProxy<WlSeatClient>, serial: UInt32) throws(WaylandProxyError) {
+    package func grab(seat: WaylandProxy<WlSeatClient>, serial: UInt32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _seatProxy = try unsafe seat.requireNativeProxy()
         unsafe swift_wayland_client_request_xdg_popup_grab(_proxy, _seatProxy, serial)
         return
     }
-    func reposition(positioner: WaylandProxy<XdgPositionerClient>, token: UInt32) throws(WaylandProxyError) {
+    package func reposition(positioner: WaylandProxy<XdgPositionerClient>, token: UInt32)
+        throws(WaylandProxyError)
+    {
         guard version >= 3 else {
             throw .unsupportedVersion(
                 required: 3, actual: version)
@@ -35,13 +38,15 @@ public extension WaylandProxy where Interface == XdgPopupClient {
     }
 }
 @MainActor
-public protocol XdgPopupEvents: AnyObject {
-    func configure(_ proxy: WaylandBorrowedProxy<XdgPopupClient>, x: Int32, y: Int32, width: Int32, height: Int32)
+package protocol XdgPopupEvents: AnyObject {
+    func configure(
+        _ proxy: WaylandBorrowedProxy<XdgPopupClient>, x: Int32, y: Int32, width: Int32,
+        height: Int32)
     func popupDone(_ proxy: WaylandBorrowedProxy<XdgPopupClient>)
     func repositioned(_ proxy: WaylandBorrowedProxy<XdgPopupClient>, token: UInt32)
 }
-public extension XdgPopupClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<xdg_popup_listener> = {
+package extension XdgPopupClient {
+    package nonisolated(unsafe) static let listener: UnsafeMutablePointer<xdg_popup_listener> = {
         let p = UnsafeMutablePointer<xdg_popup_listener>.allocate(capacity: 1)
         unsafe p.initialize(to: xdg_popup_listener())
         unsafe p.pointee.configure = configure_impl
@@ -52,54 +57,62 @@ public extension XdgPopupClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any XdgPopupEvents? {
         context.owner as? any XdgPopupEvents
     }
-    private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32, Int32, Int32) -> Void = { data, proxy, x, y, width, height in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let configure_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32, Int32, Int32) ->
+            Void = { data, proxy, x, y, width, height in
+                guard let data = unsafe data, let proxy = unsafe proxy else {
+                    return
+                }
+                let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+                guard let h = handler(listenerContext) else {
+                    return
+                }
+                nonisolated(unsafe) let eventHandler = h
+                nonisolated(unsafe) let eventProxy = unsafe proxy
+                nonisolated(unsafe) let eventContext = listenerContext
+                MainActor.assumeIsolated {
+                    unsafe eventHandler.configure(
+                        WaylandBorrowedProxy<XdgPopupClient>(eventProxy), x: x, y: y, width: width,
+                        height: height)
+                }
+            }
+    private static let popupDone_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.popupDone(WaylandBorrowedProxy<XdgPopupClient>(eventProxy))
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
+    private static let repositioned_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = {
+            data, proxy, token in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.repositioned(
+                    WaylandBorrowedProxy<XdgPopupClient>(eventProxy), token: token)
+            }
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.configure(WaylandBorrowedProxy<XdgPopupClient>(eventProxy), x: x, y: y, width: width, height: height)
-        }
-    }
-    private static let popupDone_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.popupDone(WaylandBorrowedProxy<XdgPopupClient>(eventProxy))
-        }
-    }
-    private static let repositioned_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, token in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.repositioned(WaylandBorrowedProxy<XdgPopupClient>(eventProxy), token: token)
-        }
-    }
 }
-public extension WaylandProxy where Interface == XdgPopupClient {
-    func installListener(_ owner: any XdgPopupEvents) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == XdgPopupClient {
+    package func installListener(_ owner: any XdgPopupEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe xdg_popup_add_listener(proxy, XdgPopupClient.listener, data)
         }

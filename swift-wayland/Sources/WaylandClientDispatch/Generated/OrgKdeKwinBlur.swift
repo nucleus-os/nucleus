@@ -2,24 +2,25 @@
 // Typed client descriptor and event dispatch for org_kde_kwin_blur.
 
 import WaylandClientC
-public enum OrgKdeKwinBlurClient: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum OrgKdeKwinBlurClient: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_org_kde_kwin_blur())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == OrgKdeKwinBlurClient {
-    func commit() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == OrgKdeKwinBlurClient {
+    package func commit() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_org_kde_kwin_blur_commit(_proxy)
         return
     }
-    func setRegion(region: WaylandProxy<WlRegionClient>?) throws(WaylandProxyError) {
+    package func setRegion(region: WaylandProxy<WlRegionClient>?) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _regionProxy = try unsafe region?.requireNativeProxy()
         unsafe swift_wayland_client_request_org_kde_kwin_blur_set_region(_proxy, _regionProxy)
         return
     }
-    func release() throws(WaylandProxyError) {
+    package func release() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_org_kde_kwin_blur_release(_proxy)

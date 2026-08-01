@@ -1,3 +1,5 @@
+internal import NucleusAppHostProtocols
+
 // The Android render engine: the `@MainActor` owner of the shared render stack on
 // Android. It holds the platform-agnostic `RenderCore` (Vulkan instance/device +
 // Graphite context + the retained NucleusUI tree) and the `AndroidVulkanPresenter`
@@ -14,8 +16,8 @@
 // The thread the JNI frame callback runs on is treated as the main actor; that
 // binding is part of the deferred on-device validation.
 
-@_spi(NucleusPlatform) internal import NucleusRenderer
 internal import NucleusRenderModel
+internal import NucleusRenderer
 internal import NucleusTextRenderingBridge
 internal import VulkanC
 
@@ -39,36 +41,38 @@ final class AndroidRenderEngine {
         resourceHost: SwiftResourceHost,
         asyncRenderWakeSink: any AsyncRenderWakeSink
     ) {
-        guard nucleus.text.installTextRenderingBridge()
-            != nucleus.text.TextRenderingBridgeInstallStatus
+        guard
+            nucleus.text.installTextRenderingBridge()
+                != nucleus.text.TextRenderingBridgeInstallStatus
                 .conflictingProvider
         else {
             return nil
         }
         guard let bootstrap = VulkanBootstrap.create(applicationName: "Nucleus Android"),
-              let surface = bootstrap.createSurface({ context in
-            let instance = unsafe context.vkInstance
-            guard let raw = unsafe vkGetInstanceProcAddr(
-                instance,
-                "vkCreateAndroidSurfaceKHR")
-            else {
-                return nil
-            }
-            let create = unsafe unsafeBitCast(
-                raw,
-                to: PFN_vkCreateAndroidSurfaceKHR.self)
-            var info = unsafe VkAndroidSurfaceCreateInfoKHR()
-            unsafe info.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR
-            unsafe info.window = OpaquePointer(window)
-            var surface: VkSurfaceKHR? = nil
-            guard unsafe create(instance, &info, nil, &surface) == VK_SUCCESS,
-                  let surface = unsafe surface
-            else {
-                return nil
-            }
-            return unsafe VulkanSurfaceHandle(surface)
-        }),
-              let core = RenderCore.create(
+            let surface = bootstrap.createSurface({ context in
+                let instance = unsafe context.vkInstance
+                guard
+                    let raw = unsafe vkGetInstanceProcAddr(
+                        instance,
+                        "vkCreateAndroidSurfaceKHR")
+                else {
+                    return nil
+                }
+                let create = unsafe unsafeBitCast(
+                    raw,
+                    to: PFN_vkCreateAndroidSurfaceKHR.self)
+                var info = unsafe VkAndroidSurfaceCreateInfoKHR()
+                unsafe info.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR
+                unsafe info.window = OpaquePointer(window)
+                var surface: VkSurfaceKHR? = nil
+                guard unsafe create(instance, &info, nil, &surface) == VK_SUCCESS,
+                    let surface = unsafe surface
+                else {
+                    return nil
+                }
+                return unsafe VulkanSurfaceHandle(surface)
+            }),
+            let core = RenderCore.create(
                 bootstrap: bootstrap,
                 qualification: .surface(surface),
                 store: store,

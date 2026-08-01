@@ -38,17 +38,20 @@ private func sparseTransactionValidationWorkload(
             creation.created.reserveCapacity(layerCount)
             creation.inserted.reserveCapacity(layerCount)
             for id in 1...layerCount {
-                creation.created.append(LayerCreated(
-                    nodeId: UInt64(id),
-                    kind: .container))
-                creation.inserted.append(LayerInserted(
-                    nodeId: UInt64(id),
-                    parentId: id == 1 ? 0 : 1,
-                    index: UInt32(id - 1)))
+                creation.created.append(
+                    LayerCreated(
+                        nodeId: UInt64(id),
+                        kind: .container))
+                creation.inserted.append(
+                    LayerInserted(
+                        nodeId: UInt64(id),
+                        parentId: id == 1 ? 0 : 1,
+                        index: UInt32(id - 1)))
             }
-            guard case .success = TransactionApplier.apply(
-                creation,
-                to: &tree)
+            guard
+                case .success = TransactionApplier.apply(
+                    creation,
+                    to: &tree)
             else {
                 throw BenchmarkFailure.semantic(
                     "large retained tree setup was rejected")
@@ -59,16 +62,17 @@ private func sparseTransactionValidationWorkload(
             var update = Transaction(contextId: context)
             update.propertyUpdates = [property]
             var diagnostics = TransactionApplier.ApplyDiagnostics()
-            guard case .success = TransactionApplier.apply(
-                update,
-                to: &tree,
-                diagnostics: &diagnostics)
+            guard
+                case .success = TransactionApplier.apply(
+                    update,
+                    to: &tree,
+                    diagnostics: &diagnostics)
             else {
                 throw BenchmarkFailure.semantic(
                     "one-node retained-tree update was rejected")
             }
             guard tree.layers.count == layerCount,
-                  tree.get(2)?.model.properties.opacity == 0.625
+                tree.get(2)?.model.properties.opacity == 0.625
             else {
                 throw BenchmarkFailure.semantic(
                     "one-node retained-tree update changed unrelated topology")
@@ -76,29 +80,31 @@ private func sparseTransactionValidationWorkload(
 
             var reparent = Transaction(contextId: context)
             reparent.inserted = [
-                LayerInserted(nodeId: 2, parentId: 3, index: 0),
+                LayerInserted(nodeId: 2, parentId: 3, index: 0)
             ]
             var reparentDiagnostics =
                 TransactionApplier.ApplyDiagnostics()
-            guard case .success = TransactionApplier.apply(
-                reparent,
-                to: &tree,
-                diagnostics: &reparentDiagnostics)
+            guard
+                case .success = TransactionApplier.apply(
+                    reparent,
+                    to: &tree,
+                    diagnostics: &reparentDiagnostics)
             else {
                 throw BenchmarkFailure.semantic(
                     "one-node retained-tree reparent was rejected")
             }
             guard tree.get(2)?.parent == 3,
-                  tree.get(3)?.children == [2],
-                  tree.get(1)?.children.contains(2) == false
+                tree.get(3)?.children == [2],
+                tree.get(1)?.children.contains(2) == false
             else {
                 throw BenchmarkFailure.semantic(
                     "one-node retained-tree reparent produced invalid topology")
             }
 
             var checksum = UInt64(tree.layers.count)
-            checksum.mix(UInt64(
-                tree.get(2)?.model.properties.opacity.bitPattern ?? 0))
+            checksum.mix(
+                UInt64(
+                    tree.get(2)?.model.properties.opacity.bitPattern ?? 0))
             checksum.mix(tree.get(2)?.parent ?? 0)
             return BenchmarkSample(
                 metrics: [
@@ -156,10 +162,11 @@ private func retainedTreeWorkload(layerCount: Int) -> BenchmarkWorkload {
                         PaintContentHandle(raw: UInt64(id)))
                 }
                 creation.created.append(layer)
-                creation.inserted.append(LayerInserted(
-                    nodeId: UInt64(id),
-                    parentId: id == 1 ? 0 : 1,
-                    index: UInt32(id - 1)))
+                creation.inserted.append(
+                    LayerInserted(
+                        nodeId: UInt64(id),
+                        parentId: id == 1 ? 0 : 1,
+                        index: UInt32(id - 1)))
             }
             guard case .success = store.ingest(creation) else {
                 throw BenchmarkFailure.semantic(
@@ -170,7 +177,8 @@ private func retainedTreeWorkload(layerCount: Int) -> BenchmarkWorkload {
                 let snapshot = store.snapshot()
                 return (
                     snapshot.layers.count,
-                    snapshot.get(1)?.children.count ?? -1)
+                    snapshot.get(1)?.children.count ?? -1
+                )
             }()
             guard initialShape == (layerCount, layerCount - 1) else {
                 throw BenchmarkFailure.semantic(
@@ -184,8 +192,9 @@ private func retainedTreeWorkload(layerCount: Int) -> BenchmarkWorkload {
             let emptyDelta = store.revision - beforeEmpty
 
             var invalid = Transaction(contextId: context)
-            invalid.propertyUpdates.append(LayerPropertyUpdate(
-                nodeId: UInt64(layerCount + 1)))
+            invalid.propertyUpdates.append(
+                LayerPropertyUpdate(
+                    nodeId: UInt64(layerCount + 1)))
             let beforeInvalid = store.revision
             let invalidAccepted: UInt64
             switch store.ingest(invalid) {
@@ -204,7 +213,7 @@ private func retainedTreeWorkload(layerCount: Int) -> BenchmarkWorkload {
             for id in 2...1_001 {
                 var update = LayerPropertyUpdate(nodeId: UInt64(id))
                 update.position = Point2D(x: Float(id), y: Float(id / 2))
-                update.contentDamage = Rect(x: 1, y: 2, w: 8, h: 9)
+                update.contentDamage = RenderRect(x: 1, y: 2, w: 8, h: 9)
                 updates.propertyUpdates.append(update)
             }
             guard case .success = store.ingest(updates) else {
@@ -224,10 +233,11 @@ private func retainedTreeWorkload(layerCount: Int) -> BenchmarkWorkload {
                 throw BenchmarkFailure.semantic(
                     "render removal count mismatch: \(remaining)")
             }
-            let copiedBytes = UInt64(layerCount)
+            let copiedBytes =
+                UInt64(layerCount)
                 * UInt64(MemoryLayout<LayerCreated>.stride)
                 + UInt64(layerCount)
-                    * UInt64(MemoryLayout<LayerInserted>.stride)
+                * UInt64(MemoryLayout<LayerInserted>.stride)
                 + 1_000 * UInt64(MemoryLayout<LayerPropertyUpdate>.stride)
             var checksum = UInt64(remaining)
             checksum.mix(store.revision)
@@ -277,24 +287,28 @@ private func animationCompletionWorkload(
             transaction.animationsAdded.reserveCapacity(animationCount)
             for index in 0..<animationCount {
                 let id = UInt64(index + 1)
-                transaction.created.append(LayerCreated(
-                    nodeId: id,
-                    kind: .container))
-                transaction.inserted.append(LayerInserted(
-                    nodeId: id,
-                    parentId: index == 0 ? 0 : 1,
-                    index: UInt32(index)))
-                transaction.animationsAdded.append(AnimationRecord(
-                    id: AnimationID(raw: id),
-                    layerId: id,
-                    animation: .basic(BasicAnimation(
-                        keyPath: .opacity,
-                        fromValue: 0,
-                        toValue: 1,
-                        duration: 0.25,
-                        timingFunction: .linear)),
-                    completionToken: completionToken,
-                    transactionId: 99))
+                transaction.created.append(
+                    LayerCreated(
+                        nodeId: id,
+                        kind: .container))
+                transaction.inserted.append(
+                    LayerInserted(
+                        nodeId: id,
+                        parentId: index == 0 ? 0 : 1,
+                        index: UInt32(index)))
+                transaction.animationsAdded.append(
+                    AnimationRecord(
+                        id: AnimationID(raw: id),
+                        layerId: id,
+                        animation: .basic(
+                            BasicAnimation(
+                                keyPath: .opacity,
+                                fromValue: 0,
+                                toValue: 1,
+                                duration: 0.25,
+                                timingFunction: .linear)),
+                        completionToken: completionToken,
+                        transactionId: 99))
             }
             var completionEvents: [PresentationCompletionEvent] = []
             let observer = store.addCompletionObserver {
@@ -313,9 +327,12 @@ private func animationCompletionWorkload(
                 if case .stopped = $1 { $0 += 1 }
             }
             store.markPresented()
-            guard completionEvents == [PresentationCompletionEvent(
-                token: completionToken.raw,
-                outcome: .completed)]
+            guard
+                completionEvents == [
+                    PresentationCompletionEvent(
+                        token: completionToken.raw,
+                        outcome: .completed)
+                ]
             else {
                 throw BenchmarkFailure.semantic(
                     "animation batch completion did not resolve once")

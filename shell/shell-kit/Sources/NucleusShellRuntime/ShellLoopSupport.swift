@@ -1,7 +1,7 @@
-import NucleusWindowClientRuntime
-import NucleusLinuxReactor
-import Tracy
 import Glibc
+import NucleusLinuxReactor
+import NucleusWindowClientRuntime
+import Tracy
 
 struct ShellLoopCounters {
     private var pollWakeCount: UInt64 = 0

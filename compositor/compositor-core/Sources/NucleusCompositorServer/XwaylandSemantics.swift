@@ -1,78 +1,85 @@
+package import NucleusCompositorServerTypes
 import NucleusTypes
-public import NucleusCompositorServerTypes
 
-public struct XwaylandProtocols: OptionSet, Sendable, Equatable {
-    public let rawValue: UInt32
+package struct XwaylandProtocols: OptionSet, Sendable, Equatable {
+    package let rawValue: UInt32
 
-    public init(rawValue: UInt32) {
+    package init(rawValue: UInt32) {
         self.rawValue = rawValue
     }
 
-    public static let deleteWindow = XwaylandProtocols(rawValue: UInt32(xwaylandProtocolDeleteWindow))
-    public static let takeFocus = XwaylandProtocols(rawValue: UInt32(xwaylandProtocolTakeFocus))
-    public static let ping = XwaylandProtocols(rawValue: UInt32(xwaylandProtocolPing))
-    public static let syncRequest = XwaylandProtocols(rawValue: UInt32(xwaylandProtocolSyncRequest))
+    package static let deleteWindow = XwaylandProtocols(
+        rawValue: UInt32(xwaylandProtocolDeleteWindow))
+    package static let takeFocus = XwaylandProtocols(rawValue: UInt32(xwaylandProtocolTakeFocus))
+    package static let ping = XwaylandProtocols(rawValue: UInt32(xwaylandProtocolPing))
+    package static let syncRequest = XwaylandProtocols(
+        rawValue: UInt32(xwaylandProtocolSyncRequest))
 }
 
-public struct XwaylandWindowType: OptionSet, Sendable, Equatable {
-    public let rawValue: UInt64
+package struct XwaylandWindowType: OptionSet, Sendable, Equatable {
+    package let rawValue: UInt64
 
-    public init(rawValue: UInt64) {
+    package init(rawValue: UInt64) {
         self.rawValue = rawValue
     }
 
-    public static let normal = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeNormal))
-    public static let dialog = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeDialog))
-    public static let utility = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeUtility))
-    public static let toolbar = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeToolbar))
-    public static let splash = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeSplash))
-    public static let menu = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeMenu))
-    public static let dropdownMenu = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeDropdownMenu))
-    public static let popupMenu = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypePopupMenu))
-    public static let tooltip = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeTooltip))
-    public static let notification = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeNotification))
-    public static let dock = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeDock))
-    public static let desktop = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeDesktop))
-    public static let dragAndDrop = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeDnd))
-    public static let combo = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeCombo))
+    package static let normal = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeNormal))
+    package static let dialog = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeDialog))
+    package static let utility = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeUtility))
+    package static let toolbar = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeToolbar))
+    package static let splash = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeSplash))
+    package static let menu = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeMenu))
+    package static let dropdownMenu = XwaylandWindowType(
+        rawValue: UInt64(xwaylandWindowTypeDropdownMenu))
+    package static let popupMenu = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypePopupMenu))
+    package static let tooltip = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeTooltip))
+    package static let notification = XwaylandWindowType(
+        rawValue: UInt64(xwaylandWindowTypeNotification))
+    package static let dock = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeDock))
+    package static let desktop = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeDesktop))
+    package static let dragAndDrop = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeDnd))
+    package static let combo = XwaylandWindowType(rawValue: UInt64(xwaylandWindowTypeCombo))
 
-    public var wantsOverrideRedirectFocus: Bool {
+    package var wantsOverrideRedirectFocus: Bool {
         !intersection(XwaylandWindowType([.popupMenu, .dropdownMenu, .combo, .dragAndDrop])).isEmpty
     }
 }
 
-public struct XwaylandNetState: OptionSet, Sendable, Equatable {
-    public let rawValue: UInt64
+package struct XwaylandNetState: OptionSet, Sendable, Equatable {
+    package let rawValue: UInt64
 
-    public init(rawValue: UInt64) {
+    package init(rawValue: UInt64) {
         self.rawValue = rawValue
     }
 
-    public static let fullscreen = XwaylandNetState(rawValue: UInt64(xwaylandNetStateFullscreen))
-    public static let maximizedVert = XwaylandNetState(rawValue: UInt64(xwaylandNetStateMaximizedVert))
-    public static let maximizedHorz = XwaylandNetState(rawValue: UInt64(xwaylandNetStateMaximizedHorz))
-    public static let hidden = XwaylandNetState(rawValue: UInt64(xwaylandNetStateHidden))
-    public static let above = XwaylandNetState(rawValue: UInt64(xwaylandNetStateAbove))
-    public static let below = XwaylandNetState(rawValue: UInt64(xwaylandNetStateBelow))
-    public static let demandsAttention = XwaylandNetState(rawValue: UInt64(xwaylandNetStateDemandsAttention))
-    public static let modal = XwaylandNetState(rawValue: UInt64(xwaylandNetStateModal))
-    public static let skipTaskbar = XwaylandNetState(rawValue: UInt64(xwaylandNetStateSkipTaskbar))
-    public static let skipPager = XwaylandNetState(rawValue: UInt64(xwaylandNetStateSkipPager))
-    public static let sticky = XwaylandNetState(rawValue: UInt64(xwaylandNetStateSticky))
-    public static let focused = XwaylandNetState(rawValue: UInt64(xwaylandNetStateFocused))
+    package static let fullscreen = XwaylandNetState(rawValue: UInt64(xwaylandNetStateFullscreen))
+    package static let maximizedVert = XwaylandNetState(
+        rawValue: UInt64(xwaylandNetStateMaximizedVert))
+    package static let maximizedHorz = XwaylandNetState(
+        rawValue: UInt64(xwaylandNetStateMaximizedHorz))
+    package static let hidden = XwaylandNetState(rawValue: UInt64(xwaylandNetStateHidden))
+    package static let above = XwaylandNetState(rawValue: UInt64(xwaylandNetStateAbove))
+    package static let below = XwaylandNetState(rawValue: UInt64(xwaylandNetStateBelow))
+    package static let demandsAttention = XwaylandNetState(
+        rawValue: UInt64(xwaylandNetStateDemandsAttention))
+    package static let modal = XwaylandNetState(rawValue: UInt64(xwaylandNetStateModal))
+    package static let skipTaskbar = XwaylandNetState(rawValue: UInt64(xwaylandNetStateSkipTaskbar))
+    package static let skipPager = XwaylandNetState(rawValue: UInt64(xwaylandNetStateSkipPager))
+    package static let sticky = XwaylandNetState(rawValue: UInt64(xwaylandNetStateSticky))
+    package static let focused = XwaylandNetState(rawValue: UInt64(xwaylandNetStateFocused))
 
-    public var maximized: Bool {
+    package var maximized: Bool {
         contains(.maximizedVert) || contains(.maximizedHorz)
     }
 }
 
-public enum XwaylandFocusModel: UInt32, Sendable, Equatable {
+package enum XwaylandFocusModel: UInt32, Sendable, Equatable {
     case noInput
     case passive
     case locallyActive
     case globallyActive
 
-    public init(input: Bool, takeFocus: Bool) {
+    package init(input: Bool, takeFocus: Bool) {
         switch (input, takeFocus) {
         case (true, false): self = .passive
         case (true, true): self = .locallyActive
@@ -82,36 +89,36 @@ public enum XwaylandFocusModel: UInt32, Sendable, Equatable {
     }
 }
 
-public struct XwaylandHints: Sendable, Equatable {
-    public var input: Bool
-    public var urgent: Bool
-    public var decorationsOff: Bool
+package struct XwaylandHints: Sendable, Equatable {
+    package var input: Bool
+    package var urgent: Bool
+    package var decorationsOff: Bool
 
-    public init(input: Bool = true, urgent: Bool = false, decorationsOff: Bool = false) {
+    package init(input: Bool = true, urgent: Bool = false, decorationsOff: Bool = false) {
         self.input = input
         self.urgent = urgent
         self.decorationsOff = decorationsOff
     }
 
-    public func focusModel(protocols: XwaylandProtocols) -> XwaylandFocusModel {
+    package func focusModel(protocols: XwaylandProtocols) -> XwaylandFocusModel {
         XwaylandFocusModel(input: input, takeFocus: protocols.contains(.takeFocus))
     }
 }
 
-public struct XwaylandWindowMetadata: Sendable, Equatable {
-    public var x11WindowID: UInt64
-    public var transientForX11WindowID: UInt64?
-    public var windowTypes: XwaylandWindowType
-    public var netState: XwaylandNetState
-    public var protocols: XwaylandProtocols
-    public var processID: UInt32?
-    public var userTime: UInt32
-    public var overrideRedirect: Bool
-    public var hints: XwaylandHints
+package struct XwaylandWindowMetadata: Sendable, Equatable {
+    package var x11WindowID: UInt64
+    package var transientForX11WindowID: UInt64?
+    package var windowTypes: XwaylandWindowType
+    package var netState: XwaylandNetState
+    package var protocols: XwaylandProtocols
+    package var processID: UInt32?
+    package var userTime: UInt32
+    package var overrideRedirect: Bool
+    package var hints: XwaylandHints
 
     /// Field-wise init: the Swift-native XWM constructs this directly from the XCB
     /// event/property data (no wire ABI round-trip).
-    public init(
+    package init(
         x11WindowID: UInt64,
         transientForX11: UInt64,
         windowTypeMask: UInt64,
@@ -136,15 +143,15 @@ public struct XwaylandWindowMetadata: Sendable, Equatable {
     }
 }
 
-public struct XwaylandStateRequest: Sendable, Equatable {
-    public var windowID: UInt64
-    public var action: UInt32
-    public var states: XwaylandNetState
-    public var sourceIndication: UInt32
+package struct XwaylandStateRequest: Sendable, Equatable {
+    package var windowID: UInt64
+    package var action: UInt32
+    package var states: XwaylandNetState
+    package var sourceIndication: UInt32
 
     /// Field-wise init: the Swift-native XWM constructs this directly from the XCB
     /// event/property data (no wire ABI round-trip).
-    public init(windowID: UInt64, action: UInt32, stateMask: UInt64, sourceIndication: UInt32) {
+    package init(windowID: UInt64, action: UInt32, stateMask: UInt64, sourceIndication: UInt32) {
         self.windowID = windowID
         self.action = action
         self.states = XwaylandNetState(rawValue: stateMask)
@@ -152,16 +159,16 @@ public struct XwaylandStateRequest: Sendable, Equatable {
     }
 }
 
-public struct XwaylandStatePlan: Sendable, Equatable {
-    public var handled: Bool = false
-    public var requestConfigure: Bool = false
-    public var activate: Bool = false
-    public var raise: Bool = false
-    public var requestedFullscreen: Bool = false
-    public var requestedMaximized: Bool = false
-    public var netState: XwaylandNetState = []
+package struct XwaylandStatePlan: Sendable, Equatable {
+    package var handled: Bool = false
+    package var requestConfigure: Bool = false
+    package var activate: Bool = false
+    package var raise: Bool = false
+    package var requestedFullscreen: Bool = false
+    package var requestedMaximized: Bool = false
+    package var netState: XwaylandNetState = []
 
-    public init(
+    package init(
         handled: Bool = false,
         requestConfigure: Bool = false,
         activate: Bool = false,
@@ -180,14 +187,14 @@ public struct XwaylandStatePlan: Sendable, Equatable {
     }
 }
 
-public struct XwaylandFocusPlan: Sendable, Equatable {
-    public var actions: UInt32 = 0
-    public var activeX11Window: UInt64 = 0
-    public var previousX11Window: UInt64 = 0
-    public var focusedX11Window: UInt64 = 0
-    public var deniedSyncState: UInt64 = 0
+package struct XwaylandFocusPlan: Sendable, Equatable {
+    package var actions: UInt32 = 0
+    package var activeX11Window: UInt64 = 0
+    package var previousX11Window: UInt64 = 0
+    package var focusedX11Window: UInt64 = 0
+    package var deniedSyncState: UInt64 = 0
 
-    public init(
+    package init(
         actions: UInt32 = 0,
         activeX11Window: UInt64 = 0,
         previousX11Window: UInt64 = 0,
@@ -202,10 +209,10 @@ public struct XwaylandFocusPlan: Sendable, Equatable {
     }
 }
 
-public struct XwaylandClosePlan: Sendable, Equatable {
-    public var action: UInt32 = UInt32(xwaylandCloseNone)
+package struct XwaylandClosePlan: Sendable, Equatable {
+    package var action: UInt32 = UInt32(xwaylandCloseNone)
 
-    public init(action: UInt32 = UInt32(xwaylandCloseNone)) {
+    package init(action: UInt32 = UInt32(xwaylandCloseNone)) {
         self.action = action
     }
 }

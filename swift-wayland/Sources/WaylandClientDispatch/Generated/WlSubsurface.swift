@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for wl_subsurface.
 
 import WaylandClientC
-public enum WlSubsurfaceClient: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum WlSubsurfaceClient: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_subsurface())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == WlSubsurfaceClient {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WlSubsurfaceClient {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wl_subsurface_destroy(_proxy)
@@ -17,29 +18,29 @@ public extension WaylandProxy where Interface == WlSubsurfaceClient {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func setPosition(x: Int32, y: Int32) throws(WaylandProxyError) {
+    package func setPosition(x: Int32, y: Int32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_wl_subsurface_set_position(_proxy, x, y)
         return
     }
-    func placeAbove(sibling: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) {
+    package func placeAbove(sibling: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _siblingProxy = try unsafe sibling.requireNativeProxy()
         unsafe swift_wayland_client_request_wl_subsurface_place_above(_proxy, _siblingProxy)
         return
     }
-    func placeBelow(sibling: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) {
+    package func placeBelow(sibling: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _siblingProxy = try unsafe sibling.requireNativeProxy()
         unsafe swift_wayland_client_request_wl_subsurface_place_below(_proxy, _siblingProxy)
         return
     }
-    func setSync() throws(WaylandProxyError) {
+    package func setSync() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_wl_subsurface_set_sync(_proxy)
         return
     }
-    func setDesync() throws(WaylandProxyError) {
+    package func setDesync() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_wl_subsurface_set_desync(_proxy)
         return

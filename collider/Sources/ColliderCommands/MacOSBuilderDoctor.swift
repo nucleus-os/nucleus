@@ -93,7 +93,6 @@ struct MacOSBuilderDoctor {
             resources(contract, scope: scope),
             persistentService(contract, scope: scope),
             containerSystem(contract, scope: scope),
-            rosetta(scope: scope),
             hostOnlyNetwork(contract, scope: scope),
             storage(contract, scope: scope),
         ]
@@ -264,25 +263,6 @@ struct MacOSBuilderDoctor {
                     statusOutput, contract: contract)
             else { return nil }
             return "\(versionDetail), \(statusDetail)"
-        }
-    }
-
-    private func rosetta(scope: String) -> HostPrerequisite {
-        HostPrerequisite(
-            id: "macos-builder:rosetta",
-            scope: scope,
-            description: "Rosetta x86_64 execution",
-            remediation:
-                "run sudo softwareupdate --install-rosetta --agree-to-license"
-        ) {
-            guard
-                let output = try? await context.run(
-                    "/usr/bin/arch",
-                    ["-x86_64", "/usr/bin/uname", "-m"],
-                    capture: true),
-                output == "x86_64"
-            else { return nil }
-            return output
         }
     }
 

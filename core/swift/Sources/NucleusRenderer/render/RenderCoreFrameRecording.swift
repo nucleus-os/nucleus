@@ -1,9 +1,10 @@
-import NucleusSkiaGraphiteBridge
 import NucleusDiagnostics
-import VulkanC
-import Vulkan
-import Tracy
 internal import NucleusRenderModel
+import NucleusSkiaGraphiteBridge
+import Tracy
+import Vulkan
+import VulkanC
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Android)
@@ -11,7 +12,7 @@ import Android
 #endif
 @MainActor
 extension RenderCore {
-    public func recordFrame(
+    package func recordFrame(
         outputID: UInt64,
         target: AcquiredFrameTarget,
         forceFullDamage: Bool = false
@@ -19,7 +20,9 @@ extension RenderCore {
         let renderStarted = telemetryClock.now
         lastFrameRenderStarted = renderStarted
         lastFrameAcquiredSurfaceIDs.removeAll(keepingCapacity: true)
-        guard let driver = frameDriver, let renderTarget = outputTargets[outputID] else { return false }
+        guard let driver = frameDriver, let renderTarget = outputTargets[outputID] else {
+            return false
+        }
         for mutation in resourceHost.images.takeMutations() {
             switch mutation {
             case .retry(let handle):
@@ -60,14 +63,16 @@ extension RenderCore {
         case .clientBackingStore:
             submissionMode = .offscreen
         case .swapchainColor:
-            submissionMode = unsafe .swapchain(FrameDriver.PresentSubmit(
-                waitSemaphore: target.waitSemaphore,
-                signalSemaphore: target.signalSemaphore,
-                queueFamily: target.queueFamily))
+            submissionMode = unsafe .swapchain(
+                FrameDriver.PresentSubmit(
+                    waitSemaphore: target.waitSemaphore,
+                    signalSemaphore: target.signalSemaphore,
+                    queueFamily: target.queueFamily))
         case .drmScanout:
             guard let signalSemaphore = unsafe target.signalSemaphore else { return false }
-            submissionMode = unsafe .drm(FrameDriver.DrmSubmit(
-                signalSemaphore: signalSemaphore))
+            submissionMode = unsafe .drm(
+                FrameDriver.DrmSubmit(
+                    signalSemaphore: signalSemaphore))
         }
 
         // Materialize the latest coalesced SHM generations only after the target
@@ -170,7 +175,7 @@ extension RenderCore {
             if let instant = clientCommitInstants[$1] { $0[$1] = instant }
         }
         if let submission = result.submissionResult,
-           !submission.isOk()
+            !submission.isOk()
         {
             _ = acceptGraphiteSubmission(submission)
         }
@@ -188,8 +193,7 @@ extension RenderCore {
     /// A queue, rather than a "last frame" slot, preserves every output in a
     /// multi-output render pass and prevents idle reactor turns from republishing
     /// stale timings.
-    @_spi(NucleusPlatform)
-    public func takeFrameTelemetry() -> [RenderFrameTelemetry] {
+    package func takeFrameTelemetry() -> [RenderFrameTelemetry] {
         let events = pendingFrameTelemetry
         pendingFrameTelemetry.removeAll(keepingCapacity: true)
         return events
@@ -199,7 +203,7 @@ extension RenderCore {
     /// ready and has pending damage, acquire the image to record into, record the
     /// retained tree, and present. Returns true if any output presented this pass.
     @discardableResult
-    public func renderReady(backend: any PresentationBackend) -> Bool {
+    package func renderReady(backend: any PresentationBackend) -> Bool {
         guard frameDriver != nil else { return false }
         // Client request dispatch only copies/converts SHM. `recordFrame`
         // materializes the latest generation after a composited target exists;
@@ -228,14 +232,17 @@ extension RenderCore {
                 treeRevision: targetRevision,
                 lockGeneration: targetLockGeneration,
                 resourceGeneration: targetResourceGeneration)
-            let forced = lockComposition != nil
+            let forced =
+                lockComposition != nil
                 || invalidation.forceFullDamage
-            guard Self.shouldRenderOutput(
-                hasPendingDamage: invalidation.treeRevisionChanged,
-                forced: forced,
-                wantsPresent: backend.wantsPresent(outputID),
-                needsInitialFrame: outputsNeedingInitialFrame.contains(outputID)
-            ) else { continue }
+            guard
+                Self.shouldRenderOutput(
+                    hasPendingDamage: invalidation.treeRevisionChanged,
+                    forced: forced,
+                    wantsPresent: backend.wantsPresent(outputID),
+                    needsInitialFrame: outputsNeedingInitialFrame.contains(outputID)
+                )
+            else { continue }
             // Direct scanout: if a fullscreen client buffer can go straight onto the
             // primary plane, present it with no composition and skip the record pass.
             // Any miss falls through to compositing this output normally.
@@ -256,10 +263,11 @@ extension RenderCore {
                 outputAcquisitionCount)
             let acquireTargetNs = elapsedNanoseconds(acquireStarted, telemetryClock.now)
             let recordStarted = telemetryClock.now
-            guard recordFrame(
-                outputID: outputID,
-                target: target,
-                forceFullDamage: invalidation.forceFullDamage)
+            guard
+                recordFrame(
+                    outputID: outputID,
+                    target: target,
+                    forceFullDamage: invalidation.forceFullDamage)
             else {
                 // The acquire succeeded but the frame could not be recorded. Let the
                 // backend undo the acquire (WSI: consume the acquire semaphore +

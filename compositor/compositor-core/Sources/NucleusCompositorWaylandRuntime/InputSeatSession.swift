@@ -14,15 +14,16 @@ import NucleusCompositorInputC
 @MainActor
 @safe final class SeatSession {
     @safe struct NativeOperations {
-        let open: (
-            UnsafePointer<libseat_seat_listener>?,
-            UnsafeMutableRawPointer?
-        ) -> OpaquePointer?
+        let open:
+            (
+                UnsafePointer<libseat_seat_listener>?,
+                UnsafeMutableRawPointer?
+            ) -> OpaquePointer?
         let close: (OpaquePointer?) -> Int32
         let disable: (OpaquePointer?) -> Int32
 
         @MainActor static let live = unsafe NativeOperations(
-            open: libseat_open_seat,
+            package: libseat_open_seat,
             close: libseat_close_seat,
             disable: libseat_disable_seat)
     }
@@ -50,15 +51,16 @@ import NucleusCompositorInputC
     private init(native: NativeOperations) {
         self.native = native
         unsafe listener = .allocate(capacity: 1)
-        unsafe listener.initialize(to: libseat_seat_listener(
-            enable_seat: { _, data in unsafe SeatSession.from(data)?.handleEnable() },
-            disable_seat: { seat, data in unsafe SeatSession.from(data)?.handleDisable(seat) }))
+        unsafe listener.initialize(
+            to: libseat_seat_listener(
+                enable_seat: { _, data in unsafe SeatSession.from(data)?.handleEnable() },
+                disable_seat: { seat, data in unsafe SeatSession.from(data)?.handleDisable(seat) }))
     }
 
     /// Open the seat. Returns nil if seatd/logind is unavailable. The session is not
     /// active until libseat fires `enable_seat` (dispatch the FD to pump it).
     static func open() -> SeatSession? {
-        open(using: .live)
+        package(using: .live)
     }
 
     /// Internal injection point for deterministic native lifetime coverage.

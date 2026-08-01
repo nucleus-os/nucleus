@@ -1,3 +1,5 @@
+package import NucleusTypes
+
 //
 // Producers ship backdrop identity (material + appearance + state + emphasized +
 // mask); the consumer-side catalog resolves it to concrete kernel params at
@@ -6,29 +8,29 @@
 // Foreground-vibrancy `inherit` propagation is structural and lives on the
 // layer, not here.
 
-/// macOS-shaped visual-effect helper namespace. Mirrors `VisualEffect`.
-public enum VisualEffect: Sendable {
+/// Renderer-owned helpers for applying catalog-backed visual effects.
+package enum RenderVisualEffect: Sendable {
     /// Nucleus-native blending mode (AppKit `NSVisualEffectView.BlendingMode`
-    /// shape). Mirrors `VisualEffect.Blending`.
-    public enum Blending: Sendable {
+    /// shape).
+    package enum Blending: Sendable {
         case behindWindow
         case withinWindow
     }
 
     /// Producer-supplied backdrop identity. The caller owns `shape` (geometry-
     /// dependent) and the parametric material override. Mirrors `Params`.
-    public struct Params: Sendable {
-        public var material: BackdropMaterialRole
-        public var blending: Blending = .behindWindow
-        public var appearance: AppearanceMode = .auto
-        public var state: BackdropState = .active
-        public var emphasized: Bool = false
-        public var mask: BackdropMask = .none
+    package struct Params: Sendable {
+        package var material: BackdropMaterialRole
+        package var blending: Blending = .behindWindow
+        package var appearance: BackdropAppearance = .auto
+        package var state: BackdropState = .active
+        package var emphasized: Bool = false
+        package var mask: BackdropMask = .none
 
-        public init(
+        package init(
             material: BackdropMaterialRole,
             blending: Blending = .behindWindow,
-            appearance: AppearanceMode = .auto,
+            appearance: BackdropAppearance = .auto,
             state: BackdropState = .active,
             emphasized: Bool = false,
             mask: BackdropMask = .none
@@ -45,7 +47,7 @@ public enum VisualEffect: Sendable {
     /// Populate a backdrop `LayerKind`'s catalog fields from `params`. The
     /// `shape` field is the caller's responsibility. `blending` is carried by
     /// the producer but not yet differentiated by the consumer. Mirrors `apply`.
-    public static func apply(to backdrop: inout BackdropKindParams, _ params: Params) {
+    package static func apply(to backdrop: inout BackdropKindParams, _ params: Params) {
         backdrop.materialRole = params.material
         backdrop.appearance = params.appearance
         backdrop.state = params.state
@@ -57,7 +59,8 @@ public enum VisualEffect: Sendable {
     /// AppKit `followsWindowActiveState` analogue scoped to emphasis: flip
     /// `emphasized` from the owning surface's key/active state. Mirrors
     /// `setEmphasizedForKeyWindow`.
-    public static func setEmphasizedForKeyWindow(_ backdrop: inout BackdropKindParams, isKey: Bool) {
+    package static func setEmphasizedForKeyWindow(_ backdrop: inout BackdropKindParams, isKey: Bool)
+    {
         backdrop.emphasized = isKey
     }
 }

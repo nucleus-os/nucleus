@@ -19,8 +19,9 @@ import WaylandServerC
         data: UnsafeMutableRawPointer? = nil,
         bind: @convention(c) (OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32) -> Void
     ) {
-        guard let global = unsafe wl_global_create(
-            display.display, interface, version, data, bind)
+        guard
+            let global = unsafe wl_global_create(
+                display.display, interface, version, data, bind)
         else { return nil }
         unsafe self.global = global
         self.displayOwner = display

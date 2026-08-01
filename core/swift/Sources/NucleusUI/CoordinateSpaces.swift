@@ -1,3 +1,5 @@
+public import NucleusTypes
+
 /// The logical coordinate spaces that meet at NucleusUI host boundaries.
 ///
 /// NucleusUI uses a top-left origin with y increasing downward in every logical

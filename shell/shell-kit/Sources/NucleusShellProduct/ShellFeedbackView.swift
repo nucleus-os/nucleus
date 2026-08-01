@@ -1,14 +1,14 @@
-public import NucleusUI
+package import NucleusUI
 
 /// Shell-owned transient feedback presented on a privileged layer surface.
 @MainActor
-public final class ShellFeedbackView: View {
-    public let backgroundEffectView: VisualEffectView
-    public let titleLabel: Label
-    public let bodyLabel: Label
+package final class ShellFeedbackView: View {
+    package let backgroundEffectView: VisualEffectView
+    package let titleLabel: Label
+    package let bodyLabel: Label
     private var actionButtons: [Button] = []
 
-    public override init() {
+    package override init() {
         backgroundEffectView = VisualEffectView(
             material: .popover,
             state: .active,
@@ -27,7 +27,7 @@ public final class ShellFeedbackView: View {
         accessibilityRole = .window
     }
 
-    public func showHotkeys(_ descriptions: [String]) {
+    package func showHotkeys(_ descriptions: [String]) {
         removeActionButtons()
         titleLabel.text = "Nucleus Keybindings"
         bodyLabel.text = descriptions.joined(separator: "\n")
@@ -37,7 +37,7 @@ public final class ShellFeedbackView: View {
         setNeedsLayout()
     }
 
-    public func showWindowMenu(
+    package func showWindowMenu(
         capabilities: UInt32,
         perform: @escaping @MainActor (UInt32) -> Void
     ) {
@@ -53,8 +53,7 @@ public final class ShellFeedbackView: View {
             (0, "Close", 1 << 0),
         ]
         for (verb, title, requiredCapability) in commands
-        where capabilities & requiredCapability != 0
-        {
+        where capabilities & requiredCapability != 0 {
             let button = Button(title: title)
             button.onPress { _ in perform(verb) }
             addSubview(button)
@@ -65,7 +64,7 @@ public final class ShellFeedbackView: View {
         setNeedsLayout()
     }
 
-    public override func layout() {
+    package override func layout() {
         backgroundEffectView.frame = bounds
         let inset = 16.0
         titleLabel.frame = Rect(

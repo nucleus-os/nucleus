@@ -1,6 +1,6 @@
 import Foundation
-import NucleusConfig
-import NucleusIPCTransport
+public import NucleusConfig
+internal import NucleusIPCTransport
 
 /// A fresh identity generated whenever the render-server process starts.
 public struct RenderServerEpoch: Codable, Equatable, Hashable, Sendable {

@@ -13,7 +13,7 @@ import Glibc
 import NucleusCompositorInputC
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
-public import NucleusConfig
+package import NucleusConfig
 
 /// Opaque identity for a live C-owned libinput device. It pairs inventory events
 /// and is never converted back into a pointer.
@@ -248,7 +248,8 @@ final class InputHost {
                 continue
             }
             let snapshot = dispatch.currentSnapshot()
-            let scale = host.server.displayFractionalScaleAt(x: snapshot.cursorX, y: snapshot.cursorY)
+            let scale = host.server.displayFractionalScaleAt(
+                x: snapshot.cursorX, y: snapshot.cursorY)
             let touchSpace = host.server.layout.displays.first.map {
                 TouchCoordinateSpace(
                     x: $0.logicalRect.x, y: $0.logicalRect.y,
@@ -330,15 +331,16 @@ final class InputHost {
 
 // MARK: - composition-root lifecycle
 
-public extension WaylandRuntime {
+extension WaylandRuntime {
     /// Open the seat and compile the keymap under a configuration.
     ///
     /// The configuration arrives here rather than being applied afterwards
     /// because the xkb rule set is an input to keymap compilation, and the
     /// keymap is built exactly once, before any client can bind a keyboard.
-    func openSeat(configuration: InputConfig = .defaults) -> Bool {
-        guard let inputHost = InputHost.open(
-            host: host, configuration: configuration)
+    package func openSeat(configuration: InputConfig = .defaults) -> Bool {
+        guard
+            let inputHost = InputHost.open(
+                host: host, configuration: configuration)
         else { return false }
         host.inputHost = inputHost
         inputHost.waitForActivation()
@@ -346,36 +348,36 @@ public extension WaylandRuntime {
     }
 
     /// Adopt a configuration after bring-up, applying it to connected devices.
-    func updateInputConfiguration(_ configuration: InputConfig) {
+    package func updateInputConfiguration(_ configuration: InputConfig) {
         host.inputHost?.updateInputConfiguration(configuration)
     }
 
-    func startLibinput() -> Bool { host.inputHost?.startLibinput() ?? false }
-    func publishKeymap() { host.inputHost?.publishKeymap() }
-    var seatFileDescriptor: Int32 { host.inputHost?.seatFd ?? -1 }
-    var libinputFileDescriptor: Int32 { host.inputHost?.libinputFd ?? -1 }
-    func dispatchSeat() { host.inputHost?.dispatchSeat() }
-    var drmHotplugFileDescriptor: Int32 { host.inputHost?.drmHotplugFd ?? -1 }
-    func drainDrmHotplug() -> Bool { host.inputHost?.drainDrmHotplug() ?? false }
-    func drainLibinput() { host.inputHost?.drainLibinput() }
+    package func startLibinput() -> Bool { host.inputHost?.startLibinput() ?? false }
+    package func publishKeymap() { host.inputHost?.publishKeymap() }
+    package var seatFileDescriptor: Int32 { host.inputHost?.seatFd ?? -1 }
+    package var libinputFileDescriptor: Int32 { host.inputHost?.libinputFd ?? -1 }
+    package func dispatchSeat() { host.inputHost?.dispatchSeat() }
+    package var drmHotplugFileDescriptor: Int32 { host.inputHost?.drmHotplugFd ?? -1 }
+    package func drainDrmHotplug() -> Bool { host.inputHost?.drainDrmHotplug() ?? false }
+    package func drainLibinput() { host.inputHost?.drainLibinput() }
 
-    func openDevice(_ path: UnsafePointer<CChar>?) -> Int32 {
+    package func openDevice(_ path: UnsafePointer<CChar>?) -> Int32 {
         guard let path = unsafe path else { return -1 }
         return unsafe host.inputHost?.openDevice(path: path) ?? -1
     }
 
-    func closeDevice(_ fileDescriptor: Int32) {
+    package func closeDevice(_ fileDescriptor: Int32) {
         host.inputHost?.closeDevice(fd: fileDescriptor)
     }
 
-    func shutdownInput() {
+    package func shutdownInput() {
         if host.server.inputControl === host.inputHost?.dispatch {
             host.server.inputControl = nil
         }
         host.inputHost = nil
     }
 
-    func completeSessionPause() {
+    package func completeSessionPause() {
         host.inputHost?.completeSessionPause()
     }
 }

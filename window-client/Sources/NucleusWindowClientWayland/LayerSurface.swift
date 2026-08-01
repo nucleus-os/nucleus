@@ -8,56 +8,56 @@
 // report the size → the render backend sizes its swapchain and presents (the WSI does the
 // buffer attach + commit). Resizes re-fire onConfigure.
 
-public import WaylandClientDispatch
+package import WaylandClientDispatch
 import WaylandProtocolTypes
 
-public enum NucleusDesktopLayer: Sendable, Equatable {
+package enum NucleusDesktopLayer: Sendable, Equatable {
     case background
     case bottom
     case top
     case overlay
 }
 
-public struct NucleusDesktopLayerAnchors:
+package struct NucleusDesktopLayerAnchors:
     OptionSet, Sendable, Equatable
 {
-    public let rawValue: UInt32
+    package let rawValue: UInt32
 
-    public init(rawValue: UInt32) {
+    package init(rawValue: UInt32) {
         self.rawValue = rawValue
     }
 
-    public static let top = Self(rawValue: 1 << 0)
-    public static let bottom = Self(rawValue: 1 << 1)
-    public static let left = Self(rawValue: 1 << 2)
-    public static let right = Self(rawValue: 1 << 3)
-    public static let all: Self = [.top, .bottom, .left, .right]
+    package static let top = Self(rawValue: 1 << 0)
+    package static let bottom = Self(rawValue: 1 << 1)
+    package static let left = Self(rawValue: 1 << 2)
+    package static let right = Self(rawValue: 1 << 3)
+    package static let all: Self = [.top, .bottom, .left, .right]
 }
 
-public enum NucleusDesktopLayerKeyboardPolicy: Sendable, Equatable {
+package enum NucleusDesktopLayerKeyboardPolicy: Sendable, Equatable {
     case none
     case exclusive
     case onDemand
 }
 
 /// Configuration for a layer surface, decided by the panel before its first commit.
-public struct NucleusDesktopLayerSurfaceConfiguration {
-    public var layer: NucleusDesktopLayer
-    public var anchor: NucleusDesktopLayerAnchors
+package struct NucleusDesktopLayerSurfaceConfiguration {
+    package var layer: NucleusDesktopLayer
+    package var anchor: NucleusDesktopLayerAnchors
     /// Logical size; 0 on an anchored axis means "span the anchored edges".
-    public var width: UInt32
-    public var height: UInt32
+    package var width: UInt32
+    package var height: UInt32
     /// Reserve this many logical px of work area on the anchored edge.
     /// `-1` ignores other exclusive zones and uses the complete output.
-    public var exclusiveZone: Int32
-    public var keyboard: NucleusDesktopLayerKeyboardPolicy
-    public var namespace: String
-    public var marginTop: Int32
-    public var marginRight: Int32
-    public var marginBottom: Int32
-    public var marginLeft: Int32
+    package var exclusiveZone: Int32
+    package var keyboard: NucleusDesktopLayerKeyboardPolicy
+    package var namespace: String
+    package var marginTop: Int32
+    package var marginRight: Int32
+    package var marginBottom: Int32
+    package var marginLeft: Int32
 
-    public init(
+    package init(
         layer: NucleusDesktopLayer,
         anchor: NucleusDesktopLayerAnchors,
         width: UInt32,
@@ -87,31 +87,31 @@ public struct NucleusDesktopLayerSurfaceConfiguration {
 
 @MainActor
 @safe public final class NucleusDesktopLayerSurface {
-    @_spi(NucleusWindowClientImplementation)
-    public let wlSurface: WaylandProxy<WlSurfaceClient>
-    @_spi(NucleusWindowClientImplementation)
-    public let layerSurface:
-        WaylandProxy<ZwlrLayerSurfaceV1Client>
-    public let config: NucleusDesktopLayerSurfaceConfiguration
+    package let wlSurface: WaylandProxy<WlSurfaceClient>
+    package let layerSurface: WaylandProxy<ZwlrLayerSurfaceV1Client>
+    package let config: NucleusDesktopLayerSurfaceConfiguration
     /// The output this panel is on (nil = compositor picks).
-    public let output: NucleusDesktopOutput?
+    package let output: NucleusDesktopOutput?
 
     /// The last configured pixel size (post-scale is applied by the render backend).
-    public private(set) var configuredWidth: UInt32 = 0
-    public private(set) var configuredHeight: UInt32 = 0
+    package private(set) var configuredWidth: UInt32 = 0
+    package private(set) var configuredHeight: UInt32 = 0
 
     /// Fired on each configure with the negotiated logical size. The render backend sizes
     /// its swapchain and presents in response.
-    public var onConfigure: ((UInt32, UInt32) -> Void)?
+    package var onConfigure: ((UInt32, UInt32) -> Void)?
     /// Fired when the compositor destroys the surface (output removed, session end).
-    public var onClosed: (() -> Void)?
+    package var onClosed: (() -> Void)?
 
     private var acked = false
     private var isDestroyed = false
 
-    public init?(client: NucleusDesktopConnection, config: NucleusDesktopLayerSurfaceConfiguration, output: NucleusDesktopOutput?) {
+    package init?(
+        client: NucleusDesktopConnection, config: NucleusDesktopLayerSurfaceConfiguration,
+        output: NucleusDesktopOutput?
+    ) {
         guard let layerShell = client.layerShell,
-              let surface = try? client.createSurface()
+            let surface = try? client.createSurface()
         else {
             return nil
         }
@@ -119,11 +119,12 @@ public struct NucleusDesktopLayerSurfaceConfiguration {
         self.config = config
         self.output = output
 
-        guard let layerSurface = try? layerShell.getLayerSurface(
-            surface: surface,
-            output: output?.proxy,
-            layer: config.layer.protocolValue,
-            namespace: config.namespace)
+        guard
+            let layerSurface = try? layerShell.getLayerSurface(
+                surface: surface,
+                output: output?.proxy,
+                layer: config.layer.protocolValue,
+                namespace: config.namespace)
         else {
             try? surface.destroy()
             return nil
@@ -154,12 +155,12 @@ public struct NucleusDesktopLayerSurfaceConfiguration {
     }
 
     /// Update the reserved work area (e.g. when the bar height changes).
-    public func setExclusiveZone(_ zone: Int32) {
+    package func setExclusiveZone(_ zone: Int32) {
         try? layerSurface.setExclusiveZone(zone: zone)
         try? wlSurface.commit()
     }
 
-    public func destroy() {
+    package func destroy() {
         guard !isDestroyed else { return }
         isDestroyed = true
         try? layerSurface.destroy()
@@ -171,8 +172,8 @@ public struct NucleusDesktopLayerSurfaceConfiguration {
     }
 }
 
-private extension NucleusDesktopLayer {
-    var protocolValue: ZwlrLayerShellV1Layer {
+extension NucleusDesktopLayer {
+    fileprivate var protocolValue: ZwlrLayerShellV1Layer {
         switch self {
         case .background: .background
         case .bottom: .bottom
@@ -182,8 +183,8 @@ private extension NucleusDesktopLayer {
     }
 }
 
-private extension NucleusDesktopLayerAnchors {
-    var protocolValue: ZwlrLayerSurfaceV1Anchor {
+extension NucleusDesktopLayerAnchors {
+    fileprivate var protocolValue: ZwlrLayerSurfaceV1Anchor {
         var value: ZwlrLayerSurfaceV1Anchor = []
         if contains(.top) { value.insert(.top) }
         if contains(.bottom) { value.insert(.bottom) }
@@ -193,8 +194,8 @@ private extension NucleusDesktopLayerAnchors {
     }
 }
 
-private extension NucleusDesktopLayerKeyboardPolicy {
-    var protocolValue: ZwlrLayerSurfaceV1KeyboardInteractivity {
+extension NucleusDesktopLayerKeyboardPolicy {
+    fileprivate var protocolValue: ZwlrLayerSurfaceV1KeyboardInteractivity {
         switch self {
         case .none: .none
         case .exclusive: .exclusive
@@ -204,14 +205,17 @@ private extension NucleusDesktopLayerKeyboardPolicy {
 }
 
 extension NucleusDesktopLayerSurface: ZwlrLayerSurfaceV1Events {
-    public func configure(_ proxy: WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>, serial: UInt32, width: UInt32, height: UInt32) {
+    package func configure(
+        _ proxy: WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>, serial: UInt32, width: UInt32,
+        height: UInt32
+    ) {
         try? layerSurface.ackConfigure(serial: serial)
         acked = true
         configuredWidth = width
         configuredHeight = height
         onConfigure?(width, height)
     }
-    public func closed(_ proxy: WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>) {
+    package func closed(_ proxy: WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>) {
         onClosed?()
     }
 }

@@ -1,4 +1,5 @@
 import NucleusLinuxDBusC
+
 #if canImport(Glibc)
 import Glibc
 #endif
@@ -20,7 +21,7 @@ private func dbusObjectHandler(
     _ error: UnsafeMutablePointer<sd_bus_error>?
 ) -> Int32 {
     guard let rawMessage = unsafe rawMessage,
-          let userData = unsafe userData
+        let userData = unsafe userData
     else { return -EINVAL }
     let registration = unsafe Unmanaged<SDBusObjectRegistration>
         .fromOpaque(userData)
@@ -28,7 +29,7 @@ private func dbusObjectHandler(
     let address = UInt(bitPattern: rawMessage)
     return MainActor.assumeIsolated {
         guard registration.isActive,
-              let message = unsafe OpaquePointer(bitPattern: address)
+            let message = unsafe OpaquePointer(bitPattern: address)
         else { return -ECANCELED }
         return registration.handler(unsafe SDBusMessage(message))
     }
@@ -47,11 +48,13 @@ private func dbusPendingCallHandler(
     return MainActor.assumeIsolated {
         guard let handler = pending.takeHandler() else { return 0 }
         guard let address,
-              let rawMessage = unsafe OpaquePointer(bitPattern: address)
+            let rawMessage = unsafe OpaquePointer(bitPattern: address)
         else {
-            handler(.failure(DBusError(
-                name: "org.nucleus.DBus.Error.InvalidReply",
-                message: "The asynchronous D-Bus call returned no reply")))
+            handler(
+                .failure(
+                    DBusError(
+                        name: "org.nucleus.DBus.Error.InvalidReply",
+                        message: "The asynchronous D-Bus call returned no reply")))
             return 1
         }
         let message = unsafe SDBusMessage(rawMessage)
@@ -68,30 +71,30 @@ private func dbusPendingCallHandler(
 ///
 /// Callers decode it synchronously. The raw pointer never leaves this module,
 /// which keeps message lifetime and Swift/C callback assumptions in one place.
-@safe public struct SDBusMessage {
+@safe package struct SDBusMessage {
     fileprivate let raw: OpaquePointer
 
     fileprivate init(_ raw: OpaquePointer) {
         unsafe self.raw = raw
     }
 
-    public var path: String {
+    package var path: String {
         unsafe Self.string(sd_bus_message_get_path(raw))
     }
 
-    public var interface: String {
+    package var interface: String {
         unsafe Self.string(sd_bus_message_get_interface(raw))
     }
 
-    public var member: String {
+    package var member: String {
         unsafe Self.string(sd_bus_message_get_member(raw))
     }
 
-    public var signature: String {
+    package var signature: String {
         unsafe Self.string(sd_bus_message_get_signature(raw, 1))
     }
 
-    public var methodError: DBusError? {
+    package var methodError: DBusError? {
         guard unsafe nucleus_dbus_message_is_error(raw) != 0 else {
             return nil
         }
@@ -102,57 +105,63 @@ private func dbusPendingCallHandler(
         return DBusError(name: name, message: message)
     }
 
-    public func readString() -> String? {
+    package func readString() -> String? {
         var value: UnsafePointer<CChar>?
-        guard unsafe sd_bus_message_read_basic(
-            raw, dbusTypeString, &value) > 0,
-              let value = unsafe value
-        else { return nil }
-        return unsafe String(cString: value)
-    }
-
-    public func readObjectPath() -> String? {
-        var value: UnsafePointer<CChar>?
-        guard unsafe sd_bus_message_read_basic(
-            raw, dbusTypeObjectPath, &value) > 0,
+        guard
+            unsafe sd_bus_message_read_basic(
+                raw, dbusTypeString, &value) > 0,
             let value = unsafe value
         else { return nil }
         return unsafe String(cString: value)
     }
 
-    public func readInt32() -> Int32? {
+    package func readObjectPath() -> String? {
+        var value: UnsafePointer<CChar>?
+        guard
+            unsafe sd_bus_message_read_basic(
+                raw, dbusTypeObjectPath, &value) > 0,
+            let value = unsafe value
+        else { return nil }
+        return unsafe String(cString: value)
+    }
+
+    package func readInt32() -> Int32? {
         var value: Int32 = 0
-        guard unsafe sd_bus_message_read_basic(
-            raw, dbusTypeInt32, &value) > 0
+        guard
+            unsafe sd_bus_message_read_basic(
+                raw, dbusTypeInt32, &value) > 0
         else { return nil }
         return value
     }
 
-    public func readUInt32() -> UInt32? {
+    package func readUInt32() -> UInt32? {
         var value: UInt32 = 0
-        guard unsafe sd_bus_message_read_basic(
-            raw, dbusTypeUInt32, &value) > 0
+        guard
+            unsafe sd_bus_message_read_basic(
+                raw, dbusTypeUInt32, &value) > 0
         else { return nil }
         return value
     }
 
-    public func readBoolean() -> Bool? {
+    package func readBoolean() -> Bool? {
         var value: Int32 = 0
-        guard unsafe sd_bus_message_read_basic(
-            raw, dbusTypeBoolean, &value) > 0
+        guard
+            unsafe sd_bus_message_read_basic(
+                raw, dbusTypeBoolean, &value) > 0
         else { return nil }
         return value != 0
     }
 
-    public func readDouble() -> Double? {
+    package func readDouble() -> Double? {
         var value = 0.0
-        guard unsafe sd_bus_message_read_basic(
-            raw, dbusTypeDouble, &value) > 0
+        guard
+            unsafe sd_bus_message_read_basic(
+                raw, dbusTypeDouble, &value) > 0
         else { return nil }
         return value
     }
 
-    public func readVariantUInt32() -> UInt32? {
+    package func readVariantUInt32() -> UInt32? {
         guard enterContainer(type: dbusTypeVariant, signature: "u") else {
             return nil
         }
@@ -160,7 +169,7 @@ private func dbusPendingCallHandler(
         return value
     }
 
-    public func readVariantBoolean() -> Bool? {
+    package func readVariantBoolean() -> Bool? {
         guard enterContainer(type: dbusTypeVariant, signature: "b") else {
             return nil
         }
@@ -168,7 +177,7 @@ private func dbusPendingCallHandler(
         return value
     }
 
-    public func readVariantDouble() -> Double? {
+    package func readVariantDouble() -> Double? {
         guard enterContainer(type: dbusTypeVariant, signature: "d") else {
             return nil
         }
@@ -176,23 +185,23 @@ private func dbusPendingCallHandler(
         return value
     }
 
-    public func enterContainer(type: CChar, signature: String) -> Bool {
+    package func enterContainer(type: CChar, signature: String) -> Bool {
         signature.withCString {
             unsafe sd_bus_message_enter_container(raw, type, $0) > 0
         }
     }
 
-    public func exitContainer() -> Bool {
+    package func exitContainer() -> Bool {
         unsafe sd_bus_message_exit_container(raw) > 0
     }
 
-    public func skip(signature: String) -> Bool {
+    package func skip(signature: String) -> Bool {
         signature.withCString {
             unsafe sd_bus_message_skip(raw, $0) >= 0
         }
     }
 
-    public func reply(
+    package func reply(
         _ body: (inout SDBusMessageWriter) -> Int32 = { _ in 0 }
     ) -> Int32 {
         var reply: OpaquePointer?
@@ -207,7 +216,7 @@ private func dbusPendingCallHandler(
         return unsafe sd_bus_send(nil, reply, nil)
     }
 
-    public func replyError(name: String, message: String) -> Int32 {
+    package func replyError(name: String, message: String) -> Int32 {
         name.withCString { namePointer in
             message.withCString { messagePointer in
                 unsafe nucleus_dbus_reply_error(
@@ -223,16 +232,16 @@ private func dbusPendingCallHandler(
     }
 }
 
-@safe public struct SDBusMessageWriter {
+@safe package struct SDBusMessageWriter {
     fileprivate let raw: OpaquePointer
-    public private(set) var result: Int32 = 0
+    package private(set) var result: Int32 = 0
 
     fileprivate init(_ raw: OpaquePointer) {
         unsafe self.raw = raw
     }
 
     @discardableResult
-    public mutating func string(_ value: String) -> Int32 {
+    package mutating func string(_ value: String) -> Int32 {
         guard result >= 0 else { return result }
         result = value.withCString {
             unsafe sd_bus_message_append_basic(raw, dbusTypeString, $0)
@@ -241,7 +250,7 @@ private func dbusPendingCallHandler(
     }
 
     @discardableResult
-    public mutating func objectPath(_ value: String) -> Int32 {
+    package mutating func objectPath(_ value: String) -> Int32 {
         guard result >= 0 else { return result }
         result = value.withCString {
             unsafe sd_bus_message_append_basic(
@@ -251,7 +260,7 @@ private func dbusPendingCallHandler(
     }
 
     @discardableResult
-    public mutating func int16(_ value: Int16) -> Int32 {
+    package mutating func int16(_ value: Int16) -> Int32 {
         guard result >= 0 else { return result }
         var value = value
         result = withUnsafePointer(to: &value) {
@@ -261,7 +270,7 @@ private func dbusPendingCallHandler(
     }
 
     @discardableResult
-    public mutating func int32(_ value: Int32) -> Int32 {
+    package mutating func int32(_ value: Int32) -> Int32 {
         guard result >= 0 else { return result }
         var value = value
         result = withUnsafePointer(to: &value) {
@@ -271,7 +280,7 @@ private func dbusPendingCallHandler(
     }
 
     @discardableResult
-    public mutating func uint32(_ value: UInt32) -> Int32 {
+    package mutating func uint32(_ value: UInt32) -> Int32 {
         guard result >= 0 else { return result }
         var value = value
         result = withUnsafePointer(to: &value) {
@@ -281,7 +290,7 @@ private func dbusPendingCallHandler(
     }
 
     @discardableResult
-    public mutating func boolean(_ value: Bool) -> Int32 {
+    package mutating func boolean(_ value: Bool) -> Int32 {
         guard result >= 0 else { return result }
         var value: Int32 = value ? 1 : 0
         result = withUnsafePointer(to: &value) {
@@ -291,7 +300,7 @@ private func dbusPendingCallHandler(
     }
 
     @discardableResult
-    public mutating func double(_ value: Double) -> Int32 {
+    package mutating func double(_ value: Double) -> Int32 {
         guard result >= 0 else { return result }
         var value = value
         result = withUnsafePointer(to: &value) {
@@ -301,7 +310,7 @@ private func dbusPendingCallHandler(
     }
 
     @discardableResult
-    public mutating func container(
+    package mutating func container(
         type: CChar,
         signature: String,
         _ body: (inout SDBusMessageWriter) -> Int32
@@ -321,7 +330,7 @@ private func dbusPendingCallHandler(
     }
 
     @discardableResult
-    public mutating func structValue(
+    package mutating func structValue(
         signature: String,
         _ body: (inout SDBusMessageWriter) -> Int32
     ) -> Int32 {
@@ -329,7 +338,7 @@ private func dbusPendingCallHandler(
     }
 
     @discardableResult
-    public mutating func variant(
+    package mutating func variant(
         signature: String,
         _ body: (inout SDBusMessageWriter) -> Int32
     ) -> Int32 {
@@ -337,7 +346,7 @@ private func dbusPendingCallHandler(
     }
 
     @discardableResult
-    public mutating func objectReference(
+    package mutating func objectReference(
         busName: String,
         path: String
     ) -> Int32 {
@@ -349,7 +358,7 @@ private func dbusPendingCallHandler(
     }
 
     @discardableResult
-    public mutating func objectReferenceArray(
+    package mutating func objectReferenceArray(
         _ paths: [String],
         busName: String
     ) -> Int32 {
@@ -364,7 +373,7 @@ private func dbusPendingCallHandler(
     }
 
     @discardableResult
-    public mutating func stringArray(_ values: [String]) -> Int32 {
+    package mutating func stringArray(_ values: [String]) -> Int32 {
         container(type: dbusTypeArray, signature: "s") { writer in
             for value in values {
                 let result = writer.string(value)
@@ -375,7 +384,7 @@ private func dbusPendingCallHandler(
     }
 
     @discardableResult
-    public mutating func uint32Array(_ values: [UInt32]) -> Int32 {
+    package mutating func uint32Array(_ values: [UInt32]) -> Int32 {
         container(type: dbusTypeArray, signature: "u") { writer in
             for value in values {
                 let result = writer.uint32(value)
@@ -386,7 +395,7 @@ private func dbusPendingCallHandler(
     }
 
     @discardableResult
-    public mutating func stringDictionary(
+    package mutating func stringDictionary(
         _ values: [String: String]
     ) -> Int32 {
         let dictionaryType = CChar(UInt8(ascii: "e"))
@@ -406,7 +415,7 @@ private func dbusPendingCallHandler(
     }
 
     @discardableResult
-    public mutating func stringVariantDictionary(
+    package mutating func stringVariantDictionary(
         _ values: [String: String]
     ) -> Int32 {
         let dictionaryType = CChar(UInt8(ascii: "e"))
@@ -429,7 +438,7 @@ private func dbusPendingCallHandler(
 }
 
 @MainActor
-@safe public final class SDBusObjectRegistration {
+@safe package final class SDBusObjectRegistration {
     fileprivate var slot: OpaquePointer?
     fileprivate weak var owner: SDBusConnection?
     fileprivate let handler: @MainActor (borrowing SDBusMessage) -> Int32
@@ -442,7 +451,7 @@ private func dbusPendingCallHandler(
 
     fileprivate var isActive: Bool { unsafe slot != nil }
 
-    public func cancel() {
+    package func cancel() {
         guard let slot = unsafe slot else { return }
         unsafe self.slot = nil
         unsafe sd_bus_slot_unref(slot)
@@ -457,15 +466,16 @@ private func dbusPendingCallHandler(
 }
 
 @MainActor
-@safe public final class SDBusPendingCall {
+@safe package final class SDBusPendingCall {
     fileprivate var slot: OpaquePointer?
     fileprivate weak var owner: SDBusConnection?
-    private var handler:
-        (@MainActor (Result<SDBusMessage, DBusError>) -> Void)?
+    private var handler: (@MainActor (Result<SDBusMessage, DBusError>) -> Void)?
 
     fileprivate init(
-        handler: @escaping @MainActor (
-            Result<SDBusMessage, DBusError>) -> Void
+        handler:
+            @escaping @MainActor (
+                Result<SDBusMessage, DBusError>
+            ) -> Void
     ) {
         self.handler = handler
     }
@@ -479,7 +489,7 @@ private func dbusPendingCallHandler(
         return handler
     }
 
-    public func cancel() {
+    package func cancel() {
         handler = nil
         cancelSlot()
     }
@@ -514,25 +524,26 @@ struct SDBusEventLoopOperations {
 }
 
 @MainActor
-@safe public final class SDBusConnection {
+@safe package final class SDBusConnection {
     private var bus: OpaquePointer?
     private var injectedEventLoop: SDBusEventLoopOperations?
     private var registrations: [ObjectIdentifier: SDBusObjectRegistration] = [:]
     private var pendingCalls: [ObjectIdentifier: SDBusPendingCall] = [:]
 
-    public init(_ kind: DBusBus) throws(DBusError) {
+    package init(_ kind: DBusBus) throws(DBusError) {
         var handle: OpaquePointer?
-        let result: Int32 = switch kind {
-        case .session: unsafe sd_bus_open_user(&handle)
-        case .system: unsafe sd_bus_open_system(&handle)
-        }
+        let result: Int32 =
+            switch kind {
+            case .session: unsafe sd_bus_open_user(&handle)
+            case .system: unsafe sd_bus_open_system(&handle)
+            }
         guard result >= 0, let handle = unsafe handle else {
             throw DBusError(errno: result, while: "opening the \(kind) bus")
         }
         unsafe bus = handle
     }
 
-    public init(address: String) throws(DBusError) {
+    package init(address: String) throws(DBusError) {
         var handle: OpaquePointer?
         var result = unsafe sd_bus_new(&handle)
         guard result >= 0, let handle = unsafe handle else {
@@ -566,22 +577,22 @@ struct SDBusEventLoopOperations {
         close()
     }
 
-    public var isOpen: Bool {
+    package var isOpen: Bool {
         unsafe bus != nil || injectedEventLoop != nil
     }
 
-    public var uniqueName: String? {
+    package var uniqueName: String? {
         guard let bus = unsafe bus else { return nil }
         var value: UnsafePointer<CChar>?
         guard unsafe sd_bus_get_unique_name(bus, &value) >= 0,
-              let value = unsafe value
+            let value = unsafe value
         else {
             return nil
         }
         return unsafe String(cString: value)
     }
 
-    public var fileDescriptor: Int32 {
+    package var fileDescriptor: Int32 {
         if let injectedEventLoop {
             return injectedEventLoop.fileDescriptor()
         }
@@ -590,7 +601,7 @@ struct SDBusEventLoopOperations {
         return descriptor >= 0 ? descriptor : -1
     }
 
-    public var pollEvents: Int16 {
+    package var pollEvents: Int16 {
         if let injectedEventLoop {
             return injectedEventLoop.pollEvents()
         }
@@ -599,21 +610,21 @@ struct SDBusEventLoopOperations {
         return events >= 0 ? Int16(truncatingIfNeeded: events) : 0
     }
 
-    public func timeoutMicroseconds() -> UInt64? {
+    package func timeoutMicroseconds() -> UInt64? {
         if let injectedEventLoop {
             return injectedEventLoop.timeoutMicroseconds()
         }
         guard let bus = unsafe bus else { return nil }
         var deadline: UInt64 = 0
         guard unsafe sd_bus_get_timeout(bus, &deadline) >= 0,
-              deadline != UInt64.max
+            deadline != UInt64.max
         else { return nil }
         let now = Self.monotonicMicroseconds()
         return deadline > now ? deadline - now : 0
     }
 
     @discardableResult
-    public func process() throws(DBusError) -> Bool {
+    package func process() throws(DBusError) -> Bool {
         if let injectedEventLoop {
             var handled = false
             while true {
@@ -663,7 +674,7 @@ struct SDBusEventLoopOperations {
         return handled
     }
 
-    public func registerFallback(
+    package func registerFallback(
         path: String,
         handler: @escaping @MainActor (borrowing SDBusMessage) -> Int32
     ) throws(DBusError) -> SDBusObjectRegistration {
@@ -687,14 +698,16 @@ struct SDBusEventLoopOperations {
     }
 
     @discardableResult
-    public func callAsync(
+    package func callAsync(
         service: String,
         path: String,
         interface: String,
         member: String,
         encode: (inout SDBusMessageWriter) -> Int32 = { _ in 0 },
-        completion: @escaping @MainActor (
-            Result<SDBusMessage, DBusError>) -> Void
+        completion:
+            @escaping @MainActor (
+                Result<SDBusMessage, DBusError>
+            ) -> Void
     ) throws(DBusError) -> SDBusPendingCall {
         guard let bus = unsafe bus else { throw DBusError.closed }
         var rawMessage: OpaquePointer?
@@ -729,7 +742,7 @@ struct SDBusEventLoopOperations {
     }
 
     @discardableResult
-    public func emitSignal(
+    package func emitSignal(
         path: String,
         interface: String,
         member: String,
@@ -756,7 +769,7 @@ struct SDBusEventLoopOperations {
         return unsafe sd_bus_send(bus, rawMessage, nil)
     }
 
-    public func close(flush: Bool = true) {
+    package func close(flush: Bool = true) {
         let livePending = Array(pendingCalls.values)
         pendingCalls.removeAll(keepingCapacity: false)
         for pending in livePending { pending.cancel() }

@@ -152,10 +152,10 @@ enum RenderBridge {
         let height = display.pixelSize.height
         let stride = width.multipliedReportingOverflow(by: 4)
         guard width != 0,
-              height != 0,
-              Int32(exactly: width) != nil,
-              Int32(exactly: height) != nil,
-              !stride.overflow
+            height != 0,
+            Int32(exactly: width) != nil,
+            Int32(exactly: height) != nil,
+            !stride.overflow
         else { return nil }
         // wl_shm.format XRGB8888 = 1; DRM fourcc 'XR24' (0x34325258).
         return ScreencopyParams(

@@ -18,11 +18,11 @@
 // reactor callbacks assume isolation and call these @MainActor methods. Only
 // Sendable scalars cross.
 
-import WaylandServerC
-import NucleusCompositorXcbC
-@_spi(NucleusRenderServer) import NucleusLayers
 internal import NucleusCompositorServer
 internal import NucleusCompositorWindowManager
+import NucleusCompositorXcbC
+package import NucleusLayers
+import WaylandServerC
 
 @MainActor
 final class RouterXwaylandDriver {
@@ -119,7 +119,9 @@ final class RouterXwaylandDriver {
     /// tear the scene down. The X-side MapNotify/UnmapNotify drives this.
     func setMapped(windowID: UInt64, mapped: Bool) {
         let wm = windowManager
-        guard let window = wm.server.window(id: windowID), window.surfaceObjectId != 0 else { return }
+        guard let window = wm.server.window(id: windowID), window.surfaceObjectId != 0 else {
+            return
+        }
         let surfaceId = UInt32(window.surfaceObjectId)
         if mapped {
             guard !window.mapped else { return }
@@ -141,9 +143,10 @@ final class RouterXwaylandDriver {
                 forWindowID: windowID)
         } else {
             guard window.mapped else { return }
-            let closing = feeder?.beginClosing(
-                window: window,
-                destroyWindowOnCompletion: false) ?? false
+            let closing =
+                feeder?.beginClosing(
+                    window: window,
+                    destroyWindowOnCompletion: false) ?? false
             window.mapped = false
             seatDriver.surfaceUnmapped(surfaceId: surfaceId)
             if closing {
@@ -164,9 +167,10 @@ final class RouterXwaylandDriver {
         var closing = false
         if window.surfaceObjectId != 0 {
             let surfaceId = UInt32(window.surfaceObjectId)
-            closing = feeder?.beginClosing(
-                window: window,
-                destroyWindowOnCompletion: true) ?? false
+            closing =
+                feeder?.beginClosing(
+                    window: window,
+                    destroyWindowOnCompletion: true) ?? false
             window.mapped = false
             seatDriver.surfaceUnmapped(surfaceId: surfaceId)
             if closing {
@@ -193,7 +197,8 @@ final class RouterXwaylandDriver {
         host.xwaylandHost?.xwm?.configureWindowById(
             xcb_window_t(truncatingIfNeeded: x11WindowID),
             Int16(clamping: Int(content.x.rounded())), Int16(clamping: Int(content.y.rounded())),
-            UInt16(clamping: Int(max(1, content.width))), UInt16(clamping: Int(max(1, content.height))))
+            UInt16(clamping: Int(max(1, content.width))),
+            UInt16(clamping: Int(max(1, content.height))))
     }
 
     /// Apply an EWMH fullscreen/maximize transition to the shared window model
@@ -202,10 +207,11 @@ final class RouterXwaylandDriver {
     func applyStateConfigure(windowID: UInt64) {
         let wm = windowManager
         guard let window = wm.server.window(id: windowID),
-              let plan = wm.planConfigure(ConfigureRequest(
-                windowID: windowID, reason: .xwaylandStateRequest,
-                activated: wm.server.windows.focusedWindow?.id == windowID,
-                tileEdges: window.tileEdges))
+            let plan = wm.planConfigure(
+                ConfigureRequest(
+                    windowID: windowID, reason: .xwaylandStateRequest,
+                    activated: wm.server.windows.focusedWindow?.id == windowID,
+                    tileEdges: window.tileEdges))
         else { return }
         window.setGeometry(plan.targetRect)
         window.activeMaximized = plan.activeMaximized
@@ -219,7 +225,7 @@ final class RouterXwaylandDriver {
             x: plan.targetRect.x, y: plan.targetRect.y,
             w: Double(plan.targetRect.width), h: Double(plan.targetRect.height))
         if window.mapped, plan.shouldPresent, plan.layoutTransitionID != 0,
-           let feeder
+            let feeder
         {
             feeder.beginTileTransition(
                 window: window,
@@ -240,7 +246,8 @@ final class RouterXwaylandDriver {
     /// focus transition as native click-to-focus.
     func activateWindow(windowID: UInt64) {
         guard let window = server.window(id: windowID),
-              window.mapped, window.surfaceObjectId != 0 else { return }
+            window.mapped, window.surfaceObjectId != 0
+        else { return }
         server.windows.raise(id: windowID)
         server.windows.focus(id: windowID)
         if window.wantsKeyboardFocus {

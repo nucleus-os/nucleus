@@ -31,18 +31,18 @@ import FoundationXML
 
 enum Mode: String { case server, client }
 
-public struct WaylandGeneratorDiagnostic: Error, Equatable, CustomStringConvertible {
-    public let path: String
-    public let context: String
-    public let problem: String
+package struct WaylandGeneratorDiagnostic: Error, Equatable, CustomStringConvertible {
+    package let path: String
+    package let context: String
+    package let problem: String
 
-    public init(path: String, context: String, problem: String) {
+    package init(path: String, context: String, problem: String) {
         self.path = path
         self.context = context
         self.problem = problem
     }
 
-    public var description: String {
+    package var description: String {
         "\(path): \(context): \(problem)"
     }
 }
@@ -75,8 +75,8 @@ private func parseProtocol(_ path: String) throws -> Proto {
     try WaylandProtocolParser.parse(path: path)
 }
 
-public enum SwiftWaylandGenerator {
-    public static func run(arguments: [String]) throws {
+package enum SwiftWaylandGenerator {
+    package static func run(arguments: [String]) throws {
         // ── Parse args: --mode X --module Y [--search-dir D...] <out_dir> <xml...> ───────
         var mode: Mode?
         var module: String?
@@ -561,7 +561,7 @@ public enum SwiftWaylandGenerator {
                                             name: .identifier("frozen"))))
                             ],
                             modifiers: [
-                                DeclModifierSyntax(name: .keyword(.public))
+                                DeclModifierSyntax(name: .keyword(.package))
                             ],
                             name: .identifier(opcodeName),
                             inheritanceClause: InheritanceClauseSyntax {
@@ -596,7 +596,7 @@ public enum SwiftWaylandGenerator {
                                             name: .identifier("frozen"))))
                             ],
                             modifiers: [
-                                DeclModifierSyntax(name: .keyword(.public))
+                                DeclModifierSyntax(name: .keyword(.package))
                             ],
                             name: .identifier(name),
                             inheritanceClause: InheritanceClauseSyntax {
@@ -609,10 +609,10 @@ public enum SwiftWaylandGenerator {
                                     type: TypeSyntax(stringLiteral: "Sendable"))
                             }
                         ) {
-                            DeclSyntax("public let rawValue: UInt32")
+                            DeclSyntax("package let rawValue: UInt32")
                             DeclSyntax(
                                 """
-                                public init(rawValue: UInt32) {
+                                package init(rawValue: UInt32) {
                                     self.rawValue = rawValue
                                 }
                                 """)
@@ -628,7 +628,7 @@ public enum SwiftWaylandGenerator {
                                 let annotation = value == "[]" ? ": Self" : ""
                                 DeclSyntax(
                                     """
-                                    public static let \(raw: memberName(entry.name))\(raw: annotation) = \(raw: value)
+                                    package static let \(raw: memberName(entry.name))\(raw: annotation) = \(raw: value)
                                     """)
                             }
                             if !enumeration.isBitfield {
@@ -637,7 +637,7 @@ public enum SwiftWaylandGenerator {
                                 }.joined(separator: "\n")
                                 DeclSyntax(
                                     """
-                                    public var knownName: String? {
+                                    package var knownName: String? {
                                         switch self {
                                         \(raw: cases)
                                         default: nil
@@ -727,14 +727,14 @@ public enum SwiftWaylandGenerator {
                     let P = upperCamel(iface.name)
                     var source = SwiftSourceFileBuilder()
                     source.addImport("WaylandServerC")
-                    source.addImport("WaylandServer", public: true)
+                    source.addImport("WaylandServer", packageAccess: true)
                     let usesProtocolValues =
                         iface.enumerations.contains { $0.name == "error" }
                         || (iface.requests + iface.events).contains {
                             $0.args.contains { $0.enumName != nil }
                         }
                     if usesProtocolValues {
-                        source.addImport("WaylandProtocolTypes", public: true)
+                        source.addImport("WaylandProtocolTypes", packageAccess: true)
                     }
                     // The protocol carries EVERY request, including destructors — a destructor can have
                     // consumer semantics (ext_session_lock_v1.unlock_and_destroy unlocks the session; a
@@ -756,7 +756,7 @@ public enum SwiftWaylandGenerator {
                         }
                         let requests = ProtocolDeclSyntax(
                             attributes: [publicAttribute("MainActor")],
-                            modifiers: [DeclModifierSyntax(name: .keyword(.public))],
+                            modifiers: [DeclModifierSyntax(name: .keyword(.package))],
                             name: .identifier("\(P)Requests"),
                             inheritanceClause: InheritanceClauseSyntax {
                                 InheritedTypeSyntax(
@@ -781,7 +781,7 @@ public enum SwiftWaylandGenerator {
                             ])
                         }
                         let defaults = try ExtensionDeclSyntax(
-                            "public extension \(raw: P)Requests"
+                            "package extension \(raw: P)Requests"
                         ) {
                             for member in members {
                                 member
@@ -792,7 +792,7 @@ public enum SwiftWaylandGenerator {
 
                     var serverMembers: [DeclSyntax] = [
                         declaration([
-                            "public nonisolated static let maximumVersion: Int32 = \(iface.version)"
+                            "package nonisolated static let maximumVersion: Int32 = \(iface.version)"
                         ])
                     ]
                     if dispatchesRequests {
@@ -822,7 +822,7 @@ public enum SwiftWaylandGenerator {
                     }
                     serverMembers.append(
                         declaration([
-                            "public nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(",
+                            "package nonisolated static let descriptor = unsafe WaylandServerInterfaceDescriptor(",
                             "    nativeInterface: swift_wayland_iface_\(iface.name)(),",
                             "    nativeRequestVtable: \(dispatchesRequests ? "nativeRequestVtable" : "nil"))",
                         ]))
@@ -846,7 +846,7 @@ public enum SwiftWaylandGenerator {
                         }
                         serverMembers.append(
                             declaration([
-                                "public static func send\(upperCamel(e.name))(\(sp.joined(separator: ", "))) {",
+                                "package static func send\(upperCamel(e.name))(\(sp.joined(separator: ", "))) {",
                                 "    unsafe \(iface.name)_send_\(e.name)(\(ca.joined(separator: ", ")))",
                                 "}",
                             ]))
@@ -959,7 +959,7 @@ public enum SwiftWaylandGenerator {
                     }
 
                     let server = EnumDeclSyntax(
-                        modifiers: [DeclModifierSyntax(name: .keyword(.public))],
+                        modifiers: [DeclModifierSyntax(name: .keyword(.package))],
                         name: .identifier("\(P)Server"),
                         inheritanceClause: InheritanceClauseSyntax {
                             InheritedTypeSyntax(
@@ -1129,7 +1129,7 @@ public enum SwiftWaylandGenerator {
                             }
                         }
                         let events = try ExtensionDeclSyntax(
-                            "public extension WaylandResourceHandle where Interface == \(raw: P)Server"
+                            "package extension WaylandResourceHandle where Interface == \(raw: P)Server"
                         ) {
                             for member in eventMembers {
                                 member
@@ -1142,7 +1142,7 @@ public enum SwiftWaylandGenerator {
                     ) {
                         let errorType = upperCamel(iface.name) + upperCamel(errorEnumeration.name)
                         let errors = try ExtensionDeclSyntax(
-                            "public extension WaylandRequest where Interface == \(raw: P)Server"
+                            "package extension WaylandRequest where Interface == \(raw: P)Server"
                         ) {
                             declaration([
                                 "func postError(_ code: \(errorType), message: String) {",
@@ -1153,7 +1153,7 @@ public enum SwiftWaylandGenerator {
                         source.add(DeclSyntax(errors))
 
                         let handleErrors = try ExtensionDeclSyntax(
-                            "public extension WaylandResourceHandle where Interface == \(raw: P)Server"
+                            "package extension WaylandResourceHandle where Interface == \(raw: P)Server"
                         ) {
                             declaration([
                                 "@discardableResult",
@@ -1200,7 +1200,7 @@ public enum SwiftWaylandGenerator {
                             ]))
                     }
                     let newID = try ExtensionDeclSyntax(
-                        "public extension WlNewId where Interface == \(raw: P)Server"
+                        "package extension WlNewId where Interface == \(raw: P)Server"
                     ) {
                         for member in newIDMembers {
                             member
@@ -1209,7 +1209,7 @@ public enum SwiftWaylandGenerator {
                     source.add(DeclSyntax(newID))
 
                     let serverFactories = try ExtensionDeclSyntax(
-                        "public extension \(raw: P)Server"
+                        "package extension \(raw: P)Server"
                     ) {
                         declaration([
                             "@MainActor",
@@ -1578,7 +1578,7 @@ public enum SwiftWaylandGenerator {
                     source.addImport("WaylandClientC")
 
                     let descriptor = EnumDeclSyntax(
-                        modifiers: [DeclModifierSyntax(name: .keyword(.public))],
+                        modifiers: [DeclModifierSyntax(name: .keyword(.package))],
                         name: .identifier("\(P)Client"),
                         inheritanceClause: InheritanceClauseSyntax {
                             InheritedTypeSyntax(
@@ -1587,11 +1587,11 @@ public enum SwiftWaylandGenerator {
                         }
                     ) {
                         clientDeclaration([
-                            "public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(",
+                            "package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(",
                             "    nativeInterface: swift_wayland_iface_\(iface.name)())",
                         ])
                         clientDeclaration([
-                            "public nonisolated static let maximumVersion: UInt32 = \(iface.version)"
+                            "package nonisolated static let maximumVersion: UInt32 = \(iface.version)"
                         ])
                     }
                     source.add(DeclSyntax(descriptor))
@@ -1599,7 +1599,7 @@ public enum SwiftWaylandGenerator {
                     if (iface.requests + iface.events).flatMap(\.args).contains(where: {
                         resolvedEnumerationName($0, in: iface) != nil
                     }) {
-                        source.addImport("WaylandProtocolTypes", public: true)
+                        source.addImport("WaylandProtocolTypes", packageAccess: true)
                     }
                     if !iface.requests.isEmpty {
                         let requestMembers = iface.requests.map {
@@ -1607,7 +1607,7 @@ public enum SwiftWaylandGenerator {
                                 clientRequestDeclaration($0, in: iface))
                         }
                         let requests = try ExtensionDeclSyntax(
-                            "public extension WaylandProxy where Interface == \(raw: P)Client"
+                            "package extension WaylandProxy where Interface == \(raw: P)Client"
                         ) {
                             for member in requestMembers {
                                 member
@@ -1638,7 +1638,7 @@ public enum SwiftWaylandGenerator {
                         clientDeclaration(
                             [
                                 "@MainActor",
-                                "public protocol \(P)Events: AnyObject {",
+                                "package protocol \(P)Events: AnyObject {",
                             ] + eventMembers + ["}"]))
 
                     var listenerLines = [
@@ -1759,7 +1759,7 @@ public enum SwiftWaylandGenerator {
                     }
 
                     let dispatch = try ExtensionDeclSyntax(
-                        "public extension \(raw: P)Client"
+                        "package extension \(raw: P)Client"
                     ) {
                         for member in clientMembers {
                             member
@@ -1768,7 +1768,7 @@ public enum SwiftWaylandGenerator {
                     source.add(DeclSyntax(dispatch))
                     source.add(
                         clientDeclaration([
-                            "public extension WaylandProxy where Interface == \(P)Client {",
+                            "package extension WaylandProxy where Interface == \(P)Client {",
                             "    func installListener(_ owner: any \(P)Events) throws(WaylandProxyError) {",
                             "        try unsafe installListener(owner: owner) { proxy, data in",
                             "            unsafe \(iface.name)_add_listener(proxy, \(P)Client.listener, data)",
@@ -1791,7 +1791,7 @@ public enum SwiftWaylandGenerator {
         }
     }
 
-    public static func resolveClosure(
+    package static func resolveClosure(
         selected: [WaylandProtocol],
         searchDirectories: [String]
     ) throws -> [WaylandProtocol] {
@@ -1835,7 +1835,7 @@ public enum SwiftWaylandGenerator {
         return closure
     }
 
-    public static func validate(protocols: [WaylandProtocol]) throws {
+    package static func validate(protocols: [WaylandProtocol]) throws {
         let supportedArgumentTypes: Set<String> = [
             "int", "uint", "fixed", "string", "object", "new_id", "array", "fd",
         ]

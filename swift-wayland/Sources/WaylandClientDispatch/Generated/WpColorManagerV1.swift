@@ -2,14 +2,15 @@
 // Typed client descriptor and event dispatch for wp_color_manager_v1.
 
 import WaylandClientC
-public enum WpColorManagerV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+package import WaylandProtocolTypes
+
+package enum WpColorManagerV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_color_manager_v1())
-    public nonisolated static let maximumVersion: UInt32 = 2
+    package nonisolated static let maximumVersion: UInt32 = 2
 }
-public import WaylandProtocolTypes
-public extension WaylandProxy where Interface == WpColorManagerV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpColorManagerV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_color_manager_v1_destroy(_proxy)
@@ -18,65 +19,103 @@ public extension WaylandProxy where Interface == WpColorManagerV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func getOutput(output: WaylandProxy<WlOutputClient>) throws(WaylandProxyError) -> WaylandProxy<WpColorManagementOutputV1Client> {
+    package func getOutput(output: WaylandProxy<WlOutputClient>) throws(WaylandProxyError)
+        -> WaylandProxy<WpColorManagementOutputV1Client>
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _outputProxy = try unsafe output.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_wp_color_manager_v1_get_output(_proxy, _outputProxy) else {
+        guard
+            let _created = unsafe swift_wayland_client_request_wp_color_manager_v1_get_output(
+                _proxy, _outputProxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, WpColorManagementOutputV1Client.self)
     }
-    func getSurface(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<WpColorManagementSurfaceV1Client> {
+    package func getSurface(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError)
+        -> WaylandProxy<WpColorManagementSurfaceV1Client>
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_wp_color_manager_v1_get_surface(_proxy, _surfaceProxy) else {
+        guard
+            let _created = unsafe swift_wayland_client_request_wp_color_manager_v1_get_surface(
+                _proxy, _surfaceProxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, WpColorManagementSurfaceV1Client.self)
     }
-    func getSurfaceFeedback(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<WpColorManagementSurfaceFeedbackV1Client> {
+    package func getSurfaceFeedback(surface: WaylandProxy<WlSurfaceClient>)
+        throws(WaylandProxyError) -> WaylandProxy<WpColorManagementSurfaceFeedbackV1Client>
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_wp_color_manager_v1_get_surface_feedback(_proxy, _surfaceProxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_wp_color_manager_v1_get_surface_feedback(
+                    _proxy, _surfaceProxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, WpColorManagementSurfaceFeedbackV1Client.self)
     }
-    func createIccCreator() throws(WaylandProxyError) -> WaylandProxy<WpImageDescriptionCreatorIccV1Client> {
+    package func createIccCreator() throws(WaylandProxyError) -> WaylandProxy<
+        WpImageDescriptionCreatorIccV1Client
+    > {
         let _proxy = try unsafe requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_wp_color_manager_v1_create_icc_creator(_proxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_wp_color_manager_v1_create_icc_creator(_proxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, WpImageDescriptionCreatorIccV1Client.self)
     }
-    func createParametricCreator() throws(WaylandProxyError) -> WaylandProxy<WpImageDescriptionCreatorParamsV1Client> {
+    package func createParametricCreator() throws(WaylandProxyError) -> WaylandProxy<
+        WpImageDescriptionCreatorParamsV1Client
+    > {
         let _proxy = try unsafe requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_wp_color_manager_v1_create_parametric_creator(_proxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_wp_color_manager_v1_create_parametric_creator(
+                    _proxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, WpImageDescriptionCreatorParamsV1Client.self)
     }
-    func createWindowsScrgb() throws(WaylandProxyError) -> WaylandProxy<WpImageDescriptionV1Client> {
+    package func createWindowsScrgb() throws(WaylandProxyError) -> WaylandProxy<
+        WpImageDescriptionV1Client
+    > {
         let _proxy = try unsafe requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_wp_color_manager_v1_create_windows_scrgb(_proxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_wp_color_manager_v1_create_windows_scrgb(_proxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, WpImageDescriptionV1Client.self)
     }
-    func getImageDescription(reference: WaylandProxy<WpImageDescriptionReferenceV1Client>) throws(WaylandProxyError) -> WaylandProxy<WpImageDescriptionV1Client> {
+    package func getImageDescription(reference: WaylandProxy<WpImageDescriptionReferenceV1Client>)
+        throws(WaylandProxyError) -> WaylandProxy<WpImageDescriptionV1Client>
+    {
         guard version >= 2 else {
             throw .unsupportedVersion(
                 required: 2, actual: version)
         }
         let _proxy = try unsafe requireNativeProxy()
         let _referenceProxy = try unsafe reference.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_wp_color_manager_v1_get_image_description(_proxy, _referenceProxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_wp_color_manager_v1_get_image_description(
+                    _proxy, _referenceProxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
@@ -84,105 +123,130 @@ public extension WaylandProxy where Interface == WpColorManagerV1Client {
     }
 }
 @MainActor
-public protocol WpColorManagerV1Events: AnyObject {
-    func supportedIntent(_ proxy: WaylandBorrowedProxy<WpColorManagerV1Client>, render_intent: WpColorManagerV1RenderIntent)
-    func supportedFeature(_ proxy: WaylandBorrowedProxy<WpColorManagerV1Client>, feature: WpColorManagerV1Feature)
-    func supportedTfNamed(_ proxy: WaylandBorrowedProxy<WpColorManagerV1Client>, tf: WpColorManagerV1TransferFunction)
-    func supportedPrimariesNamed(_ proxy: WaylandBorrowedProxy<WpColorManagerV1Client>, primaries: WpColorManagerV1Primaries)
+package protocol WpColorManagerV1Events: AnyObject {
+    func supportedIntent(
+        _ proxy: WaylandBorrowedProxy<WpColorManagerV1Client>,
+        render_intent: WpColorManagerV1RenderIntent)
+    func supportedFeature(
+        _ proxy: WaylandBorrowedProxy<WpColorManagerV1Client>, feature: WpColorManagerV1Feature)
+    func supportedTfNamed(
+        _ proxy: WaylandBorrowedProxy<WpColorManagerV1Client>, tf: WpColorManagerV1TransferFunction)
+    func supportedPrimariesNamed(
+        _ proxy: WaylandBorrowedProxy<WpColorManagerV1Client>, primaries: WpColorManagerV1Primaries)
     func done(_ proxy: WaylandBorrowedProxy<WpColorManagerV1Client>)
 }
-public extension WpColorManagerV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wp_color_manager_v1_listener> = {
-        let p = UnsafeMutablePointer<wp_color_manager_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wp_color_manager_v1_listener())
-        unsafe p.pointee.supported_intent = supportedIntent_impl
-        unsafe p.pointee.supported_feature = supportedFeature_impl
-        unsafe p.pointee.supported_tf_named = supportedTfNamed_impl
-        unsafe p.pointee.supported_primaries_named = supportedPrimariesNamed_impl
-        unsafe p.pointee.done = done_impl
-        return unsafe p
-    }()
-    private static func handler(_ context: WaylandClientListenerContext) -> any WpColorManagerV1Events? {
+package extension WpColorManagerV1Client {
+    package nonisolated(unsafe) static let listener:
+        UnsafeMutablePointer<wp_color_manager_v1_listener> = {
+            let p = UnsafeMutablePointer<wp_color_manager_v1_listener>.allocate(capacity: 1)
+            unsafe p.initialize(to: wp_color_manager_v1_listener())
+            unsafe p.pointee.supported_intent = supportedIntent_impl
+            unsafe p.pointee.supported_feature = supportedFeature_impl
+            unsafe p.pointee.supported_tf_named = supportedTfNamed_impl
+            unsafe p.pointee.supported_primaries_named = supportedPrimariesNamed_impl
+            unsafe p.pointee.done = done_impl
+            return unsafe p
+        }()
+    private static func handler(_ context: WaylandClientListenerContext)
+        -> any WpColorManagerV1Events?
+    {
         context.owner as? any WpColorManagerV1Events
     }
-    private static let supportedIntent_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, render_intent in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let supportedIntent_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = {
+            data, proxy, render_intent in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.supportedIntent(
+                    WaylandBorrowedProxy<WpColorManagerV1Client>(eventProxy),
+                    render_intent: WpColorManagerV1RenderIntent(rawValue: render_intent))
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
+    private static let supportedFeature_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = {
+            data, proxy, feature in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.supportedFeature(
+                    WaylandBorrowedProxy<WpColorManagerV1Client>(eventProxy),
+                    feature: WpColorManagerV1Feature(rawValue: feature))
+            }
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.supportedIntent(WaylandBorrowedProxy<WpColorManagerV1Client>(eventProxy), render_intent: WpColorManagerV1RenderIntent(rawValue: render_intent))
+    private static let supportedTfNamed_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = {
+            data, proxy, tf in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.supportedTfNamed(
+                    WaylandBorrowedProxy<WpColorManagerV1Client>(eventProxy),
+                    tf: WpColorManagerV1TransferFunction(rawValue: tf))
+            }
         }
-    }
-    private static let supportedFeature_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, feature in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let supportedPrimariesNamed_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = {
+            data, proxy, primaries in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.supportedPrimariesNamed(
+                    WaylandBorrowedProxy<WpColorManagerV1Client>(eventProxy),
+                    primaries: WpColorManagerV1Primaries(rawValue: primaries))
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
+    private static let done_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.done(WaylandBorrowedProxy<WpColorManagerV1Client>(eventProxy))
+            }
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.supportedFeature(WaylandBorrowedProxy<WpColorManagerV1Client>(eventProxy), feature: WpColorManagerV1Feature(rawValue: feature))
-        }
-    }
-    private static let supportedTfNamed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, tf in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.supportedTfNamed(WaylandBorrowedProxy<WpColorManagerV1Client>(eventProxy), tf: WpColorManagerV1TransferFunction(rawValue: tf))
-        }
-    }
-    private static let supportedPrimariesNamed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, primaries in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.supportedPrimariesNamed(WaylandBorrowedProxy<WpColorManagerV1Client>(eventProxy), primaries: WpColorManagerV1Primaries(rawValue: primaries))
-        }
-    }
-    private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.done(WaylandBorrowedProxy<WpColorManagerV1Client>(eventProxy))
-        }
-    }
 }
-public extension WaylandProxy where Interface == WpColorManagerV1Client {
-    func installListener(_ owner: any WpColorManagerV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpColorManagerV1Client {
+    package func installListener(_ owner: any WpColorManagerV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe wp_color_manager_v1_add_listener(proxy, WpColorManagerV1Client.listener, data)
         }

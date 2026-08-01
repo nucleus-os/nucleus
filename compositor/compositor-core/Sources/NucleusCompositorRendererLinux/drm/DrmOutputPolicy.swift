@@ -45,7 +45,8 @@ struct VrrState: Sendable, Equatable {
     /// was impossible while the policy was fixed at construction.
     init(capable: Bool, adaptiveSync: Bool? = nil) {
         self.capable = capable
-        self.policy = capable && (adaptiveSync ?? true)
+        self.policy =
+            capable && (adaptiveSync ?? true)
             ? .fullscreenDirectScanoutOnly
             : .disabled
         self.enabled = false
@@ -155,7 +156,9 @@ struct FrameTelemetry: Sendable, Equatable {
     mutating func noteRenderedFrame() { renderedFrameCount &+= 1 }
     mutating func noteGpuCompletedFrame() { gpuCompletedFrameCount &+= 1 }
     mutating func noteDroppedRenderedFrame() { droppedRenderedFrameCount &+= 1 }
-    mutating func noteComposedFrameFailure(_ reason: FrameFailureReason) { composedFrameFailureCount &+= 1 }
+    mutating func noteComposedFrameFailure(_ reason: FrameFailureReason) {
+        composedFrameFailureCount &+= 1
+    }
 
     /// Accumulate one composed-frame total-time sample (count + sum + max).
     mutating func recordComposedFrameTiming(totalNs: UInt64) {
@@ -166,7 +169,8 @@ struct FrameTelemetry: Sendable, Equatable {
 
     /// Mean composed-frame time, or nil before any sample.
     var meanComposedFrameNs: UInt64? {
-        composedFrameTimingCount == 0 ? nil : composedFrameTimingTotalNs / UInt64(composedFrameTimingCount)
+        composedFrameTimingCount == 0
+            ? nil : composedFrameTimingTotalNs / UInt64(composedFrameTimingCount)
     }
 
     /// One-shot color-diagnostics gate (true the first time per kind).

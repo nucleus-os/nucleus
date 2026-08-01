@@ -11,10 +11,10 @@
 // no_release_point / conflicting_points.
 
 import Glibc
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
 import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 /// A named point on a DRM syncobj timeline: the imported handle plus the 64-bit point.
 struct SyncPoint: Equatable, Sendable {
@@ -76,14 +76,16 @@ extension WpLinuxDrmSyncobjManager: WpLinuxDrmSyncobjManagerV1Requests {
                 message: "surface already has a syncobj surface")
             return
         }
-        guard id.create(
-            owner: { handle in
-                WpDrmSyncobjSurface(resource: handle, surface: surface)
-            },
-            installed: { object in
-                surface.addCommitObserver(object)
-            }
-        ) != nil else {
+        guard
+            id.create(
+                owner: { handle in
+                    WpDrmSyncobjSurface(resource: handle, surface: surface)
+                },
+                installed: { object in
+                    surface.addCommitObserver(object)
+                }
+            ) != nil
+        else {
             surface.releaseAux(.syncobj)
             return
         }
@@ -93,8 +95,7 @@ extension WpLinuxDrmSyncobjManager: WpLinuxDrmSyncobjManagerV1Requests {
 /// wp_linux_drm_syncobj_timeline_v1 owner (Rule 9): a DRM syncobj handle.
 @MainActor
 @safe final class WpDrmSyncobjTimeline {
-    private let resource:
-        WaylandResourceHandle<WpLinuxDrmSyncobjTimelineV1Server>
+    private let resource: WaylandResourceHandle<WpLinuxDrmSyncobjTimelineV1Server>
     let handle: UInt32
     private let destroy: (UInt32) -> Void
     init(
@@ -116,8 +117,7 @@ extension WpLinuxDrmSyncobjManager: WpLinuxDrmSyncobjManagerV1Requests {
 @MainActor
 @safe final class WpDrmSyncobjSurface: WlSurfaceCommitObserver {
     private weak let surface: WlSurface?
-    private let resource:
-        WaylandResourceHandle<WpLinuxDrmSyncobjSurfaceV1Server>
+    private let resource: WaylandResourceHandle<WpLinuxDrmSyncobjSurfaceV1Server>
     private var pendingAcquire: SyncPoint?
     private var pendingRelease: SyncPoint?
 
@@ -139,7 +139,10 @@ extension WpLinuxDrmSyncobjManager: WpLinuxDrmSyncobjManagerV1Requests {
         effects: inout [() -> Void]
     ) -> Bool {
         let hasPoint = pendingAcquire != nil || pendingRelease != nil
-        defer { pendingAcquire = nil; pendingRelease = nil }
+        defer {
+            pendingAcquire = nil
+            pendingRelease = nil
+        }
 
         // Points and one newly attached non-null buffer are an iff contract.
         guard bufferAttached, attachedBufferIsNonNull else {
@@ -187,7 +190,8 @@ extension WpDrmSyncobjSurface: WpLinuxDrmSyncobjSurfaceV1Requests {
     // set_acquire_point(timeline, point_hi, point_lo)
     func setAcquirePoint(
         _ request: WaylandRequest<WpLinuxDrmSyncobjSurfaceV1Server>,
-        timeline timelineRes: WaylandBorrowedObject<WpLinuxDrmSyncobjTimelineV1Server>, point_hi hi: UInt32, point_lo lo: UInt32
+        timeline timelineRes: WaylandBorrowedObject<WpLinuxDrmSyncobjTimelineV1Server>,
+        point_hi hi: UInt32, point_lo lo: UInt32
     ) {
         guard surface != nil else {
             request.postError(.noSurface, message: "wl_surface was destroyed")
@@ -200,7 +204,8 @@ extension WpDrmSyncobjSurface: WpLinuxDrmSyncobjSurfaceV1Requests {
     // set_release_point(timeline, point_hi, point_lo)
     func setReleasePoint(
         _ request: WaylandRequest<WpLinuxDrmSyncobjSurfaceV1Server>,
-        timeline timelineRes: WaylandBorrowedObject<WpLinuxDrmSyncobjTimelineV1Server>, point_hi hi: UInt32, point_lo lo: UInt32
+        timeline timelineRes: WaylandBorrowedObject<WpLinuxDrmSyncobjTimelineV1Server>,
+        point_hi hi: UInt32, point_lo lo: UInt32
     ) {
         guard surface != nil else {
             request.postError(.noSurface, message: "wl_surface was destroyed")

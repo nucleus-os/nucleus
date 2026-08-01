@@ -7,17 +7,17 @@
 // compositor's. The runtime projects `windows` into typed native product state and routes typed
 // taskbar actions directly back through the handle.
 
-public import WaylandClientDispatch
+package import WaylandClientDispatch
 
 /// A window as seen over foreign-toplevel. Value snapshot the native taskbar reads.
-public struct NucleusDesktopToplevel: Identifiable, Sendable {
-    public let id: UInt64
-    public var title: String = ""
-    public var appID: String = ""
-    public var activated: Bool = false
-    public var maximized: Bool = false
-    public var minimized: Bool = false
-    public var fullscreen: Bool = false
+package struct NucleusDesktopToplevel: Identifiable, Sendable {
+    package let id: UInt64
+    package var title: String = ""
+    package var appID: String = ""
+    package var activated: Bool = false
+    package var maximized: Bool = false
+    package var minimized: Bool = false
+    package var fullscreen: Bool = false
 }
 
 @MainActor
@@ -27,9 +27,9 @@ public struct NucleusDesktopToplevel: Identifiable, Sendable {
     private weak var client: NucleusDesktopConnection?
 
     /// Live windows keyed by handle id, in arrival order.
-    public private(set) var windows: [NucleusDesktopToplevel] = []
+    package private(set) var windows: [NucleusDesktopToplevel] = []
     /// Fired (coalesced per `done`) whenever the window set or any window's state changes.
-    public var onChanged: (() -> Void)?
+    package var onChanged: (() -> Void)?
 
     // Per-handle: the proxy, a scratch record accumulating events until `done` publishes it,
     // and a back-reference to the owning manager so the handle's events can publish/remove.
@@ -55,7 +55,7 @@ public struct NucleusDesktopToplevel: Identifiable, Sendable {
     }
     private var handles: [UInt64: HandleBox] = [:]
 
-    public init?(client: NucleusDesktopConnection) {
+    package init?(client: NucleusDesktopConnection) {
         guard let manager = client.foreignToplevel else { return nil }
         self.manager = manager
         self.client = client
@@ -91,7 +91,7 @@ public struct NucleusDesktopToplevel: Identifiable, Sendable {
 
     // MARK: - Actions (routed from the native taskbar → the compositor's model)
 
-    public func activate(id: UInt64) {
+    package func activate(id: UInt64) {
         guard let box = handles[id],
               let seat = client?.seat
         else {
@@ -99,11 +99,11 @@ public struct NucleusDesktopToplevel: Identifiable, Sendable {
         }
         try? box.handle.activate(seat: seat)
     }
-    public func close(id: UInt64) {
+    package func close(id: UInt64) {
         guard let box = handles[id] else { return }
         try? box.handle.close()
     }
-    public func setMinimized(id: UInt64, _ minimized: Bool) {
+    package func setMinimized(id: UInt64, _ minimized: Bool) {
         guard let box = handles[id] else { return }
         if minimized {
             try? box.handle.setMinimized()
@@ -111,7 +111,7 @@ public struct NucleusDesktopToplevel: Identifiable, Sendable {
             try? box.handle.unsetMinimized()
         }
     }
-    public func setMaximized(id: UInt64, _ maximized: Bool) {
+    package func setMaximized(id: UInt64, _ maximized: Bool) {
         guard let box = handles[id] else { return }
         if maximized {
             try? box.handle.setMaximized()
@@ -119,7 +119,7 @@ public struct NucleusDesktopToplevel: Identifiable, Sendable {
             try? box.handle.unsetMaximized()
         }
     }
-    public func setFullscreen(id: UInt64, _ fullscreen: Bool) {
+    package func setFullscreen(id: UInt64, _ fullscreen: Bool) {
         guard let box = handles[id] else { return }
         if fullscreen {
             try? box.handle.setFullscreen(output: nil)
@@ -130,7 +130,7 @@ public struct NucleusDesktopToplevel: Identifiable, Sendable {
 }
 
 extension NucleusDesktopForeignToplevelManager: ZwlrForeignToplevelManagerV1Events {
-    public func toplevel(
+    package func toplevel(
         _ proxy: WaylandBorrowedProxy<ZwlrForeignToplevelManagerV1Client>,
         toplevel: WaylandProxy<ZwlrForeignToplevelHandleV1Client>
     ) {
@@ -144,7 +144,7 @@ extension NucleusDesktopForeignToplevelManager: ZwlrForeignToplevelManagerV1Even
             try? toplevel.destroy()
         }
     }
-    public func finished(
+    package func finished(
         _ proxy: WaylandBorrowedProxy<ZwlrForeignToplevelManagerV1Client>
     ) {}
 }

@@ -12,10 +12,10 @@
 // already_constrained. InputDispatch applies the cursor clamp/freeze; this owns the
 // lifetime/active/dead transitions and the (un)locked/(un)confined wire events.
 
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
 import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 @MainActor
 @safe final class PointerConstraintsManager {
@@ -84,19 +84,21 @@ extension PointerConstraintsManager: ZwpPointerConstraintsV1Requests {
     func lockPointer(
         _ request: WaylandRequest<ZwpPointerConstraintsV1Server>,
         id: WlNewId<ZwpLockedPointerV1Server>,
-        surface: WaylandBorrowedObject<WlSurfaceServer>, pointer: WaylandBorrowedObject<WlPointerServer>,
+        surface: WaylandBorrowedObject<WlSurfaceServer>,
+        pointer: WaylandBorrowedObject<WlPointerServer>,
         region: WaylandBorrowedObject<WlRegionServer>?, lifetime: ZwpPointerConstraintsV1Lifetime
     ) {
-        guard let prepared = prepareConstraint(
-            surfaceRes: surface,
-            regionRes: region,
-            lifetimeRaw: lifetime.rawValue,
-            kind: .locked,
-            onAlreadyConstrained: {
-                request.postError(
-                    .alreadyConstrained,
-                    message: "pointer already constrained for surface")
-            })
+        guard
+            let prepared = prepareConstraint(
+                surfaceRes: surface,
+                regionRes: region,
+                lifetimeRaw: lifetime.rawValue,
+                kind: .locked,
+                onAlreadyConstrained: {
+                    request.postError(
+                        .alreadyConstrained,
+                        message: "pointer already constrained for surface")
+                })
         else { return }
         _ = id.create(
             owner: { handle in
@@ -116,19 +118,21 @@ extension PointerConstraintsManager: ZwpPointerConstraintsV1Requests {
     func confinePointer(
         _ request: WaylandRequest<ZwpPointerConstraintsV1Server>,
         id: WlNewId<ZwpConfinedPointerV1Server>,
-        surface: WaylandBorrowedObject<WlSurfaceServer>, pointer: WaylandBorrowedObject<WlPointerServer>,
+        surface: WaylandBorrowedObject<WlSurfaceServer>,
+        pointer: WaylandBorrowedObject<WlPointerServer>,
         region: WaylandBorrowedObject<WlRegionServer>?, lifetime: ZwpPointerConstraintsV1Lifetime
     ) {
-        guard let prepared = prepareConstraint(
-            surfaceRes: surface,
-            regionRes: region,
-            lifetimeRaw: lifetime.rawValue,
-            kind: .confined,
-            onAlreadyConstrained: {
-                request.postError(
-                    .alreadyConstrained,
-                    message: "pointer already constrained for surface")
-            })
+        guard
+            let prepared = prepareConstraint(
+                surfaceRes: surface,
+                regionRes: region,
+                lifetimeRaw: lifetime.rawValue,
+                kind: .confined,
+                onAlreadyConstrained: {
+                    request.postError(
+                        .alreadyConstrained,
+                        message: "pointer already constrained for surface")
+                })
         else { return }
         _ = id.create(
             owner: { handle in
@@ -187,15 +191,15 @@ extension PointerConstraintsManager: ZwpPointerConstraintsV1Requests {
 
     fileprivate func sendActive() {
         switch resource {
-        case let .locked(handle): handle.sendLocked()
-        case let .confined(handle): handle.sendConfined()
+        case .locked(let handle): handle.sendLocked()
+        case .confined(let handle): handle.sendConfined()
         }
     }
 
     fileprivate func sendInactive() {
         switch resource {
-        case let .locked(handle): handle.sendUnlocked()
-        case let .confined(handle): handle.sendUnconfined()
+        case .locked(let handle): handle.sendUnlocked()
+        case .confined(let handle): handle.sendUnconfined()
         }
     }
 

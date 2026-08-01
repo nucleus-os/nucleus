@@ -3,9 +3,8 @@
 // macOS developer already knows, sitting on top of the imperative `Application` / `Window`
 // / `View` surface, which stays as the layer it builds on.
 //
-// `Application.withContext` is the one first-party privileged seam used here (pushing the
-// host's rendering context while the scene tree materializes), reached through the
-// `@_spi(NucleusRenderServer)` group — the SPI is used internally and never re-exported.
+// `Application.withContexts` installs the host's UI and visual contexts while the scene tree
+// materializes. It is package-scoped runtime assembly, not part of the app-authoring contract.
 
 import NucleusUI
 

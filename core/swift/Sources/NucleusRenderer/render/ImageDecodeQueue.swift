@@ -1,3 +1,8 @@
+package import NucleusAppHostProtocols
+package import NucleusRenderModel
+import NucleusSkiaGraphiteBridge
+import Tracy
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Android)
@@ -5,12 +10,8 @@ import Android
 #elseif canImport(Darwin)
 import Darwin
 #endif
-package import NucleusRenderModel
-import NucleusSkiaGraphiteBridge
-import Tracy
 
-@_spi(NucleusPlatform)
-public enum ImageDecodeFailure: Error, Sendable, Equatable, Hashable {
+package enum ImageDecodeFailure: Error, Sendable, Equatable, Hashable {
     case unreadableInput
     case unsupportedFormat
     case invalidDimensions
@@ -96,7 +97,7 @@ package final class ImageDecodeQueue {
             let key = JobKey(handle: handle, generation: generation)
             let (accepted, shouldWake) = synchronization.withLock {
                 guard running, handle != 0, generation != 0,
-                      !submittedJobs.contains(key)
+                    !submittedJobs.contains(key)
                 else { return (false, false) }
 
                 // A newer generation supersedes only non-started work. Running
@@ -108,9 +109,10 @@ package final class ImageDecodeQueue {
                     where request.key.handle == handle
                         && request.key != key
                     {
-                        shouldWake = appendCompletion(
-                            key: request.key,
-                            result: .failure(.cancellation)) || shouldWake
+                        shouldWake =
+                            appendCompletion(
+                                key: request.key,
+                                result: .failure(.cancellation)) || shouldWake
                     }
                     retained.removeAll {
                         $0.key.handle == handle && $0.key != key
@@ -140,9 +142,10 @@ package final class ImageDecodeQueue {
                 let results = Array(completed.prefix(count))
                 completed.removeFirst(count)
                 for completion in results {
-                    submittedJobs.remove(JobKey(
-                        handle: completion.handle,
-                        generation: completion.generation))
+                    submittedJobs.remove(
+                        JobKey(
+                            handle: completion.handle,
+                            generation: completion.generation))
                 }
                 return results
             }
@@ -154,9 +157,10 @@ package final class ImageDecodeQueue {
                 if pendingHead < pending.count {
                     var retained = Array(pending[pendingHead...])
                     for request in retained where request.key.handle == handle {
-                        shouldWake = appendCompletion(
-                            key: request.key,
-                            result: .failure(.cancellation)) || shouldWake
+                        shouldWake =
+                            appendCompletion(
+                                key: request.key,
+                                result: .failure(.cancellation)) || shouldWake
                     }
                     retained.removeAll { $0.key.handle == handle }
                     pending = retained
@@ -245,10 +249,11 @@ package final class ImageDecodeQueue {
             result: Result<DecodedImage, ImageDecodeFailure>
         ) -> Bool {
             let wasEmpty = completed.isEmpty
-            completed.append(ImageDecodeCompletion(
-                handle: key.handle,
-                generation: key.generation,
-                result: result))
+            completed.append(
+                ImageDecodeCompletion(
+                    handle: key.handle,
+                    generation: key.generation,
+                    result: result))
             return wasEmpty
         }
 
@@ -289,13 +294,15 @@ package final class ImageDecodeQueue {
             let retainedState =
                 unsafe Unmanaged.passRetained(state).toOpaque()
             var thread = pthread_t()
-            let created = unsafe pthread_create(&thread, nil, { pointer in
-                let state = unsafe Unmanaged<WorkerState>
-                    .fromOpaque(pointer!)
-                    .takeRetainedValue()
-                state.workerLoop()
-                return nil
-            }, unsafe retainedState)
+            let created = unsafe pthread_create(
+                &thread, nil,
+                { pointer in
+                    let state = unsafe Unmanaged<WorkerState>
+                        .fromOpaque(pointer!)
+                        .takeRetainedValue()
+                    state.workerLoop()
+                    return nil
+                }, unsafe retainedState)
             if created == 0 {
                 workers.append(thread)
             } else {
@@ -358,18 +365,20 @@ package final class ImageDecodeQueue {
     ) -> Result<ImageMetadata, ImageDecodeFailure> {
         switch source.content {
         case .raw(let buffer):
-            guard let dimensions = validatedDimensions(
-                width: buffer.width,
-                height: buffer.height,
-                bytesPerPixel: 4)
+            guard
+                let dimensions = validatedDimensions(
+                    width: buffer.width,
+                    height: buffer.height,
+                    bytesPerPixel: 4)
             else { return .failure(.limitExceeded) }
             guard buffer.isWellFormed else {
                 return .failure(.invalidDimensions)
             }
-            return .success(ImageMetadata(
-                width: dimensions.width,
-                height: dimensions.height,
-                isVector: false))
+            return .success(
+                ImageMetadata(
+                    width: dimensions.width,
+                    height: dimensions.height,
+                    isVector: false))
         case .file(let path):
             switch openEncodedFile(path) {
             case .failure(let failure):
@@ -388,9 +397,10 @@ package final class ImageDecodeQueue {
                 return .failure(.limitExceeded)
             }
             return bytes.withUnsafeBufferPointer {
-                unsafe mapMetadata(nucleus.skia.probeEncodedImageMemory(
-                    $0.baseAddress,
-                    $0.count))
+                unsafe mapMetadata(
+                    nucleus.skia.probeEncodedImageMemory(
+                        $0.baseAddress,
+                        $0.count))
             }
         }
     }
@@ -425,20 +435,22 @@ package final class ImageDecodeQueue {
                 return .failure(targetFailure(source))
             }
             return bytes.withUnsafeBufferPointer {
-                unsafe mapDecode(nucleus.skia.decodeEncodedImageMemory(
-                    $0.baseAddress,
-                    $0.count,
-                    bounds.width,
-                    bounds.height))
+                unsafe mapDecode(
+                    nucleus.skia.decodeEncodedImageMemory(
+                        $0.baseAddress,
+                        $0.count,
+                        bounds.width,
+                        bounds.height))
             }
         case .raw(let buffer):
             guard buffer.width > 0, buffer.height > 0 else {
                 return .failure(.invalidDimensions)
             }
-            guard validatedDimensions(
-                width: buffer.width,
-                height: buffer.height,
-                bytesPerPixel: 4) != nil
+            guard
+                validatedDimensions(
+                    width: buffer.width,
+                    height: buffer.height,
+                    bytesPerPixel: 4) != nil
             else { return .failure(.limitExceeded) }
             guard let rgba = buffer.normalizedRGBA() else {
                 return .failure(.decodeFailure)
@@ -486,17 +498,17 @@ package final class ImageDecodeQueue {
         bytesPerPixel: Int
     ) -> (width: Int32, height: Int32)? {
         guard width > 0, height > 0,
-              width <= Limits.maximumDimension,
-              height <= Limits.maximumDimension
+            width <= Limits.maximumDimension,
+            height <= Limits.maximumDimension
         else { return nil }
         let pixels = width.multipliedReportingOverflow(by: height)
         guard !pixels.overflow,
-              pixels.partialValue <= Limits.maximumPixels
+            pixels.partialValue <= Limits.maximumPixels
         else { return nil }
         let bytes = pixels.partialValue.multipliedReportingOverflow(
             by: bytesPerPixel)
         guard !bytes.overflow,
-              bytes.partialValue <= Limits.maximumDecodedBytes
+            bytes.partialValue <= Limits.maximumDecodedBytes
         else { return nil }
         return (Int32(width), Int32(height))
     }
@@ -511,7 +523,7 @@ package final class ImageDecodeQueue {
         }
         var metadata = stat()
         guard unsafe fstat(fileDescriptor, &metadata) == 0,
-              metadata.st_size > 0
+            metadata.st_size > 0
         else {
             close(fileDescriptor)
             return .failure(.unreadableInput)
@@ -530,10 +542,11 @@ package final class ImageDecodeQueue {
         guard metadata.isSuccess() else {
             return .failure(mapFailure(metadata.status))
         }
-        return .success(ImageMetadata(
-            width: metadata.width,
-            height: metadata.height,
-            isVector: metadata.isVector))
+        return .success(
+            ImageMetadata(
+                width: metadata.width,
+                height: metadata.height,
+                isVector: metadata.isVector))
     }
 
     private static func mapDecode(

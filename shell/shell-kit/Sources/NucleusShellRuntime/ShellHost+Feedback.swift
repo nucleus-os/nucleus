@@ -2,10 +2,9 @@ import NucleusConfig
 import NucleusSessionProtocol
 import NucleusShellProduct
 import NucleusShellServices
-@_spi(NucleusWindowClientImplementation)
-import NucleusWindowClientWayland
 import NucleusUI
 import NucleusUIEmbedder
+package import NucleusWindowClientWayland
 
 @MainActor
 struct NativeFeedbackSurface {
@@ -20,9 +19,9 @@ extension ShellHost {
     func reconcileFeedbackSurface(_ state: ShellFeedbackState) {
         destroyFeedbackSurface()
         guard state != .hidden,
-              let nativePublicationContext,
-              let surfaceRegistry,
-              let output = feedbackOutput(for: state)
+            let nativePublicationContext,
+            let surfaceRegistry,
+            let output = feedbackOutput(for: state)
         else { return }
 
         let width: UInt32
@@ -34,9 +33,10 @@ extension ShellHost {
             return
         case .hotkey:
             width = 420
-            height = UInt32(min(
-                640,
-                max(160, 72 + liveConfiguration.displayedBinds.count * 20)))
+            height = UInt32(
+                min(
+                    640,
+                    max(160, 72 + liveConfiguration.displayedBinds.count * 20)))
             localX = max(0, (output.logicalWidth - Int32(width)) / 2)
             localY = 60
         case .windowMenu(_, let x, let y, _):
@@ -54,7 +54,8 @@ extension ShellHost {
                     Int32(y.rounded()) - output.logicalY))
         }
 
-        let (view, window) = nativePublicationContext
+        let (view, window) =
+            nativePublicationContext
             .withSemanticContext {
                 let view = ShellFeedbackView()
                 switch state {
@@ -105,11 +106,13 @@ extension ShellHost {
             surfaceID: surfaceID,
             outputID: output.registryName,
             logicalOrigin: origin)
-        layerSurface.onConfigure = { [weak self] configuredWidth,
+        layerSurface.onConfigure = {
+            [weak self]
+            configuredWidth,
             configuredHeight in
             guard let self,
-                  let record = feedbackSurface,
-                  let output = client.outputs[record.outputID]
+                let record = feedbackSurface,
+                let output = client.outputs[record.outputID]
             else { return }
             _ = surfaceRegistry.configure(
                 surfaceID: record.surfaceID,
@@ -156,10 +159,11 @@ extension ShellHost {
         verb: UInt32
     ) {
         do {
-            try policyChannel?.send(ShellPolicyRequest(
-                kind: .selectWindowMenuItem,
-                windowID: windowID,
-                windowMenuVerb: verb))
+            try policyChannel?.send(
+                ShellPolicyRequest(
+                    kind: .selectWindowMenuItem,
+                    windowID: windowID,
+                    windowMenuVerb: verb))
         } catch {
             running = false
         }

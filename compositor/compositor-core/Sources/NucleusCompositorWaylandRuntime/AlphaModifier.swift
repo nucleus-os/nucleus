@@ -17,8 +17,9 @@ extension WpAlphaModifierManager: WpAlphaModifierV1Requests {
         surface surfaceResource:
             WaylandBorrowedObject<WlSurfaceServer>
     ) {
-        guard let surface = surfaceResource.owner(
-            as: WlSurface.self)
+        guard
+            let surface = surfaceResource.owner(
+                as: WlSurface.self)
         else { return }
         guard surface.claimAux(.alphaModifier) else {
             request.postError(
@@ -27,11 +28,13 @@ extension WpAlphaModifierManager: WpAlphaModifierV1Requests {
                     "wl_surface already has an alpha modifier")
             return
         }
-        guard id.create(owner: { handle in
-            WpAlphaModifierSurface(
-                resource: handle,
-                surface: surface)
-        }) != nil else {
+        guard
+            id.create(owner: { handle in
+                WpAlphaModifierSurface(
+                    resource: handle,
+                    surface: surface)
+            }) != nil
+        else {
             surface.releaseAux(.alphaModifier)
             return
         }
@@ -40,8 +43,7 @@ extension WpAlphaModifierManager: WpAlphaModifierV1Requests {
 
 @MainActor
 final class WpAlphaModifierSurface {
-    private let resource:
-        WaylandResourceHandle<WpAlphaModifierSurfaceV1Server>
+    private let resource: WaylandResourceHandle<WpAlphaModifierSurfaceV1Server>
     private weak var surface: WlSurface?
 
     init(

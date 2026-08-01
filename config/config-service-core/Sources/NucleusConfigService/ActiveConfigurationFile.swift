@@ -3,14 +3,14 @@ import Glibc
 import NucleusConfigIO
 import NucleusSessionProtocol
 
-public enum ActiveConfigurationFileFailure:
+package enum ActiveConfigurationFileFailure:
     Error, CustomStringConvertible, Sendable
 {
     case unavailable
     case invalidSource([ConfigurationDiagnosticPublication])
     case system(operation: String, error: Int32)
 
-    public var description: String {
+    package var description: String {
         switch self {
         case .unavailable:
             "no active configuration path is available"
@@ -23,15 +23,15 @@ public enum ActiveConfigurationFileFailure:
 }
 
 /// The service's sole filesystem authority over the active configuration.
-public struct ActiveConfigurationFile: Sendable {
-    public let path: String
+package struct ActiveConfigurationFile: Sendable {
+    package let path: String
 
-    public init?(path: String? = ConfigFile.defaultPath()) {
+    package init?(path: String? = ConfigFile.defaultPath()) {
         guard let path else { return nil }
         self.path = path
     }
 
-    public func load() -> ConfigLoadOutcome {
+    package func load() -> ConfigLoadOutcome {
         ConfigFile.load(path: path)
     }
 
@@ -39,7 +39,7 @@ public struct ActiveConfigurationFile: Sendable {
     ///
     /// The caller publishes this result directly. The resulting watcher event
     /// is a semantic duplicate and therefore cannot advance the generation.
-    public func replace(source: String) throws -> ConfigLoadOutcome {
+    package func replace(source: String) throws -> ConfigLoadOutcome {
         let result = ConfigLoader.load(text: source)
         if case .failed(let diagnostics) = result {
             throw ActiveConfigurationFileFailure.invalidSource(
@@ -51,7 +51,7 @@ public struct ActiveConfigurationFile: Sendable {
 
     private func persist(_ bytes: [UInt8]) throws {
         guard let separator = path.lastIndex(of: "/"),
-              separator != path.startIndex
+            separator != path.startIndex
         else {
             throw ActiveConfigurationFileFailure.unavailable
         }

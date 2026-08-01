@@ -1,5 +1,5 @@
-import NucleusTypes
 public import NucleusAppHostProtocols
+import NucleusTypes
 import Synchronization
 
 /// Runtime registry of the host-protocol references that NucleusLayers
@@ -134,7 +134,9 @@ private final class StubImageRegistrar: ImageRegistrar {
         self.identities = identities
     }
 
-    func register(path: String, maxWidth: UInt32, maxHeight: UInt32) throws(ImageRegistrationError) -> UInt64 {
+    func register(path: String, maxWidth: UInt32, maxHeight: UInt32) throws(ImageRegistrationError)
+        -> UInt64
+    {
         return identities.nextHandleValue()
     }
 
@@ -207,9 +209,9 @@ private final class StubContextIDAllocator: ContextIDAllocator {
 private final class StubDisplayLinkSource: DisplayLinkSource {
     func query(contextID: UInt32) throws(DisplayLinkError) -> NucleusTypes.PresentReport {
         return NucleusTypes.PresentReport(
-            predictedPresentationNs: 1,
-            targetPresentationNs: 2,
-            nextPresentId: 1
+            predictedPresentationNanoseconds: 1,
+            targetPresentationNanoseconds: 2,
+            nextPresentID: 1
         )
     }
 }
@@ -244,8 +246,8 @@ private final class StubIOSurfaceLifecycle: IOSurfaceLifecycle {
 }
 
 @MainActor
-public extension LayerRuntimeHost {
-    static func inMemory() -> LayerRuntimeHost {
+extension LayerRuntimeHost {
+    public static func inMemory() -> LayerRuntimeHost {
         let identities = StubIdentityAllocator()
         let allocator = StubContextIDAllocator(identities: identities)
         return LayerRuntimeHost(

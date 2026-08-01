@@ -38,8 +38,8 @@ extension AtSPIService {
             member: descriptor.1
         ) { writer in
             guard writer.string(event.detail) >= 0,
-                  writer.int32(event.detail1) >= 0,
-                  writer.int32(event.detail2) >= 0
+                writer.int32(event.detail1) >= 0,
+                writer.int32(event.detail2) >= 0
             else { return writer.result }
             let variantResult: Int32
             if let related = event.relatedPath {
@@ -47,7 +47,7 @@ extension AtSPIService {
                     $0.objectReference(busName: uniqueName, path: related)
                 }
             } else if event.kind == .boundsChanged,
-                      let object = model.objects[event.sourcePath]
+                let object = model.objects[event.sourcePath]
             {
                 variantResult = writer.variant(signature: "(iiii)") {
                     $0.structValue(signature: "iiii") {
@@ -63,9 +63,10 @@ extension AtSPIService {
             return writer.stringVariantDictionary([:])
         }
         guard result >= 0 else {
-            transitionToReconnect(after: AtSPIServiceError(
-                operation: "emitting AT-SPI event",
-                code: result))
+            transitionToReconnect(
+                after: AtSPIServiceError(
+                    operation: "emitting AT-SPI event",
+                    code: result))
             return false
         }
         return true

@@ -1,32 +1,32 @@
 import Glibc
 import NucleusLinuxPrimitives
 
-public enum NucleusWindowClientMonotonicClock {
-    public static func nowNanoseconds() -> UInt64 {
+package enum NucleusWindowClientMonotonicClock {
+    package static func nowNanoseconds() -> UInt64 {
         LinuxMonotonicClock.nowNanoseconds()
     }
 }
 
 /// Classification of one poll descriptor's returned events.
-public struct NucleusWindowClientPollResult: Sendable, Equatable {
-    public let revents: Int16
+package struct NucleusWindowClientPollResult: Sendable, Equatable {
+    package let revents: Int16
 
-    public init(revents: Int16) {
+    package init(revents: Int16) {
         self.revents = revents
     }
 
-    public var isReadable: Bool { revents & Int16(POLLIN) != 0 }
-    public var isWritable: Bool { revents & Int16(POLLOUT) != 0 }
-    public var isHungUp: Bool { revents & Int16(POLLHUP) != 0 }
-    public var isInvalid: Bool { revents & Int16(POLLNVAL) != 0 }
-    public var hasError: Bool { revents & Int16(POLLERR) != 0 }
-    public var isTerminal: Bool { isHungUp || isInvalid || hasError }
+    package var isReadable: Bool { revents & Int16(POLLIN) != 0 }
+    package var isWritable: Bool { revents & Int16(POLLOUT) != 0 }
+    package var isHungUp: Bool { revents & Int16(POLLHUP) != 0 }
+    package var isInvalid: Bool { revents & Int16(POLLNVAL) != 0 }
+    package var hasError: Bool { revents & Int16(POLLERR) != 0 }
+    package var isTerminal: Bool { isHungUp || isInvalid || hasError }
 }
 
-public enum NucleusWindowClientPollInterestPolicy {
+package enum NucleusWindowClientPollInterestPolicy {
     /// A source with no requested events remains deadline-driven; submitting it
     /// to poll/io_uring would be an invalid zero-event registration.
-    public static func shouldRegister(
+    package static func shouldRegister(
         fileDescriptor: Int32,
         events: Int16
     ) -> Bool {
@@ -34,12 +34,12 @@ public enum NucleusWindowClientPollInterestPolicy {
     }
 }
 
-public enum NucleusWindowClientFlushDisposition: Sendable, Equatable {
+package enum NucleusWindowClientFlushDisposition: Sendable, Equatable {
     case flushed
     case needsWrite
     case disconnected(error: Int32)
 
-    public static func classify(result: Int32, error: Int32) -> Self {
+    package static func classify(result: Int32, error: Int32) -> Self {
         guard result < 0 else { return .flushed }
         return error == EAGAIN
             ? .needsWrite
@@ -48,17 +48,17 @@ public enum NucleusWindowClientFlushDisposition: Sendable, Equatable {
 }
 
 /// Accumulates relative event-loop deadlines and produces poll's timeout.
-public struct NucleusWindowClientDeadlineSet: Sendable, Equatable {
-    public private(set) var earliestNanoseconds: UInt64?
+package struct NucleusWindowClientDeadlineSet: Sendable, Equatable {
+    package private(set) var earliestNanoseconds: UInt64?
 
-    public init() {}
+    package init() {}
 
-    public mutating func add(relativeNanoseconds value: UInt64?) {
+    package mutating func add(relativeNanoseconds value: UInt64?) {
         guard let value else { return }
         earliestNanoseconds = min(earliestNanoseconds ?? value, value)
     }
 
-    public mutating func add(relativeMicroseconds value: UInt64?) {
+    package mutating func add(relativeMicroseconds value: UInt64?) {
         guard let value else { return }
         let nanoseconds = value.multipliedReportingOverflow(by: 1_000)
         add(relativeNanoseconds: nanoseconds.overflow ? UInt64.max : nanoseconds.partialValue)
@@ -66,23 +66,24 @@ public struct NucleusWindowClientDeadlineSet: Sendable, Equatable {
 
     /// `-1` means infinite. Finite waits round up so poll does not wake before
     /// the earliest nanosecond deadline merely because it accepts milliseconds.
-    public var pollTimeoutMilliseconds: Int32 {
+    package var pollTimeoutMilliseconds: Int32 {
         guard let nanoseconds = earliestNanoseconds else { return -1 }
-        let milliseconds = nanoseconds / 1_000_000
+        let milliseconds =
+            nanoseconds / 1_000_000
             + (nanoseconds % 1_000_000 == 0 ? 0 : 1)
         return Int32(clamping: milliseconds)
     }
 }
 
-public enum NucleusWindowClientPresentationTiming {
+package enum NucleusWindowClientPresentationTiming {
     /// Convert wl_output's millihertz unit to a nanosecond interval.
-    public static func intervalNanoseconds(refreshMillihertz: Int32) -> UInt64? {
+    package static func intervalNanoseconds(refreshMillihertz: Int32) -> UInt64? {
         guard refreshMillihertz > 0 else { return nil }
         return 1_000_000_000_000 / UInt64(refreshMillihertz)
     }
 
     /// Advance one interval from a live deadline, or rebase after a stall.
-    public static func nextDeadline(
+    package static func nextDeadline(
         previous: UInt64?,
         now: UInt64,
         interval: UInt64
@@ -96,8 +97,8 @@ public enum NucleusWindowClientPresentationTiming {
     }
 }
 
-public enum NucleusWindowClientFrameDecision {
-    public static func shouldRender(
+package enum NucleusWindowClientFrameDecision {
+    package static func shouldRender(
         workPending: Bool,
         deadline: UInt64?,
         now: UInt64
@@ -106,13 +107,13 @@ public enum NucleusWindowClientFrameDecision {
     }
 }
 
-private extension UInt64 {
-    func saturatingAdd(_ other: UInt64) -> UInt64 {
+extension UInt64 {
+    fileprivate func saturatingAdd(_ other: UInt64) -> UInt64 {
         let result = addingReportingOverflow(other)
         return result.overflow ? .max : result.partialValue
     }
 
-    func saturatingSubtract(_ other: UInt64) -> UInt64 {
+    fileprivate func saturatingSubtract(_ other: UInt64) -> UInt64 {
         self >= other ? self - other : 0
     }
 }

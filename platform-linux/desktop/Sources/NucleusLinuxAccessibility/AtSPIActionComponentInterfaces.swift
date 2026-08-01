@@ -28,21 +28,24 @@ extension AtSPIService {
             return reply(message) { $0.string("") }
         case "GetActions":
             return reply(message) { writer in
-                writer.actionDescriptions(actions.map {
-                    (
-                        name: actionName($0),
-                        description: actionDescription($0),
-                        keyBinding: ""
-                    )
-                })
+                writer.actionDescriptions(
+                    actions.map {
+                        (
+                            name: actionName($0),
+                            description: actionDescription($0),
+                            keyBinding: ""
+                        )
+                    })
             }
         case "DoAction":
             guard let action = indexedAction(message, actions: actions),
-                  let id = object.id
+                let id = object.id
             else { return invalidArguments(message) }
-            let accepted = onAction?(.init(
-                target: id,
-                action: action)) ?? false
+            let accepted =
+                onAction?(
+                    .init(
+                        target: id,
+                        action: action)) ?? false
             return reply(message) { $0.boolean(accepted) }
         default:
             return unknownMethod(
@@ -52,7 +55,6 @@ extension AtSPIService {
         }
     }
 
-
     func handleComponent(
         _ message: SDBusMessage,
         object: AtSPIExportedObject,
@@ -61,21 +63,24 @@ extension AtSPIService {
         switch member {
         case "Contains":
             guard let x = readInt32(message),
-                  let y = readInt32(message),
-                  readUInt32(message) != nil
+                let y = readInt32(message),
+                readUInt32(message) != nil
             else { return invalidArguments(message) }
             return reply(message) {
-                $0.boolean(object.frame.contains(Point(
-                    x: Double(x),
-                    y: Double(y))))
+                $0.boolean(
+                    object.frame.contains(
+                        Point(
+                            x: Double(x),
+                            y: Double(y))))
             }
         case "GetAccessibleAtPoint":
             guard let x = readInt32(message),
-                  let y = readInt32(message),
-                  readUInt32(message) != nil
+                let y = readInt32(message),
+                readUInt32(message) != nil
             else { return invalidArguments(message) }
             let point = Point(x: Double(x), y: Double(y))
-            let path = deepestObject(at: point, below: object)
+            let path =
+                deepestObject(at: point, below: object)
                 ?? AtSPIExportModel.nullPath
             return reply(message) {
                 $0.objectReference(busName: uniqueName, path: path)
@@ -112,9 +117,11 @@ extension AtSPIService {
             guard let id = object.id else {
                 return reply(message) { $0.boolean(false) }
             }
-            let accepted = onAction?(.init(
-                target: id,
-                action: .focus)) ?? false
+            let accepted =
+                onAction?(
+                    .init(
+                        target: id,
+                        action: .focus)) ?? false
             return reply(message) { $0.boolean(accepted) }
         case "GetAlpha":
             return reply(message) { $0.double(1) }
@@ -140,12 +147,14 @@ extension AtSPIService {
         switch member {
         case "SetCurrentValue":
             guard let value = readDouble(message),
-                  let id = object.id
+                let id = object.id
             else { return invalidArguments(message) }
-            let accepted = onAction?(.init(
-                target: id,
-                action: .setValue,
-                value: value)) ?? false
+            let accepted =
+                onAction?(
+                    .init(
+                        target: id,
+                        action: .setValue,
+                        value: value)) ?? false
             return reply(message) { $0.boolean(accepted) }
         default:
             return unknownMethod(
@@ -154,7 +163,6 @@ extension AtSPIService {
                 member: member)
         }
     }
-
 
     func handleSelection(
         _ message: SDBusMessage,
@@ -173,7 +181,8 @@ extension AtSPIService {
             guard let index = readInt32(message) else {
                 return invalidArguments(message)
             }
-            let path = selected.indices.contains(Int(index))
+            let path =
+                selected.indices.contains(Int(index))
                 ? selected[Int(index)]
                 : AtSPIExportModel.nullPath
             return reply(message) {
@@ -184,13 +193,15 @@ extension AtSPIService {
             }
         case "SelectChild":
             guard let index = readInt32(message),
-                  object.childPaths.indices.contains(Int(index)),
-                  let child = model.objects[object.childPaths[Int(index)]],
-                  let id = child.id
+                object.childPaths.indices.contains(Int(index)),
+                let child = model.objects[object.childPaths[Int(index)]],
+                let id = child.id
             else { return invalidArguments(message) }
-            let accepted = onAction?(.init(
-                target: id,
-                action: .select)) ?? false
+            let accepted =
+                onAction?(
+                    .init(
+                        target: id,
+                        action: .select)) ?? false
             return reply(message) { $0.boolean(accepted) }
         default:
             return unknownMethod(
@@ -200,14 +211,13 @@ extension AtSPIService {
         }
     }
 
-
     func indexedAction(
         _ message: SDBusMessage,
         actions: [AccessibilityAction]
     ) -> AccessibilityAction? {
         guard let index = readInt32(message),
-              index >= 0,
-              actions.indices.contains(Int(index))
+            index >= 0,
+            actions.indices.contains(Int(index))
         else { return nil }
         return actions[Int(index)]
     }
@@ -271,7 +281,7 @@ extension AtSPIService {
         func descend(_ object: AtSPIExportedObject) -> String? {
             for path in object.childPaths.reversed() {
                 guard let child = model.objects[path],
-                      child.frame.contains(point)
+                    child.frame.contains(point)
                 else { continue }
                 return descend(child) ?? path
             }
@@ -279,7 +289,6 @@ extension AtSPIService {
         }
         return descend(root)
     }
-
 
     static func isWindowRole(_ role: UInt32) -> Bool {
         role == 2 || role == 16 || role == 41 || role == 69

@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for zxdg_importer_v1.
 
 import WaylandClientC
-public enum ZxdgImporterV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum ZxdgImporterV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zxdg_importer_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == ZxdgImporterV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZxdgImporterV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zxdg_importer_v1_destroy(_proxy)
@@ -17,10 +18,18 @@ public extension WaylandProxy where Interface == ZxdgImporterV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func `import`(handle: String) throws(WaylandProxyError) -> WaylandProxy<ZxdgImportedV1Client> {
+    package func `import`(handle: String) throws(WaylandProxyError) -> WaylandProxy<
+        ZxdgImportedV1Client
+    > {
         let _proxy = try unsafe requireNativeProxy()
-        return try handle.withCString { (_handleCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> WaylandProxy<ZxdgImportedV1Client> in
-            guard let _created = unsafe swift_wayland_client_request_zxdg_importer_v1_import(_proxy, _handleCString) else {
+        return try handle.withCString {
+            (_handleCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> WaylandProxy<
+                ZxdgImportedV1Client
+            > in
+            guard
+                let _created = unsafe swift_wayland_client_request_zxdg_importer_v1_import(
+                    _proxy, _handleCString)
+            else {
                 throw WaylandProxyError.proxyCreationFailed
             }
             return unsafe makeOwnedProxy(

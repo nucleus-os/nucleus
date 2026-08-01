@@ -1,16 +1,16 @@
-public import NucleusUI
+package import NucleusUI
 
 /// A panel of wrapped body text under a title — the case that cannot be laid
 /// out from `intrinsicContentSize` at all, because the body's height is a
 /// function of the width the panel is given.
 @MainActor
-public final class ShellNoticeView: View {
-    public let titleLabel: Label
-    public let bodyLabel: Label
+package final class ShellNoticeView: View {
+    package let titleLabel: Label
+    package let bodyLabel: Label
 
     private let column: StackView
 
-    public init(title: String = "", body: String = "") {
+    package init(title: String = "", body: String = "") {
         column = StackView(axis: .vertical, spacing: 4, alignment: .fill)
         titleLabel = Label(title)
         bodyLabel = Label(body)
@@ -29,11 +29,11 @@ public final class ShellNoticeView: View {
 
     /// Defers to the column, which measures the wrapped body against the
     /// width being proposed.
-    public override func measure(_ constraints: LayoutConstraints) -> Size {
+    package override func measure(_ constraints: LayoutConstraints) -> Size {
         column.measure(constraints)
     }
 
-    public override func layout() {
+    package override func layout() {
         column.arrange(in: bounds)
     }
 }

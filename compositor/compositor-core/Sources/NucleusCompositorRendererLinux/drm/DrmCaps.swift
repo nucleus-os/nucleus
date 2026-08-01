@@ -45,8 +45,8 @@ enum DrmCapabilities {
     /// Enable universal planes then atomic — the order the kernel requires
     /// (atomic implies universal planes). Returns true only if both succeed.
     static func enableAtomicModesetting(fd: Int32) -> Bool {
-        setClientCap(fd: fd, capability: clientCapUniversalPlanes) &&
-            setClientCap(fd: fd, capability: clientCapAtomic)
+        setClientCap(fd: fd, capability: clientCapUniversalPlanes)
+            && setClientCap(fd: fd, capability: clientCapAtomic)
     }
 
     /// Read the cursor/modifier/syncobj device caps. Absent caps read as 0/false.
@@ -56,7 +56,6 @@ enum DrmCapabilities {
             cursorHeight: get(fd: fd, capability: capCursorHeight) ?? 0,
             addFB2Modifiers: (get(fd: fd, capability: capAddFB2Modifiers) ?? 0) != 0,
             syncobj: (get(fd: fd, capability: capSyncobj) ?? 0) != 0,
-            timestampMonotonic:
-                (get(fd: fd, capability: capTimestampMonotonic) ?? 0) != 0)
+            timestampMonotonic: (get(fd: fd, capability: capTimestampMonotonic) ?? 0) != 0)
     }
 }

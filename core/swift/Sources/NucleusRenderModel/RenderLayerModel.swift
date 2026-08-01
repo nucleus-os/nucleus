@@ -5,50 +5,51 @@
 /// 4×4 transform in Skia's `SkM44` column-major layout (`m[col*4 + row]`).
 /// Carried value only here; mapping/concatenation is renderer-side. Mirrors
 /// `m44.M44`.
-public struct M44: Equatable, Sendable {
+package struct M44: Equatable, Sendable {
     /// 16 floats, column-major. Kept as an array (not a tuple) because Swift
     /// only synthesizes tuple `==` up to arity 6.
-    public var m: [Float]
+    package var m: [Float]
 
-    public init(m: [Float]) { self.m = m }
+    package init(m: [Float]) { self.m = m }
 
-    public static let identity = M44(m: [
+    package static let identity = M44(m: [
         1, 0, 0, 0,
         0, 1, 0, 0,
         0, 0, 1, 0,
-        0, 0, 0, 1])
+        0, 0, 0, 1,
+    ])
 }
 
 /// Layer logical size. Mirrors `Bounds`.
-public struct Bounds: Equatable, Sendable {
-    public var w: Float = 0
-    public var h: Float = 0
+package struct Bounds: Equatable, Sendable {
+    package var w: Float = 0
+    package var h: Float = 0
 
-    public init(w: Float = 0, h: Float = 0) {
+    package init(w: Float = 0, h: Float = 0) {
         self.w = w
         self.h = h
     }
 }
 
 /// 2D point. Mirrors `Point2D`. Default anchor is (0.5, 0.5).
-public struct Point2D: Equatable, Sendable {
-    public var x: Float = 0
-    public var y: Float = 0
+package struct Point2D: Equatable, Sendable {
+    package var x: Float = 0
+    package var y: Float = 0
 
-    public init(x: Float = 0, y: Float = 0) {
+    package init(x: Float = 0, y: Float = 0) {
         self.x = x
         self.y = y
     }
 }
 
-/// Axis-aligned rect. Mirrors `Rect`.
-public struct Rect: Equatable, Sendable {
-    public var x: Float = 0
-    public var y: Float = 0
-    public var w: Float = 0
-    public var h: Float = 0
+/// Axis-aligned rectangle in the renderer's `Float` coordinate domain.
+package struct RenderRect: Equatable, Sendable {
+    package var x: Float = 0
+    package var y: Float = 0
+    package var w: Float = 0
+    package var h: Float = 0
 
-    public init(x: Float = 0, y: Float = 0, w: Float = 0, h: Float = 0) {
+    package init(x: Float = 0, y: Float = 0, w: Float = 0, h: Float = 0) {
         self.x = x
         self.y = y
         self.w = w
@@ -56,45 +57,45 @@ public struct Rect: Equatable, Sendable {
     }
 }
 
-/// Composition-time clip: rounded rect + a 3×3 transform. Mirrors `ClipOp`.
-public struct ClipOp: Equatable, Sendable {
-    public var rect: Float4
-    public var radii: Float4
-    public var antiAlias: Bool
+/// Composition-time clip in the renderer's tuple-based Float domain.
+package struct RenderClip: Equatable, Sendable {
+    package var rect: Float4
+    package var radii: Float4
+    package var antiAlias: Bool
     /// Row-major 3×3 (`[9]f32`). Array, not a tuple, for `Equatable`.
-    public var transform: [Float]
+    package var transform: [Float]
 
-    public init(rect: Float4, radii: Float4, antiAlias: Bool, transform: [Float]) {
+    package init(rect: Float4, radii: Float4, antiAlias: Bool, transform: [Float]) {
         self.rect = rect
         self.radii = radii
         self.antiAlias = antiAlias
         self.transform = transform
     }
 
-    public static func == (lhs: ClipOp, rhs: ClipOp) -> Bool {
-        float4Equal(lhs.rect, rhs.rect) && float4Equal(lhs.radii, rhs.radii) &&
-            lhs.antiAlias == rhs.antiAlias && lhs.transform == rhs.transform
+    package static func == (lhs: RenderClip, rhs: RenderClip) -> Bool {
+        float4Equal(lhs.rect, rhs.rect) && float4Equal(lhs.radii, rhs.radii)
+            && lhs.antiAlias == rhs.antiAlias && lhs.transform == rhs.transform
     }
 }
 
 // MARK: - Model state (producer side)
 
 /// Producer-authored layer geometry/opacity/clip. Mirrors `ModelProperties`.
-public struct ModelProperties: Equatable, Sendable {
-    public var position = Point2D()
-    public var anchorPoint = Point2D(x: 0.5, y: 0.5)
-    public var transform = M44.identity
-    public var opacity: Float = 1.0
-    public var clip: ClipOp?
-    public var bounds = Bounds()
-    public var scrollOffset = Point2D()
+package struct ModelProperties: Equatable, Sendable {
+    package var position = Point2D()
+    package var anchorPoint = Point2D(x: 0.5, y: 0.5)
+    package var transform = M44.identity
+    package var opacity: Float = 1.0
+    package var clip: RenderClip?
+    package var bounds = Bounds()
+    package var scrollOffset = Point2D()
 
-    public init(
+    package init(
         position: Point2D = Point2D(),
         anchorPoint: Point2D = Point2D(x: 0.5, y: 0.5),
         transform: M44 = M44.identity,
         opacity: Float = 1.0,
-        clip: ClipOp? = nil,
+        clip: RenderClip? = nil,
         bounds: Bounds = Bounds(),
         scrollOffset: Point2D = Point2D()
     ) {
@@ -109,18 +110,18 @@ public struct ModelProperties: Equatable, Sendable {
 }
 
 /// Producer-authored retained model state for a node. Mirrors `ModelState`.
-public struct ModelState: Equatable, Sendable {
-    public var properties = ModelProperties()
-    public var visualStyle: VisualStyle?
+package struct ModelState: Equatable, Sendable {
+    package var properties = ModelProperties()
+    package var visualStyle: VisualStyle?
     /// `none` for pure structural layers; otherwise paint/external/snapshot.
-    public var content: LayerContent = .none
-    public var visualRevision: UInt64 = 0
+    package var content: LayerContent = .none
+    package var visualRevision: UInt64 = 0
     /// Revision of visual state excluding the sampled content identity. This
     /// lets output damage distinguish a localized paint replacement from a
     /// simultaneous geometry/style change that requires old-and-new footprints.
-    public var compositeRevision: UInt64 = 0
+    package var compositeRevision: UInt64 = 0
 
-    public init(
+    package init(
         properties: ModelProperties = ModelProperties(),
         visualStyle: VisualStyle? = nil,
         content: LayerContent = .none,
@@ -136,7 +137,7 @@ public struct ModelState: Equatable, Sendable {
 
     /// Releases content back to `none`. Mirrors `ModelState.deinit` (value-type
     /// here, so this is an explicit reset rather than a destructor).
-    public mutating func reset() {
+    package mutating func reset() {
         content = .none
     }
 }
@@ -146,18 +147,18 @@ public struct ModelState: Equatable, Sendable {
 /// Animation-driven overrides applied over `ModelProperties` at composition
 /// time. Each `nil` field falls through to the model. Mirrors
 /// `PresentationOverride`.
-public struct PresentationOverride: Equatable, Sendable {
-    public var transform: M44?
-    public var opacity: Float?
-    public var position: Point2D?
-    public var bounds: Bounds?
-    public var anchorPoint: Point2D?
-    public var scrollOffset: Point2D?
+package struct PresentationOverride: Equatable, Sendable {
+    package var transform: M44?
+    package var opacity: Float?
+    package var position: Point2D?
+    package var bounds: Bounds?
+    package var anchorPoint: Point2D?
+    package var scrollOffset: Point2D?
     /// Uniform corner-radius override applied to all four corners while the
     /// rasterized fill stays based on the model's per-corner radii.
-    public var cornerRadiusUniform: Float?
+    package var cornerRadiusUniform: Float?
 
-    public init(
+    package init(
         transform: M44? = nil,
         opacity: Float? = nil,
         position: Point2D? = nil,
@@ -178,21 +179,21 @@ public struct PresentationOverride: Equatable, Sendable {
 
 /// Whether this layer has a renderable backing yet. Mirrors
 /// `PresentationReadiness`.
-public enum PresentationReadiness: UInt8, Sendable {
+package enum PresentationReadiness: Sendable {
     case noBacking
     case backingReady
 }
 
 /// Pixel source rect + logical size used to sample one side of a presentation
 /// transition. Mirrors `ContentSample`.
-public struct ContentSample: Equatable, Sendable {
-    public var sourceSurfaceId: UInt64 = 0
-    public var srcOrigin: (Float, Float) = (0, 0)
-    public var srcSize: (Float, Float) = (0, 0)
-    public var logicalSize = Bounds()
-    public var opaqueFullSurface: Bool = false
+package struct ContentSample: Equatable, Sendable {
+    package var sourceSurfaceId: UInt64 = 0
+    package var srcOrigin: (Float, Float) = (0, 0)
+    package var srcSize: (Float, Float) = (0, 0)
+    package var logicalSize = Bounds()
+    package var opaqueFullSurface: Bool = false
 
-    public init(
+    package init(
         sourceSurfaceId: UInt64 = 0,
         srcOrigin: (Float, Float) = (0, 0),
         srcSize: (Float, Float) = (0, 0),
@@ -206,22 +207,21 @@ public struct ContentSample: Equatable, Sendable {
         self.opaqueFullSurface = opaqueFullSurface
     }
 
-    public static func == (lhs: ContentSample, rhs: ContentSample) -> Bool {
-        lhs.sourceSurfaceId == rhs.sourceSurfaceId &&
-            lhs.srcOrigin == rhs.srcOrigin && lhs.srcSize == rhs.srcSize &&
-            lhs.logicalSize == rhs.logicalSize &&
-            lhs.opaqueFullSurface == rhs.opaqueFullSurface
+    package static func == (lhs: ContentSample, rhs: ContentSample) -> Bool {
+        lhs.sourceSurfaceId == rhs.sourceSurfaceId && lhs.srcOrigin == rhs.srcOrigin
+            && lhs.srcSize == rhs.srcSize && lhs.logicalSize == rhs.logicalSize
+            && lhs.opaqueFullSurface == rhs.opaqueFullSurface
     }
 }
 
 /// One background-effect region rect. Mirrors `BackgroundEffectRect`.
-public struct BackgroundEffectRect: Equatable, Sendable {
-    public var x: Float = 0
-    public var y: Float = 0
-    public var w: Float = 0
-    public var h: Float = 0
+package struct BackgroundEffectRect: Equatable, Sendable {
+    package var x: Float = 0
+    package var y: Float = 0
+    package var w: Float = 0
+    package var h: Float = 0
 
-    public init(x: Float = 0, y: Float = 0, w: Float = 0, h: Float = 0) {
+    package init(x: Float = 0, y: Float = 0, w: Float = 0, h: Float = 0) {
         self.x = x
         self.y = y
         self.w = w
@@ -231,14 +231,15 @@ public struct BackgroundEffectRect: Equatable, Sendable {
 
 /// Up to `maxRects` background-effect regions published by the router scene
 /// feeder. Mirrors `BackgroundEffectRegions`.
-public struct BackgroundEffectRegions: Equatable, Sendable {
-    public static let maxRects = 8
+package struct BackgroundEffectRegions: Equatable, Sendable {
+    package static let maxRects = 8
 
-    public var rects: [BackgroundEffectRect] = Array(repeating: BackgroundEffectRect(), count: maxRects)
-    public var count: UInt32 = 0
-    public var wholeSurface: Bool = false
+    package var rects: [BackgroundEffectRect] = Array(
+        repeating: BackgroundEffectRect(), count: maxRects)
+    package var count: UInt32 = 0
+    package var wholeSurface: Bool = false
 
-    public init(
+    package init(
         rects: [BackgroundEffectRect] = Array(repeating: BackgroundEffectRect(), count: maxRects),
         count: UInt32 = 0,
         wholeSurface: Bool = false
@@ -251,16 +252,16 @@ public struct BackgroundEffectRegions: Equatable, Sendable {
 
 /// Renderer-authoritative per-node presentation state. Mirrors
 /// `PresentationState`.
-public struct PresentationState: Equatable, Sendable {
-    public var override_: PresentationOverride?
-    public var readiness: PresentationReadiness = .noBacking
+package struct PresentationState: Equatable, Sendable {
+    package var override_: PresentationOverride?
+    package var readiness: PresentationReadiness = .noBacking
     /// Renderer-authoritative content mirrored from `model.content`.
-    public var content: LayerContent = .none
-    public var contentSample = ContentSample()
-    public var backgroundEffect: Bool = false
-    public var backgroundEffectRegions = BackgroundEffectRegions()
+    package var content: LayerContent = .none
+    package var contentSample = ContentSample()
+    package var backgroundEffect: Bool = false
+    package var backgroundEffectRegions = BackgroundEffectRegions()
 
-    public init(
+    package init(
         override_: PresentationOverride? = nil,
         readiness: PresentationReadiness = .noBacking,
         content: LayerContent = .none,
@@ -282,28 +283,31 @@ public struct PresentationState: Equatable, Sendable {
 /// The `effective*` precedence: each reads
 /// the presentation override (set by an in-flight animation) before falling
 /// back to the model.
-public enum EffectiveLayer: Sendable {
-    public static func transform(model: ModelProperties, presentation: PresentationState) -> M44 {
+package enum EffectiveLayer: Sendable {
+    package static func transform(model: ModelProperties, presentation: PresentationState) -> M44 {
         if let ov = presentation.override_, let t = ov.transform { return t }
         return model.transform
     }
 
-    public static func bounds(model: ModelProperties, presentation: PresentationState) -> Bounds {
+    package static func bounds(model: ModelProperties, presentation: PresentationState) -> Bounds {
         if let ov = presentation.override_, let b = ov.bounds { return b }
         return model.bounds
     }
 
-    public static func position(model: ModelProperties, presentation: PresentationState) -> Point2D {
+    package static func position(model: ModelProperties, presentation: PresentationState) -> Point2D
+    {
         if let ov = presentation.override_, let p = ov.position { return p }
         return model.position
     }
 
-    public static func anchorPoint(model: ModelProperties, presentation: PresentationState) -> Point2D {
+    package static func anchorPoint(model: ModelProperties, presentation: PresentationState)
+        -> Point2D
+    {
         if let ov = presentation.override_, let a = ov.anchorPoint { return a }
         return model.anchorPoint
     }
 
-    public static func opacity(model: ModelProperties, presentation: PresentationState) -> Float {
+    package static func opacity(model: ModelProperties, presentation: PresentationState) -> Float {
         if let ov = presentation.override_, let o = ov.opacity { return o }
         return model.opacity
     }
@@ -311,7 +315,7 @@ public enum EffectiveLayer: Sendable {
     /// Per-corner radii at composition time. The override is uniform-only (one
     /// scalar applied to all four corners); per-corner asymmetry comes from the
     /// model's visual style.
-    public static func cornerRadii(model: ModelState, presentation: PresentationState) -> Float4 {
+    package static func cornerRadii(model: ModelState, presentation: PresentationState) -> Float4 {
         if let ov = presentation.override_, let r = ov.cornerRadiusUniform {
             return (r, r, r, r)
         }
@@ -324,22 +328,24 @@ public enum EffectiveLayer: Sendable {
 
 /// Resolved sampling geometry for a content texture. Mirrors
 /// `ResolvedContentSample`.
-public struct ResolvedContentSample: Equatable, Sendable {
-    public var srcOrigin: (Float, Float)
-    public var srcSize: (Float, Float)
-    public var logicalW: Double
-    public var logicalH: Double
+package struct ResolvedContentSample: Equatable, Sendable {
+    package var srcOrigin: (Float, Float)
+    package var srcSize: (Float, Float)
+    package var logicalW: Double
+    package var logicalH: Double
 
-    public init(srcOrigin: (Float, Float), srcSize: (Float, Float), logicalW: Double, logicalH: Double) {
+    package init(
+        srcOrigin: (Float, Float), srcSize: (Float, Float), logicalW: Double, logicalH: Double
+    ) {
         self.srcOrigin = srcOrigin
         self.srcSize = srcSize
         self.logicalW = logicalW
         self.logicalH = logicalH
     }
 
-    public static func == (lhs: ResolvedContentSample, rhs: ResolvedContentSample) -> Bool {
-        lhs.srcOrigin == rhs.srcOrigin && lhs.srcSize == rhs.srcSize &&
-            lhs.logicalW == rhs.logicalW && lhs.logicalH == rhs.logicalH
+    package static func == (lhs: ResolvedContentSample, rhs: ResolvedContentSample) -> Bool {
+        lhs.srcOrigin == rhs.srcOrigin && lhs.srcSize == rhs.srcSize && lhs.logicalW == rhs.logicalW
+            && lhs.logicalH == rhs.logicalH
     }
 }
 
@@ -347,7 +353,7 @@ public struct ResolvedContentSample: Equatable, Sendable {
 /// fallbacks: a non-positive source size falls back to the whole texture, and a
 /// non-positive logical size falls back to the supplied logical size, then to
 /// the source size (min 1). Pure. Mirrors `resolveContentSample`.
-public func resolveContentSample(
+package func resolveContentSample(
     _ sample: ContentSample,
     textureWidth: UInt32,
     textureHeight: UInt32,

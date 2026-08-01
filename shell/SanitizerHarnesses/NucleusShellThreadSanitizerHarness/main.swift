@@ -1,4 +1,4 @@
-@_spi(NucleusShellTesting) import NucleusShellRuntime
+package import NucleusShellRuntime
 
 @main
 struct NucleusShellThreadSanitizerHarness {

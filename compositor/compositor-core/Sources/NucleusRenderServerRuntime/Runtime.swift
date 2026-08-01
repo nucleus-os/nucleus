@@ -2,10 +2,10 @@
 // main-actor isolated, but its reactor wait suspends that actor so unrelated
 // UI, process, and service tasks can make progress between host events.
 import NucleusConfig
-public import NucleusSessionProtocol
+package import NucleusSessionProtocol
 
 @MainActor
-public func runNucleusCompositor(
+package func runNucleusCompositor(
     configuration: SessionConfiguration = .defaults,
     liveConfiguration: RenderServerConfiguration =
         NucleusConfiguration.defaults.renderServerProjection,
@@ -31,15 +31,16 @@ public func runNucleusCompositor(
     }
     defer { session.shutdown() }
 
-    guard let runtime = CompositorRuntime(
-        configuration: configuration,
-        liveConfiguration: liveConfiguration,
-        configurationEpoch: configurationEpoch,
-        configurationGeneration: configurationGeneration,
-        configurationChannel: configurationChannel,
-        controlChannel: controlChannel,
-        shellPolicyAttachments: shellPolicyAttachments,
-        readinessReporter: readinessReporter)
+    guard
+        let runtime = CompositorRuntime(
+            configuration: configuration,
+            liveConfiguration: liveConfiguration,
+            configurationEpoch: configurationEpoch,
+            configurationGeneration: configurationGeneration,
+            configurationChannel: configurationChannel,
+            controlChannel: controlChannel,
+            shellPolicyAttachments: shellPolicyAttachments,
+            readinessReporter: readinessReporter)
     else { return Int32(1) }
     guard runtime.bringUp() else {
         await runtime.teardown()

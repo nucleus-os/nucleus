@@ -1,16 +1,16 @@
 import Glibc
+import NucleusDiagnostics
 import NucleusLinuxAccessibility
 import NucleusLinuxReactor
 import NucleusSessionProtocol
-import NucleusWindowClientInput
-import NucleusWindowClientRuntime
-import NucleusWindowClientPasteboard
 import NucleusShellProduct
-import NucleusWindowClientRender
-@_spi(NucleusWindowClientImplementation)
-import NucleusWindowClientWayland
 import NucleusUI
 import NucleusUIEmbedder
+import NucleusWindowClientInput
+import NucleusWindowClientPasteboard
+import NucleusWindowClientRender
+import NucleusWindowClientRuntime
+package import NucleusWindowClientWayland
 import WaylandClient
 
 @MainActor
@@ -122,7 +122,7 @@ extension ShellHost {
             nextPresentationDeadlineNs = nowNanoseconds
         }
         guard let scheduledDeadline = nextPresentationDeadlineNs,
-              NucleusWindowClientFrameDecision.shouldRender(
+            NucleusWindowClientFrameDecision.shouldRender(
                 workPending: renderWorkDue,
                 deadline: scheduledDeadline,
                 now: nowNanoseconds)
@@ -139,7 +139,8 @@ extension ShellHost {
 
         if animationDemand {
             animationDemand = false
-            let remainsActive = nativePublicationContext?
+            let remainsActive =
+                nativePublicationContext?
                 .semanticContext
                 .advanceAnimations(
                     predictedPresentationNanoseconds:
@@ -197,8 +198,8 @@ extension ShellHost {
         _ postedOutputIDs: Set<UInt64>
     ) {
         guard readinessReporter != nil, !postedOutputIDs.isEmpty,
-              policyChannel == nil || policyReady,
-              let surfaceRegistry
+            policyChannel == nil || policyReady,
+            let surfaceRegistry
         else { return }
 
         let liveOutputIDs = Set(client.outputs.keys)
@@ -220,12 +221,13 @@ extension ShellHost {
                     for: record.surfaceID),
                 contentReady: true)
         }
-        guard startupReadiness.observe(
-            postedRenderOutputIDs: postedOutputIDs,
-            liveOutputIDs: liveOutputIDs,
-            wallpapers: wallpapers,
-            bars: bars),
-              let reporter = readinessReporter
+        guard
+            startupReadiness.observe(
+                postedRenderOutputIDs: postedOutputIDs,
+                liveOutputIDs: liveOutputIDs,
+                wallpapers: wallpapers,
+                bars: bars),
+            let reporter = readinessReporter
         else { return }
 
         do {
@@ -246,4 +248,3 @@ extension ShellHost {
         NucleusLogger(subsystem: "shell").error(message)
     }
 }
-import NucleusDiagnostics

@@ -1,8 +1,9 @@
-import NucleusUITestSupport
 import NucleusTypes
-@_spi(NucleusRenderServer) @testable import NucleusUI
-@_spi(NucleusRenderServer) @testable import NucleusLayers
+import NucleusUITestSupport
 import Testing
+
+@testable import NucleusLayers
+@testable import NucleusUI
 
 @MainActor
 @Suite(.uiContext) struct LayerTransactionImplicitTests {
@@ -90,12 +91,14 @@ import Testing
         }
 
         let updates = sink.transactions.flatMap(\.propertyUpdates)
-        let frame = try #require(updates.first {
-            $0.properties.position != nil && $0.properties.bounds != nil
-        })
-        let opacity = try #require(updates.first {
-            $0.properties.opacity == 0.5
-        })
+        let frame = try #require(
+            updates.first {
+                $0.properties.position != nil && $0.properties.bounds != nil
+            })
+        let opacity = try #require(
+            updates.first {
+                $0.properties.opacity == 0.5
+            })
         #expect(frame.properties.actionPolicy == .default)
         #expect(opacity.properties.actionPolicy == .none)
     }

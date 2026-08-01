@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for ext_image_capture_source_v1.
 
 import WaylandClientC
-public enum ExtImageCaptureSourceV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum ExtImageCaptureSourceV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_ext_image_capture_source_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == ExtImageCaptureSourceV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ExtImageCaptureSourceV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_ext_image_capture_source_v1_destroy(_proxy)

@@ -1,6 +1,6 @@
-import NucleusRenderer // private framework implementation
-import NucleusCompositorSignalC
 import Glibc
+package import NucleusAppHostProtocols
+import NucleusCompositorSignalC
 import Synchronization
 
 /// Thread-safe eventfd wake owned by the compositor reactor.
@@ -47,7 +47,8 @@ package final class CompositorRenderWakeSink: AsyncRenderWakeSink {
             // Keep the lock through the syscall. Otherwise shutdown can close
             // and recycle this descriptor before the write reaches the kernel.
             if nucleus_compositor_signal_render_wake(
-                state.fileDescriptor) != 0 {
+                state.fileDescriptor) != 0
+            {
                 state.signalsWritten &+= 1
             } else {
                 state.signalFailures &+= 1

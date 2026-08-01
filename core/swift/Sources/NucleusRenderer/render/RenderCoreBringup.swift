@@ -1,9 +1,11 @@
-import NucleusSkiaGraphiteBridge
+package import NucleusAppHostProtocols
 import NucleusDiagnostics
-import VulkanC
-import Vulkan
+package import NucleusRenderModel
+import NucleusSkiaGraphiteBridge
 import Tracy
-public import NucleusRenderModel
+import Vulkan
+import VulkanC
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Android)
@@ -15,15 +17,16 @@ extension RenderCore {
     /// context + frame driver, and the shared retained tree. No platform fd — the
     /// presentation backend owns the display device. Returns nil when the GPU stack
     /// is unavailable.
-    public static func create(
+    package static func create(
         applicationName: String,
         presentation: VkRequirements.PresentationMode = .platformDefault,
         store: RetainedTreeStore,
         resourceHost: SwiftResourceHost,
         asyncRenderWakeSink: any AsyncRenderWakeSink
     ) -> RenderCore? {
-        guard let bootstrap = VulkanBootstrap.create(
-            applicationName: applicationName, presentation: presentation)
+        guard
+            let bootstrap = VulkanBootstrap.create(
+                applicationName: applicationName, presentation: presentation)
         else { return nil }
         return create(
             bootstrap: bootstrap, qualification: .none,
@@ -31,7 +34,7 @@ extension RenderCore {
             asyncRenderWakeSink: asyncRenderWakeSink)
     }
 
-    public static func create(
+    package static func create(
         bootstrap: VulkanBootstrap,
         qualification: VulkanPresentationQualification,
         store: RetainedTreeStore,
@@ -41,7 +44,7 @@ extension RenderCore {
         guard !bootstrap.finalized else { return nil }
         let contract = bootstrap.contract
         guard let instanceHandle = unsafe bootstrap.instanceLifetime.owner?.handle,
-              let instanceDispatch = bootstrap.instanceLifetime.owner?.dispatch
+            let instanceDispatch = bootstrap.instanceLifetime.owner?.dispatch
         else { return nil }
         let requiredSurface: VkSurfaceKHR?
         let probe: ((VkInstance, VkPhysicalDevice, UInt32) -> Bool)?
@@ -52,22 +55,27 @@ extension RenderCore {
         case .platformProbe(let body):
             unsafe requiredSurface = nil
             unsafe probe = { instance, device, family in
-                unsafe body(VulkanInstanceHandle(instance), VulkanPhysicalDeviceHandle(device), family)
+                unsafe body(
+                    VulkanInstanceHandle(instance), VulkanPhysicalDeviceHandle(device), family)
             }
         case .surface(let surface):
             guard unsafe surface.instance == instanceHandle else { return nil }
             unsafe requiredSurface = surface.handle
             unsafe probe = nil
         }
-        guard let selection = unsafe DeviceOwner.selectPhysicalDevice(
-            instance: instanceHandle, dispatch: instanceDispatch, contract: contract,
-            requiredPresentationSurface: requiredSurface,
-            queueFamilyPresentationSupport: probe
-        ) else { return nil }
-        guard let device = unsafe DeviceOwner.create(
-            selection: selection, instanceDispatch: instanceDispatch,
-            contract: contract
-        ) else { return nil }
+        guard
+            let selection = unsafe DeviceOwner.selectPhysicalDevice(
+                instance: instanceHandle, dispatch: instanceDispatch, contract: contract,
+                requiredPresentationSurface: requiredSurface,
+                queueFamilyPresentationSupport: probe
+            )
+        else { return nil }
+        guard
+            let device = unsafe DeviceOwner.create(
+                selection: selection, instanceDispatch: instanceDispatch,
+                contract: contract
+            )
+        else { return nil }
         guard let queue = unsafe device.queue(family: selection.graphicsQueueFamily) else {
             return nil
         }
@@ -90,10 +98,11 @@ extension RenderCore {
             return unsafe nucleus.skia.makeGraphiteVulkanContext(ctxDesc)
         }
         guard unsafe context.isValid() else { return nil }
-        guard let driver = unsafe FrameDriver(
-            context: context,
-            resourceHost: resourceHost,
-            wakeSink: asyncRenderWakeSink)
+        guard
+            let driver = unsafe FrameDriver(
+                context: context,
+                resourceHost: resourceHost,
+                wakeSink: asyncRenderWakeSink)
         else {
             return nil
         }
@@ -151,7 +160,7 @@ extension RenderCore {
 
         var replacement = unsafe makeReplacementGraphiteContext()
         guard unsafe replacement.isValid(),
-              let driver = unsafe FrameDriver(
+            let driver = unsafe FrameDriver(
                 context: replacement,
                 resourceHost: resourceHost,
                 wakeSink: asyncRenderWakeSink)
@@ -183,9 +192,9 @@ extension RenderCore {
         return false
     }
 
-    public func createSurface(_ factory: VulkanSurfaceFactory) -> VulkanSurface? {
+    package func createSurface(_ factory: VulkanSurfaceFactory) -> VulkanSurface? {
         guard let instanceLifetime,
-              let token = unsafe factory(VulkanInstanceHandle(instanceHandle))
+            let token = unsafe factory(VulkanInstanceHandle(instanceHandle))
         else { return nil }
         return unsafe VulkanSurface(
             lifetime: instanceLifetime, instance: instanceHandle, dispatch: instanceDispatch,

@@ -28,10 +28,11 @@ final class SessionLockGate {
         awaiting.removeAll(keepingCapacity: true)
 
         for display in host.server.layout.displays {
-            awaiting.append(AwaitingLockedFrame(
-                outputID: display.id,
-                threshold: display.displayLink.peekNextPresentID()
-            ))
+            awaiting.append(
+                AwaitingLockedFrame(
+                    outputID: display.id,
+                    threshold: display.displayLink.peekNextPresentID()
+                ))
             RenderBridge.requestFrame(
                 server: host.server,
                 outputId: display.id,
@@ -70,7 +71,8 @@ final class SessionLockGate {
         let live = Set(host.server.layout.displays.map(\.id))
 
         awaiting.removeAll { entry in
-            (entry.outputID == outputID && acked >= entry.threshold) || !live.contains(entry.outputID)
+            (entry.outputID == outputID && acked >= entry.threshold)
+                || !live.contains(entry.outputID)
         }
 
         if awaiting.isEmpty {

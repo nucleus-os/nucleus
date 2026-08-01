@@ -281,8 +281,8 @@ struct DrmPropertyEntry: Sendable, Equatable {
 /// KMS object kinds the property enumeration runs against.
 enum DrmObjectKind: UInt32 {
     case connector = 0xc0c0_c0c0  // DRM_MODE_OBJECT_CONNECTOR
-    case crtc = 0xcccc_cccc       // DRM_MODE_OBJECT_CRTC
-    case plane = 0xeeee_eeee      // DRM_MODE_OBJECT_PLANE
+    case crtc = 0xcccc_cccc  // DRM_MODE_OBJECT_CRTC
+    case plane = 0xeeee_eeee  // DRM_MODE_OBJECT_PLANE
 }
 
 enum DrmProperties {
@@ -299,8 +299,9 @@ enum DrmProperties {
 
         let count = unsafe Int(props.pointee.count_props)
         guard count > 0,
-              let ids = unsafe props.pointee.props,
-              let values = unsafe props.pointee.prop_values else { return [] }
+            let ids = unsafe props.pointee.props,
+            let values = unsafe props.pointee.prop_values
+        else { return [] }
 
         var entries: [DrmPropertyEntry] = []
         entries.reserveCapacity(count)
@@ -326,7 +327,8 @@ enum DrmProperties {
 
     /// Resolve a property value by name on a live object (nil when absent),
     /// mirroring `getObjectPropertyValue`.
-    static func findValue(fd: Int32, objectId: UInt32, kind: DrmObjectKind, name: String) -> UInt64? {
+    static func findValue(fd: Int32, objectId: UInt32, kind: DrmObjectKind, name: String) -> UInt64?
+    {
         findValue(in: enumerate(fd: fd, objectId: objectId, kind: kind), name: name)
     }
 

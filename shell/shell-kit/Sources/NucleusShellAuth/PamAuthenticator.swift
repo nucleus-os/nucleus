@@ -1,25 +1,26 @@
 import Dispatch
 import NucleusShellAuthWire
 import NucleusShellProcessC
-public import NucleusShellProduct
-public import NucleusUI
+package import NucleusShellProduct
+package import NucleusUI
+
 #if canImport(Glibc)
 import Glibc
 #endif
 
 @MainActor
-public final class PamAuthenticator: LockAuthenticator {
-    public enum PollSource: Sendable, Equatable {
+package final class PamAuthenticator: LockAuthenticator {
+    package enum PollSource: Sendable, Equatable {
         case response
         case process
     }
 
-    public struct PollDescriptor: Sendable {
-        public var source: PollSource
-        public var fileDescriptor: Int32
+    package struct PollDescriptor: Sendable {
+        package var source: PollSource
+        package var fileDescriptor: Int32
     }
 
-    public var service: String = "login"
+    package var service: String = "login"
     private let helperPath: String
     private let pollSetDidChange: @MainActor () -> Void
     private let attemptTimeoutNanoseconds: UInt64
@@ -41,7 +42,7 @@ public final class PamAuthenticator: LockAuthenticator {
 
     private var attempt: Attempt?
 
-    public init(
+    package init(
         helperPath: String? = nil,
         attemptTimeoutNanoseconds: UInt64 = 30_000_000_000,
         exitGraceNanoseconds: UInt64 = 1_000_000_000,
@@ -57,7 +58,7 @@ public final class PamAuthenticator: LockAuthenticator {
         self.pollSetDidChange = pollSetDidChange
     }
 
-    public var pollDescriptors: [PollDescriptor] {
+    package var pollDescriptors: [PollDescriptor] {
         guard let attempt else { return [] }
         return [
             PollDescriptor(source: .response, fileDescriptor: attempt.responseFD),
@@ -65,13 +66,13 @@ public final class PamAuthenticator: LockAuthenticator {
         ]
     }
 
-    public func nanosecondsUntilDeadline(nowNanoseconds: UInt64) -> UInt64? {
+    package func nanosecondsUntilDeadline(nowNanoseconds: UInt64) -> UInt64? {
         guard let attempt else { return nil }
         let deadline = min(attempt.attemptDeadline, attempt.exitDeadline ?? .max)
         return deadline > nowNanoseconds ? deadline - nowNanoseconds : 0
     }
 
-    public func authenticate(
+    package func authenticate(
         password: consuming SecureBytes,
         completion: @escaping (LockAuthenticationOutcome) -> Void
     ) {
@@ -107,7 +108,7 @@ public final class PamAuthenticator: LockAuthenticator {
         }
         let pidFD = openPidFD(spawned.pid)
         guard pidFD >= 0,
-              nucleus_shell_set_nonblocking(spawned.responseFD) == 0
+            nucleus_shell_set_nonblocking(spawned.responseFD) == 0
         else {
             if pidFD >= 0 { close(pidFD) }
             close(spawned.responseFD)
@@ -140,7 +141,7 @@ public final class PamAuthenticator: LockAuthenticator {
         pollSetDidChange()
     }
 
-    public func process(
+    package func process(
         _ source: PollSource,
         nowNanoseconds: UInt64
     ) {
@@ -154,9 +155,10 @@ public final class PamAuthenticator: LockAuthenticator {
         finishIfReady()
     }
 
-    public func processDeadline(nowNanoseconds: UInt64) {
+    package func processDeadline(nowNanoseconds: UInt64) {
         guard var current = attempt else { return }
-        let expired = nowNanoseconds >= current.attemptDeadline
+        let expired =
+            nowNanoseconds >= current.attemptDeadline
             || current.exitDeadline.map { nowNanoseconds >= $0 } == true
         guard expired else { return }
         if !current.didKill {
@@ -169,7 +171,7 @@ public final class PamAuthenticator: LockAuthenticator {
         finishIfReady()
     }
 
-    public func cancelPendingAttempt() {
+    package func cancelPendingAttempt() {
         guard let current = attempt else { return }
         attempt = nil
         _ = kill(current.pid, SIGKILL)
@@ -180,7 +182,7 @@ public final class PamAuthenticator: LockAuthenticator {
         current.completion(.unavailable("Authentication cancelled"))
     }
 
-    public func failPendingAttempt(_ message: String) {
+    package func failPendingAttempt(_ message: String) {
         failAndKill(message)
     }
 
@@ -208,7 +210,8 @@ public final class PamAuthenticator: LockAuthenticator {
         var fromHelper: [Int32] = [-1, -1]
         guard unsafe nucleus_shell_pipe(&toHelper) == 0 else { return nil }
         guard unsafe nucleus_shell_pipe(&fromHelper) == 0 else {
-            close(toHelper[0]); close(toHelper[1])
+            close(toHelper[0])
+            close(toHelper[1])
             return nil
         }
         var actions = unsafe posix_spawn_file_actions_t()
@@ -231,7 +234,8 @@ public final class PamAuthenticator: LockAuthenticator {
         close(toHelper[0])
         close(fromHelper[1])
         guard result == 0 else {
-            close(toHelper[1]); close(fromHelper[0])
+            close(toHelper[1])
+            close(fromHelper[0])
             return nil
         }
         return Spawned(pid: pid, responseFD: fromHelper[0], requestFD: toHelper[1])
@@ -297,8 +301,8 @@ public final class PamAuthenticator: LockAuthenticator {
 
     private func finishIfReady() {
         guard let current = attempt,
-              let response = current.response,
-              let exitCode = current.exitCode
+            let response = current.response,
+            let exitCode = current.exitCode
         else { return }
         attempt = nil
         close(current.responseFD)

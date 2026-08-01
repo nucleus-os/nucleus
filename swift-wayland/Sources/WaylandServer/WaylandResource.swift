@@ -4,10 +4,10 @@
 // libwayland or another subsystem. libwayland owns the resource's wire/object mechanics; the
 // Swift owner holds the server-side semantic state for it.
 
-public import WaylandServerC
+package import WaylandServerC
 
 @MainActor
-public enum WaylandResource {
+package enum WaylandResource {
     private static var owners: [UInt: AnyObject] = [:]
 
     typealias ResourceFactory = (
@@ -24,7 +24,7 @@ public enum WaylandResource {
     /// request-handler struct (e.g. a zero-initialized swift_wayland_<iface>_requests
     /// with its handler fields assigned), or nil for resources that take no
     /// requests.
-    public static func create(
+    package static func create(
         client: OpaquePointer,
         interface: UnsafePointer<wl_interface>?,
         version: Int32,
@@ -160,12 +160,14 @@ public enum WaylandResource {
         installed: (Owner) -> Void,
         using createResource: ResourceFactory
     ) -> Owner? {
-        guard let resource = unsafe createResource(
-            client, Interface.descriptor.nativeInterface, version, id)
+        guard
+            let resource = unsafe createResource(
+                client, Interface.descriptor.nativeInterface, version, id)
         else { return nil }
 
-        guard let reference =
-            unsafe WaylandResourceReference<Interface>(resource)
+        guard
+            let reference =
+                unsafe WaylandResourceReference<Interface>(resource)
         else {
             unsafe wl_resource_destroy(resource)
             return nil
@@ -196,8 +198,9 @@ public enum WaylandResource {
         owner: AnyObject,
         using createResource: ResourceFactory
     ) -> UnsafeMutablePointer<wl_resource>? {
-        guard let resource = unsafe createResource(
-            client, interface, version, id)
+        guard
+            let resource = unsafe createResource(
+                client, interface, version, id)
         else { return nil }
         let retained = unsafe Unmanaged.passRetained(owner).toOpaque()
         owners[UInt(bitPattern: resource)] = owner
@@ -208,7 +211,7 @@ public enum WaylandResource {
 
     /// Borrow the Swift owner bound to a resource created by this runtime.
     /// Foreign resources return nil without interpreting their user data.
-    public static func owner<T: AnyObject>(
+    package static func owner<T: AnyObject>(
         of resource: UnsafeMutablePointer<wl_resource>, as _: T.Type
     ) -> T? {
         owners[UInt(bitPattern: resource)] as? T
@@ -243,9 +246,10 @@ public enum WaylandResource {
         unsafe self.resource = resource
         self.semanticOwner = semanticOwner
         unsafe self.listener = nil
-        guard let listener = unsafe swift_wayland_resource_lifetime_listener_create(
-            Unmanaged.passUnretained(self).toOpaque(),
-            waylandResourceReferenceDestroyed)
+        guard
+            let listener = unsafe swift_wayland_resource_lifetime_listener_create(
+                Unmanaged.passUnretained(self).toOpaque(),
+                waylandResourceReferenceDestroyed)
         else { return nil }
         unsafe self.listener = listener
         unsafe swift_wayland_resource_lifetime_listener_attach(
@@ -258,7 +262,7 @@ public enum WaylandResource {
         }
     }
 
-    public func typedHandle<Interface: WaylandServerInterface>(
+    package func typedHandle<Interface: WaylandServerInterface>(
         as _: Interface.Type
     ) -> WaylandResourceHandle<Interface>? {
         unsafe WaylandResourceHandle(resource)
@@ -279,7 +283,8 @@ public enum WaylandResource {
 /// the resource. The interface parameter is fixed when the reference is created,
 /// so retained resources cannot be reconstructed as another protocol type.
 @MainActor
-@safe public final class WaylandResourceReference<
+@safe
+package final class WaylandResourceReference<
     Interface: WaylandServerInterface
 > {
     private let lifetime: WaylandResourceLifetime
@@ -289,51 +294,52 @@ public enum WaylandResource {
         _ resource: UnsafeMutablePointer<wl_resource>?,
         retaining semanticOwner: AnyObject? = nil
     ) {
-        guard let lifetime = unsafe WaylandResourceLifetime(
-            resource,
-            retaining: semanticOwner)
+        guard
+            let lifetime = unsafe WaylandResourceLifetime(
+                resource,
+                retaining: semanticOwner)
         else { return nil }
         self.lifetime = lifetime
     }
 
-    public var handle: WaylandResourceHandle<Interface> {
+    package var handle: WaylandResourceHandle<Interface> {
         WaylandResourceHandle(reference: self)
     }
 
-    public var isLive: Bool {
+    package var isLive: Bool {
         unsafe lifetime.resource != nil
     }
 
-    public var version: Int32? {
+    package var version: Int32? {
         guard let resource = unsafe lifetime.resource else { return nil }
         return unsafe wl_resource_get_version(resource)
     }
 
-    public var clientID: WaylandClientID? {
+    package var clientID: WaylandClientID? {
         guard let resource = unsafe lifetime.resource else { return nil }
         return unsafe WaylandClientID(wl_resource_get_client(resource))
     }
 
-    public var objectID: UInt32? {
+    package var objectID: UInt32? {
         guard let resource = unsafe lifetime.resource else { return nil }
         return unsafe wl_resource_get_id(resource)
     }
 
-    public func retainedSemanticOwner<Owner: AnyObject>(
+    package func retainedSemanticOwner<Owner: AnyObject>(
         as _: Owner.Type
     ) -> Owner? {
         lifetime.semanticOwner as? Owner
     }
 
     @discardableResult
-    public func destroy() -> Bool {
+    package func destroy() -> Bool {
         guard let resource = unsafe lifetime.resource else { return false }
         unsafe wl_resource_destroy(resource)
         return true
     }
 
     @discardableResult
-    public func postNoMemory() -> Bool {
+    package func postNoMemory() -> Bool {
         guard let resource = unsafe lifetime.resource else { return false }
         unsafe wl_resource_post_no_memory(resource)
         return true
@@ -344,31 +350,33 @@ public enum WaylandResource {
     }
 }
 
-private let waylandResourceReferenceDestroyed: @convention(c) (
-    UnsafeMutablePointer<wl_listener>?, UnsafeMutableRawPointer?
-) -> Void = { listener, _ in
-    guard let listener = unsafe listener,
-          let owner = unsafe swift_wayland_resource_lifetime_listener_owner(
-            listener)
-    else { return }
-    let reference = unsafe Unmanaged<WaylandResourceLifetime>
-        .fromOpaque(owner).takeUnretainedValue()
-    guard let box = unsafe swift_wayland_resource_lifetime_listener_box(
-        listener)
-    else { return }
-    let actorReference = reference
-    nonisolated(unsafe) let actorBox = unsafe box
-    MainActor.assumeIsolated {
-        unsafe actorReference.resourceDestroyed(actorBox)
+private let waylandResourceReferenceDestroyed:
+    @convention(c) (
+        UnsafeMutablePointer<wl_listener>?, UnsafeMutableRawPointer?
+    ) -> Void = { listener, _ in
+        guard let listener = unsafe listener,
+            let owner = unsafe swift_wayland_resource_lifetime_listener_owner(
+                listener)
+        else { return }
+        let reference = unsafe Unmanaged<WaylandResourceLifetime>
+            .fromOpaque(owner).takeUnretainedValue()
+        guard
+            let box = unsafe swift_wayland_resource_lifetime_listener_box(
+                listener)
+        else { return }
+        let actorReference = reference
+        nonisolated(unsafe) let actorBox = unsafe box
+        MainActor.assumeIsolated {
+            unsafe actorReference.resourceDestroyed(actorBox)
+        }
     }
-}
 
 // One destroy callback serves every resource: release the retained owner box.
 // Semantic teardown runs in the owner's deinit.
 let swiftWaylandResourceDestroy: @convention(c) (UnsafeMutablePointer<wl_resource>?) -> Void = {
     resource in
     guard let resource = unsafe resource,
-          let ud = unsafe wl_resource_get_user_data(resource)
+        let ud = unsafe wl_resource_get_user_data(resource)
     else { return }
     nonisolated(unsafe) let actorOwner = unsafe ud
     nonisolated(unsafe) let actorResource = unsafe resource

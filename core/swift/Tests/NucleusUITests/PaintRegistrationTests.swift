@@ -1,9 +1,9 @@
+import NucleusAppHostProtocols
+package import NucleusLayers
+import NucleusTypes
+import NucleusUI
 import NucleusUITestSupport
 import Testing
-import NucleusUI
-@_spi(NucleusRenderServer) import NucleusLayers
-import NucleusAppHostProtocols
-import NucleusTypes
 
 /// Counts registrations so a test can prove that an unchanged drawing does not
 /// re-register. The in-memory context registrar hands out handles without
@@ -39,9 +39,10 @@ private final class PayloadPaintView: View {
         var path = Path()
         path.move(to: Point(x: 0, y: 0))
         path.addLine(to: Point(x: bounds.size.width, y: 0))
-        path.addLine(to: Point(
-            x: bounds.size.width,
-            y: bounds.size.height))
+        path.addLine(
+            to: Point(
+                x: bounds.size.width,
+                y: bounds.size.height))
         path.close()
         context.fill(path)
     }
@@ -63,18 +64,19 @@ private final class PayloadPaintView: View {
         let stub = LayerRuntimeHost.inMemory()
         let runtimeHost = LayerRuntimeHost(
             operations: Host(
-            imageRegistrar: stub.operations.imageRegistrar,
-            paintContentRegistrar: registrar,
-            runtimeEffectRegistrar: stub.operations.runtimeEffectRegistrar,
-            iosurfaceBinder: stub.operations.iosurfaceBinder,
-            contextIDAllocator: stub.operations.contextIDAllocator,
-            displayLinkSource: stub.operations.displayLinkSource,
-            implicitActionRegistrar: stub.operations.implicitActionRegistrar),
+                imageRegistrar: stub.operations.imageRegistrar,
+                paintContentRegistrar: registrar,
+                runtimeEffectRegistrar: stub.operations.runtimeEffectRegistrar,
+                iosurfaceBinder: stub.operations.iosurfaceBinder,
+                contextIDAllocator: stub.operations.contextIDAllocator,
+                displayLinkSource: stub.operations.displayLinkSource,
+                implicitActionRegistrar: stub.operations.implicitActionRegistrar),
             lifecycle: stub.lifecycle)
         return (
             registrar,
             Application.makeInMemoryVisualContext(
-                runtimeHost: runtimeHost))
+                runtimeHost: runtimeHost)
+        )
     }
 
     private func makeStyledView() -> View {

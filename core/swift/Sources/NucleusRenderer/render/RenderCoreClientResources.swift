@@ -1,9 +1,10 @@
-import NucleusSkiaGraphiteBridge
 import NucleusDiagnostics
-import VulkanC
-import Vulkan
-import Tracy
 internal import NucleusRenderModel
+import NucleusSkiaGraphiteBridge
+import Tracy
+import Vulkan
+import VulkanC
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Android)
@@ -12,7 +13,7 @@ import Android
 @MainActor
 extension RenderCore {
     /// Allocate a fresh non-zero IOSurface id for a new client surface.
-    public func allocSurfaceId() -> UInt32 {
+    package func allocSurfaceId() -> UInt32 {
         let id = nextSurfaceId
         nextSurfaceId &+= 1
         if nextSurfaceId == 0 { nextSurfaceId = 1 }
@@ -24,7 +25,7 @@ extension RenderCore {
         nextContentGeneration &+= 1
         return g
     }
-    public func registerSurfaceTexture(
+    package func registerSurfaceTexture(
         iosurfaceID: UInt64, fd: Int32, width: UInt32, height: UInt32,
         drmFormat: UInt32, modifier: UInt64, planes: [DmaBufPlane],
         contentGeneration: UInt64, acquireFenceFd: Int32 = -1
@@ -42,9 +43,10 @@ extension RenderCore {
         }
         let acquireSemaphore: ClientAcquireSemaphore?
         if acquireFenceFd >= 0 {
-            guard let importedSemaphore = unsafe ClientAcquireSemaphore(
-                device: deviceHandle, dispatch: deviceDispatch,
-                consumingSyncFd: acquireFenceFd)
+            guard
+                let importedSemaphore = unsafe ClientAcquireSemaphore(
+                    device: deviceHandle, dispatch: deviceDispatch,
+                    consumingSyncFd: acquireFenceFd)
             else { return fail("acquire-semaphore-import") }
             acquireSemaphore = importedSemaphore
         } else {
@@ -65,9 +67,10 @@ extension RenderCore {
                 }
                 importedFdBySource[sourceFd] = imported
             }
-            importPlanes.append(DmaBufPlane(
-                fd: importedFdBySource[sourceFd] ?? -1,
-                offset: plane.offset, rowPitch: plane.rowPitch))
+            importPlanes.append(
+                DmaBufPlane(
+                    fd: importedFdBySource[sourceFd] ?? -1,
+                    offset: plane.offset, rowPitch: plane.rowPitch))
         }
         guard let importFd = importPlanes.first?.fd, importFd >= 0 else {
             for imported in importedFdBySource.values { close(imported) }
@@ -77,21 +80,26 @@ extension RenderCore {
         let descriptor = DmaBufImageDescriptor(
             fd: importFd, width: width, height: height, drmFormat: drmFormat, modifier: modifier,
             planes: importPlanes, usage: DmaBufImageDescriptor.sampledUsage)
-        guard let imported = unsafe importDmaBufImage(
-            device: deviceHandle, dispatch: deviceDispatch, descriptor: descriptor
-        ) else {
+        guard
+            let imported = unsafe importDmaBufImage(
+                device: deviceHandle, dispatch: deviceDispatch, descriptor: descriptor
+            )
+        else {
             return fail("vulkan-import")
         }
 
         let params = unsafe ScanoutImageParams(
             image: imported.handle, memory: nil, allocSize: 0,
             width: Int32(width), height: Int32(height), format: vulkanFormatForDrm(drmFormat),
-            tiling: VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT, initialLayout: VK_IMAGE_LAYOUT_UNDEFINED,
+            tiling: VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
+            initialLayout: VK_IMAGE_LAYOUT_UNDEFINED,
             usageFlags: DmaBufImageDescriptor.sampledUsage, queueFamilyIndex: graphicsFamily,
             hasAlpha: true)
-        guard let image = unsafe driver.registry.wrapBackendImage(
-            recorder: driver.recorder, descriptor: ScanoutSurface.descriptor(params)
-        ) else {
+        guard
+            let image = unsafe driver.registry.wrapBackendImage(
+                recorder: driver.recorder, descriptor: ScanoutSurface.descriptor(params)
+            )
+        else {
             // The imported VkImage drops here (VkOwned deinit) — wrap failed.
             return fail("graphite-wrap")
         }
@@ -104,10 +112,11 @@ extension RenderCore {
         if let old = importedSurfaceImages[iosurfaceID], let image = unsafe old.take() {
             let retirement = ClientResourceRetirement.atMutation(
                 lastSubmittedSerial: lastSubmittedSerial)
-            unsafe retiredSurfaceImages.append(RetiredSurfaceImage(
-                serial: retirement.submissionSerial,
-                image: image,
-                releaseID: iosurfaceID))
+            unsafe retiredSurfaceImages.append(
+                RetiredSurfaceImage(
+                    serial: retirement.submissionSerial,
+                    image: image,
+                    releaseID: iosurfaceID))
         }
         importedSurfaceImages[iosurfaceID] = unsafe VkOwnedImageBox(consuming: imported)
         unsafe driver.registry.register(
@@ -120,25 +129,27 @@ extension RenderCore {
         if let old = unsafe clientUploadTextures.removeValue(forKey: iosurfaceID) {
             let retirement = ClientResourceRetirement.atMutation(
                 lastSubmittedSerial: lastSubmittedSerial)
-            unsafe retiredClientUploadTextures.append((
-                retirement.submissionSerial,
-                old))
+            unsafe retiredClientUploadTextures.append(
+                (
+                    retirement.submissionSerial,
+                    old
+                ))
         }
         clientCommitInstants[iosurfaceID] = commitInstant
         return true
     }
 
     /// The content generation for a fresh client upload.
-    public func freshContentGeneration() -> UInt64 { nextGeneration() }
+    package func freshContentGeneration() -> UInt64 { nextGeneration() }
 
     /// The renderer device's importable sampled dmabuf format/modifier table.
-    public func dmabufSupportedFormats() -> [DmaBufFormatModifier] {
+    package func dmabufSupportedFormats() -> [DmaBufFormatModifier] {
         sampleableDmaBufFormats
     }
 
     /// Probe the complete Vulkan external-memory path without registering client
     /// content. The caller retains its fds; duplicates are consumed by the probe.
-    public func canImportSurfaceDmaBuf(
+    package func canImportSurfaceDmaBuf(
         fd: Int32,
         width: UInt32,
         height: UInt32,
@@ -164,10 +175,11 @@ extension RenderCore {
                 }
                 importedFdBySource[sourceFd] = imported
             }
-            importPlanes.append(DmaBufPlane(
-                fd: importedFdBySource[sourceFd] ?? -1,
-                offset: plane.offset,
-                rowPitch: plane.rowPitch))
+            importPlanes.append(
+                DmaBufPlane(
+                    fd: importedFdBySource[sourceFd] ?? -1,
+                    offset: plane.offset,
+                    rowPitch: plane.rowPitch))
         }
         guard let importFd = importPlanes.first?.fd, importFd >= 0 else {
             for duplicate in importedFdBySource.values { close(duplicate) }
@@ -190,14 +202,15 @@ extension RenderCore {
     /// Copy and coalesce a client SHM update. GPU allocation/upload is deliberately
     /// deferred to `renderReady`, outside Wayland dispatch.
     @discardableResult
-    public func registerSurfaceShm(
+    package func registerSurfaceShm(
         iosurfaceID: UInt64, pixels: Span<UInt8>,
         width: UInt32, height: UInt32, drmFormat: UInt32, stride: UInt32
     ) -> Bool {
         let commitInstant = telemetryClock.now
         guard iosurfaceID != 0, frameDriver != nil else { return false }
-        guard let conversion = convertClientShmToRGBAWithMetrics(
-            pixels: pixels, width: width, height: height, drmFormat: drmFormat, stride: stride)
+        guard
+            let conversion = convertClientShmToRGBAWithMetrics(
+                pixels: pixels, width: width, height: height, drmFormat: drmFormat, stride: stride)
         else { return false }
         let pending = PendingShmUpload(
             pixels: conversion.pixels,
@@ -236,7 +249,7 @@ extension RenderCore {
     /// of unrelated clients.
     func drainPendingShmUpload(iosurfaceID: UInt64) {
         guard let driver = frameDriver,
-              let pending = pendingShmUploads.remove(iosurfaceID)
+            let pending = pendingShmUploads.remove(iosurfaceID)
         else { return }
         clientUploadStats.pendingBytes = pendingShmUploads.byteCount
         materializeShmUpload(
@@ -250,11 +263,12 @@ extension RenderCore {
         iosurfaceID: UInt64,
         driver: FrameDriver
     ) {
-        guard let texture = unsafe driver.stageClientUpload(
-            replacing: clientUploadTextures[iosurfaceID],
-            pixels: pending.pixels,
-            width: pending.width,
-            height: pending.height)
+        guard
+            let texture = unsafe driver.stageClientUpload(
+                replacing: clientUploadTextures[iosurfaceID],
+                pixels: pending.pixels,
+                width: pending.width,
+                height: pending.height)
         else {
             clientUploadStats.failed &+= 1
             return
@@ -275,19 +289,22 @@ extension RenderCore {
             // Switching from DMA-BUF to SHM retires the borrowed image only
             // after the recording containing the upload was accepted.
             if let old = importedSurfaceImages[iosurfaceID], let image = unsafe old.take() {
-                unsafe retiredSurfaceImages.append(RetiredSurfaceImage(
-                    serial: submissionSerial,
-                    image: image,
-                    releaseID: iosurfaceID))
+                unsafe retiredSurfaceImages.append(
+                    RetiredSurfaceImage(
+                        serial: submissionSerial,
+                        image: image,
+                        releaseID: iosurfaceID))
             }
             importedSurfaceImages[iosurfaceID] = nil
             if let old = unsafe clientUploadTextures.updateValue(
                 staged.texture,
                 forKey: iosurfaceID)
             {
-                unsafe retiredClientUploadTextures.append((
-                    submissionSerial,
-                    old))
+                unsafe retiredClientUploadTextures.append(
+                    (
+                        submissionSerial,
+                        old
+                    ))
             }
             unsafe frameDriver?.registry.register(
                 key: .clientSurface(iosurfaceID),
@@ -314,7 +331,7 @@ extension RenderCore {
     }
     /// Drop a client surface's imported texture (surface destroyed / content
     /// detached). Evicts the registry entry + releases the backing VkImage.
-    public func releaseSurfaceTexture(iosurfaceID: UInt64) {
+    package func releaseSurfaceTexture(iosurfaceID: UInt64) {
         clientCommitInstants[iosurfaceID] = nil
         pendingClientAcquireSemaphores[iosurfaceID] = nil
         _ = frameDriver?.registry.release(.clientSurface(iosurfaceID))
@@ -324,17 +341,20 @@ extension RenderCore {
         if let old = unsafe clientUploadTextures.removeValue(forKey: iosurfaceID) {
             let retirement = ClientResourceRetirement.atMutation(
                 lastSubmittedSerial: lastSubmittedSerial)
-            unsafe retiredClientUploadTextures.append((
-                retirement.submissionSerial,
-                old))
+            unsafe retiredClientUploadTextures.append(
+                (
+                    retirement.submissionSerial,
+                    old
+                ))
         }
         if let old = importedSurfaceImages[iosurfaceID], let image = unsafe old.take() {
             let retirement = ClientResourceRetirement.atMutation(
                 lastSubmittedSerial: lastSubmittedSerial)
-            unsafe retiredSurfaceImages.append(RetiredSurfaceImage(
-                serial: retirement.submissionSerial,
-                image: image,
-                releaseID: iosurfaceID))
+            unsafe retiredSurfaceImages.append(
+                RetiredSurfaceImage(
+                    serial: retirement.submissionSerial,
+                    image: image,
+                    releaseID: iosurfaceID))
         }
         importedSurfaceImages[iosurfaceID] = nil
     }
@@ -342,7 +362,7 @@ extension RenderCore {
     /// Drop an acquire semaphore that the DRM direct-scanout path consumed through
     /// its duplicate sync_file. It was never submitted to Vulkan and is safe to
     /// destroy immediately after the atomic commit accepts the buffer.
-    public func discardPendingSurfaceAcquire(iosurfaceID: UInt64) {
+    package func discardPendingSurfaceAcquire(iosurfaceID: UInt64) {
         pendingClientAcquireSemaphores[iosurfaceID] = nil
     }
 }

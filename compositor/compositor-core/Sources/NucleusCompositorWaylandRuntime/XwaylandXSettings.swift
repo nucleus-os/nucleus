@@ -38,10 +38,10 @@ func serializeXSettings(scale rawScale: Double, serial: UInt32) -> [UInt8] {
     let gdkUnscaledDpi = Int32(((96.0 * 1024.0) / scale).rounded())
 
     var buf: [UInt8] = []
-    buf.append(0) // LSBFirst byte order
-    buf.append(contentsOf: [0, 0, 0]) // padding
+    buf.append(0)  // LSBFirst byte order
+    buf.append(contentsOf: [0, 0, 0])  // padding
     appendLE32(&buf, serial)
-    appendLE32(&buf, 3) // n_settings
+    appendLE32(&buf, 3)  // n_settings
 
     appendIntSetting(&buf, "Xft/DPI", serial: serial, value: xftDpi)
     appendIntSetting(&buf, "Gdk/WindowScalingFactor", serial: serial, value: gdkWindowScaling)
@@ -55,8 +55,8 @@ func serializeXSettings(scale rawScale: Double, serial: UInt32) -> [UInt8] {
 ///   last_change_serial (4) | value (4)
 private func appendIntSetting(_ buf: inout [UInt8], _ name: String, serial: UInt32, value: Int32) {
     let nameBytes = Array(name.utf8)
-    buf.append(0) // XSettingsTypeInteger
-    buf.append(0) // unused padding
+    buf.append(0)  // XSettingsTypeInteger
+    buf.append(0)  // unused padding
     appendLE16(&buf, UInt16(nameBytes.count))
     buf.append(contentsOf: nameBytes)
 

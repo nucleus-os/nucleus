@@ -187,7 +187,7 @@
 	url = https://github.com/apple/swift-numerics.git
 [submodule "swift-toolchain/source/swift-sdk-generator"]
 	path = swift-toolchain/source/swift-sdk-generator
-	url = https://github.com/swiftlang/swift-sdk-generator.git
+	url = git@github.com:nucleus-os/swift-sdk-generator.git
 [submodule "swift-toolchain/source/swift-stress-tester"]
 	path = swift-toolchain/source/swift-stress-tester
 	url = https://github.com/swiftlang/swift-stress-tester.git

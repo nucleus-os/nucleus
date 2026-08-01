@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for xdg_toplevel_drag_v1.
 
 import WaylandClientC
-public enum XdgToplevelDragV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum XdgToplevelDragV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_xdg_toplevel_drag_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == XdgToplevelDragV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == XdgToplevelDragV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_xdg_toplevel_drag_v1_destroy(_proxy)
@@ -17,10 +18,13 @@ public extension WaylandProxy where Interface == XdgToplevelDragV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func attach(toplevel: WaylandProxy<XdgToplevelClient>, x_offset: Int32, y_offset: Int32) throws(WaylandProxyError) {
+    package func attach(toplevel: WaylandProxy<XdgToplevelClient>, x_offset: Int32, y_offset: Int32)
+        throws(WaylandProxyError)
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _toplevelProxy = try unsafe toplevel.requireNativeProxy()
-        unsafe swift_wayland_client_request_xdg_toplevel_drag_v1_attach(_proxy, _toplevelProxy, x_offset, y_offset)
+        unsafe swift_wayland_client_request_xdg_toplevel_drag_v1_attach(
+            _proxy, _toplevelProxy, x_offset, y_offset)
         return
     }
 }

@@ -6,10 +6,10 @@
 //
 // libwayland owns the resource mechanics; this owns the topology semantics.
 
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
 import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 extension WlSubcompositor: WlSubcompositorRequests {
     func getSubsurface(
@@ -25,19 +25,22 @@ extension WlSubcompositor: WlSubcompositorRequests {
         guard !surface.wouldCreateSubsurfaceCycle(parent: parent),
             surface.claimSubsurfaceRole()
         else {
-            request.postError(.badSurface, message: "surface already has a role or is its own parent")
+            request.postError(
+                .badSurface, message: "surface already has a role or is its own parent")
             return
         }
 
-        guard id.create(
-            owner: { handle in
-                WlSubsurface(
-                    resource: handle, surface: surface, parent: parent)
-            },
-            installed: { _ in
-                surface.attachAsSubsurface(to: parent)
-            }
-        ) != nil else {
+        guard
+            id.create(
+                owner: { handle in
+                    WlSubsurface(
+                        resource: handle, surface: surface, parent: parent)
+                },
+                installed: { _ in
+                    surface.attachAsSubsurface(to: parent)
+                }
+            ) != nil
+        else {
             surface.releaseSubsurfaceRole()
             return
         }
@@ -76,13 +79,15 @@ extension WlSubsurface: WlSubsurfaceRequests {
     }
 
     func placeAbove(
-        _ request: WaylandRequest<WlSubsurfaceServer>, sibling siblingRes: WaylandBorrowedObject<WlSurfaceServer>
+        _ request: WaylandRequest<WlSubsurfaceServer>,
+        sibling siblingRes: WaylandBorrowedObject<WlSurfaceServer>
     ) {
         place(request, siblingRes, .above)
     }
 
     func placeBelow(
-        _ request: WaylandRequest<WlSubsurfaceServer>, sibling siblingRes: WaylandBorrowedObject<WlSurfaceServer>
+        _ request: WaylandRequest<WlSubsurfaceServer>,
+        sibling siblingRes: WaylandBorrowedObject<WlSurfaceServer>
     ) {
         place(request, siblingRes, .below)
     }
@@ -106,7 +111,8 @@ extension WlSubsurface: WlSubsurfaceRequests {
         guard sibling === parent || sibling.subsurfaceParent === parent,
             parent.placeChild(surface, relativeTo: sibling, dir)
         else {
-            request.postError(.badSurface, message: "stacking reference is not the parent or a sibling")
+            request.postError(
+                .badSurface, message: "stacking reference is not the parent or a sibling")
             return
         }
     }

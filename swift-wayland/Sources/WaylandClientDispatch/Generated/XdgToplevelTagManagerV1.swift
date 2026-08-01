@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for xdg_toplevel_tag_manager_v1.
 
 import WaylandClientC
-public enum XdgToplevelTagManagerV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum XdgToplevelTagManagerV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_xdg_toplevel_tag_manager_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == XdgToplevelTagManagerV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == XdgToplevelTagManagerV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_xdg_toplevel_tag_manager_v1_destroy(_proxy)
@@ -17,19 +18,27 @@ public extension WaylandProxy where Interface == XdgToplevelTagManagerV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func setToplevelTag(toplevel: WaylandProxy<XdgToplevelClient>, tag: String) throws(WaylandProxyError) {
+    package func setToplevelTag(toplevel: WaylandProxy<XdgToplevelClient>, tag: String)
+        throws(WaylandProxyError)
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _toplevelProxy = try unsafe toplevel.requireNativeProxy()
-        return try tag.withCString { (_tagCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
-            unsafe swift_wayland_client_request_xdg_toplevel_tag_manager_v1_set_toplevel_tag(_proxy, _toplevelProxy, _tagCString)
+        return try tag.withCString {
+            (_tagCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_xdg_toplevel_tag_manager_v1_set_toplevel_tag(
+                _proxy, _toplevelProxy, _tagCString)
             return
         }
     }
-    func setToplevelDescription(toplevel: WaylandProxy<XdgToplevelClient>, description: String) throws(WaylandProxyError) {
+    package func setToplevelDescription(
+        toplevel: WaylandProxy<XdgToplevelClient>, description: String
+    ) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _toplevelProxy = try unsafe toplevel.requireNativeProxy()
-        return try description.withCString { (_descriptionCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
-            unsafe swift_wayland_client_request_xdg_toplevel_tag_manager_v1_set_toplevel_description(_proxy, _toplevelProxy, _descriptionCString)
+        return try description.withCString {
+            (_descriptionCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_xdg_toplevel_tag_manager_v1_set_toplevel_description(
+                _proxy, _toplevelProxy, _descriptionCString)
             return
         }
     }

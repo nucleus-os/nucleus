@@ -1,5 +1,5 @@
 import Foundation
-import NucleusIPCTransport
+public import NucleusIPCTransport
 
 public enum SessionServiceAttachmentRole:
     String, Codable, Equatable, Sendable

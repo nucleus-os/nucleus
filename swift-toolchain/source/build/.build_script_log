@@ -20,3 +20,5 @@
 {"event": "end", "command": "macosx-x86_64-swift-build", "duration": "1524.58"}
 {"event": "start", "command": "macosx-x86_64-lldb-build", "duration": "0.00"}
 {"event": "end", "command": "macosx-x86_64-lldb-build", "duration": "136.67"}
+{"event": "start", "command": "local ninja", "duration": "0.00"}
+{"event": "end", "command": "local ninja", "duration": "0.02"}

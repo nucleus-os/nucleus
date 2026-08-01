@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for wp_commit_timing_manager_v1.
 
 import WaylandClientC
-public enum WpCommitTimingManagerV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum WpCommitTimingManagerV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_commit_timing_manager_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == WpCommitTimingManagerV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpCommitTimingManagerV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_commit_timing_manager_v1_destroy(_proxy)
@@ -17,10 +18,16 @@ public extension WaylandProxy where Interface == WpCommitTimingManagerV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func getTimer(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<WpCommitTimerV1Client> {
+    package func getTimer(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError)
+        -> WaylandProxy<WpCommitTimerV1Client>
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_wp_commit_timing_manager_v1_get_timer(_proxy, _surfaceProxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_wp_commit_timing_manager_v1_get_timer(
+                    _proxy, _surfaceProxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

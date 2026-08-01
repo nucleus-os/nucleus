@@ -1,7 +1,8 @@
+import Glibc
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowManager
-import Glibc
+
 @MainActor
 extension InputDispatch {
     package func handleTouch(_ event: WireEventRecord) {
@@ -32,7 +33,9 @@ extension InputDispatch {
                 surfaceID: grab.surfaceID, timeMsec: msec(event), id: id,
                 x: event.x + grab.localOffsetX, y: event.y + grab.localOffsetY)
         case .touchUp:
-            guard let grab = touchGrabs.removeValue(forKey: id), !lockBlocks(grab.surfaceID) else { return }
+            guard let grab = touchGrabs.removeValue(forKey: id), !lockBlocks(grab.surfaceID) else {
+                return
+            }
             seatDelivery.touchUp(surfaceID: grab.surfaceID, timeMsec: msec(event), id: id)
             if touchGrabs.isEmpty {
                 _ = host.runtime?.dataDevice.dropActiveDrag()
@@ -120,9 +123,9 @@ extension InputDispatch {
         case 4:  // window_menu (for the focused window)
             let surface = keyboardFocusID()
             if surface != 0,
-               let windowID = windowDriver?.windowId(
+                let windowID = windowDriver?.windowId(
                     forSurfaceId: UInt32(truncatingIfNeeded: surface)),
-               windowID != 0
+                windowID != 0
             {
                 showWindowMenuForWindow(windowID)
             }
@@ -132,7 +135,8 @@ extension InputDispatch {
         case 6:  // tile (value carries the TileCommand raw)
             let surface = keyboardFocusID()
             if surface != 0 {
-                _ = windowDriver?.tile(surfaceId: UInt32(truncatingIfNeeded: surface), command: value)
+                _ = windowDriver?.tile(
+                    surfaceId: UInt32(truncatingIfNeeded: surface), command: value)
             }
         case 7:  // backdrop_changed
             RenderBridge.requestFrame(server: host.server, outputId: 0)
@@ -184,7 +188,8 @@ extension InputDispatch {
         guard isKey(event.kind) else { return }
         let keycode = UInt32(truncatingIfNeeded: event.data0)
         let pressed = event.kind == .keyDown
-        let seatKeyCount: UInt32? = event.data2 == UInt64.max ? nil : UInt32(truncatingIfNeeded: event.data2)
+        let seatKeyCount: UInt32? =
+            event.data2 == UInt64.max ? nil : UInt32(truncatingIfNeeded: event.data2)
         xkb.updateKey(evdevKeycode: keycode, pressed: pressed, seatKeyCount: seatKeyCount)
         event.flags = xkb.flagsRaw()
         streamFlags = event.flags

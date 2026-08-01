@@ -3,12 +3,13 @@ import NucleusSessionProtocol
 
 extension CompositorRuntime {
     func publishControlReadiness() {
-        try? controlChannel.send(RenderServerControlPublication(
-            result: .ready,
-            ownerEpoch: controlEpoch,
-            configurationEpoch: configurationEpoch,
-            appliedConfigurationGeneration: configurationGeneration,
-            version: Self.controlVersion))
+        try? controlChannel.send(
+            RenderServerControlPublication(
+                result: .ready,
+                ownerEpoch: controlEpoch,
+                configurationEpoch: configurationEpoch,
+                appliedConfigurationGeneration: configurationGeneration,
+                version: Self.controlVersion))
     }
 
     func receiveControlRequest() {
@@ -60,10 +61,12 @@ extension CompositorRuntime {
             RenderServerOutputSnapshot(
                 id: display.id,
                 name: display.name,
-                width: UInt32(max(
-                    0, Int(display.logicalRect.width.rounded()))),
-                height: UInt32(max(
-                    0, Int(display.logicalRect.height.rounded()))),
+                width: UInt32(
+                    max(
+                        0, Int(display.logicalRect.width.rounded()))),
+                height: UInt32(
+                    max(
+                        0, Int(display.logicalRect.height.rounded()))),
                 refreshMillihertz: Self.millihertz(
                     fromIntervalNs: display.displayLink.refreshIntervalNs),
                 scale: display.fractionalScale,
@@ -81,7 +84,7 @@ extension CompositorRuntime {
 
     private func performControlAction(_ action: BindAction) {
         if action.runtimeOwner == .shell,
-           action != .showWindowMenu
+            action != .showWindowMenu
         {
             publishControlShellAction(action)
             return
@@ -107,16 +110,17 @@ extension CompositorRuntime {
         failureCode: OwnerControlFailureCode? = nil,
         rejection: String? = nil
     ) throws {
-        try controlChannel.send(RenderServerControlPublication(
-            requestID: requestID,
-            result: result,
-            ownerEpoch: controlEpoch,
-            configurationEpoch: configurationEpoch,
-            appliedConfigurationGeneration: configurationGeneration,
-            version: version,
-            outputs: outputs,
-            activeBindings: activeBindings,
-            failureCode: failureCode,
-            rejection: rejection))
+        try controlChannel.send(
+            RenderServerControlPublication(
+                requestID: requestID,
+                result: result,
+                ownerEpoch: controlEpoch,
+                configurationEpoch: configurationEpoch,
+                appliedConfigurationGeneration: configurationGeneration,
+                version: version,
+                outputs: outputs,
+                activeBindings: activeBindings,
+                failureCode: failureCode,
+                rejection: rejection))
     }
 }

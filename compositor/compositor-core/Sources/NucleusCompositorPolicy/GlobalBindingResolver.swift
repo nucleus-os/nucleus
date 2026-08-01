@@ -1,5 +1,5 @@
-public import NucleusCompositorWindowManager
-public import NucleusConfig
+package import NucleusCompositorWindowManager
+package import NucleusConfig
 
 /// Compositor session-policy keybind table.
 ///
@@ -13,14 +13,14 @@ public import NucleusConfig
 /// because the control socket has to name the same operations a binding names —
 /// defining "close the focused window" twice would guarantee the two drift.
 @MainActor
-public final class GlobalBindingResolver {
-    public enum Phase: Sendable {
+package final class GlobalBindingResolver {
+    package enum Phase: Sendable {
         case down
         case up
     }
 
     /// Stable server-to-shell action vocabulary. Values are protocol ABI.
-    public enum AcceptedAction: UInt8, Sendable {
+    package enum AcceptedAction: UInt8, Sendable {
         case none = 0
         case launch = 1
         case toggleHotkey = 2
@@ -33,7 +33,7 @@ public final class GlobalBindingResolver {
         case moveWindowToWorkspace = 9
     }
 
-    public enum Dispatch: Sendable {
+    package enum Dispatch: Sendable {
         case pass
         case consume
         case deferred(DeferredAction)
@@ -45,11 +45,11 @@ public final class GlobalBindingResolver {
         case action(BindAction)
     }
 
-    public struct DeferredAction: Sendable {
-        public let kind: AcceptedAction
+    package struct DeferredAction: Sendable {
+        package let kind: AcceptedAction
         /// Index into the exact configuration-generation binding projection.
-        public let configurationIndex: UInt32
-        public let value: UInt32
+        package let configurationIndex: UInt32
+        package let value: UInt32
     }
 
     private struct Binding: Sendable {
@@ -61,7 +61,7 @@ public final class GlobalBindingResolver {
     private var globallyCapturedKeys: Set<UInt32> = []
     private unowned let windowManager: WindowManager
 
-    public init(
+    package init(
         windowManager: WindowManager,
         binds: [KeyBind] = DefaultBinds.table
     ) {
@@ -74,7 +74,7 @@ public final class GlobalBindingResolver {
     /// Keys captured by the outgoing table are released: a chord that is no
     /// longer bound must not swallow its own key-up and leave the client that
     /// now owns it holding a key down forever.
-    public func updateBinds(_ binds: [KeyBind]) {
+    package func updateBinds(_ binds: [KeyBind]) {
         bindings = Self.table(from: binds)
         globallyCapturedKeys.removeAll(keepingCapacity: true)
     }
@@ -91,7 +91,7 @@ public final class GlobalBindingResolver {
         return table
     }
 
-    public func dispatch(
+    package func dispatch(
         keycode: UInt32, modifiers: KeyModifiers, phase: Phase
     ) -> Dispatch {
         switch resolve(keycode: keycode, modifiers: modifiers, phase: phase) {
@@ -140,7 +140,7 @@ public final class GlobalBindingResolver {
     ///
     /// The control socket reaches the same executor a binding does, so a
     /// command and a chord cannot diverge in what they actually perform.
-    public func perform(_ action: BindAction) -> Dispatch {
+    package func perform(_ action: BindAction) -> Dispatch {
         run(action)
     }
 
@@ -154,54 +154,64 @@ public final class GlobalBindingResolver {
     ) -> Dispatch {
         switch action {
         case .launch:
-            return .deferred(DeferredAction(
-                kind: .launch,
-                configurationIndex: configurationIndex,
-                value: 0))
+            return .deferred(
+                DeferredAction(
+                    kind: .launch,
+                    configurationIndex: configurationIndex,
+                    value: 0))
 
         case .closeWindow:
-            return .deferred(DeferredAction(
-                kind: .closeFocused,
-                configurationIndex: configurationIndex,
-                value: 0))
+            return .deferred(
+                DeferredAction(
+                    kind: .closeFocused,
+                    configurationIndex: configurationIndex,
+                    value: 0))
         case .showWindowMenu:
-            return .deferred(DeferredAction(
-                kind: .windowMenu,
-                configurationIndex: configurationIndex,
-                value: 0))
+            return .deferred(
+                DeferredAction(
+                    kind: .windowMenu,
+                    configurationIndex: configurationIndex,
+                    value: 0))
         case .toggleHotkeyOverlay:
-            return .deferred(DeferredAction(
-                kind: .toggleHotkey,
-                configurationIndex: configurationIndex,
-                value: 0))
+            return .deferred(
+                DeferredAction(
+                    kind: .toggleHotkey,
+                    configurationIndex: configurationIndex,
+                    value: 0))
         case .dismissHotkeyOverlay:
-            return .deferred(DeferredAction(
-                kind: .dismissHotkey,
-                configurationIndex: configurationIndex,
-                value: 0))
+            return .deferred(
+                DeferredAction(
+                    kind: .dismissHotkey,
+                    configurationIndex: configurationIndex,
+                    value: 0))
         case .tile(let direction):
-            return .deferred(DeferredAction(
-                kind: .tile,
-                configurationIndex: configurationIndex,
-                value: Self.wireValue(direction)))
+            return .deferred(
+                DeferredAction(
+                    kind: .tile,
+                    configurationIndex: configurationIndex,
+                    value: Self.wireValue(direction)))
         case .adjustBackdropIntensity(let delta):
-            let next = windowManager.backdropResolver.dynamics
+            let next =
+                windowManager.backdropResolver.dynamics
                 .target.resolvedIntensity + Float(delta)
             _ = windowManager.backdropResolver.dynamics.setIntensity(next)
-            return .deferred(DeferredAction(
-                kind: .backdropChanged,
-                configurationIndex: configurationIndex,
-                value: 0))
+            return .deferred(
+                DeferredAction(
+                    kind: .backdropChanged,
+                    configurationIndex: configurationIndex,
+                    value: 0))
         case .activateWorkspace(let index):
-            return .deferred(DeferredAction(
-                kind: .activateWorkspace,
-                configurationIndex: configurationIndex,
-                value: index))
+            return .deferred(
+                DeferredAction(
+                    kind: .activateWorkspace,
+                    configurationIndex: configurationIndex,
+                    value: index))
         case .moveWindowToWorkspace(let index):
-            return .deferred(DeferredAction(
-                kind: .moveWindowToWorkspace,
-                configurationIndex: configurationIndex,
-                value: index))
+            return .deferred(
+                DeferredAction(
+                    kind: .moveWindowToWorkspace,
+                    configurationIndex: configurationIndex,
+                    value: index))
         }
     }
 
@@ -223,7 +233,7 @@ public final class GlobalBindingResolver {
 }
 
 extension GlobalBindingResolver {
-    public func bridgeDispatch(
+    package func bridgeDispatch(
         keycode: UInt32,
         modifierBits: UInt64,
         pressed: Bool

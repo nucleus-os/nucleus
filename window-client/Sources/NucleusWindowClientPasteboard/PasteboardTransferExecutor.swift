@@ -1,15 +1,15 @@
 import Glibc
-import NucleusWindowClientRuntime
 import NucleusUI
+import NucleusWindowClientRuntime
 
 /// A transient descriptor returned to the desktop host immediately before `poll`.
 ///
 /// This value borrows the executor's descriptor. It must not be retained across
 /// a call to `processPollResult`, which may complete and close the transfer.
-public struct NucleusDesktopTransferPollDescriptor: Sendable, Equatable {
-    public let token: UInt64
-    public let fileDescriptor: Int32
-    public let events: Int16
+package struct NucleusDesktopTransferPollDescriptor: Sendable, Equatable {
+    package let token: UInt64
+    package let fileDescriptor: Int32
+    package let events: Int16
 }
 
 enum DataTransferFailure: Error, Sendable, Equatable {
@@ -182,12 +182,13 @@ final class DataTransferExecutor {
     ) -> UInt64 {
         precondition(byteLimit >= 0)
         let token = allocateToken()
-        transfers[token] = .read(PendingRead(
-            descriptor: StoredTransferFileDescriptor(owning: descriptor),
-            operation: operation,
-            byteLimit: byteLimit,
-            deadlineNanoseconds: deadlineNanoseconds,
-            completion: completion))
+        transfers[token] = .read(
+            PendingRead(
+                descriptor: StoredTransferFileDescriptor(owning: descriptor),
+                operation: operation,
+                byteLimit: byteLimit,
+                deadlineNanoseconds: deadlineNanoseconds,
+                completion: completion))
         pollSetDidChange()
         return token
     }
@@ -217,11 +218,12 @@ final class DataTransferExecutor {
             return nil
         }
         let token = allocateToken()
-        transfers[token] = .write(PendingWrite(
-            descriptor: stored,
-            operation: operation,
-            payload: payload,
-            deadlineNanoseconds: deadlineNanoseconds))
+        transfers[token] = .write(
+            PendingWrite(
+                descriptor: stored,
+                operation: operation,
+                payload: payload,
+                deadlineNanoseconds: deadlineNanoseconds))
         pollSetDidChange()
         return token
     }
@@ -266,7 +268,8 @@ final class DataTransferExecutor {
 
     func nanosecondsUntilDeadline(nowNanoseconds: UInt64) -> UInt64? {
         transfers.values.reduce(nil as UInt64?) { earliest, transfer in
-            let remaining = transfer.deadlineNanoseconds > nowNanoseconds
+            let remaining =
+                transfer.deadlineNanoseconds > nowNanoseconds
                 ? transfer.deadlineNanoseconds - nowNanoseconds
                 : 0
             return min(earliest ?? remaining, remaining)

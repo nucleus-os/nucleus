@@ -1,15 +1,15 @@
+package import NucleusCompositorServer
 import NucleusTypes
-public import NucleusCompositorServer
 
-public typealias LayerSurfaceID = UInt64
+package typealias LayerSurfaceID = UInt64
 
-public struct LayerMargin: Sendable, Equatable {
-    public var top: Int32
-    public var right: Int32
-    public var bottom: Int32
-    public var left: Int32
+package struct LayerMargin: Sendable, Equatable {
+    package var top: Int32
+    package var right: Int32
+    package var bottom: Int32
+    package var left: Int32
 
-    public init(top: Int32, right: Int32, bottom: Int32, left: Int32) {
+    package init(top: Int32, right: Int32, bottom: Int32, left: Int32) {
         self.top = top
         self.right = right
         self.bottom = bottom
@@ -17,18 +17,18 @@ public struct LayerMargin: Sendable, Equatable {
     }
 }
 
-public struct LayerSurfaceRecord: Sendable, Equatable {
-    public var id: LayerSurfaceID
-    public var layer: UInt32
-    public var anchor: UInt32
-    public var exclusiveZone: Int32
-    public var margin: LayerMargin
-    public var outputID: DisplayID
-    public var namespace: String
-    public var keyboardInteractivity: Int32
-    public var mapped: Bool
+package struct LayerSurfaceRecord: Sendable, Equatable {
+    package var id: LayerSurfaceID
+    package var layer: UInt32
+    package var anchor: UInt32
+    package var exclusiveZone: Int32
+    package var margin: LayerMargin
+    package var outputID: DisplayID
+    package var namespace: String
+    package var keyboardInteractivity: Int32
+    package var mapped: Bool
 
-    public init(
+    package init(
         id: LayerSurfaceID,
         layer: UInt32,
         anchor: UInt32,
@@ -51,51 +51,52 @@ public struct LayerSurfaceRecord: Sendable, Equatable {
     }
 }
 
-public struct LayerExclusiveZones: Sendable, Equatable {
-    public var top: Int32 = 0
-    public var bottom: Int32 = 0
-    public var left: Int32 = 0
-    public var right: Int32 = 0
+package struct LayerExclusiveZones: Sendable, Equatable {
+    package var top: Int32 = 0
+    package var bottom: Int32 = 0
+    package var left: Int32 = 0
+    package var right: Int32 = 0
 
-    public init() {}
+    package init() {}
 }
 
 @MainActor
-public struct LayerShellPolicy {
+package struct LayerShellPolicy {
     private var records: [LayerSurfaceID: LayerSurfaceRecord] = [:]
 
-    public init() {}
+    package init() {}
 
-    public mutating func reset() {
+    package mutating func reset() {
         records.removeAll(keepingCapacity: true)
     }
 
     @discardableResult
-    public mutating func register(_ record: LayerSurfaceRecord) -> Bool {
+    package mutating func register(_ record: LayerSurfaceRecord) -> Bool {
         records[record.id] = record
         return true
     }
 
-    public mutating func unregister(id: LayerSurfaceID) {
+    package mutating func unregister(id: LayerSurfaceID) {
         records[id] = nil
     }
 
-    public mutating func update(_ record: LayerSurfaceRecord) {
+    package mutating func update(_ record: LayerSurfaceRecord) {
         records[record.id] = record
     }
 
     /// Whether any mapped layer surface occupies `outputID` — the render-side
     /// scanout gate (a mapped overlay forbids direct plane scanout).
-    public func hasMappedSurface(outputID: DisplayID) -> Bool {
+    package func hasMappedSurface(outputID: DisplayID) -> Bool {
         for record in records.values where record.outputID == outputID && record.mapped {
             return true
         }
         return false
     }
 
-    public func recalcZones(outputID: DisplayID) -> LayerExclusiveZones? {
+    package func recalcZones(outputID: DisplayID) -> LayerExclusiveZones? {
         var zones = LayerExclusiveZones()
-        for record in records.values where record.outputID == outputID && record.mapped && record.exclusiveZone > 0 {
+        for record in records.values
+        where record.outputID == outputID && record.mapped && record.exclusiveZone > 0 {
             guard let edge = exclusiveEdge(anchor: record.anchor) else { continue }
             let value = record.exclusiveZone + marginForEdge(record.margin, edge: edge)
             switch edge {
@@ -109,7 +110,9 @@ public struct LayerShellPolicy {
         return zones
     }
 
-    public func resolveOutput(requestedID: DisplayID, namespace: String, server: NucleusCompositorServer) -> DisplayID? {
+    package func resolveOutput(
+        requestedID: DisplayID, namespace: String, server: NucleusCompositorServer
+    ) -> DisplayID? {
         _ = namespace
         if requestedID != 0, server.layout.display(id: requestedID) != nil {
             return requestedID

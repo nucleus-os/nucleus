@@ -1,6 +1,7 @@
-@_spi(NucleusRenderServer) public import NucleusLayers
-public import struct NucleusTypes.AnimationCurve
+public import NucleusLayers
 import Tracy
+
+public import enum NucleusTypes.AnimationCurve
 
 /// A view property the compositor can interpolate without invoking main-actor
 /// setters on every frame.
@@ -14,7 +15,7 @@ public enum AnimatableProperty: Sendable, Equatable {
     case scrollOffsetX
     case scrollOffsetY
 
-    package var keyPath: NucleusLayers.AnimationKeyPath {
+    package var keyPath: NucleusLayers.LayerAnimationKeyPath {
         switch self {
         case .opacity: .opacity
         case .cornerRadius: .cornerRadius
@@ -30,7 +31,7 @@ public enum AnimatableProperty: Sendable, Equatable {
 
 package enum ViewAnimationOperation: Sendable, Equatable {
     case add(Animation)
-    case remove(NucleusLayers.AnimationKeyPath)
+    case remove(NucleusLayers.LayerAnimationKeyPath)
 }
 
 package struct ViewAnimationRequest: Sendable, Equatable {
@@ -91,9 +92,7 @@ public final class AnimationHandle: ~Sendable {
     package private(set) var presentationToken: PresentationCompletionToken?
     private let startedAt = ContinuousClock.now
     private var cancellation: (@MainActor () -> Void)?
-    private var completionCallbacks: [
-        @MainActor (AnimationOutcome) -> Void
-    ] = []
+    private var completionCallbacks: [@MainActor (AnimationOutcome) -> Void] = []
 
     package init(id: UInt64) {
         self.id = id
@@ -144,7 +143,8 @@ public final class AnimationHandle: ~Sendable {
         if elapsed.seconds < 0 || elapsed.attoseconds < 0 {
             nanoseconds = 0
         } else {
-            nanoseconds = UInt64(elapsed.seconds) &* 1_000_000_000
+            nanoseconds =
+                UInt64(elapsed.seconds) &* 1_000_000_000
                 &+ UInt64(elapsed.attoseconds / 1_000_000_000)
         }
         Trace.plot(
@@ -187,7 +187,8 @@ extension View {
         )
         validate(timing)
         let keyPath = property.keyPath
-        let animationID = requestedID == 0
+        let animationID =
+            requestedID == 0
             ? uiContext.allocateAnimationID()
             : requestedID
         let handle = makeAnimationHandle(
@@ -240,7 +241,8 @@ extension View {
             "transform animation endpoints must be finite"
         )
         validate(timing)
-        let animationID = requestedID == 0
+        let animationID =
+            requestedID == 0
             ? uiContext.allocateAnimationID()
             : requestedID
         let handle = makeAnimationHandle(
@@ -263,8 +265,8 @@ extension View {
         }
 
         let animation = Animation.transform(
-            from: from.layersTransform,
-            to: to.layersTransform,
+            from: from,
+            to: to,
             duration: duration,
             curve: timing.curve,
             id: animationID,
@@ -296,12 +298,11 @@ extension View {
         timing: AnimationTiming = .standard,
         completion: (@MainActor (AnimationOutcome) -> Void)? = nil
     ) -> AnimationHandle {
-        let target = min(max(
-            0,
-            targetOpacity ??
-                storedFadeTargetOpacity ??
-                (alphaValue > 0 ? alphaValue : 1)
-        ), 1)
+        let target = min(
+            max(
+                0,
+                targetOpacity ?? storedFadeTargetOpacity ?? (alphaValue > 0 ? alphaValue : 1)
+            ), 1)
         storedFadeTargetOpacity = target
         isHidden = false
         return animate(
@@ -373,7 +374,7 @@ extension View {
 
     private func makeAnimationHandle(
         id: UInt64,
-        keyPath: NucleusLayers.AnimationKeyPath,
+        keyPath: NucleusLayers.LayerAnimationKeyPath,
         completion: (@MainActor (AnimationOutcome) -> Void)?
     ) -> AnimationHandle {
         precondition(id != 0, "animation id zero is reserved")
@@ -383,8 +384,8 @@ extension View {
         )
 
         if let currentID = currentAnimationHandleIDs[keyPath],
-           let current = animationHandles[currentID],
-           !current.isPublished
+            let current = animationHandles[currentID],
+            !current.isPublished
         {
             completeWithoutPresentation(current, result: .superseded)
         }
@@ -410,7 +411,7 @@ extension View {
 
     private func cancel(
         _ handle: AnimationHandle,
-        keyPath: NucleusLayers.AnimationKeyPath
+        keyPath: NucleusLayers.LayerAnimationKeyPath
     ) {
         guard !handle.isFinished else { return }
         guard currentAnimationHandleIDs[keyPath] == handle.id else {
@@ -428,7 +429,7 @@ extension View {
     }
 
     private func removeAnimation(
-        forKeyPath keyPath: NucleusLayers.AnimationKeyPath
+        forKeyPath keyPath: NucleusLayers.LayerAnimationKeyPath
     ) {
         let generation = recordMutation(.animation)
         animationRequests[keyPath] = ViewAnimationRequest(
@@ -436,8 +437,8 @@ extension View {
             operation: .remove(keyPath)
         )
         guard let id = currentAnimationHandleIDs[keyPath],
-              let handle = animationHandles[id],
-              !handle.isPublished
+            let handle = animationHandles[id],
+            !handle.isPublished
         else {
             return
         }
@@ -459,7 +460,7 @@ extension View {
 
     private func animationHandleDidComplete(
         id: UInt64,
-        keyPath: NucleusLayers.AnimationKeyPath
+        keyPath: NucleusLayers.LayerAnimationKeyPath
     ) {
         animationHandles[id] = nil
         if currentAnimationHandleIDs[keyPath] == id {
@@ -516,34 +517,28 @@ extension View {
             timing.duration.isFinite && timing.duration >= 0,
             "animation duration must be finite and nonnegative"
         )
-        switch timing.curve.kind {
+        switch timing.curve {
         case .linear:
             break
-        case .bezier:
+        case .bezier(let p1x, let p1y, let p2x, let p2y):
             precondition(
-                timing.curve.bezierP1x.isFinite &&
-                    timing.curve.bezierP1y.isFinite &&
-                    timing.curve.bezierP2x.isFinite &&
-                    timing.curve.bezierP2y.isFinite,
+                p1x.isFinite && p1y.isFinite && p2x.isFinite && p2y.isFinite,
                 "animation Bézier control points must be finite"
             )
-        case .spring:
+        case .spring(let stiffness, let damping, let mass, let initialVelocity):
             precondition(
-                timing.curve.springMass.isFinite &&
-                    timing.curve.springMass > 0 &&
-                    timing.curve.springStiffness.isFinite &&
-                    timing.curve.springStiffness > 0 &&
-                    timing.curve.springDamping.isFinite &&
-                    timing.curve.springDamping >= 0 &&
-                    timing.curve.springInitialVelocity.isFinite,
+                mass.isFinite && mass > 0
+                    && stiffness.isFinite && stiffness > 0
+                    && damping.isFinite && damping >= 0
+                    && initialVelocity.isFinite,
                 "animation spring parameters are invalid"
             )
         }
     }
 }
 
-private extension AnimationOutcome {
-    init(_ result: PresentationCompletionResult) {
+extension AnimationOutcome {
+    fileprivate init(_ result: PresentationCompletionResult) {
         switch result {
         case .completed:
             self = .completed

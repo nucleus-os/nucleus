@@ -1,8 +1,8 @@
-public import NucleusLinuxDBus
+package import NucleusLinuxDBus
 
 /// What UPower reports a battery is doing. Values match
 /// `org.freedesktop.UPower.Device.State`.
-public enum BatteryChargeState: UInt32, Sendable, Equatable {
+package enum BatteryChargeState: UInt32, Sendable, Equatable {
     case unknown = 0
     case charging = 1
     case discharging = 2
@@ -14,25 +14,25 @@ public enum BatteryChargeState: UInt32, Sendable, Equatable {
     /// Whether power is going in. `pendingCharge` counts: the machine is
     /// plugged in and the battery is simply not taking charge yet, which reads
     /// to a user as charging rather than as draining.
-    public var isPluggedIn: Bool {
+    package var isPluggedIn: Bool {
         self == .charging || self == .fullyCharged || self == .pendingCharge
     }
 }
 
 /// One reading of the aggregate battery.
-public struct BatteryReading: Sendable, Equatable {
+package struct BatteryReading: Sendable, Equatable {
     /// Whether there is a battery at all. A desktop reports a display device
     /// that is not present, which is not an error and not zero percent.
-    public var isPresent: Bool
+    package var isPresent: Bool
     /// 0...100, as UPower reports it.
-    public var percentage: Double
-    public var state: BatteryChargeState
+    package var percentage: Double
+    package var state: BatteryChargeState
     /// Seconds until empty while discharging, or 0 when unknown.
-    public var timeToEmptySeconds: Int64
+    package var timeToEmptySeconds: Int64
     /// Seconds until full while charging, or 0 when unknown.
-    public var timeToFullSeconds: Int64
+    package var timeToFullSeconds: Int64
 
-    public init(
+    package init(
         isPresent: Bool = false,
         percentage: Double = 0,
         state: BatteryChargeState = .unknown,
@@ -49,7 +49,7 @@ public struct BatteryReading: Sendable, Equatable {
     /// Seconds until the battery reaches its destination, or `nil` when UPower
     /// has not worked it out — which it has not for the first minute or so after
     /// a state change, and never on a desktop.
-    public var secondsRemaining: Int64? {
+    package var secondsRemaining: Int64? {
         let value = state.isPluggedIn ? timeToFullSeconds : timeToEmptySeconds
         return value > 0 ? value : nil
     }
@@ -66,25 +66,25 @@ public struct BatteryReading: Sendable, Equatable {
 /// no UPower, or UPower with no battery, and neither is a failure to report as
 /// one.
 @MainActor
-public final class UPowerService {
-    public static let serviceName = "org.freedesktop.UPower"
-    public static let displayDevicePath = "/org/freedesktop/UPower/devices/DisplayDevice"
-    public static let deviceInterface = "org.freedesktop.UPower.Device"
+package final class UPowerService {
+    package static let serviceName = "org.freedesktop.UPower"
+    package static let displayDevicePath = "/org/freedesktop/UPower/devices/DisplayDevice"
+    package static let deviceInterface = "org.freedesktop.UPower.Device"
 
     /// The most recent reading, or `nil` before the first successful read.
-    public private(set) var reading: BatteryReading?
+    package private(set) var reading: BatteryReading?
 
     /// Whether UPower answered at all. `false` means no service on the bus —
     /// render as absent, not as broken.
-    public private(set) var isAvailable = false
+    package private(set) var isAvailable = false
 
     /// Called after each successful read, including the first.
-    public var onChange: ((BatteryReading) -> Void)?
+    package var onChange: ((BatteryReading) -> Void)?
 
     private let connection: DBusConnection
     private var subscription: DBusSubscription?
 
-    public init(connection: DBusConnection) {
+    package init(connection: DBusConnection) {
         self.connection = connection
     }
 
@@ -93,7 +93,7 @@ public final class UPowerService {
     /// Does not throw when UPower is absent: that is a configuration, not an
     /// error, and a caller that treated it as one would have to special-case the
     /// most ordinary failure. It throws only when the *bus* misbehaves.
-    public func start() throws(DBusError) {
+    package func start() throws(DBusError) {
         subscription = try connection.subscribe(
             matching: DBusConnection.propertiesChangedRule(
                 service: UPowerService.serviceName,
@@ -105,7 +105,7 @@ public final class UPowerService {
         refresh()
     }
 
-    public func stop() {
+    package func stop() {
         if let subscription { connection.cancel(subscription) }
         subscription = nil
     }
@@ -116,7 +116,7 @@ public final class UPowerService {
     /// and re-reading the handful of values shown is both simpler and more
     /// correct than trusting a payload that may list a property as merely
     /// invalidated.
-    public func refresh() {
+    package func refresh() {
         do {
             let reading = try read()
             isAvailable = true

@@ -2,46 +2,56 @@
 // Typed client descriptor and event dispatch for zwlr_output_configuration_head_v1.
 
 import WaylandClientC
-public enum ZwlrOutputConfigurationHeadV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+package import WaylandProtocolTypes
+
+package enum ZwlrOutputConfigurationHeadV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwlr_output_configuration_head_v1())
-    public nonisolated static let maximumVersion: UInt32 = 4
+    package nonisolated static let maximumVersion: UInt32 = 4
 }
-public import WaylandProtocolTypes
-public extension WaylandProxy where Interface == ZwlrOutputConfigurationHeadV1Client {
-    func setMode(mode: WaylandProxy<ZwlrOutputModeV1Client>) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwlrOutputConfigurationHeadV1Client {
+    package func setMode(mode: WaylandProxy<ZwlrOutputModeV1Client>) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _modeProxy = try unsafe mode.requireNativeProxy()
-        unsafe swift_wayland_client_request_zwlr_output_configuration_head_v1_set_mode(_proxy, _modeProxy)
+        unsafe swift_wayland_client_request_zwlr_output_configuration_head_v1_set_mode(
+            _proxy, _modeProxy)
         return
     }
-    func setCustomMode(width: Int32, height: Int32, refresh: Int32) throws(WaylandProxyError) {
+    package func setCustomMode(width: Int32, height: Int32, refresh: Int32)
+        throws(WaylandProxyError)
+    {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_zwlr_output_configuration_head_v1_set_custom_mode(_proxy, width, height, refresh)
+        unsafe swift_wayland_client_request_zwlr_output_configuration_head_v1_set_custom_mode(
+            _proxy, width, height, refresh)
         return
     }
-    func setPosition(x: Int32, y: Int32) throws(WaylandProxyError) {
+    package func setPosition(x: Int32, y: Int32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_zwlr_output_configuration_head_v1_set_position(_proxy, x, y)
+        unsafe swift_wayland_client_request_zwlr_output_configuration_head_v1_set_position(
+            _proxy, x, y)
         return
     }
-    func setTransform(transform: WlOutputTransform) throws(WaylandProxyError) {
+    package func setTransform(transform: WlOutputTransform) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_zwlr_output_configuration_head_v1_set_transform(_proxy, Int32(bitPattern: transform.rawValue))
+        unsafe swift_wayland_client_request_zwlr_output_configuration_head_v1_set_transform(
+            _proxy, Int32(bitPattern: transform.rawValue))
         return
     }
-    func setScale(scale: Double) throws(WaylandProxyError) {
+    package func setScale(scale: Double) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_zwlr_output_configuration_head_v1_set_scale(_proxy, swift_wayland_fixed_from_double(scale))
+        unsafe swift_wayland_client_request_zwlr_output_configuration_head_v1_set_scale(
+            _proxy, swift_wayland_fixed_from_double(scale))
         return
     }
-    func setAdaptiveSync(state: ZwlrOutputHeadV1AdaptiveSyncState) throws(WaylandProxyError) {
+    package func setAdaptiveSync(state: ZwlrOutputHeadV1AdaptiveSyncState) throws(WaylandProxyError)
+    {
         guard version >= 4 else {
             throw .unsupportedVersion(
                 required: 4, actual: version)
         }
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_zwlr_output_configuration_head_v1_set_adaptive_sync(_proxy, state.rawValue)
+        unsafe swift_wayland_client_request_zwlr_output_configuration_head_v1_set_adaptive_sync(
+            _proxy, state.rawValue)
         return
     }
 }

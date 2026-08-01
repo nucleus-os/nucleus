@@ -1,17 +1,17 @@
-public import NucleusCompositorServer
+package import NucleusCompositorServer
 
 @MainActor
-public final class WindowManager {
-    public struct InteractiveStartContext {
-        public var cursorX: Double
-        public var cursorY: Double
-        public var startRect: WindowRect
+package final class WindowManager {
+    package struct InteractiveStartContext {
+        package var cursorX: Double
+        package var cursorY: Double
+        package var startRect: WindowRect
     }
 
-    public let server: NucleusCompositorServer
-    public var interaction = InteractionState()
-    public var layerShellPolicy = LayerShellPolicy()
-    public let backdropResolver = BackdropResolver()
+    package let server: NucleusCompositorServer
+    package var interaction = InteractionState()
+    package var layerShellPolicy = LayerShellPolicy()
+    package let backdropResolver = BackdropResolver()
     private var pendingInteractionStarts: [UInt64: InteractiveStartContext] = [:]
     var xdgRolesByWindow: [UInt64: XdgRole] = [:]
     var xdgWindowByToplevel: [XdgToplevelID: UInt64] = [:]
@@ -21,11 +21,11 @@ public final class WindowManager {
     var xwaylandXIDByWindow: [UInt64: UInt64] = [:]
     var activeXwaylandWindowID: UInt64?
 
-    public init(server: NucleusCompositorServer) {
+    package init(server: NucleusCompositorServer) {
         self.server = server
     }
 
-    public func reset() {
+    package func reset() {
         pendingInteractionStarts.removeAll(keepingCapacity: true)
         xdgRolesByWindow.removeAll(keepingCapacity: true)
         xdgWindowByToplevel.removeAll(keepingCapacity: true)
@@ -38,11 +38,14 @@ public final class WindowManager {
         interaction.reset()
     }
 
-    public func seedInteractiveStartContext(windowID: UInt64, cursorX: Double, cursorY: Double, startRect: WindowRect) {
-        pendingInteractionStarts[windowID] = InteractiveStartContext(cursorX: cursorX, cursorY: cursorY, startRect: startRect)
+    package func seedInteractiveStartContext(
+        windowID: UInt64, cursorX: Double, cursorY: Double, startRect: WindowRect
+    ) {
+        pendingInteractionStarts[windowID] = InteractiveStartContext(
+            cursorX: cursorX, cursorY: cursorY, startRect: startRect)
     }
 
-    public func takeInteractiveStartContext(windowID: UInt64) -> InteractiveStartContext {
+    package func takeInteractiveStartContext(windowID: UInt64) -> InteractiveStartContext {
         if let context = pendingInteractionStarts.removeValue(forKey: windowID) {
             return context
         }

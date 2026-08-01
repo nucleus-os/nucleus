@@ -1,4 +1,5 @@
 import NucleusLinuxDBusC
+
 #if canImport(Glibc)
 import Glibc
 #endif
@@ -9,7 +10,7 @@ import Glibc
 /// machine-wide ones — UPower, BlueZ, NetworkManager, logind. A shell needs
 /// both, and which one a service lives on is not a detail its client gets to
 /// guess.
-public enum DBusBus: Sendable, Equatable {
+package enum DBusBus: Sendable, Equatable {
     case session
     case system
 }
@@ -19,12 +20,12 @@ public enum DBusBus: Sendable, Equatable {
 /// `name` is the D-Bus error name (`org.freedesktop.DBus.Error.ServiceUnknown`
 /// and friends), which is the part worth branching on; `message` is human text
 /// and is not.
-public struct DBusError: Error, Equatable, Sendable {
-    public var name: String
-    public var message: String
-    public var systemCode: Int32?
+package struct DBusError: Error, Equatable, Sendable {
+    package var name: String
+    package var message: String
+    package var systemCode: Int32?
 
-    public init(
+    package init(
         name: String,
         message: String,
         systemCode: Int32? = nil
@@ -35,7 +36,7 @@ public struct DBusError: Error, Equatable, Sendable {
     }
 
     /// A failure reported as a negative errno rather than a bus error.
-    public init(errno code: Int32, while action: String) {
+    package init(errno code: Int32, while action: String) {
         let normalizedCode = code < 0 ? code : -EIO
         self.name = "org.nucleus.DBus.Error.System"
         let detail = unsafe String(cString: strerror(-normalizedCode))
@@ -46,7 +47,7 @@ public struct DBusError: Error, Equatable, Sendable {
     /// Whether the peer is simply not running. Distinguishable because a shell
     /// widget for an absent service should render as unavailable rather than as
     /// broken — a laptop without bluetooth hardware has no BlueZ.
-    public var isServiceUnavailable: Bool {
+    package var isServiceUnavailable: Bool {
         name == "org.freedesktop.DBus.Error.ServiceUnknown"
             || name == "org.freedesktop.DBus.Error.NameHasNoOwner"
     }
@@ -54,7 +55,7 @@ public struct DBusError: Error, Equatable, Sendable {
 
 /// A subscription token. Dropping it removes the match.
 @MainActor
-@safe public final class DBusSubscription {
+@safe package final class DBusSubscription {
     fileprivate var slot: OpaquePointer?
     fileprivate let handler: () -> Void
     fileprivate weak var owner: DBusConnection?
@@ -64,7 +65,7 @@ public struct DBusError: Error, Equatable, Sendable {
     }
 
     /// Stop delivery and release the sd-bus match slot. Idempotent.
-    public func cancel() {
+    package func cancel() {
         guard let slot = unsafe slot else { return }
         unsafe self.slot = nil
         unsafe sd_bus_slot_unref(slot)
@@ -87,7 +88,7 @@ public struct DBusError: Error, Equatable, Sendable {
 /// called when any of them fires. The explicitly synchronous property and method
 /// APIs are for cold-path clients; event-loop services use the asynchronous APIs.
 @MainActor
-public final class DBusConnection {
+package final class DBusConnection {
     private final class WeakSubscription {
         weak var value: DBusSubscription?
 
@@ -101,9 +102,9 @@ public final class DBusConnection {
 
     private var bus: OpaquePointer? { unsafe transport?.rawHandle }
 
-    public let kind: DBusBus
+    package let kind: DBusBus
 
-    public init(_ kind: DBusBus) throws(DBusError) {
+    package init(_ kind: DBusBus) throws(DBusError) {
         self.kind = kind
         transport = try SDBusConnection(kind)
     }
@@ -118,7 +119,7 @@ public final class DBusConnection {
     }
 
     /// Close the connection. Idempotent; the connection is unusable afterwards.
-    public func close() {
+    package func close() {
         compactSubscriptions()
         let liveSubscriptions = subscriptions.compactMap(\.value)
         subscriptions.removeAll(keepingCapacity: true)
@@ -129,19 +130,19 @@ public final class DBusConnection {
         transport = nil
     }
 
-    public var isOpen: Bool { transport?.isOpen == true }
+    package var isOpen: Bool { transport?.isOpen == true }
 
     // MARK: - Event-loop integration
 
     /// The descriptor to poll. `-1` once closed.
-    public var fileDescriptor: Int32 {
+    package var fileDescriptor: Int32 {
         transport?.fileDescriptor ?? -1
     }
 
     /// The poll events the connection currently wants. sd-bus asks for write
     /// interest only while it has something queued, so this is re-read each
     /// iteration rather than cached.
-    public var pollEvents: Int16 {
+    package var pollEvents: Int16 {
         transport?.pollEvents ?? 0
     }
 
@@ -149,7 +150,7 @@ public final class DBusConnection {
     /// `nil` for "no deadline of its own". sd-bus reports an absolute
     /// CLOCK_MONOTONIC deadline; this converts it to a relative wait, clamped at
     /// zero for a deadline already past.
-    public func timeoutMicroseconds() -> UInt64? {
+    package func timeoutMicroseconds() -> UInt64? {
         transport?.timeoutMicroseconds()
     }
 
@@ -159,7 +160,7 @@ public final class DBusConnection {
     /// wakeup from real work. Signal handlers run inside this call, which is why
     /// it belongs on the main actor with the rest of the UI.
     @discardableResult
-    public func process() throws(DBusError) -> Bool {
+    package func process() throws(DBusError) -> Bool {
         compactSubscriptions()
         defer { compactSubscriptions() }
         return try transport?.process() ?? false
@@ -167,7 +168,7 @@ public final class DBusConnection {
 
     // MARK: - Properties
 
-    public func propertyBool(
+    package func propertyBool(
         service: String, path: String, interface: String, member: String
     ) throws(DBusError) -> Bool {
         var value: Int32 = 0
@@ -177,7 +178,7 @@ public final class DBusConnection {
         return value != 0
     }
 
-    public func propertyUInt32(
+    package func propertyUInt32(
         service: String, path: String, interface: String, member: String
     ) throws(DBusError) -> UInt32 {
         var value: UInt32 = 0
@@ -187,7 +188,7 @@ public final class DBusConnection {
         return value
     }
 
-    public func propertyInt64(
+    package func propertyInt64(
         service: String, path: String, interface: String, member: String
     ) throws(DBusError) -> Int64 {
         var value: Int64 = 0
@@ -197,7 +198,7 @@ public final class DBusConnection {
         return value
     }
 
-    public func propertyDouble(
+    package func propertyDouble(
         service: String, path: String, interface: String, member: String
     ) throws(DBusError) -> Double {
         var value: Double = 0
@@ -207,7 +208,7 @@ public final class DBusConnection {
         return value
     }
 
-    public func propertyString(
+    package func propertyString(
         service: String, path: String, interface: String, member: String
     ) throws(DBusError) -> String {
         guard let bus = unsafe bus else { throw DBusError.closed }
@@ -225,7 +226,7 @@ public final class DBusConnection {
         return unsafe String(cString: raw)
     }
 
-    public func portalSettingUInt32Async(
+    package func portalSettingUInt32Async(
         service: String,
         path: String,
         interface: String,
@@ -240,7 +241,7 @@ public final class DBusConnection {
             completion: completion)
     }
 
-    public func portalSettingBoolAsync(
+    package func portalSettingBoolAsync(
         service: String,
         path: String,
         interface: String,
@@ -255,7 +256,7 @@ public final class DBusConnection {
             completion: completion)
     }
 
-    public func portalSettingDoubleAsync(
+    package func portalSettingDoubleAsync(
         service: String,
         path: String,
         interface: String,
@@ -294,9 +295,11 @@ public final class DBusConnection {
             switch result {
             case .success(let message):
                 guard let value = decode(message) else {
-                    completion(.failure(DBusError(
-                        name: "org.nucleus.DBus.Error.InvalidReply",
-                        message: "Portal setting \(namespace).\(key) has the wrong type")))
+                    completion(
+                        .failure(
+                            DBusError(
+                                name: "org.nucleus.DBus.Error.InvalidReply",
+                                message: "Portal setting \(namespace).\(key) has the wrong type")))
                     return
                 }
                 completion(.success(value))
@@ -330,7 +333,7 @@ public final class DBusConnection {
     /// The shape almost every shell action has: `Suspend`, `Lock`, `Next`,
     /// `PowerOff`. Calls with arguments or meaningful replies are added when a
     /// service needs them rather than speculatively.
-    public func call(
+    package func call(
         service: String, path: String, interface: String, member: String
     ) throws(DBusError) {
         guard let bus = unsafe bus else { throw DBusError.closed }
@@ -366,7 +369,7 @@ public final class DBusConnection {
     /// not always authoritative. A signal whose *body* matters gets a decoder
     /// when a service needs one.
     @discardableResult
-    public func subscribe(
+    package func subscribe(
         matching rule: String, handler: @escaping () -> Void
     ) throws(DBusError) -> DBusSubscription {
         compactSubscriptions()
@@ -402,7 +405,7 @@ public final class DBusConnection {
     }
 
     /// Stop delivering a subscription's callback.
-    public func cancel(_ subscription: DBusSubscription) {
+    package func cancel(_ subscription: DBusSubscription) {
         subscription.cancel()
         compactSubscriptions()
     }
@@ -421,7 +424,7 @@ public final class DBusConnection {
 
     /// A match rule for `PropertiesChanged` on one object, the signal nearly
     /// every service uses to announce state.
-    public static func propertiesChangedRule(
+    package static func propertiesChangedRule(
         service: String, path: String, interface: String
     ) -> String {
         """

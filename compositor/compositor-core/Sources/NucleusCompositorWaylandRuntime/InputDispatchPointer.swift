@@ -1,8 +1,9 @@
+import Glibc
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowManager
 import NucleusDiagnostics
-import Glibc
+
 @MainActor
 extension InputDispatch {
     package func processCursorMotion(_ event: WireEventRecord) {
@@ -70,21 +71,27 @@ extension InputDispatch {
 
             // Resolve the cursor afresh from the same presented-scene hit on every
             // motion. No sticky resize flag survives a changed target.
-            let resizeName = chromeIsChrome && chromeRegion == .resize
+            let resizeName =
+                chromeIsChrome && chromeRegion == .resize
                 ? resizeCursorName(edges: hit.chromeEdges) : nil
-            applyCursorIntent(resolveCursorIntent(
-                resizeName: resizeName,
-                clientOwnsCursor: host.pointerCursorSurface.surfaceId != 0 || cursorFromXwayland,
-                shellControl: false))
-            updateChromeButtonVisual(windowID: chromeIsChrome ? hit.windowId : 0, region: chromeRegion)
+            applyCursorIntent(
+                resolveCursorIntent(
+                    resizeName: resizeName,
+                    clientOwnsCursor: host.pointerCursorSurface.surfaceId != 0
+                        || cursorFromXwayland,
+                    shellControl: false))
+            updateChromeButtonVisual(
+                windowID: chromeIsChrome ? hit.windowId : 0, region: chromeRegion)
         }
 
         if let targetID = decision.target.surfaceID {
             if decision.pointerFocusChanged {
-                setPointerFocusSurface(targetID, sx: decision.target.surfaceX, sy: decision.target.surfaceY)
+                setPointerFocusSurface(
+                    targetID, sx: decision.target.surfaceX, sy: decision.target.surfaceY)
             }
-            deliverPointerMotion(event, surfaceID: targetID,
-                                 sx: decision.target.surfaceX, sy: decision.target.surfaceY)
+            deliverPointerMotion(
+                event, surfaceID: targetID,
+                sx: decision.target.surfaceX, sy: decision.target.surfaceY)
         } else {
             clearPointerFocusSurface()
         }
@@ -150,7 +157,9 @@ extension InputDispatch {
             delta: delta, value120: value120, source: source)
     }
 
-    package func deliverPointerMotion(_ event: WireEventRecord, surfaceID: UInt64, sx: Double, sy: Double) {
+    package func deliverPointerMotion(
+        _ event: WireEventRecord, surfaceID: UInt64, sx: Double, sy: Double
+    ) {
         if lockBlocks(surfaceID) { return }
         seatDelivery.pointerMotionRaw(
             surfaceID: surfaceID, timeMsec: msec(event), surfaceX: sx, surfaceY: sy,
@@ -164,8 +173,11 @@ extension InputDispatch {
         let target = pointerFocusID()
         if inputRouteDiagnosticsRemaining > 0 {
             inputRouteDiagnosticsRemaining -= 1
-            let source = target == 0 ? 0 : (windowDriver?.windowSource(
-                forSurfaceId: UInt32(truncatingIfNeeded: target)) ?? 0)
+            let source =
+                target == 0
+                ? 0
+                : (windowDriver?.windowSource(
+                    forSurfaceId: UInt32(truncatingIfNeeded: target)) ?? 0)
             NucleusLogger(subsystem: "input-route").debug(
                 "button=\(button) down=\(down) target=\(target) source=\(source) "
                     + "cursor=\(cursorX),\(cursorY)")
@@ -202,8 +214,10 @@ extension InputDispatch {
             event.x = cursorX
             event.y = cursorY
         case 2:  // confined
-            guard let rect = host.feeder?.presentedWindow(
-                surfaceID: UInt32(truncatingIfNeeded: surfaceID))?.frame else { return }
+            guard
+                let rect = host.feeder?.presentedWindow(
+                    surfaceID: UInt32(truncatingIfNeeded: surfaceID))?.frame
+            else { return }
             event.x = min(max(event.x, rect.x), rect.x + rect.w - 1)
             event.y = min(max(event.y, rect.y), rect.y + rect.h - 1)
         default:

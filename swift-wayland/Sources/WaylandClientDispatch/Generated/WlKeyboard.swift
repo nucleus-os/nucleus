@@ -2,14 +2,15 @@
 // Typed client descriptor and event dispatch for wl_keyboard.
 
 import WaylandClientC
-public enum WlKeyboardClient: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+package import WaylandProtocolTypes
+
+package enum WlKeyboardClient: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_keyboard())
-    public nonisolated static let maximumVersion: UInt32 = 10
+    package nonisolated static let maximumVersion: UInt32 = 10
 }
-public import WaylandProtocolTypes
-public extension WaylandProxy where Interface == WlKeyboardClient {
-    func release() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WlKeyboardClient {
+    package func release() throws(WaylandProxyError) {
         guard version >= 3 else {
             throw .unsupportedVersion(
                 required: 3, actual: version)
@@ -24,16 +25,26 @@ public extension WaylandProxy where Interface == WlKeyboardClient {
     }
 }
 @MainActor
-public protocol WlKeyboardEvents: AnyObject {
-    func keymap(_ proxy: WaylandBorrowedProxy<WlKeyboardClient>, format: WlKeyboardKeymapFormat, fd: consuming WaylandClientOwnedFileDescriptor, size: UInt32)
-    func enter(_ proxy: WaylandBorrowedProxy<WlKeyboardClient>, serial: UInt32, surface: WaylandBorrowedProxy<WlSurfaceClient>, keys: WaylandClientArrayView)
-    func leave(_ proxy: WaylandBorrowedProxy<WlKeyboardClient>, serial: UInt32, surface: WaylandBorrowedProxy<WlSurfaceClient>)
-    func key(_ proxy: WaylandBorrowedProxy<WlKeyboardClient>, serial: UInt32, time: UInt32, key: UInt32, state: WlKeyboardKeyState)
-    func modifiers(_ proxy: WaylandBorrowedProxy<WlKeyboardClient>, serial: UInt32, mods_depressed: UInt32, mods_latched: UInt32, mods_locked: UInt32, group: UInt32)
+package protocol WlKeyboardEvents: AnyObject {
+    func keymap(
+        _ proxy: WaylandBorrowedProxy<WlKeyboardClient>, format: WlKeyboardKeymapFormat,
+        fd: consuming WaylandClientOwnedFileDescriptor, size: UInt32)
+    func enter(
+        _ proxy: WaylandBorrowedProxy<WlKeyboardClient>, serial: UInt32,
+        surface: WaylandBorrowedProxy<WlSurfaceClient>, keys: WaylandClientArrayView)
+    func leave(
+        _ proxy: WaylandBorrowedProxy<WlKeyboardClient>, serial: UInt32,
+        surface: WaylandBorrowedProxy<WlSurfaceClient>)
+    func key(
+        _ proxy: WaylandBorrowedProxy<WlKeyboardClient>, serial: UInt32, time: UInt32, key: UInt32,
+        state: WlKeyboardKeyState)
+    func modifiers(
+        _ proxy: WaylandBorrowedProxy<WlKeyboardClient>, serial: UInt32, mods_depressed: UInt32,
+        mods_latched: UInt32, mods_locked: UInt32, group: UInt32)
     func repeatInfo(_ proxy: WaylandBorrowedProxy<WlKeyboardClient>, rate: Int32, delay: Int32)
 }
-public extension WlKeyboardClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_keyboard_listener> = {
+package extension WlKeyboardClient {
+    package nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_keyboard_listener> = {
         let p = UnsafeMutablePointer<wl_keyboard_listener>.allocate(capacity: 1)
         unsafe p.initialize(to: wl_keyboard_listener())
         unsafe p.pointee.keymap = keymap_impl
@@ -47,102 +58,131 @@ public extension WlKeyboardClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any WlKeyboardEvents? {
         context.owner as? any WlKeyboardEvents
     }
-    private static let keymap_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, Int32, UInt32) -> Void = { data, proxy, format, fd, size in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let keymap_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, Int32, UInt32) -> Void = {
+            data, proxy, format, fd, size in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.keymap(
+                    WaylandBorrowedProxy<WlKeyboardClient>(eventProxy),
+                    format: WlKeyboardKeymapFormat(rawValue: format),
+                    fd: WaylandClientOwnedFileDescriptor(fd), size: size)
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
+    private static let enter_impl:
+        @convention(c) (
+            UnsafeMutableRawPointer?, OpaquePointer?, UInt32, OpaquePointer?,
+            UnsafeMutablePointer<wl_array>?
+        ) -> Void = { data, proxy, serial, surface, keys in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            nonisolated(unsafe) let _event_surface = unsafe surface
+            nonisolated(unsafe) let _event_keys = unsafe keys
+            MainActor.assumeIsolated {
+                unsafe eventHandler.enter(
+                    WaylandBorrowedProxy<WlKeyboardClient>(eventProxy), serial: serial,
+                    surface: WaylandBorrowedProxy<WlSurfaceClient>(_event_surface!),
+                    keys: WaylandClientArrayView(_event_keys!))
+            }
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.keymap(WaylandBorrowedProxy<WlKeyboardClient>(eventProxy), format: WlKeyboardKeymapFormat(rawValue: format), fd: WaylandClientOwnedFileDescriptor(fd), size: size)
+    private static let leave_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, OpaquePointer?) -> Void =
+            { data, proxy, serial, surface in
+                guard let data = unsafe data, let proxy = unsafe proxy else {
+                    return
+                }
+                let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+                guard let h = handler(listenerContext) else {
+                    return
+                }
+                nonisolated(unsafe) let eventHandler = h
+                nonisolated(unsafe) let eventProxy = unsafe proxy
+                nonisolated(unsafe) let eventContext = listenerContext
+                nonisolated(unsafe) let _event_surface = unsafe surface
+                MainActor.assumeIsolated {
+                    unsafe eventHandler.leave(
+                        WaylandBorrowedProxy<WlKeyboardClient>(eventProxy), serial: serial,
+                        surface: WaylandBorrowedProxy<WlSurfaceClient>(_event_surface!))
+                }
+            }
+    private static let key_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32, UInt32) ->
+            Void = { data, proxy, serial, time, key, state in
+                guard let data = unsafe data, let proxy = unsafe proxy else {
+                    return
+                }
+                let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+                guard let h = handler(listenerContext) else {
+                    return
+                }
+                nonisolated(unsafe) let eventHandler = h
+                nonisolated(unsafe) let eventProxy = unsafe proxy
+                nonisolated(unsafe) let eventContext = listenerContext
+                MainActor.assumeIsolated {
+                    unsafe eventHandler.key(
+                        WaylandBorrowedProxy<WlKeyboardClient>(eventProxy), serial: serial,
+                        time: time, key: key, state: WlKeyboardKeyState(rawValue: state))
+                }
+            }
+    private static let modifiers_impl:
+        @convention(c) (
+            UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32, UInt32, UInt32
+        ) -> Void = { data, proxy, serial, mods_depressed, mods_latched, mods_locked, group in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.modifiers(
+                    WaylandBorrowedProxy<WlKeyboardClient>(eventProxy), serial: serial,
+                    mods_depressed: mods_depressed, mods_latched: mods_latched,
+                    mods_locked: mods_locked, group: group)
+            }
         }
-    }
-    private static let enter_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, OpaquePointer?, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, serial, surface, keys in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let repeatInfo_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = {
+            data, proxy, rate, delay in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.repeatInfo(
+                    WaylandBorrowedProxy<WlKeyboardClient>(eventProxy), rate: rate, delay: delay)
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_surface = unsafe surface
-        nonisolated(unsafe) let _event_keys = unsafe keys
-        MainActor.assumeIsolated {
-            unsafe eventHandler.enter(WaylandBorrowedProxy<WlKeyboardClient>(eventProxy), serial: serial, surface: WaylandBorrowedProxy<WlSurfaceClient>(_event_surface!), keys: WaylandClientArrayView(_event_keys!))
-        }
-    }
-    private static let leave_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, OpaquePointer?) -> Void = { data, proxy, serial, surface in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_surface = unsafe surface
-        MainActor.assumeIsolated {
-            unsafe eventHandler.leave(WaylandBorrowedProxy<WlKeyboardClient>(eventProxy), serial: serial, surface: WaylandBorrowedProxy<WlSurfaceClient>(_event_surface!))
-        }
-    }
-    private static let key_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32, UInt32) -> Void = { data, proxy, serial, time, key, state in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.key(WaylandBorrowedProxy<WlKeyboardClient>(eventProxy), serial: serial, time: time, key: key, state: WlKeyboardKeyState(rawValue: state))
-        }
-    }
-    private static let modifiers_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32, UInt32, UInt32) -> Void = { data, proxy, serial, mods_depressed, mods_latched, mods_locked, group in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.modifiers(WaylandBorrowedProxy<WlKeyboardClient>(eventProxy), serial: serial, mods_depressed: mods_depressed, mods_latched: mods_latched, mods_locked: mods_locked, group: group)
-        }
-    }
-    private static let repeatInfo_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = { data, proxy, rate, delay in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.repeatInfo(WaylandBorrowedProxy<WlKeyboardClient>(eventProxy), rate: rate, delay: delay)
-        }
-    }
 }
-public extension WaylandProxy where Interface == WlKeyboardClient {
-    func installListener(_ owner: any WlKeyboardEvents) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WlKeyboardClient {
+    package func installListener(_ owner: any WlKeyboardEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe wl_keyboard_add_listener(proxy, WlKeyboardClient.listener, data)
         }

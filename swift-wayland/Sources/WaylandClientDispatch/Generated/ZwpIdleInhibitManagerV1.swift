@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for zwp_idle_inhibit_manager_v1.
 
 import WaylandClientC
-public enum ZwpIdleInhibitManagerV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum ZwpIdleInhibitManagerV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_idle_inhibit_manager_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == ZwpIdleInhibitManagerV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpIdleInhibitManagerV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zwp_idle_inhibit_manager_v1_destroy(_proxy)
@@ -17,10 +18,16 @@ public extension WaylandProxy where Interface == ZwpIdleInhibitManagerV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func createInhibitor(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<ZwpIdleInhibitorV1Client> {
+    package func createInhibitor(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError)
+        -> WaylandProxy<ZwpIdleInhibitorV1Client>
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_zwp_idle_inhibit_manager_v1_create_inhibitor(_proxy, _surfaceProxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_zwp_idle_inhibit_manager_v1_create_inhibitor(
+                    _proxy, _surfaceProxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

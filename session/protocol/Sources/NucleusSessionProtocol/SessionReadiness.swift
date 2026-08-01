@@ -1,5 +1,5 @@
 import Glibc
-import NucleusIPCTransport
+internal import NucleusIPCTransport
 
 public enum SessionProcessRole: UInt8, Sendable, Equatable {
     case compositor = 1

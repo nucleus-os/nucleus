@@ -1,8 +1,9 @@
-import NucleusSkiaGraphiteBridge
-import VulkanC
-import Vulkan
-import Tracy
 internal import NucleusRenderModel
+import NucleusSkiaGraphiteBridge
+import Tracy
+import Vulkan
+import VulkanC
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Android)
@@ -15,7 +16,7 @@ extension RenderCore {
     /// Drop the render resources (snapshots, frame driver accumulators + registry
     /// images, imported client-surface images) — step one of GPU-lifetime teardown,
     /// run BEFORE the backend tears down its own scanout/swapchain images.
-    public func shutdownRenderResources() {
+    package func shutdownRenderResources() {
         pendingPixelCaptureJobs.removeAll()
         pixelCaptureJobByKey.removeAll()
         pixelCaptureJobByRequest.removeAll()
@@ -57,7 +58,7 @@ extension RenderCore {
     /// future serial would leak when no later frame is submitted. A KMS page flip
     /// gated by submission N proves every earlier item on the single graphics queue
     /// has completed, independent of other outputs' flip phase.
-    public func releaseRetiredGpuResources(completedSubmissionSerial: UInt64 = .max) {
+    package func releaseRetiredGpuResources(completedSubmissionSerial: UInt64 = .max) {
         let graphiteCompletedSerial = pollCompletedSubmissionSerial()
         let safeSubmissionSerial = min(completedSubmissionSerial, graphiteCompletedSerial)
         // A noncopyable element cannot be filtered in place, so drain from the back
@@ -101,29 +102,27 @@ extension RenderCore {
     /// Poll Graphite's completion callbacks without blocking. Platform backends
     /// use the same serial authority to retire objects from submissions that never
     /// reached their normal presentation-completion path.
-    @_spi(NucleusPlatform)
-    public func pollCompletedSubmissionSerial() -> UInt64 {
+    package func pollCompletedSubmissionSerial() -> UInt64 {
         frameDriver?.pollCompletedSubmissionSerial() ?? .max
     }
 
     /// Consume the Graphite/Vulkan timestamp-query duration for one completed
     /// composite submission. The pageflip path calls this before releasing the
     /// synchronization objects retained by DRM.
-    @_spi(NucleusPlatform)
-    public func takeCompletedSubmissionGpuElapsedNs(_ submissionSerial: UInt64) -> UInt64? {
+    package func takeCompletedSubmissionGpuElapsedNs(_ submissionSerial: UInt64) -> UInt64? {
         frameDriver?.takeCompletedSubmissionGpuElapsedNs(submissionSerial)
     }
 
     /// Drain submitted GPU work before platform-owned synchronization and scanout
     /// objects are destroyed during shutdown or exceptional presentation recovery.
-    public func waitForGpuIdle() {
+    package func waitForGpuIdle() {
         _ = unsafe deviceDispatch.vkQueueWaitIdle?(graphicsQueue)
     }
 
     /// Drop Graphite first, then the Vulkan device + instance — step two of
     /// teardown, run AFTER the backend tears down its images. Graphite borrows the
     /// Vulkan handles and must never survive `vkDestroyDevice`.
-    public func teardownDevice() {
+    package func teardownDevice() {
         unsafe context.reset()
         deviceBox = nil
         instanceLifetime = nil

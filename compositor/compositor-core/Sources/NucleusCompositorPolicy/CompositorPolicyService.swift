@@ -1,35 +1,35 @@
-public import NucleusCompositorServer
-public import NucleusConfig
-public import NucleusSessionProtocol
+package import NucleusCompositorServer
+package import NucleusConfig
+package import NucleusSessionProtocol
 
 /// Server-owned physical-input policy and the narrow publication seam to the
 /// supervisor-provisioned out-of-process shell.
 @MainActor
-public final class CompositorPolicyService: CompositorPolicy {
-    public typealias AcceptedActionSink = @MainActor (
-        _ action: UInt8,
-        _ configurationIndex: UInt32,
-        _ value: UInt32,
-        _ epoch: ConfigurationServiceEpoch,
-        _ generation: ConfigurationGeneration
-    ) -> Void
+package final class CompositorPolicyService: CompositorPolicy {
+    package typealias AcceptedActionSink =
+        @MainActor (
+            _ action: UInt8,
+            _ configurationIndex: UInt32,
+            _ value: UInt32,
+            _ epoch: ConfigurationServiceEpoch,
+            _ generation: ConfigurationGeneration
+        ) -> Void
 
-    public typealias WindowMenuSink = @MainActor (
-        _ windowID: UInt64,
-        _ x: Double,
-        _ y: Double,
-        _ capabilities: UInt32
-    ) -> Void
+    package typealias WindowMenuSink =
+        @MainActor (
+            _ windowID: UInt64,
+            _ x: Double,
+            _ y: Double,
+            _ capabilities: UInt32
+        ) -> Void
 
     private let bindings: GlobalBindingResolver
     private let cursorTheme: ServerCursorThemeService
 
-    public var acceptedActionSink: AcceptedActionSink?
-    public var windowMenuSink: WindowMenuSink?
-    public private(set) var configurationEpoch:
-        ConfigurationServiceEpoch
-    public private(set) var configurationGeneration:
-        ConfigurationGeneration
+    package var acceptedActionSink: AcceptedActionSink?
+    package var windowMenuSink: WindowMenuSink?
+    package private(set) var configurationEpoch: ConfigurationServiceEpoch
+    package private(set) var configurationGeneration: ConfigurationGeneration
 
     init(
         bindings: GlobalBindingResolver,
@@ -43,7 +43,7 @@ public final class CompositorPolicyService: CompositorPolicy {
         self.configurationGeneration = configurationGeneration
     }
 
-    public func adoptConfiguration(
+    package func adoptConfiguration(
         binds: [KeyBind],
         epoch: ConfigurationServiceEpoch,
         generation: ConfigurationGeneration
@@ -53,7 +53,7 @@ public final class CompositorPolicyService: CompositorPolicy {
         configurationGeneration = generation
     }
 
-    public func adoptConfigurationVersion(
+    package func adoptConfigurationVersion(
         epoch: ConfigurationServiceEpoch,
         generation: ConfigurationGeneration
     ) {
@@ -61,7 +61,7 @@ public final class CompositorPolicyService: CompositorPolicy {
         configurationGeneration = generation
     }
 
-    public func dispatchKeybind(
+    package func dispatchKeybind(
         keycode: UInt32,
         modifiers: UInt64,
         pressed: Bool
@@ -86,15 +86,15 @@ public final class CompositorPolicyService: CompositorPolicy {
         }
     }
 
-    public func cursorApplyDefault() {
+    package func cursorApplyDefault() {
         cursorTheme.applyDefault()
     }
 
-    public func cursorApplyNamed(_ name: String) {
+    package func cursorApplyNamed(_ name: String) {
         cursorTheme.applyNamed(name)
     }
 
-    public func acceptedShellAction(
+    package func acceptedShellAction(
         action: UInt8,
         configurationIndex: UInt32,
         value: UInt32
@@ -107,7 +107,7 @@ public final class CompositorPolicyService: CompositorPolicy {
             configurationGeneration)
     }
 
-    public func showWindowMenu(
+    package func showWindowMenu(
         windowID: UInt64,
         x: Double,
         y: Double,

@@ -4,28 +4,28 @@
 
 /// A cubic-bezier timing curve (two control points; endpoints fixed at 0,0 and
 /// 1,1). Mirrors `animation.TimingFunction`.
-public struct TimingFunction: Equatable, Sendable {
-    public var c1x: Float
-    public var c1y: Float
-    public var c2x: Float
-    public var c2y: Float
+package struct TimingFunction: Equatable, Sendable {
+    package var c1x: Float
+    package var c1y: Float
+    package var c2x: Float
+    package var c2y: Float
 
-    public init(c1x: Float, c1y: Float, c2x: Float, c2y: Float) {
+    package init(c1x: Float, c1y: Float, c2x: Float, c2y: Float) {
         self.c1x = c1x
         self.c1y = c1y
         self.c2x = c2x
         self.c2y = c2y
     }
 
-    public static let linear = TimingFunction(c1x: 0, c1y: 0, c2x: 1, c2y: 1)
-    public static let easeIn = TimingFunction(c1x: 0.42, c1y: 0, c2x: 1, c2y: 1)
-    public static let easeOut = TimingFunction(c1x: 0, c1y: 0, c2x: 0.58, c2y: 1)
-    public static let easeInEaseOut = TimingFunction(c1x: 0.42, c1y: 0, c2x: 0.58, c2y: 1)
-    public static let `default` = TimingFunction.easeInEaseOut
+    package static let linear = TimingFunction(c1x: 0, c1y: 0, c2x: 1, c2y: 1)
+    package static let easeIn = TimingFunction(c1x: 0.42, c1y: 0, c2x: 1, c2y: 1)
+    package static let easeOut = TimingFunction(c1x: 0, c1y: 0, c2x: 0.58, c2y: 1)
+    package static let easeInEaseOut = TimingFunction(c1x: 0.42, c1y: 0, c2x: 0.58, c2y: 1)
+    package static let `default` = TimingFunction.easeInEaseOut
 
     /// Evaluate the curve at `t ∈ [0, 1]`: Newton-iterate x(u)=t, then return
     /// y(u). Linear short-circuits. Mirrors `TimingFunction.evaluate`.
-    public func evaluate(_ t: Float) -> Float {
+    package func evaluate(_ t: Float) -> Float {
         if t <= 0 { return 0 }
         if t >= 1 { return 1 }
         if c1x == 0 && c1y == 0 && c2x == 1 && c2y == 1 { return t }
@@ -55,7 +55,7 @@ private func bezier3Derivative(_ a: Float, _ b: Float, _ t: Float) -> Float {
 // MARK: - Presentation update
 
 /// A GPU-side presentation update for one node. Mirrors `PresentationUpdate`.
-public enum PresentationUpdate: Equatable, Sendable {
+package enum PresentationUpdate: Equatable, Sendable {
     case set(
         nodeId: UInt64,
         transform: M44?,
@@ -66,13 +66,15 @@ public enum PresentationUpdate: Equatable, Sendable {
         scrollPresentationOffset: Point2D?)
     case clear(nodeId: UInt64)
 
-    public static func == (lhs: PresentationUpdate, rhs: PresentationUpdate) -> Bool {
+    package static func == (lhs: PresentationUpdate, rhs: PresentationUpdate) -> Bool {
         switch (lhs, rhs) {
-        case let (.set(an, at, ao, ace, abo, ato, aso), .set(bn, bt, bo, bce, bbo, bto, bso)):
-            return an == bn && at == bt && ao == bo &&
-                optFloat4Equal(ace, bce) && abo == bbo &&
-                optFloat4Equal(ato, bto) && aso == bso
-        case let (.clear(a), .clear(b)):
+        case (
+            .set(let an, let at, let ao, let ace, let abo, let ato, let aso),
+            .set(let bn, let bt, let bo, let bce, let bbo, let bto, let bso)
+        ):
+            return an == bn && at == bt && ao == bo && optFloat4Equal(ace, bce) && abo == bbo
+                && optFloat4Equal(ato, bto) && aso == bso
+        case (.clear(let a), .clear(let b)):
             return a == b
         default:
             return false
@@ -83,7 +85,7 @@ public enum PresentationUpdate: Equatable, Sendable {
 private func optFloat4Equal(_ a: Float4?, _ b: Float4?) -> Bool {
     switch (a, b) {
     case (nil, nil): return true
-    case let (x?, y?): return float4Equal(x, y)
+    case (let x?, let y?): return float4Equal(x, y)
     default: return false
     }
 }

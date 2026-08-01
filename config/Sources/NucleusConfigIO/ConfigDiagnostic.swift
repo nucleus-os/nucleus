@@ -1,26 +1,26 @@
-public import NucleusConfigSyntax
 import NucleusConfig
+package import NucleusConfigSyntax
 
 /// One problem found while loading configuration, in a form suitable for both a
 /// terminal and the on-screen notice the compositor raises when a reload fails.
-public struct ConfigDiagnostic: Equatable, Sendable {
-    public enum Severity: Sendable, Equatable {
+package struct ConfigDiagnostic: Equatable, Sendable {
+    package enum Severity: Sendable, Equatable {
         /// The configuration cannot be used. The caller keeps what it has.
         case error
         /// The configuration is usable; something in it was ignored.
         case warning
     }
 
-    public var severity: Severity
-    public var message: String
+    package var severity: Severity
+    package var message: String
     /// Where in the file, when the defect is positional.
-    public var location: SourceLocation?
+    package var location: SourceLocation?
     /// Which setting, when the defect is semantic. `["input", "touchpad", "tap"]`.
-    public var keyPath: [String]
+    package var keyPath: [String]
     /// The offending source line with a caret under the column.
-    public var excerpt: String?
+    package var excerpt: String?
 
-    public init(
+    package init(
         severity: Severity,
         message: String,
         location: SourceLocation? = nil,
@@ -34,7 +34,7 @@ public struct ConfigDiagnostic: Equatable, Sendable {
         self.excerpt = excerpt
     }
 
-    public init(_ issue: ConfigValidationIssue) {
+    package init(_ issue: ConfigValidationIssue) {
         self.init(
             severity: issue.severity == .error ? .error : .warning,
             message: issue.message,
@@ -43,7 +43,7 @@ public struct ConfigDiagnostic: Equatable, Sendable {
 
     /// A single-line summary: `12:5: error: unclosed '{'` or
     /// `error: input.touchpad.accel_speed: expected a number`.
-    public var summary: String {
+    package var summary: String {
         var parts: [String] = []
         if let location { parts.append("\(location):") }
         parts.append(severity == .error ? "error:" : "warning:")
@@ -53,7 +53,7 @@ public struct ConfigDiagnostic: Equatable, Sendable {
     }
 
     /// The summary plus a source excerpt, when one is available.
-    public var display: String {
+    package var display: String {
         guard let excerpt else { return summary }
         return summary + "\n" + excerpt
     }

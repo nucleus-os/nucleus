@@ -2,62 +2,79 @@
 // Typed client descriptor and event dispatch for zwp_input_method_v1.
 
 import WaylandClientC
-public enum ZwpInputMethodV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum ZwpInputMethodV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_input_method_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
 @MainActor
-public protocol ZwpInputMethodV1Events: AnyObject {
-    func activate(_ proxy: WaylandBorrowedProxy<ZwpInputMethodV1Client>, id: WaylandProxy<ZwpInputMethodContextV1Client>)
-    func deactivate(_ proxy: WaylandBorrowedProxy<ZwpInputMethodV1Client>, context: WaylandBorrowedProxy<ZwpInputMethodContextV1Client>)
+package protocol ZwpInputMethodV1Events: AnyObject {
+    func activate(
+        _ proxy: WaylandBorrowedProxy<ZwpInputMethodV1Client>,
+        id: WaylandProxy<ZwpInputMethodContextV1Client>)
+    func deactivate(
+        _ proxy: WaylandBorrowedProxy<ZwpInputMethodV1Client>,
+        context: WaylandBorrowedProxy<ZwpInputMethodContextV1Client>)
 }
-public extension ZwpInputMethodV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_input_method_v1_listener> = {
-        let p = UnsafeMutablePointer<zwp_input_method_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwp_input_method_v1_listener())
-        unsafe p.pointee.activate = activate_impl
-        unsafe p.pointee.deactivate = deactivate_impl
-        return unsafe p
-    }()
-    private static func handler(_ context: WaylandClientListenerContext) -> any ZwpInputMethodV1Events? {
+package extension ZwpInputMethodV1Client {
+    package nonisolated(unsafe) static let listener:
+        UnsafeMutablePointer<zwp_input_method_v1_listener> = {
+            let p = UnsafeMutablePointer<zwp_input_method_v1_listener>.allocate(capacity: 1)
+            unsafe p.initialize(to: zwp_input_method_v1_listener())
+            unsafe p.pointee.activate = activate_impl
+            unsafe p.pointee.deactivate = deactivate_impl
+            return unsafe p
+        }()
+    private static func handler(_ context: WaylandClientListenerContext)
+        -> any ZwpInputMethodV1Events?
+    {
         context.owner as? any ZwpInputMethodV1Events
     }
-    private static let activate_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, id in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let activate_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = {
+            data, proxy, id in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            nonisolated(unsafe) let _event_id = unsafe id
+            MainActor.assumeIsolated {
+                unsafe eventHandler.activate(
+                    WaylandBorrowedProxy<ZwpInputMethodV1Client>(eventProxy),
+                    id: WaylandProxy<ZwpInputMethodContextV1Client>(
+                        adopting: _event_id!, connectionLifetime: eventContext.connectionLifetime))
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
+    private static let deactivate_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = {
+            data, proxy, context in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            nonisolated(unsafe) let _event_context = unsafe context
+            MainActor.assumeIsolated {
+                unsafe eventHandler.deactivate(
+                    WaylandBorrowedProxy<ZwpInputMethodV1Client>(eventProxy),
+                    context: WaylandBorrowedProxy<ZwpInputMethodContextV1Client>(_event_context!))
+            }
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_id = unsafe id
-        MainActor.assumeIsolated {
-            unsafe eventHandler.activate(WaylandBorrowedProxy<ZwpInputMethodV1Client>(eventProxy), id: WaylandProxy<ZwpInputMethodContextV1Client>(adopting: _event_id!, connectionLifetime: eventContext.connectionLifetime))
-        }
-    }
-    private static let deactivate_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, context in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_context = unsafe context
-        MainActor.assumeIsolated {
-            unsafe eventHandler.deactivate(WaylandBorrowedProxy<ZwpInputMethodV1Client>(eventProxy), context: WaylandBorrowedProxy<ZwpInputMethodContextV1Client>(_event_context!))
-        }
-    }
 }
-public extension WaylandProxy where Interface == ZwpInputMethodV1Client {
-    func installListener(_ owner: any ZwpInputMethodV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpInputMethodV1Client {
+    package func installListener(_ owner: any ZwpInputMethodV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe zwp_input_method_v1_add_listener(proxy, ZwpInputMethodV1Client.listener, data)
         }

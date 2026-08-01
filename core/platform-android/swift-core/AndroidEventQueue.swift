@@ -8,7 +8,7 @@
 
 @inline(always)
 func nucMix(_ hash: UInt32, _ value: UInt32) -> UInt32 {
-    return (hash ^ value) &* 16777619
+    return (hash ^ value) &* 16_777_619
 }
 
 @inline(always)
@@ -74,13 +74,13 @@ struct AndroidEvent {
 
 struct DrainStats {
     var count: UInt32 = 0
-    var hash: UInt32 = 2166136261
+    var hash: UInt32 = 2_166_136_261
     var dropped_count: UInt64 = 0
 
     func smokeValue() -> Int32 {
         var value = nucMix(hash, count)
         value = nucMixU64(value, dropped_count)
-        return Int32(value & 0x7fffffff)
+        return Int32(value & 0x7fff_ffff)
     }
 }
 
@@ -127,7 +127,7 @@ struct AndroidEventQueue {
     }
 
     mutating func drainStats() -> DrainStats {
-        var stats = DrainStats(count: 0, hash: 2166136261, dropped_count: dropped_count)
+        var stats = DrainStats(count: 0, hash: 2_166_136_261, dropped_count: dropped_count)
         while let event = pop() {
             stats.count &+= 1
             stats.hash = nucMix(stats.hash, UInt32(bitPattern: event.kind.rawValue))

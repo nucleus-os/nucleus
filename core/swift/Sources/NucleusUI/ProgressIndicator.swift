@@ -1,3 +1,5 @@
+public import NucleusTypes
+
 /// A bar showing progress through a task, or a level.
 ///
 /// The bar in the reference is used both ways — a download's progress and the

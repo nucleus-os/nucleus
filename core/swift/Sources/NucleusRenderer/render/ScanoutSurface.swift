@@ -8,37 +8,37 @@
 // agnostic: at the cutover the VkImage is the GBM-scanout-BO image from the
 // attachment VkImage works.
 
-public import VulkanC
-public import Vulkan
 import NucleusSkiaGraphiteBridge
+package import Vulkan
+package import VulkanC
 
 /// A borrowed Vulkan scanout image plus the metadata the façade needs to wrap it
 /// as a Graphite render target. Every handle is borrowed — see the lifetime
 /// contract on `ScanoutSurface`.
 /// Pure borrowed-handle metadata. No operation dereferences the handles until
 /// `wrapBackendSurface`, whose caller owns the stated scanout lifetime.
-@safe public struct ScanoutImageParams {
+@safe package struct ScanoutImageParams {
     /// The borrowed `VkImage`. Must include `VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT`
     /// in `usageFlags` for the wrap to produce a render target.
-    public var image: VkImage?
+    package var image: VkImage?
     /// The borrowed backing `VkDeviceMemory`, or nil (the façade tolerates a null
     /// memory for render targets).
-    public var memory: VkDeviceMemory?
+    package var memory: VkDeviceMemory?
     /// Bound allocation size; 0 → indeterminate / borrowed.
-    public var allocSize: UInt64
-    public var width: Int32
-    public var height: Int32
-    public var format: VkFormat
-    public var tiling: VkImageTiling
+    package var allocSize: UInt64
+    package var width: Int32
+    package var height: Int32
+    package var format: VkFormat
+    package var tiling: VkImageTiling
     /// The image's current layout (e.g. `VK_IMAGE_LAYOUT_UNDEFINED` for a fresh BO).
-    public var initialLayout: VkImageLayout
-    public var usageFlags: VK.ImageUsageFlags
-    public var queueFamilyIndex: UInt32
+    package var initialLayout: VkImageLayout
+    package var usageFlags: VK.ImageUsageFlags
+    package var queueFamilyIndex: UInt32
     /// Premultiplied alpha vs opaque (false for an XRGB-style scanout BO).
-    public var hasAlpha: Bool
-    public var sampleCount: UInt32
+    package var hasAlpha: Bool
+    package var sampleCount: UInt32
 
-    public init(
+    package init(
         image: VkImage?,
         memory: VkDeviceMemory?,
         allocSize: UInt64,
@@ -74,13 +74,15 @@ import NucleusSkiaGraphiteBridge
 /// holding the image must be destroyed only AFTER the Surface's scope ends, and
 /// the whole chain torn down before the Graphite context. A Surface backed by a
 /// backend texture faults if used after its backing is freed.
-public enum ScanoutSurface {
+package enum ScanoutSurface {
     /// Pure marshaling: assemble the façade descriptor from the borrowed image.
     /// No GPU access — the hardware-independent unit. `VkImage`/`VkDeviceMemory`
     /// handles marshal to the descriptor's `void *` fields the same way device
     /// handles do (`UnsafeMutableRawPointer(handle)`); the `VkFormat` /
     /// `VkImageTiling` / `VkImageLayout` C enums lower to their `rawValue`.
-    public static func descriptor(_ params: ScanoutImageParams) -> nucleus.skia.VulkanImageDescriptor {
+    package static func descriptor(_ params: ScanoutImageParams)
+        -> nucleus.skia.VulkanImageDescriptor
+    {
         var desc = unsafe nucleus.skia.VulkanImageDescriptor()
         if let image = unsafe params.image {
             unsafe desc.image = UnsafeMutableRawPointer(image)
@@ -104,7 +106,7 @@ public enum ScanoutSurface {
     /// Wrap the borrowed image as a Graphite render-target `Surface`. The returned
     /// Surface is invalid (`isValid() == false`) on an unusable descriptor (e.g. a
     /// null image, or `usageFlags` lacking `VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT`).
-    public static func wrap(
+    package static func wrap(
         recorder: nucleus.skia.Recorder, params: ScanoutImageParams
     ) -> nucleus.skia.Surface {
         unsafe recorder.wrapBackendSurface(descriptor(params))

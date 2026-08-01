@@ -1,6 +1,7 @@
 import NucleusUITestSupport
-@_spi(NucleusRenderServer) @testable import NucleusUI
 import Testing
+
+@testable import NucleusUI
 
 @MainActor
 @Suite(.uiContext, .serialized)
@@ -122,10 +123,12 @@ struct MenuTests {
         for frame in presentation.popoverFramesForTesting() {
             #expect(frame.origin.x >= scene.displayBounds.origin.x)
             #expect(frame.origin.y >= scene.displayBounds.origin.y)
-            #expect(frame.origin.x + frame.size.width
-                <= scene.displayBounds.origin.x + scene.displayBounds.size.width)
-            #expect(frame.origin.y + frame.size.height
-                <= scene.displayBounds.origin.y + scene.displayBounds.size.height)
+            #expect(
+                frame.origin.x + frame.size.width
+                    <= scene.displayBounds.origin.x + scene.displayBounds.size.width)
+            #expect(
+                frame.origin.y + frame.size.height
+                    <= scene.displayBounds.origin.y + scene.displayBounds.size.height)
         }
 
         _ = scene.dispatchEvent(key(.leftArrow))
@@ -202,9 +205,10 @@ struct MenuTests {
             anchor: Rect(x: 30, y: 30, width: 1, height: 1))
         let ordinaryViewID = try #require(
             presentation.retainedViewIDForTesting(itemID: ordinary.id))
-        _ = scene.dispatchEvent(Event(
-            type: .flagsChanged,
-            modifierFlags: .option))
+        _ = scene.dispatchEvent(
+            Event(
+                type: .flagsChanged,
+                modifierFlags: .option))
         #expect(
             presentation.retainedViewIDForTesting(itemID: alternate.id)
                 != nil)
@@ -213,10 +217,11 @@ struct MenuTests {
             presentation.retainedViewIDForTesting(itemID: ordinary.id)
                 == ordinaryViewID)
 
-        _ = scene.dispatchEvent(key(
-            .letterR,
-            modifiers: .option,
-            characters: "r"))
+        _ = scene.dispatchEvent(
+            key(
+                .letterR,
+                modifiers: .option,
+                characters: "r"))
         #expect(alternateActivations == 1)
 
         _ = scene.present(
@@ -238,9 +243,10 @@ struct MenuTests {
             anchor: Rect(x: 80, y: 80, width: 1, height: 1),
             stickyOpeningGesture: true)
 
-        _ = scene.dispatchEvent(Event(
-            type: .pointerUp,
-            location: Point(x: 5, y: 5)))
+        _ = scene.dispatchEvent(
+            Event(
+                type: .pointerUp,
+                location: Point(x: 5, y: 5)))
         #expect(scene.menuPresentation === presentation)
 
         let row = try #require(
@@ -248,14 +254,16 @@ struct MenuTests {
         let point = Point(
             x: row.origin.x + row.size.width * 0.5,
             y: row.origin.y + row.size.height * 0.5)
-        _ = scene.dispatchEvent(Event(
-            type: .pointerDown,
-            location: point,
-            button: .left))
-        _ = scene.dispatchEvent(Event(
-            type: .pointerUp,
-            location: point,
-            button: .left))
+        _ = scene.dispatchEvent(
+            Event(
+                type: .pointerDown,
+                location: point,
+                button: .left))
+        _ = scene.dispatchEvent(
+            Event(
+                type: .pointerUp,
+                location: point,
+                button: .left))
         #expect(activations == 1)
         #expect(scene.menuPresentation == nil)
 
@@ -268,23 +276,26 @@ struct MenuTests {
         let dragPoint = Point(
             x: dragRow.origin.x + 10,
             y: dragRow.origin.y + 10)
-        _ = scene.dispatchEvent(Event(
-            type: .pointerDragged,
-            location: dragPoint,
-            activeButtons: .left))
-        _ = scene.dispatchEvent(Event(
-            type: .pointerUp,
-            location: dragPoint,
-            button: .left))
+        _ = scene.dispatchEvent(
+            Event(
+                type: .pointerDragged,
+                location: dragPoint,
+                activeButtons: .left))
+        _ = scene.dispatchEvent(
+            Event(
+                type: .pointerUp,
+                location: dragPoint,
+                button: .left))
         #expect(activations == 2)
 
         presentation = scene.present(
             Menu(items: [item]),
             anchor: Rect(x: 80, y: 80, width: 1, height: 1))
-        _ = scene.dispatchEvent(Event(
-            type: .pointerDown,
-            location: Point(x: 499, y: 399),
-            button: .left))
+        _ = scene.dispatchEvent(
+            Event(
+                type: .pointerDown,
+                location: Point(x: 499, y: 399),
+                button: .left))
         #expect(presentation.result == .cancelled)
         #expect(scene.menuPresentation == nil)
     }
@@ -303,11 +314,12 @@ struct MenuTests {
             anchor: Rect(x: 30, y: 30, width: 1, height: 1))
         let frame = try #require(
             presentation.itemFrameInSceneForTesting(itemID: parent.id))
-        _ = scene.dispatchEvent(Event(
-            type: .pointerMoved,
-            location: Point(
-                x: frame.origin.x + 10,
-                y: frame.origin.y + 10)))
+        _ = scene.dispatchEvent(
+            Event(
+                type: .pointerMoved,
+                location: Point(
+                    x: frame.origin.x + 10,
+                    y: frame.origin.y + 10)))
 
         #expect(presentation.panelCountForTesting() == 1)
         await Task.yield()
@@ -330,16 +342,18 @@ struct MenuTests {
             id: "parent",
             title: "Parent",
             submenu: Menu(items: [
-                MenuItem(id: "child", title: "Child") {},
-            ])) {}
+                MenuItem(id: "child", title: "Child") {}
+            ])
+        ) {}
         let presentation = scene.present(
             Menu(items: [parent]),
             anchor: Rect(x: 30, y: 30, width: 1, height: 1))
         let frame = try #require(
             presentation.itemFrameInSceneForTesting(itemID: parent.id))
-        _ = scene.dispatchEvent(Event(
-            type: .pointerMoved,
-            location: Point(x: frame.origin.x + 10, y: frame.origin.y + 10)))
+        _ = scene.dispatchEvent(
+            Event(
+                type: .pointerMoved,
+                location: Point(x: frame.origin.x + 10, y: frame.origin.y + 10)))
         await waitForClockWaiters(1)
 
         presentation.dismiss()
@@ -373,15 +387,18 @@ struct MenuTests {
 
         let nodes = Array(scene.accessibilityTree.snapshot.nodes.values)
         #expect(nodes.contains { $0.role == .menu })
-        let row = try #require(nodes.first {
-            $0.role == .menuItem && $0.label == "Show Status"
-        })
+        let row = try #require(
+            nodes.first {
+                $0.role == .menuItem && $0.label == "Show Status"
+            })
         #expect(row.state.contains(.checked))
         #expect(row.state.contains(.focused))
         #expect(row.actions.contains(.press))
-        #expect(scene.accessibilityTree.perform(.init(
-            target: row.id,
-            action: .press)))
+        #expect(
+            scene.accessibilityTree.perform(
+                .init(
+                    target: row.id,
+                    action: .press)))
         #expect(activations == 1)
         #expect(presentation.result == .activated(checked.id))
     }

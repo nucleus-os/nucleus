@@ -1,7 +1,7 @@
 import Dispatch
-import NucleusRenderer
-import NucleusShellSignalC
 import Glibc
+package import NucleusAppHostProtocols
+import NucleusShellSignalC
 import Synchronization
 
 /// Thread-safe eventfd wake owned by the shell event loop.
@@ -51,8 +51,7 @@ package final class ShellRenderWakeSink: AsyncRenderWakeSink {
     }
 }
 
-@_spi(NucleusShellTesting)
-public func runShellThreadSanitizerHarness() {
+package func runShellThreadSanitizerHarness() {
     let producerCount = 8
     let requestsPerProducer = 2_048
     var exercisedDescriptorReuse = false
@@ -82,7 +81,8 @@ public func runShellThreadSanitizerHarness() {
 
         let replacement = nucleus_shell_create_render_wake_fd()
         precondition(replacement >= 0)
-        exercisedDescriptorReuse = exercisedDescriptorReuse
+        exercisedDescriptorReuse =
+            exercisedDescriptorReuse
             || replacement == originalDescriptor
         for _ in 0..<256 { sink.signalRenderWork() }
         precondition(

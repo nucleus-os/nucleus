@@ -17,10 +17,10 @@ private func fourcc(_ a: UInt8, _ b: UInt8, _ c: UInt8, _ d: UInt8) -> UInt32 {
     UInt32(a) | (UInt32(b) << 8) | (UInt32(c) << 16) | (UInt32(d) << 24)
 }
 
-let drmFormatXRGB8888 = fourcc(0x58, 0x52, 0x32, 0x34)      // 'X','R','2','4'
-let drmFormatXBGR8888 = fourcc(0x58, 0x42, 0x32, 0x34)      // 'X','B','2','4'
-let drmFormatARGB8888 = fourcc(0x41, 0x52, 0x32, 0x34)      // 'A','R','2','4' (cursor plane)
-let drmFormatABGR2101010 = fourcc(0x41, 0x42, 0x33, 0x30)   // 'A','B','3','0'
+let drmFormatXRGB8888 = fourcc(0x58, 0x52, 0x32, 0x34)  // 'X','R','2','4'
+let drmFormatXBGR8888 = fourcc(0x58, 0x42, 0x32, 0x34)  // 'X','B','2','4'
+let drmFormatARGB8888 = fourcc(0x41, 0x52, 0x32, 0x34)  // 'A','R','2','4' (cursor plane)
+let drmFormatABGR2101010 = fourcc(0x41, 0x42, 0x33, 0x30)  // 'A','B','3','0'
 
 func drmFormatName(_ format: UInt32) -> String {
     switch format {
@@ -86,7 +86,9 @@ struct FormatSet: Sendable, Equatable {
 
     func supportsFormatModifier(_ format: UInt32, _ modifier: UInt64) -> Bool {
         guard let mods = get(format), mods.supported else { return false }
-        if mods.count == 0 { return mods.implicit || modifier == 0 || modifier == drmFormatModInvalid }
+        if mods.count == 0 {
+            return mods.implicit || modifier == 0 || modifier == drmFormatModInvalid
+        }
         return mods.contains(modifier)
     }
 }
@@ -141,9 +143,12 @@ func selectScanoutFormat(
 ) -> ScanoutFormat? {
     for format in scanoutFormatPreference {
         guard let planeMods = planeFormats.get(format),
-              let importMods = importFormats.get(format) else { continue }
+            let importMods = importFormats.get(format)
+        else { continue }
         if let choice = intersectFormatModifiers(
-            format: format, planeMods: planeMods, importMods: importMods, allowModifiers: allowModifiers) {
+            format: format, planeMods: planeMods, importMods: importMods,
+            allowModifiers: allowModifiers)
+        {
             return choice
         }
     }
@@ -166,9 +171,12 @@ func fallbackScanoutFormat(
             continue
         }
         guard let planeMods = planeFormats.get(format),
-              let importMods = importFormats.get(format) else { continue }
+            let importMods = importFormats.get(format)
+        else { continue }
         if let choice = intersectFormatModifiers(
-            format: format, planeMods: planeMods, importMods: importMods, allowModifiers: allowModifiers) {
+            format: format, planeMods: planeMods, importMods: importMods,
+            allowModifiers: allowModifiers)
+        {
             return choice
         }
     }
@@ -205,7 +213,8 @@ func parseInFormatsBlob(_ bytes: [UInt8]) -> [FormatModifierPair] {
 
         // Bounds-check the two tables before walking them.
         guard formatsOffset + countFormats * 4 <= bytes.count,
-              modifiersOffset + countModifiers * 24 <= bytes.count else { return [] }
+            modifiersOffset + countModifiers * 24 <= bytes.count
+        else { return [] }
 
         func formatAt(_ index: Int) -> UInt32 { u32(formatsOffset + index * 4) }
 
@@ -235,8 +244,11 @@ func collectPlaneFormats(fd: Int32, planeId: UInt32) -> FormatSet {
         formats.add(format, drmFormatModInvalid)
     }
 
-    let blobId = DrmProperties.findValue(fd: fd, objectId: planeId, kind: .plane, name: "IN_FORMATS") ?? 0
-    guard blobId != 0, let blob = DrmPropertyBlob(fd: fd, blobId: UInt32(truncatingIfNeeded: blobId)) else {
+    let blobId =
+        DrmProperties.findValue(fd: fd, objectId: planeId, kind: .plane, name: "IN_FORMATS") ?? 0
+    guard blobId != 0,
+        let blob = DrmPropertyBlob(fd: fd, blobId: UInt32(truncatingIfNeeded: blobId))
+    else {
         return formats
     }
     for pair in parseInFormatsBlob(blob.bytes) {

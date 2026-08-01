@@ -7,8 +7,8 @@
 // consumer therefore observes identical input, opacity, blur, and damage geometry.
 
 import NucleusRenderModel
-import WaylandServerC
 import WaylandServer
+import WaylandServerC
 import WaylandServerDispatch
 
 /// A wire rectangle. Shared by region ops and surface damage.
@@ -58,10 +58,14 @@ final class WlRegion {
 // The wl_region request handlers (add/subtract) — the shared WlRegionServer.vtable recovers this
 // WlRegion owner and forwards. `destroy` is the generated fixed wl_resource_destroy trampoline.
 extension WlRegion: WlRegionRequests {
-    func add(_ request: WaylandRequest<WlRegionServer>, x: Int32, y: Int32, width: Int32, height: Int32) {
+    func add(
+        _ request: WaylandRequest<WlRegionServer>, x: Int32, y: Int32, width: Int32, height: Int32
+    ) {
         add(WlRect(x: x, y: y, width: width, height: height))
     }
-    func subtract(_ request: WaylandRequest<WlRegionServer>, x: Int32, y: Int32, width: Int32, height: Int32) {
+    func subtract(
+        _ request: WaylandRequest<WlRegionServer>, x: Int32, y: Int32, width: Int32, height: Int32
+    ) {
         subtract(WlRect(x: x, y: y, width: width, height: height))
     }
 }

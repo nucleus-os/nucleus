@@ -1,9 +1,8 @@
 import NucleusLayers
-import NucleusWindowClientInput
-@_spi(NucleusWindowClientImplementation)
-import NucleusWindowClientRender
 import NucleusUI
 import NucleusUIEmbedder
+import NucleusWindowClientInput
+package import NucleusWindowClientRender
 import WaylandClientDispatch
 
 /// The single host for every native shell view presented on a Wayland surface.
@@ -73,21 +72,22 @@ import WaylandClientDispatch
         refreshMillihertz: Int32
     ) -> Bool {
         guard logicalWidth.isFinite, logicalHeight.isFinite,
-              logicalWidth > 0, logicalHeight > 0,
-              scale.isFinite, scale > 0,
-              var record = records[surfaceID]
+            logicalWidth > 0, logicalHeight > 0,
+            scale.isFinite, scale > 0,
+            var record = records[surfaceID]
         else { return false }
 
         let frame = Rect(
             origin: logicalOrigin,
             size: Size(width: logicalWidth, height: logicalHeight))
         record.window.setFrame(frame)
-        record.window.setSurfaceAssociation(WindowSurfaceAssociation(
-            surfaceID: PresentationSurfaceID(rawValue: UInt64(surfaceID)),
-            transform: WindowSurfaceTransform(
-                windowOriginInSurface: .zero,
-                surfaceOriginInOutput: logicalOrigin,
-                backingScaleFactor: BackingScaleFactor(scale))))
+        record.window.setSurfaceAssociation(
+            WindowSurfaceAssociation(
+                surfaceID: PresentationSurfaceID(rawValue: UInt64(surfaceID)),
+                transform: WindowSurfaceTransform(
+                    windowOriginInSurface: .zero,
+                    surfaceOriginInOutput: logicalOrigin,
+                    backingScaleFactor: BackingScaleFactor(scale))))
 
         let pixelWidth = Self.pixelExtent(logicalWidth, scale: scale)
         let pixelHeight = Self.pixelExtent(logicalHeight, scale: scale)

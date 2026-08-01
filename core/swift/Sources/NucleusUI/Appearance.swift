@@ -1,65 +1,11 @@
-package import NucleusLayers
-internal import struct NucleusTypes.Color
+public import NucleusTypes
 
 public enum Appearance: Sendable, Equatable {
     case light
     case dark
-
-    package init(_ appearance: NucleusLayers.Appearance) {
-        switch appearance {
-        case .light:
-            self = .light
-        case .dark:
-            self = .dark
-        }
-    }
-
-    package var layersAppearance: NucleusLayers.Appearance {
-        switch self {
-        case .light:
-            .light
-        case .dark:
-            .dark
-        }
-    }
 }
 
-public struct Color: Sendable, Equatable {
-    public let r: Float
-    public let g: Float
-    public let b: Float
-    public let a: Float
-
-    public init(_ r: Float, _ g: Float, _ b: Float, _ a: Float) {
-        self.r = Self.component(r)
-        self.g = Self.component(g)
-        self.b = Self.component(b)
-        self.a = Self.component(a)
-    }
-
-    public init(r: Float, g: Float, b: Float, a: Float) {
-        self.init(r, g, b, a)
-    }
-
-    package init(_ color: NucleusLayers.Color) {
-        self.init(color.r, color.g, color.b, color.a)
-    }
-
-    package var layersColor: NucleusLayers.Color {
-        .init(r, g, b, a)
-    }
-
-    /// Returns this color with its alpha replaced, matching
-    /// `NSColor.withAlphaComponent(_:)` behavior.
-    public func opacity(_ alpha: Float) -> Color {
-        Color(r, g, b, alpha)
-    }
-
-    private static func component(_ value: Float) -> Float {
-        guard value.isFinite else { return 0 }
-        return min(max(value, 0), 1)
-    }
-}
+public typealias Color = NucleusTypes.Color
 
 /// Named UI color roles, mirroring `NSColor`'s semantic color tokens.
 public enum SemanticColor: Sendable, Equatable {
@@ -83,17 +29,17 @@ public enum SemanticColor: Sendable, Equatable {
     /// intent rather than as constants.
     public var spec: ColorSpec {
         switch self {
-        case .label:            return .role(.onSurface)
-        case .secondaryLabel:   return .role(.onSurfaceVariant)
-        case .tertiaryLabel:    return ColorSpec(role: .onSurface, alpha: 0.56)
-        case .quaternaryLabel:  return ColorSpec(role: .onSurface, alpha: 0.15)
-        case .separator:        return .role(.outline)
+        case .label: return .role(.onSurface)
+        case .secondaryLabel: return .role(.onSurfaceVariant)
+        case .tertiaryLabel: return ColorSpec(role: .onSurface, alpha: 0.56)
+        case .quaternaryLabel: return ColorSpec(role: .onSurface, alpha: 0.15)
+        case .separator: return .role(.outline)
         // Full strength, deliberately. The old values were 0.82 in dark and
         // 0.95 in light — one multiplier cannot serve both, and an accent's
         // strength is the theme's business rather than a constant here. A
         // palette wanting a muted accent gives `primary` that alpha.
-        case .accent:           return .role(.primary)
-        case .accentLabel:      return .role(.secondary)
+        case .accent: return .role(.primary)
+        case .accentLabel: return .role(.secondary)
         }
     }
 
@@ -111,53 +57,4 @@ public enum SemanticColor: Sendable, Equatable {
     }
 }
 
-/// Drop shadow authored by UI code. The layers wire layer receives the
-/// converted shadow only at publication / property-write boundaries.
-public struct Shadow: Sendable, Equatable {
-    public var offsetX: Double
-    public var offsetY: Double
-    public var blurRadius: Double
-    public var cornerRadius: Double
-    public var opacity: Double
-    public var color: Color
-
-    public init(
-        offsetX: Double = 0,
-        offsetY: Double = 3,
-        blurRadius: Double = 3,
-        cornerRadius: Double = 0,
-        opacity: Double = 0,
-        color: Color = Color(0, 0, 0, 1)
-    ) {
-        self.offsetX = offsetX.isFinite ? offsetX : 0
-        self.offsetY = offsetY.isFinite ? offsetY : 0
-        self.blurRadius = blurRadius.isFinite ? max(0, blurRadius) : 0
-        self.cornerRadius = cornerRadius.isFinite ? max(0, cornerRadius) : 0
-        self.opacity = opacity.isFinite ? min(max(opacity, 0), 1) : 0
-        self.color = color
-    }
-
-    package init(_ shadow: NucleusLayers.Shadow) {
-        self.init(
-            offsetX: shadow.offsetX,
-            offsetY: shadow.offsetY,
-            blurRadius: shadow.blurRadius,
-            cornerRadius: shadow.cornerRadius,
-            opacity: shadow.opacity,
-            color: Color(shadow.color)
-        )
-    }
-
-    package var layersShadow: NucleusLayers.Shadow {
-        .init(
-            offsetX: offsetX,
-            offsetY: offsetY,
-            blurRadius: blurRadius,
-            cornerRadius: cornerRadius,
-            opacity: opacity,
-            color: color.layersColor
-        )
-    }
-
-    public static let none = Shadow()
-}
+public typealias Shadow = NucleusTypes.Shadow

@@ -1,5 +1,5 @@
-internal import VulkanC
 internal import NucleusRenderer
+internal import VulkanC
 
 // The Android presentation backend — a thin adapter over the shared `SwapchainPresenter`
 // (in NucleusRenderer). Android surface creation and physical-device qualification happen
@@ -22,8 +22,9 @@ final class AndroidVulkanPresenter: PresentationBackend {
     /// + `VK_KHR_swapchain_maintenance1`
     /// (`VkRequirements` `#if os(Android)`).
     init?(core: RenderCore, surface: VulkanSurface) {
-        guard let swapchain = SwapchainPresenter(
-                  core: core, outputID: Self.outputID, surface: surface)
+        guard
+            let swapchain = SwapchainPresenter(
+                core: core, outputID: Self.outputID, surface: surface)
         else {
             return nil
         }
@@ -47,7 +48,9 @@ final class AndroidVulkanPresenter: PresentationBackend {
     // MARK: PresentationBackend — forwarded to the shared presenter.
     func presentableOutputIDs() -> [UInt64] { swapchain.presentableOutputIDs() }
     func isReadyToPresent(_ outputID: UInt64) -> Bool { swapchain.isReadyToPresent(outputID) }
-    func acquireTarget(_ outputID: UInt64) -> AcquiredFrameTarget? { swapchain.acquireTarget(outputID) }
+    func acquireTarget(_ outputID: UInt64) -> AcquiredFrameTarget? {
+        swapchain.acquireTarget(outputID)
+    }
     func didSubmitTarget(_ outputID: UInt64) -> Bool { swapchain.didSubmitTarget(outputID) }
     func present(_ outputID: UInt64) -> Bool { swapchain.present(outputID) }
     func discardAcquiredTarget(_ outputID: UInt64) { swapchain.discardAcquiredTarget(outputID) }

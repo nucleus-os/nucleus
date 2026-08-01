@@ -1,5 +1,5 @@
 import NucleusCompositorServer
-public import NucleusCompositorWaylandRuntime
+package import NucleusCompositorWaylandRuntime
 import NucleusCompositorWindowManager
 import NucleusCompositorWindowScene
 import NucleusLayers
@@ -8,13 +8,13 @@ import NucleusLayers
 /// tests. Keeping this fixture alive keeps every unowned production edge valid;
 /// the exposed runtime is the same graph production activation constructs.
 @MainActor
-public final class WaylandRouterTestFixture {
+package final class WaylandRouterTestFixture {
     private let server: NucleusCompositorServer
     private let windowManager: WindowManager
     private let host: RouterHost
-    public let runtime: WaylandRouterRuntime
+    package let runtime: WaylandRouterRuntime
 
-    public init?() {
+    package init?() {
         let server = NucleusCompositorServer()
         let windowManager = WindowManager(server: server)
         let host = RouterHost(
@@ -23,9 +23,10 @@ public final class WaylandRouterTestFixture {
         let sink = InMemoryCommitSink()
         let author = WindowSceneAuthor(
             commitSinkFactory: { sink })
-        guard let runtime = WaylandRouterRuntime(
-            author: author,
-            host: host)
+        guard
+            let runtime = WaylandRouterRuntime(
+                author: author,
+                host: host)
         else { return nil }
 
         self.server = server

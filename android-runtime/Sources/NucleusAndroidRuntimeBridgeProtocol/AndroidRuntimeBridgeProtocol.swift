@@ -4,13 +4,13 @@ import NucleusAndroidRuntimeCore
 import NucleusIPCTransport
 import Synchronization
 
-public enum AndroidRuntimeBridgeProtocol {
-    public static let maximumPacketBytes = 256 * 1_024
-    public static let maximumActivities = 16_384
-    public static let androidUserID: UInt32 = 2_900
+package enum AndroidRuntimeBridgeProtocol {
+    package static let maximumPacketBytes = 256 * 1_024
+    package static let maximumActivities = 16_384
+    package static let androidUserID: UInt32 = 2_900
 }
 
-public enum AndroidRuntimeBridgeMessageKind:
+package enum AndroidRuntimeBridgeMessageKind:
     String, Codable, Equatable, Sendable
 {
     case bridgeHello
@@ -22,26 +22,26 @@ public enum AndroidRuntimeBridgeMessageKind:
     case cursorShape
 }
 
-public enum AndroidInputAction: String, Codable, Equatable, Sendable {
+package enum AndroidInputAction: String, Codable, Equatable, Sendable {
     case pointerMotion
     case pointerButton
     case pointerScroll
     case key
 }
 
-public struct AndroidInputEvent: Codable, Equatable, Sendable {
-    public let displayID: Int32
-    public let eventTimeNanoseconds: UInt64
-    public let x: Double?
-    public let y: Double?
-    public let button: UInt32?
-    public let keyCode: UInt32?
-    public let pressed: Bool?
-    public let scrollX: Double?
-    public let scrollY: Double?
-    public let action: AndroidInputAction
+package struct AndroidInputEvent: Codable, Equatable, Sendable {
+    package let displayID: Int32
+    package let eventTimeNanoseconds: UInt64
+    package let x: Double?
+    package let y: Double?
+    package let button: UInt32?
+    package let keyCode: UInt32?
+    package let pressed: Bool?
+    package let scrollX: Double?
+    package let scrollY: Double?
+    package let action: AndroidInputAction
 
-    public init(
+    package init(
         displayID: Int32,
         eventTimeNanoseconds: UInt64,
         x: Double? = nil,
@@ -66,7 +66,7 @@ public struct AndroidInputEvent: Codable, Equatable, Sendable {
         try validate()
     }
 
-    public func validate() throws {
+    package func validate() throws {
         guard displayID >= 0,
             x?.isFinite ?? true,
             y?.isFinite ?? true,
@@ -120,17 +120,17 @@ public struct AndroidInputEvent: Codable, Equatable, Sendable {
     }
 }
 
-public struct AndroidCursorShapeUpdate: Codable, Equatable, Sendable {
-    public let displayID: Int32
-    public let pointerIconType: Int32
+package struct AndroidCursorShapeUpdate: Codable, Equatable, Sendable {
+    package let displayID: Int32
+    package let pointerIconType: Int32
 
-    public init(displayID: Int32, pointerIconType: Int32) throws {
+    package init(displayID: Int32, pointerIconType: Int32) throws {
         self.displayID = displayID
         self.pointerIconType = pointerIconType
         try validate()
     }
 
-    public func validate() throws {
+    package func validate() throws {
         guard displayID >= 0,
             pointerIconType >= -1,
             pointerIconType <= 10_000
@@ -141,14 +141,14 @@ public struct AndroidCursorShapeUpdate: Codable, Equatable, Sendable {
     }
 }
 
-public struct AndroidRuntimeBridgeActivity:
+package struct AndroidRuntimeBridgeActivity:
     Codable, Equatable, Sendable
 {
-    public let packageName: String
-    public let activityName: String
-    public let label: String
+    package let packageName: String
+    package let activityName: String
+    package let label: String
 
-    public init(
+    package init(
         packageName: String,
         activityName: String,
         label: String
@@ -159,20 +159,20 @@ public struct AndroidRuntimeBridgeActivity:
     }
 }
 
-public struct AndroidRuntimeBridgeEnvelope:
+package struct AndroidRuntimeBridgeEnvelope:
     Codable, Equatable, Sendable
 {
-    public let kind: AndroidRuntimeBridgeMessageKind
-    public let generation: String?
-    public let userUnlocked: Bool?
-    public let userSerial: Int64?
-    public let activities: [AndroidRuntimeBridgeActivity]?
-    public let inputReady: Bool?
-    public let inputError: String?
-    public let inputEvent: AndroidInputEvent?
-    public let cursorShape: AndroidCursorShapeUpdate?
+    package let kind: AndroidRuntimeBridgeMessageKind
+    package let generation: String?
+    package let userUnlocked: Bool?
+    package let userSerial: Int64?
+    package let activities: [AndroidRuntimeBridgeActivity]?
+    package let inputReady: Bool?
+    package let inputError: String?
+    package let inputEvent: AndroidInputEvent?
+    package let cursorShape: AndroidCursorShapeUpdate?
 
-    public init(
+    package init(
         kind: AndroidRuntimeBridgeMessageKind,
         generation: String? = nil,
         userUnlocked: Bool? = nil,
@@ -195,7 +195,7 @@ public struct AndroidRuntimeBridgeEnvelope:
         try validate()
     }
 
-    public func validate() throws {
+    package func validate() throws {
         if let generation {
             guard !generation.isEmpty,
                 generation.utf8.count <= 128,
@@ -335,7 +335,7 @@ public struct AndroidRuntimeBridgeEnvelope:
     }
 }
 
-public enum AndroidRuntimeBridgeEvent: Equatable, Sendable {
+package enum AndroidRuntimeBridgeEvent: Equatable, Sendable {
     case connected(generation: String)
     case inputReady(generation: String)
     case inputFailed(generation: String, error: String)
@@ -350,13 +350,13 @@ public enum AndroidRuntimeBridgeEvent: Equatable, Sendable {
     case disconnected(generation: String)
 }
 
-public final class AndroidRuntimeBridgeServer: @unchecked Sendable {
+package final class AndroidRuntimeBridgeServer: @unchecked Sendable {
     private let listener: PacketListener
     private let expectedUserID: UInt32
-    public let generation: String
+    package let generation: String
     private let writer = Mutex<PacketConnection?>(nil)
 
-    public init(
+    package init(
         socketPath: URL,
         expectedUserID: UInt32,
         generation: String = UUID().uuidString.lowercased()
@@ -369,7 +369,7 @@ public final class AndroidRuntimeBridgeServer: @unchecked Sendable {
             nonblocking: true)
     }
 
-    public func send(_ inputEvent: AndroidInputEvent) throws {
+    package func send(_ inputEvent: AndroidInputEvent) throws {
         try writer.withLock { connection in
             guard let connection else {
                 throw AndroidRuntimeFailure(
@@ -384,7 +384,7 @@ public final class AndroidRuntimeBridgeServer: @unchecked Sendable {
         }
     }
 
-    public func run(
+    package func run(
         onEvent: @escaping @Sendable (
             AndroidRuntimeBridgeEvent
         ) async -> Void
@@ -593,11 +593,11 @@ private struct AndroidDisplayInteractionEnvelope:
     }
 }
 
-public enum AndroidDisplayInteractionEvent: Sendable {
+package enum AndroidDisplayInteractionEvent: Sendable {
     case input(AndroidInputEvent)
 }
 
-public final class AndroidDisplayInteractionServer: @unchecked Sendable {
+package final class AndroidDisplayInteractionServer: @unchecked Sendable {
     private struct State {
         var connection: PacketConnection?
         var latestCursorShapeByDisplay: [
@@ -609,7 +609,7 @@ public final class AndroidDisplayInteractionServer: @unchecked Sendable {
     private let expectedUserID: UInt32
     private let state = Mutex(State())
 
-    public init(socketPath: URL, expectedUserID: UInt32) throws {
+    package init(socketPath: URL, expectedUserID: UInt32) throws {
         self.expectedUserID = expectedUserID
         listener = try PacketListener(
             path: socketPath.path,
@@ -617,7 +617,7 @@ public final class AndroidDisplayInteractionServer: @unchecked Sendable {
             nonblocking: true)
     }
 
-    public func run(
+    package func run(
         onEvent: @escaping @Sendable (
             AndroidDisplayInteractionEvent
         ) throws -> Void
@@ -702,7 +702,7 @@ public final class AndroidDisplayInteractionServer: @unchecked Sendable {
         }
     }
 
-    public func send(_ update: AndroidCursorShapeUpdate) throws {
+    package func send(_ update: AndroidCursorShapeUpdate) throws {
         try update.validate()
         let bytes = try Self.encode(cursorShape: update)
         try state.withLock { state in
@@ -741,15 +741,15 @@ public final class AndroidDisplayInteractionServer: @unchecked Sendable {
     }
 }
 
-public final class AndroidDisplayInteractionClient: @unchecked Sendable {
+package final class AndroidDisplayInteractionClient: @unchecked Sendable {
     private let connection: PacketConnection
-    public var fileDescriptor: Int32 { connection.fileDescriptor }
+    package var fileDescriptor: Int32 { connection.fileDescriptor }
 
-    public init(socketPath: String) throws {
+    package init(socketPath: String) throws {
         connection = try PacketConnection.connect(path: socketPath)
     }
 
-    public func send(_ event: AndroidInputEvent) throws {
+    package func send(_ event: AndroidInputEvent) throws {
         try send(AndroidDisplayInteractionEnvelope(inputEvent: event))
     }
 
@@ -766,7 +766,7 @@ public final class AndroidDisplayInteractionClient: @unchecked Sendable {
         try connection.send(bytes)
     }
 
-    public func receiveCursorShape() throws -> AndroidCursorShapeUpdate {
+    package func receiveCursorShape() throws -> AndroidCursorShapeUpdate {
         let packet = try connection.receive(
             maximumBytes:
                 AndroidRuntimeBridgeProtocol.maximumPacketBytes,

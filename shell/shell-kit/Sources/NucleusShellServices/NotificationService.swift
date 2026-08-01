@@ -1,11 +1,11 @@
-public struct ShellNotification: Sendable, Equatable {
-    public var id: UInt32
-    public var applicationName: String
-    public var summary: String
-    public var body: String
-    public var expireTimeoutMilliseconds: Int32
+package struct ShellNotification: Sendable, Equatable {
+    package var id: UInt32
+    package var applicationName: String
+    package var summary: String
+    package var body: String
+    package var expireTimeoutMilliseconds: Int32
 
-    public init(
+    package init(
         id: UInt32,
         applicationName: String,
         summary: String,
@@ -24,15 +24,15 @@ public struct ShellNotification: Sendable, Equatable {
 /// Shell-owned notification state. A D-Bus adapter can feed this service
 /// without giving the compositor any notification or UI dependency.
 @MainActor
-public final class NotificationService {
-    public private(set) var notifications: [ShellNotification] = []
-    public var onChanged: (([ShellNotification]) -> Void)?
+package final class NotificationService {
+    package private(set) var notifications: [ShellNotification] = []
+    package var onChanged: (([ShellNotification]) -> Void)?
     private var nextID: UInt32 = 1
 
-    public init() {}
+    package init() {}
 
     @discardableResult
-    public func notify(
+    package func notify(
         applicationName: String = "",
         replacesID: UInt32 = 0,
         summary: String,
@@ -45,18 +45,19 @@ public final class NotificationService {
         let id = nextID
         nextID &+= 1
         if nextID == 0 { nextID = 1 }
-        notifications.append(ShellNotification(
-            id: id,
-            applicationName: applicationName,
-            summary: summary,
-            body: body,
-            expireTimeoutMilliseconds:
-                expireTimeoutMilliseconds))
+        notifications.append(
+            ShellNotification(
+                id: id,
+                applicationName: applicationName,
+                summary: summary,
+                body: body,
+                expireTimeoutMilliseconds:
+                    expireTimeoutMilliseconds))
         onChanged?(notifications)
         return id
     }
 
-    public func dismiss(id: UInt32) {
+    package func dismiss(id: UInt32) {
         let previousCount = notifications.count
         notifications.removeAll { $0.id == id }
         if notifications.count != previousCount {
@@ -64,7 +65,7 @@ public final class NotificationService {
         }
     }
 
-    public func reset() {
+    package func reset() {
         guard !notifications.isEmpty else { return }
         notifications.removeAll(keepingCapacity: true)
         onChanged?(notifications)

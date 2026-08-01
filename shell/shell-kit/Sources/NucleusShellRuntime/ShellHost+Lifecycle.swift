@@ -3,21 +3,20 @@ import NucleusLinuxAccessibility
 import NucleusLinuxDBus
 import NucleusLinuxEnvironment
 import NucleusLinuxReactor
+package import NucleusSessionProtocol
 import NucleusShellAuth
-import NucleusWindowClientPasteboard
-import NucleusWindowClientRender
 import NucleusShellServices
-@_spi(NucleusWindowClientImplementation)
-import NucleusWindowClientWayland
 import NucleusUI
 import NucleusUIEmbedder
-public import NucleusSessionProtocol
+import NucleusWindowClientPasteboard
+import NucleusWindowClientRender
+package import NucleusWindowClientWayland
 
 @MainActor
 extension ShellHost {
     /// Bring up the native Swift product and drive it until the compositor
     /// disconnects or a process signal requests exit.
-    public func run(
+    package func run(
         readinessReporter: SessionReadinessReporter? = nil
     ) async {
         client.onOutputsChanged = { [weak self] in
@@ -37,9 +36,9 @@ extension ShellHost {
         reconcileBarSurfaces()
 
         guard nativePublicationContext != nil,
-              inputScene != nil,
-              surfaceRegistry != nil,
-              productController != nil
+            inputScene != nil,
+            surfaceRegistry != nil,
+            productController != nil
         else {
             writeErr("nucleus-shell: native runtime bring-up failed")
             await shutdown()

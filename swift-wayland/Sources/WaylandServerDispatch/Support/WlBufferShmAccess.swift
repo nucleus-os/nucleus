@@ -1,11 +1,11 @@
 import WaylandServer
 
 extension WaylandResourceReference where Interface == WlBufferServer {
-    public var shmMetadata: WaylandShmMetadata? {
+    package var shmMetadata: WaylandShmMetadata? {
         _shmMetadata
     }
 
-    public func withShmBytes<Result: ~Copyable>(
+    package func withShmBytes<Result: ~Copyable>(
         _ body: (
             WaylandShmMetadata,
             borrowing WaylandShmBytes
@@ -14,7 +14,7 @@ extension WaylandResourceReference where Interface == WlBufferServer {
         try _withShmBytes(body)
     }
 
-    public func withMutableShmBytes<Result: ~Copyable>(
+    package func withMutableShmBytes<Result: ~Copyable>(
         _ body: (
             WaylandShmMetadata,
             borrowing MutableWaylandShmBytes

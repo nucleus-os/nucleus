@@ -1,6 +1,7 @@
 import NucleusSkiaGraphiteBridge
-import VulkanC
 import Vulkan
+import VulkanC
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Android)
@@ -22,7 +23,7 @@ import Android
         consumingSyncFd fd: Int32
     ) {
         guard fd >= 0, let create = unsafe dispatch.vkCreateSemaphore,
-              let importFd = unsafe dispatch.vkImportSemaphoreFdKHR
+            let importFd = unsafe dispatch.vkImportSemaphoreFdKHR
         else {
             if fd >= 0 { close(fd) }
             return nil
@@ -31,7 +32,7 @@ import Android
         unsafe info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
         var created: VkSemaphore?
         guard unsafe create(device, &info, nil, &created) == VK_SUCCESS,
-              let created = unsafe created
+            let created = unsafe created
         else {
             close(fd)
             return nil

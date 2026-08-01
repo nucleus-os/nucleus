@@ -1,14 +1,14 @@
 import Foundation
 import Glibc
-public import NucleusControlProtocol
+package import NucleusControlProtocol
 import NucleusIPCTransport
 
-public enum ControlSocket {
-    public static let environmentVariable = "NUCLEUS_CONTROL_SOCKET"
-    public static let elevatedCapabilityDescriptorArgument =
+package enum ControlSocket {
+    package static let environmentVariable = "NUCLEUS_CONTROL_SOCKET"
+    package static let elevatedCapabilityDescriptorArgument =
         "--nucleus-shell-control-capability-fd"
 
-    public static func defaultPath(
+    package static func defaultPath(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> String? {
         if let explicit = environment[environmentVariable], !explicit.isEmpty {
@@ -25,7 +25,7 @@ public enum ControlSocket {
     }
 }
 
-public enum ControlClientError: Error, Equatable, Sendable {
+package enum ControlClientError: Error, Equatable, Sendable {
     case noSocketPath
     case socketPathTooLong(String)
     case cannotConnect(path: String, errno: Int32)
@@ -33,7 +33,7 @@ public enum ControlClientError: Error, Equatable, Sendable {
     case malformedResponse(String)
     case protocolFailure(ControlProtocolError)
 
-    public var message: String {
+    package var message: String {
         switch self {
         case .noSocketPath:
             "no control socket path; set \(ControlSocket.environmentVariable) "
@@ -54,13 +54,13 @@ public enum ControlClientError: Error, Equatable, Sendable {
 
 /// A blocking one-shot client. Each exchange is exactly one request packet and
 /// one correlated response packet over a fresh SOCK_SEQPACKET connection.
-public struct ControlClient: Sendable {
-    public static let maximumPacketBytes = 64 * 1024
+package struct ControlClient: Sendable {
+    package static let maximumPacketBytes = 64 * 1024
 
     private let path: String
     private let requestID: ControlRequestID
 
-    public init(
+    package init(
         path: String,
         requestID: ControlRequestID = ControlRequestID(rawValue: 1)
     ) {
@@ -68,7 +68,7 @@ public struct ControlClient: Sendable {
         self.requestID = requestID
     }
 
-    public init(
+    package init(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         requestID: ControlRequestID = ControlRequestID(rawValue: 1)
     ) throws(ControlClientError) {
@@ -77,7 +77,7 @@ public struct ControlClient: Sendable {
         self.init(path: path, requestID: requestID)
     }
 
-    public func send(
+    package func send(
         _ request: ControlRequest,
         capabilityDescriptor: Int32? = nil
     ) throws(ControlClientError) -> ControlResponse {

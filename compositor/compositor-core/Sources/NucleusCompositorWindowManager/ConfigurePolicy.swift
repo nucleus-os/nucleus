@@ -1,9 +1,9 @@
-import NucleusTypes
+package import NucleusCompositorServer
 import NucleusCompositorServerTypes
-public import NucleusCompositorServer
+import NucleusTypes
 import Tracy
 
-public enum ConfigureReason: UInt32, Sendable {
+package enum ConfigureReason: UInt32, Sendable {
     case initialMap = 1
     case resize = 2
     case move = 3
@@ -16,16 +16,16 @@ public enum ConfigureReason: UInt32, Sendable {
     case focusState = 10
 }
 
-public struct ConfigureRequest: Sendable, Equatable {
-    public var windowID: UInt64
-    public var reason: ConfigureReason
-    public var targetRect: WindowRect?
-    public var targetOutputID: DisplayID?
-    public var activated: Bool
-    public var resizing: Bool
-    public var tileEdges: TileEdges
+package struct ConfigureRequest: Sendable, Equatable {
+    package var windowID: UInt64
+    package var reason: ConfigureReason
+    package var targetRect: WindowRect?
+    package var targetOutputID: DisplayID?
+    package var activated: Bool
+    package var resizing: Bool
+    package var tileEdges: TileEdges
 
-    public init(
+    package init(
         windowID: UInt64,
         reason: ConfigureReason,
         targetRect: WindowRect? = nil,
@@ -44,33 +44,33 @@ public struct ConfigureRequest: Sendable, Equatable {
     }
 }
 
-public struct ConfigurePlan: Sendable, Equatable {
-    public var shouldConfigure: Bool
-    public var shouldPresent: Bool
-    public var isRedundant: Bool
-    public var targetRect: WindowRect
-    public var stateMask: XdgStateMask
-    public var activeMaximized: Bool
-    public var activeFullscreen: Bool
-    public var specialOutputID: DisplayID?
-    public var layoutOutputID: DisplayID?
-    public var layoutTransitionID: UInt64
-    public var clearRequestedSpecial: Bool
+package struct ConfigurePlan: Sendable, Equatable {
+    package var shouldConfigure: Bool
+    package var shouldPresent: Bool
+    package var isRedundant: Bool
+    package var targetRect: WindowRect
+    package var stateMask: XdgStateMask
+    package var activeMaximized: Bool
+    package var activeFullscreen: Bool
+    package var specialOutputID: DisplayID?
+    package var layoutOutputID: DisplayID?
+    package var layoutTransitionID: UInt64
+    package var clearRequestedSpecial: Bool
 }
 
-public struct ConfigureCommitReport: Sendable, Equatable {
-    public var windowID: UInt64
-    public var ackedSerial: UInt32
-    public var commitSequence: UInt64
-    public var bufferAttached: Bool
-    public var hasBuffer: Bool
-    public var committedWidth: UInt32
-    public var committedHeight: UInt32
+package struct ConfigureCommitReport: Sendable, Equatable {
+    package var windowID: UInt64
+    package var ackedSerial: UInt32
+    package var commitSequence: UInt64
+    package var bufferAttached: Bool
+    package var hasBuffer: Bool
+    package var committedWidth: UInt32
+    package var committedHeight: UInt32
 }
 
 @MainActor
 extension WindowManager {
-    public func planConfigure(_ request: ConfigureRequest) -> ConfigurePlan? {
+    package func planConfigure(_ request: ConfigureRequest) -> ConfigurePlan? {
         Trace.zone("window_manager.plan_configure", color: Trace.Color.blue) {
             Trace.plot("swift.window_manager.configure_reason", UInt64(request.reason.rawValue))
             guard let window = server.window(id: request.windowID) else { return nil }
@@ -95,15 +95,19 @@ extension WindowManager {
 
             if requested.willSpecial && !wasSpecial {
                 window.restoreRect = window.currentRect()
-                window.restoreOutputID = server.spaces.fallbackOutput(
-                    for: window, layout: server.layout)?.id
+                window.restoreOutputID =
+                    server.spaces.fallbackOutput(
+                        for: window, layout: server.layout)?.id
             } else if !requested.willSpecial, let restore = window.restoreRect {
-                guard let fallback = server.spaces.fallbackOutput(
-                    for: window, layout: server.layout
-                ) else {
+                guard
+                    let fallback = server.spaces.fallbackOutput(
+                        for: window, layout: server.layout
+                    )
+                else {
                     return nil
                 }
-                let restoreOutput = server.spaces.validOutputID(window.restoreOutputID, layout: server.layout)
+                let restoreOutput = server.spaces.validOutputID(
+                    window.restoreOutputID, layout: server.layout)
                 if restoreOutput == nil {
                     window.restoreRect = server.spaces.translateRectToOutput(
                         restore,
@@ -117,12 +121,16 @@ extension WindowManager {
                 }
             }
 
-            guard let targetRect = request.targetRect ?? desiredConfigureRect(
-                for: window
-            ) else {
+            guard
+                let targetRect = request.targetRect
+                    ?? desiredConfigureRect(
+                        for: window
+                    )
+            else {
                 return nil
             }
-            let layoutOutputID = specialOutputID ?? window.currentOutputID ?? window.preferredOutputID
+            let layoutOutputID =
+                specialOutputID ?? window.currentOutputID ?? window.preferredOutputID
             let stateMask = xdgStateMask(
                 requestedMaximized: requested.activeMaximized,
                 requestedFullscreen: requested.activeFullscreen,
@@ -146,7 +154,9 @@ extension WindowManager {
         }
     }
 
-    public func recordConfigureSent(windowID: UInt64, serial: UInt32, plan: ConfigurePlan) -> WindowPendingConfigure? {
+    package func recordConfigureSent(windowID: UInt64, serial: UInt32, plan: ConfigurePlan)
+        -> WindowPendingConfigure?
+    {
         guard let window = server.window(id: windowID) else { return nil }
         let slotGeneration = window.protocolState.queueConfigure(
             rect: plan.targetRect,
@@ -169,11 +179,13 @@ extension WindowManager {
         )
     }
 
-    public func reportConfigureAck(windowID: UInt64, ackedSerial: UInt32) -> WindowPendingConfigure? {
+    package func reportConfigureAck(windowID: UInt64, ackedSerial: UInt32)
+        -> WindowPendingConfigure?
+    {
         server.window(id: windowID)?.consumeAckedConfigure(serial: ackedSerial)
     }
 
-    public func reportConfigureCommit(_ report: ConfigureCommitReport) -> Bool {
+    package func reportConfigureCommit(_ report: ConfigureCommitReport) -> Bool {
         guard let window = server.window(id: report.windowID) else { return false }
         if !window.activeFullscreen && !window.activeMaximized {
             window.restoreRect = window.currentRect()
@@ -184,16 +196,18 @@ extension WindowManager {
 
     private func planTileConfigure(window: Window, request: ConfigureRequest) -> ConfigurePlan? {
         guard let targetRect = request.targetRect else { return nil }
-        let samePending = window.protocolState.latest.map {
-            $0.rect == targetRect && !$0.activeMaximized && !$0.activeFullscreen && $0.specialOutputID == nil
-        } ?? false
+        let samePending =
+            window.protocolState.latest.map {
+                $0.rect == targetRect && !$0.activeMaximized && !$0.activeFullscreen
+                    && $0.specialOutputID == nil
+            } ?? false
         let sameSettled = !window.protocolState.hasPending && window.currentRect() == targetRect
         let noRequestedSpecial =
-            !window.requestedMaximized &&
-            !window.requestedFullscreen &&
-            !window.activeMaximized &&
-            !window.activeFullscreen
-        let redundant = window.tileEdges == request.tileEdges && noRequestedSpecial && (samePending || sameSettled)
+            !window.requestedMaximized && !window.requestedFullscreen && !window.activeMaximized
+            && !window.activeFullscreen
+        let redundant =
+            window.tileEdges == request.tileEdges && noRequestedSpecial
+            && (samePending || sameSettled)
         if redundant {
             return ConfigurePlan(
                 shouldConfigure: false,
@@ -210,7 +224,8 @@ extension WindowManager {
                 activeMaximized: false,
                 activeFullscreen: false,
                 specialOutputID: nil,
-                layoutOutputID: request.targetOutputID ?? window.currentOutputID ?? window.preferredOutputID,
+                layoutOutputID: request.targetOutputID ?? window.currentOutputID
+                    ?? window.preferredOutputID,
                 layoutTransitionID: 0,
                 clearRequestedSpecial: true
             )
@@ -239,7 +254,8 @@ extension WindowManager {
             activeMaximized: false,
             activeFullscreen: false,
             specialOutputID: nil,
-            layoutOutputID: request.targetOutputID ?? window.currentOutputID ?? window.preferredOutputID,
+            layoutOutputID: request.targetOutputID ?? window.currentOutputID
+                ?? window.preferredOutputID,
             layoutTransitionID: interaction.allocLayoutTransitionID(),
             clearRequestedSpecial: true
         )
@@ -254,9 +270,10 @@ extension WindowManager {
             window.currentOutputID = outputID
             window.preferredOutputID = outputID
         }
-        let samePending = window.protocolState.latest.map {
-            $0.rect == targetRect && $0.resizing == request.resizing
-        } ?? false
+        let samePending =
+            window.protocolState.latest.map {
+                $0.rect == targetRect && $0.resizing == request.resizing
+            } ?? false
         return ConfigurePlan(
             shouldConfigure: !samePending,
             shouldPresent: false,
@@ -272,16 +289,19 @@ extension WindowManager {
             activeMaximized: false,
             activeFullscreen: false,
             specialOutputID: nil,
-            layoutOutputID: request.targetOutputID ?? window.currentOutputID ?? window.preferredOutputID,
+            layoutOutputID: request.targetOutputID ?? window.currentOutputID
+                ?? window.preferredOutputID,
             layoutTransitionID: 0,
             clearRequestedSpecial: false
         )
     }
 
     private func normalizeOutputState(window: Window) {
-        guard let fallback = server.spaces.fallbackOutput(
-            for: window, layout: server.layout
-        ) else {
+        guard
+            let fallback = server.spaces.fallbackOutput(
+                for: window, layout: server.layout
+            )
+        else {
             window.currentOutputID = nil
             window.preferredOutputID = nil
             window.specialOutputID = nil
@@ -297,8 +317,8 @@ extension WindowManager {
             window.preferredOutputID = fallback.id
         }
         if window.isManagedAppWindow(),
-           let restore = window.restoreRect,
-           server.spaces.validOutputID(window.restoreOutputID, layout: server.layout) == nil
+            let restore = window.restoreRect,
+            server.spaces.validOutputID(window.restoreOutputID, layout: server.layout) == nil
         {
             window.restoreRect = server.spaces.translateRectToOutput(
                 restore,
@@ -311,32 +331,38 @@ extension WindowManager {
             window.restoreOutputID = fallback.id
         }
         if window.isManagedAppWindow(),
-           server.spaces.validOutputID(window.specialOutputID, layout: server.layout) == nil,
-           (window.activeFullscreen || window.requestedFullscreen || window.activeMaximized || window.requestedMaximized)
+            server.spaces.validOutputID(window.specialOutputID, layout: server.layout) == nil,
+            window.activeFullscreen || window.requestedFullscreen || window.activeMaximized
+                || window.requestedMaximized
         {
             window.specialOutputID = fallback.id
         }
         if case .output(let outputID) = window.fullscreenTarget,
-           server.spaces.validOutputID(outputID, layout: server.layout) == nil
+            server.spaces.validOutputID(outputID, layout: server.layout) == nil
         {
             window.fullscreenTarget = .output(fallback.id)
         }
     }
 
     private func desiredConfigureRect(for window: Window) -> WindowRect? {
-        guard let placement = server.spaces.placementOutput(
-            for: window, layout: server.layout, fullscreen: false
-        ), let fullscreenOutput = server.spaces.placementOutput(
-            for: window, layout: server.layout, fullscreen: true
-        ) else {
+        guard
+            let placement = server.spaces.placementOutput(
+                for: window, layout: server.layout, fullscreen: false
+            ),
+            let fullscreenOutput = server.spaces.placementOutput(
+                for: window, layout: server.layout, fullscreen: true
+            )
+        else {
             return nil
         }
         return server.spaces.desiredLayoutRect(
             for: window,
             rects: LayoutRects(
                 fullscreen: server.spaces.fullscreenLayoutRect(for: fullscreenOutput),
-                maximized: server.spaces.maximizedLayoutRect(for: placement, usable: usableArea(for: placement)),
-                default: server.spaces.defaultWindowRect(for: placement, usable: usableArea(for: placement))
+                maximized: server.spaces.maximizedLayoutRect(
+                    for: placement, usable: usableArea(for: placement)),
+                default: server.spaces.defaultWindowRect(
+                    for: placement, usable: usableArea(for: placement))
             )
         )
     }
@@ -360,7 +386,7 @@ extension WindowManager {
     /// runs while both the departing and fallback geometries are still queryable;
     /// only then are the display and its workspaces removed.
     @discardableResult
-    public func removeOutput(_ outputID: DisplayID) -> Bool {
+    package func removeOutput(_ outputID: DisplayID) -> Bool {
         guard let removed = server.layout.display(id: outputID) else { return false }
         let fallbackID = server.layout.fallbackDisplayIDForRemoval(outputID)
         let fallback = fallbackID.flatMap { server.layout.display(id: $0) }
@@ -389,10 +415,15 @@ extension WindowManager {
     /// its parent for a dialog/transient with a mapped parent, otherwise on its
     /// output's usable area. Returns nil when the window owns its placement
     /// (fullscreen / maximized), so the caller keeps the configured rect.
-    public func centeredFirstMapRect(windowID: UInt64, contentWidth: UInt32, contentHeight: UInt32) -> WindowRect? {
+    package func centeredFirstMapRect(windowID: UInt64, contentWidth: UInt32, contentHeight: UInt32)
+        -> WindowRect?
+    {
         guard let window = server.window(id: windowID) else { return nil }
-        if window.requestedFullscreen || window.requestedMaximized ||
-            window.activeFullscreen || window.activeMaximized { return nil }
+        if window.requestedFullscreen || window.requestedMaximized || window.activeFullscreen
+            || window.activeMaximized
+        {
+            return nil
+        }
         let w = max(1, contentWidth)
         let h = max(1, contentHeight)
         // Center the frame (content + chrome insets), not the bare content, so a
@@ -403,7 +434,8 @@ extension WindowManager {
         let frameH = UInt32(max(1, Double(h) + insets.vertical))
         if let parentID = window.parentWindowID,
             let parent = server.window(id: parentID),
-            parent.mapped {
+            parent.mapped
+        {
             let p = parent.currentRect()
             return WindowRect(
                 x: p.x + (Double(p.width) - Double(frameW)) / 2,
@@ -412,9 +444,11 @@ extension WindowManager {
                 height: h
             )
         }
-        guard let output = server.spaces.placementOutput(
-            for: window, layout: server.layout, fullscreen: false
-        ) else {
+        guard
+            let output = server.spaces.placementOutput(
+                for: window, layout: server.layout, fullscreen: false
+            )
+        else {
             return WindowRect(x: 0, y: 0, width: w, height: h)
         }
         let usable = usableArea(for: output)

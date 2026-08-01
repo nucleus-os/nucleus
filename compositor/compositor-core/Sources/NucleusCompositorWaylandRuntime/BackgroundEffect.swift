@@ -6,10 +6,10 @@
 // The router owns the request/latch mechanics and publishes the committed region
 // through SceneFeeder into the renderer's backdrop-effect plan.
 
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
 import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 /// The render seam for ext-background-effect. `region` nil = no blur.
 @MainActor
@@ -33,22 +33,25 @@ extension ExtBackgroundEffectManager: ExtBackgroundEffectManagerV1Requests {
     func getBackgroundEffect(
         _ request: WaylandRequest<ExtBackgroundEffectManagerV1Server>,
         id: WlNewId<ExtBackgroundEffectSurfaceV1Server>,
-                             surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>) {
+        surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>
+    ) {
         guard let surface = surfaceRes.owner(as: WlSurface.self) else { return }
         guard surface.claimAux(.backgroundEffect) else {
-            request.postError(.backgroundEffectExists, message: "surface already has a background effect")
+            request.postError(
+                .backgroundEffectExists, message: "surface already has a background effect")
             return
         }
-        guard id.create(
-            owner: { handle in
-                ExtBackgroundEffectSurface(
-                    resource: handle,
-                    manager: self,
-                    surface: surface)
-            },
-            installed: { object in
-                surface.addCommitObserver(object)
-            }) != nil
+        guard
+            id.create(
+                owner: { handle in
+                    ExtBackgroundEffectSurface(
+                        resource: handle,
+                        manager: self,
+                        surface: surface)
+                },
+                installed: { object in
+                    surface.addCommitObserver(object)
+                }) != nil
         else {
             surface.releaseAux(.backgroundEffect)
             return
@@ -60,8 +63,7 @@ extension ExtBackgroundEffectManager: ExtBackgroundEffectManagerV1Requests {
 /// set_blur_region writes pending, latched and published on the surface's commit.
 @MainActor
 final class ExtBackgroundEffectSurface: WlSurfaceCommitObserver {
-    private let resource:
-        WaylandResourceHandle<ExtBackgroundEffectSurfaceV1Server>
+    private let resource: WaylandResourceHandle<ExtBackgroundEffectSurfaceV1Server>
     private weak var manager: ExtBackgroundEffectManager?
     private weak var surface: WlSurface?
     private var pendingRegion: RegionSnapshot?
@@ -100,8 +102,10 @@ final class ExtBackgroundEffectSurface: WlSurfaceCommitObserver {
 
 extension ExtBackgroundEffectSurface: ExtBackgroundEffectSurfaceV1Requests {
     // set_blur_region(region): null region = no blur.
-    func setBlurRegion(_ request: WaylandRequest<ExtBackgroundEffectSurfaceV1Server>,
-                       region regionRes: WaylandBorrowedObject<WlRegionServer>?) {
+    func setBlurRegion(
+        _ request: WaylandRequest<ExtBackgroundEffectSurfaceV1Server>,
+        region regionRes: WaylandBorrowedObject<WlRegionServer>?
+    ) {
         guard surface != nil else {
             request.postError(.surfaceDestroyed, message: "wl_surface was destroyed")  // surface_destroyed
             return

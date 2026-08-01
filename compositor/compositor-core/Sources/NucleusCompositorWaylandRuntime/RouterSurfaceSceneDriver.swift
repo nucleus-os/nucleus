@@ -15,14 +15,15 @@
 // SurfaceSceneDelegate calls here; `WlCompositor.sceneDelegate` stays wired to
 // RouterWindowDriver.
 
-import WaylandServerC
-import NucleusRenderModel
-import NucleusTypes
-@_spi(NucleusRenderServer) import NucleusLayers
+import Glibc
 internal import NucleusCompositorServer
 internal import NucleusCompositorWindowManager
+import NucleusDiagnostics
+package import NucleusLayers
+import NucleusRenderModel
+import NucleusTypes
 import WaylandServer
-import Glibc
+import WaylandServerC
 
 @MainActor
 final class RouterSurfaceSceneDriver {
@@ -92,8 +93,8 @@ final class RouterSurfaceSceneDriver {
             // that follows this scene commit flips `mapped` off and clears input;
             // this preserves only immutable visual content for the close fade.
             if let windowID = windowID(forSurfaceId: surfaceId),
-               let window = server.window(id: windowID),
-               window.mapped
+                let window = server.window(id: windowID),
+                window.mapped
             {
                 _ = feeder?.beginClosing(
                     window: window,
@@ -112,27 +113,28 @@ final class RouterSurfaceSceneDriver {
         }
 
         if buffer.shmMetadata != nil {
-            let newId: UInt32 = (try? buffer.withShmBytes {
-                metadata, bytes -> UInt32 in
-                guard let renderService = server.renderService
-                else { return UInt32(0) }
-                return unsafe bytes.withUnsafeBytes { rawBytes in
-                    guard let data = rawBytes.baseAddress
+            let newId: UInt32 =
+                (try? buffer.withShmBytes {
+                    metadata, bytes -> UInt32 in
+                    guard let renderService = server.renderService
                     else { return UInt32(0) }
-                    let pixels = unsafe Span<UInt8>(
-                        _unsafeStart:
-                            data.assumingMemoryBound(to: UInt8.self),
-                        count: rawBytes.count)
-                    return renderService.importShm(
-                        previousIOSurfaceID: surface.renderIosurfaceId,
-                        width: UInt32(metadata.width),
-                        height: UInt32(metadata.height),
-                        drmFormat: Self.drmFormat(
-                            fromShm: metadata.format),
-                        stride: UInt32(metadata.stride),
-                        pixels: pixels)
-                }
-            }) ?? 0
+                    return unsafe bytes.withUnsafeBytes { rawBytes in
+                        guard let data = rawBytes.baseAddress
+                        else { return UInt32(0) }
+                        let pixels = unsafe Span<UInt8>(
+                            _unsafeStart:
+                                data.assumingMemoryBound(to: UInt8.self),
+                            count: rawBytes.count)
+                        return renderService.importShm(
+                            previousIOSurfaceID: surface.renderIosurfaceId,
+                            width: UInt32(metadata.width),
+                            height: UInt32(metadata.height),
+                            drmFormat: Self.drmFormat(
+                                fromShm: metadata.format),
+                            stride: UInt32(metadata.stride),
+                            pixels: pixels)
+                    }
+                }) ?? 0
             guard newId != 0 else {
                 importFailed(surface)
                 return
@@ -145,7 +147,9 @@ final class RouterSurfaceSceneDriver {
             if reportedImports.insert(surfaceId).inserted,
                 let metadata = buffer.shmMetadata
             {
-                diagnostic("surface=\(surfaceId) shm=\(metadata.width)x\(metadata.height) texture=\(newId) generation=\(surface.renderContentGeneration)")
+                diagnostic(
+                    "surface=\(surfaceId) shm=\(metadata.width)x\(metadata.height) texture=\(newId) generation=\(surface.renderContentGeneration)"
+                )
             }
             if let metadata = buffer.shmMetadata {
                 recordBufferSize(
@@ -181,9 +185,12 @@ final class RouterSurfaceSceneDriver {
             surface.renderIosurfaceId = newId
             surface.didImportContent(generation: commit.bufferGeneration)
             if reportedImports.insert(surfaceId).inserted {
-                diagnostic("surface=\(surfaceId) dmabuf=\(attrs.width)x\(attrs.height) format=\(attrs.format) modifier=\(attrs.modifier) texture=\(newId) generation=\(surface.renderContentGeneration)")
+                diagnostic(
+                    "surface=\(surfaceId) dmabuf=\(attrs.width)x\(attrs.height) format=\(attrs.format) modifier=\(attrs.modifier) texture=\(newId) generation=\(surface.renderContentGeneration)"
+                )
             }
-            recordBufferSize(surfaceId: surfaceId, width: UInt32(attrs.width), height: UInt32(attrs.height))
+            recordBufferSize(
+                surfaceId: surfaceId, width: UInt32(attrs.width), height: UInt32(attrs.height))
             publishContent(surface, commit: commit)
             return
         }
@@ -284,13 +291,14 @@ final class RouterSurfaceSceneDriver {
         // root app-window topology is retained by the close transition.
         var retainedRootWindow = false
         if let windowID = windowID(forSurfaceId: surfaceId),
-           let window = server.window(id: windowID),
-           window.source == .xdg || window.source == .xwayland
+            let window = server.window(id: windowID),
+            window.source == .xdg || window.source == .xwayland
         {
-            retainedRootWindow = feeder?.beginClosing(
-                window: window,
-                iosurfaceID: iosurfaceId,
-                destroyWindowOnCompletion: true) ?? false
+            retainedRootWindow =
+                feeder?.beginClosing(
+                    window: window,
+                    iosurfaceID: iosurfaceId,
+                    destroyWindowOnCompletion: true) ?? false
             window.mapped = false
         }
         server.renderService?
@@ -303,8 +311,8 @@ final class RouterSurfaceSceneDriver {
             // model window + scene tear down here. A failed app-window capture
             // takes this immediate path too.
             if let windowID = windowID(forSurfaceId: surfaceId),
-               let window = server.window(id: windowID),
-               window.source == .xdg || window.source == .xwayland
+                let window = server.window(id: windowID),
+                window.source == .xdg || window.source == .xwayland
             {
                 feeder?.windowUnmapped(surfaceID: surfaceId)
                 _ = server.destroyWindow(id: windowID)
@@ -455,20 +463,24 @@ final class RouterSurfaceSceneDriver {
         bufferWidth: UInt32, bufferHeight: UInt32
     ) {
         let wm = windowManager
-        let windowID = wm.layerShellCreated(surfaceObjectId: surface.objectId, layer: layerSurface.layer)
+        let windowID = wm.layerShellCreated(
+            surfaceObjectId: surface.objectId, layer: layerSurface.layer)
         guard let window = wm.server.window(id: windowID) else { return }
         let x = Double(layerSurface.arrangedX)
         let y = Double(layerSurface.arrangedY)
         let w = Double(layerSurface.configuredWidth)
         let h = Double(layerSurface.configuredHeight)
         if reportedLayerMaps.insert(surface.objectId).inserted {
-            diagnostic("layer-map surface=\(surface.objectId) output=\(layerSurface.outputID) layer=\(layerSurface.layer) frame=\(x),\(y) \(w)x\(h) buffer=\(bufferWidth)x\(bufferHeight) texture=\(surface.renderIosurfaceId)")
+            diagnostic(
+                "layer-map surface=\(surface.objectId) output=\(layerSurface.outputID) layer=\(layerSurface.layer) frame=\(x),\(y) \(w)x\(h) buffer=\(bufferWidth)x\(bufferHeight) texture=\(surface.renderIosurfaceId)"
+            )
         }
         window.committedBufferSize = RenderSize(w: Double(bufferWidth), h: Double(bufferHeight))
         window.committedLogicalSize = RenderSize(w: max(1, w), h: max(1, h))
         window.currentOutputID = layerSurface.outputID
-        window.setGeometry(WindowRect(
-            x: x, y: y, width: UInt32(max(1, w)), height: UInt32(max(1, h))))
+        window.setGeometry(
+            WindowRect(
+                x: x, y: y, width: UInt32(max(1, w)), height: UInt32(max(1, h))))
         if !window.mapped {
             window.mapped = true
             window.seedPresentationActorToRect(
@@ -521,7 +533,8 @@ final class RouterSurfaceSceneDriver {
             srcHeight: Float(src?.height ?? Double(max(1, bufferHeight))),
             logicalWidth: Float(dst.map { Double($0.width) } ?? max(1, logicalW)),
             logicalHeight: Float(dst.map { Double($0.height) } ?? max(1, logicalH)),
-            opaqueFullSurface: Self.opaqueRegionCoversSurface(surface.opaqueRegion, width: logicalW, height: logicalH))
+            opaqueFullSurface: Self.opaqueRegionCoversSurface(
+                surface.opaqueRegion, width: logicalW, height: logicalH))
     }
 
     private func contentSample(for surface: WlSurface) -> NucleusLayers.ContentSample? {
@@ -540,10 +553,13 @@ final class RouterSurfaceSceneDriver {
             srcHeight: Float(src?.height ?? max(1, buffer.h)),
             logicalWidth: Float(dst.map { Double($0.width) } ?? max(1, logical.w)),
             logicalHeight: Float(dst.map { Double($0.height) } ?? max(1, logical.h)),
-            opaqueFullSurface: Self.opaqueRegionCoversSurface(surface.opaqueRegion, width: logical.w, height: logical.h))
+            opaqueFullSurface: Self.opaqueRegionCoversSurface(
+                surface.opaqueRegion, width: logical.w, height: logical.h))
     }
 
-    private static func opaqueRegionCoversSurface(_ region: RegionSnapshot?, width: Double, height: Double) -> Bool {
+    private static func opaqueRegionCoversSurface(
+        _ region: RegionSnapshot?, width: Double, height: Double
+    ) -> Bool {
         guard let region, width > 0, height > 0 else { return false }
         let coverW = Int32(max(1, width.rounded(.up)))
         let coverH = Int32(max(1, height.rounded(.up)))
@@ -560,4 +576,3 @@ final class RouterSurfaceSceneDriver {
         }
     }
 }
-import NucleusDiagnostics

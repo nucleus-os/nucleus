@@ -1,14 +1,14 @@
-public import NucleusConfig
-public import NucleusConfigIO
-public import NucleusSessionProtocol
+package import NucleusConfig
+package import NucleusConfigIO
+package import NucleusSessionProtocol
 
-public struct ConfigurationServiceSnapshot: Equatable, Sendable {
-    public var epoch: ConfigurationServiceEpoch
-    public var generation: ConfigurationGeneration
-    public var configuration: NucleusConfiguration
-    public var diagnostics: [ConfigurationDiagnosticPublication]
+package struct ConfigurationServiceSnapshot: Equatable, Sendable {
+    package var epoch: ConfigurationServiceEpoch
+    package var generation: ConfigurationGeneration
+    package var configuration: NucleusConfiguration
+    package var diagnostics: [ConfigurationDiagnosticPublication]
 
-    public init(
+    package init(
         epoch: ConfigurationServiceEpoch,
         generation: ConfigurationGeneration,
         configuration: NucleusConfiguration,
@@ -20,7 +20,7 @@ public struct ConfigurationServiceSnapshot: Equatable, Sendable {
         self.diagnostics = diagnostics
     }
 
-    public func publication(
+    package func publication(
         for role: ConfigurationSubscriberRole
     ) -> ConfigurationPublication {
         switch role {
@@ -40,7 +40,7 @@ public struct ConfigurationServiceSnapshot: Equatable, Sendable {
     }
 }
 
-public enum ConfigurationServiceUpdate: Sendable {
+package enum ConfigurationServiceUpdate: Sendable {
     case unchanged([ConfigurationDiagnosticPublication])
     case diagnostics([ConfigurationDiagnosticPublication])
     case adopted(ConfigurationServiceSnapshot)
@@ -50,10 +50,10 @@ public enum ConfigurationServiceUpdate: Sendable {
 ///
 /// Filesystem and channel ownership stay in the composition root; this type
 /// defines generation, last-known-good, validation, and projection semantics.
-public struct ConfigurationServiceState: Sendable {
-    public private(set) var snapshot: ConfigurationServiceSnapshot
+package struct ConfigurationServiceState: Sendable {
+    package private(set) var snapshot: ConfigurationServiceSnapshot
 
-    public init(
+    package init(
         epoch: ConfigurationServiceEpoch,
         startup result: ConfigLoadOutcome
     ) {
@@ -73,7 +73,7 @@ public struct ConfigurationServiceState: Sendable {
         }
     }
 
-    public mutating func reload(
+    package mutating func reload(
         _ result: ConfigLoadOutcome,
         forceGeneration: Bool = false
     ) -> ConfigurationServiceUpdate {
@@ -97,13 +97,13 @@ public struct ConfigurationServiceState: Sendable {
         }
     }
 
-    public mutating func fileRemoved() -> ConfigurationServiceUpdate {
+    package mutating func fileRemoved() -> ConfigurationServiceUpdate {
         reload(
             .loaded(.defaults, warnings: []),
             forceGeneration: true)
     }
 
-    public func validate(source: String) -> ConfigurationPublication {
+    package func validate(source: String) -> ConfigurationPublication {
         let diagnostics: [ConfigurationDiagnosticPublication]
         switch ConfigLoader.load(text: source) {
         case .loaded(_, let warnings):
@@ -117,14 +117,14 @@ public struct ConfigurationServiceState: Sendable {
             diagnostics: diagnostics)
     }
 
-    public func export() throws -> ConfigurationPublication {
+    package func export() throws -> ConfigurationPublication {
         .exported(
             epoch: snapshot.epoch,
             generation: snapshot.generation,
             source: try ConfigExport.json(snapshot.configuration))
     }
 
-    public mutating func replace(
+    package mutating func replace(
         source: String,
         activeFile: ActiveConfigurationFile
     ) throws -> ConfigurationServiceUpdate {
@@ -133,8 +133,8 @@ public struct ConfigurationServiceState: Sendable {
     }
 }
 
-public extension Array where Element == ConfigDiagnostic {
-    var publications: [ConfigurationDiagnosticPublication] {
+extension Array where Element == ConfigDiagnostic {
+    package var publications: [ConfigurationDiagnosticPublication] {
         map {
             ConfigurationDiagnosticPublication(
                 severity: $0.severity == .error ? .error : .warning,

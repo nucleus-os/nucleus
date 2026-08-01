@@ -1,11 +1,13 @@
-import NucleusUITestSupport
-import Testing
+package import NucleusLayers
+import NucleusTypes
 import NucleusUI
 import NucleusUIEmbedder
-import NucleusTypes
-import struct NucleusUI.Point
-@_spi(NucleusRenderServer) import NucleusLayers
+import NucleusUITestSupport
 import NucleusWindowClientWayland
+import Testing
+
+import struct NucleusUI.Point
+
 @testable import NucleusWindowClientInput
 
 /// The shell's Wayland-to-NucleusUI input translation.
@@ -397,9 +399,10 @@ import NucleusWindowClientWayland
 
         view.alphaValue = 0.5
         _ = try scene.publish()
-        #expect(sink.transactions.last?.propertyUpdates.contains {
-            $0.properties.opacity == 0.5
-        } == true)
+        #expect(
+            sink.transactions.last?.propertyUpdates.contains {
+                $0.properties.opacity == 0.5
+            } == true)
 
         router.unregister(surfaceID: 42)
         try scene.disconnect()

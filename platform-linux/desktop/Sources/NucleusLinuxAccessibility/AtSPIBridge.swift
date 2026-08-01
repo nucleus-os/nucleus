@@ -1,4 +1,4 @@
-public import NucleusUI
+package import NucleusUI
 
 /// Couples one retained scene's neutral semantic tree to a platform adapter.
 ///
@@ -6,14 +6,15 @@ public import NucleusUI
 /// through the latest published tree, so an object removed in the same frame
 /// cannot act on a stale view.
 @MainActor
-public final class AtSPIBridge {
+package final class AtSPIBridge {
     private let tree: AccessibilityTree
-    private let applyUpdate: @MainActor (
-        AccessibilityTreeSnapshot,
-        AccessibilityTreeUpdate
-    ) -> Void
+    private let applyUpdate:
+        @MainActor (
+            AccessibilityTreeSnapshot,
+            AccessibilityTreeUpdate
+        ) -> Void
 
-    public init(
+    package init(
         scene: WindowScene,
         service: AtSPIService
     ) {
@@ -25,24 +26,25 @@ public final class AtSPIBridge {
 
     init(
         scene: WindowScene,
-        applyUpdate: @escaping @MainActor (
-            AccessibilityTreeSnapshot,
-            AccessibilityTreeUpdate
-        ) -> Void
+        applyUpdate:
+            @escaping @MainActor (
+                AccessibilityTreeSnapshot,
+                AccessibilityTreeUpdate
+            ) -> Void
     ) {
         tree = scene.accessibilityTree
         self.applyUpdate = applyUpdate
     }
 
     @discardableResult
-    public func publish() -> AccessibilityTreeUpdate {
+    package func publish() -> AccessibilityTreeUpdate {
         let update = tree.publish()
         applyUpdate(tree.snapshot, update)
         return update
     }
 
     @discardableResult
-    public func perform(_ request: AccessibilityActionRequest) -> Bool {
+    package func perform(_ request: AccessibilityActionRequest) -> Bool {
         tree.perform(request)
     }
 }

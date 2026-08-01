@@ -1,10 +1,10 @@
+import NucleusLinuxDBus
+import NucleusUI
+
 private let dbusTypeArray = CChar(UInt8(ascii: "a"))
 private let dbusTypeDictEntry = CChar(UInt8(ascii: "e"))
 private let dbusTypeStruct = CChar(UInt8(ascii: "r"))
 private let dbusTypeVariant = CChar(UInt8(ascii: "v"))
-
-import NucleusLinuxDBus
-import NucleusUI
 
 /// D-Bus geometry is signed 32-bit. Treat non-finite semantic geometry as a
 /// bounded wire value instead of routing it through `Int(Double)`, which traps
@@ -110,7 +110,7 @@ extension AtSPIService {
         else { return nil }
         defer { _ = message.exitContainer() }
         guard let name = message.readString(),
-              let path = message.readObjectPath()
+            let path = message.readObjectPath()
         else { return nil }
         return (name, path)
     }

@@ -11,8 +11,8 @@
 import Dispatch
 import Glibc
 import Synchronization
-import WaylandServerC
 import WaylandServer
+import WaylandServerC
 import WaylandServerDispatch
 
 private struct GammaRamp: Sendable {
@@ -69,8 +69,8 @@ private enum GammaRampReader {
 
         var metadata = stat()
         guard unsafe fstat(fileDescriptor, &metadata) == 0,
-              metadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG),
-              Int64(metadata.st_size) == Int64(byteCount.partialValue)
+            metadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG),
+            Int64(metadata.st_size) == Int64(byteCount.partialValue)
         else { return nil }
 
         var values = [UInt16](
@@ -170,7 +170,8 @@ extension ZwlrGammaControlManager: ZwlrGammaControlManagerV1Requests {
     func getGammaControl(
         _ request: WaylandRequest<ZwlrGammaControlManagerV1Server>,
         id: WlNewId<ZwlrGammaControlV1Server>,
-                         output outputRes: WaylandBorrowedObject<WlOutputServer>) {
+        output outputRes: WaylandBorrowedObject<WlOutputServer>
+    ) {
         let output = outputRes.output
         let size = delegate?.gammaRampSize(output: output) ?? 0
         _ = id.create(
@@ -202,11 +203,11 @@ extension ZwlrGammaControlManager: ZwlrGammaControlManagerV1Requests {
     private weak var manager: ZwlrGammaControlManager?
     private weak var output: WlOutput?
     private let size: UInt32
-    fileprivate let resource:
-        WaylandResourceHandle<ZwlrGammaControlV1Server>
-    private var currentRamp: (
-        red: [UInt16], green: [UInt16], blue: [UInt16]
-    )?
+    fileprivate let resource: WaylandResourceHandle<ZwlrGammaControlV1Server>
+    private var currentRamp:
+        (
+            red: [UInt16], green: [UInt16], blue: [UInt16]
+        )?
     private var readInFlight = false
     private var failed = false
 
@@ -250,7 +251,7 @@ extension ZwlrGammaControlManager: ZwlrGammaControlManagerV1Requests {
         readInFlight = false
         guard !failed else { return }
         guard let ramp,
-              manager?.isActive(self, output: output) == true
+            manager?.isActive(self, output: output) == true
         else {
             fail()
             return
@@ -266,7 +267,10 @@ extension ZwlrGammaControlManager: ZwlrGammaControlManagerV1Requests {
 
 // set_gamma(fd): the fd holds 3 * size host-endian uint16 ramps (R, G, B).
 extension ZwlrGammaControl: ZwlrGammaControlV1Requests {
-    func setGamma(_ request: WaylandRequest<ZwlrGammaControlV1Server>, fd: consuming WaylandOwnedFileDescriptor) {
+    func setGamma(
+        _ request: WaylandRequest<ZwlrGammaControlV1Server>,
+        fd: consuming WaylandOwnedFileDescriptor
+    ) {
         let rawFD = fd.take()
         guard !failed, !readInFlight else {
             _ = close(rawFD)
@@ -274,12 +278,13 @@ extension ZwlrGammaControl: ZwlrGammaControlV1Requests {
             return
         }
         readInFlight = true
-        guard GammaRampReader.submit(
-            fileDescriptor: rawFD,
-            size: Int(size),
-            completion: { [weak self] ramp in
-                self?.finishedReading(ramp)
-            })
+        guard
+            GammaRampReader.submit(
+                fileDescriptor: rawFD,
+                size: Int(size),
+                completion: { [weak self] ramp in
+                    self?.finishedReading(ramp)
+                })
         else {
             readInFlight = false
             fail()

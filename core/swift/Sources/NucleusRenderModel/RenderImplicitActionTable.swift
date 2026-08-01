@@ -1,3 +1,5 @@
+package import NucleusTypes
+
 //
 // Template choice is policy authored Swift-side: a `(role, key path) → action
 // template` lookup the transaction applier consults when a property update
@@ -7,12 +9,12 @@
 // data; expanding templates against live values is the applier's job.
 
 /// Spring parameters for a default frame action. Mirrors `FrameSpringParams`.
-public struct FrameSpringParams: Equatable, Sendable {
-    public var mass: Float
-    public var stiffness: Float
-    public var damping: Float
+package struct FrameSpringParams: Equatable, Sendable {
+    package var mass: Float
+    package var stiffness: Float
+    package var damping: Float
 
-    public init(mass: Float, stiffness: Float, damping: Float) {
+    package init(mass: Float, stiffness: Float, damping: Float) {
         self.mass = mass
         self.stiffness = stiffness
         self.damping = damping
@@ -21,71 +23,29 @@ public struct FrameSpringParams: Equatable, Sendable {
 
 /// Timed-curve parameters for a default scalar action. Mirrors
 /// `BasicScalarParams`.
-public struct BasicScalarParams: Equatable, Sendable {
-    public var duration: Double
-    public var timingFunction: TimingFunction
+package struct BasicScalarParams: Equatable, Sendable {
+    package var duration: Double
+    package var timingFunction: TimingFunction
 
-    public init(duration: Double, timingFunction: TimingFunction) {
+    package init(duration: Double, timingFunction: TimingFunction) {
         self.duration = duration
         self.timingFunction = timingFunction
     }
 }
 
-/// Which property a template row targets. Mirrors `ImplicitActionTable.KeyPath`.
-public enum ImplicitActionKeyPath: UInt8, Sendable {
-    case frame = 1
-    case opacity = 2
-}
-
-/// Which animation kind a template row produces. Mirrors
-/// `ImplicitActionTable.Kind`.
-public enum ImplicitActionKind: UInt8, Sendable {
-    case spring = 1
-    case scalar = 2
-}
-
-/// One wire row used to (re)populate the table. Mirrors `ImplicitActionTable.Row`.
-public struct ImplicitActionRow: Equatable, Sendable {
-    public var role: LayerRole
-    public var keyPath: ImplicitActionKeyPath
-    public var kind: ImplicitActionKind
-    public var mass: Float = 0
-    public var stiffness: Float = 0
-    public var damping: Float = 0
-    public var duration: Double = 0
-    public var c1x: Float = 0
-    public var c1y: Float = 0
-    public var c2x: Float = 0
-    public var c2y: Float = 0
-
-    public init(
-        role: LayerRole, keyPath: ImplicitActionKeyPath, kind: ImplicitActionKind,
-        mass: Float = 0, stiffness: Float = 0, damping: Float = 0, duration: Double = 0,
-        c1x: Float = 0, c1y: Float = 0, c2x: Float = 0, c2y: Float = 0
-    ) {
-        self.role = role
-        self.keyPath = keyPath
-        self.kind = kind
-        self.mass = mass
-        self.stiffness = stiffness
-        self.damping = damping
-        self.duration = duration
-        self.c1x = c1x
-        self.c1y = c1y
-        self.c2x = c2x
-        self.c2y = c2y
-    }
-}
+package typealias ImplicitActionKeyPath = NucleusTypes.ImplicitActionKeyPath
+package typealias ImplicitActionKind = NucleusTypes.ImplicitActionKind
+package typealias ImplicitActionRow = NucleusTypes.ImplicitActionRow
 
 /// Resident lookup for Swift-authored implicit-action policy. Mirrors
 /// `ImplicitActionTable`. `roleCount` is `dock + 1` (the last `LayerRole`).
-public struct ImplicitActionTable: Equatable, Sendable {
-    public static let roleCount = Int(LayerRole.dock.rawValue) + 1
+package struct ImplicitActionTable: Equatable, Sendable {
+    package static let roleCount = Int(LayerRole.dock.rawValue) + 1
 
-    public var frames: [FrameSpringParams?]
-    public var opacities: [BasicScalarParams?]
+    package var frames: [FrameSpringParams?]
+    package var opacities: [BasicScalarParams?]
 
-    public init() {
+    package init() {
         frames = Array(repeating: nil, count: ImplicitActionTable.roleCount)
         opacities = Array(repeating: nil, count: ImplicitActionTable.roleCount)
     }
@@ -93,7 +53,7 @@ public struct ImplicitActionTable: Equatable, Sendable {
     /// Replace the whole table from a row set, validating each row (a spring row
     /// needs positive mass/stiffness; a scalar row needs positive duration).
     /// Mirrors `ImplicitActionTable.replace`.
-    public mutating func replace(_ rows: [ImplicitActionRow]) {
+    package mutating func replace(_ rows: [ImplicitActionRow]) {
         frames = Array(repeating: nil, count: ImplicitActionTable.roleCount)
         opacities = Array(repeating: nil, count: ImplicitActionTable.roleCount)
         for row in rows {
@@ -108,19 +68,20 @@ public struct ImplicitActionTable: Equatable, Sendable {
                 if row.kind == .scalar && row.duration > 0 {
                     opacities[index] = BasicScalarParams(
                         duration: row.duration,
-                        timingFunction: TimingFunction(c1x: row.c1x, c1y: row.c1y, c2x: row.c2x, c2y: row.c2y))
+                        timingFunction: TimingFunction(
+                            c1x: row.c1x, c1y: row.c1y, c2x: row.c2x, c2y: row.c2y))
                 }
             }
         }
     }
 
     /// The default frame spring for `role`, if any. Mirrors `frameFor`.
-    public func frameFor(_ role: LayerRole) -> FrameSpringParams? {
+    package func frameFor(_ role: LayerRole) -> FrameSpringParams? {
         frames[Int(role.rawValue)]
     }
 
     /// The default opacity curve for `role`, if any. Mirrors `opacityFor`.
-    public func opacityFor(_ role: LayerRole) -> BasicScalarParams? {
+    package func opacityFor(_ role: LayerRole) -> BasicScalarParams? {
         opacities[Int(role.rawValue)]
     }
 }

@@ -12,10 +12,10 @@
 // supervision) is Swift now; this owns only the
 // wayland-side association. No-ops before Xwayland attaches to the router.
 
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
 import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 @MainActor
 @safe final class XwaylandShellManager {
@@ -96,7 +96,10 @@ extension XwaylandShellManager: XwaylandShellV1Requests {
 
 extension XwaylandSurfaceRole: XwaylandSurfaceV1Requests {
     // set_serial(serial_lo, serial_hi): double-buffered, latched on commit.
-    func setSerial(_ request: WaylandRequest<XwaylandSurfaceV1Server>, serial_lo lo: UInt32, serial_hi hi: UInt32) {
+    func setSerial(
+        _ request: WaylandRequest<XwaylandSurfaceV1Server>, serial_lo lo: UInt32,
+        serial_hi hi: UInt32
+    ) {
         let serial = (UInt64(hi) << 32) | UInt64(lo)
         guard serial != 0 else {
             request.postError(.invalidSerial, message: "serial was not valid")

@@ -7,36 +7,39 @@
 // — it works in a headless bring-up where no Graphite recorder exists.
 // Refcounted: registered at 1, evicted at 0.
 
+package import NucleusTypes
 import Synchronization
-public import NucleusTypes
 
 // MARK: - Store
 
 /// Refcounted registry of paint command lists keyed by `PaintContentHandle`.
 /// The renderer reads `commands(_:)` at frame time. Mirrors `PaintContentStore`.
-public final class PaintContentStore: Sendable {
-    public struct Content: Sendable {
-        public let commands: [PaintCommand]
+package final class PaintContentStore: Sendable {
+    package struct Content: Sendable {
+        package let commands: [PaintCommand]
         /// Unique image resources referenced by this immutable command list.
         /// The renderer consumes this directly instead of rescanning commands
         /// every frame to infer cache dependencies.
-        public let imageDependencies: [UInt64]
+        package let imageDependencies: [UInt64]
         /// Variable-length data the commands index into via
         /// `payloadOffset`/`payloadLength`. Opaque to this store.
-        public let payload: [UInt8]
-        public let width: Float
-        public let height: Float
+        package let payload: [UInt8]
+        package let width: Float
+        package let height: Float
 
-        public init(
+        package init(
             commands: [PaintCommand], payload: [UInt8] = [],
             width: Float, height: Float
         ) {
             self.commands = commands
-            self.imageDependencies = Array(Set(commands.compactMap {
-                $0.kind == .image && $0.imageHandle != 0
-                    ? $0.imageHandle
-                    : nil
-            })).sorted()
+            self.imageDependencies = Array(
+                Set(
+                    commands.compactMap {
+                        $0.kind == .image && $0.imageHandle != 0
+                            ? $0.imageHandle
+                            : nil
+                    })
+            ).sorted()
             self.payload = payload
             self.width = width
             self.height = height
@@ -55,16 +58,16 @@ public final class PaintContentStore: Sendable {
 
     private let state = Mutex(State())
 
-    public init() {}
+    package init() {}
 
-    public var count: Int {
+    package var count: Int {
         state.withLock { $0.entries.count }
     }
 
     /// Register a command list at refcount 1 and return its handle. Mirrors
     /// `registerCommands`.
     @discardableResult
-    public func register(
+    package func register(
         _ commands: [PaintCommand], payload: [UInt8] = [],
         width: Float, height: Float
     ) -> PaintContentHandle {
@@ -82,7 +85,7 @@ public final class PaintContentStore: Sendable {
     }
 
     /// Add one ref. No-op for an unknown handle. Mirrors `retain`.
-    public func retain(_ handle: PaintContentHandle) {
+    package func retain(_ handle: PaintContentHandle) {
         state.withLock {
             guard $0.entries[handle] != nil else { return }
             $0.entries[handle]!.refs &+= 1
@@ -92,7 +95,7 @@ public final class PaintContentStore: Sendable {
     /// Drop one ref; evict at zero. No-op for an unknown handle. Mirrors
     /// `release` (image-handle release inside a command is the renderer's image
     /// registry's concern — this store holds only the command list).
-    public func release(_ handle: PaintContentHandle) {
+    package func release(_ handle: PaintContentHandle) {
         state.withLock {
             guard var entry = $0.entries[handle] else { return }
             if entry.refs > 1 {
@@ -106,11 +109,11 @@ public final class PaintContentStore: Sendable {
 
     /// The command list registered for `handle`, or nil if unknown. Mirrors
     /// `displayList`/`picture` queries.
-    public func commands(_ handle: PaintContentHandle) -> [PaintCommand]? {
+    package func commands(_ handle: PaintContentHandle) -> [PaintCommand]? {
         state.withLock { $0.entries[handle]?.content.commands }
     }
 
-    public func content(_ handle: PaintContentHandle) -> Content? {
+    package func content(_ handle: PaintContentHandle) -> Content? {
         state.withLock { $0.entries[handle]?.content }
     }
 }

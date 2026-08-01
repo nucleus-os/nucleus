@@ -1,8 +1,8 @@
-public import NucleusCompositorServer
+package import NucleusCompositorServer
 
 @MainActor
 extension WindowManager {
-    public func shouldFocusOnMap(windowID: UInt64) -> Bool {
+    package func shouldFocusOnMap(windowID: UInt64) -> Bool {
         guard let window = server.window(id: windowID), window.wantsKeyboardFocus else {
             return false
         }
@@ -12,15 +12,18 @@ extension WindowManager {
         // `!minimized` check the occlusion path enforces, so a minimized fullscreen
         // window wrongly blocked focus-on-map. (owner nil / owner == window both
         // resolve to "not occluded" → focus allowed.)
-        guard let outputID = server.spaces.policyOutputID(
-            for: window,
-            layout: server.layout)
+        guard
+            let outputID = server.spaces.policyOutputID(
+                for: window,
+                layout: server.layout)
         else { return false }
         let owner = server.fullscreenOwner(onOutput: outputID)
         return !server.isOccludedByFullscreen(window, owner: owner)
     }
 
-    public func fullscreenRelinquishPlan(outputID: DisplayID, exceptID: UInt64, max: Int) -> [UInt64] {
+    package func fullscreenRelinquishPlan(outputID: DisplayID, exceptID: UInt64, max: Int)
+        -> [UInt64]
+    {
         var ids: [UInt64] = []
         ids.reserveCapacity(min(max, server.windows.windows.count))
         for window in server.windows.windows {
@@ -35,7 +38,9 @@ extension WindowManager {
                 nextActiveMaximized: false
             )
             let policyOutputID = server.spaces.policyOutputID(for: window, layout: server.layout)
-            if (requestedOutputID == nil || requestedOutputID != outputID) && policyOutputID != outputID {
+            if (requestedOutputID == nil || requestedOutputID != outputID)
+                && policyOutputID != outputID
+            {
                 continue
             }
 

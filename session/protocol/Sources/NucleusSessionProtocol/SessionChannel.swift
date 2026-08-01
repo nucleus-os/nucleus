@@ -1,4 +1,4 @@
-import NucleusIPCTransport
+internal import NucleusIPCTransport
 
 public enum SessionChannel {
     public static func socketPair() throws -> (Int32, Int32) {

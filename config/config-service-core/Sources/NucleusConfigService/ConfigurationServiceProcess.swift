@@ -68,23 +68,26 @@ private final class ConfigurationServiceProcess {
             let watcherIndex: Int?
             if let watcher {
                 watcherIndex = pollDescriptors.count
-                pollDescriptors.append(pollfd(
-                    fd: watcher.fileDescriptor,
-                    events: Int16(POLLIN),
-                    revents: 0))
+                pollDescriptors.append(
+                    pollfd(
+                        fd: watcher.fileDescriptor,
+                        events: Int16(POLLIN),
+                        revents: 0))
             } else {
                 watcherIndex = nil
             }
             let signalIndex = pollDescriptors.count
-            pollDescriptors.append(pollfd(
-                fd: signalDescriptor,
-                events: Int16(POLLIN),
-                revents: 0))
+            pollDescriptors.append(
+                pollfd(
+                    fd: signalDescriptor,
+                    events: Int16(POLLIN),
+                    revents: 0))
             let attachmentIndex = pollDescriptors.count
-            pollDescriptors.append(pollfd(
-                fd: attachments.fileDescriptor,
-                events: Int16(POLLIN),
-                revents: 0))
+            pollDescriptors.append(
+                pollfd(
+                    fd: attachments.fileDescriptor,
+                    events: Int16(POLLIN),
+                    revents: 0))
             let result = unsafe poll(
                 &pollDescriptors,
                 nfds_t(pollDescriptors.count),
@@ -106,7 +109,7 @@ private final class ConfigurationServiceProcess {
                 }
             }
             if let watcherIndex,
-               pollDescriptors[watcherIndex].revents & Int16(POLLIN) != 0
+                pollDescriptors[watcherIndex].revents & Int16(POLLIN) != 0
             {
                 processWatcher()
             }
@@ -149,9 +152,11 @@ private final class ConfigurationServiceProcess {
             throw ServiceFailure.channel(
                 "render-server control endpoint sent to config service")
         }
-        guard let index = endpoints.firstIndex(where: {
-            $0.capability == capability
-        }) else {
+        guard
+            let index = endpoints.firstIndex(where: {
+                $0.capability == capability
+            })
+        else {
             throw ServiceFailure.channel(
                 "configuration attachment role is not provisioned")
         }
@@ -166,9 +171,11 @@ private final class ConfigurationServiceProcess {
     }
 
     private func publishControlReadiness() throws {
-        guard let index = endpoints.firstIndex(where: {
-            $0.capability == .control
-        }) else {
+        guard
+            let index = endpoints.firstIndex(where: {
+                $0.capability == .control
+            })
+        else {
             throw ServiceFailure.channel(
                 "configuration control endpoint is not provisioned")
         }
@@ -244,8 +251,8 @@ private final class ConfigurationServiceProcess {
             try send(state.snapshot.publication(for: grantedRole), to: index)
         case .acknowledge, .reject:
             guard grantedRole != nil,
-                  request.epoch == state.snapshot.epoch,
-                  request.generation == state.snapshot.generation
+                request.epoch == state.snapshot.epoch,
+                request.generation == state.snapshot.generation
             else {
                 try send(
                     .rejected(
@@ -276,7 +283,7 @@ private final class ConfigurationServiceProcess {
             try send(state.validate(source: source), to: index)
         case .replace:
             guard capability == .control, let source = request.source,
-                  let activeFile
+                let activeFile
             else {
                 try rejectUnauthorized(to: index)
                 return
@@ -378,9 +385,9 @@ private func descriptor(
     arguments: [String]
 ) throws -> Int32 {
     guard let index = arguments.firstIndex(of: argument),
-          arguments.indices.contains(index + 1),
-          let descriptor = Int32(arguments[index + 1]),
-          descriptor >= 3
+        arguments.indices.contains(index + 1),
+        let descriptor = Int32(arguments[index + 1]),
+        descriptor >= 3
     else { throw ServiceFailure.argument("missing \(argument)") }
     return descriptor
 }
@@ -392,7 +399,7 @@ private func makeEpoch() -> ConfigurationServiceEpoch {
 }
 
 @MainActor
-public func runConfigurationService(
+package func runConfigurationService(
     arguments: [String] = CommandLine.arguments
 ) -> Int32 {
     do {
@@ -428,7 +435,8 @@ public func runConfigurationService(
                 owning: try descriptor(
                     following:
                         SupervisorAttachmentChannel.descriptorArgument,
-                    arguments: arguments))).run(readiness: readiness)
+                    arguments: arguments))
+        ).run(readiness: readiness)
     } catch {
         let message = "nucleus-config-service: \(error)\n"
         _ = message.withCString {

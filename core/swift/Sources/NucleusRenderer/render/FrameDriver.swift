@@ -1,3 +1,5 @@
+internal import NucleusAppHostProtocols
+
 // The top-level per-frame renderer. `FrameDriver.renderFrame` builds a FramePlan
 // from the retained tree, pre-resolves each texture handle to a GPU image, composites
 // the operations onto the persistent output accumulator, executes backdrop bands,
@@ -6,11 +8,13 @@
 // render_demand.shouldRenderThisVblank — the render-demand predicate the reactor
 // uses to decide whether to render a vblank.
 
-import NucleusSkiaGraphiteBridge
 import NucleusDiagnostics
-import VulkanC
 package import NucleusRenderModel
+import NucleusSkiaGraphiteBridge
+import VulkanC
+
 internal import struct NucleusTypes.OutputPixelRect
+
 #if canImport(Glibc)
 import Glibc
 #endif
@@ -28,56 +32,54 @@ struct FrameDemand {
     }
 }
 
-@_spi(NucleusPlatform)
-public struct RenderFrameTimings: Sendable, Equatable {
-    public var planNs: UInt64 = 0
-    public var resourceSummaryNs: UInt64 = 0
-    public var resolveNs: UInt64 = 0
-    public var accumulatorNs: UInt64 = 0
-    public var damageNs: UInt64 = 0
-    public var compositeNs: UInt64 = 0
-    public var blitNs: UInt64 = 0
-    public var frameSnapNs: UInt64 = 0
-    public var submitNs: UInt64 = 0
-    public var totalNs: UInt64 = 0
+package struct RenderFrameTimings: Sendable, Equatable {
+    package var planNs: UInt64 = 0
+    package var resourceSummaryNs: UInt64 = 0
+    package var resolveNs: UInt64 = 0
+    package var accumulatorNs: UInt64 = 0
+    package var damageNs: UInt64 = 0
+    package var compositeNs: UInt64 = 0
+    package var blitNs: UInt64 = 0
+    package var frameSnapNs: UInt64 = 0
+    package var submitNs: UInt64 = 0
+    package var totalNs: UInt64 = 0
 
-    public init() {}
+    package init() {}
 }
 
-@_spi(NucleusPlatform)
-public struct RenderFrameTelemetry: Sendable, Equatable {
-    public var generation: UInt64 = 0
-    public var outputID: UInt64 = 0
-    public var frameSerial: UInt64 = 0
-    public var operationCount: UInt64 = 0
-    public var referencedSurfaceCount: UInt64 = 0
-    public var uniqueTextureCount: UInt64 = 0
-    public var paintRequestCount: UInt64 = 0
-    public var shadowMaterialCount: UInt64 = 0
-    public var backdropBlurRegionCount: UInt64 = 0
-    public var changedSurfaceCount: UInt64 = 0
-    public var damageRectCount: UInt64 = 0
-    public var damagePixelCount: UInt64 = 0
-    public var fullDamage: Bool = false
-    public var paintRepaintCount: UInt64 = 0
-    public var partialPaintRepaintCount: UInt64 = 0
-    public var fullPaintRepaintCount: UInt64 = 0
-    public var shadowRepaintCount: UInt64 = 0
-    public var producerDrawCount: UInt64 = 0
-    public var producerTexturePassCount: UInt64 = 0
-    public var producerInvalidationCount: UInt64 = 0
-    public var oldestCommitToRenderNs: UInt64 = 0
-    public var clientCommitToRenderNs: [UInt64] = []
-    public var acquireTargetNs: UInt64 = 0
-    public var targetWrapNs: UInt64 = 0
-    public var treeSnapshotNs: UInt64 = 0
-    public var recordNs: UInt64 = 0
-    public var backendFinalizeNs: UInt64 = 0
-    public var backendPresentNs: UInt64 = 0
-    public var recordToSubmitNs: UInt64 = 0
-    public var timings = RenderFrameTimings()
+package struct RenderFrameTelemetry: Sendable, Equatable {
+    package var generation: UInt64 = 0
+    package var outputID: UInt64 = 0
+    package var frameSerial: UInt64 = 0
+    package var operationCount: UInt64 = 0
+    package var referencedSurfaceCount: UInt64 = 0
+    package var uniqueTextureCount: UInt64 = 0
+    package var paintRequestCount: UInt64 = 0
+    package var shadowMaterialCount: UInt64 = 0
+    package var backdropBlurRegionCount: UInt64 = 0
+    package var changedSurfaceCount: UInt64 = 0
+    package var damageRectCount: UInt64 = 0
+    package var damagePixelCount: UInt64 = 0
+    package var fullDamage: Bool = false
+    package var paintRepaintCount: UInt64 = 0
+    package var partialPaintRepaintCount: UInt64 = 0
+    package var fullPaintRepaintCount: UInt64 = 0
+    package var shadowRepaintCount: UInt64 = 0
+    package var producerDrawCount: UInt64 = 0
+    package var producerTexturePassCount: UInt64 = 0
+    package var producerInvalidationCount: UInt64 = 0
+    package var oldestCommitToRenderNs: UInt64 = 0
+    package var clientCommitToRenderNs: [UInt64] = []
+    package var acquireTargetNs: UInt64 = 0
+    package var targetWrapNs: UInt64 = 0
+    package var treeSnapshotNs: UInt64 = 0
+    package var recordNs: UInt64 = 0
+    package var backendFinalizeNs: UInt64 = 0
+    package var backendPresentNs: UInt64 = 0
+    package var recordToSubmitNs: UInt64 = 0
+    package var timings = RenderFrameTimings()
 
-    public init() {}
+    package init() {}
 }
 
 func elapsedNanoseconds(
@@ -174,9 +176,9 @@ package protocol FrameResourceResolver: AnyObject {
     ) -> nucleus.skia.UploadTexture? {
         let texture: nucleus.skia.UploadTexture
         if let existing = unsafe existing,
-           unsafe existing.isValid(),
-           unsafe existing.width() == width,
-           unsafe existing.height() == height
+            unsafe existing.isValid(),
+            unsafe existing.width() == width,
+            unsafe existing.height() == height
         {
             unsafe texture = unsafe existing
         } else {
@@ -286,8 +288,11 @@ package protocol FrameResourceResolver: AnyObject {
         return unsafe compiledEffect(handle: handle, source: source)
     }
 
-    func compiledEffect(handle: UInt64, source: RuntimeEffectSource) -> nucleus.skia.RuntimeEffect? {
-        if let existing = unsafe compiledEffects[handle], unsafe existing.isValid() { return unsafe existing }
+    func compiledEffect(handle: UInt64, source: RuntimeEffectSource) -> nucleus.skia.RuntimeEffect?
+    {
+        if let existing = unsafe compiledEffects[handle], unsafe existing.isValid() {
+            return unsafe existing
+        }
         let effect = unsafe nucleus.skia.makeRuntimeEffect(source.sksl)
         guard unsafe effect.isValid() else { return nil }
         unsafe compiledEffects[handle] = unsafe effect
@@ -354,12 +359,17 @@ package protocol FrameResourceResolver: AnyObject {
         accumulators[output]
     }
 
-    private func ensureAccumulator(output: UInt64, width: Int32, height: Int32) -> OutputAccumulator? {
+    private func ensureAccumulator(output: UInt64, width: Int32, height: Int32)
+        -> OutputAccumulator?
+    {
         if let existing = accumulators[output] {
-            return unsafe existing.ensure(recorder: recorder, width: width, height: height) ? existing : nil
+            return unsafe existing.ensure(recorder: recorder, width: width, height: height)
+                ? existing : nil
         }
-        guard let created = unsafe OutputAccumulator.create(
-            recorder: recorder, outputId: output, width: width, height: height) else { return nil }
+        guard
+            let created = unsafe OutputAccumulator.create(
+                recorder: recorder, outputId: output, width: width, height: height)
+        else { return nil }
         accumulators[output] = created
         return created
     }
@@ -376,8 +386,9 @@ package protocol FrameResourceResolver: AnyObject {
         var attemptedPaintImages: Set<UInt64> = []
         for request in summary.paintRequests {
             let handle = request.reference.handle
-            guard let content = resolver.paintContent(
-                for: PaintContentHandle(raw: handle.raw))
+            guard
+                let content = resolver.paintContent(
+                    for: PaintContentHandle(raw: handle.raw))
             else {
                 continue
             }
@@ -405,7 +416,7 @@ package protocol FrameResourceResolver: AnyObject {
                 resolveImage: { unsafe paintImages[$0] },
                 resolveEffect: unsafe resolvePaintEffect)
             if let produced,
-               let image = unsafe registry.resolve(.renderer(produced))
+                let image = unsafe registry.resolve(.renderer(produced))
             {
                 unsafe resolved[request.reference] = unsafe image
             }
@@ -425,9 +436,9 @@ package protocol FrameResourceResolver: AnyObject {
         unsafe images.reserveCapacity(handles.count)
         for handle in handles {
             if attempted.insert(handle).inserted,
-               let image = unsafe resolver.paintImage(
-                   for: handle,
-                   outputID: outputID)
+                let image = unsafe resolver.paintImage(
+                    for: handle,
+                    outputID: outputID)
             {
                 unsafe resolved[handle] = unsafe image
             }
@@ -452,9 +463,10 @@ package protocol FrameResourceResolver: AnyObject {
                 width: material.rasterWidth, height: material.rasterHeight,
                 shapeRect: material.shapeRect, cornerRadii: material.cornerRadii,
                 blurSigma: material.blurSigma, color: color)
-            guard let handle = unsafe producer.produceShadow(
-                recorder: recorder, layerId: material.layerId,
-                revision: material.revision, shadow: decoration),
+            guard
+                let handle = unsafe producer.produceShadow(
+                    recorder: recorder, layerId: material.layerId,
+                    revision: material.revision, shadow: decoration),
                 let image = unsafe registry.resolve(.renderer(handle))
             else { continue }
             unsafe resolved[material.layerId] = unsafe image
@@ -574,8 +586,9 @@ package protocol FrameResourceResolver: AnyObject {
         acquiredSurfaceIDs.reserveCapacity(referencedSurfaceIDs.count)
         unsafe frameAcquireWaits.reserveCapacity(referencedSurfaceIDs.count)
         for surfaceID in referencedSurfaceIDs {
-            guard let semaphore = unsafe resolver.acquireWaitSemaphore(
-                forClientSurfaceID: surfaceID)
+            guard
+                let semaphore = unsafe resolver.acquireWaitSemaphore(
+                    forClientSurfaceID: surfaceID)
             else {
                 continue
             }
@@ -598,10 +611,11 @@ package protocol FrameResourceResolver: AnyObject {
         timings.resolveNs = elapsedNanoseconds(phaseStart, clock.now)
 
         phaseStart = clock.now
-        guard let accumulator = ensureAccumulator(
-            output: request.target.outputId,
-            width: Int32(request.target.pixelSize.width),
-            height: Int32(request.target.pixelSize.height))
+        guard
+            let accumulator = ensureAccumulator(
+                output: request.target.outputId,
+                width: Int32(request.target.pixelSize.width),
+                height: Int32(request.target.pixelSize.height))
         else {
             return nil
         }
@@ -691,10 +705,14 @@ package protocol FrameResourceResolver: AnyObject {
         timings.frameSnapNs = elapsedNanoseconds(phaseStart, clock.now)
         let submissionResult: nucleus.skia.SubmissionResult
         phaseStart = clock.now
-        var waits: [UnsafeMutableRawPointer?] = unsafe frameAcquireWaits.map { unsafe UnsafeMutableRawPointer($0) }
+        var waits: [UnsafeMutableRawPointer?] = unsafe frameAcquireWaits.map {
+            unsafe UnsafeMutableRawPointer($0)
+        }
         switch request.submissionMode {
         case .swapchain(let present):
-            if let wait = unsafe present.waitSemaphore { unsafe waits.append(UnsafeMutableRawPointer(wait)) }
+            if let wait = unsafe present.waitSemaphore {
+                unsafe waits.append(UnsafeMutableRawPointer(wait))
+            }
             let signal = unsafe present.signalSemaphore.map { unsafe UnsafeMutableRawPointer($0) }
             submissionResult = waits.withUnsafeBufferPointer { waits in
                 return unsafe context.submitForPresent(
@@ -770,12 +788,12 @@ package protocol FrameResourceResolver: AnyObject {
             if old != new || new?.contentDamaged == true {
                 let canUseLocalizedContentDamage =
                     old?.rect == new?.rect
-                        && old?.compositeSignature == new?.compositeSignature
-                        && old?.structural == false
-                        && new?.structural == false
-                        && new?.contentDamaged == true
+                    && old?.compositeSignature == new?.compositeSignature
+                    && old?.structural == false
+                    && new?.structural == false
+                    && new?.contentDamaged == true
                 if canUseLocalizedContentDamage,
-                   let localized = new?.localizedContentDamage
+                    let localized = new?.localizedContentDamage
                 {
                     accumulator.addRect(localized)
                 } else {
@@ -799,21 +817,26 @@ package protocol FrameResourceResolver: AnyObject {
         let rects = accumulator.rects.compactMap { clampDamageRectToTarget($0, width, height) }
         let bounds = DamageAccumulatorBounds.bounds(rects)
         let full = bounds.map { damageBoundsCoverTarget($0, width, height) } ?? false
-        return FrameDamage(rects: full ? [fullRect] : rects, bounds: full ? fullRect : bounds, full: full)
+        return FrameDamage(
+            rects: full ? [fullRect] : rects, bounds: full ? fullRect : bounds, full: full)
     }
 }
 
 private enum DamageAccumulatorBounds {
     static func bounds(_ rects: [PhysicalRect]) -> PhysicalRect? {
         guard let first = rects.first else { return nil }
-        var left = Int64(first.x), top = Int64(first.y)
-        var right = left + Int64(first.width), bottom = top + Int64(first.height)
+        var left = Int64(first.x)
+        var top = Int64(first.y)
+        var right = left + Int64(first.width)
+        var bottom = top + Int64(first.height)
         for rect in rects.dropFirst() {
-            left = min(left, Int64(rect.x)); top = min(top, Int64(rect.y))
+            left = min(left, Int64(rect.x))
+            top = min(top, Int64(rect.y))
             right = max(right, Int64(rect.x) + Int64(rect.width))
             bottom = max(bottom, Int64(rect.y) + Int64(rect.height))
         }
-        return PhysicalRect(x: Int32(left), y: Int32(top),
-                            width: UInt32(right - left), height: UInt32(bottom - top))
+        return PhysicalRect(
+            x: Int32(left), y: Int32(top),
+            width: UInt32(right - left), height: UInt32(bottom - top))
     }
 }

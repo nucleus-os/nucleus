@@ -9,6 +9,7 @@
 
 import Glibc
 internal import NucleusCompositorWindowManager
+import NucleusDiagnostics
 
 enum ClientKeyPolicy {
     case nativeCommand
@@ -48,7 +49,8 @@ final class InputClientPolicy {
     /// + `masks` are the xkb-serialized modifiers and per-modifier masks.
     func handleClientKey(
         surfaceID: UInt64, keycode: UInt32, pressed: Bool, timeMsec: UInt32, commandActive: Bool,
-        policy: ClientKeyPolicy, physical: XkbKeyboard.SerializedModifiers, masks: XkbKeyboard.ModifierMasks
+        policy: ClientKeyPolicy, physical: XkbKeyboard.SerializedModifiers,
+        masks: XkbKeyboard.ModifierMasks
     ) -> Bool {
         if policy == .nativeCommand { return false }
 
@@ -64,7 +66,8 @@ final class InputClientPolicy {
             seatDelivery.keyboardModifiers(
                 surfaceID: surfaceID, depressed: mods.depressed, latched: mods.latched,
                 locked: mods.locked, group: mods.group)
-            seatDelivery.keyboardKey(surfaceID: surfaceID, timeMsec: timeMsec, keycode: keycode, keyState: 1)
+            seatDelivery.keyboardKey(
+                surfaceID: surfaceID, timeMsec: timeMsec, keycode: keycode, keyState: 1)
             markTranslatedKey(keycode, down: true)
             logTranslated(keycode: keycode, pressed: true, reason: "command-to-control-down")
             return true
@@ -76,7 +79,8 @@ final class InputClientPolicy {
             seatDelivery.keyboardModifiers(
                 surfaceID: surfaceID, depressed: mods.depressed, latched: mods.latched,
                 locked: mods.locked, group: mods.group)
-            seatDelivery.keyboardKey(surfaceID: surfaceID, timeMsec: timeMsec, keycode: keycode, keyState: 0)
+            seatDelivery.keyboardKey(
+                surfaceID: surfaceID, timeMsec: timeMsec, keycode: keycode, keyState: 0)
             markTranslatedKey(keycode, down: false)
             let restored = Self.translatedModifiers(
                 physical, masks: masks, forceControl: translatedKeysLow != 0)
@@ -90,7 +94,8 @@ final class InputClientPolicy {
     }
 
     private static func translatedModifiers(
-        _ physical: XkbKeyboard.SerializedModifiers, masks: XkbKeyboard.ModifierMasks, forceControl: Bool
+        _ physical: XkbKeyboard.SerializedModifiers, masks: XkbKeyboard.ModifierMasks,
+        forceControl: Bool
     ) -> XkbKeyboard.SerializedModifiers {
         var translated = physical
         translated.depressed &= ~masks.command
@@ -118,4 +123,3 @@ final class InputClientPolicy {
             "keycode=\(keycode) pressed=\(pressed) \(reason)")
     }
 }
-import NucleusDiagnostics

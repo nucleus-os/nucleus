@@ -1,3 +1,5 @@
+package import enum NucleusTypes.AnimationCurve
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Android)
@@ -5,8 +7,6 @@ import Android
 #elseif canImport(Darwin)
 import Darwin
 #endif
-package import enum NucleusTypes.AnimationCurveKind
-package import struct NucleusTypes.AnimationCurve
 
 /// Semantic identity for one animated value owned by an object.
 public struct AnimationPropertyKey: RawRepresentable, Hashable, Sendable {
@@ -263,7 +263,7 @@ extension UIContext {
         let ids = valueAnimationRecords.keys.sorted()
         for id in ids {
             guard let record = valueAnimationRecords[id],
-                  record.timeMode == .motionScaled
+                record.timeMode == .motionScaled
             else {
                 continue
             }
@@ -284,7 +284,8 @@ extension UIContext {
             record.autoreverses
             ? leg.multipliedReportingOverflow(by: 2)
             : (partialValue: leg, overflow: false)
-        let iterationNs = iterationDuration.overflow
+        let iterationNs =
+            iterationDuration.overflow
             ? UInt64.max
             : iterationDuration.partialValue
         let iterationLimit: UInt64?
@@ -309,7 +310,8 @@ extension UIContext {
             }
         }
 
-        let local = iterationNs > 0
+        let local =
+            iterationNs > 0
             ? elapsedNanoseconds % iterationNs
             : 0
         let reverses = record.autoreverses && local >= leg
@@ -332,32 +334,30 @@ extension UIContext {
         _ curve: AnimationCurve,
         progress: Double
     ) -> Double {
-        switch curve.kind {
+        switch curve {
         case .linear:
             return progress
-        case .bezier:
+        case .bezier(let p1x, let p1y, let p2x, let p2y):
             return cubicBezier(
                 progress,
-                x1: Double(curve.bezierP1x),
-                y1: Double(curve.bezierP1y),
-                x2: Double(curve.bezierP2x),
-                y2: Double(curve.bezierP2y)
+                x1: Double(p1x),
+                y1: Double(p1y),
+                x2: Double(p2x),
+                y2: Double(p2y)
             )
-        case .spring:
-            let mass = Double(curve.springMass)
-            let stiffness = Double(curve.springStiffness)
-            let damping = Double(curve.springDamping)
-            let velocity = Double(curve.springInitialVelocity)
+        case .spring(
+            let authoredStiffness, let authoredDamping, let authoredMass, let authoredVelocity):
+            let mass = Double(authoredMass)
+            let stiffness = Double(authoredStiffness)
+            let damping = Double(authoredDamping)
+            let velocity = Double(authoredVelocity)
             let omega0 = (stiffness / mass).squareRoot()
             let zeta = damping / (2 * (stiffness * mass).squareRoot())
             if zeta < 1 {
                 let omegaD = omega0 * (1 - zeta * zeta).squareRoot()
                 let decay = exp(-zeta * omega0 * progress)
                 let coefficient = (zeta * omega0 - velocity) / omegaD
-                return 1 - decay * (
-                    cos(omegaD * progress) +
-                    coefficient * sin(omegaD * progress)
-                )
+                return 1 - decay * (cos(omegaD * progress) + coefficient * sin(omegaD * progress))
             }
             return 1 - exp(-omega0 * progress)
         }
@@ -372,9 +372,7 @@ extension UIContext {
     ) -> Double {
         func coordinate(_ t: Double, _ a: Double, _ b: Double) -> Double {
             let inverse = 1 - t
-            return 3 * inverse * inverse * t * a +
-                3 * inverse * t * t * b +
-                t * t * t
+            return 3 * inverse * inverse * t * a + 3 * inverse * t * t * b + t * t * t
         }
         var low = 0.0
         var high = 1.0
@@ -395,26 +393,20 @@ extension UIContext {
             timing.duration.isFinite && timing.duration >= 0,
             "value animation duration must be finite and nonnegative"
         )
-        switch timing.curve.kind {
+        switch timing.curve {
         case .linear:
             break
-        case .bezier:
+        case .bezier(let p1x, let p1y, let p2x, let p2y):
             precondition(
-                timing.curve.bezierP1x.isFinite &&
-                    timing.curve.bezierP1y.isFinite &&
-                    timing.curve.bezierP2x.isFinite &&
-                    timing.curve.bezierP2y.isFinite,
+                p1x.isFinite && p1y.isFinite && p2x.isFinite && p2y.isFinite,
                 "value animation Bézier control points must be finite"
             )
-        case .spring:
+        case .spring(let stiffness, let damping, let mass, let initialVelocity):
             precondition(
-                timing.curve.springMass.isFinite &&
-                    timing.curve.springMass > 0 &&
-                    timing.curve.springStiffness.isFinite &&
-                    timing.curve.springStiffness > 0 &&
-                    timing.curve.springDamping.isFinite &&
-                    timing.curve.springDamping >= 0 &&
-                    timing.curve.springInitialVelocity.isFinite,
+                mass.isFinite && mass > 0
+                    && stiffness.isFinite && stiffness > 0
+                    && damping.isFinite && damping >= 0
+                    && initialVelocity.isFinite,
                 "value animation spring parameters are invalid"
             )
         }

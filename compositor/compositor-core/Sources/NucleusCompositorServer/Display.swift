@@ -1,49 +1,49 @@
-import NucleusTypes
-public import NucleusCompositorServerTypes
 import Glibc
+package import NucleusCompositorServerTypes
+import NucleusTypes
 
-public typealias DisplayID = UInt64
-public typealias SpaceID = UInt32
-public typealias WindowID = UInt64
+package typealias DisplayID = UInt64
+package typealias SpaceID = UInt32
+package typealias WindowID = UInt64
 
 // Pure-scalar geometry mirrors are the generated wire types themselves. The
 // generator emits Wire-prefixed names, so these unprefixed aliases don't
 // collide with the wire types. `LogicalRect`'s `maxX`/`maxY` are the only
 // relocated conveniences.
-public typealias LogicalRect = WireLogicalRect
-public typealias RenderRect = WireRenderRect
-public typealias PixelSize = WirePixelSize
-public typealias UsableArea = WireUsableArea
+package typealias LogicalRect = WireLogicalRect
+package typealias RenderRect = WireRenderRect
+package typealias PixelSize = WirePixelSize
+package typealias UsableArea = WireUsableArea
 
 extension WireLogicalRect {
-    public var maxX: Double { x + width }
-    public var maxY: Double { y + height }
+    package var maxX: Double { x + width }
+    package var maxY: Double { y + height }
 }
 
-public struct PhysicalRect: Sendable, Equatable {
-    public var x: Int32
-    public var y: Int32
-    public var width: UInt32
-    public var height: UInt32
+package struct PhysicalRect: Sendable, Equatable {
+    package var x: Int32
+    package var y: Int32
+    package var width: UInt32
+    package var height: UInt32
 }
 
 // `DisplayMode` is the generated wire type itself. Its refresh field is the
 // wire's `refreshMhz` (camelCase of `refresh_mhz`); the `Display` class keeps a
 // separate `refreshMHz` property of its own.
-public typealias DisplayMode = WireDisplayMode
+package typealias DisplayMode = WireDisplayMode
 
-public struct DisplayConfiguration: Sendable, Equatable {
-    public var enabled: Bool
-    public var primary: Bool
-    public var logicalX: Double
-    public var logicalY: Double
-    public var logicalWidth: Double?
-    public var logicalHeight: Double?
-    public var scale: UInt32
-    public var fractionalScale: Double
-    public var mode: DisplayMode
+package struct DisplayConfiguration: Sendable, Equatable {
+    package var enabled: Bool
+    package var primary: Bool
+    package var logicalX: Double
+    package var logicalY: Double
+    package var logicalWidth: Double?
+    package var logicalHeight: Double?
+    package var scale: UInt32
+    package var fractionalScale: Double
+    package var mode: DisplayMode
 
-    public init(
+    package init(
         enabled: Bool = true,
         primary: Bool = false,
         logicalX: Double = 0,
@@ -66,65 +66,64 @@ public struct DisplayConfiguration: Sendable, Equatable {
     }
 }
 
-public struct DisplayConfigurationChanges: Sendable, Equatable {
-    public var enabled: Bool?
-    public var primary: Bool?
-    public var logicalX: Double?
-    public var logicalY: Double?
-    public var logicalWidth: Double?
-    public var logicalHeight: Double?
-    public var scale: UInt32?
-    public var fractionalScale: Double?
-    public var mode: DisplayMode?
+package struct DisplayConfigurationChanges: Sendable, Equatable {
+    package var enabled: Bool?
+    package var primary: Bool?
+    package var logicalX: Double?
+    package var logicalY: Double?
+    package var logicalWidth: Double?
+    package var logicalHeight: Double?
+    package var scale: UInt32?
+    package var fractionalScale: Double?
+    package var mode: DisplayMode?
 
-    public init() {}
+    package init() {}
 }
 
-public struct OutputRedrawMetrics: Sendable, Equatable {
-    public var redrawRequests: UInt64 = 0
-    public var coalescedRequests: UInt64 = 0
+package struct OutputRedrawMetrics: Sendable, Equatable {
+    package var redrawRequests: UInt64 = 0
+    package var coalescedRequests: UInt64 = 0
     /// One counter per `RedrawReasons` bit, indexed by its trailing-zero bit.
-    public var coalescedByReason: [UInt64] =
+    package var coalescedByReason: [UInt64] =
         Array(repeating: 0, count: 8)
-    public var sceneAuthorPasses: UInt64 = 0
-    public var renderPassesWithoutSubmission: UInt64 = 0
+    package var sceneAuthorPasses: UInt64 = 0
+    package var renderPassesWithoutSubmission: UInt64 = 0
     /// idle, queued, rendering, awaiting-presentation, deferred, suspended.
-    public var stateResidenceNs: [UInt64] =
+    package var stateResidenceNs: [UInt64] =
         Array(repeating: 0, count: 6)
 
-    public init() {}
+    package init() {}
 }
 
 @MainActor
-public final class Display {
-    public let id: DisplayID
-    public var logicalRect: LogicalRect
-    public var pixelSize: PixelSize
-    public var scale: UInt32
-    public var fractionalScale: Double
-    public var refreshMHz: Int32
-    public var configuration: DisplayConfiguration
+package final class Display {
+    package let id: DisplayID
+    package var logicalRect: LogicalRect
+    package var pixelSize: PixelSize
+    package var scale: UInt32
+    package var fractionalScale: Double
+    package var refreshMHz: Int32
+    package var configuration: DisplayConfiguration
     /// Per-output frame scheduler (the native Swift owner; the reactor reaches it by
     /// output id through the display-link service).
-    public var displayLink: DisplayLink
-    public private(set) var redrawState:
-        OutputRedrawState = .idle
+    package var displayLink: DisplayLink
+    package private(set) var redrawState: OutputRedrawState = .idle
     private var redrawStateSinceNs =
         Display.monotonicNowNs()
     private var redrawMetrics = OutputRedrawMetrics()
-    public var physicalWidthMM: Int32
-    public var physicalHeightMM: Int32
-    public var name: String
-    public var description: String
-    public var drmOutputAddress: UInt = 0
+    package var physicalWidthMM: Int32
+    package var physicalHeightMM: Int32
+    package var name: String
+    package var description: String
+    package var drmOutputAddress: UInt = 0
     /// The predicted presentation time (ns, presentation clock domain) for this
     /// output's next frame, refreshed each frame by the render loop from the
     /// output's display-link timeline. The scene feeder reads `predictedPresentSeconds`
     /// to advance the tiling spring. Hardware frame-request arming stays in the reactor;
     /// only the predicted-present value crosses onto the model.
-    public var predictedPresentNs: UInt64 = 0
+    package var predictedPresentNs: UInt64 = 0
     /// `predictedPresentNs` in seconds — the spring's per-frame sample clock.
-    public var predictedPresentSeconds: Double { Double(predictedPresentNs) / 1_000_000_000 }
+    package var predictedPresentSeconds: Double { Double(predictedPresentNs) / 1_000_000_000 }
 
     /// The `DisplayLink` present id issued for this output's in-flight scanout
     /// (0 = none outstanding). Issued at submit (`noteFrameSubmitted`) and carried
@@ -132,28 +131,29 @@ public final class Display {
     /// so the acked id reflects a frame submitted *after* — never before — a state
     /// change like a session-lock blank. The security-sensitive `locked` ack reads
     /// `displayLink.lastAckedPresentID` against a begin-time threshold.
-    public var inFlightPresentID: UInt64 = 0
+    package var inFlightPresentID: UInt64 = 0
 
     /// A scanout frame was submitted for this output (KMS atomic commit accepted):
     /// open the submitted-frame range and issue the next present id, held until the
     /// page flip completes.
-    public func noteFrameSubmitted() {
+    package func noteFrameSubmitted() {
         displayLink.beginSubmittedFrame()
         inFlightPresentID = displayLink.nextPresentID()
     }
 
     /// This output's in-flight scanout page-flipped: fold the present id issued at
     /// submit into the display-link ack, advancing `lastAckedPresentID`.
-    public func noteFramePresented(presentationNs: UInt64) {
-        displayLink.presented(PresentReport(
-            source: .drmPageFlip,
-            presentationNs: presentationNs,
-            presentID: inFlightPresentID == 0 ? nil : inFlightPresentID,
-            refreshIntervalNs: displayLink.refreshIntervalNs))
+    package func noteFramePresented(presentationNs: UInt64) {
+        displayLink.presented(
+            PresentReport(
+                source: .drmPageFlip,
+                presentationNs: presentationNs,
+                presentID: inFlightPresentID == 0 ? nil : inFlightPresentID,
+                refreshIntervalNs: displayLink.refreshIntervalNs))
         inFlightPresentID = 0
     }
 
-    public func requestRedraw(_ reasons: RedrawReasons) {
+    package func requestRedraw(_ reasons: RedrawReasons) {
         guard !reasons.isEmpty else { return }
         redrawMetrics.redrawRequests &+= 1
         if !isIdle(redrawState) {
@@ -170,16 +170,19 @@ public final class Display {
             transition(
                 to: .queued(existing.union(reasons)))
         case .rendering(let frameBuildID, let pending):
-            transition(to: .rendering(
-                frameBuildID: frameBuildID,
-                pending: pending.union(reasons)))
+            transition(
+                to: .rendering(
+                    frameBuildID: frameBuildID,
+                    pending: pending.union(reasons)))
         case .awaitingPresentation(let submissionID, let pending):
-            transition(to: .awaitingPresentation(
-                submissionID: submissionID,
-                pending: pending.union(reasons)))
+            transition(
+                to: .awaitingPresentation(
+                    submissionID: submissionID,
+                    pending: pending.union(reasons)))
         case .deferredUntil(let deadline, let existing):
-            transition(to: .deferredUntil(
-                deadline, existing.union(reasons)))
+            transition(
+                to: .deferredUntil(
+                    deadline, existing.union(reasons)))
         case .suspended(let existing):
             transition(
                 to: .suspended(existing.union(reasons)))
@@ -188,45 +191,50 @@ public final class Display {
     }
 
     @discardableResult
-    public func beginRedraw(frameBuildID: UInt64) -> Bool {
+    package func beginRedraw(frameBuildID: UInt64) -> Bool {
         guard case .queued = redrawState else { return false }
         _ = displayLink.consumeFrameDemand()
-        transition(to: .rendering(
-            frameBuildID: frameBuildID, pending: []))
+        transition(
+            to: .rendering(
+                frameBuildID: frameBuildID, pending: []))
         return true
     }
 
-    public func redrawSubmitted(submissionID: UInt64) {
+    package func redrawSubmitted(submissionID: UInt64) {
         guard case .rendering(_, let pending) = redrawState else { return }
-        transition(to: .awaitingPresentation(
-            submissionID: submissionID, pending: pending))
+        transition(
+            to: .awaitingPresentation(
+                submissionID: submissionID, pending: pending))
     }
 
-    public func redrawDidNotSubmit() {
+    package func redrawDidNotSubmit() {
         guard case .rendering(_, let pending) = redrawState else { return }
         redrawMetrics.renderPassesWithoutSubmission &+= 1
-        transition(to:
-            pending.isEmpty ? .idle : .queued(pending))
+        transition(
+            to:
+                pending.isEmpty ? .idle : .queued(pending))
     }
 
-    public func redrawPresented(submissionID: UInt64) {
-        guard case .awaitingPresentation(
-            let expectedSubmissionID, let pending) = redrawState,
+    package func redrawPresented(submissionID: UInt64) {
+        guard
+            case .awaitingPresentation(
+                let expectedSubmissionID, let pending) = redrawState,
             expectedSubmissionID == submissionID
         else { return }
-        transition(to:
-            pending.isEmpty ? .idle : .queued(pending))
+        transition(
+            to:
+                pending.isEmpty ? .idle : .queued(pending))
     }
 
-    public func suspendRedraws() {
+    package func suspendRedraws() {
         let retained: RedrawReasons
         switch redrawState {
         case .queued(let reasons),
-             .deferredUntil(_, let reasons),
-             .suspended(let reasons):
+            .deferredUntil(_, let reasons),
+            .suspended(let reasons):
             retained = reasons
         case .rendering(_, let pending),
-             .awaitingPresentation(_, let pending):
+            .awaitingPresentation(_, let pending):
             retained = pending
         case .idle:
             retained = []
@@ -235,24 +243,25 @@ public final class Display {
         displayLink.suspend()
     }
 
-    public func resumeRedraws() {
+    package func resumeRedraws() {
         let retained: RedrawReasons
         if case .suspended(let reasons) = redrawState {
             retained = reasons
         } else {
             retained = []
         }
-        transition(to:
-            .queued(retained.union(.recovery)))
+        transition(
+            to:
+                .queued(retained.union(.recovery)))
         displayLink.resetPresentationPhase()
         displayLink.requestFrame()
     }
 
-    public func noteSceneAuthorPass() {
+    package func noteSceneAuthorPass() {
         redrawMetrics.sceneAuthorPasses &+= 1
     }
 
-    public func sampleRedrawMetrics()
+    package func sampleRedrawMetrics()
         -> OutputRedrawMetrics
     {
         var sample = redrawMetrics
@@ -303,7 +312,10 @@ public final class Display {
             &+ UInt64(timestamp.tv_nsec)
     }
 
-    public init(id: DisplayID, configuration: DisplayConfiguration, physicalWidthMM: Int32 = 0, physicalHeightMM: Int32 = 0, name: String = "", description: String = "") {
+    package init(
+        id: DisplayID, configuration: DisplayConfiguration, physicalWidthMM: Int32 = 0,
+        physicalHeightMM: Int32 = 0, name: String = "", description: String = ""
+    ) {
         self.id = id
         self.configuration = configuration
         self.physicalWidthMM = physicalWidthMM
@@ -324,15 +336,18 @@ public final class Display {
         apply(configuration)
     }
 
-    public func apply(_ configuration: DisplayConfiguration) {
+    package func apply(_ configuration: DisplayConfiguration) {
         self.configuration = configuration
         logicalRect = LogicalRect(
             x: configuration.logicalX,
             y: configuration.logicalY,
-            width: configuration.logicalWidth ?? Double(configuration.mode.pixelWidth) / configuration.fractionalScale,
-            height: configuration.logicalHeight ?? Double(configuration.mode.pixelHeight) / configuration.fractionalScale
+            width: configuration.logicalWidth ?? Double(configuration.mode.pixelWidth)
+                / configuration.fractionalScale,
+            height: configuration.logicalHeight ?? Double(configuration.mode.pixelHeight)
+                / configuration.fractionalScale
         )
-        pixelSize = PixelSize(width: configuration.mode.pixelWidth, height: configuration.mode.pixelHeight)
+        pixelSize = PixelSize(
+            width: configuration.mode.pixelWidth, height: configuration.mode.pixelHeight)
         scale = max(1, configuration.scale)
         fractionalScale = max(0.01, configuration.fractionalScale)
         refreshMHz = configuration.mode.refreshMhz
@@ -346,15 +361,15 @@ public final class Display {
 }
 
 @MainActor
-public final class DesktopLayout {
-    public private(set) var displays: [Display] = []
-    public private(set) var primaryOutputID: DisplayID?
+package final class DesktopLayout {
+    package private(set) var displays: [Display] = []
+    package private(set) var primaryOutputID: DisplayID?
     private var nextOutputID: DisplayID = 1
 
-    public init() {}
+    package init() {}
 
     @discardableResult
-    public func addDisplay(
+    package func addDisplay(
         id requestedID: DisplayID = 0,
         configuration: DisplayConfiguration,
         name: String = "",
@@ -392,7 +407,7 @@ public final class DesktopLayout {
     }
 
     @discardableResult
-    public func removeDisplay(id: DisplayID) -> Display? {
+    package func removeDisplay(id: DisplayID) -> Display? {
         guard let index = displays.firstIndex(where: { $0.id == id }) else { return nil }
         let removed = displays.remove(at: index)
         if primaryOutputID == id {
@@ -402,22 +417,22 @@ public final class DesktopLayout {
         return removed
     }
 
-    public func display(id: DisplayID) -> Display? {
+    package func display(id: DisplayID) -> Display? {
         displays.first { $0.id == id }
     }
 
-    public func primaryDisplayID() -> DisplayID? {
+    package func primaryDisplayID() -> DisplayID? {
         primaryOutputID ?? displays.first?.id
     }
 
-    public func fallbackDisplayIDForRemoval(_ removedID: DisplayID) -> DisplayID? {
+    package func fallbackDisplayIDForRemoval(_ removedID: DisplayID) -> DisplayID? {
         if let primaryOutputID, primaryOutputID != removedID, display(id: primaryOutputID) != nil {
             return primaryOutputID
         }
         return displays.first { $0.id != removedID }?.id
     }
 
-    public func configureDisplay(id: DisplayID, changes: DisplayConfigurationChanges) -> Bool {
+    package func configureDisplay(id: DisplayID, changes: DisplayConfigurationChanges) -> Bool {
         guard let display = display(id: id) else { return false }
         let before = display.configuration
         var next = before
@@ -428,7 +443,9 @@ public final class DesktopLayout {
         if let logicalWidth = changes.logicalWidth { next.logicalWidth = logicalWidth }
         if let logicalHeight = changes.logicalHeight { next.logicalHeight = logicalHeight }
         if let scale = changes.scale { next.scale = max(1, scale) }
-        if let fractionalScale = changes.fractionalScale { next.fractionalScale = max(0.01, fractionalScale) }
+        if let fractionalScale = changes.fractionalScale {
+            next.fractionalScale = max(0.01, fractionalScale)
+        }
         if let mode = changes.mode { next.mode = mode }
         display.apply(next)
         if changes.primary == true {
@@ -440,7 +457,7 @@ public final class DesktopLayout {
         return before != display.configuration
     }
 
-    public func desktopBounds() -> LogicalRect? {
+    package func desktopBounds() -> LogicalRect? {
         guard let first = displays.first else { return nil }
         var minX = first.logicalRect.x
         var minY = first.logicalRect.y

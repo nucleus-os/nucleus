@@ -1,4 +1,5 @@
 package import NucleusLayers
+public import NucleusTypes
 import Tracy
 
 @MainActor
@@ -28,13 +29,11 @@ public final class WindowScene: ~Sendable {
     public private(set) var windows: [Window] = []
     public private(set) var keyWindow: Window?
     public private(set) var activationState: SceneActivationState = .background
-    public private(set) var menuPresentation:
-        MenuPresentationController? = nil
+    public private(set) var menuPresentation: MenuPresentationController? = nil
     public lazy var accessibilityTree = AccessibilityTree(scene: self)
 
     /// Called after the host changes this retained scene's activation state.
-    public var onActivationChange:
-        (@MainActor (SceneActivationState) -> Void)?
+    public var onActivationChange: (@MainActor (SceneActivationState) -> Void)?
 
     private enum SequenceKind: Hashable {
         case pointer
@@ -118,7 +117,8 @@ public final class WindowScene: ~Sendable {
     /// Production hosts construct scenes through their embedder/app-host
     /// context so no production call silently acquires this sink.
     public convenience init(inMemoryWindows windows: [Window] = []) {
-        let runtimeHost = windows.first?.uiContext.runtimeHost
+        let runtimeHost =
+            windows.first?.uiContext.runtimeHost
             ?? LayerRuntimeHost.inMemory()
         let visualContext = Application.makeInMemoryVisualContext(
             runtimeHost: runtimeHost)
@@ -294,9 +294,7 @@ public final class WindowScene: ~Sendable {
     /// it is attaching is its own concept.
     package func insertionIndex(forLevel level: WindowLevel) -> UInt32 {
         let precedingWindowCount = windowsForDisplay().filter { window in
-            window.isVisible &&
-                window.root != nil &&
-                window.level.rawValue <= level.rawValue
+            window.isVisible && window.root != nil && window.level.rawValue <= level.rawValue
         }.count
         return UInt32(precedingWindowCount)
     }
@@ -428,8 +426,8 @@ public final class WindowScene: ~Sendable {
         }
 
         if let key = sequenceKey(for: event),
-           eventContinuesCapturedSequence(event),
-           let capture = captures[key]
+            eventContinuesCapturedSequence(event),
+            let capture = captures[key]
         {
             guard let window = capture.window, let view = capture.view else {
                 captures[key] = nil
@@ -471,7 +469,7 @@ public final class WindowScene: ~Sendable {
         }
 
         if event.type == .pointerDown, event.button == .right,
-           let menu = contextMenu(startingAt: hit.view)
+            let menu = contextMenu(startingAt: hit.view)
         {
             let anchor = Rect(
                 x: event.location.x,
@@ -493,8 +491,8 @@ public final class WindowScene: ~Sendable {
         }
         let route = hit.view.deliverEventRoute(localEvent)
         if eventBeginsSequence(event),
-           route.handling != .notHandled,
-           let key = sequenceKey(for: event)
+            route.handling != .notHandled,
+            let key = sequenceKey(for: event)
         {
             let capturedView = route.responder as? View ?? hit.view
             captures[key] = CaptureRecord(
@@ -578,7 +576,7 @@ public final class WindowScene: ~Sendable {
     private func eventContinuesCapturedSequence(_ event: Event) -> Bool {
         switch event.type {
         case .pointerDragged, .pointerUp, .pointerCancelled,
-             .touchMoved, .touchUp, .touchCancelled:
+            .touchMoved, .touchUp, .touchCancelled:
             true
         default:
             false
@@ -640,8 +638,7 @@ public final class WindowScene: ~Sendable {
         }
     }
 
-    private var popoverFocusRestorations:
-        [ObjectIdentifier: PopoverFocusRestoration] = [:]
+    private var popoverFocusRestorations: [ObjectIdentifier: PopoverFocusRestoration] = [:]
 
     /// The palette every window in this scene paints under, unless a view
     /// overrides it.
@@ -739,12 +736,13 @@ public final class WindowScene: ~Sendable {
     }
 
     private func restoreFocus(after popover: Popover) {
-        guard let restoration = popoverFocusRestorations.removeValue(
-            forKey: ObjectIdentifier(popover))
+        guard
+            let restoration = popoverFocusRestorations.removeValue(
+                forKey: ObjectIdentifier(popover))
         else { return }
         guard let window = restoration.window,
-              windows.contains(where: { $0 === window }),
-              window.isVisible
+            windows.contains(where: { $0 === window }),
+            window.isVisible
         else {
             keyWindow = nil
             return
@@ -789,9 +787,10 @@ public final class WindowScene: ~Sendable {
             dismiss(target)
         }
 
-        let inside = hitTest(at: event.location).map { hit in
-            popovers.contains { $0.window === hit.window }
-        } ?? false
+        let inside =
+            hitTest(at: event.location).map { hit in
+                popovers.contains { $0.window === hit.window }
+            } ?? false
         guard !inside else { return false }
 
         if let target = popovers.first(where: {
@@ -890,11 +889,12 @@ public final class WindowScene: ~Sendable {
     /// can reveal a tooltip without requiring a free-running frame clock.
     public func nanosecondsUntilToolTip(atNanoseconds now: UInt64) -> UInt64? {
         guard !toolTipShown,
-              let area = activeTrackingArea,
-              let text = area.resolvedToolTip(),
-              !text.isEmpty
+            let area = activeTrackingArea,
+            let text = area.resolvedToolTip(),
+            !text.isEmpty
         else { return nil }
-        let elapsed = now >= hoverBeganAtNanoseconds
+        let elapsed =
+            now >= hoverBeganAtNanoseconds
             ? now - hoverBeganAtNanoseconds
             : 0
         return elapsed >= toolTipDelayNanoseconds
@@ -972,7 +972,8 @@ public final class WindowScene: ~Sendable {
     }
 
     public func hitTest(at point: Point) -> WindowHitTestResult? {
-        for window in windowsForDisplay().reversed() where window.isVisible && window.participatesInHitTesting {
+        for window in windowsForDisplay().reversed()
+        where window.isVisible && window.participatesInHitTesting {
             let localPoint = window.windowPoint(fromScene: point)
             guard let root = window.root, let view = root.hitTest(localPoint) else {
                 continue

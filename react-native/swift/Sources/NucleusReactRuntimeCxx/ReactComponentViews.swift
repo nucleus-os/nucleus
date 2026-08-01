@@ -1,7 +1,7 @@
 import CxxStdlib
+import NucleusReactRuntimeCxxBridge
 import NucleusUI
 import NucleusUIEmbedder
-import NucleusReactRuntimeCxxBridge
 
 /// The mounted view for an RN text component.
 ///
@@ -25,10 +25,15 @@ final class ReactParagraphView: View {
             return
         }
         let font = attributes.font
-        fallbackColor = attributes.textColor.map { Color($0.red, $0.green, $0.blue, $0.alpha) } ?? Color(1, 1, 1, 1)
-        textRuns = text.isEmpty ? [] : [
-            TextRun(text: text, font: font, color: fallbackColor),
-        ]
+        fallbackColor =
+            attributes.textColor.map { Color($0.red, $0.green, $0.blue, $0.alpha) }
+            ?? Color(1, 1, 1, 1)
+        textRuns =
+            text.isEmpty
+            ? []
+            : [
+                TextRun(text: text, font: font, color: fallbackColor)
+            ]
         alignment = attributes.nucleonAlignment
         lineBreakMode = attributes.nucleonLineBreakMode
         numberOfLines = max(1, attributes.maximumNumberOfLines)
@@ -52,10 +57,12 @@ final class ReactParagraphView: View {
         let targetLineHeight = lineHeight ?? layout.usedRect.size.height
         let y = max(0, (targetLineHeight - layout.usedRect.size.height) * 0.5)
         context.fillColor = fallbackColor
-        context.draw(layout, in: Rect(
-            x: 0, y: y,
-            width: layout.usedRect.size.width,
-            height: layout.usedRect.size.height))
+        context.draw(
+            layout,
+            in: Rect(
+                x: 0, y: y,
+                width: layout.usedRect.size.width,
+                height: layout.usedRect.size.height))
     }
 
     private func textLayout(containerWidth: Double?) -> TextLayout {
@@ -70,17 +77,18 @@ final class ReactParagraphView: View {
     }
 }
 
-private extension TextAttributesSnapshot {
-    var font: Font {
-        Font(descriptor: FontDescriptor(
-            familyName: fontFamily.isEmpty ? nil : fontFamily,
-            pointSize: fontSize > 0 ? fontSize : 14,
-            weight: nucleonWeight,
-            slant: nucleonSlant
-        ))
+extension TextAttributesSnapshot {
+    fileprivate var font: Font {
+        Font(
+            descriptor: FontDescriptor(
+                familyName: fontFamily.isEmpty ? nil : fontFamily,
+                pointSize: fontSize > 0 ? fontSize : 14,
+                weight: nucleonWeight,
+                slant: nucleonSlant
+            ))
     }
 
-    var nucleonAlignment: TextAlignment {
+    fileprivate var nucleonAlignment: TextAlignment {
         switch alignment {
         case .center:
             .center
@@ -91,7 +99,7 @@ private extension TextAttributesSnapshot {
         }
     }
 
-    var nucleonLineBreakMode: LineBreakMode {
+    fileprivate var nucleonLineBreakMode: LineBreakMode {
         switch lineBreakMode {
         case .truncatingTail:
             .byTruncatingTail

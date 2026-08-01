@@ -7,10 +7,10 @@
 // Production constructs one WlOutput per live Display and refreshes it in place on
 // output changes; protocol fixtures can supply the same value model synthetically.
 
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
 import NucleusRenderModel
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 /// A snapshot of one output's advertised state. Fields match wl_output's events.
 struct OutputInfo {
@@ -104,7 +104,8 @@ extension WaylandBorrowedObject where Interface == WlOutputServer {
     /// The output's authoritative logical rect in compositor space. Layer-shell
     /// arranges anchored surfaces against it; xdg-output advertises it.
     var logicalRect: WlRect {
-        let fractionalScale = info.fractionalScale > 0 ? info.fractionalScale : Double(max(1, info.scale))
+        let fractionalScale =
+            info.fractionalScale > 0 ? info.fractionalScale : Double(max(1, info.scale))
         let fallbackWidth = Int32(max(1.0, (Double(info.pixelWidth) / fractionalScale).rounded()))
         let fallbackHeight = Int32(max(1.0, (Double(info.pixelHeight) / fractionalScale).rounded()))
         return WlRect(

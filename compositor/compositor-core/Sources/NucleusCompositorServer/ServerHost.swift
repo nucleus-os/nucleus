@@ -1,16 +1,16 @@
+package import NucleusCompositorServerTypes
 import NucleusTypes
-public import NucleusCompositorServerTypes
 
 /// Shared failure type for NucleusCompositorServer caller-boundary (`*Host`)
 /// requirements that distinguish an invalid request from transient output
 /// unavailability.
-public enum HostCallError: Error, Equatable {
+package enum HostCallError: Error, Equatable {
     case failed
     case noOutputs
 }
 
 @MainActor
-public protocol ServerHost: AnyObject {
+package protocol ServerHost: AnyObject {
     func displayOutputForPoint(x: Double, y: Double) -> UInt64
     func cursorServerSetImage(imageHandle: UInt64, width: UInt32, height: UInt32)
     func cursorServerSetHotSpot(x: Int32, y: Int32)
@@ -18,7 +18,8 @@ public protocol ServerHost: AnyObject {
     func serverReset()
     func displayAdd(id: UInt64, configuration: WireDisplayConfiguration) throws(HostCallError)
     func displayRemove(id: UInt64) throws(HostCallError)
-    func displayConfigure(id: UInt64, changes: WireDisplayConfigurationChanges) throws(HostCallError)
+    func displayConfigure(id: UInt64, changes: WireDisplayConfigurationChanges)
+        throws(HostCallError)
     func displayLayoutUpdate() throws(HostCallError)
     func displayPrimaryID() throws(HostCallError) -> UInt64
     func displayFallbackForRemoval(removedID: UInt64) throws(HostCallError) -> UInt64
@@ -49,7 +50,8 @@ public protocol ServerHost: AnyObject {
     func windowListBelow(id: UInt64, siblingID: UInt64) -> Bool
     func windowListFocus(id: UInt64) -> Bool
     func windowRenderOrderCount(frontToBack: Bool) -> UInt64
-    func windowRenderOrderFill(frontToBack: Bool, into out: inout OutputSpan<WireWindowRenderOrderEntry>)
+    func windowRenderOrderFill(
+        frontToBack: Bool, into out: inout OutputSpan<WireWindowRenderOrderEntry>)
     func spacesActiveForDisplay(displayID: UInt64) -> UInt32
     func spacesSetActive(displayID: UInt64, spaceID: UInt32) -> Bool
     func spacesOverlayDisplayID() throws(HostCallError) -> UInt64
@@ -59,7 +61,8 @@ public protocol ServerHost: AnyObject {
     func spacesRemove(spaceID: UInt32) -> Bool
     func spacesAssignWindowToSpace(windowID: UInt64, spaceID: UInt32) -> Bool
     func windowGetSpaceHidden(id: UInt64) -> Bool
-    func windowCopyPolicySnapshot(windowID: UInt64) throws(HostCallError) -> WireWindowPolicySnapshot
+    func windowCopyPolicySnapshot(windowID: UInt64) throws(HostCallError)
+        -> WireWindowPolicySnapshot
     func spacesOutputLayoutSnapshot(
         outputID: UInt64,
         usable: WireUsableArea
@@ -81,7 +84,10 @@ public protocol ServerHost: AnyObject {
     func seatFocusResetPointerButtons()
     func seatFocusInvalidateSurface(surfaceID: UInt64)
     func windowGetChromeInsets(id: UInt64) throws(HostCallError) -> WireChromeInsets
-    func windowChromeHit(id: UInt64, frameLocalX: Double, frameLocalY: Double, frameWidth: Double, frameHeight: Double) -> UInt64
+    func windowChromeHit(
+        id: UInt64, frameLocalX: Double, frameLocalY: Double, frameWidth: Double,
+        frameHeight: Double
+    ) -> UInt64
     func windowCapabilities(id: UInt64) -> UInt32
 }
 
@@ -93,10 +99,10 @@ public protocol ServerHost: AnyObject {
 // (`DisplayConfiguration(wireValue:)`, `WindowRect.wireValue`, …) live in
 // `WireBridge.swift`.
 extension NucleusCompositorServer: ServerHost {
-    public func displayOutputForPoint(x: Double, y: Double) -> UInt64 {
+    package func displayOutputForPoint(x: Double, y: Double) -> UInt64 {
         for display in layout.displays {
-            if x >= display.logicalRect.x && x < display.logicalRect.maxX &&
-                y >= display.logicalRect.y && y < display.logicalRect.maxY
+            if x >= display.logicalRect.x && x < display.logicalRect.maxX
+                && y >= display.logicalRect.y && y < display.logicalRect.maxY
             {
                 return display.id
             }
@@ -104,26 +110,28 @@ extension NucleusCompositorServer: ServerHost {
         return 0
     }
 
-    public func cursorServerSetImage(imageHandle: UInt64, width: UInt32, height: UInt32) {
+    package func cursorServerSetImage(imageHandle: UInt64, width: UInt32, height: UInt32) {
         cursor.imageHandle = imageHandle
         cursor.width = width
         cursor.height = height
     }
 
-    public func cursorServerSetHotSpot(x: Int32, y: Int32) {
+    package func cursorServerSetHotSpot(x: Int32, y: Int32) {
         cursor.hotSpotX = x
         cursor.hotSpotY = y
     }
 
-    public func seatFocusGetSnapshot() throws(HostCallError) -> WireSeatFocusSnapshot {
+    package func seatFocusGetSnapshot() throws(HostCallError) -> WireSeatFocusSnapshot {
         seatFocus.snapshot
     }
 
-    public func serverReset() {
+    package func serverReset() {
         reset()
     }
 
-    public func displayAdd(id: UInt64, configuration: WireDisplayConfiguration) throws(HostCallError) {
+    package func displayAdd(id: UInt64, configuration: WireDisplayConfiguration)
+        throws(HostCallError)
+    {
         _ = layout.addDisplay(
             id: id,
             configuration: DisplayConfiguration(wireValue: configuration),
@@ -133,7 +141,7 @@ extension NucleusCompositorServer: ServerHost {
         spaces.ensureDisplay(id)
     }
 
-    public func displayRemove(id: UInt64) throws(HostCallError) {
+    package func displayRemove(id: UInt64) throws(HostCallError) {
         guard !layout.displays.isEmpty else { throw .noOutputs }
         guard layout.display(id: id) != nil else { throw .failed }
         let hasFallbackDisplay = layout.fallbackDisplayIDForRemoval(id) != nil
@@ -142,24 +150,29 @@ extension NucleusCompositorServer: ServerHost {
         spaces.removeDisplay(id, layout: layout)
     }
 
-    public func displayConfigure(id: UInt64, changes: WireDisplayConfigurationChanges) throws(HostCallError) {
+    package func displayConfigure(id: UInt64, changes: WireDisplayConfigurationChanges)
+        throws(HostCallError)
+    {
         guard !layout.displays.isEmpty else { throw .noOutputs }
-        guard layout.configureDisplay(id: id, changes: DisplayConfigurationChanges(wireValue: changes)) else {
+        guard
+            layout.configureDisplay(
+                id: id, changes: DisplayConfigurationChanges(wireValue: changes))
+        else {
             throw .failed
         }
     }
 
-    public func displayLayoutUpdate() throws(HostCallError) {
+    package func displayLayoutUpdate() throws(HostCallError) {
         guard layout.desktopBounds() != nil else { throw .noOutputs }
     }
 
-    public func displayPrimaryID() throws(HostCallError) -> UInt64 {
+    package func displayPrimaryID() throws(HostCallError) -> UInt64 {
         guard let outputID = layout.primaryDisplayID()
         else { throw .noOutputs }
         return outputID
     }
 
-    public func displayFallbackForRemoval(
+    package func displayFallbackForRemoval(
         removedID: UInt64
     ) throws(HostCallError) -> UInt64 {
         guard !layout.displays.isEmpty else { throw .noOutputs }
@@ -168,33 +181,36 @@ extension NucleusCompositorServer: ServerHost {
         return outputID
     }
 
-    public func displayDesktopBounds() throws(HostCallError) -> WireLogicalRect {
+    package func displayDesktopBounds() throws(HostCallError) -> WireLogicalRect {
         guard let bounds = layout.desktopBounds() else { throw .noOutputs }
         return bounds
     }
 
-    public func displayFind(id: UInt64) throws(HostCallError) -> WireLogicalRect {
+    package func displayFind(id: UInt64) throws(HostCallError) -> WireLogicalRect {
         guard !layout.displays.isEmpty else { throw .noOutputs }
         guard let display = layout.display(id: id) else { throw .failed }
         return display.logicalRect
     }
 
-    public func displayFractionalScaleAt(x: Double, y: Double) -> Double {
+    package func displayFractionalScaleAt(x: Double, y: Double) -> Double {
         let outputID = displayOutputForPoint(x: x, y: y)
         if outputID != 0, let display = layout.display(id: outputID) {
             return display.fractionalScale
         }
-        guard let primary = layout.primaryOutputID.flatMap({ layout.display(id: $0) }) ?? layout.displays.first else {
+        guard
+            let primary = layout.primaryOutputID.flatMap({ layout.display(id: $0) })
+                ?? layout.displays.first
+        else {
             return 1
         }
         return primary.fractionalScale
     }
 
-    public func displayFractionalScaleForOutput(id: UInt64) -> Double {
+    package func displayFractionalScaleForOutput(id: UInt64) -> Double {
         layout.display(id: id)?.fractionalScale ?? 0
     }
 
-    public func displayUsableArea(id: UInt64) throws(HostCallError) -> WireUsableArea {
+    package func displayUsableArea(id: UInt64) throws(HostCallError) -> WireUsableArea {
         guard !layout.displays.isEmpty else { throw .noOutputs }
         guard let display = layout.display(id: id) else { throw .failed }
         return UsableArea(
@@ -205,57 +221,57 @@ extension NucleusCompositorServer: ServerHost {
         )
     }
 
-    public func windowCreate(source: WindowSource) throws(HostCallError) -> UInt64 {
+    package func windowCreate(source: WindowSource) throws(HostCallError) -> UInt64 {
         createWindow(source: source).id
     }
 
-    public func windowDestroy(id: UInt64) throws(HostCallError) {
+    package func windowDestroy(id: UInt64) throws(HostCallError) {
         guard destroyWindow(id: id) else { throw .failed }
     }
 
-    public func windowSetGeometry(id: UInt64, rect: WireWindowRect) throws(HostCallError) {
+    package func windowSetGeometry(id: UInt64, rect: WireWindowRect) throws(HostCallError) {
         guard let window = window(id: id) else { throw .failed }
         window.setGeometry(WindowRect(wireValue: rect))
     }
 
-    public func windowGetGeometry(id: UInt64) throws(HostCallError) -> WireWindowRect {
+    package func windowGetGeometry(id: UInt64) throws(HostCallError) -> WireWindowRect {
         guard let window = window(id: id) else { throw .failed }
         return window.currentRect().wireValue
     }
 
-    public func windowGetRequestedMaximized(id: UInt64) -> Bool {
+    package func windowGetRequestedMaximized(id: UInt64) -> Bool {
         window(id: id)?.requestedMaximized == true
     }
 
-    public func windowGetRequestedFullscreen(id: UInt64) -> Bool {
+    package func windowGetRequestedFullscreen(id: UInt64) -> Bool {
         window(id: id)?.requestedFullscreen == true
     }
 
-    public func windowGetActiveMaximized(id: UInt64) -> Bool {
+    package func windowGetActiveMaximized(id: UInt64) -> Bool {
         window(id: id)?.activeMaximized == true
     }
 
-    public func windowGetActiveFullscreen(id: UInt64) -> Bool {
+    package func windowGetActiveFullscreen(id: UInt64) -> Bool {
         window(id: id)?.activeFullscreen == true
     }
 
-    public func windowGetManagedAppWindow(id: UInt64) -> Bool {
+    package func windowGetManagedAppWindow(id: UInt64) -> Bool {
         window(id: id)?.managedAppWindow == true
     }
 
-    public func windowGetWantsKeyboardFocus(id: UInt64) -> Bool {
+    package func windowGetWantsKeyboardFocus(id: UInt64) -> Bool {
         window(id: id)?.wantsKeyboardFocus == true
     }
 
-    public func windowGetCurrentOutput(id: UInt64) -> UInt64 {
+    package func windowGetCurrentOutput(id: UInt64) -> UInt64 {
         window(id: id)?.currentOutputID ?? 0
     }
 
-    public func windowGetLevel(id: UInt64) -> Int32 {
+    package func windowGetLevel(id: UInt64) -> Int32 {
         window(id: id)?.level ?? 0
     }
 
-    public func windowGetTileEdges(id: UInt64) throws(HostCallError) -> WireResizeEdges {
+    package func windowGetTileEdges(id: UInt64) throws(HostCallError) -> WireResizeEdges {
         guard let window = window(id: id) else { throw .failed }
         var edges = WireResizeEdges()
         edges.left = window.tileEdges.left
@@ -265,23 +281,25 @@ extension NucleusCompositorServer: ServerHost {
         return edges
     }
 
-    public func windowAllocSlotGeneration(id: UInt64) -> UInt64 {
+    package func windowAllocSlotGeneration(id: UInt64) -> UInt64 {
         guard let window = window(id: id) else { return 0 }
         return window.protocolState.allocateSlotGeneration()
     }
 
-    public func windowSetMapped(id: UInt64, mapped: Bool) {
+    package func windowSetMapped(id: UInt64, mapped: Bool) {
         guard let window = window(id: id) else { return }
         window.mapped = mapped
         // On map, bind the window to its output's active workspace so it appears on
         // the current workspace and stays there (per-output, niri-like). Layer-shell
         // surfaces are not workspace-scoped — they belong to the output itself.
-        if mapped, window.isManagedAppWindow(), window.layerHost == nil, let outputID = window.currentOutputID {
+        if mapped, window.isManagedAppWindow(), window.layerHost == nil,
+            let outputID = window.currentOutputID
+        {
             spaces.assignToActiveSpace(window: id, outputID: outputID)
         }
     }
 
-    public func windowNoteSurfaceOutput(id: UInt64, outputID: UInt64) {
+    package func windowNoteSurfaceOutput(id: UInt64, outputID: UInt64) {
         guard let window = window(id: id) else { return }
         let output = outputID == 0 ? nil : outputID
         window.currentOutputID = output
@@ -293,30 +311,30 @@ extension NucleusCompositorServer: ServerHost {
         assignWorkspaceIfReady(id: id)
     }
 
-    public func windowClearRequestedSpecial(id: UInt64) {
+    package func windowClearRequestedSpecial(id: UInt64) {
         guard let window = window(id: id) else { return }
         window.requestedFullscreen = false
         window.requestedMaximized = false
         window.fullscreenTarget = .automatic
     }
 
-    public func windowPendingConfigureCount(id: UInt64) -> UInt32 {
+    package func windowPendingConfigureCount(id: UInt64) -> UInt32 {
         UInt32(window(id: id)?.protocolState.pendingConfigures.count ?? 0)
     }
 
-    public func windowListRaise(id: UInt64) -> Bool {
+    package func windowListRaise(id: UInt64) -> Bool {
         windows.raise(id: id)
     }
 
-    public func windowListBelow(id: UInt64, siblingID: UInt64) -> Bool {
+    package func windowListBelow(id: UInt64, siblingID: UInt64) -> Bool {
         windows.place(id: id, below: siblingID)
     }
 
-    public func windowListFocus(id: UInt64) -> Bool {
+    package func windowListFocus(id: UInt64) -> Bool {
         windows.focus(id: id)
     }
 
-    public func windowRenderOrderCount(frontToBack: Bool) -> UInt64 {
+    package func windowRenderOrderCount(frontToBack: Bool) -> UInt64 {
         let ids = frontToBack ? windows.frontToBackOrderedIDs() : windows.orderedIDs()
         return UInt64(ids.count)
     }
@@ -325,7 +343,9 @@ extension NucleusCompositorServer: ServerHost {
     /// place, stopping when the span is full. The caller owns the result buffer (sized
     /// from `windowRenderOrderCount`) and Swift appends into it, so no heap
     /// `Array` crosses back with cross-language ARC.
-    public func windowRenderOrderFill(frontToBack: Bool, into out: inout OutputSpan<WireWindowRenderOrderEntry>) {
+    package func windowRenderOrderFill(
+        frontToBack: Bool, into out: inout OutputSpan<WireWindowRenderOrderEntry>
+    ) {
         let ids = frontToBack ? windows.frontToBackOrderedIDs() : windows.orderedIDs()
         for id in ids {
             if out.freeCapacity == 0 { break }
@@ -333,53 +353,55 @@ extension NucleusCompositorServer: ServerHost {
         }
     }
 
-    public func spacesActiveForDisplay(displayID: UInt64) -> UInt32 {
+    package func spacesActiveForDisplay(displayID: UInt64) -> UInt32 {
         spaces.activeSpace(forDisplay: displayID) ?? 0
     }
 
-    public func spacesSetActive(displayID: UInt64, spaceID: UInt32) -> Bool {
+    package func spacesSetActive(displayID: UInt64, spaceID: UInt32) -> Bool {
         spaces.setActiveSpace(spaceID, forDisplay: displayID)
     }
 
-    public func windowGetSpaceHidden(id: UInt64) -> Bool {
+    package func windowGetSpaceHidden(id: UInt64) -> Bool {
         spaces.isSpaceHidden(window: id)
     }
 
-    public func spacesOverlayDisplayID() throws(HostCallError) -> UInt64 {
+    package func spacesOverlayDisplayID() throws(HostCallError) -> UInt64 {
         guard let outputID = spaces.overlayDisplayID(layout: layout)
         else { throw .noOutputs }
         return outputID
     }
 
-    public func spacesCreate(outputID: UInt64) throws(HostCallError) -> UInt32 {
+    package func spacesCreate(outputID: UInt64) throws(HostCallError) -> UInt32 {
         guard !layout.displays.isEmpty else { throw .noOutputs }
         guard layout.display(id: outputID) != nil else { throw .failed }
         return spaces.createSpace(name: "Space", outputID: outputID)
     }
 
-    public func spacesEnsureForOutput(outputID: UInt64, index: UInt32) -> UInt32 {
+    package func spacesEnsureForOutput(outputID: UInt64, index: UInt32) -> UInt32 {
         spaces.ensureWorkspace(onOutput: outputID, index: Int(index))
     }
 
-    public func spacesAppend(outputID: UInt64) -> UInt32 {
+    package func spacesAppend(outputID: UInt64) -> UInt32 {
         spaces.appendWorkspace(onOutput: outputID)
     }
 
-    public func spacesRemove(spaceID: UInt32) -> Bool {
+    package func spacesRemove(spaceID: UInt32) -> Bool {
         spaces.removeSpace(spaceID)
     }
 
-    public func spacesAssignWindowToSpace(windowID: UInt64, spaceID: UInt32) -> Bool {
+    package func spacesAssignWindowToSpace(windowID: UInt64, spaceID: UInt32) -> Bool {
         spaces.assign(window: windowID, toSpace: spaceID)
     }
 
-    public func windowCopyPolicySnapshot(windowID: UInt64) throws(HostCallError) -> WireWindowPolicySnapshot {
+    package func windowCopyPolicySnapshot(windowID: UInt64) throws(HostCallError)
+        -> WireWindowPolicySnapshot
+    {
         guard !layout.displays.isEmpty else { throw .noOutputs }
         guard let window = window(id: windowID) else { throw .failed }
         return windowPolicySnapshot(for: window)
     }
 
-    public func spacesOutputLayoutSnapshot(
+    package func spacesOutputLayoutSnapshot(
         outputID: UInt64,
         usable: WireUsableArea
     ) throws(HostCallError) -> WireOutputLayoutSnapshot {
@@ -392,62 +414,68 @@ extension NucleusCompositorServer: ServerHost {
         return snapshot
     }
 
-    public func eventServerDispatch(
+    package func eventServerDispatch(
         event: WireEventRecord,
         bounds: WirePointerBounds
     ) throws(HostCallError) -> WireEventDispatchDecision {
         events.dispatch(event, bounds: bounds)
     }
 
-    public func eventServerResetInputState() {
+    package func eventServerResetInputState() {
         events.resetInputState()
     }
 
-    public func eventServerSetFlags(flags: UInt64) {
+    package func eventServerSetFlags(flags: UInt64) {
         events.setFlags(flags)
     }
 
-    public func eventServerSetCursor(x: Double, y: Double) {
+    package func eventServerSetCursor(x: Double, y: Double) {
         events.setCursor(x: x, y: y)
     }
 
-    public func eventServerCursorX() -> Double { events.cursorX }
-    public func eventServerCursorY() -> Double { events.cursorY }
+    package func eventServerCursorX() -> Double { events.cursorX }
+    package func eventServerCursorY() -> Double { events.cursorY }
 
-    public func seatFocusSetPointer(surfaceID: UInt64) {
+    package func seatFocusSetPointer(surfaceID: UInt64) {
         seatFocus.setPointerFocus(surfaceID: surfaceID)
     }
 
-    public func seatFocusClearPointer() {
+    package func seatFocusClearPointer() {
         seatFocus.clearPointerFocus()
     }
 
-    public func seatFocusSetKeyboard(surfaceID: UInt64) {
+    package func seatFocusSetKeyboard(surfaceID: UInt64) {
         seatFocus.setKeyboardFocus(surfaceID: surfaceID)
     }
 
-    public func seatFocusClearKeyboard() {
+    package func seatFocusClearKeyboard() {
         seatFocus.clearKeyboardFocus()
     }
 
-    public func seatFocusRecordPointerButton(state: UInt32, serial: UInt32, focusedSurfaceID: UInt64) {
-        seatFocus.recordPointerButton(state: state, serial: serial, focusedSurfaceID: focusedSurfaceID)
+    package func seatFocusRecordPointerButton(
+        state: UInt32, serial: UInt32, focusedSurfaceID: UInt64
+    ) {
+        seatFocus.recordPointerButton(
+            state: state, serial: serial, focusedSurfaceID: focusedSurfaceID)
     }
 
-    public func seatFocusResetPointerButtons() {
+    package func seatFocusResetPointerButtons() {
         seatFocus.resetPointerButtons()
     }
 
-    public func seatFocusInvalidateSurface(surfaceID: UInt64) {
+    package func seatFocusInvalidateSurface(surfaceID: UInt64) {
         seatFocus.invalidateSurface(id: surfaceID)
     }
 
-    public func windowGetChromeInsets(id: UInt64) throws(HostCallError) -> WireChromeInsets {
+    package func windowGetChromeInsets(id: UInt64) throws(HostCallError) -> WireChromeInsets {
         guard let window = window(id: id) else { throw .failed }
         return window.chromeInsets
     }
 
-    public func windowChromeHit(id: UInt64, frameLocalX: Double, frameLocalY: Double, frameWidth: Double, frameHeight: Double) -> UInt64 {
+    package func windowChromeHit(
+        id: UInt64, frameLocalX: Double, frameLocalY: Double, frameWidth: Double,
+        frameHeight: Double
+    ) -> UInt64 {
         guard let window = window(id: id) else { return 0 }
         return window.frameView.classify(
             x: frameLocalX,
@@ -457,7 +485,7 @@ extension NucleusCompositorServer: ServerHost {
         ).packed
     }
 
-    public func windowCapabilities(id: UInt64) -> UInt32 {
+    package func windowCapabilities(id: UInt64) -> UInt32 {
         guard let window = window(id: id) else { return 0 }
         return window.frameView.windowMenuCapabilities
     }
@@ -470,18 +498,20 @@ extension NucleusCompositorServer {
         var snapshot = WireWindowPolicySnapshot()
         snapshot.policyOutputId =
             spaces.policyOutputID(for: window, layout: layout) ?? 0
-        snapshot.requestedFullscreenOutputId = spaces.resolveSpecialOutputID(
-            for: window,
-            layout: layout,
-            nextActiveFullscreen: true,
-            nextActiveMaximized: false
-        ) ?? 0
-        snapshot.requestedMaximizedOutputId = spaces.resolveSpecialOutputID(
-            for: window,
-            layout: layout,
-            nextActiveFullscreen: false,
-            nextActiveMaximized: true
-        ) ?? 0
+        snapshot.requestedFullscreenOutputId =
+            spaces.resolveSpecialOutputID(
+                for: window,
+                layout: layout,
+                nextActiveFullscreen: true,
+                nextActiveMaximized: false
+            ) ?? 0
+        snapshot.requestedMaximizedOutputId =
+            spaces.resolveSpecialOutputID(
+                for: window,
+                layout: layout,
+                nextActiveFullscreen: false,
+                nextActiveMaximized: true
+            ) ?? 0
         snapshot.requestedSpecial = spaces.requestedSpecialMode(for: window)
         snapshot.activeMaximized = window.activeMaximized
         snapshot.activeFullscreen = window.activeFullscreen

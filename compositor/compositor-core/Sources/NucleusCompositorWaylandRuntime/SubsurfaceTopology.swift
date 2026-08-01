@@ -121,7 +121,8 @@ final class SubsurfaceTopology {
             return false
         }
         let entry = next.remove(at: from)
-        let target = sibling === owner
+        let target =
+            sibling === owner
             ? selfContentIndex(in: next)
             : childIndex(sibling, in: next)
         guard let target else { return false }

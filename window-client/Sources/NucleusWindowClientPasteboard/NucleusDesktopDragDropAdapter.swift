@@ -1,9 +1,9 @@
 import Foundation
 import Glibc
-public import NucleusUI
-public import NucleusWindowClientRuntime
-@_spi(NucleusWindowClientImplementation) public import NucleusWindowClientWayland
-public import WaylandClientDispatch
+package import NucleusUI
+package import NucleusWindowClientRuntime
+package import NucleusWindowClientWayland
+package import WaylandClientDispatch
 import WaylandProtocolTypes
 
 /// The `wl_data_device` projection of NucleusUI's retained drag lifecycle.
@@ -12,11 +12,11 @@ import WaylandProtocolTypes
 /// Sharing this target gives both transports the same descriptor executor
 /// without sharing offers, sources, cancellation, or selection state.
 @MainActor
-@safe public final class NucleusDesktopDragDropAdapter {
-    public typealias DestinationResolver =
+@safe package final class NucleusDesktopDragDropAdapter {
+    package typealias DestinationResolver =
         @MainActor (_ surfaceID: UInt, _ surfaceLocation: Point)
         -> (scene: WindowScene, sceneLocation: Point)?
-    public typealias DiagnosticHandler =
+    package typealias DiagnosticHandler =
         @MainActor @Sendable (_ operation: String, _ message: String) -> Void
 
     @MainActor
@@ -188,7 +188,7 @@ import WaylandProtocolTypes
     private var readTokens: [UInt64: (offerKey: UInt, token: UInt64)] = [:]
     private var isShutdown = false
 
-    public init?(
+    package init?(
         client: NucleusDesktopConnection,
         seat: NucleusDesktopSeat,
         limits: NucleusDesktopTransferLimits = NucleusDesktopTransferLimits(),
@@ -217,22 +217,22 @@ import WaylandProtocolTypes
         }
     }
 
-    public var pollDescriptors: [NucleusDesktopTransferPollDescriptor] {
+    package var pollDescriptors: [NucleusDesktopTransferPollDescriptor] {
         transferExecutor.pollDescriptors
     }
 
-    public var activeTransferCount: Int {
+    package var activeTransferCount: Int {
         transferExecutor.activeTransferCount
     }
 
-    public func nanosecondsUntilTransferDeadline(
+    package func nanosecondsUntilTransferDeadline(
         nowNanoseconds: UInt64
     ) -> UInt64? {
         transferExecutor.nanosecondsUntilDeadline(
             nowNanoseconds: nowNanoseconds)
     }
 
-    public func processPollResult(
+    package func processPollResult(
         token: UInt64,
         result: NucleusWindowClientPollResult,
         nowNanoseconds: UInt64
@@ -243,14 +243,14 @@ import WaylandProtocolTypes
             nowNanoseconds: nowNanoseconds)
     }
 
-    public func expireTransfers(nowNanoseconds: UInt64) {
+    package func expireTransfers(nowNanoseconds: UInt64) {
         transferExecutor.expireTransfers(nowNanoseconds: nowNanoseconds)
     }
 
     /// Starts an outbound Wayland drag using the current pointer-down serial.
     /// The serial is consumed on success or failure and cannot be replayed.
     @discardableResult
-    public func startDrag(
+    package func startDrag(
         from sourceView: View,
         source: DragSourceConfiguration,
         originSurface: WaylandProxy<WlSurfaceClient>,
@@ -318,12 +318,12 @@ import WaylandProtocolTypes
         return sessionID
     }
 
-    public func surfaceWillClose(_ surfaceID: UInt) {
+    package func surfaceWillClose(_ surfaceID: UInt) {
         guard incoming?.offer.surfaceID == surfaceID else { return }
         cancelIncoming()
     }
 
-    public func sceneWillDisconnect(_ scene: WindowScene) {
+    package func sceneWillDisconnect(_ scene: WindowScene) {
         if incoming?.scene === scene {
             cancelIncoming()
         }
@@ -332,7 +332,7 @@ import WaylandProtocolTypes
         }
     }
 
-    public func shutdown() {
+    package func shutdown() {
         guard !isShutdown else { return }
         isShutdown = true
         cancelIncoming()
@@ -805,7 +805,7 @@ import WaylandProtocolTypes
 }
 
 extension NucleusDesktopDragDropAdapter: WlDataDeviceEvents {
-    public func dataOffer(
+    package func dataOffer(
         _ proxy: WaylandBorrowedProxy<WlDataDeviceClient>,
         id: WaylandProxy<WlDataOfferClient>
     ) {
@@ -820,7 +820,7 @@ extension NucleusDesktopDragDropAdapter: WlDataDeviceEvents {
         }
     }
 
-    public func enter(
+    package func enter(
         _ proxy: WaylandBorrowedProxy<WlDataDeviceClient>,
         serial: UInt32,
         surface: WaylandBorrowedProxy<WlSurfaceClient>,
@@ -845,13 +845,13 @@ extension NucleusDesktopDragDropAdapter: WlDataDeviceEvents {
             surfaceLocation: Point(x: x, y: y))
     }
 
-    public func leave(
+    package func leave(
         _ proxy: WaylandBorrowedProxy<WlDataDeviceClient>
     ) {
         cancelIncoming()
     }
 
-    public func motion(
+    package func motion(
         _ proxy: WaylandBorrowedProxy<WlDataDeviceClient>,
         time: UInt32,
         x: Double,
@@ -860,13 +860,13 @@ extension NucleusDesktopDragDropAdapter: WlDataDeviceEvents {
         moveIncoming(surfaceLocation: Point(x: x, y: y))
     }
 
-    public func drop(
+    package func drop(
         _ proxy: WaylandBorrowedProxy<WlDataDeviceClient>
     ) {
         performIncomingDrop()
     }
 
-    public func selection(
+    package func selection(
         _ proxy: WaylandBorrowedProxy<WlDataDeviceClient>,
         id: WaylandBorrowedProxy<WlDataOfferClient>?
     ) {

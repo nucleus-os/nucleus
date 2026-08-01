@@ -8,8 +8,8 @@
 // the parent apply use the RouterWindowDriver delegate seam. (v2, not v1: v1's
 // export/import request names are C++ keywords the importer cannot parse.)
 
-import WaylandServerC
 import WaylandServer
+import WaylandServerC
 import WaylandServerDispatch
 
 @MainActor
@@ -139,7 +139,8 @@ extension XdgForeignBinding: ZxdgImporterV2Requests {
 
 extension ZxdgImported: ZxdgImportedV2Requests {
     func setParentOf(
-        _ request: WaylandRequest<ZxdgImportedV2Server>, surface childRes: WaylandBorrowedObject<WlSurfaceServer>
+        _ request: WaylandRequest<ZxdgImportedV2Server>,
+        surface childRes: WaylandBorrowedObject<WlSurfaceServer>
     ) {
         guard let child = childRes.owner(as: WlSurface.self) else { return }
         foreign.delegate?.setForeignParent(child: child, parent: parent)

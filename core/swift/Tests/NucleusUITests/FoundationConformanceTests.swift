@@ -1,11 +1,11 @@
-import NucleusUITestSupport
 import NucleusHostProjectionTestSupport
+package import NucleusLayers
 import NucleusRendererTestSupport
 import NucleusResourceTestSupport
 import NucleusRetainedSceneTestSupport
 import NucleusUI
 import NucleusUIEmbedder
-@_spi(NucleusRenderServer) import NucleusLayers
+import NucleusUITestSupport
 import Testing
 
 @MainActor
@@ -20,12 +20,14 @@ struct FoundationConformanceTests {
         let scene = WindowScene(inMemoryWindows: fixture.windows)
 
         #expect(fixture.views.count == BaselineSemanticID.allCases.count)
-        #expect(fixture.views.values.allSatisfy {
-            $0.uiContext === uiContext
-        })
-        #expect(fixture.windows.allSatisfy {
-            $0.uiContext === uiContext
-        })
+        #expect(
+            fixture.views.values.allSatisfy {
+                $0.uiContext === uiContext
+            })
+        #expect(
+            fixture.windows.allSatisfy {
+                $0.uiContext === uiContext
+            })
         #expect(fixture.secureField.accessibilityValue == nil)
 
         scene.transition(to: .active)
@@ -79,8 +81,9 @@ struct FoundationConformanceTests {
     func projectionCapabilitiesRequireExplicitSupportOrOmission() {
         let declarations = FoundationHostCapabilities.declarations
         #expect(declarations.count == FoundationHostProjection.allCases.count)
-        #expect(Set(declarations.map(\.projection)).count
-            == FoundationHostProjection.allCases.count)
+        #expect(
+            Set(declarations.map(\.projection)).count
+                == FoundationHostProjection.allCases.count)
         let fabric = declarations.first { $0.projection == .fabric }
         #expect(fabric?.supports(.retainedViews) == true)
         #expect(fabric?.supports(.nativeInput) == false)
@@ -92,20 +95,24 @@ struct FoundationConformanceTests {
             backend: "Skia CPU raster",
             colorFormat: .rgba8888,
             colorSpace: "sRGB")
-        #expect(PixelFixtureComparator.compare(
-            actual: [10, 20, 30, 255],
-            expected: [10, 20, 30, 255],
-            metadata: exact).matches)
+        #expect(
+            PixelFixtureComparator.compare(
+                actual: [10, 20, 30, 255],
+                expected: [10, 20, 30, 255],
+                metadata: exact
+            ).matches)
 
         let tolerant = PixelFixtureMetadata(
             backend: "Skia native text",
             colorFormat: .rgba8888,
             colorSpace: "sRGB",
             channelTolerance: 2)
-        #expect(PixelFixtureComparator.compare(
-            actual: [10, 21, 28, 255],
-            expected: [10, 20, 30, 255],
-            metadata: tolerant).matches)
+        #expect(
+            PixelFixtureComparator.compare(
+                actual: [10, 21, 28, 255],
+                expected: [10, 20, 30, 255],
+                metadata: tolerant
+            ).matches)
     }
 
     @Test

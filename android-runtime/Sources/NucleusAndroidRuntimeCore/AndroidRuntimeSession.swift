@@ -1,6 +1,6 @@
 import Foundation
 import Glibc
-import NucleusAndroidContainerContract
+internal import NucleusAndroidContainerContract
 
 public func initializeAndroidRuntimeDiagnostics(
     layout: AndroidRuntimeLayout

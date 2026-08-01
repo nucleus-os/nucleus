@@ -47,31 +47,11 @@ let androidSDKSearchRoot: String = {
 }()
 
 let hostProducts: [Product] = [
-    .library(name: "NucleusAndroidGraphicsContract", targets: ["NucleusAndroidGraphicsContract"]),
-    .library(name: "NucleusAndroidIPC", targets: ["NucleusAndroidIPC"]),
-    .library(
-        name: "NucleusAndroidGfxstreamTransport", targets: ["NucleusAndroidGfxstreamTransport"]),
-    .library(
-        name: "NucleusAndroidGfxstreamAdapters", targets: ["NucleusAndroidGfxstreamAdaptersCxx"]),
-    .library(
-        name: "NucleusAndroidGfxstreamGuestTransport",
-        targets: ["NucleusAndroidGfxstreamGuestTransportCxx"]),
-    .library(name: "NucleusAndroidGfxstreamHost", targets: ["NucleusAndroidGfxstreamHostC"]),
-    .library(name: "NucleusAndroidGraphicsPlatform", targets: ["NucleusAndroidGraphicsPlatform"]),
-    .library(name: "NucleusAndroidGpuBrokerCore", targets: ["NucleusAndroidGpuBrokerCore"]),
-    .library(name: "NucleusAndroidContainerContract", targets: ["NucleusAndroidContainerContract"]),
     .library(name: "NucleusAndroidRuntimeCore", targets: ["NucleusAndroidRuntimeCore"]),
-    .library(
-        name: "NucleusAndroidRuntimeBridgeProtocol",
-        targets: ["NucleusAndroidRuntimeBridgeProtocol"]),
-    .library(
-        name: "NucleusAndroidRuntimeBrokerCore",
-        targets: ["NucleusAndroidRuntimeBrokerCore"]),
     .executable(name: "nucleus-android-runtime", targets: ["NucleusAndroidRuntime"]),
     .executable(
         name: "nucleus-android-runtime-privileged",
         targets: ["NucleusAndroidRuntimePrivileged"]),
-    .library(name: "NucleusAndroidDisplayHostCore", targets: ["NucleusAndroidDisplayHostCore"]),
     .executable(name: "nucleus-android-gpu-broker", targets: ["NucleusAndroidGpuBroker"]),
     .executable(
         name: "nucleus-android-gfxstream-workload", targets: ["NucleusAndroidGfxstreamWorkload"]),
@@ -88,15 +68,6 @@ let hostProducts: [Product] = [
     .executable(
         name: "NucleusRenderServerThreadSanitizerHarness",
         targets: ["NucleusRenderServerThreadSanitizerHarness"]),
-    .library(name: "NucleusCompositorRendererLinux", targets: ["NucleusCompositorRendererLinux"]),
-    .library(name: "NucleusCompositorRenderRuntime", targets: ["NucleusCompositorRenderRuntime"]),
-    .library(name: "NucleusCompositorWaylandRuntime", targets: ["NucleusCompositorWaylandRuntime"]),
-    .library(name: "NucleusRenderServerTestSupport", targets: ["NucleusRenderServerTestSupport"]),
-    .library(name: "NucleusCompositorWindowScene", targets: ["NucleusCompositorWindowScene"]),
-    .library(name: "NucleusCompositorServerTypes", targets: ["NucleusCompositorServerTypes"]),
-    .library(name: "NucleusCompositorServer", targets: ["NucleusCompositorServer"]),
-    .library(name: "NucleusCompositorWindowManager", targets: ["NucleusCompositorWindowManager"]),
-    .library(name: "NucleusCompositorPolicy", targets: ["NucleusCompositorPolicy"]),
     .library(
         name: "NucleusConfigIO", type: .dynamic,
         targets: ["NucleusConfigIO", "NucleusConfigSyntax"]),
@@ -110,12 +81,6 @@ let hostProducts: [Product] = [
             "NucleusTextBackend",
             "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
         ]),
-    .library(name: "NucleusAndroidHostLifecycle", targets: ["NucleusAndroidHostLifecycle"]),
-    .library(name: "NucleusTextCxxBridge", targets: ["NucleusTextCxxBridge"]),
-    .library(name: "NucleusBenchmarkSupport", targets: ["NucleusBenchmarkSupport"]),
-    .library(
-        name: "NucleusPresentationBackendContractTestSupport", type: .dynamic,
-        targets: ["NucleusPresentationBackendContractTestSupport"]),
     .executable(name: "NucleusHeadlessBenchmarks", targets: ["NucleusHeadlessBenchmarks"]),
     .executable(
         name: "NucleusCoreThreadSanitizerHarness", targets: ["NucleusCoreThreadSanitizerHarness"]),
@@ -149,23 +114,15 @@ let hostProducts: [Product] = [
     .library(name: "NucleusReactRuntimeCxx", targets: ["NucleusReactRuntimeCxx"]),
     .library(name: "NucleusReactRuntimeHostCxx", targets: ["NucleusReactRuntimeHostCxx"]),
     .library(name: "NucleusSessionProtocol", type: .dynamic, targets: ["NucleusSessionProtocol"]),
-    .library(name: "NucleusShellAuthWire", targets: ["NucleusShellAuthWire"]),
     .library(name: "NucleusShellKit", type: .dynamic, targets: ["NucleusShellRuntime"]),
     .library(name: "SwiftTracy", type: .dynamic, targets: ["Tracy"]),
     .library(name: "SwiftVulkan", type: .dynamic, targets: ["Vulkan"]),
-    .library(name: "VulkanC", targets: ["VulkanC"]),
-    .library(name: "WaylandProtocolModel", targets: ["WaylandProtocolModel"]),
-    .library(name: "SwiftWaylandGenerator", targets: ["SwiftWaylandGenerator"]),
-    .library(name: "WaylandServerC", targets: ["WaylandServerC"]),
-    .library(name: "WaylandClientC", targets: ["WaylandClientC"]),
     .library(name: "WaylandServer", targets: ["WaylandServer"]),
-    .library(name: "WaylandServerDispatch", targets: ["WaylandServerDispatch"]),
-    .library(name: "WaylandClientDispatch", targets: ["WaylandClientDispatch"]),
     .library(name: "WaylandClient", targets: ["WaylandClient"]),
     .executable(name: "SwiftWaylandGen", targets: ["SwiftWaylandGen"]),
     .library(
-        name: "SwiftWaylandProtocolRuntime", type: .dynamic,
-        targets: ["SwiftWaylandProtocolRuntime", "WaylandProtocolTypes", "WaylandProtocolsC"]),
+        name: "WaylandProtocolRuntime", type: .dynamic,
+        targets: ["WaylandProtocolTypes", "WaylandProtocolsC"]),
     .library(
         name: "NucleusWindowClient", type: .dynamic,
         targets: [
@@ -537,7 +494,7 @@ let hostTargets: [Target] = [
             "NucleusLinuxReactor", "NucleusLinuxReactorC", "NucleusLinuxDBus",
             "NucleusLinuxSessionC",
             "NucleusThemeAssetIO", "WaylandClient", "WaylandClientC", "WaylandClientDispatch",
-            "SwiftWaylandProtocolRuntime", "WaylandProtocolTypes", "WaylandProtocolsC",
+            "WaylandProtocolTypes", "WaylandProtocolsC",
         ], path: "android-runtime/Sources/NucleusAndroidDisplayHostCore",
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
@@ -811,7 +768,7 @@ let hostTargets: [Target] = [
         name: "NucleusCompositorWaylandRuntime",
         dependencies: [
             "NucleusFoundation", "WaylandServerC", "WaylandServer", "WaylandServerDispatch",
-            "SwiftWaylandProtocolRuntime", "WaylandProtocolTypes", "WaylandProtocolsC",
+            "WaylandProtocolTypes", "WaylandProtocolsC",
             "NucleusCompositorXcbC", "NucleusCompositorInputC", "NucleusCompositorServer",
             "NucleusCompositorWindowManager", "NucleusCompositorServerTypes",
             "NucleusCompositorWindowScene", "Nucleus", "NucleusApp", "NucleusAppHostBundle",
@@ -851,7 +808,8 @@ let hostTargets: [Target] = [
     .target(
         name: "NucleusCompositorRendererLinux",
         dependencies: [
-            "NucleusFoundation", "Nucleus", "NucleusApp", "NucleusAppHostBundle", "NucleusLayers",
+            "NucleusAppHostProtocols", "NucleusFoundation", "Nucleus", "NucleusApp",
+            "NucleusAppHostBundle", "NucleusLayers",
             "NucleusRenderHost", "NucleusRenderModel", "NucleusRenderer",
             "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
@@ -871,7 +829,8 @@ let hostTargets: [Target] = [
     .target(
         name: "NucleusCompositorRenderRuntime",
         dependencies: [
-            "Nucleus", "NucleusApp", "NucleusAppHostBundle", "NucleusLayers", "NucleusRenderHost",
+            "NucleusAppHostProtocols", "Nucleus", "NucleusApp", "NucleusAppHostBundle",
+            "NucleusLayers", "NucleusRenderHost",
             "NucleusRenderModel", "NucleusRenderer", "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend",
             "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
@@ -892,7 +851,8 @@ let hostTargets: [Target] = [
     .target(
         name: "NucleusRenderServerRuntime",
         dependencies: [
-            "NucleusFoundation", "Nucleus", "NucleusApp", "NucleusAppHostBundle", "NucleusLayers",
+            "NucleusAppHostProtocols", "NucleusFoundation", "Nucleus", "NucleusApp",
+            "NucleusAppHostBundle", "NucleusLayers",
             "NucleusRenderHost", "NucleusRenderModel", "NucleusRenderer",
             "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
@@ -1012,7 +972,8 @@ let hostTargets: [Target] = [
     .testTarget(
         name: "NucleusCompositorRendererLinuxTests",
         dependencies: [
-            "NucleusCompositorRendererLinux", "Nucleus", "NucleusApp", "NucleusAppHostBundle",
+            "NucleusAppHostProtocols", "NucleusCompositorRendererLinux", "Nucleus", "NucleusApp",
+            "NucleusAppHostBundle",
             "NucleusLayers", "NucleusRenderHost", "NucleusRenderModel", "NucleusRenderer",
             "NucleusSkiaGraphiteBridge", "NucleusTextBackend", "NucleusTextRenderingBridge",
             "NucleusUI",
@@ -1034,7 +995,8 @@ let hostTargets: [Target] = [
     .testTarget(
         name: "NucleusCompositorRenderRuntimeTests",
         dependencies: [
-            "NucleusCompositorRenderRuntime", "NucleusCompositorRendererLinux",
+            "NucleusAppHostProtocols", "NucleusCompositorRenderRuntime",
+            "NucleusCompositorRendererLinux",
             "NucleusCompositorServer",
             "Nucleus", "NucleusApp", "NucleusAppHostBundle", "NucleusLayers", "NucleusRenderHost",
             "NucleusRenderModel", "NucleusRenderer", "NucleusSkiaGraphiteBridge",
@@ -1055,7 +1017,7 @@ let hostTargets: [Target] = [
     .testTarget(
         name: "NucleusCompositorWaylandCTests",
         dependencies: [
-            "WaylandServerC", "SwiftWaylandProtocolRuntime", "WaylandProtocolTypes",
+            "WaylandServerC", "WaylandProtocolTypes",
             "WaylandProtocolsC",
         ], path: "compositor/compositor-core/Tests/NucleusCompositorWaylandCTests",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
@@ -1094,7 +1056,6 @@ let hostTargets: [Target] = [
             "NucleusTextBackend",
             "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder", "NucleusCompositorXcbC",
             "NucleusCompositorInputC", "WaylandServerC", "WaylandServer",
-            "SwiftWaylandProtocolRuntime",
             "WaylandProtocolTypes", "WaylandProtocolsC", "WaylandWireTestC",
         ], path: "compositor/compositor-core/Tests/NucleusCompositorWaylandRuntimeTests",
         exclude: [
@@ -1286,12 +1247,12 @@ let hostTargets: [Target] = [
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .target(
-        name: "NucleusLayers", dependencies: ["NucleusFoundation"],
+        name: "NucleusLayers", dependencies: ["NucleusTypes", "NucleusFoundation"],
         path: "core/swift/Sources/NucleusLayers", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
             .interoperabilityMode(.Cxx),
-            .define("NUCLEUS_LAYERS_PUBLIC_NAMES"), .strictMemorySafety(), .strictMemorySafety(),
+            .strictMemorySafety(), .strictMemorySafety(),
             .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1352,7 +1313,9 @@ let hostTargets: [Target] = [
         ]),
     .target(
         name: "NucleusUI",
-        dependencies: ["NucleusLayers", "NucleusSecureMemoryC", "NucleusFoundation", "Tracy"],
+        dependencies: [
+            "NucleusTypes", "NucleusLayers", "NucleusSecureMemoryC", "NucleusFoundation", "Tracy",
+        ],
         path: "core/swift/Sources/NucleusUI", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
@@ -1370,7 +1333,7 @@ let hostTargets: [Target] = [
         ]),
     .target(
         name: "NucleusUIEmbedder",
-        dependencies: ["NucleusUI", "NucleusLayers", "NucleusFoundation"],
+        dependencies: ["NucleusTypes", "NucleusUI", "NucleusLayers", "NucleusFoundation"],
         path: "core/swift/Sources/NucleusUIEmbedder", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
@@ -1388,7 +1351,7 @@ let hostTargets: [Target] = [
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .target(
-        name: "NucleusRenderModel", dependencies: ["NucleusFoundation"],
+        name: "NucleusRenderModel", dependencies: ["NucleusTypes", "NucleusFoundation"],
         path: "core/swift/Sources/NucleusRenderModel", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
@@ -1398,7 +1361,9 @@ let hostTargets: [Target] = [
         ]),
     .target(
         name: "NucleusAppHostBundle",
-        dependencies: ["NucleusLayers", "NucleusRenderModel", "NucleusFoundation"],
+        dependencies: [
+            "NucleusTypes", "NucleusLayers", "NucleusRenderModel", "NucleusFoundation",
+        ],
         path: "core/swift/Sources/NucleusAppHostBundle", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
@@ -1536,7 +1501,9 @@ let hostTargets: [Target] = [
         ]),
     .target(
         name: "NucleusRenderHost",
-        dependencies: ["NucleusLayers", "NucleusRenderModel", "NucleusFoundation"],
+        dependencies: [
+            "NucleusTypes", "NucleusLayers", "NucleusRenderModel", "NucleusFoundation",
+        ],
         path: "core/swift/Sources/NucleusRenderHost", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
@@ -1547,7 +1514,8 @@ let hostTargets: [Target] = [
     .testTarget(
         name: "NucleusRenderHostTests",
         dependencies: [
-            "NucleusRenderHost", "NucleusLayers", "NucleusRenderModel", "NucleusFoundation",
+            "NucleusTypes", "NucleusRenderHost", "NucleusLayers", "NucleusRenderModel",
+            "NucleusFoundation",
         ], path: "core/swift/Tests/NucleusRenderHostTests", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
@@ -1558,8 +1526,8 @@ let hostTargets: [Target] = [
     .testTarget(
         name: "NucleusRuntimeGraphTests",
         dependencies: [
-            "NucleusAppHostBundle", "NucleusRenderHost", "NucleusRenderModel", "NucleusLayers",
-            "NucleusUI", "NucleusFoundation",
+            "NucleusTypes", "NucleusAppHostBundle", "NucleusRenderHost", "NucleusRenderModel",
+            "NucleusLayers", "NucleusUI", "NucleusFoundation",
         ], path: "core/swift/Tests/NucleusRuntimeGraphTests",
         cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
@@ -1580,8 +1548,9 @@ let hostTargets: [Target] = [
     .target(
         name: "NucleusRenderer",
         dependencies: [
-            "NucleusRenderModel", "NucleusBlockingSynchronizationC", "NucleusFoundation", "VulkanC",
-            "Vulkan", "NucleusSkiaGraphiteBridge", "Tracy",
+            "NucleusAppHostProtocols", "NucleusRenderModel", "NucleusTypes",
+            "NucleusBlockingSynchronizationC",
+            "NucleusFoundation", "VulkanC", "Vulkan", "NucleusSkiaGraphiteBridge", "Tracy",
         ], path: "core/swift/Sources/NucleusRenderer", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
@@ -1593,7 +1562,10 @@ let hostTargets: [Target] = [
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .testTarget(
-        name: "NucleusRendererTests", dependencies: ["NucleusRenderer", "NucleusFoundation"],
+        name: "NucleusRendererTests",
+        dependencies: [
+            "NucleusAppHostProtocols", "NucleusTypes", "NucleusRenderer", "NucleusFoundation",
+        ],
         path: "core/swift/Tests/NucleusRendererTests", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
@@ -1625,7 +1597,8 @@ let hostTargets: [Target] = [
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .testTarget(
-        name: "NucleusRenderModelTests", dependencies: ["NucleusRenderModel", "NucleusFoundation"],
+        name: "NucleusRenderModelTests",
+        dependencies: ["NucleusTypes", "NucleusRenderModel", "NucleusFoundation"],
         path: "core/swift/Tests/NucleusRenderModelTests", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
@@ -1705,7 +1678,10 @@ let hostTargets: [Target] = [
         ]),
     .testTarget(
         name: "NucleusUIEmbedderTests",
-        dependencies: ["NucleusUIEmbedder", "NucleusUI", "NucleusLayers", "NucleusFoundation"],
+        dependencies: [
+            "NucleusTypes", "NucleusUIEmbedder", "NucleusUI", "NucleusLayers",
+            "NucleusFoundation",
+        ],
         path: "core/swift/Tests/NucleusUIEmbedderTests", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
@@ -1725,7 +1701,8 @@ let hostTargets: [Target] = [
     .testTarget(
         name: "NucleusUITests",
         dependencies: [
-            "NucleusUI", "NucleusUIEmbedder", "NucleusLayers", "NucleusTextBackend",
+            "NucleusTypes", "NucleusUI", "NucleusUIEmbedder", "NucleusLayers",
+            "NucleusTextBackend",
             "NucleusSkiaGraphiteBridge", "NucleusRenderHost", "NucleusRenderModel",
             "NucleusRetainedSceneTestSupport", "NucleusHostProjectionTestSupport",
             "NucleusRendererTestSupport", "NucleusResourceTestSupport",
@@ -1794,7 +1771,10 @@ let hostTargets: [Target] = [
         ]),
     .executableTarget(
         name: "NucleusCoreThreadSanitizerHarness",
-        dependencies: ["NucleusRenderModel", "NucleusRenderer", "NucleusFoundation"],
+        dependencies: [
+            "NucleusAppHostProtocols", "NucleusRenderModel", "NucleusRenderer",
+            "NucleusFoundation",
+        ],
         path: "core/swift/SanitizerHarnesses/NucleusCoreThreadSanitizerHarness",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
@@ -1819,14 +1799,7 @@ let hostTargets: [Target] = [
     .target(
         name: "NucleusDesktop",
         dependencies: [
-            "Nucleus", "NucleusApp", "NucleusAppHostBundle", "NucleusLayers", "NucleusRenderHost",
-            "NucleusRenderModel", "NucleusRenderer", "NucleusSkiaGraphiteBridge",
-            "NucleusTextBackend",
-            "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
-            "NucleusWindowClientContracts", "NucleusWindowClientRuntime",
-            "NucleusWindowClientWayland",
-            "NucleusWindowClientPasteboard", "NucleusWindowClientRender",
-            "NucleusWindowClientInput",
+            "Nucleus", "NucleusAppHostProtocols", "NucleusWindowClientContracts",
             "NucleusWindowClientHost",
         ], path: "desktop/Sources/NucleusDesktop",
         swiftSettings: [
@@ -1847,6 +1820,14 @@ let hostTargets: [Target] = [
         swiftSettings: [
             .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
+            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+        ]),
+    .testTarget(
+        name: "NucleusTypesTests", dependencies: ["NucleusTypes"],
+        path: "foundation/Tests/NucleusTypesTests",
+        swiftSettings: [
+            .interoperabilityMode(.Cxx), .strictMemorySafety(),
+            .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .target(
@@ -3078,7 +3059,8 @@ let hostTargets: [Target] = [
     .target(
         name: "NucleusShellRuntime",
         dependencies: [
-            "NucleusFoundation", "NucleusWindowClientContracts", "NucleusWindowClientRuntime",
+            "NucleusAppHostProtocols", "NucleusFoundation", "NucleusWindowClientContracts",
+            "NucleusWindowClientRuntime",
             "NucleusWindowClientWayland", "NucleusWindowClientPasteboard",
             "NucleusWindowClientRender",
             "NucleusWindowClientInput", "NucleusWindowClientHost", "NucleusShellSignalC",
@@ -3265,7 +3247,7 @@ let hostTargets: [Target] = [
     .target(
         name: "WaylandServer",
         dependencies: [
-            "WaylandServerC", "SwiftWaylandProtocolRuntime", "WaylandProtocolTypes",
+            "WaylandServerC", "WaylandProtocolTypes",
             "WaylandProtocolsC",
         ], path: "swift-wayland/Sources/WaylandServer", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
@@ -3278,7 +3260,7 @@ let hostTargets: [Target] = [
     .target(
         name: "WaylandServerDispatch",
         dependencies: [
-            "WaylandServerC", "WaylandServer", "SwiftWaylandProtocolRuntime",
+            "WaylandServerC", "WaylandServer",
             "WaylandProtocolTypes",
             "WaylandProtocolsC",
         ], path: "swift-wayland/Sources/WaylandServerDispatch",
@@ -3293,7 +3275,7 @@ let hostTargets: [Target] = [
     .target(
         name: "WaylandClientDispatch",
         dependencies: [
-            "WaylandClientC", "SwiftWaylandProtocolRuntime", "WaylandProtocolTypes",
+            "WaylandClientC", "WaylandProtocolTypes",
             "WaylandProtocolsC",
         ], path: "swift-wayland/Sources/WaylandClientDispatch",
         cSettings: [.unsafeFlags(["-Werror"])],
@@ -3317,7 +3299,7 @@ let hostTargets: [Target] = [
     .testTarget(
         name: "WaylandClientCTests",
         dependencies: [
-            "WaylandClientC", "SwiftWaylandProtocolRuntime", "WaylandProtocolTypes",
+            "WaylandClientC", "WaylandProtocolTypes",
             "WaylandProtocolsC",
         ], path: "swift-wayland/Tests/WaylandClientCTests", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
@@ -3350,7 +3332,7 @@ let hostTargets: [Target] = [
     .testTarget(
         name: "WaylandServerTests",
         dependencies: [
-            "WaylandServer", "SwiftWaylandProtocolRuntime", "WaylandProtocolTypes",
+            "WaylandServer", "WaylandProtocolTypes",
             "WaylandProtocolsC",
         ], path: "swift-wayland/Tests/WaylandServerTests", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
@@ -3374,7 +3356,7 @@ let hostTargets: [Target] = [
         name: "WaylandLoopbackTests",
         dependencies: [
             "WaylandServer", "WaylandServerDispatch", "WaylandClient", "WaylandClientDispatch",
-            "SwiftWaylandProtocolRuntime", "WaylandProtocolTypes", "WaylandProtocolsC",
+            "WaylandProtocolTypes", "WaylandProtocolsC",
         ], path: "swift-wayland/Tests/WaylandLoopbackTests", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
@@ -3392,14 +3374,6 @@ let hostTargets: [Target] = [
     .target(
         name: "WaylandProtocolTypes",
         path: "swift-wayland/protocol-runtime/Sources/WaylandProtocolTypes",
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
-    .target(
-        name: "SwiftWaylandProtocolRuntime", dependencies: ["WaylandProtocolTypes"],
-        path: "swift-wayland/protocol-runtime/Sources/SwiftWaylandProtocolRuntime",
         swiftSettings: [
             .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
@@ -3438,7 +3412,6 @@ let hostTargets: [Target] = [
         dependencies: [
             "NucleusWindowClientContracts", "NucleusWindowClientXkbC", "NucleusWindowClientRuntime",
             "WaylandClientC", "WaylandClientDispatch", "WaylandClient",
-            "SwiftWaylandProtocolRuntime",
             "WaylandProtocolTypes", "WaylandProtocolsC", "NucleusFoundation",
         ], path: "window-client/Sources/NucleusWindowClientWayland",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
@@ -3452,7 +3425,7 @@ let hostTargets: [Target] = [
         name: "NucleusWindowClientPasteboard",
         dependencies: [
             "NucleusWindowClientWayland", "NucleusWindowClientRuntime", "WaylandClientC",
-            "WaylandClientDispatch", "SwiftWaylandProtocolRuntime", "WaylandProtocolTypes",
+            "WaylandClientDispatch", "WaylandProtocolTypes",
             "WaylandProtocolsC", "Nucleus", "NucleusApp", "NucleusAppHostBundle", "NucleusLayers",
             "NucleusRenderHost", "NucleusRenderModel", "NucleusRenderer",
             "NucleusSkiaGraphiteBridge",
@@ -3468,7 +3441,8 @@ let hostTargets: [Target] = [
     .target(
         name: "NucleusWindowClientRender",
         dependencies: [
-            "NucleusFoundation", "NucleusWindowClientRuntime", "NucleusWindowClientWayland",
+            "NucleusAppHostProtocols", "NucleusFoundation", "NucleusWindowClientRuntime",
+            "NucleusWindowClientWayland",
             "WaylandClientDispatch", "Nucleus", "NucleusApp", "NucleusAppHostBundle",
             "NucleusLayers",
             "NucleusRenderHost", "NucleusRenderModel", "NucleusRenderer",
@@ -3486,7 +3460,7 @@ let hostTargets: [Target] = [
         name: "NucleusWindowClientInput",
         dependencies: [
             "NucleusWindowClientWayland", "WaylandClientC", "WaylandClientDispatch",
-            "SwiftWaylandProtocolRuntime", "WaylandProtocolTypes", "WaylandProtocolsC",
+            "WaylandProtocolTypes", "WaylandProtocolsC",
             "NucleusFoundation", "Nucleus", "NucleusApp", "NucleusAppHostBundle", "NucleusLayers",
             "NucleusRenderHost", "NucleusRenderModel", "NucleusRenderer",
             "NucleusSkiaGraphiteBridge",
@@ -3501,14 +3475,10 @@ let hostTargets: [Target] = [
     .target(
         name: "NucleusWindowClientHost",
         dependencies: [
-            "NucleusWindowClientContracts", "NucleusWindowClientRuntime",
+            "NucleusAppHostBundle", "NucleusAppHostProtocols", "NucleusDiagnostics",
+            "NucleusLinuxReactor", "NucleusRenderModel", "NucleusTextBackend", "NucleusUI",
+            "NucleusWindowClientContracts", "NucleusWindowClientRender",
             "NucleusWindowClientWayland",
-            "NucleusWindowClientPasteboard", "NucleusWindowClientRender",
-            "NucleusWindowClientInput",
-            "Nucleus", "NucleusApp", "NucleusAppHostBundle", "NucleusLayers", "NucleusRenderHost",
-            "NucleusRenderModel", "NucleusRenderer", "NucleusSkiaGraphiteBridge",
-            "NucleusTextBackend",
-            "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
         ], path: "window-client/Sources/NucleusWindowClientHost",
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
@@ -3543,7 +3513,8 @@ let androidTargets: [Target] = [
     .target(
         name: "NucleusAndroidCore",
         dependencies: [
-            "NucleusAndroidHostLifecycle", "NucleusAndroidC", "Vulkan", "VulkanC", "Nucleus",
+            "NucleusAppHostProtocols", "NucleusAndroidHostLifecycle", "NucleusAndroidC", "Vulkan",
+            "VulkanC", "Nucleus",
             "NucleusApp", "NucleusAppHostBundle", "NucleusLayers", "NucleusRenderHost",
             "NucleusRenderModel", "NucleusRenderer", "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend",
@@ -3588,6 +3559,7 @@ let androidTargets: [Target] = [
 
 let package = Package(
     name: "Nucleus",
+    platforms: [.macOS("27")],
     products: hostProducts + (isAndroidTarget ? androidProducts : []),
     dependencies: hostDependencies + (isAndroidTarget ? androidDependencies : []),
     targets: hostTargets + (isAndroidTarget ? androidTargets : []),

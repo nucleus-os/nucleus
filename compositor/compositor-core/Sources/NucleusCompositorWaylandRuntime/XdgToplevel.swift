@@ -1,10 +1,10 @@
 // ConfigurePolicy by the production router.
 
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
-import WaylandProtocolTypes
 internal import NucleusCompositorWindowManager
+import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 @MainActor
 @safe final class XdgToplevel {
@@ -86,7 +86,8 @@ extension XdgToplevel: XdgToplevelRequests {
     }
 
     func setParent(
-        _ context: WaylandRequest<XdgToplevelServer>, parent parentRes: WaylandBorrowedObject<XdgToplevelServer>?
+        _ context: WaylandRequest<XdgToplevelServer>,
+        parent parentRes: WaylandBorrowedObject<XdgToplevelServer>?
     ) {
         let requested = parentRes?.owner(as: XdgToplevel.self)
         if let requested, requested === self || wouldCreateParentCycle(requested) {
@@ -126,7 +127,8 @@ extension XdgToplevel: XdgToplevelRequests {
     }
 
     func move(
-        _ context: WaylandRequest<XdgToplevelServer>, seat: WaylandBorrowedObject<WlSeatServer>, serial: UInt32
+        _ context: WaylandRequest<XdgToplevelServer>, seat: WaylandBorrowedObject<WlSeatServer>,
+        serial: UInt32
     ) {
         guard let seatOwner = seat.owner(as: SeatBinding.self)?.seat,
             let seatClientID = seat.clientID,
@@ -163,8 +165,8 @@ extension XdgToplevel: XdgToplevelRequests {
 
     func setMaxSize(_ context: WaylandRequest<XdgToplevelServer>, width: Int32, height: Int32) {
         guard width >= 0, height >= 0,
-            (width == 0 || width >= minWidth),
-            (height == 0 || height >= minHeight)
+            width == 0 || width >= minWidth,
+            height == 0 || height >= minHeight
         else {
             context.postError(
                 .invalidSize,
@@ -178,8 +180,8 @@ extension XdgToplevel: XdgToplevelRequests {
 
     func setMinSize(_ context: WaylandRequest<XdgToplevelServer>, width: Int32, height: Int32) {
         guard width >= 0, height >= 0,
-            (maxWidth == 0 || width <= maxWidth),
-            (maxHeight == 0 || height <= maxHeight)
+            maxWidth == 0 || width <= maxWidth,
+            maxHeight == 0 || height <= maxHeight
         else {
             context.postError(
                 .invalidSize,

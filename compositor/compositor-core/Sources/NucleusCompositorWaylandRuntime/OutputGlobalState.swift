@@ -1,5 +1,5 @@
-import WaylandServerC
 import WaylandServer
+import WaylandServerC
 import WaylandServerDispatch
 
 /// Independently removable output-global registration plus the live resources

@@ -1,12 +1,12 @@
 /// An integer rectangle used by compositor coverage and damage regions.
 /// Coordinates are half-open: `[x, x + width) × [y, y + height)`.
-public struct RegionRect: Equatable, Hashable, Sendable {
-    public var x: Int32
-    public var y: Int32
-    public var width: Int32
-    public var height: Int32
+package struct RegionRect: Equatable, Hashable, Sendable {
+    package var x: Int32
+    package var y: Int32
+    package var width: Int32
+    package var height: Int32
 
-    public init(x: Int32, y: Int32, width: Int32, height: Int32) {
+    package init(x: Int32, y: Int32, width: Int32, height: Int32) {
         self.x = x
         self.y = y
         self.width = width
@@ -17,33 +17,33 @@ public struct RegionRect: Equatable, Hashable, Sendable {
     fileprivate var minY: Int64 { Int64(y) }
     fileprivate var maxX: Int64 { Int64(x) + Int64(width) }
     fileprivate var maxY: Int64 { Int64(y) + Int64(height) }
-    public var isEmpty: Bool { width <= 0 || height <= 0 }
+    package var isEmpty: Bool { width <= 0 || height <= 0 }
 }
 
 /// Exact canonical coverage represented by disjoint, maximally coalesced integer
 /// rectangles. All boolean operations normalize their result, so consumers never
 /// need to replay or reinterpret a mutation history.
-public struct Region: Equatable, Sendable {
-    public private(set) var rectangles: [RegionRect]
+package struct Region: Equatable, Sendable {
+    package private(set) var rectangles: [RegionRect]
 
-    public init() {
+    package init() {
         rectangles = []
     }
 
-    public init(_ rect: RegionRect) {
+    package init(_ rect: RegionRect) {
         rectangles = rect.isEmpty ? [] : [rect]
     }
 
-    public init(rectangles: [RegionRect]) {
+    package init(rectangles: [RegionRect]) {
         self = rectangles.reduce(into: Region()) { result, rect in
             result.formUnion(rect)
         }
     }
 
-    public var isEmpty: Bool { rectangles.isEmpty }
-    public var rectangleCount: Int { rectangles.count }
+    package var isEmpty: Bool { rectangles.isEmpty }
+    package var rectangleCount: Int { rectangles.count }
 
-    public var bounds: RegionRect? {
+    package var bounds: RegionRect? {
         guard let first = rectangles.first else { return nil }
         var minX = first.minX
         var minY = first.minY
@@ -58,48 +58,48 @@ public struct Region: Equatable, Sendable {
         return Self.rect(minX: minX, minY: minY, maxX: maxX, maxY: maxY)
     }
 
-    public func contains(x: Double, y: Double) -> Bool {
+    package func contains(x: Double, y: Double) -> Bool {
         rectangles.contains { rect in
             x >= Double(rect.minX) && x < Double(rect.maxX)
                 && y >= Double(rect.minY) && y < Double(rect.maxY)
         }
     }
 
-    public func contains(_ rect: RegionRect) -> Bool {
+    package func contains(_ rect: RegionRect) -> Bool {
         guard !rect.isEmpty else { return true }
         return Region(rect).subtracting(self).isEmpty
     }
 
-    public mutating func formUnion(_ rect: RegionRect) {
+    package mutating func formUnion(_ rect: RegionRect) {
         guard !rect.isEmpty else { return }
         self = Self.combine(self, Region(rect), where: { $0 || $1 })
     }
 
-    public mutating func formUnion(_ other: Region) {
+    package mutating func formUnion(_ other: Region) {
         self = Self.combine(self, other, where: { $0 || $1 })
     }
 
-    public func union(_ other: Region) -> Region {
+    package func union(_ other: Region) -> Region {
         Self.combine(self, other, where: { $0 || $1 })
     }
 
-    public mutating func subtract(_ rect: RegionRect) {
+    package mutating func subtract(_ rect: RegionRect) {
         guard !rect.isEmpty else { return }
         self = subtracting(Region(rect))
     }
 
-    public func subtracting(_ other: Region) -> Region {
+    package func subtracting(_ other: Region) -> Region {
         Self.combine(self, other, where: { $0 && !$1 })
     }
 
-    public func intersection(_ other: Region) -> Region {
+    package func intersection(_ other: Region) -> Region {
         Self.combine(self, other, where: { $0 && $1 })
     }
 
     /// Returns exact coverage unless it exceeds the caller's storage budget, in
     /// which case the conservative bounding rectangle is returned. This is suitable
     /// for damage, where overdraw is valid; input and opaque regions stay exact.
-    public func conservative(maxRectangles: Int) -> Region {
+    package func conservative(maxRectangles: Int) -> Region {
         guard rectangles.count > maxRectangles, let bounds else { return self }
         return Region(bounds)
     }
@@ -115,7 +115,10 @@ public struct Region: Equatable, Sendable {
         let xs = Array(Set(all.flatMap { [$0.minX, $0.maxX] })).sorted()
         guard ys.count > 1, xs.count > 1 else { return Region() }
 
-        struct Span: Hashable { var minX: Int64; var maxX: Int64 }
+        struct Span: Hashable {
+            var minX: Int64
+            var maxX: Int64
+        }
         var output: [RegionRect] = []
         var active: [Span: Int] = [:]
 
@@ -144,11 +147,14 @@ public struct Region: Equatable, Sendable {
             var nextActive: [Span: Int] = [:]
             for span in spans {
                 if let index = active[span], output[index].maxY == minY,
-                    let extended = rect(minX: span.minX, minY: output[index].minY, maxX: span.maxX, maxY: maxY)
+                    let extended = rect(
+                        minX: span.minX, minY: output[index].minY, maxX: span.maxX, maxY: maxY)
                 {
                     output[index] = extended
                     nextActive[span] = index
-                } else if let newRect = rect(minX: span.minX, minY: minY, maxX: span.maxX, maxY: maxY) {
+                } else if let newRect = rect(
+                    minX: span.minX, minY: minY, maxX: span.maxX, maxY: maxY)
+                {
                     output.append(newRect)
                     nextActive[span] = output.count - 1
                 }
@@ -176,6 +182,7 @@ public struct Region: Equatable, Sendable {
             minY >= Int64(Int32.min), minY <= Int64(Int32.max),
             width <= Int64(Int32.max), height <= Int64(Int32.max)
         else { return nil }
-        return RegionRect(x: Int32(minX), y: Int32(minY), width: Int32(width), height: Int32(height))
+        return RegionRect(
+            x: Int32(minX), y: Int32(minY), width: Int32(width), height: Int32(height))
     }
 }

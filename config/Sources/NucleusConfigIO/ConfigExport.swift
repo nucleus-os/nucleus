@@ -8,10 +8,10 @@ import NucleusConfig
 /// once defaults, file, and overrides have been layered. It also produces a
 /// complete annotated starting file, so a user's first edit is against every
 /// setting at its real default rather than a blank object.
-public enum ConfigExport {
+package enum ConfigExport {
     /// Deterministically ordered, indented JSON with snake_case keys — the same
     /// spelling the loader accepts.
-    public static func json(
+    package static func json(
         _ configuration: NucleusConfiguration
     ) throws -> String {
         let encoder = JSONEncoder()

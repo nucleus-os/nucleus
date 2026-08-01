@@ -1,13 +1,13 @@
-public import NucleusUI
+package import NucleusUI
 
 /// Fabric image projection onto the same retained request/cache lifecycle used
 /// by native `ImageView`.
 @MainActor
-public final class ReactImageComponentView: ReactComponentView {
-    public let tag: Int
-    public let componentName: String
-    public private(set) var nativeID: String
-    public let view: View
+package final class ReactImageComponentView: ReactComponentView {
+    package let tag: Int
+    package let componentName: String
+    package private(set) var nativeID: String
+    package let view: View
     private let imageView: ImageView
     private var environment: ReactSurfaceEnvironment
     private var currentSource: String?
@@ -26,10 +26,11 @@ public final class ReactImageComponentView: ReactComponentView {
         self.environment = ReactSurfaceEnvironment()
     }
 
-    public func apply(_ snapshot: MountComponentSnapshot) {
-        guard case .image(
-            let viewSnapshot,
-            let nextSource) = snapshot
+    package func apply(_ snapshot: MountComponentSnapshot) {
+        guard
+            case .image(
+                let viewSnapshot,
+                let nextSource) = snapshot
         else { return }
         nativeID = viewSnapshot.nativeID
         view.frame = viewSnapshot.frame
@@ -37,14 +38,15 @@ public final class ReactImageComponentView: ReactComponentView {
             environment.backingScaleFactor
         if nextSource != currentSource {
             currentSource = nextSource
-            imageView.source = nextSource
+            imageView.source =
+                nextSource
                 .flatMap(Self.localFilePath(from:))
                 .map(ImageRequestSource.resource)
         }
         imageView.layoutIfNeeded()
     }
 
-    public func updateEnvironment(
+    package func updateEnvironment(
         _ environment: ReactSurfaceEnvironment
     ) {
         self.environment = environment

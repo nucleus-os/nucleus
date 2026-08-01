@@ -1,8 +1,8 @@
 import Foundation
 import Glibc
 import NucleusAndroidDrmC
-import NucleusAndroidGraphicsContract
-import NucleusAndroidGraphicsPlatform
+internal import NucleusAndroidGraphicsContract
+internal import NucleusAndroidGraphicsPlatform
 import WaylandClient
 import WaylandClientDispatch
 import WaylandProtocolTypes
@@ -36,9 +36,11 @@ func validateDisplayFormatContract(
             "compositor dma-buf feedback was incomplete")
     }
     let candidates = try DrmDeviceDiscovery.enumerate()
-    guard let candidate = candidates.first(where: {
-        $0.renderNode == renderDevice
-    }) else {
+    guard
+        let candidate = candidates.first(where: {
+            $0.renderNode == renderDevice
+        })
+    else {
         throw DisplayHostError.wayland(
             "selected render node \(renderDevice) is absent from DRM discovery")
     }
@@ -47,10 +49,12 @@ func validateDisplayFormatContract(
         let exactPairs = feedback.orderedFormats.filter {
             $0.format == format.drmFormat && device.supports($0)
         }
-        guard exactPairs.contains(where: {
-            device.formatModifierProperties($0)?.planeCount
-                == UInt32(format.planes.count)
-        }) else {
+        guard
+            exactPairs.contains(where: {
+                device.formatModifierProperties($0)?.planeCount
+                    == UInt32(format.planes.count)
+            })
+        else {
             let drm = String(format: "0x%08x", format.drmFormat)
             throw DisplayHostError.wayland(
                 "required \(format.name) contract unavailable: "
@@ -69,7 +73,7 @@ func validateDisplayFormatContract(
         let result = unsafe mmap(
             nil, byteCount, PROT_READ, MAP_PRIVATE, fileDescriptor, 0)
         guard let address = unsafe result,
-              unsafe address != MAP_FAILED
+            unsafe address != MAP_FAILED
         else { return nil }
         unsafe self.address = address
         self.byteCount = byteCount
@@ -117,7 +121,7 @@ private final class DisplayDmabufFeedbackCollector:
         let descriptor = fd.take()
         defer { _ = close(descriptor) }
         guard size > 0, size % 16 == 0,
-              let mapping = DisplayReadOnlyMapping(
+            let mapping = DisplayReadOnlyMapping(
                 fileDescriptor: descriptor, byteCount: Int(size))
         else {
             failure = DisplayHostError.wayland(
@@ -173,16 +177,17 @@ private final class DisplayDmabufFeedbackCollector:
         _ proxy: WaylandBorrowedProxy<ZwpLinuxDmabufFeedbackV1Client>
     ) {
         guard let targetDevice, !indices.isEmpty,
-              indices.allSatisfy({ Int($0) < table.count })
+            indices.allSatisfy({ Int($0) < table.count })
         else {
             failure = DisplayHostError.wayland(
                 "incomplete dma-buf tranche")
             return
         }
-        tranches.append(WaylandDmabufTranche(
-            targetDevice: targetDevice,
-            scanout: scanout,
-            formats: indices.map { table[Int($0)] }))
+        tranches.append(
+            WaylandDmabufTranche(
+                targetDevice: targetDevice,
+                scanout: scanout,
+                formats: indices.map { table[Int($0)] }))
         self.targetDevice = nil
         indices = []
         scanout = false

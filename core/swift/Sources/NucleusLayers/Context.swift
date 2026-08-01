@@ -1,5 +1,5 @@
-import NucleusTypes
 import NucleusAppHostProtocols
+import NucleusTypes
 
 public struct ContextID: RawRepresentable, Hashable, Sendable, Equatable {
     public var rawValue: UInt32
@@ -82,7 +82,7 @@ public final class Context: ~Sendable {
     package var nextLayerOrdinal: UInt32
     package var nextTransactionIDValue: UInt64
     package var revision: UInt32
-    @_spi(NucleusRenderServer) public var layers: [LayerID: Layer]
+    package var layers: [LayerID: Layer]
     package let transactionStack: TransactionStack
     package var activeGroup: ActiveGroup?
 
@@ -127,7 +127,9 @@ public final class Context: ~Sendable {
                 throw LayerError.invalidHandle(detail: "reserve context id: id space exhausted")
             }
         }
-        try self.init(id: ContextID(rawValue: contextID), commitSink: commitSink, releasesContextOnDeinit: true)
+        try self.init(
+            id: ContextID(rawValue: contextID), commitSink: commitSink,
+            releasesContextOnDeinit: true)
     }
 
     public convenience init(contextID: UInt32, commitSink: any CommitSink) throws(LayerError) {
@@ -143,8 +145,7 @@ public final class Context: ~Sendable {
     public func queryDisplayLink() throws(LayerError) -> PresentReport {
         let displayLink = runtimeHost.operations.displayLinkSource
         do {
-            let report = try displayLink.query(contextID: id.rawValue)
-            return PresentReport(report)
+            return try displayLink.query(contextID: id.rawValue)
         } catch let err {
             switch err {
             case .invalidArgument:
@@ -179,7 +180,9 @@ public final class Context: ~Sendable {
         return layer
     }
 
-    public func importExistingLayer(id: LayerID, _ descriptor: LayerDescriptor = LayerDescriptor()) -> Layer {
+    public func importExistingLayer(id: LayerID, _ descriptor: LayerDescriptor = LayerDescriptor())
+        -> Layer
+    {
         precondition(
             UInt32(truncatingIfNeeded: id.rawValue >> 32) == self.id.rawValue,
             "imported layer identity belongs to another context")

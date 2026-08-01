@@ -4,7 +4,7 @@ import NucleusShellProduct
 import NucleusShellServices
 import NucleusUI
 import NucleusUIEmbedder
-@_spi(NucleusWindowClientImplementation) import NucleusWindowClientWayland
+package import NucleusWindowClientWayland
 
 #if canImport(FoundationInternationalization)
 import FoundationInternationalization

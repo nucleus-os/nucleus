@@ -105,12 +105,11 @@ Already in tree:
   `swift/Sources/NucleusUI/Geometry.swift:73-87`
   (`top/left/bottom/right: Double`, `.zero`). Phase 4 reuses it as-is;
   no new type is introduced.
-- The geometry plane is consistently `Double` from the wire payload through
-  the Swift view layer: `nucleon_point` / `nucleon_size` /
-  `nucleon_rect` are `f64`
-  (`src/nucleon/dynamics/wire.zig`); `Point`, `Size`, `Rect`,
-  `EdgeInsets` (`Geometry.swift`), `GeometryRect` / `GeometryPoint` /
-  `GeometrySize` (`swift/Sources/NucleusLayers/Geometry.swift`), `TextLayout`'s baseline
+- The geometry plane is consistently `Double` from the canonical
+  `NucleusTypes.Point` / `Size` / `Rect` values through the Swift view and
+  committed-layer stages. `EdgeInsets` (`Geometry.swift`), the
+  `NucleusLayers.GeometryRect` / `GeometryPoint` / `GeometrySize` aliases,
+  `TextLayout`'s baseline
   offsets, and `Label.firstBaselineOffsetFromTop` are all `Double`.
   Three pockets are `Float` and need normalization in Phase 1:
   `BackingScaleFactor.value` (the scalar itself), the entire
@@ -120,7 +119,7 @@ Already in tree:
   baselineY:)`'s parameters. `Float` legitimately remains for the GPU
   / paint-command boundary (`ViewLayerPublisher`'s paint command
   fields, color RGBA channels, `Font.pointSize`); those stay `Float`.
-- `View.frame` is a raw setter that journals an FFI layer update
+- `View.frame` is a raw setter that journals a committed layer update
   (`swift/Sources/NucleusUI/View.swift:95-109`). It does no snapping and
   continues to do none. The contract is "helpers snap; the setter is
   raw," matching AppKit.
@@ -155,9 +154,8 @@ Out of scope:
 
 ## Phase 1 — Geometry-plane type normalization (`Float` → `Double`)
 
-The view-layer geometry plane is canonically `Double`: the wire record
-fields are `f64`, all `Point` / `Size` / `Rect` / `EdgeInsets` /
-`GeometryRect` fields are `Double`, and the text system already returns
+The view-layer geometry plane is canonically `Double`: the shared `Point` /
+`Size` / `Rect` values and UI-owned `EdgeInsets` fields are `Double`, and the text system already returns
 `Double` baseline offsets. The remaining `Float` pockets are gratuitous casts
 in overlay layout code and one `Float`-typed scalar
 (`BackingScaleFactor.value`) that participates in coordinate
@@ -239,7 +237,7 @@ caller's job and uses Phase 2's API.
 
 `ShellOverlayScene` writes `window.setBackingScaleFactor(...)` from the
 frame event before driving layout. `ShellOverlayFrameInfo` keeps its
-`backingScaleFactor` accessor as the wire-format value, but stops
+`backingScaleFactor` accessor as event input, but stops
 being the layout-time source of truth; layout reads
 `window.backingScaleFactor`.
 
@@ -507,7 +505,7 @@ Settled during pre-conditions review, not open:
   `swift/Sources/NucleusUI/Window.swift`, not in a separate extension
   file. `ShellOverlayScene` writes the scale on each frame event
   before invoking layout; `ShellOverlayFrameInfo.backingScaleFactor`
-  remains as the wire-format accessor but stops being read by layout
+  remains as the event accessor but stops being read by layout
   code.
 - **`EdgeInsets`.** The existing `EdgeInsets` at
   `swift/Sources/NucleusUI/Geometry.swift:73` is reused as-is for

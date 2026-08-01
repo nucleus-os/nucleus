@@ -19,9 +19,9 @@
    Name mappings when a doc uses the old vocabulary as if current:
    - `Nucleon` (project/module) → `Nucleus` / `NucleusUI`; `Valence*` → `NucleusCompositor*`.
    - The layer system **Dynamics → Layers**: module `NucleusDynamics` → `NucleusLayers`;
-     `DynamicsHost` → `Host`, `DynamicsSettings` → `Settings`, `dynamicsColor` →
-     `layersColor`, `dynamicsPolicy` → `layersPolicy`, etc. (`LayerTransaction` is a
-     deliberate exception — it keeps its qualifier.)
+     `DynamicsHost` → `Host`, `DynamicsSettings` → `Settings`, and
+     `NucleusTypes` now owns values shared unchanged by UI, layers, and rendering.
+     (`LayerTransaction` is a deliberate exception — it keeps its qualifier.)
    - The `nucleon/` source directory is gone: its contents folded into
      `swift/Sources/*` and `render-cxx/`.
 3. **Monorepo consolidation.** The package boundaries remain, but `core/`, `react-native/`,

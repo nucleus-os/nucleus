@@ -2,14 +2,15 @@
 // Typed client descriptor and event dispatch for wp_cursor_shape_device_v1.
 
 import WaylandClientC
-public enum WpCursorShapeDeviceV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+package import WaylandProtocolTypes
+
+package enum WpCursorShapeDeviceV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_cursor_shape_device_v1())
-    public nonisolated static let maximumVersion: UInt32 = 2
+    package nonisolated static let maximumVersion: UInt32 = 2
 }
-public import WaylandProtocolTypes
-public extension WaylandProxy where Interface == WpCursorShapeDeviceV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpCursorShapeDeviceV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_cursor_shape_device_v1_destroy(_proxy)
@@ -18,9 +19,12 @@ public extension WaylandProxy where Interface == WpCursorShapeDeviceV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func setShape(serial: UInt32, shape: WpCursorShapeDeviceV1Shape) throws(WaylandProxyError) {
+    package func setShape(serial: UInt32, shape: WpCursorShapeDeviceV1Shape)
+        throws(WaylandProxyError)
+    {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_wp_cursor_shape_device_v1_set_shape(_proxy, serial, shape.rawValue)
+        unsafe swift_wayland_client_request_wp_cursor_shape_device_v1_set_shape(
+            _proxy, serial, shape.rawValue)
         return
     }
 }

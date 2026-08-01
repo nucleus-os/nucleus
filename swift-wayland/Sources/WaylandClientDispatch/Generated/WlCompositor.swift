@@ -2,29 +2,33 @@
 // Typed client descriptor and event dispatch for wl_compositor.
 
 import WaylandClientC
-public enum WlCompositorClient: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum WlCompositorClient: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_compositor())
-    public nonisolated static let maximumVersion: UInt32 = 7
+    package nonisolated static let maximumVersion: UInt32 = 7
 }
-public extension WaylandProxy where Interface == WlCompositorClient {
-    func createSurface() throws(WaylandProxyError) -> WaylandProxy<WlSurfaceClient> {
+package extension WaylandProxy where Interface == WlCompositorClient {
+    package func createSurface() throws(WaylandProxyError) -> WaylandProxy<WlSurfaceClient> {
         let _proxy = try unsafe requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_wl_compositor_create_surface(_proxy) else {
+        guard
+            let _created = unsafe swift_wayland_client_request_wl_compositor_create_surface(_proxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, WlSurfaceClient.self)
     }
-    func createRegion() throws(WaylandProxyError) -> WaylandProxy<WlRegionClient> {
+    package func createRegion() throws(WaylandProxyError) -> WaylandProxy<WlRegionClient> {
         let _proxy = try unsafe requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_wl_compositor_create_region(_proxy) else {
+        guard let _created = unsafe swift_wayland_client_request_wl_compositor_create_region(_proxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, WlRegionClient.self)
     }
-    func release() throws(WaylandProxyError) {
+    package func release() throws(WaylandProxyError) {
         guard version >= 7 else {
             throw .unsupportedVersion(
                 required: 7, actual: version)

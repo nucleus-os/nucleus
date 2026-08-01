@@ -1,38 +1,39 @@
-@_spi(NucleusRenderServer) public import NucleusLayers
-public import enum NucleusTypes.BackdropMaterialKind
+package import NucleusLayers
+
+package import enum NucleusTypes.BackdropMaterialKind
 
 /// Single Swift authority for backdrop dynamics, material identity, state,
 /// appearance, accessibility, visibility, occlusion, and grouping. The caller
 /// gathers identities and geometry, then executes the returned specifications.
 @MainActor
-public final class BackdropResolver {
-    public struct Identity: Sendable, Equatable {
-        public var layerID: UInt64
-        public var material: BackdropMaterialKind
-        public var requestedState: BackdropState
-        public var appearance: BackdropAppearance
-        public var isEmphasized: Bool
-        public var owningWindowID: UInt64?
-        public var tint: SIMD4<Float>
-        public var opacity: Float
+package final class BackdropResolver {
+    package struct Identity: Sendable, Equatable {
+        package var layerID: UInt64
+        package var material: BackdropMaterialKind
+        package var requestedState: BackdropState
+        package var appearance: BackdropAppearance
+        package var isEmphasized: Bool
+        package var owningWindowID: UInt64?
+        package var tint: SIMD4<Float>
+        package var opacity: Float
     }
 
-    public struct GeometryInput: Sendable, Equatable {
-        public var layerID: UInt64
-        public var frame: BackdropPolicy.Rect
-        public var isOpaqueOccluder: Bool
-        public var producerGroupID: UInt64
+    package struct GeometryInput: Sendable, Equatable {
+        package var layerID: UInt64
+        package var frame: BackdropPolicy.Rect
+        package var isOpaqueOccluder: Bool
+        package var producerGroupID: UInt64
     }
 
-    public private(set) var materials: [UInt64: ResolvedBackdropMaterial] = [:]
+    package private(set) var materials: [UInt64: ResolvedBackdropMaterial] = [:]
     private var identities: [UInt64: Identity] = [:]
-    public var dynamics = BackdropDynamics()
+    package var dynamics = BackdropDynamics()
 
-    public init() {}
+    package init() {}
 
     /// Frame-start half of `resolveBackdrops`. Advances presentation dynamics
     /// once, then resolves every identity into the retained frame snapshot.
-    public func resolveBackdrops(
+    package func resolveBackdrops(
         identities: [Identity],
         keyWindowID: UInt64?,
         accessibility: BackdropPolicy.Accessibility,
@@ -73,14 +74,17 @@ public final class BackdropResolver {
             resolved.alpha *= min(max(identity.opacity, 0), 1)
             resolved.enabled = resolved.enabled && resolved.alpha > 0.0001
             materials[identity.layerID] = resolved
-            records.append(.init(layerID: identity.layerID, material: resolved, needsFrame: dynamics.hasActiveAnimation))
+            records.append(
+                .init(
+                    layerID: identity.layerID, material: resolved,
+                    needsFrame: dynamics.hasActiveAnimation))
         }
         return records
     }
 
     /// Post-walk half of `resolveBackdrops`. Geometry policy consumes the
     /// retained frame-start state/appearance snapshot and never re-resolves it.
-    public func resolveSpatial(
+    package func resolveSpatial(
         geometries: [GeometryInput]
     ) -> [BackdropPolicy.Draw] {
         let fallbackIdentity = identities[UInt64.max]
@@ -112,8 +116,8 @@ public final class BackdropResolver {
     }
 }
 
-public struct ResolvedBackdropMaterialRecord: Sendable, Equatable {
-    public var layerID: UInt64
-    public var material: ResolvedBackdropMaterial
-    public var needsFrame: Bool
+package struct ResolvedBackdropMaterialRecord: Sendable, Equatable {
+    package var layerID: UInt64
+    package var material: ResolvedBackdropMaterial
+    package var needsFrame: Bool
 }

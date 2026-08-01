@@ -2,14 +2,15 @@
 // Typed client descriptor and event dispatch for wp_content_type_v1.
 
 import WaylandClientC
-public enum WpContentTypeV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+package import WaylandProtocolTypes
+
+package enum WpContentTypeV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_content_type_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public import WaylandProtocolTypes
-public extension WaylandProxy where Interface == WpContentTypeV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpContentTypeV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_content_type_v1_destroy(_proxy)
@@ -18,9 +19,10 @@ public extension WaylandProxy where Interface == WpContentTypeV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func setContentType(content_type: WpContentTypeV1Type) throws(WaylandProxyError) {
+    package func setContentType(content_type: WpContentTypeV1Type) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_wp_content_type_v1_set_content_type(_proxy, content_type.rawValue)
+        unsafe swift_wayland_client_request_wp_content_type_v1_set_content_type(
+            _proxy, content_type.rawValue)
         return
     }
 }

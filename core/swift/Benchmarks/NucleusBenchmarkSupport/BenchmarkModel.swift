@@ -5,13 +5,13 @@ import NucleusBenchmarkMetricsC
 import FoundationInternationalization
 #endif
 
-public struct BenchmarkResourceSnapshot: Sendable, Equatable {
-    public var heapLiveBytes: UInt64
-    public var allocatorMappedBytes: UInt64
-    public var maximumResidentBytes: UInt64
-    public var openFileDescriptors: UInt64
+package struct BenchmarkResourceSnapshot: Sendable, Equatable {
+    package var heapLiveBytes: UInt64
+    package var allocatorMappedBytes: UInt64
+    package var maximumResidentBytes: UInt64
+    package var openFileDescriptors: UInt64
 
-    public static func capture() throws -> Self {
+    package static func capture() throws -> Self {
         var raw = nucleus_benchmark_resource_snapshot()
         guard unsafe nucleus_benchmark_capture_resources(&raw) == 0 else {
             throw BenchmarkFailure.semantic(
@@ -67,16 +67,16 @@ public struct BenchmarkResourceSnapshot: Sendable, Equatable {
     }
 }
 
-public struct BenchmarkSample: Equatable, Sendable {
-    public var metrics: [String: UInt64]
+package struct BenchmarkSample: Equatable, Sendable {
+    package var metrics: [String: UInt64]
     /// Physical process counters. These are recorded per iteration but excluded
     /// from structural determinism and exact budgets because allocator/RSS state
     /// legitimately varies after warm-up.
-    public var measurements: [String: Int64]
-    public var semanticChecksum: UInt64
-    public var phaseNanoseconds: [String: UInt64]
+    package var measurements: [String: Int64]
+    package var semanticChecksum: UInt64
+    package var phaseNanoseconds: [String: UInt64]
 
-    public init(
+    package init(
         metrics: [String: UInt64],
         measurements: [String: Int64] = [:],
         semanticChecksum: UInt64,
@@ -88,40 +88,40 @@ public struct BenchmarkSample: Equatable, Sendable {
         self.phaseNanoseconds = phaseNanoseconds
     }
 
-    public static func == (lhs: Self, rhs: Self) -> Bool {
+    package static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.metrics == rhs.metrics
             && lhs.semanticChecksum == rhs.semanticChecksum
     }
 }
 
-public struct MetricBudget: Codable, Equatable, Sendable {
-    public enum Kind: String, Codable, Sendable {
+package struct MetricBudget: Codable, Equatable, Sendable {
+    package enum Kind: String, Codable, Sendable {
         case exact
         case maximum
     }
 
-    public var metric: String
-    public var kind: Kind
-    public var value: UInt64
+    package var metric: String
+    package var kind: Kind
+    package var value: UInt64
 
-    public static func exact(_ metric: String, _ value: UInt64) -> Self {
+    package static func exact(_ metric: String, _ value: UInt64) -> Self {
         Self(metric: metric, kind: .exact, value: value)
     }
 
-    public static func maximum(_ metric: String, _ value: UInt64) -> Self {
+    package static func maximum(_ metric: String, _ value: UInt64) -> Self {
         Self(metric: metric, kind: .maximum, value: value)
     }
 }
 
-public struct BenchmarkWorkload {
-    public var category: String
-    public var name: String
-    public var inputSize: UInt64
-    public var seed: UInt64
-    public var budgets: [MetricBudget]
-    public var body: @MainActor () async throws -> BenchmarkSample
+package struct BenchmarkWorkload {
+    package var category: String
+    package var name: String
+    package var inputSize: UInt64
+    package var seed: UInt64
+    package var budgets: [MetricBudget]
+    package var body: @MainActor () async throws -> BenchmarkSample
 
-    public init(
+    package init(
         category: String,
         name: String,
         inputSize: UInt64,
@@ -186,7 +186,7 @@ struct BenchmarkReport: Codable {
     var workloads: [BenchmarkResult]
 }
 
-public enum BenchmarkFailure: Error, CustomStringConvertible {
+package enum BenchmarkFailure: Error, CustomStringConvertible {
     case argument(String)
     case semantic(String)
     case nondeterministic(
@@ -207,7 +207,7 @@ public enum BenchmarkFailure: Error, CustomStringConvertible {
         expected: UInt64,
         actual: UInt64)
 
-    public var description: String {
+    package var description: String {
         switch self {
         case .argument(let message), .semantic(let message):
             message
@@ -230,10 +230,10 @@ public enum BenchmarkFailure: Error, CustomStringConvertible {
 }
 
 @MainActor
-public struct BenchmarkRunner {
-    public var iterations: Int
+package struct BenchmarkRunner {
+    package var iterations: Int
 
-    public init(iterations: Int) {
+    package init(iterations: Int) {
         self.iterations = iterations
     }
 
@@ -476,9 +476,9 @@ enum BenchmarkReportWriter {
         .grouping(.never)
 }
 
-public enum BenchmarkProgram {
+package enum BenchmarkProgram {
     @MainActor
-    public static func run(
+    package static func run(
         workloads: [BenchmarkWorkload],
         arguments: [String],
         productName: String
@@ -586,13 +586,13 @@ public enum BenchmarkProgram {
     }
 }
 
-public struct BenchmarkPhaseRecorder {
+package struct BenchmarkPhaseRecorder {
     private let clock = ContinuousClock()
-    public private(set) var phaseNanoseconds: [String: UInt64] = [:]
+    package private(set) var phaseNanoseconds: [String: UInt64] = [:]
 
-    public init() {}
+    package init() {}
 
-    public mutating func measure<T>(
+    package mutating func measure<T>(
         _ phase: String,
         _ body: () throws -> T
     ) rethrows -> T {
@@ -606,7 +606,7 @@ public struct BenchmarkPhaseRecorder {
     }
 
     @MainActor
-    public mutating func measure<T>(
+    package mutating func measure<T>(
         _ phase: String,
         _ body: () async throws -> T
     ) async rethrows -> T {
@@ -634,12 +634,12 @@ private func durationNanoseconds(_ duration: Duration) -> UInt64 {
 }
 
 extension UInt64 {
-    public mutating func mix(_ value: UInt64) {
+    package mutating func mix(_ value: UInt64) {
         self ^= value &+ 0x9e37_79b9_7f4a_7c15 &+ (self << 6) &+ (self >> 2)
     }
 }
 
 @inline(never)
-public func consume<T>(_ value: T) {
+package func consume<T>(_ value: T) {
     withExtendedLifetime(value) {}
 }

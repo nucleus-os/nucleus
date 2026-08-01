@@ -1,28 +1,28 @@
-public import NucleusLayers
-public import NucleusAppHostProtocols
-public import NucleusRenderModel
+package import NucleusLayers
+package import NucleusAppHostProtocols
+package import NucleusRenderModel
 
 /// One host runtime's concrete Swift resource and runtime-protocol graph. The
 /// compositor, shell, Android host, or fixture owns this value and passes its
 /// `layersHost` to every context it creates. Nothing is installed process-wide.
 @MainActor
-public final class NucleusAppHostBundle: ~Sendable {
-    public let resourceHost: SwiftResourceHost
-    public let imageRegistrar: any ImageRegistrar
-    public let imageLifecycle: any ImageLifecycle
-    public let displayLinkSource: any DisplayLinkSource
-    public let paintContentRegistrar: any PaintContentRegistrar
-    public let runtimeEffectRegistrar: any RuntimeEffectRegistrar
-    public let paintContentLifecycle: any PaintContentLifecycle
-    public let runtimeEffectLifecycle: any RuntimeEffectLifecycle
-    public let snapshotLifecycle: any SnapshotLifecycle
-    public let iosurfaceBinder: any IOSurfaceBinder
-    public let iosurfaceLifecycle: any IOSurfaceLifecycle
-    public let contextIDAllocator: any ContextIDAllocator
-    public let implicitActionRegistrar: any ImplicitActionRegistrar
-    public let layersHost: LayerRuntimeHost
+package final class NucleusAppHostBundle: ~Sendable {
+    package let resourceHost: SwiftResourceHost
+    package let imageRegistrar: any ImageRegistrar
+    package let imageLifecycle: any ImageLifecycle
+    package let displayLinkSource: any DisplayLinkSource
+    package let paintContentRegistrar: any PaintContentRegistrar
+    package let runtimeEffectRegistrar: any RuntimeEffectRegistrar
+    package let paintContentLifecycle: any PaintContentLifecycle
+    package let runtimeEffectLifecycle: any RuntimeEffectLifecycle
+    package let snapshotLifecycle: any SnapshotLifecycle
+    package let iosurfaceBinder: any IOSurfaceBinder
+    package let iosurfaceLifecycle: any IOSurfaceLifecycle
+    package let contextIDAllocator: any ContextIDAllocator
+    package let implicitActionRegistrar: any ImplicitActionRegistrar
+    package let layersHost: LayerRuntimeHost
 
-    public init(resourceHost: SwiftResourceHost) {
+    package init(resourceHost: SwiftResourceHost) {
         let imageRegistrar = SwiftImageRegistrar(resourceHost: resourceHost)
         let imageLifecycle = SwiftImageLifecycle(resourceHost: resourceHost)
         let displayLinkSource = SwiftDisplayLinkSource()
@@ -79,7 +79,7 @@ public final class NucleusAppHostBundle: ~Sendable {
     /// Invalidates the raw boundary identity before late callbacks can reach any
     /// store. Contexts and content leases retain their conformers long enough to
     /// reject those callbacks deterministically.
-    public func invalidate() {
+    package func invalidate() {
         layersHost.presentationCompletions.invalidate()
         resourceHost.invalidate()
     }

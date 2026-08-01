@@ -1,5 +1,5 @@
-@_spi(NucleusRenderServer) import NucleusLayers
 import NucleusBenchmarkSupport
+package import NucleusLayers
 import NucleusUI
 
 @MainActor
@@ -45,7 +45,8 @@ private func flatPublicationWorkload(nodeCount: Int) -> BenchmarkWorkload {
                     return (
                         root,
                         children,
-                        ViewLayerPublisher(context: visualContext))
+                        ViewLayerPublisher(context: visualContext)
+                    )
                 }
 
                 _ = try phases.measure("initial_publication") {
@@ -142,7 +143,8 @@ private func deepPublicationWorkload(nodeCount: Int) -> BenchmarkWorkload {
                     return (
                         root,
                         leaf,
-                        ViewLayerPublisher(context: visualContext))
+                        ViewLayerPublisher(context: visualContext)
+                    )
                 }
                 _ = try phases.measure("initial_publication") {
                     try publisher.publish(roots: [root])

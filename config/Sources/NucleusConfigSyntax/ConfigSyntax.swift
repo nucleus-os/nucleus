@@ -15,7 +15,7 @@
 /// What this deliberately does *not* do is parse JSON. Literals, colons, commas,
 /// and value grammar all remain the decoder's job, where a semantic coding path
 /// (`input.touchpad.accel_speed`) is a better diagnostic than a byte offset.
-public enum ConfigSyntax {
+package enum ConfigSyntax {
     private static let space = UInt8(ascii: " ")
     private static let newline = UInt8(ascii: "\n")
     private static let quote = UInt8(ascii: "\"")
@@ -29,7 +29,7 @@ public enum ConfigSyntax {
 
     /// Comment-stripped bytes with offsets preserved, or the first structural
     /// defect found.
-    public static func prepare(
+    package static func prepare(
         _ source: ConfigSource
     ) throws(ConfigSyntaxError) -> [UInt8] {
         let bytes = source.bytes

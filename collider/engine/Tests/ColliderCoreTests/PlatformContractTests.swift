@@ -19,6 +19,10 @@ import Testing
     #expect(artifact.abi == "bionic")
     #expect(artifact.androidAPILevel == 37)
 
+    #expect(ExecutionPlatform.linuxARM64OCI.architecture == .arm64)
+    #expect(ArtifactTarget.linuxARM64.architecture == .arm64)
+    #expect(ArtifactTarget.androidARM64(apiLevel: 37).architecture == .arm64)
+
     let encoded = try JSONEncoder().encode(artifact)
     #expect(try JSONDecoder().decode(ArtifactTarget.self, from: encoded) == artifact)
 }

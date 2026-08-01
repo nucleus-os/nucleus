@@ -86,7 +86,8 @@ struct GammaState {
     /// nil when no ramp is staged. Mirrors `ensureBlob`'s LUT build.
     func buildColorLut() -> [DrmColorLut]? {
         guard let table = desiredTable, desiredRampSize != 0,
-              table.count >= desiredRampSize * 3 else { return nil }
+            table.count >= desiredRampSize * 3
+        else { return nil }
         let n = desiredRampSize
         return (0..<n).map { i in
             DrmColorLut(red: table[i], green: table[n + i], blue: table[2 * n + i])

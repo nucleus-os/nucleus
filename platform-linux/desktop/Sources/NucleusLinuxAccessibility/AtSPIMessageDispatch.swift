@@ -17,12 +17,12 @@ extension AtSPIService {
         if let expected = AtSPIWireContract.expectedInputSignature(
             interface: interface,
             member: member),
-           messageSignature(message) != expected
+            messageSignature(message) != expected
         {
             return invalidArguments(message)
         }
         if interface.hasPrefix("org.a11y.atspi."),
-           !object.interfaces.contains(interface)
+            !object.interfaces.contains(interface)
         {
             return unknownInterface(message, interface: interface)
         }
@@ -69,9 +69,9 @@ extension AtSPIService {
         switch member {
         case "Get":
             guard let interface = readString(message),
-                  let property = readString(message),
-                  object.interfaces.contains(interface),
-                  let value = propertyValue(
+                let property = readString(message),
+                object.interfaces.contains(interface),
+                let value = propertyValue(
                     object: object,
                     interface: interface,
                     property: property)
@@ -97,27 +97,29 @@ extension AtSPIService {
             }
         case "Set":
             guard let interface = readString(message),
-                  let property = readString(message)
+                let property = readString(message)
             else { return invalidArguments(message) }
             guard object.interfaces.contains(interface) else {
                 return unknownInterface(message, interface: interface)
             }
             if interface == AtSPIInterface.application,
-               property == "Id",
-               let value = readVariantInt32(message)
+                property == "Id",
+                let value = readVariantInt32(message)
             {
                 applicationID = value
                 return reply(message) { _ in 0 }
             }
             if interface == AtSPIInterface.value,
-               property == "CurrentValue",
-               let value = readVariantDouble(message),
-               let id = object.id
+                property == "CurrentValue",
+                let value = readVariantDouble(message),
+                let id = object.id
             {
-                let accepted = onAction?(.init(
-                    target: id,
-                    action: .setValue,
-                    value: value)) ?? false
+                let accepted =
+                    onAction?(
+                        .init(
+                            target: id,
+                            action: .setValue,
+                            value: value)) ?? false
                 return accepted
                     ? reply(message) { _ in 0 }
                     : actionFailed(message)

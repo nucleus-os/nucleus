@@ -24,7 +24,9 @@ public final class SwiftTextLayoutManager: Sendable {
         self.handler = handler
     }
 
-    public func measure(_ request: nucleus.react.TextMeasureRequest) -> nucleus.react.TextMeasureResult {
+    public func measure(_ request: nucleus.react.TextMeasureRequest)
+        -> nucleus.react.TextMeasureResult
+    {
         handler.measure(request)
     }
 

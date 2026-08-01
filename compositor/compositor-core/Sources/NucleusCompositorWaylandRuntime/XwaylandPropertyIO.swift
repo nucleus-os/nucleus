@@ -48,10 +48,11 @@ private let maximumTrackedPropertyWords =
     var cookies: [xcb_get_property_cookie_t] = []
     cookies.reserveCapacity(trackedPropertyAtoms.count)
     for id in trackedPropertyAtoms {
-        unsafe cookies.append(xcb_get_property(
-            conn, 0, surface.windowID, atoms[id],
-            xcb_atom_t(XCB_ATOM_ANY.rawValue), 0,
-            maximumTrackedPropertyWords))
+        unsafe cookies.append(
+            xcb_get_property(
+                conn, 0, surface.windowID, atoms[id],
+                xcb_atom_t(XCB_ATOM_ANY.rawValue), 0,
+                maximumTrackedPropertyWords))
     }
     _ = unsafe xcb_flush(conn)
     for (i, id) in trackedPropertyAtoms.enumerated() {

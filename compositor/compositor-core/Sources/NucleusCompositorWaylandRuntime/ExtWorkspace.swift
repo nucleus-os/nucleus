@@ -15,11 +15,11 @@
 // order to the Swift Spaces model.
 // Ported from the legacy NucleusWaylandRouter/Workspace.swift.
 
-import WaylandServerC
 internal import NucleusCompositorServer
-import WaylandServer
-import WaylandServerDispatch
 import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 @MainActor
 final class ExtWorkspaceManager {
@@ -46,8 +46,7 @@ final class ExtWorkspaceManager {
 @safe final class ExtWorkspaceClient: DesktopModelObserver {
     fileprivate unowned let manager: ExtWorkspaceManager
     fileprivate let version: Int32
-    private let resource:
-        WaylandResourceHandle<ExtWorkspaceManagerV1Server>
+    private let resource: WaylandResourceHandle<ExtWorkspaceManagerV1Server>
 
     /// group_capabilities: create_workspace = 1.
     private static let groupCaps: UInt32 = 1
@@ -93,10 +92,11 @@ final class ExtWorkspaceManager {
         var touched = false
         for change in changes {
             switch change {
-            case let .spaceAdded(id): touched = reconcileWorkspace(id) || touched
-            case let .spaceChanged(id): touched = reconcileWorkspace(id) || touched
-            case let .spaceRemoved(id): touched = dropWorkspace(id) || touched
-            case let .spaceActivated(output, _): touched = refreshActive(forOutput: output) || touched
+            case .spaceAdded(let id): touched = reconcileWorkspace(id) || touched
+            case .spaceChanged(let id): touched = reconcileWorkspace(id) || touched
+            case .spaceRemoved(let id): touched = dropWorkspace(id) || touched
+            case .spaceActivated(let output, _):
+                touched = refreshActive(forOutput: output) || touched
             default: break  // window changes belong to foreign-toplevel
             }
         }
@@ -105,7 +105,7 @@ final class ExtWorkspaceManager {
 
     private func reconcileWorkspace(_ spaceID: SpaceID) -> Bool {
         guard resource.isLive,
-              let space = spaces.spaces.first(where: { $0.id == spaceID })
+            let space = spaces.spaces.first(where: { $0.id == spaceID })
         else {
             return dropWorkspace(spaceID)
         }
@@ -113,29 +113,30 @@ final class ExtWorkspaceManager {
         let group = ensureGroup(forOutput: space.outputID)
 
         if workspace(spaceID) == nil {
-            guard resource.createWorkspace(
-                owner: { handle in
-                    ExtWorkspaceHandle(
-                        resource: handle,
-                        client: self,
-                        spaceID: spaceID,
-                        outputID: space.outputID)
-                },
-                installed: { handleObj in
-                    handleObj.active = active
-                    self.workspaces.insert(handleObj, forKey: spaceID)
-                    if let group {
-                        group.resource.sendWorkspaceEnter(
-                            workspace: handleObj.resource)
-                    }
-                    handleObj.resource.sendName(name: space.name)
-                    handleObj.resource.sendCapabilities(
-                        capabilities: ExtWorkspaceHandleV1WorkspaceCapabilities(
-                            rawValue: Self.workspaceCaps))
-                    handleObj.resource.sendState(
-                        state: ExtWorkspaceHandleV1State(
-                            rawValue: active ? Self.stateActive : 0))
-                }) != nil
+            guard
+                resource.createWorkspace(
+                    owner: { handle in
+                        ExtWorkspaceHandle(
+                            resource: handle,
+                            client: self,
+                            spaceID: spaceID,
+                            outputID: space.outputID)
+                    },
+                    installed: { handleObj in
+                        handleObj.active = active
+                        self.workspaces.insert(handleObj, forKey: spaceID)
+                        if let group {
+                            group.resource.sendWorkspaceEnter(
+                                workspace: handleObj.resource)
+                        }
+                        handleObj.resource.sendName(name: space.name)
+                        handleObj.resource.sendCapabilities(
+                            capabilities: ExtWorkspaceHandleV1WorkspaceCapabilities(
+                                rawValue: Self.workspaceCaps))
+                        handleObj.resource.sendState(
+                            state: ExtWorkspaceHandleV1State(
+                                rawValue: active ? Self.stateActive : 0))
+                    }) != nil
             else { return false }
             return true
         }
@@ -162,19 +163,20 @@ final class ExtWorkspaceManager {
     private func ensureGroup(forOutput outputID: DisplayID) -> ExtWorkspaceGroup? {
         guard resource.isLive else { return nil }
         if group(outputID) == nil {
-            guard resource.createWorkspaceGroup(
-                owner: { handle in
-                    ExtWorkspaceGroup(
-                        resource: handle,
-                        client: self,
-                        outputID: outputID)
-                },
-                installed: { groupObj in
-                    self.groups.insert(groupObj, forKey: outputID)
-                    groupObj.resource.sendCapabilities(
-                        capabilities: ExtWorkspaceGroupHandleV1GroupCapabilities(
-                            rawValue: Self.groupCaps))
-                }) != nil
+            guard
+                resource.createWorkspaceGroup(
+                    owner: { handle in
+                        ExtWorkspaceGroup(
+                            resource: handle,
+                            client: self,
+                            outputID: outputID)
+                    },
+                    installed: { groupObj in
+                        self.groups.insert(groupObj, forKey: outputID)
+                        groupObj.resource.sendCapabilities(
+                            capabilities: ExtWorkspaceGroupHandleV1GroupCapabilities(
+                                rawValue: Self.groupCaps))
+                    }) != nil
             else { return nil }
         }
         guard let group = group(outputID) else { return nil }
@@ -240,18 +242,19 @@ final class ExtWorkspaceManager {
         let spaces = manager.server.spaces
         for request in requests {
             switch request {
-            case let .activate(space, output):
+            case .activate(let space, let output):
                 if spaces.setActiveSpace(space, forDisplay: output) {
                     RenderBridge.requestFrame(server: manager.server, outputId: output)
                 }
-            case let .createWorkspace(output):
+            case .createWorkspace(let output):
                 if spaces.appendWorkspace(onOutput: output) != 0 {
                     RenderBridge.requestFrame(server: manager.server, outputId: output)
                 }
-            case let .remove(space):
-                let output = spaces.spaces.first {
-                    $0.id == space
-                }?.outputID ?? 0
+            case .remove(let space):
+                let output =
+                    spaces.spaces.first {
+                        $0.id == space
+                    }?.outputID ?? 0
                 if spaces.removeSpace(space) {
                     RenderBridge.requestFrame(server: manager.server, outputId: output)
                 }
@@ -283,8 +286,7 @@ extension ExtWorkspaceClient: ExtWorkspaceManagerV1Requests {
 @safe final class ExtWorkspaceGroup {
     private unowned let client: ExtWorkspaceClient
     let outputID: DisplayID
-    fileprivate let resource:
-        WaylandResourceHandle<ExtWorkspaceGroupHandleV1Server>
+    fileprivate let resource: WaylandResourceHandle<ExtWorkspaceGroupHandleV1Server>
     var outputAdvertised = false
 
     init(
@@ -299,8 +301,10 @@ extension ExtWorkspaceClient: ExtWorkspaceManagerV1Requests {
 }
 
 extension ExtWorkspaceGroup: ExtWorkspaceGroupHandleV1Requests {
-    func createWorkspace(_ request: WaylandRequest<ExtWorkspaceGroupHandleV1Server>,
-                         workspace: String) {
+    func createWorkspace(
+        _ request: WaylandRequest<ExtWorkspaceGroupHandleV1Server>,
+        workspace: String
+    ) {
         // The requested name is advisory; the model numbers workspaces. Buffered.
         client.enqueueCreateWorkspace(output: outputID)
     }
@@ -312,8 +316,7 @@ extension ExtWorkspaceGroup: ExtWorkspaceGroupHandleV1Requests {
     private unowned let client: ExtWorkspaceClient
     let spaceID: SpaceID
     let outputID: DisplayID
-    fileprivate let resource:
-        WaylandResourceHandle<ExtWorkspaceHandleV1Server>
+    fileprivate let resource: WaylandResourceHandle<ExtWorkspaceHandleV1Server>
     var name: String = ""
     var active: Bool = false
 
@@ -341,8 +344,10 @@ extension ExtWorkspaceHandle: ExtWorkspaceHandleV1Requests {
     // deactivate: not advertised (the active workspace is implicitly replaced, never
     // cleared); assign: not advertised (workspaces are output-bound). Both no-op.
     func deactivate(_ request: WaylandRequest<ExtWorkspaceHandleV1Server>) {}
-    func assign(_ request: WaylandRequest<ExtWorkspaceHandleV1Server>,
-                workspace_group: WaylandBorrowedObject<ExtWorkspaceGroupHandleV1Server>) {}
+    func assign(
+        _ request: WaylandRequest<ExtWorkspaceHandleV1Server>,
+        workspace_group: WaylandBorrowedObject<ExtWorkspaceGroupHandleV1Server>
+    ) {}
     func remove(_ request: WaylandRequest<ExtWorkspaceHandleV1Server>) {
         act { client, me in client.enqueueRemove(space: me.spaceID) }
     }

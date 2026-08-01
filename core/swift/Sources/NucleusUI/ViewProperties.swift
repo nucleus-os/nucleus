@@ -1,4 +1,5 @@
 public import NucleusLayers
+public import NucleusTypes
 
 public struct ViewProperties: Sendable, Equatable {
     public var frame: Rect?

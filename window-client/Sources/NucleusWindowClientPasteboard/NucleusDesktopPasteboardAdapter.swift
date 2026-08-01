@@ -1,15 +1,15 @@
 import Foundation
 import Glibc
-public import NucleusUI
-public import NucleusWindowClientRuntime
-@_spi(NucleusWindowClientImplementation) public import NucleusWindowClientWayland
-public import WaylandClientDispatch
+package import NucleusUI
+package import NucleusWindowClientRuntime
+package import NucleusWindowClientWayland
+package import WaylandClientDispatch
 
-public struct NucleusDesktopTransferLimits: Sendable, Equatable {
-    public var maximumBytes: Int
-    public var transferTimeoutNanoseconds: UInt64
+package struct NucleusDesktopTransferLimits: Sendable, Equatable {
+    package var maximumBytes: Int
+    package var transferTimeoutNanoseconds: UInt64
 
-    public init(
+    package init(
         maximumBytes: Int = 8 * 1024 * 1024,
         transferTimeoutNanoseconds: UInt64 = 5_000_000_000
     ) {
@@ -28,20 +28,20 @@ struct NucleusDesktopPasteboardResourceCounts: Equatable {
 }
 
 @MainActor
-@safe public final class NucleusDesktopPasteboardAdapter: PasteboardAdapter {
-    public typealias DiagnosticHandler =
+@safe package final class NucleusDesktopPasteboardAdapter: PasteboardAdapter {
+    package typealias DiagnosticHandler =
         @MainActor @Sendable (_ operation: String, _ failure: PasteboardFailure) -> Void
 
     /// The protocol treats MIME strings as opaque. This exact order makes
     /// negotiation stable across source offer order and compositor versions.
-    public nonisolated static let preferredPlainTextMIMETypes = [
+    package nonisolated static let preferredPlainTextMIMETypes = [
         "text/plain;charset=utf-8",
         "text/plain;charset=UTF-8",
         "UTF8_STRING",
         "text/plain",
     ]
 
-    public nonisolated static func preferredPlainTextMIMEType<S: Sequence>(
+    package nonisolated static func preferredPlainTextMIMEType<S: Sequence>(
         in mimeTypes: S
     ) -> String? where S.Element == String {
         let available = Set(mimeTypes)
@@ -132,7 +132,7 @@ struct NucleusDesktopPasteboardResourceCounts: Equatable {
     private var readRequestSequence: UInt64 = 1
     private var isShutdown = false
 
-    public init?(
+    package init?(
         client: NucleusDesktopConnection,
         seat: NucleusDesktopSeat,
         limits: NucleusDesktopTransferLimits = NucleusDesktopTransferLimits(),
@@ -158,11 +158,11 @@ struct NucleusDesktopPasteboardResourceCounts: Equatable {
         }
     }
 
-    public var pollDescriptors: [NucleusDesktopTransferPollDescriptor] {
+    package var pollDescriptors: [NucleusDesktopTransferPollDescriptor] {
         transferExecutor.pollDescriptors
     }
 
-    public var activeTransferCount: Int {
+    package var activeTransferCount: Int {
         transferExecutor.activeTransferCount
     }
 
@@ -180,14 +180,14 @@ struct NucleusDesktopPasteboardResourceCounts: Equatable {
             transfers: transferExecutor.activeTransferCount)
     }
 
-    public func nanosecondsUntilTransferDeadline(
+    package func nanosecondsUntilTransferDeadline(
         nowNanoseconds: UInt64
     ) -> UInt64? {
         transferExecutor.nanosecondsUntilDeadline(
             nowNanoseconds: nowNanoseconds)
     }
 
-    public func processPollResult(
+    package func processPollResult(
         token: UInt64,
         result: NucleusWindowClientPollResult,
         nowNanoseconds: UInt64
@@ -198,11 +198,11 @@ struct NucleusDesktopPasteboardResourceCounts: Equatable {
             nowNanoseconds: nowNanoseconds)
     }
 
-    public func expireTransfers(nowNanoseconds: UInt64) {
+    package func expireTransfers(nowNanoseconds: UInt64) {
         transferExecutor.expireTransfers(nowNanoseconds: nowNanoseconds)
     }
 
-    public func readString() async throws(PasteboardFailure) -> String? {
+    package func readString() async throws(PasteboardFailure) -> String? {
         guard !isShutdown, let activeOffer else {
             if isShutdown { throw .unavailable }
             return nil
@@ -241,7 +241,7 @@ struct NucleusDesktopPasteboardResourceCounts: Equatable {
         return string
     }
 
-    public func writeString(
+    package func writeString(
         _ string: String
     ) async throws(PasteboardFailure) {
         let payload = Array(string.utf8)
@@ -299,7 +299,7 @@ struct NucleusDesktopPasteboardResourceCounts: Equatable {
         try flush(operation: "write-selection")
     }
 
-    public func clear() async throws(PasteboardFailure) {
+    package func clear() async throws(PasteboardFailure) {
         guard !isShutdown, let device else { throw .unavailable }
         do {
             try device.setSelection(source: nil)
@@ -310,7 +310,7 @@ struct NucleusDesktopPasteboardResourceCounts: Equatable {
         try flush(operation: "clear-selection")
     }
 
-    public func shutdown() {
+    package func shutdown() {
         guard !isShutdown else { return }
         isShutdown = true
         transferExecutor.shutdown()
@@ -481,7 +481,7 @@ struct NucleusDesktopPasteboardResourceCounts: Equatable {
 }
 
 extension NucleusDesktopPasteboardAdapter: ExtDataControlDeviceV1Events {
-    public func dataOffer(
+    package func dataOffer(
         _ proxy: WaylandBorrowedProxy<ExtDataControlDeviceV1Client>,
         id: WaylandProxy<ExtDataControlOfferV1Client>
     ) {
@@ -492,7 +492,7 @@ extension NucleusDesktopPasteboardAdapter: ExtDataControlDeviceV1Events {
         }
     }
 
-    public func selection(
+    package func selection(
         _ proxy: WaylandBorrowedProxy<ExtDataControlDeviceV1Client>,
         id: WaylandBorrowedProxy<ExtDataControlOfferV1Client>?
     ) {
@@ -514,7 +514,7 @@ extension NucleusDesktopPasteboardAdapter: ExtDataControlDeviceV1Events {
         }
     }
 
-    public func finished(
+    package func finished(
         _ proxy: WaylandBorrowedProxy<ExtDataControlDeviceV1Client>
     ) {
         shutdown()
@@ -523,7 +523,7 @@ extension NucleusDesktopPasteboardAdapter: ExtDataControlDeviceV1Events {
             .transport("compositor finished the data-control device"))
     }
 
-    public func primarySelection(
+    package func primarySelection(
         _ proxy: WaylandBorrowedProxy<ExtDataControlDeviceV1Client>,
         id: WaylandBorrowedProxy<ExtDataControlOfferV1Client>?
     ) {

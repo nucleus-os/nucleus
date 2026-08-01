@@ -13,12 +13,13 @@
 /// The hosted-context geometry the scene lowering reads. Mirrors the
 /// `root_layer_id` + `source_rect` of `rs.HostedContextGeometry`.
 internal import NucleusRenderModel
+
 internal import struct NucleusTypes.OutputPixelSize
 internal import struct NucleusTypes.Rect
 
 struct HostedContextGeometry {
     var rootLayerId: UInt64
-    var sourceRect: NucleusRenderModel.Rect
+    var sourceRect: NucleusRenderModel.RenderRect
 }
 
 /// Inputs for lowering a remote-host layer's damage. Mirrors
@@ -93,25 +94,31 @@ enum RemoteHostPresentation {
     case inlineSubtree(RemoteHostInline)
 }
 
-private func lowerRemoteHostGeometry(_ input: LayerInput, _ geometry: HostedContextGeometry) -> RemoteHostGeometry? {
+private func lowerRemoteHostGeometry(_ input: LayerInput, _ geometry: HostedContextGeometry)
+    -> RemoteHostGeometry?
+{
     let hostMatrix = input.worldMatrix
     let hostRect = mappedLayerRect(hostMatrix, geometry.sourceRect)
     guard let visible = clipLayerRect(input.clip, hostRect) else { return nil }
-    return RemoteHostGeometry(hostMatrix: hostMatrix, hostRect: hostRect,
-                              visibleRect: visible, opacity: input.combinedOpacity)
+    return RemoteHostGeometry(
+        hostMatrix: hostMatrix, hostRect: hostRect,
+        visibleRect: visible, opacity: input.combinedOpacity)
 }
 
 /// Resolve a remote host into an inline-subtree presentation. Mirrors
 /// `lowerRemoteHost`.
-func lowerRemoteHost(_ input: LayerInput, _ geometry: HostedContextGeometry,
-                     destinationPassRequired: Bool) -> RemoteHostPresentation? {
+func lowerRemoteHost(
+    _ input: LayerInput, _ geometry: HostedContextGeometry,
+    destinationPassRequired: Bool
+) -> RemoteHostPresentation? {
     guard let resolved = lowerRemoteHostGeometry(input, geometry) else { return nil }
-    return .inlineSubtree(RemoteHostInline(
-        rootLayerId: geometry.rootLayerId,
-        hostMatrix: resolved.hostMatrix,
-        opacity: resolved.opacity,
-        clip: .rect(RoundedClip(rect: resolved.visibleRect)),
-        destinationPassRequired: destinationPassRequired))
+    return .inlineSubtree(
+        RemoteHostInline(
+            rootLayerId: geometry.rootLayerId,
+            hostMatrix: resolved.hostMatrix,
+            opacity: resolved.opacity,
+            clip: .rect(RoundedClip(rect: resolved.visibleRect)),
+            destinationPassRequired: destinationPassRequired))
 }
 
 /// Lower a remote host's damage fact. Mirrors `lowerRemoteHostDamageFact`.
@@ -120,7 +127,9 @@ func lowerRemoteHostDamageFact(
     _ geometry: HostedContextGeometry, contextRevision: UInt64
 ) -> RemoteHostDamageFact? {
     guard let resolved = lowerRemoteHostGeometry(input, geometry) else { return nil }
-    guard let visibleRect = physicalDamageRectFromLogicalRect(target, resolved.visibleRect) else { return nil }
+    guard let visibleRect = physicalDamageRectFromLogicalRect(target, resolved.visibleRect) else {
+        return nil
+    }
     return RemoteHostDamageFact(
         outputId: target.outputId,
         hostLayerId: input.layerId,
@@ -135,13 +144,16 @@ func lowerRemoteHostDamageFact(
 // MARK: - Damage-fact lowering
 
 /// Lower a layer's damage-relevant facts. Mirrors `lowerLayerDamageFacts`.
-func lowerLayerDamageFacts(_ target: RenderTarget, _ input: LayerInput,
-                           remoteHost: RemoteHostDamageInput?) -> LayerDamageFacts {
+func lowerLayerDamageFacts(
+    _ target: RenderTarget, _ input: LayerInput,
+    remoteHost: RemoteHostDamageInput?
+) -> LayerDamageFacts {
     if case .remoteHost = input.layer.kind {
         let fact: RemoteHostDamageFact?
         if let hosted = remoteHost {
-            fact = lowerRemoteHostDamageFact(target, input, hostContextId: hosted.hostContextId,
-                                             hosted.geometry, contextRevision: hosted.contextRevision)
+            fact = lowerRemoteHostDamageFact(
+                target, input, hostContextId: hosted.hostContextId,
+                hosted.geometry, contextRevision: hosted.contextRevision)
         } else {
             fact = nil
         }
@@ -154,10 +166,13 @@ func lowerLayerDamageFacts(_ target: RenderTarget, _ input: LayerInput,
 
 /// Lower a native (compositor-tracked) layer's damage fact. Mirrors
 /// `lowerNativeLayerDamageFact` (drops the renderer-only `diagnostic`).
-func lowerNativeLayerDamageFact(_ target: RenderTarget, _ input: LayerInput) -> NativeLayerDamageFact? {
+func lowerNativeLayerDamageFact(_ target: RenderTarget, _ input: LayerInput)
+    -> NativeLayerDamageFact?
+{
     if !shouldTrackNativeLayerDamage(input.layer) { return nil }
-    let footprint = computeLayerFootprint(LayerFootprintInput(
-        layer: input.layer, bounds: input.bounds, layerRect: input.layerRect, clip: input.clip))
+    let footprint = computeLayerFootprint(
+        LayerFootprintInput(
+            layer: input.layer, bounds: input.bounds, layerRect: input.layerRect, clip: input.clip))
     guard let currentVisible = footprint.physicalDamageRect(target) else { return nil }
     return NativeLayerDamageFact(
         outputId: target.outputId,
@@ -186,11 +201,12 @@ func shouldTrackNativeLayerDamage(_ layer: Layer) -> Bool {
 
 private func mappedLayerRect(
     _ matrix: M44,
-    _ rect: NucleusRenderModel.Rect
+    _ rect: NucleusRenderModel.RenderRect
 ) -> LogicalRect {
     let mapped = matrix.mapRect(rect.x, rect.y, rect.w, rect.h)
-    return LogicalRect(x: Double(mapped.x), y: Double(mapped.y),
-                       width: Double(mapped.w), height: Double(mapped.h))
+    return LogicalRect(
+        x: Double(mapped.x), y: Double(mapped.y),
+        width: Double(mapped.w), height: Double(mapped.h))
 }
 
 // MARK: - Visual-state signatures
@@ -233,9 +249,11 @@ private func nativeLayerSignature(
     h.f32(layer.effectiveOpacity())
 
     let bounds = layer.effectiveBounds()
-    h.f32(bounds.w); h.f32(bounds.h)
+    h.f32(bounds.w)
+    h.f32(bounds.h)
     let position = layer.effectivePosition()
-    h.f32(position.x); h.f32(position.y)
+    h.f32(position.x)
+    h.f32(position.y)
 
     switch layer.kind {
     case .container:
@@ -243,22 +261,43 @@ private func nativeLayerSignature(
     case .backdrop(let bd):
         h.byte(1)
         h.byte(bd.materialRole.rawValue)
-        h.byte(bd.appearance.rawValue)
-        h.byte(bd.state.rawValue)
+        switch bd.appearance {
+        case .auto: h.byte(0)
+        case .light: h.byte(1)
+        case .dark: h.byte(2)
+        }
+        switch bd.state {
+        case .active: h.byte(0)
+        case .inactive: h.byte(1)
+        case .followsWindowActiveState: h.byte(2)
+        }
         h.byte(bd.emphasized ? 1 : 0)
         switch bd.mask {
         case .none: h.byte(0)
-        case .roundedRect(let radius): h.byte(1); h.f32(radius)
-        case .image(let handle): h.byte(2); h.u64(handle.raw)
+        case .roundedRect(let radius):
+            h.byte(1)
+            h.f32(radius)
+        case .image(let handle):
+            h.byte(2)
+            h.u64(handle.raw)
         }
         switch bd.shape {
         case .rect(let rect):
             h.byte(0)
-            h.f32(rect.0); h.f32(rect.1); h.f32(rect.2); h.f32(rect.3)
+            h.f32(rect.0)
+            h.f32(rect.1)
+            h.f32(rect.2)
+            h.f32(rect.3)
         case .rrect(let rect, let radii):
             h.byte(1)
-            h.f32(rect.0); h.f32(rect.1); h.f32(rect.2); h.f32(rect.3)
-            h.f32(radii.0); h.f32(radii.1); h.f32(radii.2); h.f32(radii.3)
+            h.f32(rect.0)
+            h.f32(rect.1)
+            h.f32(rect.2)
+            h.f32(rect.3)
+            h.f32(radii.0)
+            h.f32(radii.1)
+            h.f32(radii.2)
+            h.f32(radii.3)
         }
     case .remoteHost:
         h.byte(2)
@@ -267,9 +306,15 @@ private func nativeLayerSignature(
     if includesContent {
         switch layer.presentedContent() {
         case .none: h.byte(0)
-        case .paint(let handle): h.byte(1); h.u64(handle.raw)
-        case .external(let surfaceId): h.byte(2); h.u64(UInt64(surfaceId.raw))
-        case .snapshot(let snapshot): h.byte(3); h.u64(snapshot.raw)
+        case .paint(let handle):
+            h.byte(1)
+            h.u64(handle.raw)
+        case .external(let surfaceId):
+            h.byte(2)
+            h.u64(UInt64(surfaceId.raw))
+        case .snapshot(let snapshot):
+            h.byte(3)
+            h.u64(snapshot.raw)
         }
     }
 
@@ -278,7 +323,9 @@ private func nativeLayerSignature(
 
 /// Signature of a remote host's identity + placement. Mirrors
 /// `remoteHostSignature`.
-func remoteHostSignature(_ hostContextId: ContextID, _ hostMatrix: M44, _ effectiveOpacity: Float) -> UInt64 {
+func remoteHostSignature(_ hostContextId: ContextID, _ hostMatrix: M44, _ effectiveOpacity: Float)
+    -> UInt64
+{
     var h = SceneHasher(seed: 0x25b0_f4d3_c17a_8d91)
     h.u64(UInt64(hostContextId.raw))
     for value in hostMatrix.m { h.f32(value) }
@@ -307,7 +354,9 @@ enum SurfaceBackdropKind: UInt32 {
 
 /// Distinct nonzero synthetic layer id per (layer, kind, region). Mirrors
 /// `surfaceBackdropLayerId`.
-func surfaceBackdropLayerId(_ layerId: UInt64, _ kind: SurfaceBackdropKind, _ regionIndex: UInt32) -> UInt64 {
+func surfaceBackdropLayerId(_ layerId: UInt64, _ kind: SurfaceBackdropKind, _ regionIndex: UInt32)
+    -> UInt64
+{
     var h = SceneHasher(seed: 0x6616_2c4b_0e1f_91a7)
     h.u64(layerId)
     h.u64(UInt64(kind.rawValue))
@@ -332,13 +381,19 @@ struct SceneHasher {
     }
     mutating func u64(_ v: UInt64) {
         var x = v
-        for _ in 0..<8 { byte(UInt8(x & 0xff)); x >>= 8 }
+        for _ in 0..<8 {
+            byte(UInt8(x & 0xff))
+            x >>= 8
+        }
     }
     mutating func f32(_ v: Float) { u32(v.bitPattern) }
     mutating func f64(_ v: Double) { u64(v.bitPattern) }
     private mutating func u32(_ v: UInt32) {
         var x = v
-        for _ in 0..<4 { byte(UInt8(x & 0xff)); x >>= 8 }
+        for _ in 0..<4 {
+            byte(UInt8(x & 0xff))
+            x >>= 8
+        }
     }
     func final() -> UInt64 { state }
 }

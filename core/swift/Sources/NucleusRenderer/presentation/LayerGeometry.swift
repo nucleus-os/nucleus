@@ -7,6 +7,7 @@
 /// parameterized by this; each output derives its own from its Display.
 /// Mirrors `RenderTarget`.
 internal import NucleusRenderModel
+
 internal import struct NucleusTypes.Rect
 
 struct RenderTarget {
@@ -68,8 +69,9 @@ func layerContentMatrix(_ worldMatrix: M44, _ layer: Layer) -> M44 {
 /// `mappedLogicalRect`.
 func mappedLogicalRect(_ worldMatrix: M44, _ bounds: Bounds) -> LogicalRect {
     let mapped = worldMatrix.mapRect(0, 0, bounds.w, bounds.h)
-    return LogicalRect(x: Double(mapped.x), y: Double(mapped.y),
-                       width: Double(mapped.w), height: Double(mapped.h))
+    return LogicalRect(
+        x: Double(mapped.x), y: Double(mapped.y),
+        width: Double(mapped.w), height: Double(mapped.h))
 }
 
 /// Intersection of two logical rects; nil if degenerate. Mirrors
@@ -97,15 +99,18 @@ func rectIntersectionArea(_ a: LogicalRect, _ b: LogicalRect) -> Double {
 /// World-space rounded clip of a layer's own clip, if set. Mirrors
 /// `layerClipRect`.
 func layerClipRect(_ layer: Layer, _ worldMatrix: M44) -> RoundedClip? {
-    guard let clip = ComposeHelpers.scaledClipForBounds(
-        clip: layer.model.properties.clip,
-        modelBounds: layer.model.properties.bounds,
-        effectiveBounds: layer.effectiveBounds()) else { return nil }
+    guard
+        let clip = ComposeHelpers.scaledClipForBounds(
+            clip: layer.model.properties.clip,
+            modelBounds: layer.model.properties.bounds,
+            effectiveBounds: layer.effectiveBounds())
+    else { return nil }
     let clipMatrix = worldMatrix.concat(M44.from3x3(clip.transform))
     let mapped = clipMatrix.mapRect(clip.rect.0, clip.rect.1, clip.rect.2, clip.rect.3)
     return RoundedClip(
-        rect: LogicalRect(x: Double(mapped.x), y: Double(mapped.y),
-                          width: Double(mapped.w), height: Double(mapped.h)),
+        rect: LogicalRect(
+            x: Double(mapped.x), y: Double(mapped.y),
+            width: Double(mapped.w), height: Double(mapped.h)),
         radii: clip.radii)
 }
 
@@ -132,9 +137,13 @@ func accumulateClip(_ parentClip: ClipState, _ layer: Layer, _ worldMatrix: M44)
 /// Pick the radii for a merged clip. The innermost rounded clip whose rect
 /// equals the merged intersection owns the corners; otherwise square. Mirrors
 /// `mergeClipRadii`.
-private func mergeClipRadii(_ parent: RoundedClip, _ child: RoundedClip, _ merged: LogicalRect) -> Float4 {
-    let childRounded = child.radii.0 > 0 || child.radii.1 > 0 || child.radii.2 > 0 || child.radii.3 > 0
-    let parentRounded = parent.radii.0 > 0 || parent.radii.1 > 0 || parent.radii.2 > 0 || parent.radii.3 > 0
+private func mergeClipRadii(_ parent: RoundedClip, _ child: RoundedClip, _ merged: LogicalRect)
+    -> Float4
+{
+    let childRounded =
+        child.radii.0 > 0 || child.radii.1 > 0 || child.radii.2 > 0 || child.radii.3 > 0
+    let parentRounded =
+        parent.radii.0 > 0 || parent.radii.1 > 0 || parent.radii.2 > 0 || parent.radii.3 > 0
     if childRounded && rectsApproxEqual(child.rect, merged) { return child.radii }
     if parentRounded && rectsApproxEqual(parent.rect, merged) { return parent.radii }
     return (0, 0, 0, 0)
@@ -142,8 +151,8 @@ private func mergeClipRadii(_ parent: RoundedClip, _ child: RoundedClip, _ merge
 
 private func rectsApproxEqual(_ a: LogicalRect, _ b: LogicalRect) -> Bool {
     let eps = 0.5
-    return abs(a.x - b.x) <= eps && abs(a.y - b.y) <= eps &&
-        abs(a.width - b.width) <= eps && abs(a.height - b.height) <= eps
+    return abs(a.x - b.x) <= eps && abs(a.y - b.y) <= eps && abs(a.width - b.width) <= eps
+        && abs(a.height - b.height) <= eps
 }
 
 /// Clip a layer's rect against the accumulated clip; nil if fully clipped.
@@ -186,7 +195,9 @@ func logicalToTargetPhysicalY(_ target: RenderTarget, _ logicalY: Double) -> Dou
 
 /// Whether a logical-space rect overlaps this target's output area. Mirrors
 /// `logicalRectIntersectsTarget`.
-func logicalRectIntersectsTarget(_ target: RenderTarget, _ x: Double, _ y: Double, _ width: Double, _ height: Double) -> Bool {
+func logicalRectIntersectsTarget(
+    _ target: RenderTarget, _ x: Double, _ y: Double, _ width: Double, _ height: Double
+) -> Bool {
     rectIntersectionArea(
         LogicalRect(x: x, y: y, width: width, height: height),
         target.logicalRect) > 0

@@ -1,48 +1,48 @@
 import Vulkan
-public import VulkanC
+package import VulkanC
 
 /// Opaque, non-owning Vulkan tokens passed across the renderer's platform-host
 /// boundary. The unchecked sendability covers only immutable pointer bits:
 /// construction and dereference remain platform SPI operations, and the
 /// originating `VulkanBootstrap`/`VulkanSurface` lifetime must encompass every
 /// use. No mutable Vulkan state is accessed through these values directly.
-@safe public struct VulkanInstanceHandle: @unchecked Sendable {
+@safe package struct VulkanInstanceHandle: @unchecked Sendable {
     private let raw: UnsafeRawPointer
-    @_spi(NucleusPlatform) public init(_ value: VkInstance) {
+    package init(_ value: VkInstance) {
         unsafe raw = UnsafeRawPointer(value)
     }
-    @_spi(NucleusPlatform) public var vkInstance: VkInstance {
+    package var vkInstance: VkInstance {
         unsafe OpaquePointer(raw)
     }
 }
 
-@safe public struct VulkanPhysicalDeviceHandle: @unchecked Sendable {
+@safe package struct VulkanPhysicalDeviceHandle: @unchecked Sendable {
     private let raw: UnsafeRawPointer
-    @_spi(NucleusPlatform) public init(_ value: VkPhysicalDevice) {
+    package init(_ value: VkPhysicalDevice) {
         unsafe raw = UnsafeRawPointer(value)
     }
-    @_spi(NucleusPlatform) public var vkPhysicalDevice: VkPhysicalDevice {
+    package var vkPhysicalDevice: VkPhysicalDevice {
         unsafe OpaquePointer(raw)
     }
 }
 
-@safe public struct VulkanSurfaceHandle: @unchecked Sendable {
+@safe package struct VulkanSurfaceHandle: @unchecked Sendable {
     private let raw: UnsafeRawPointer
-    @_spi(NucleusPlatform) public init(_ value: VkSurfaceKHR) {
+    package init(_ value: VkSurfaceKHR) {
         unsafe raw = UnsafeRawPointer(value)
     }
-    @_spi(NucleusPlatform) public var vkSurface: VkSurfaceKHR {
+    package var vkSurface: VkSurfaceKHR {
         unsafe OpaquePointer(raw)
     }
 }
 
-public typealias VulkanSurfaceFactory = (VulkanInstanceHandle) -> VulkanSurfaceHandle?
-public typealias VulkanQueuePresentationProbe = (
+package typealias VulkanSurfaceFactory = (VulkanInstanceHandle) -> VulkanSurfaceHandle?
+package typealias VulkanQueuePresentationProbe = (
     VulkanInstanceHandle, VulkanPhysicalDeviceHandle, UInt32
 ) -> Bool
 
 /// The platform-specific evidence required while selecting the graphics queue.
-public enum VulkanPresentationQualification {
+package enum VulkanPresentationQualification {
     case none
     case platformProbe(VulkanQueuePresentationProbe)
     case surface(VulkanSurface)
@@ -57,7 +57,7 @@ final class VulkanInstanceLifetime {
 /// on every WSI platform and must be released before its originating instance.
 @MainActor
 /// Encapsulates a surface handle while retaining its originating instance owner.
-@safe public final class VulkanSurface {
+@safe package final class VulkanSurface {
     let instance: VkInstance
     let dispatch: VK.InstanceDispatch
     let handle: VkSurfaceKHR
@@ -81,7 +81,7 @@ final class VulkanInstanceLifetime {
 /// Instance-only bring-up. Android creates its real surface at this stage before
 /// device selection; platforms with a pre-surface query finalize via a probe.
 @MainActor
-public final class VulkanBootstrap {
+package final class VulkanBootstrap {
     let contract: VkRequirements.Contract
     let instanceLifetime: VulkanInstanceLifetime
     var finalized = false
@@ -91,23 +91,25 @@ public final class VulkanBootstrap {
         self.instanceLifetime = VulkanInstanceLifetime(instance: consume instance)
     }
 
-    public static func create(
+    package static func create(
         applicationName: String,
         presentation: VkRequirements.PresentationMode = .platformDefault,
         enableValidation: Bool = false
     ) -> VulkanBootstrap? {
         let contract = VkRequirements.contract(for: presentation)
-        guard let instance = unsafe InstanceOwner.create(
-            base: VK.loadBaseDispatch(), applicationName: applicationName,
-            contract: contract, enableValidation: enableValidation
-        ) else { return nil }
+        guard
+            let instance = unsafe InstanceOwner.create(
+                base: VK.loadBaseDispatch(), applicationName: applicationName,
+                contract: contract, enableValidation: enableValidation
+            )
+        else { return nil }
         return VulkanBootstrap(contract: contract, instance: consume instance)
     }
 
-    public func createSurface(_ factory: VulkanSurfaceFactory) -> VulkanSurface? {
+    package func createSurface(_ factory: VulkanSurfaceFactory) -> VulkanSurface? {
         guard !finalized else { return nil }
         guard let instance = unsafe instanceLifetime.owner?.handle,
-              let dispatch = instanceLifetime.owner?.dispatch
+            let dispatch = instanceLifetime.owner?.dispatch
         else { return nil }
         guard let token = unsafe factory(VulkanInstanceHandle(instance)) else {
             return nil

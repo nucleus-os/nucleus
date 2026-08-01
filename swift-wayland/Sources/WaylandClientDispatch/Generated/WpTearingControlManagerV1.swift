@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for wp_tearing_control_manager_v1.
 
 import WaylandClientC
-public enum WpTearingControlManagerV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum WpTearingControlManagerV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_tearing_control_manager_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == WpTearingControlManagerV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpTearingControlManagerV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_tearing_control_manager_v1_destroy(_proxy)
@@ -17,10 +18,16 @@ public extension WaylandProxy where Interface == WpTearingControlManagerV1Client
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func getTearingControl(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<WpTearingControlV1Client> {
+    package func getTearingControl(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError)
+        -> WaylandProxy<WpTearingControlV1Client>
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_wp_tearing_control_manager_v1_get_tearing_control(_proxy, _surfaceProxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_wp_tearing_control_manager_v1_get_tearing_control(
+                    _proxy, _surfaceProxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

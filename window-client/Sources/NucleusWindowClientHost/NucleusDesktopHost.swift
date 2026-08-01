@@ -1,15 +1,13 @@
-import NucleusAppHostBundle
+package import NucleusAppHostBundle
+public import NucleusAppHostProtocols
 import NucleusDiagnostics
-import NucleusLinuxReactor
-import NucleusRenderModel
-@_spi(NucleusPlatform) import NucleusRenderer
+package import NucleusLinuxReactor
+package import NucleusRenderModel
 import NucleusTextBackend
-import NucleusUI
-@_spi(NucleusWindowClientImplementation)
-import NucleusWindowClientRender
-@_spi(NucleusWindowClientImplementation)
-import NucleusWindowClientWayland
-import NucleusWindowClientContracts
+package import NucleusUI
+public import NucleusWindowClientContracts
+package import NucleusWindowClientRender
+public import NucleusWindowClientWayland
 
 public struct NucleusDesktopHostConfiguration: Sendable, Equatable {
     public var waylandSocketName: String?
@@ -39,27 +37,19 @@ public struct NucleusDesktopHostConfiguration: Sendable, Equatable {
 /// construct client protocol or presentation implementations themselves.
 @MainActor
 public final class NucleusDesktopHost {
-    @_spi(NucleusWindowClientImplementation)
-    public let wayland: NucleusDesktopConnection
-    @_spi(NucleusWindowClientImplementation)
-    public let reactor: LinuxHostReactor
-    @_spi(NucleusWindowClientImplementation)
-    public let resourceHost: SwiftResourceHost
-    @_spi(NucleusWindowClientImplementation)
-    public let retainedStore: RetainedTreeStore
-    public let applicationHost: NucleusAppHostBundle
-    public let textSystem: TextSystem
-    @_spi(NucleusWindowClientImplementation)
-    public let renderer: NucleusWindowClientRenderEngine
+    package let wayland: NucleusDesktopConnection
+    package let reactor: LinuxHostReactor
+    package let resourceHost: SwiftResourceHost
+    package let retainedStore: RetainedTreeStore
+    package let applicationHost: NucleusAppHostBundle
+    package let textSystem: TextSystem
+    package let renderer: NucleusWindowClientRenderEngine
 
-    public var capabilities:
-        [NucleusDesktopCapabilityKind: NucleusDesktopCapability]
-    {
+    public var capabilities: [NucleusDesktopCapabilityKind: NucleusDesktopCapability] {
         wayland.capabilities
     }
 
-    public var onLifecycleEvent:
-        ((NucleusDesktopLifecycleEvent) -> Void)?
+    public var onLifecycleEvent: ((NucleusDesktopLifecycleEvent) -> Void)?
     {
         get { wayland.onLifecycleEvent }
         set { wayland.onLifecycleEvent = newValue }
@@ -110,7 +100,7 @@ public final class NucleusDesktopHost {
     ) {
         let wayland: NucleusDesktopConnection?
         if let descriptor =
-                configuration.connectedWaylandFileDescriptor
+            configuration.connectedWaylandFileDescriptor
         {
             wayland = NucleusDesktopConnection(
                 connectedFileDescriptor: descriptor,
@@ -120,7 +110,7 @@ public final class NucleusDesktopHost {
                 socketName: configuration.waylandSocketName)
         }
         guard let wayland,
-              let reactor = try? LinuxHostReactor(
+            let reactor = try? LinuxHostReactor(
                 queueDepth: configuration.reactorQueueDepth)
         else {
             return nil
@@ -136,12 +126,13 @@ public final class NucleusDesktopHost {
                 "conflicting Graphite text borrow provider")
             return nil
         }
-        guard let renderer = NucleusWindowClientRenderEngine(
-            connection: wayland,
-            enableValidation: configuration.enableVulkanValidation,
-            store: retainedStore,
-            resourceHost: resourceHost,
-            asyncRenderWakeSink: asyncRenderWakeSink)
+        guard
+            let renderer = NucleusWindowClientRenderEngine(
+                connection: wayland,
+                enableValidation: configuration.enableVulkanValidation,
+                store: retainedStore,
+                resourceHost: resourceHost,
+                asyncRenderWakeSink: asyncRenderWakeSink)
         else {
             return nil
         }

@@ -1,6 +1,7 @@
 import NucleusUITestSupport
-@_spi(NucleusRenderServer) @testable import NucleusUI
 import Testing
+
+@testable import NucleusUI
 
 @MainActor
 @Suite(.uiContext) struct ActionTests {
@@ -11,20 +12,24 @@ import Testing
 
         view.setAction(action) { event in
             callCount += 1
-            #expect(event == Event(
+            #expect(
+                event
+                    == Event(
+                        type: .pointerDown,
+                        location: Point(x: 10, y: 20),
+                        timestampNanoseconds: 123,
+                        button: .middle
+                    ))
+        }
+
+        let handled = view.performAction(
+            action,
+            event: Event(
                 type: .pointerDown,
                 location: Point(x: 10, y: 20),
                 timestampNanoseconds: 123,
                 button: .middle
             ))
-        }
-
-        let handled = view.performAction(action, event: Event(
-            type: .pointerDown,
-            location: Point(x: 10, y: 20),
-            timestampNanoseconds: 123,
-            button: .middle
-        ))
         #expect(handled)
         #expect(callCount == 1)
     }

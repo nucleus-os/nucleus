@@ -1,7 +1,7 @@
 // ConfigurePolicy by the production router.
 
-import WaylandServerC
 import WaylandServer
+import WaylandServerC
 import WaylandServerDispatch
 
 @MainActor
@@ -43,18 +43,20 @@ extension XdgWmBaseBinding: XdgWmBaseRequests {
                     "wl_surface already has an XDG construction or committed state")
             return
         }
-        guard id.create(
-            owner: { handle in
-                XdgSurface(
-                    resource: handle,
-                    shell: shell,
-                    surface: surface,
-                    wmBaseResource: resource)
-            },
-            installed: { xdgSurface in
-                surface.bindXdgConstructionRole(xdgSurface)
-            }
-        ) != nil else {
+        guard
+            id.create(
+                owner: { handle in
+                    XdgSurface(
+                        resource: handle,
+                        shell: shell,
+                        surface: surface,
+                        wmBaseResource: resource)
+                },
+                installed: { xdgSurface in
+                    surface.bindXdgConstructionRole(xdgSurface)
+                }
+            ) != nil
+        else {
             surface.releaseXdgConstruction()
             return
         }

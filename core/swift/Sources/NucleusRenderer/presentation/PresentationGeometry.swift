@@ -3,10 +3,10 @@
 // `LogicalRect`, `PixelSize` — no protocol or backend dependency. Nothing
 // throughout the live presentation path.
 
+internal import NucleusTypes
+
 /// Stable per-output identity. Mirrors `Display.DisplayID` (`u64`).
 typealias DisplayID = UInt64
-
-internal import NucleusTypes
 
 typealias PhysicalRect = OutputPixelRect
 typealias LogicalRect = GlobalLogicalRect

@@ -2,14 +2,15 @@
 // GBM scanout BO. The pNext chain assembly (external-memory + explicit DRM
 // modifier plane layouts) and live import bind imported memory to the image.
 
+import NucleusDiagnostics
+package import Vulkan
+package import VulkanC
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Android)
 import Android
 #endif
-import NucleusDiagnostics
-public import VulkanC
-public import Vulkan
 
 private func logDmaBufImportFailure(_ descriptor: DmaBufImageDescriptor, _ stage: String) {
     NucleusLogger(subsystem: "dmabuf-import").error(
@@ -18,37 +19,39 @@ private func logDmaBufImportFailure(_ descriptor: DmaBufImageDescriptor, _ stage
             + "planes=\(descriptor.planes.count)")
 }
 
-public struct DmaBufPlane: Equatable, Sendable {
+package struct DmaBufPlane: Equatable, Sendable {
     /// Borrowed or owned dmabuf fd for this plane. `-1` means use the
     /// descriptor's primary fd. `importDmaBufImage` consumes the fds it receives.
-    public var fd: Int32
-    public var offset: UInt64
-    public var rowPitch: UInt64
-    public init(fd: Int32 = -1, offset: UInt64, rowPitch: UInt64) {
+    package var fd: Int32
+    package var offset: UInt64
+    package var rowPitch: UInt64
+    package init(fd: Int32 = -1, offset: UInt64, rowPitch: UInt64) {
         self.fd = fd
         self.offset = offset
         self.rowPitch = rowPitch
     }
 }
 
-public struct DmaBufImageDescriptor {
-    public var fd: Int32
-    public var width: UInt32
-    public var height: UInt32
+package struct DmaBufImageDescriptor {
+    package var fd: Int32
+    package var width: UInt32
+    package var height: UInt32
     /// DRM fourcc (e.g. `DRM_FORMAT_XRGB8888`).
-    public var drmFormat: UInt32
-    public var modifier: UInt64
-    public var planes: [DmaBufPlane]
+    package var drmFormat: UInt32
+    package var modifier: UInt64
+    package var planes: [DmaBufPlane]
     /// The image usage the import is created with. The default
     /// (`sampled | colorAttachment`) suits a sampled client buffer; a GBM scanout
     /// BO that Graphite wraps as a render target must add `inputAttachment` (Skia
     /// `transferSrc` for readback.
-    public var usage: VK.ImageUsageFlags
+    package var usage: VK.ImageUsageFlags
 
-    public static let sampledUsage: VK.ImageUsageFlags = [.sampledBit, .colorAttachmentBit]
-    public static let scanoutUsage: VK.ImageUsageFlags = [.colorAttachmentBit, .inputAttachmentBit, .transferSrcBit]
+    package static let sampledUsage: VK.ImageUsageFlags = [.sampledBit, .colorAttachmentBit]
+    package static let scanoutUsage: VK.ImageUsageFlags = [
+        .colorAttachmentBit, .inputAttachmentBit, .transferSrcBit,
+    ]
 
-    public init(
+    package init(
         fd: Int32, width: UInt32, height: UInt32, drmFormat: UInt32, modifier: UInt64,
         planes: [DmaBufPlane], usage: VK.ImageUsageFlags = DmaBufImageDescriptor.sampledUsage
     ) {
@@ -62,13 +65,13 @@ public struct DmaBufImageDescriptor {
     }
 }
 
-public enum DrmFourcc {
-    public static let xrgb8888: UInt32 = 0x3432_5258  // 'XR24'
-    public static let argb8888: UInt32 = 0x3432_5241  // 'AR24'
-    public static let xbgr8888: UInt32 = 0x3432_4258  // 'XB24'
-    public static let abgr8888: UInt32 = 0x3432_4241  // 'AB24'
-    public static let abgr16161616f: UInt32 = 0x4834_4241  // 'AB4H'
-    public static let abgr2101010: UInt32 = 0x3033_4241  // 'AB30'
+package enum DrmFourcc {
+    package static let xrgb8888: UInt32 = 0x3432_5258  // 'XR24'
+    package static let argb8888: UInt32 = 0x3432_5241  // 'AR24'
+    package static let xbgr8888: UInt32 = 0x3432_4258  // 'XB24'
+    package static let abgr8888: UInt32 = 0x3432_4241  // 'AB24'
+    package static let abgr16161616f: UInt32 = 0x4834_4241  // 'AB4H'
+    package static let abgr2101010: UInt32 = 0x3033_4241  // 'AB30'
 }
 
 struct ClientShmConversionMetrics: Equatable, Sendable {
@@ -85,7 +88,7 @@ struct ClientShmConversion: Equatable, Sendable {
 /// Convert a committed wl_shm client buffer into the RGBA byte layout consumed
 /// by `makeRasterImageRGBA`. wl_shm's ARGB8888/XRGB8888 values map to DRM
 /// AR24/XR24, whose little-endian memory order is BGRA/BGRX.
-public func convertClientShmToRGBA(
+package func convertClientShmToRGBA(
     pixels: Span<UInt8>,
     width: UInt32,
     height: UInt32,
@@ -169,28 +172,28 @@ func convertClientShmToRGBAWithMetrics(
             bytesCopied: UInt64(destinationCount)))
 }
 
-public struct DmaBufFormatModifier: Equatable, Sendable {
-    public var format: UInt32
-    public var modifier: UInt64
+package struct DmaBufFormatModifier: Equatable, Sendable {
+    package var format: UInt32
+    package var modifier: UInt64
 
-    public init(format: UInt32, modifier: UInt64) {
+    package init(format: UInt32, modifier: UInt64) {
         self.format = format
         self.modifier = modifier
     }
 }
 
-public struct DmaBufSyncPoint: Equatable, Sendable {
-    public var handle: UInt32
-    public var point: UInt64
+package struct DmaBufSyncPoint: Equatable, Sendable {
+    package var handle: UInt32
+    package var point: UInt64
 
-    public init(handle: UInt32, point: UInt64) {
+    package init(handle: UInt32, point: UInt64) {
         self.handle = handle
         self.point = point
     }
 }
 
 /// Map a DRM fourcc to the Vulkan format Skia/the compositor sample it as.
-public func vulkanFormatForDrm(_ fourcc: UInt32) -> VkFormat {
+package func vulkanFormatForDrm(_ fourcc: UInt32) -> VkFormat {
     switch fourcc {
     case DrmFourcc.xrgb8888, DrmFourcc.argb8888:
         return VK_FORMAT_B8G8R8A8_UNORM
@@ -266,7 +269,8 @@ public func vulkanFormatForDrm(_ fourcc: UInt32) -> VkFormat {
         }
     }
     guard result == VK_SUCCESS else { return false }
-    let features = unsafe externalProperties
+    let features =
+        unsafe externalProperties
         .externalMemoryProperties.externalMemoryFeatures
     return features & requiredExternalFeature != 0
 }
@@ -275,7 +279,7 @@ public func vulkanFormatForDrm(_ fourcc: UInt32) -> VkFormat {
 /// sampled as imported client textures. This is the source for
 /// zwp_linux_dmabuf feedback; clients should only allocate buffers the renderer's
 /// actual Vulkan device says it can sample.
-public func querySampleableDmaBufFormats(
+package func querySampleableDmaBufFormats(
     physicalDevice: VkPhysicalDevice,
     instanceDispatch: VK.InstanceDispatch,
     drmFormats: [UInt32] = [
@@ -288,7 +292,8 @@ public func querySampleableDmaBufFormats(
     ]
 ) -> [DmaBufFormatModifier] {
     guard let getFormatProperties = unsafe instanceDispatch.vkGetPhysicalDeviceFormatProperties2,
-          let getImageFormatProperties = unsafe instanceDispatch.vkGetPhysicalDeviceImageFormatProperties2
+        let getImageFormatProperties =
+            unsafe instanceDispatch.vkGetPhysicalDeviceImageFormatProperties2
     else {
         return []
     }
@@ -324,17 +329,19 @@ public func querySampleableDmaBufFormats(
             if features & UInt64(VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT) == 0 { continue }
 
             let value = modifier.drmFormatModifier
-            guard unsafe supportsDmaBufImage(
-                physicalDevice: physicalDevice,
-                getImageFormatProperties: getImageFormatProperties,
-                format: vulkanFormat,
-                modifier: value,
-                usage: DmaBufImageDescriptor.sampledUsage,
-                requiredExternalFeature:
-                    VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT.rawValue)
+            guard
+                unsafe supportsDmaBufImage(
+                    physicalDevice: physicalDevice,
+                    getImageFormatProperties: getImageFormatProperties,
+                    format: vulkanFormat,
+                    modifier: value,
+                    usage: DmaBufImageDescriptor.sampledUsage,
+                    requiredExternalFeature:
+                        VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT.rawValue)
             else { continue }
-            out.append(DmaBufFormatModifier(
-                format: drmFormat, modifier: value))
+            out.append(
+                DmaBufFormatModifier(
+                    format: drmFormat, modifier: value))
         }
     }
     return out
@@ -343,7 +350,7 @@ public func querySampleableDmaBufFormats(
 /// Build the `VkImageCreateInfo` chain for an imported DRM-modifier DMA-BUF and
 /// invoke `body` with a borrowed pointer to the head. The explicit plane-layout
 /// array and the external-memory/modifier links stay alive for the call only.
-public func withDmaBufImportImageInfo<R>(
+package func withDmaBufImportImageInfo<R>(
     _ descriptor: DmaBufImageDescriptor,
     _ body: (UnsafePointer<VkImageCreateInfo>) -> R
 ) -> R {
@@ -355,7 +362,8 @@ public func withDmaBufImportImageInfo<R>(
     }
     return layouts.withUnsafeBufferPointer { layoutBuffer -> R in
         var modifierInfo = unsafe VkImageDrmFormatModifierExplicitCreateInfoEXT()
-        unsafe modifierInfo.sType = VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT
+        unsafe modifierInfo.sType =
+            VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT
         unsafe modifierInfo.drmFormatModifier = descriptor.modifier
         unsafe modifierInfo.drmFormatModifierPlaneCount = UInt32(descriptor.planes.count)
         unsafe modifierInfo.pPlaneLayouts = layoutBuffer.baseAddress
@@ -376,7 +384,8 @@ public func withDmaBufImportImageInfo<R>(
                 }
                 unsafe info.imageType = VK_IMAGE_TYPE_2D
                 unsafe info.format = vulkanFormatForDrm(descriptor.drmFormat)
-                unsafe info.extent = VkExtent3D(width: descriptor.width, height: descriptor.height, depth: 1)
+                unsafe info.extent = VkExtent3D(
+                    width: descriptor.width, height: descriptor.height, depth: 1)
                 unsafe info.mipLevels = 1
                 unsafe info.arrayLayers = 1
                 unsafe info.samples = VK_SAMPLE_COUNT_1_BIT
@@ -410,15 +419,15 @@ public func withDmaBufImportImageInfo<R>(
 
     init?(_ dispatch: VK.DeviceDispatch) {
         guard let createImage = unsafe dispatch.vkCreateImage,
-              let destroyImage = unsafe dispatch.vkDestroyImage,
-              let allocateMemory = unsafe dispatch.vkAllocateMemory,
-              let freeMemory = unsafe dispatch.vkFreeMemory,
-              let bindImageMemory = unsafe dispatch.vkBindImageMemory,
-              let bindImageMemory2 = unsafe dispatch.vkBindImageMemory2,
-              let getMemoryFdProperties = unsafe dispatch.vkGetMemoryFdPropertiesKHR,
-              let getImageMemoryRequirements =
+            let destroyImage = unsafe dispatch.vkDestroyImage,
+            let allocateMemory = unsafe dispatch.vkAllocateMemory,
+            let freeMemory = unsafe dispatch.vkFreeMemory,
+            let bindImageMemory = unsafe dispatch.vkBindImageMemory,
+            let bindImageMemory2 = unsafe dispatch.vkBindImageMemory2,
+            let getMemoryFdProperties = unsafe dispatch.vkGetMemoryFdPropertiesKHR,
+            let getImageMemoryRequirements =
                 unsafe dispatch.vkGetImageMemoryRequirements,
-              let getImageMemoryRequirements2 =
+            let getImageMemoryRequirements2 =
                 unsafe dispatch.vkGetImageMemoryRequirements2
         else { return nil }
         unsafe self.init(
@@ -458,7 +467,7 @@ public func withDmaBufImportImageInfo<R>(
     }
 }
 
-public func importDmaBufImage(
+package func importDmaBufImage(
     device: VkDevice,
     dispatch: VK.DeviceDispatch,
     descriptor: DmaBufImageDescriptor
@@ -505,13 +514,13 @@ func importDmaBufImage(
     // to import the same consumed fd twice.
     let distinctPlaneFds = Set(ownedPlaneFds)
     guard descriptor.width > 0,
-          descriptor.height > 0,
-          vulkanFormatForDrm(descriptor.drmFormat) != VK_FORMAT_UNDEFINED,
-          (1...3).contains(descriptor.planes.count),
-          ownedPlaneFds.allSatisfy({ $0 >= 0 }),
-          distinctPlaneFds.count == 1
+        descriptor.height > 0,
+        vulkanFormatForDrm(descriptor.drmFormat) != VK_FORMAT_UNDEFINED,
+        (1...3).contains(descriptor.planes.count),
+        ownedPlaneFds.allSatisfy({ $0 >= 0 }),
+        distinctPlaneFds.count == 1
             || distinctPlaneFds.count == ownedPlaneFds.count,
-          let operations
+        let operations
     else {
         logDmaBufImportFailure(descriptor, "invalid-layout-or-dispatch")
         return nil
@@ -544,14 +553,16 @@ func importDmaBufImage(
     // memory covers every plane (imported once, below).
     let separatePlaneMemory = distinctPlaneFds.count > 1
 
-    func allocateImportedMemory(fdIndex: Int, requirements: VkMemoryRequirements) -> VkDeviceMemory? {
+    func allocateImportedMemory(fdIndex: Int, requirements: VkMemoryRequirements) -> VkDeviceMemory?
+    {
         var fdProps = unsafe VkMemoryFdPropertiesKHR()
         unsafe fdProps.sType = VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR
         let fd = ownedPlaneFds[fdIndex]
         let fdPropertiesResult = unsafe getMemoryFdProperties(
             device, VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT, fd, &fdProps)
         guard fdPropertiesResult == VK_SUCCESS else {
-            logDmaBufImportFailure(descriptor, "vkGetMemoryFdProperties-result-\(fdPropertiesResult.rawValue)")
+            logDmaBufImportFailure(
+                descriptor, "vkGetMemoryFdProperties-result-\(fdPropertiesResult.rawValue)")
             return nil
         }
         let typeBits = unsafe requirements.memoryTypeBits & fdProps.memoryTypeBits
@@ -608,7 +619,10 @@ func importDmaBufImage(
                 unsafe getImageMemoryRequirements2(device, &reqInfo, &req2)
             }
 
-            guard let memory = unsafe allocateImportedMemory(fdIndex: i, requirements: req2.memoryRequirements) else {
+            guard
+                let memory = unsafe allocateImportedMemory(
+                    fdIndex: i, requirements: req2.memoryRequirements)
+            else {
                 for unsafe m in unsafe memories { unsafe freeMemory(device, m, nil) }
                 return nil
             }
@@ -628,7 +642,8 @@ func importDmaBufImage(
         }
         let bindResult = planeInfos.withUnsafeMutableBufferPointer { planeBuffer in
             for i in unsafe binds.indices {
-                unsafe binds[i].pNext = unsafe UnsafeRawPointer(planeBuffer.baseAddress!.advanced(by: i))
+                unsafe binds[i].pNext = unsafe UnsafeRawPointer(
+                    planeBuffer.baseAddress!.advanced(by: i))
             }
             return binds.withUnsafeMutableBufferPointer { bindBuffer in
                 unsafe bindImageMemory2(device, UInt32(bindBuffer.count), bindBuffer.baseAddress)
@@ -642,7 +657,8 @@ func importDmaBufImage(
     } else {
         var requirements = VkMemoryRequirements()
         unsafe getImageMemoryRequirements(device, image, &requirements)
-        guard let memory = unsafe allocateImportedMemory(fdIndex: 0, requirements: requirements) else {
+        guard let memory = unsafe allocateImportedMemory(fdIndex: 0, requirements: requirements)
+        else {
             return nil
         }
         unsafe memories.append(memory)
@@ -659,10 +675,12 @@ func importDmaBufImage(
     }
 
     ok = true
-    return unsafe VkOwned(adopting: image, device: device, destroy: { d, img in
-        unsafe destroyImage(d, img, nil)
-        for unsafe memory in unsafe memories { unsafe freeMemory(d, memory, nil) }
-    })
+    return unsafe VkOwned(
+        adopting: image, device: device,
+        destroy: { d, img in
+            unsafe destroyImage(d, img, nil)
+            for unsafe memory in unsafe memories { unsafe freeMemory(d, memory, nil) }
+        })
 }
 
 private func dmaBufPlaneAspect(_ index: Int) -> VkImageAspectFlagBits {

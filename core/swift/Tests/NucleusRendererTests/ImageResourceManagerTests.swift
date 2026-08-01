@@ -1,9 +1,11 @@
 import Dispatch
-import Synchronization
-import Testing
-@testable @_spi(NucleusPlatform) import NucleusRenderer
+internal import NucleusAppHostProtocols
 import NucleusRenderModel
 import NucleusSkiaGraphiteBridge
+import Synchronization
+import Testing
+
+@testable import NucleusRenderer
 
 @Suite struct ImageResourceManagerTests {
     private final class TestWakeSink: AsyncRenderWakeSink, Sendable {
@@ -24,13 +26,15 @@ import NucleusSkiaGraphiteBridge
         height: Int = 2,
         byte: UInt8 = 0x80
     ) -> ImageSource {
-        ImageSource(content: .raw(RawPixelBuffer(
-            width: width,
-            height: height,
-            order: .rgba,
-            pixels: [UInt8](
-                repeating: byte,
-                count: width * height * 4))))
+        ImageSource(
+            content: .raw(
+                RawPixelBuffer(
+                    width: width,
+                    height: height,
+                    order: .rgba,
+                    pixels: [UInt8](
+                        repeating: byte,
+                        count: width * height * 4))))
     }
 
     /// The returned C++ value owns its raster surface snapshot. The bridge
@@ -166,23 +170,26 @@ import NucleusSkiaGraphiteBridge
             maxWidth: 16,
             maxHeight: 16)
 
-        let firstRequestIsPending = unsafe manager.image(
-            handle: 11,
-            source: corrupt,
-            outputID: 1) == nil
-        #expect(firstRequestIsPending)
-        #expect(wait(
-            for: .failed(
-                generation: 1,
-                reason: .unsupportedFormat),
-            handle: 11,
-            manager: manager))
-
-        for _ in 0..<100 {
-            let repeatedRequestIsPending = unsafe manager.image(
+        let firstRequestIsPending =
+            unsafe manager.image(
                 handle: 11,
                 source: corrupt,
                 outputID: 1) == nil
+        #expect(firstRequestIsPending)
+        #expect(
+            wait(
+                for: .failed(
+                    generation: 1,
+                    reason: .unsupportedFormat),
+                handle: 11,
+                manager: manager))
+
+        for _ in 0..<100 {
+            let repeatedRequestIsPending =
+                unsafe manager.image(
+                    handle: 11,
+                    source: corrupt,
+                    outputID: 1) == nil
             #expect(repeatedRequestIsPending)
         }
         #expect(decodeCount.withLock { $0 } == 1)
@@ -212,22 +219,25 @@ import NucleusSkiaGraphiteBridge
         defer { manager.shutdown() }
 
         _ = unsafe manager.image(handle: 12, source: valid, outputID: 1)
-        #expect(wait(
-            for: .failed(
-                generation: 1,
-                reason: .decodeFailure),
-            handle: 12,
-            manager: manager))
+        #expect(
+            wait(
+                for: .failed(
+                    generation: 1,
+                    reason: .decodeFailure),
+                handle: 12,
+                manager: manager))
         #expect(manager.retry(handle: 12))
         _ = unsafe manager.image(handle: 12, source: valid, outputID: 1)
-        #expect(wait(
-            for: .ready(generation: 2),
-            handle: 12,
-            manager: manager))
-        let retryImageIsValid = unsafe manager.image(
-            handle: 12,
-            source: valid,
-            outputID: 1)?.isValid() == true
+        #expect(
+            wait(
+                for: .ready(generation: 2),
+                handle: 12,
+                manager: manager))
+        let retryImageIsValid =
+            unsafe manager.image(
+                handle: 12,
+                source: valid,
+                outputID: 1)?.isValid() == true
         #expect(retryImageIsValid)
         #expect(decodeCount.withLock { $0 } == 2)
     }
@@ -259,10 +269,11 @@ import NucleusSkiaGraphiteBridge
         #expect(gate.entered.wait(timeout: .now() + 2) == .success)
         #expect(manager.replace(handle: 13, with: new))
         _ = unsafe manager.image(handle: 13, source: new, outputID: 1)
-        #expect(wait(
-            for: .ready(generation: 2),
-            handle: 13,
-            manager: manager))
+        #expect(
+            wait(
+                for: .ready(generation: 2),
+                handle: 13,
+                manager: manager))
         gate.release.signal()
         for _ in 0..<100 {
             manager.drainCompletions()
@@ -333,8 +344,7 @@ import NucleusSkiaGraphiteBridge
                 outputID: 1)
         }
         for _ in 0..<5_000
-        where decodeCount.withLock({ $0 }) < sources.count
-        {
+        where decodeCount.withLock({ $0 }) < sources.count {
             usleep(1_000)
         }
 
@@ -344,10 +354,11 @@ import NucleusSkiaGraphiteBridge
             manager.drainCompletions()
         }
         let beforeDraw = decodeCount.withLock { $0 }
-        let readyImageIsValid = unsafe manager.image(
-            handle: 1,
-            source: sources[0],
-            outputID: 1)?.isValid() == true
+        let readyImageIsValid =
+            unsafe manager.image(
+                handle: 1,
+                source: sources[0],
+                outputID: 1)?.isValid() == true
         #expect(readyImageIsValid)
         #expect(decodeCount.withLock { $0 } == beforeDraw)
     }

@@ -1,5 +1,5 @@
-import Testing
 import NucleusSkiaGraphiteBridge
+import Testing
 
 // Proves the renderer's Skia link end to end: the nucleus::skia Graphite façade
 // imports under C++ interop and links against the full GN/Ninja-built Skia
@@ -7,19 +7,20 @@ import NucleusSkiaGraphiteBridge
 // (no GPU/Vulkan context needed for the CPU raster path).
 @Test func graphiteFacadeLinksAndRunsRasterOp() {
     let px: [UInt8] = [
-        255, 0, 0, 255,   0, 255, 0, 255,
-        0, 0, 255, 255,   255, 255, 0, 255,
+        255, 0, 0, 255, 0, 255, 0, 255,
+        0, 0, 255, 255, 255, 255, 0, 255,
     ]
     let img = px.withUnsafeBufferPointer { buf in
-        unsafe RasterFixtureImage(nucleus.skia.makeRasterImageRGBA(
-            2, 2, buf.baseAddress, buf.count))
+        unsafe RasterFixtureImage(
+            nucleus.skia.makeRasterImageRGBA(
+                2, 2, buf.baseAddress, buf.count))
     }
     #expect(img.isValid)
     #expect(img.width == 2)
     #expect(img.height == 2)
 }
 
-@Test func paintWireEnumsAcceptEveryDeclaredValueAndRejectUnknownValues() {
+@Test func paintInteropEnumsAcceptEveryDeclaredValueAndRejectUnknownValues() {
     var paint = nucleus.skia.Paint()
 
     for raw in Int32(0)...7 {
@@ -55,14 +56,19 @@ private func render(
     renderRasterFixture(width: width, height: height, body)
 }
 
-private func pixel(_ pixels: [UInt8], _ x: Int, _ y: Int, width: Int) -> (UInt8, UInt8, UInt8, UInt8) {
+private func pixel(_ pixels: [UInt8], _ x: Int, _ y: Int, width: Int) -> (
+    UInt8, UInt8, UInt8, UInt8
+) {
     let i = (y * width + x) * 4
     return (pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3])
 }
 
 private func opaqueWhite() -> nucleus.skia.Color {
     var c = nucleus.skia.Color()
-    c.r = 1; c.g = 1; c.b = 1; c.a = 1
+    c.r = 1
+    c.g = 1
+    c.b = 1
+    c.a = 1
     return c
 }
 
@@ -167,7 +173,8 @@ private let closeVerb = UInt8(nucleus.skia.PathVerb.close.rawValue)
 // MARK: - Gradients
 
 @Test func linearGradientVariesAlongItsAxis() {
-    var black = nucleus.skia.Color(); black.a = 1
+    var black = nucleus.skia.Color()
+    black.a = 1
     let colors = [black, opaqueWhite()]
 
     let pixels: [UInt8] = {
@@ -201,7 +208,8 @@ private let closeVerb = UInt8(nucleus.skia.PathVerb.close.rawValue)
 /// facade rejects the inverted range rather than returning a shader that
 /// silently draws nothing.
 @Test func sweepGradientRejectsInvertedAngleRange() {
-    var black = nucleus.skia.Color(); black.a = 1
+    var black = nucleus.skia.Color()
+    black.a = 1
     let colors = [black, opaqueWhite()]
     let shader = makeSweepGradientFixture(
         colors: colors, centerX: 20, centerY: 20, start: 270, end: 90)
@@ -254,13 +262,13 @@ private let closeVerb = UInt8(nucleus.skia.PathVerb.close.rawValue)
 // MARK: - Runtime effects
 
 private let solidRed = """
-half4 main(float2 p) { return half4(1, 0, 0, 1); }
-"""
+    half4 main(float2 p) { return half4(1, 0, 0, 1); }
+    """
 
 private let uniformColor = """
-uniform float4 tint;
-half4 main(float2 p) { return half4(tint); }
-"""
+    uniform float4 tint;
+    half4 main(float2 p) { return half4(tint); }
+    """
 
 /// Compilation is uniform-independent, so a compiled program is reusable across
 /// uniform sets. This split is what lets the effect store cache compilation
@@ -326,7 +334,10 @@ half4 main(float2 p) { return half4(tint); }
         paint.strokeWidth = 2
         paint.antialias = false
         var rect = nucleus.skia.RectF()
-        rect.x = 10; rect.y = 10; rect.width = 20; rect.height = 20
+        rect.x = 10
+        rect.y = 10
+        rect.width = 20
+        rect.height = 20
         let radii = nucleus.skia.RRectRadii(
             topLeft: 4, topRight: 4, bottomRight: 4, bottomLeft: 4)
         canvas.drawRRect(rect, radii, paint)
@@ -346,7 +357,10 @@ half4 main(float2 p) { return half4(tint); }
         paint.strokeWidth = 2  // set, but style stays .fill
         paint.antialias = false
         var rect = nucleus.skia.RectF()
-        rect.x = 10; rect.y = 10; rect.width = 20; rect.height = 20
+        rect.x = 10
+        rect.y = 10
+        rect.width = 20
+        rect.height = 20
         let radii = nucleus.skia.RRectRadii(
             topLeft: 4, topRight: 4, bottomRight: 4, bottomLeft: 4)
         canvas.drawRRect(rect, radii, paint)

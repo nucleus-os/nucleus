@@ -244,19 +244,54 @@ public enum HostToolchainPlatform: String, Hashable, Sendable {
     case macOS
 }
 
+public struct BuildWorkspaceContractFile: Hashable, Sendable {
+    public let name: String
+    public let path: FilePath
+
+    public init(name: String, path: FilePath) {
+        self.name = name
+        self.path = path
+    }
+}
+
+public struct BuildWorkspaceContract: Hashable, Sendable {
+    public let name: String
+    public let stamp: FilePath
+    public let roots: [FilePath]
+    public let values: [String: String]
+    public let files: [BuildWorkspaceContractFile]
+
+    public init(
+        name: String,
+        stamp: FilePath,
+        roots: [FilePath],
+        values: [String: String],
+        files: [BuildWorkspaceContractFile]
+    ) {
+        self.name = name
+        self.stamp = stamp
+        self.roots = roots
+        self.values = values
+        self.files = files
+    }
+}
+
 public struct HostToolchainBuildPreparation: Hashable, Sendable {
     public let workspace: FilePath
     public let stagingRoot: FilePath
     public let platform: HostToolchainPlatform
+    public let contracts: [BuildWorkspaceContract]
 
     public init(
         workspace: FilePath,
         stagingRoot: FilePath,
-        platform: HostToolchainPlatform
+        platform: HostToolchainPlatform,
+        contracts: [BuildWorkspaceContract]
     ) {
         self.workspace = workspace
         self.stagingRoot = stagingRoot
         self.platform = platform
+        self.contracts = contracts
     }
 }
 

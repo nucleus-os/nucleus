@@ -19,17 +19,17 @@
 // `OutputBufferOwner` via `makeOwner`, which captures the three destroy verbs.
 
 import NucleusCompositorDrmC
-public import VulkanC
-public import Vulkan
 import NucleusRenderer
+package import Vulkan
+package import VulkanC
 
 /// One plane's GBM-reported layout, as needed for both the Vulkan import
 /// (offset/stride) and a KMS `drmModeAddFB2WithModifiers` (handle/offset/stride).
-public struct GbmPlaneLayout: Equatable, Sendable {
-    public var offset: UInt32
-    public var stride: UInt32
-    public var handle: UInt32
-    public init(offset: UInt32, stride: UInt32, handle: UInt32) {
+package struct GbmPlaneLayout: Equatable, Sendable {
+    package var offset: UInt32
+    package var stride: UInt32
+    package var handle: UInt32
+    package init(offset: UInt32, stride: UInt32, handle: UInt32) {
         self.offset = offset
         self.stride = stride
         self.handle = handle
@@ -46,19 +46,19 @@ public struct GbmPlaneLayout: Equatable, Sendable {
 /// presentation backend or cross-module ownership surface.
 @unsafe struct DRMScanoutBufferAllocation: ~Copyable {
     /// The imported scanout image. `consuming`-moved into the `OutputBufferOwner`.
-    public var image: VkOwned<VkImage>
+    package var image: VkOwned<VkImage>
     /// The raw `gbm_bo*`. Owned here; destroyed by the owner's `destroyBuffer`.
-    public let bo: OpaquePointer
-    public let width: UInt32
-    public let height: UInt32
-    public let drmFormat: UInt32
-    public let modifier: UInt64
-    public let planes: [GbmPlaneLayout]
+    package let bo: OpaquePointer
+    package let width: UInt32
+    package let height: UInt32
+    package let drmFormat: UInt32
+    package let modifier: UInt64
+    package let planes: [GbmPlaneLayout]
     /// A dup'd dmabuf fd kept for a possible KMS import path, or -1 when none was
     /// retained (the import consumed the original fd). The owner closes it if >= 0.
-    public let keptDmaBufFd: Int32
+    package let keptDmaBufFd: Int32
 
-    public init(
+    package init(
         image: consuming VkOwned<VkImage>,
         bo: OpaquePointer,
         width: UInt32,
@@ -82,7 +82,7 @@ public struct GbmPlaneLayout: Equatable, Sendable {
     /// `GBM_BO_USE_SCANOUT` and a primary node with DRM master; a render node has
     /// neither, so the fixture (and any GPU-only consumer) falls back to
     /// `renderableOnly`, which the GBM/Vulkan round-trip can still exercise.
-    public enum Usage {
+    package enum Usage {
         /// `GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING` — the live presentation buffer.
         case scanout
         /// `GBM_BO_USE_RENDERING` (+ linear) — GPU-only, no KMS master needed.
@@ -101,7 +101,7 @@ public struct GbmPlaneLayout: Equatable, Sendable {
     ///
     /// `keepDmaBufFdForKms`: when true, `dup()` the exported fd before the import
     /// consumes it, so a KMS `drmModeAddFB2WithModifiers` import remains possible.
-    public static func allocate(
+    package static func allocate(
         gbmDevice: OpaquePointer,
         drmFormat: UInt32,
         width: UInt32,
@@ -113,8 +113,8 @@ public struct GbmPlaneLayout: Equatable, Sendable {
         keepDmaBufFdForKms: Bool = false
     ) -> DRMScanoutBufferAllocation? {
         guard width > 0,
-              height > 0,
-              let modifierCount = UInt32(exactly: modifiers.count)
+            height > 0,
+            let modifierCount = UInt32(exactly: modifiers.count)
         else { return nil }
         // a. Allocate the BO. Prefer the modifier-explicit path when modifiers are
         // supplied; else the usage-flag path.
@@ -152,10 +152,11 @@ public struct GbmPlaneLayout: Equatable, Sendable {
         planes.reserveCapacity(planeCount)
         for plane in 0..<planeCount {
             let p = Int32(plane)
-            planes.append(unsafe GbmPlaneLayout(
-                offset: gbm_bo_get_offset(bo, p),
-                stride: gbm_bo_get_stride_for_plane(bo, p),
-                handle: gbm_bo_get_handle_for_plane(bo, p).u32))
+            planes.append(
+                unsafe GbmPlaneLayout(
+                    offset: gbm_bo_get_offset(bo, p),
+                    stride: gbm_bo_get_stride_for_plane(bo, p),
+                    handle: gbm_bo_get_handle_for_plane(bo, p).u32))
             // (the GEM handle is the union's 32-bit field)
         }
 
@@ -197,13 +198,17 @@ public struct GbmPlaneLayout: Equatable, Sendable {
             height: height,
             drmFormat: drmFormat,
             modifier: importModifier,
-            planes: planes.map { DmaBufPlane(offset: UInt64($0.offset), rowPitch: UInt64($0.stride)) },
+            planes: planes.map {
+                DmaBufPlane(offset: UInt64($0.offset), rowPitch: UInt64($0.stride))
+            },
             usage: DmaBufImageDescriptor.scanoutUsage)
 
-        guard let image = unsafe importDmaBufImage(
-            device: device, dispatch: dispatch, descriptor: descriptor)
+        guard
+            let image = unsafe importDmaBufImage(
+                device: device, dispatch: dispatch, descriptor: descriptor)
         else {
-            logRendererDrm("Vulkan DMA-BUF import failed modifier=\(importModifier) planes=\(planeCount)")
+            logRendererDrm(
+                "Vulkan DMA-BUF import failed modifier=\(importModifier) planes=\(planeCount)")
             // `exportedFd` is already closed by the importer's cleanup; only the KMS dup is ours.
             if keptFd >= 0 { close(keptFd) }
             unsafe gbm_bo_destroy(bo)
@@ -251,7 +256,7 @@ public struct GbmPlaneLayout: Equatable, Sendable {
             destroyFramebuffer: {
                 // No-op when no fb was created (render node has no DRM master).
                 if fbId != 0,
-                   let fd = framebufferDevice?.availableFileDescriptor
+                    let fd = framebufferDevice?.availableFileDescriptor
                 {
                     _ = drmModeRmFB(fd, fbId)
                 }

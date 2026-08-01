@@ -1,4 +1,4 @@
-public import WaylandClientDispatch
+package import WaylandClientDispatch
 
 /// One standard `ext_idle_notification_v1` subscription.
 ///
@@ -6,15 +6,15 @@ public import WaylandClientDispatch
 /// client owns only its timeout preference and reaction to the standard
 /// idled/resumed events.
 @MainActor
-public final class NucleusDesktopIdleNotification:
+package final class NucleusDesktopIdleNotification:
     ExtIdleNotificationV1Events
 {
     private let proxy:
         WaylandProxy<ExtIdleNotificationV1Client>
-    public var onIdled: (() -> Void)?
-    public var onResumed: (() -> Void)?
+    package var onIdled: (() -> Void)?
+    package var onResumed: (() -> Void)?
 
-    public init?(
+    package init?(
         client: NucleusDesktopConnection,
         timeoutMilliseconds: UInt32
     ) {
@@ -34,18 +34,18 @@ public final class NucleusDesktopIdleNotification:
         }
     }
 
-    public func destroy() {
+    package func destroy() {
         try? proxy.destroy()
     }
 
-    public func idled(
+    package func idled(
         _ proxy:
             WaylandBorrowedProxy<ExtIdleNotificationV1Client>
     ) {
         onIdled?()
     }
 
-    public func resumed(
+    package func resumed(
         _ proxy:
             WaylandBorrowedProxy<ExtIdleNotificationV1Client>
     ) {

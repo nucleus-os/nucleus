@@ -2,16 +2,16 @@ import Foundation
 import NucleusConfig
 
 /// Locating and reading the session configuration file.
-public enum ConfigFile {
-    public static let directoryName = "nucleus"
-    public static let fileName = "config.json"
+package enum ConfigFile {
+    package static let directoryName = "nucleus"
+    package static let fileName = "config.json"
 
     /// `$XDG_CONFIG_HOME/nucleus/config.json`, falling back to
     /// `$HOME/.config/nucleus/config.json`.
     ///
     /// Returns nil only when neither variable is set, which means there is no
     /// meaningful place to look rather than that the file is missing.
-    public static func defaultPath(
+    package static func defaultPath(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> String? {
         if let configHome = environment["XDG_CONFIG_HOME"], !configHome.isEmpty {
@@ -28,7 +28,7 @@ public enum ConfigFile {
     /// An absent file resolves to the built-in defaults with no diagnostics: a
     /// user who has never written a configuration is not in an error state, and
     /// the session must come up regardless.
-    public static func load(path: String) -> ConfigLoadOutcome {
+    package static func load(path: String) -> ConfigLoadOutcome {
         let data: Data
         do {
             data = try Data(
@@ -49,7 +49,7 @@ public enum ConfigFile {
 
     /// Read from the default location. Also yields defaults when no location
     /// can be determined at all.
-    public static func loadDefault(
+    package static func loadDefault(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> ConfigLoadOutcome {
         guard let path = defaultPath(environment: environment) else {

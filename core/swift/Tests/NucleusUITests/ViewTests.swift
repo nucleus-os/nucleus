@@ -1,5 +1,6 @@
 import NucleusUITestSupport
-@_spi(NucleusRenderServer) @testable import NucleusUI
+import Testing
+
 import class NucleusLayers.Context
 import struct NucleusLayers.ContextID
 import struct NucleusLayers.GeometryPoint
@@ -8,7 +9,8 @@ import struct NucleusLayers.GeometrySize
 import class NucleusLayers.InMemoryCommitSink
 import class NucleusLayers.LayerRuntimeHost
 import struct NucleusLayers.LayerTransaction
-import Testing
+
+@testable import NucleusUI
 
 @MainActor
 @Suite(.uiContext) struct ViewTests {
@@ -212,7 +214,8 @@ import Testing
     }
 
     @Test func viewLayerPublisherMaterializesBackingLayerIDsOutsideShellOverlay() throws {
-        let semanticContext = try Context(id: ContextID(rawValue: 710), commitSink: InMemoryCommitSink())
+        let semanticContext = try Context(
+            id: ContextID(rawValue: 710), commitSink: InMemoryCommitSink())
         let visualSink = InMemoryCommitSink()
         let visualContext = try Context(id: ContextID(rawValue: 711), commitSink: visualSink)
         let root = Application.withContext(semanticContext) {
@@ -238,13 +241,15 @@ import Testing
         let createdLayerIDs = Set(transaction.created.map(\.0))
         #expect(createdLayerIDs.contains(rootLayer.id))
         #expect(createdLayerIDs.contains(labelLayer.id))
-        #expect(transaction.propertyUpdates.contains {
-            $0.layer == labelLayer.id && $0.properties.content?.kind == .paint
-        })
+        #expect(
+            transaction.propertyUpdates.contains {
+                $0.layer == labelLayer.id && $0.properties.content?.kind == .paint
+            })
     }
 
     @Test func viewLayerPublisherConvertsBackdropGroupOnlyAtLayerBoundary() throws {
-        let semanticContext = try Context(id: ContextID(rawValue: 726), commitSink: InMemoryCommitSink())
+        let semanticContext = try Context(
+            id: ContextID(rawValue: 726), commitSink: InMemoryCommitSink())
         let visualSink = InMemoryCommitSink()
         let visualContext = try Context(id: ContextID(rawValue: 727), commitSink: visualSink)
         let root = Application.withContext(semanticContext) {
@@ -267,18 +272,21 @@ import Testing
         #expect(created.role == .notification)
         #expect(created.backdropGroupID == BackdropGroup.notifications.rawValue)
 
-        root.layerPresentation = ViewLayerPresentation(backdropGroup: .hotkeyOverlay, actionPolicy: .explicit)
+        root.layerPresentation = ViewLayerPresentation(
+            backdropGroup: .hotkeyOverlay, actionPolicy: .explicit)
         _ = try publisher.publish(roots: [root])
 
-        let update = try #require(visualSink.transactions.last?.propertyUpdates.first {
-            $0.layer == rootLayerID && $0.properties.backdropGroupID != nil
-        }?.properties)
+        let update = try #require(
+            visualSink.transactions.last?.propertyUpdates.first {
+                $0.layer == rootLayerID && $0.properties.backdropGroupID != nil
+            }?.properties)
         #expect(update.backdropGroupID == BackdropGroup.hotkeyOverlay.rawValue)
         #expect(update.actionPolicy == .explicit)
     }
 
     @Test func windowLayerPublisherUsesCallerWindowSelectionPolicy() throws {
-        let semanticContext = try Context(id: ContextID(rawValue: 712), commitSink: InMemoryCommitSink())
+        let semanticContext = try Context(
+            id: ContextID(rawValue: 712), commitSink: InMemoryCommitSink())
         let visualSink = InMemoryCommitSink()
         let visualContext = try Context(id: ContextID(rawValue: 713), commitSink: visualSink)
         let windows = Application.withContext(semanticContext) {
@@ -393,9 +401,10 @@ import Testing
         #expect(revealedHit.window === windows.back)
 
         let published = try scene.publish { $0.title == "Back" }
-        #expect(published.visualContent.map(\.id) == [
-            windows.back.id.rawValue
-        ])
+        #expect(
+            published.visualContent.map(\.id) == [
+                windows.back.id.rawValue
+            ])
     }
 
     @Test func windowSceneInterleavesEmbedderPlacementsByWindowLevel() throws {
@@ -425,19 +434,20 @@ import Testing
             visualContext: visualContext)
 
         let published = try scene.publishPlacing([
-                ScenePlacement(id: 40, rootLayerID: 400, level: .shellChrome),
-                ScenePlacement(id: 41, rootLayerID: 401, visible: false),
-            ])
+            ScenePlacement(id: 40, rootLayerID: 400, level: .shellChrome),
+            ScenePlacement(id: 41, rootLayerID: 401, visible: false),
+        ])
 
         // The id sequence states the interleaving directly: the placement sorts
         // between the two windows by level, and the invisible one is dropped.
         // A content-kind discriminant would say the same thing less precisely.
         #expect(published.visualContent.map(\.orderIndex) == [0, 1, 2])
-        #expect(published.visualContent.map(\.id) == [
-            windows.0.id.rawValue,
-            40,
-            windows.1.id.rawValue,
-        ])
+        #expect(
+            published.visualContent.map(\.id) == [
+                windows.0.id.rawValue,
+                40,
+                windows.1.id.rawValue,
+            ])
     }
 
     @Test func visualEffectViewStoresAppKitConfiguration() throws {
@@ -470,7 +480,8 @@ import Testing
     }
 
     @Test func viewLayerPublisherPublishesVisualEffectAsSemanticBackdropLayer() throws {
-        let semanticContext = try Context(id: ContextID(rawValue: 720), commitSink: InMemoryCommitSink())
+        let semanticContext = try Context(
+            id: ContextID(rawValue: 720), commitSink: InMemoryCommitSink())
         let visualSink = InMemoryCommitSink()
         let visualContext = try Context(id: ContextID(rawValue: 721), commitSink: visualSink)
         let root = Application.withContext(semanticContext) {
@@ -492,12 +503,14 @@ import Testing
         let transaction = try #require(visualSink.transactions.first)
         let createdBackdrops = transaction.created.filter { $0.1.kind == .backdrop }
         #expect(createdBackdrops.map(\.0) == [effectLayerID])
-        #expect(transaction.inserted.contains {
-            $0.layer == effectLayerID && $0.parent == rootLayerID
-        })
-        #expect(!transaction.created.contains {
-            $0.0 != effectLayerID && $0.1.kind == .backdrop
-        })
+        #expect(
+            transaction.inserted.contains {
+                $0.layer == effectLayerID && $0.parent == rootLayerID
+            })
+        #expect(
+            !transaction.created.contains {
+                $0.0 != effectLayerID && $0.1.kind == .backdrop
+            })
     }
 
     @Test func backingScaleFactorConvertsOnlyAtHostBoundaries() {
@@ -532,7 +545,8 @@ import Testing
     }
 
     @Test func viewLayerPublisherKeepsPublicationMetricsInPointSpace() throws {
-        let semanticContext = try Context(id: ContextID(rawValue: 722), commitSink: InMemoryCommitSink())
+        let semanticContext = try Context(
+            id: ContextID(rawValue: 722), commitSink: InMemoryCommitSink())
         let visualSink = InMemoryCommitSink()
         let visualContext = try Context(id: ContextID(rawValue: 723), commitSink: visualSink)
         let root = Application.withContext(semanticContext) {
@@ -571,19 +585,22 @@ import Testing
         #expect(effectDescriptor.backdropMaterial.cornerRadius == 18)
         #expect(labelDescriptor.frame == GeometryRect(x: 12, y: 16, width: 140, height: 24))
 
-        let rootUpdate = try #require(transaction.propertyUpdates.first { $0.layer == rootLayerID }?.properties)
+        let rootUpdate = try #require(
+            transaction.propertyUpdates.first { $0.layer == rootLayerID }?.properties)
         let rootShadow = try #require(rootUpdate.shadow)
         #expect(rootShadow.offsetY == 6)
         #expect(rootShadow.blurRadius == 20)
         #expect(rootShadow.cornerRadius == 12)
 
-        #expect(!transaction.propertyUpdates.contains {
-            $0.layer == effectLayerID && $0.properties.backdropMaterial != nil
-        })
+        #expect(
+            !transaction.propertyUpdates.contains {
+                $0.layer == effectLayerID && $0.properties.backdropMaterial != nil
+            })
     }
 
     @Test func viewLayerPublisherPublishesShadowOnlyChangesAndClears() throws {
-        let semanticContext = try Context(id: ContextID(rawValue: 724), commitSink: InMemoryCommitSink())
+        let semanticContext = try Context(
+            id: ContextID(rawValue: 724), commitSink: InMemoryCommitSink())
         let visualSink = InMemoryCommitSink()
         let visualContext = try Context(id: ContextID(rawValue: 725), commitSink: visualSink)
         let root = Application.withContext(semanticContext) {
@@ -603,9 +620,10 @@ import Testing
         _ = try publisher.publish(roots: [root])
 
         #expect(visualSink.transactions.count == initialTransactionCount + 1)
-        let shadowUpdate = try #require(visualSink.transactions.last?.propertyUpdates.first {
-            $0.layer == rootLayerID && $0.properties.shadow != nil
-        }?.properties.shadow)
+        let shadowUpdate = try #require(
+            visualSink.transactions.last?.propertyUpdates.first {
+                $0.layer == rootLayerID && $0.properties.shadow != nil
+            }?.properties.shadow)
         #expect(shadowUpdate.offsetY == 8)
         #expect(shadowUpdate.blurRadius == 18)
         #expect(shadowUpdate.opacity == 0.5)
@@ -613,9 +631,10 @@ import Testing
         root.shadow = .none
         _ = try publisher.publish(roots: [root])
 
-        let clearUpdate = try #require(visualSink.transactions.last?.propertyUpdates.first {
-            $0.layer == rootLayerID && $0.properties.shadow != nil
-        }?.properties.shadow)
+        let clearUpdate = try #require(
+            visualSink.transactions.last?.propertyUpdates.first {
+                $0.layer == rootLayerID && $0.properties.shadow != nil
+            }?.properties.shadow)
         #expect(clearUpdate.opacity == 0)
     }
 }

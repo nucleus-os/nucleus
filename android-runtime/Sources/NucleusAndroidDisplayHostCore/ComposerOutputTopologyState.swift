@@ -33,15 +33,17 @@ struct ComposerOutputTopologyState {
         height: Int32,
         refreshMillihertz: Int32
     ) -> Update? {
-        guard let period = composerRefreshPeriodNanoseconds(
-            refreshMillihertz: refreshMillihertz)
+        guard
+            let period = composerRefreshPeriodNanoseconds(
+                refreshMillihertz: refreshMillihertz)
         else { return nil }
         let previous = outputByName[name]
         if let previous,
-           previous.connected,
-           previous.width == width,
-           previous.height == height,
-           previous.refreshMillihertz == refreshMillihertz {
+            previous.connected,
+            previous.width == width,
+            previous.height == height,
+            previous.refreshMillihertz == refreshMillihertz
+        {
             return nil
         }
         let displayID: UInt64

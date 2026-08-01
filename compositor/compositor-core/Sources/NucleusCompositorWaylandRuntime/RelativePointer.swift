@@ -7,8 +7,8 @@
 // pointerMotion path emits relative motion to the focused client's live bindings.
 // libwayland owns the resource mechanics; this owns the delivery semantics.
 
-import WaylandServerC
 import WaylandServer
+import WaylandServerC
 import WaylandServerDispatch
 
 /// Non-owning handle to a live relative-pointer binding (the binding is owned by

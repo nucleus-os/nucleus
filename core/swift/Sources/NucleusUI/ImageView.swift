@@ -1,31 +1,9 @@
-package import NucleusTypes
+public import NucleusTypes
 
-public struct ImageHandle: Hashable, Sendable {
-    package let rawValue: NucleusTypes.ImageHandle
+public typealias ImageHandle = NucleusTypes.ImageHandle
 
-    public init(id: UInt64) {
-        self.rawValue = NucleusTypes.ImageHandle(id: id)
-    }
-
-    package init(rawValue: NucleusTypes.ImageHandle) {
-        self.rawValue = rawValue
-    }
-
-    public var id: UInt64 {
-        rawValue.id
-    }
-
-    public static func == (lhs: ImageHandle, rhs: ImageHandle) -> Bool {
-        lhs.id == rhs.id
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
-}
-
-private extension ImageRequestSource {
-    var isIcon: Bool {
+extension ImageRequestSource {
+    fileprivate var isIcon: Bool {
         if case .icon = self { return true }
         return false
     }
@@ -273,9 +251,9 @@ public final class ImageView: View, ~Sendable {
         requestToken = uiContext.imageRequests.request(request) {
             [weak self] result in
             guard let self,
-                  result.requestID.rawValue == self.id.rawValue,
-                  result.cancellationGeneration == self.requestGeneration,
-                  self.activeRequestInputs == inputs
+                result.requestID.rawValue == self.id.rawValue,
+                result.cancellationGeneration == self.requestGeneration,
+                self.activeRequestInputs == inputs
             else { return }
             switch result.outcome {
             case .success(let resource):
@@ -297,15 +275,16 @@ public final class ImageView: View, ~Sendable {
     func destinationRect() -> Rect {
         let frame = bounds.size
         guard contentMode != .stretch,
-              imageSize.width > 0, imageSize.height > 0,
-              frame.width > 0, frame.height > 0
+            imageSize.width > 0, imageSize.height > 0,
+            frame.width > 0, frame.height > 0
         else {
             return Rect(origin: .zero, size: frame)
         }
 
         let widthRatio = frame.width / imageSize.width
         let heightRatio = frame.height / imageSize.height
-        let scale = contentMode == .contain
+        let scale =
+            contentMode == .contain
             ? min(widthRatio, heightRatio)
             : max(widthRatio, heightRatio)
 

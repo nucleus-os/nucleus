@@ -84,10 +84,12 @@ extension AtSPIService {
         case (AtSPIInterface.text, "CharacterCount"):
             .int32(Int32(clamping: object.text.count))
         case (AtSPIInterface.text, "CaretOffset"):
-            .int32(Int32(clamping: characterRange(
-                in: object.text,
-                utf16Range: object.textSelection?.utf16Range ?? 0..<0
-            ).upperBound))
+            .int32(
+                Int32(
+                    clamping: characterRange(
+                        in: object.text,
+                        utf16Range: object.textSelection?.utf16Range ?? 0..<0
+                    ).upperBound))
         case (AtSPIInterface.text, "version"):
             .uint32(1)
         case (AtSPIInterface.editableText, "version"):
@@ -115,32 +117,40 @@ extension AtSPIService {
         object: AtSPIExportedObject,
         interface: String
     ) -> [(String, PropertyValue)] {
-        let names: [String] = switch interface {
-        case AtSPIInterface.accessible:
-            ["Name", "Description", "Parent", "ChildCount", "Locale",
-             "AccessibleId", "HelpText", "version"]
-        case AtSPIInterface.action:
-            ["NActions", "version"]
-        case AtSPIInterface.application:
-            ["ToolkitName", "ToolkitVersion", "Version", "AtspiVersion",
-             "InterfaceVersion", "Id"]
-        case AtSPIInterface.component:
-            ["version"]
-        case AtSPIInterface.text:
-            ["CharacterCount", "CaretOffset", "version"]
-        case AtSPIInterface.editableText, AtSPIInterface.selection:
-            ["version"]
-        case AtSPIInterface.value:
-            ["MinimumValue", "MaximumValue", "MinimumIncrement",
-             "CurrentValue", "Text", "version"]
-        default:
-            []
-        }
+        let names: [String] =
+            switch interface {
+            case AtSPIInterface.accessible:
+                [
+                    "Name", "Description", "Parent", "ChildCount", "Locale",
+                    "AccessibleId", "HelpText", "version",
+                ]
+            case AtSPIInterface.action:
+                ["NActions", "version"]
+            case AtSPIInterface.application:
+                [
+                    "ToolkitName", "ToolkitVersion", "Version", "AtspiVersion",
+                    "InterfaceVersion", "Id",
+                ]
+            case AtSPIInterface.component:
+                ["version"]
+            case AtSPIInterface.text:
+                ["CharacterCount", "CaretOffset", "version"]
+            case AtSPIInterface.editableText, AtSPIInterface.selection:
+                ["version"]
+            case AtSPIInterface.value:
+                [
+                    "MinimumValue", "MaximumValue", "MinimumIncrement",
+                    "CurrentValue", "Text", "version",
+                ]
+            default:
+                []
+            }
         return names.compactMap { name in
             propertyValue(
                 object: object,
                 interface: interface,
-                property: name).map { (name, $0) }
+                property: name
+            ).map { (name, $0) }
         }
     }
 

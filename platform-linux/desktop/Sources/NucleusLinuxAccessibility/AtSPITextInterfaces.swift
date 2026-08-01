@@ -16,34 +16,38 @@ extension AtSPIService {
         switch member {
         case "GetText":
             guard let start = readInt32(message),
-                  let end = readInt32(message)
+                let end = readInt32(message)
             else { return invalidArguments(message) }
             return reply(message) {
-                $0.string(textSlice(
-                    object.text,
-                    start: Int(start),
-                    end: Int(end)))
+                $0.string(
+                    textSlice(
+                        object.text,
+                        start: Int(start),
+                        end: Int(end)))
             }
         case "SetCaretOffset":
             guard let offset = readInt32(message),
-                  let id = object.id
+                let id = object.id
             else { return invalidArguments(message) }
             let utf16 = utf16Offset(
                 in: object.text,
                 characterOffset: Int(offset))
-            let accepted = onAction?(.init(
-                target: id,
-                action: .setSelection,
-                selection: .init(utf16Range: utf16..<utf16))) ?? false
+            let accepted =
+                onAction?(
+                    .init(
+                        target: id,
+                        action: .setSelection,
+                        selection: .init(utf16Range: utf16..<utf16))) ?? false
             return reply(message) { $0.boolean(accepted) }
         case "GetNSelections":
-            let count: Int32 = object.textSelection.map {
-                $0.utf16Range.isEmpty ? 0 : 1
-            } ?? 0
+            let count: Int32 =
+                object.textSelection.map {
+                    $0.utf16Range.isEmpty ? 0 : 1
+                } ?? 0
             return reply(message) { $0.int32(count) }
         case "GetSelection":
             guard readInt32(message) == 0,
-                  let selection = object.textSelection
+                let selection = object.textSelection
             else { return invalidArguments(message) }
             let range = characterRange(
                 in: object.text,
@@ -55,9 +59,9 @@ extension AtSPIService {
             }
         case "SetSelection":
             guard readInt32(message) == 0,
-                  let start = readInt32(message),
-                  let end = readInt32(message),
-                  let id = object.id
+                let start = readInt32(message),
+                let end = readInt32(message),
+                let id = object.id
             else { return invalidArguments(message) }
             let lower = utf16Offset(
                 in: object.text,
@@ -65,11 +69,13 @@ extension AtSPIService {
             let upper = utf16Offset(
                 in: object.text,
                 characterOffset: Int(end))
-            let accepted = onAction?(.init(
-                target: id,
-                action: .setSelection,
-                selection: .init(
-                    utf16Range: min(lower, upper)..<max(lower, upper)))) ?? false
+            let accepted =
+                onAction?(
+                    .init(
+                        target: id,
+                        action: .setSelection,
+                        selection: .init(
+                            utf16Range: min(lower, upper)..<max(lower, upper)))) ?? false
             return reply(message) { $0.boolean(accepted) }
         default:
             return unknownMethod(
@@ -95,14 +101,16 @@ extension AtSPIService {
             guard let text = readString(message) else {
                 return invalidArguments(message)
             }
-            let accepted = onAction?(.init(
-                target: id,
-                action: .setText,
-                text: text)) ?? false
+            let accepted =
+                onAction?(
+                    .init(
+                        target: id,
+                        action: .setText,
+                        text: text)) ?? false
             return reply(message) { $0.boolean(accepted) }
         case "CopyText", "CutText":
             guard let start = readInt32(message),
-                  let end = readInt32(message)
+                let end = readInt32(message)
             else { return invalidArguments(message) }
             let lower = utf16Offset(
                 in: object.text,
@@ -110,14 +118,17 @@ extension AtSPIService {
             let upper = utf16Offset(
                 in: object.text,
                 characterOffset: Int(end))
-            let selected = onAction?(.init(
-                target: id,
-                action: .setSelection,
-                selection: .init(
-                    utf16Range: min(lower, upper)..<max(lower, upper)))) ?? false
+            let selected =
+                onAction?(
+                    .init(
+                        target: id,
+                        action: .setSelection,
+                        selection: .init(
+                            utf16Range: min(lower, upper)..<max(lower, upper)))) ?? false
             let action: AccessibilityAction =
                 member == "CopyText" ? .copy : .cut
-            let accepted = selected
+            let accepted =
+                selected
                 && (onAction?(.init(target: id, action: action)) ?? false)
             return reply(message) { $0.boolean(accepted) }
         case "PasteText":
@@ -127,11 +138,14 @@ extension AtSPIService {
             let offset = utf16Offset(
                 in: object.text,
                 characterOffset: Int(position))
-            let selected = onAction?(.init(
-                target: id,
-                action: .setSelection,
-                selection: .init(utf16Range: offset..<offset))) ?? false
-            let accepted = selected
+            let selected =
+                onAction?(
+                    .init(
+                        target: id,
+                        action: .setSelection,
+                        selection: .init(utf16Range: offset..<offset))) ?? false
+            let accepted =
+                selected
                 && (onAction?(.init(target: id, action: .paste)) ?? false)
             return reply(message) { $0.boolean(accepted) }
         default:
@@ -141,7 +155,6 @@ extension AtSPIService {
                 member: member)
         }
     }
-
 
     func textSlice(
         _ text: String,
@@ -177,9 +190,10 @@ extension AtSPIService {
             let utf16Index = text.utf16.index(
                 text.utf16.startIndex,
                 offsetBy: bounded)
-            guard let index = String.Index(
-                utf16Index,
-                within: text)
+            guard
+                let index = String.Index(
+                    utf16Index,
+                    within: text)
             else { return text.count }
             return text.distance(from: text.startIndex, to: index)
         }

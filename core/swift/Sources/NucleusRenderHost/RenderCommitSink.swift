@@ -3,31 +3,30 @@
 // `RenderCommitSink` is the `NucleusLayers.CommitSink` the layers `Context`
 // writes to. Each `commit(_:)` lowers the materialized layer batch through
 // `RenderTransactionLowering` and folds the result into an owned
-// `RetainedTreeStore`. Nothing wires this live yet; it lands additive +
-// fixture-proven.
+// `RetainedTreeStore`.
 
-public import NucleusLayers
-public import NucleusRenderModel
+package import NucleusLayers
+package import NucleusRenderModel
 
 @MainActor
-public final class RenderCommitSink: NucleusLayers.CommitSink {
+package final class RenderCommitSink: NucleusLayers.CommitSink {
     /// The authoritative retained tree this sink feeds. Exposed for inspection by
     /// the frame walk (at the cutover) and by fixtures.
-    public let store: NucleusRenderModel.RetainedTreeStore
+    package let store: NucleusRenderModel.RetainedTreeStore
 
-    /// The layers `Context`'s resource-host identity in its C-compatible scalar
-    /// form. Registrars validate it against this sink's concrete runtime graph.
-    public let resourceHostHandle: UInt64
-    public let runtimeHost: LayerRuntimeHost
+    /// The layers `Context`'s resource-host identity. Registrars validate it
+    /// against this sink's concrete runtime graph.
+    package let resourceHostHandle: UInt64
+    package let runtimeHost: LayerRuntimeHost
 
     /// The most recently lowered transaction (before ingest). Exposed for
     /// inspection by fixtures that assert the lowered deltas directly — the
-    /// retained tree only retains the folded result, not the wire deltas.
-    public private(set) var lastLowered: NucleusRenderModel.Transaction?
+    /// retained tree only retains the folded result, not the transaction deltas.
+    package private(set) var lastLowered: NucleusRenderModel.Transaction?
     private var completionObserverID: UInt64 = 0
     private let requestFrame: @MainActor () -> Void
 
-    public init(
+    package init(
         store: NucleusRenderModel.RetainedTreeStore,
         resourceHost: NucleusRenderModel.SwiftResourceHost,
         runtimeHost: LayerRuntimeHost,
@@ -65,7 +64,7 @@ public final class RenderCommitSink: NucleusLayers.CommitSink {
         }
     }
 
-    public func commit(
+    package func commit(
         _ transaction: NucleusLayers.LayerTransactionBatch
     ) throws(NucleusLayers.LayerError) {
         let lowered = RenderTransactionLowering.lower(transaction)

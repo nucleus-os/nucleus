@@ -7,30 +7,33 @@ import WaylandServerC
 /// owner factory, and optional post-install behavior.
 @MainActor
 @safe
-public struct WaylandGlobalSpecification<
+package struct WaylandGlobalSpecification<
     Interface: WaylandServerInterface
 > {
     package let implementation: AnyObject
     package let advertisedVersion: Int32
-    package let makeOwner: (
-        OpaquePointer,
-        Int32,
-        UInt32
-    ) -> AnyObject?
+    package let makeOwner:
+        (
+            OpaquePointer,
+            Int32,
+            UInt32
+        ) -> AnyObject?
 
     package init<Implementation: AnyObject, Owner: AnyObject>(
         implementation: Implementation,
         advertisedVersion: Int32,
         vtable: UnsafeRawPointer?,
-        owner: @escaping (
-            Implementation,
-            WaylandResourceHandle<Interface>
-        ) -> Owner?,
-        installed: @escaping (
-            Implementation,
-            Owner,
-            WaylandResourceHandle<Interface>
-        ) -> Void
+        owner:
+            @escaping (
+                Implementation,
+                WaylandResourceHandle<Interface>
+            ) -> Owner?,
+        installed:
+            @escaping (
+                Implementation,
+                Owner,
+                WaylandResourceHandle<Interface>
+            ) -> Void
     ) {
         self.implementation = implementation
         self.advertisedVersion = Swift.min(
@@ -64,17 +67,18 @@ public struct WaylandGlobalSpecification<
 /// object or repeating a handwritten actor boundary.
 @MainActor
 @safe
-public final class WaylandGlobalRegistration {
-    public let implementation: AnyObject
-    private let bindOwner: (
-        OpaquePointer,
-        Int32,
-        UInt32
-    ) -> AnyObject?
+package final class WaylandGlobalRegistration {
+    package let implementation: AnyObject
+    private let bindOwner:
+        (
+            OpaquePointer,
+            Int32,
+            UInt32
+        ) -> AnyObject?
     private let advertisedVersion: Int32
     private var global: WaylandGlobal?
 
-    public init?<Interface: WaylandServerInterface>(
+    package init?<Interface: WaylandServerInterface>(
         display: WaylandDisplay,
         specification: WaylandGlobalSpecification<Interface>
     ) {
@@ -84,12 +88,13 @@ public final class WaylandGlobalRegistration {
         global = nil
 
         let data = unsafe Unmanaged.passUnretained(self).toOpaque()
-        guard let nativeGlobal = unsafe WaylandGlobal(
-            display: display,
-            interface: Interface.descriptor.nativeInterface,
-            version: specification.advertisedVersion,
-            data: data,
-            bind: waylandGlobalBind)
+        guard
+            let nativeGlobal = unsafe WaylandGlobal(
+                display: display,
+                interface: Interface.descriptor.nativeInterface,
+                version: specification.advertisedVersion,
+                data: data,
+                bind: waylandGlobalBind)
         else { return nil }
         global = nativeGlobal
     }
@@ -107,7 +112,7 @@ public final class WaylandGlobalRegistration {
 
     /// Stop advertising the global. Existing bound resources remain owned by
     /// their clients and continue to use their installed Swift owners.
-    public func remove() {
+    package func remove() {
         global = nil
     }
 
@@ -118,21 +123,22 @@ public final class WaylandGlobalRegistration {
     }
 }
 
-private let waylandGlobalBind: @convention(c) (
-    OpaquePointer?,
-    UnsafeMutableRawPointer?,
-    UInt32,
-    UInt32
-) -> Void = { client, data, version, id in
-    guard let client = unsafe client, let data = unsafe data else { return }
-    let registration = unsafe Unmanaged<WaylandGlobalRegistration>
-        .fromOpaque(data).takeUnretainedValue()
-    nonisolated(unsafe) let actorClient = unsafe client
-    let actorRegistration = registration
-    MainActor.assumeIsolated {
-        unsafe actorRegistration.bind(
-            client: actorClient,
-            requestedVersion: version,
-            id: id)
+private let waylandGlobalBind:
+    @convention(c) (
+        OpaquePointer?,
+        UnsafeMutableRawPointer?,
+        UInt32,
+        UInt32
+    ) -> Void = { client, data, version, id in
+        guard let client = unsafe client, let data = unsafe data else { return }
+        let registration = unsafe Unmanaged<WaylandGlobalRegistration>
+            .fromOpaque(data).takeUnretainedValue()
+        nonisolated(unsafe) let actorClient = unsafe client
+        let actorRegistration = registration
+        MainActor.assumeIsolated {
+            unsafe actorRegistration.bind(
+                client: actorClient,
+                requestedVersion: version,
+                id: id)
+        }
     }
-}

@@ -1,8 +1,9 @@
-public import NucleusCompositorServer
-public import struct NucleusCompositorServerTypes.WireLogicalRect
+package import NucleusCompositorServer
 import Tracy
 
-public enum TileCommand: UInt32 {
+package import struct NucleusCompositorServerTypes.WireLogicalRect
+
+package enum TileCommand: UInt32 {
     case left = 1
     case right = 2
     case top = 3
@@ -14,57 +15,57 @@ public enum TileCommand: UInt32 {
     case maximize = 9
 }
 
-public struct TileRegionPlan: Equatable {
-    public enum Action: UInt32 {
+package struct TileRegionPlan: Equatable {
+    package enum Action: UInt32 {
         case none = 0
         case tile = 1
         case maximize = 2
     }
 
-    public var action: Action
-    public var rect: WindowRect
-    public var edges: TileEdges
+    package var action: Action
+    package var rect: WindowRect
+    package var edges: TileEdges
 }
 
-public struct XdgStateMask: OptionSet, Sendable {
-    public let rawValue: UInt32
+package struct XdgStateMask: OptionSet, Sendable {
+    package let rawValue: UInt32
 
-    public init(rawValue: UInt32) {
+    package init(rawValue: UInt32) {
         self.rawValue = rawValue
     }
 
-    public static let activated = XdgStateMask(rawValue: 1 << 0)
-    public static let resizing = XdgStateMask(rawValue: 1 << 1)
-    public static let fullscreen = XdgStateMask(rawValue: 1 << 2)
-    public static let maximized = XdgStateMask(rawValue: 1 << 3)
-    public static let tiledLeft = XdgStateMask(rawValue: 1 << 4)
-    public static let tiledRight = XdgStateMask(rawValue: 1 << 5)
-    public static let tiledTop = XdgStateMask(rawValue: 1 << 6)
-    public static let tiledBottom = XdgStateMask(rawValue: 1 << 7)
+    package static let activated = XdgStateMask(rawValue: 1 << 0)
+    package static let resizing = XdgStateMask(rawValue: 1 << 1)
+    package static let fullscreen = XdgStateMask(rawValue: 1 << 2)
+    package static let maximized = XdgStateMask(rawValue: 1 << 3)
+    package static let tiledLeft = XdgStateMask(rawValue: 1 << 4)
+    package static let tiledRight = XdgStateMask(rawValue: 1 << 5)
+    package static let tiledTop = XdgStateMask(rawValue: 1 << 6)
+    package static let tiledBottom = XdgStateMask(rawValue: 1 << 7)
 }
 
-public struct RestoreTranslation: Equatable, Sendable {
-    public var rect: WindowRect
-    public var outputID: DisplayID
+package struct RestoreTranslation: Equatable, Sendable {
+    package var rect: WindowRect
+    package var outputID: DisplayID
 }
 
-public struct OutputMigrationPlan: Equatable, Sendable {
-    public var removedOutputID: DisplayID
-    public var fallbackOutputID: DisplayID?
-    public var removedUsable: UsableArea?
-    public var fallbackUsable: UsableArea?
-    public var fullscreenRect: WindowRect?
-    public var maximizedRect: WindowRect?
+package struct OutputMigrationPlan: Equatable, Sendable {
+    package var removedOutputID: DisplayID
+    package var fallbackOutputID: DisplayID?
+    package var removedUsable: UsableArea?
+    package var fallbackUsable: UsableArea?
+    package var fullscreenRect: WindowRect?
+    package var maximizedRect: WindowRect?
 }
 
-public struct OutputMigrationResult: Equatable, Sendable {
-    public var managed: Bool
-    public var changed: Bool
-    public var specialChanged: Bool
+package struct OutputMigrationResult: Equatable, Sendable {
+    package var managed: Bool
+    package var changed: Bool
+    package var specialChanged: Bool
 }
 
 extension UsableArea {
-    public func applying(layerZones zones: LayerExclusiveZones) -> UsableArea {
+    package func applying(layerZones zones: LayerExclusiveZones) -> UsableArea {
         UsableArea(
             x: zones.left,
             y: zones.top,
@@ -75,7 +76,7 @@ extension UsableArea {
 }
 
 extension WindowManager {
-    public func xdgStateMask(
+    package func xdgStateMask(
         requestedMaximized: Bool,
         requestedFullscreen: Bool,
         tileEdges: TileEdges,
@@ -104,7 +105,7 @@ extension WindowManager {
         return mask
     }
 
-    public func normalizeOutputState(
+    package func normalizeOutputState(
         windowID: UInt64,
         fallbackOutputID: DisplayID,
         translatedRestore: RestoreTranslation?
@@ -117,28 +118,31 @@ extension WindowManager {
             window.preferredOutputID = fallbackOutputID
         }
         if window.isManagedAppWindow(),
-           window.restoreRect != nil,
-           server.spaces.validOutputID(window.restoreOutputID, layout: server.layout) == nil,
-           let translatedRestore
+            window.restoreRect != nil,
+            server.spaces.validOutputID(window.restoreOutputID, layout: server.layout) == nil,
+            let translatedRestore
         {
             window.restoreRect = translatedRestore.rect
             window.restoreOutputID = translatedRestore.outputID
         }
         if window.isManagedAppWindow(),
-           server.spaces.validOutputID(window.specialOutputID, layout: server.layout) == nil,
-           (window.activeFullscreen || window.requestedFullscreen || window.activeMaximized || window.requestedMaximized)
+            server.spaces.validOutputID(window.specialOutputID, layout: server.layout) == nil,
+            window.activeFullscreen || window.requestedFullscreen || window.activeMaximized
+                || window.requestedMaximized
         {
             window.specialOutputID = fallbackOutputID
         }
         if case .output(let outputID) = window.fullscreenTarget,
-           server.spaces.validOutputID(outputID, layout: server.layout) == nil
+            server.spaces.validOutputID(outputID, layout: server.layout) == nil
         {
             window.fullscreenTarget = .output(fallbackOutputID)
         }
         return true
     }
 
-    public func migrateOffOutput(windowID: UInt64, plan: OutputMigrationPlan) -> OutputMigrationResult? {
+    package func migrateOffOutput(windowID: UInt64, plan: OutputMigrationPlan)
+        -> OutputMigrationResult?
+    {
         Trace.zone("window_manager.migrate_off_output", color: Trace.Color.yellow) {
             guard let window = server.window(id: windowID) else { return nil }
             var changed = false
@@ -156,14 +160,15 @@ extension WindowManager {
             migrateOptionalOutput(&window.preferredOutputID)
 
             if !window.isManagedAppWindow() {
-                return OutputMigrationResult(managed: false, changed: changed, specialChanged: false)
+                return OutputMigrationResult(
+                    managed: false, changed: changed, specialChanged: false)
             }
 
             if window.restoreOutputID == plan.removedOutputID {
                 if let fallbackOutputID = plan.fallbackOutputID,
-                   let fallback = server.layout.display(id: fallbackOutputID),
-                   let fallbackUsable = plan.fallbackUsable,
-                   let restore = window.restoreRect
+                    let fallback = server.layout.display(id: fallbackOutputID),
+                    let fallbackUsable = plan.fallbackUsable,
+                    let restore = window.restoreRect
                 {
                     window.restoreRect = server.spaces.translateRectToOutput(
                         restore,
@@ -187,7 +192,7 @@ extension WindowManager {
             }
 
             if case .output(let targetOutputID) = window.fullscreenTarget,
-               targetOutputID == plan.removedOutputID
+                targetOutputID == plan.removedOutputID
             {
                 if let fallbackOutputID = plan.fallbackOutputID {
                     window.fullscreenTarget = .output(fallbackOutputID)
@@ -202,8 +207,8 @@ extension WindowManager {
                 guard pending.specialOutputID == plan.removedOutputID else { return }
                 pending.specialOutputID = fallbackID()
                 if let fallbackOutputID = plan.fallbackOutputID,
-                   let fallback = server.layout.display(id: fallbackOutputID),
-                   let fallbackUsable = plan.fallbackUsable
+                    let fallback = server.layout.display(id: fallbackOutputID),
+                    let fallbackUsable = plan.fallbackUsable
                 {
                     if pending.activeFullscreen, let rect = plan.fullscreenRect {
                         pending.rect = rect
@@ -224,11 +229,12 @@ extension WindowManager {
                 specialChanged = true
             }
 
-            return OutputMigrationResult(managed: true, changed: changed, specialChanged: specialChanged)
+            return OutputMigrationResult(
+                managed: true, changed: changed, specialChanged: specialChanged)
         }
     }
 
-    public func tileRegion(command: TileCommand, output: LogicalRect) -> TileRegionPlan {
+    package func tileRegion(command: TileCommand, output: LogicalRect) -> TileRegionPlan {
         if command == .maximize {
             return TileRegionPlan(
                 action: .maximize,

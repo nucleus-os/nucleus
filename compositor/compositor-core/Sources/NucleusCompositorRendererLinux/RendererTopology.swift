@@ -1,9 +1,9 @@
-import VulkanC
-import Vulkan
+import Glibc
 import NucleusCompositorDrmC
 import NucleusRenderModel
-@_spi(NucleusPlatform) public import NucleusRenderer
-import Glibc
+package import NucleusRenderer
+import Vulkan
+import VulkanC
 
 @MainActor
 extension DRMScanoutPresenter {
@@ -11,7 +11,7 @@ extension DRMScanoutPresenter {
     /// its new scanout owners become visible, so no framebuffer is destroyed while
     /// the kernel can still reference it.
     @discardableResult
-    public func attachOutput(
+    package func attachOutput(
         outputId: UInt64,
         logicalX: Double, logicalY: Double,
         logicalWidth: Double, logicalHeight: Double,
@@ -26,23 +26,25 @@ extension DRMScanoutPresenter {
     ) -> Bool {
         let generation = nextBindingGeneration
         nextBindingGeneration &+= 1
-        guard let drm = DrmOutput.discover(
-            device: drmDevice,
-            connectorId: connectorId,
-            crtcId: crtcId,
-            planeId: planeId,
-            cursorPlaneId: cursorPlaneId,
-            modeBlobId: modeBlobId,
-            width: pixelWidth,
-            height: pixelHeight,
-            vrrCapable: vrrCapable,
-            adaptiveSync: adaptiveSync,
-            presentPolicy: presentPolicy,
-            onPageFlip: { [weak self] event in
-                self?.notePageFlipComplete(
-                    outputId, generation, event)
-            }
-        ) else {
+        guard
+            let drm = DrmOutput.discover(
+                device: drmDevice,
+                connectorId: connectorId,
+                crtcId: crtcId,
+                planeId: planeId,
+                cursorPlaneId: cursorPlaneId,
+                modeBlobId: modeBlobId,
+                width: pixelWidth,
+                height: pixelHeight,
+                vrrCapable: vrrCapable,
+                adaptiveSync: adaptiveSync,
+                presentPolicy: presentPolicy,
+                onPageFlip: { [weak self] event in
+                    self?.notePageFlipComplete(
+                        outputId, generation, event)
+                }
+            )
+        else {
             logRendererDrm(
                 "connector \(connectorId): required atomic properties unavailable")
             if modeBlobId != 0 {
@@ -60,10 +62,11 @@ extension DRMScanoutPresenter {
         var slots: [ScanoutSlot] = []
         slots.reserveCapacity(ringDepth)
         for slotIndex in 0..<ringDepth {
-            guard let slot = makeScanoutSlot(
-                width: pixelWidth,
-                height: pixelHeight,
-                drmFormat: drmFourcc)
+            guard
+                let slot = makeScanoutSlot(
+                    width: pixelWidth,
+                    height: pixelHeight,
+                    drmFormat: drmFourcc)
             else {
                 logRendererDrm(
                     "connector \(connectorId): scanout slot \(slotIndex) allocation failed")
@@ -120,8 +123,8 @@ extension DRMScanoutPresenter {
             pixelHeight: pixelHeight,
             fractionalScale: fractionalScale)
         logRendererDrm(
-            "connector \(connectorId): attached \(pixelWidth)x\(pixelHeight) crtc=\(crtcId) " +
-            "primary_plane=\(planeId) explicit_render_fence=\(drm.supportsInFence)")
+            "connector \(connectorId): attached \(pixelWidth)x\(pixelHeight) crtc=\(crtcId) "
+                + "primary_plane=\(planeId) explicit_render_fence=\(drm.supportsInFence)")
         return true
     }
 
@@ -130,16 +133,18 @@ extension DRMScanoutPresenter {
         height: UInt32,
         drmFormat: UInt32
     ) -> ScanoutSlot? {
-        guard let buffer = unsafe DRMScanoutBufferAllocation.allocate(
-            gbmDevice: gbmHandle,
-            drmFormat: drmFormat,
-            width: width,
-            height: height,
-            modifiers: [],
-            usage: .scanout,
-            device: core.deviceHandle,
-            dispatch: core.deviceDispatch
-        ) else {
+        guard
+            let buffer = unsafe DRMScanoutBufferAllocation.allocate(
+                gbmDevice: gbmHandle,
+                drmFormat: drmFormat,
+                width: width,
+                height: height,
+                modifiers: [],
+                usage: .scanout,
+                device: core.deviceHandle,
+                dispatch: core.deviceDispatch
+            )
+        else {
             logRendererDrm(
                 "GBM scanout buffer/Vulkan DMA-BUF import failed")
             return nil
@@ -152,16 +157,18 @@ extension DRMScanoutPresenter {
         let pitches = planes.map(\.stride)
         let offsets = planes.map(\.offset)
         let modifiers = planes.map { _ in modifier }
-        guard let framebuffer = DrmFramebuffer(
-            deviceFd: drmDeviceFd,
-            width: width,
-            height: height,
-            pixelFormat: drmFormat,
-            handles: handles,
-            pitches: pitches,
-            offsets: offsets,
-            modifiers: modifiers
-        ) else {
+        guard
+            let framebuffer = DrmFramebuffer(
+                deviceFd: drmDeviceFd,
+                width: width,
+                height: height,
+                pixelFormat: drmFormat,
+                handles: handles,
+                pitches: pitches,
+                offsets: offsets,
+                modifiers: modifiers
+            )
+        else {
             logRendererDrm(
                 "drmModeAddFB2WithModifiers failed errno=\(rendererErrno()) modifier=\(modifier)")
             _ = unsafe buffer.makeOwner()
@@ -179,7 +186,7 @@ extension DRMScanoutPresenter {
 
     /// Discover and globally allocate the connected outputs without mutating live
     /// KMS bindings. The composition root applies this immutable proposal.
-    public func proposeConnectedOutputTopology()
+    package func proposeConnectedOutputTopology()
         -> RendererTopologyProposal?
     {
         switch backendState {
@@ -188,8 +195,9 @@ extension DRMScanoutPresenter {
         case .pausing, .inactive, .failed:
             return nil
         }
-        guard DrmCapabilities.enableAtomicModesetting(
-            fd: drmDeviceFd)
+        guard
+            DrmCapabilities.enableAtomicModesetting(
+                fd: drmDeviceFd)
         else {
             logRendererDrm(
                 "failed to enable universal planes/atomic modesetting errno=\(rendererErrno())")
@@ -200,8 +208,9 @@ extension DRMScanoutPresenter {
         if nextTopologyGeneration == 0 {
             nextTopologyGeneration = 1
         }
-        guard let inventory = DrmTopologyDiscovery.scan(
-            fd: drmDeviceFd, generation: generation)
+        guard
+            let inventory = DrmTopologyDiscovery.scan(
+                fd: drmDeviceFd, generation: generation)
         else {
             logRendererDrm(
                 "whole-device topology discovery failed errno=\(rendererErrno())")
@@ -217,36 +226,38 @@ extension DRMScanoutPresenter {
         var proposed: [RendererOutputInfo] = []
         for assignment in plan.snapshot.assignments {
             let connectorID = assignment.connectorID.rawValue
-            guard let connector = inventory.connectors.first(
-                where: {
-                    $0.connectorID == assignment.connectorID
-                })
+            guard
+                let connector = inventory.connectors.first(
+                    where: {
+                        $0.connectorID == assignment.connectorID
+                    })
             else { continue }
             logRendererDrm(
-                "connector \(connectorID): proposed mode " +
-                "\(assignment.mode.hdisplay)x\(assignment.mode.vdisplay)@" +
-                "\(Double(assignment.mode.refreshMilliHz) / 1_000.0)Hz")
-            proposed.append(RendererOutputInfo(
-                topologyGeneration: generation,
-                id: UInt64(connectorID),
-                pixelWidth: UInt32(assignment.mode.hdisplay),
-                pixelHeight: UInt32(assignment.mode.vdisplay),
-                refreshMhz: assignment.mode.refreshMilliHz,
-                physicalWidthMM:
-                    connector.physicalSizeMM.widthMM,
-                physicalHeightMM:
-                    connector.physicalSizeMM.heightMM,
-                crtcID: assignment.crtcID.rawValue,
-                primaryPlaneID:
-                    assignment.primaryPlaneID.rawValue,
-                cursorPlaneID:
-                    assignment.cursorPlaneID?.rawValue ?? 0))
+                "connector \(connectorID): proposed mode "
+                    + "\(assignment.mode.hdisplay)x\(assignment.mode.vdisplay)@"
+                    + "\(Double(assignment.mode.refreshMilliHz) / 1_000.0)Hz")
+            proposed.append(
+                RendererOutputInfo(
+                    topologyGeneration: generation,
+                    id: UInt64(connectorID),
+                    pixelWidth: UInt32(assignment.mode.hdisplay),
+                    pixelHeight: UInt32(assignment.mode.vdisplay),
+                    refreshMhz: assignment.mode.refreshMilliHz,
+                    physicalWidthMM:
+                        connector.physicalSizeMM.widthMM,
+                    physicalHeightMM:
+                        connector.physicalSizeMM.heightMM,
+                    crtcID: assignment.crtcID.rawValue,
+                    primaryPlaneID:
+                        assignment.primaryPlaneID.rawValue,
+                    cursorPlaneID:
+                        assignment.cursorPlaneID?.rawValue ?? 0))
         }
         return RendererTopologyProposal(
             generation: generation, outputs: proposed)
     }
 
-    public func applyProposedOutput(
+    package func applyProposedOutput(
         _ proposed: RendererOutputInfo,
         logicalX: Double,
         logicalY: Double,
@@ -314,13 +325,13 @@ extension DRMScanoutPresenter {
     /// decision: VRR is engaged per frame on direct-scanout eligibility, so the
     /// per-frame value would flicker in a display tool for reasons that have
     /// nothing to do with configuration.
-    public func adaptiveSyncEnabled(outputID: UInt64) -> Bool {
+    package func adaptiveSyncEnabled(outputID: UInt64) -> Bool {
         guard let binding = bindings[outputID] else { return false }
         return binding.drm.vrr.capable && binding.drm.vrr.policy != .disabled
     }
 
     @discardableResult
-    public func retireOutput(
+    package func retireOutput(
         _ outputID: UInt64
     ) -> RendererRetirementResult {
         retireOutputs(Set([outputID]))
@@ -331,7 +342,7 @@ extension DRMScanoutPresenter {
     /// owned by the normal DRM reactor path, and callers retry without allowing
     /// another present into the retiring topology generation.
     @discardableResult
-    public func retireOutputs(
+    package func retireOutputs(
         _ outputIDs: Set<UInt64>
     ) -> RendererRetirementResult {
         let retiring = outputIDs.sorted().compactMap {
@@ -351,9 +362,10 @@ extension DRMScanoutPresenter {
                     return .rejected(errno: commitErrno)
                 }
             }
-            guard builder.validates(
-                fd: drmDeviceFd,
-                flags: drmModeAtomicAllowModeset)
+            guard
+                builder.validates(
+                    fd: drmDeviceFd,
+                    flags: drmModeAtomicAllowModeset)
             else {
                 let code = rendererErrno()
                 commitErrno = code == 0 ? EINVAL : code
@@ -374,14 +386,15 @@ extension DRMScanoutPresenter {
         switch result {
         case .draining:
             logRendererDrm(
-                "outputs \(retiring.map(\.outputId)): retirement draining" +
-                    (commitErrno == EBUSY
+                "outputs \(retiring.map(\.outputId)): retirement draining"
+                    + (commitErrno == EBUSY
                         ? " after kernel EBUSY"
                         : " pending page flip"))
             return .draining
         case .failed:
             logRendererDrm(
-                "outputs \(retiring.map(\.outputId)): atomic retirement failed errno=\(commitErrno)")
+                "outputs \(retiring.map(\.outputId)): atomic retirement failed errno=\(commitErrno)"
+            )
             for line in diagnosticLines { logRendererDrm(line) }
             return .failed
         case .complete:
@@ -426,7 +439,7 @@ extension DRMScanoutPresenter {
         backendState = .failed("DRM device revoked during shutdown")
     }
 
-    public func commitProposedTopology(
+    package func commitProposedTopology(
         generation: UInt64,
         appliedOutputIDs: Set<UInt64>
     ) {

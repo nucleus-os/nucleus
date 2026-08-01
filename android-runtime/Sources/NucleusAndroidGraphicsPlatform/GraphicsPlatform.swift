@@ -1,15 +1,15 @@
 import Glibc
 import NucleusAndroidDrmC
-import NucleusAndroidGraphicsContract
+package import NucleusAndroidGraphicsContract
 
-public struct DrmDeviceCandidate: Equatable, Sendable {
-    public var renderNode: String
-    public var primaryNode: String?
-    public var renderDevice: GraphicsDeviceID
-    public var primaryDevice: GraphicsDeviceID?
-    public var pci: PciDeviceID
+package struct DrmDeviceCandidate: Equatable, Sendable {
+    package var renderNode: String
+    package var primaryNode: String?
+    package var renderDevice: GraphicsDeviceID
+    package var primaryDevice: GraphicsDeviceID?
+    package var pci: PciDeviceID
 
-    public init(
+    package init(
         renderNode: String,
         primaryNode: String?,
         renderDevice: GraphicsDeviceID,
@@ -23,12 +23,12 @@ public struct DrmDeviceCandidate: Equatable, Sendable {
         self.pci = pci
     }
 
-    public func matches(_ device: GraphicsDeviceID) -> Bool {
+    package func matches(_ device: GraphicsDeviceID) -> Bool {
         renderDevice == device || primaryDevice == device
     }
 }
 
-public enum GraphicsPlatformError: Error, Equatable, Sendable {
+package enum GraphicsPlatformError: Error, Equatable, Sendable {
     case drmEnumerationFailed(errno: Int32)
     case compositorDeviceNotFound(GraphicsDeviceID)
     case ambiguousCompositorDevice(GraphicsDeviceID)
@@ -40,8 +40,8 @@ public enum GraphicsPlatformError: Error, Equatable, Sendable {
     case renderFailed(String)
 }
 
-public enum DrmDeviceDiscovery {
-    public static func enumerate() throws -> [DrmDeviceCandidate] {
+package enum DrmDeviceDiscovery {
+    package static func enumerate() throws -> [DrmDeviceCandidate] {
         let count = nucleus_android_drm_enumerate(nil, 0)
         guard count >= 0 else {
             throw GraphicsPlatformError.drmEnumerationFailed(errno: errno)
@@ -82,7 +82,7 @@ public enum DrmDeviceDiscovery {
         }
     }
 
-    public static func select(
+    package static func select(
         compositorDevice: GraphicsDeviceID,
         from candidates: [DrmDeviceCandidate]
     ) throws -> DrmDeviceCandidate {
@@ -108,12 +108,12 @@ public enum DrmDeviceDiscovery {
     deinit { unsafe nucleus_android_gpu_destroy(handle) }
 }
 
-public final class AndroidGraphicsDevice: @unchecked Sendable {
-    public let candidate: DrmDeviceCandidate
-    public let diagnostic: BrokerDeviceDiagnostic
+package final class AndroidGraphicsDevice: @unchecked Sendable {
+    package let candidate: DrmDeviceCandidate
+    package let diagnostic: BrokerDeviceDiagnostic
     private let resource: GraphicsDeviceResource
 
-    public convenience init(compositorDevice: GraphicsDeviceID) throws {
+    package convenience init(compositorDevice: GraphicsDeviceID) throws {
         let candidates = try DrmDeviceDiscovery.enumerate()
         let selected = try DrmDeviceDiscovery.select(
             compositorDevice: compositorDevice,
@@ -121,7 +121,7 @@ public final class AndroidGraphicsDevice: @unchecked Sendable {
         try self.init(candidate: selected)
     }
 
-    public init(candidate: DrmDeviceCandidate) throws {
+    package init(candidate: DrmDeviceCandidate) throws {
         var error = [CChar](repeating: 0, count: 1024)
         let handle = candidate.renderNode.withCString { path in
             unsafe nucleus_android_gpu_create(path, &error, error.count)
@@ -152,14 +152,14 @@ public final class AndroidGraphicsDevice: @unchecked Sendable {
             gbmBackend: string(from: raw.gbm_backend))
     }
 
-    public func supports(_ pair: DrmFormatModifier) -> Bool {
+    package func supports(_ pair: DrmFormatModifier) -> Bool {
         unsafe nucleus_android_gpu_supports_format_modifier(
             resource.handle,
             pair.format,
             pair.modifier) == 1
     }
 
-    public func formatModifierProperties(
+    package func formatModifierProperties(
         _ pair: DrmFormatModifier
     ) -> (planeCount: UInt32, features: UInt64)? {
         var planeCount: UInt32 = 0
@@ -174,7 +174,7 @@ public final class AndroidGraphicsDevice: @unchecked Sendable {
         return (planeCount, features)
     }
 
-    public func formatModifiers(
+    package func formatModifiers(
         format: UInt32
     ) -> [(pair: DrmFormatModifier, planeCount: UInt32, features: UInt64)] {
         let count = unsafe nucleus_android_gpu_list_format_modifiers(
@@ -202,7 +202,7 @@ public final class AndroidGraphicsDevice: @unchecked Sendable {
         }
     }
 
-    public func gbmPreferredFormatModifier(format: UInt32) -> DrmFormatModifier? {
+    package func gbmPreferredFormatModifier(format: UInt32) -> DrmFormatModifier? {
         var modifier: UInt64 = 0
         guard unsafe nucleus_android_gpu_preferred_modifier(
             resource.handle,
@@ -212,14 +212,14 @@ public final class AndroidGraphicsDevice: @unchecked Sendable {
         return DrmFormatModifier(format: format, modifier: modifier)
     }
 
-    public func preferredFormatModifier(format: UInt32) -> DrmFormatModifier? {
+    package func preferredFormatModifier(format: UInt32) -> DrmFormatModifier? {
         guard let pair = gbmPreferredFormatModifier(format: format), supports(pair) else {
             return nil
         }
         return pair
     }
 
-    public func allocate(_ request: BufferAllocationRequest) throws -> AndroidBufferRing {
+    package func allocate(_ request: BufferAllocationRequest) throws -> AndroidBufferRing {
         try BrokerEnvelope(
             messageID: 0,
             kind: .allocate,
@@ -284,9 +284,9 @@ public final class AndroidGraphicsDevice: @unchecked Sendable {
     }
 }
 
-public struct ExportedDmabufPlane: ~Copyable {
-    public let offset: UInt32
-    public let stride: UInt32
+package struct ExportedDmabufPlane: ~Copyable {
+    package let offset: UInt32
+    package let stride: UInt32
     private var fileDescriptor: Int32
 
     init(offset: UInt32, stride: UInt32, fileDescriptor: Int32) {
@@ -295,7 +295,7 @@ public struct ExportedDmabufPlane: ~Copyable {
         self.fileDescriptor = fileDescriptor
     }
 
-    public consuming func takeFileDescriptor() -> Int32 {
+    package consuming func takeFileDescriptor() -> Int32 {
         let taken = fileDescriptor
         fileDescriptor = -1
         discard self
@@ -308,10 +308,10 @@ public struct ExportedDmabufPlane: ~Copyable {
 }
 
 @safe public final class AndroidGraphicsBuffer: @unchecked Sendable {
-    public let id: UInt64
-    public let width: UInt32
-    public let height: UInt32
-    public let formatModifier: DrmFormatModifier
+    package let id: UInt64
+    package let width: UInt32
+    package let height: UInt32
+    package let formatModifier: DrmFormatModifier
     private let handle: OpaquePointer
     private let resource: GraphicsDeviceResource
 
@@ -331,11 +331,11 @@ public struct ExportedDmabufPlane: ~Copyable {
         self.resource = resource
     }
 
-    public var planeCount: UInt32 {
+    package var planeCount: UInt32 {
         unsafe nucleus_android_gpu_buffer_plane_count(handle)
     }
 
-    public func exportPlane(at index: UInt32) throws -> ExportedDmabufPlane {
+    package func exportPlane(at index: UInt32) throws -> ExportedDmabufPlane {
         var layout = nucleus_android_dmabuf_plane()
         let descriptor = unsafe nucleus_android_gpu_buffer_export_plane(
             handle,
@@ -350,7 +350,7 @@ public struct ExportedDmabufPlane: ~Copyable {
             fileDescriptor: descriptor)
     }
 
-    public func render(
+    package func render(
         frameNumber: UInt64,
         acquireTimeline: AndroidSyncobjTimeline,
         acquirePoint: UInt64,
@@ -387,7 +387,7 @@ public struct ExportedDmabufPlane: ~Copyable {
         self.resource = resource
     }
 
-    public func exportFileDescriptor() throws -> Int32 {
+    package func exportFileDescriptor() throws -> Int32 {
         let descriptor = unsafe nucleus_android_syncobj_timeline_export_fd(
             handle)
         guard descriptor >= 0 else {
@@ -396,11 +396,11 @@ public struct ExportedDmabufPlane: ~Copyable {
         return descriptor
     }
 
-    public func signal(point: UInt64) -> Bool {
+    package func signal(point: UInt64) -> Bool {
         unsafe nucleus_android_syncobj_timeline_signal(handle, point) == 0
     }
 
-    public func isSignaled(point: UInt64) -> Bool? {
+    package func isSignaled(point: UInt64) -> Bool? {
         switch unsafe nucleus_android_syncobj_timeline_is_signaled(handle, point) {
         case 0: return false
         case 1: return true
@@ -411,11 +411,11 @@ public struct ExportedDmabufPlane: ~Copyable {
     deinit { unsafe nucleus_android_syncobj_timeline_destroy(handle) }
 }
 
-public final class AndroidBufferRing: @unchecked Sendable {
-    public let buffers: [AndroidGraphicsBuffer]
-    public let acquireTimeline: AndroidSyncobjTimeline
-    public let releaseTimelines: [UInt64: AndroidSyncobjTimeline]
-    public let diagnostic: BrokerDeviceDiagnostic
+package final class AndroidBufferRing: @unchecked Sendable {
+    package let buffers: [AndroidGraphicsBuffer]
+    package let acquireTimeline: AndroidSyncobjTimeline
+    package let releaseTimelines: [UInt64: AndroidSyncobjTimeline]
+    package let diagnostic: BrokerDeviceDiagnostic
 
     fileprivate init(
         buffers: [AndroidGraphicsBuffer],
@@ -429,21 +429,21 @@ public final class AndroidBufferRing: @unchecked Sendable {
         self.diagnostic = diagnostic
     }
 
-    public func releaseTimeline(for bufferID: UInt64) -> AndroidSyncobjTimeline? {
+    package func releaseTimeline(for bufferID: UInt64) -> AndroidSyncobjTimeline? {
         releaseTimelines[bufferID]
     }
 }
 
-public enum DrmFormats {
-    public static let xrgb8888 = nucleus_android_drm_format_xrgb8888()
-    public static let argb8888 = nucleus_android_drm_format_argb8888()
-    public static let xbgr8888 = nucleus_android_drm_format_xbgr8888()
-    public static let abgr8888 = nucleus_android_drm_format_abgr8888()
-    public static let abgr16161616f =
+package enum DrmFormats {
+    package static let xrgb8888 = nucleus_android_drm_format_xrgb8888()
+    package static let argb8888 = nucleus_android_drm_format_argb8888()
+    package static let xbgr8888 = nucleus_android_drm_format_xbgr8888()
+    package static let abgr8888 = nucleus_android_drm_format_abgr8888()
+    package static let abgr16161616f =
         nucleus_android_drm_format_abgr16161616f()
-    public static let abgr2101010 =
+    package static let abgr2101010 =
         nucleus_android_drm_format_abgr2101010()
-    public static let linearModifier = nucleus_android_drm_modifier_linear()
+    package static let linearModifier = nucleus_android_drm_modifier_linear()
 }
 
 private func string<T>(from tuple: T) -> String {

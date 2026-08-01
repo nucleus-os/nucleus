@@ -50,9 +50,9 @@ enum NucleusVulkanLaneProbe {
     private static func probeLoader() throws {
         let base = VK.loadBaseDispatch()
         guard unsafe base.vkCreateInstance != nil,
-              unsafe base.vkEnumerateInstanceVersion != nil,
-              unsafe base.vkEnumerateInstanceExtensionProperties != nil,
-              unsafe base.vkEnumerateInstanceLayerProperties != nil
+            unsafe base.vkEnumerateInstanceVersion != nil,
+            unsafe base.vkEnumerateInstanceExtensionProperties != nil,
+            unsafe base.vkEnumerateInstanceLayerProperties != nil
         else {
             throw LaneProbeFailure.contract(
                 "the Vulkan loader does not expose the required global dispatch")
@@ -60,10 +60,11 @@ enum NucleusVulkanLaneProbe {
     }
 
     private static func probeDRM() throws {
-        guard let renderNode =
+        guard
+            let renderNode =
                 ProcessInfo.processInfo.environment[
                     "NUCLEUS_TEST_DRM_RENDER_NODE"],
-              !renderNode.isEmpty
+            !renderNode.isEmpty
         else {
             throw LaneProbeFailure.contract(
                 "NUCLEUS_TEST_DRM_RENDER_NODE was not provided")
@@ -97,39 +98,48 @@ enum NucleusVulkanLaneProbe {
     private static func probeGraphite(
         presentation: VkRequirements.PresentationMode,
         applicationName: String,
-        queueFamilyQualification: ((
-            VkInstance, VkPhysicalDevice, UInt32
-        ) -> Bool)? = nil
+        queueFamilyQualification: (
+            (
+                VkInstance, VkPhysicalDevice, UInt32
+            ) -> Bool
+        )? = nil
     ) throws {
         let contract = VkRequirements.contract(for: presentation)
-        guard let instance = unsafe InstanceOwner.create(
-            base: VK.loadBaseDispatch(),
-            applicationName: applicationName,
-            contract: contract,
-            enableValidation: false
-        ) else {
+        guard
+            let instance = unsafe InstanceOwner.create(
+                base: VK.loadBaseDispatch(),
+                applicationName: applicationName,
+                contract: contract,
+                enableValidation: false
+            )
+        else {
             throw LaneProbeFailure.contract(
                 "could not create the required \(presentation) Vulkan instance")
         }
-        guard let selection = unsafe DeviceOwner.selectPhysicalDevice(
-            instance: instance.handle,
-            dispatch: instance.dispatch,
-            contract: contract,
-            queueFamilyPresentationSupport: queueFamilyQualification
-        ) else {
+        guard
+            let selection = unsafe DeviceOwner.selectPhysicalDevice(
+                instance: instance.handle,
+                dispatch: instance.dispatch,
+                contract: contract,
+                queueFamilyPresentationSupport: queueFamilyQualification
+            )
+        else {
             throw LaneProbeFailure.contract(
                 "no physical device satisfies the required \(presentation) contract")
         }
-        guard let device = unsafe DeviceOwner.create(
-            selection: selection,
-            instanceDispatch: instance.dispatch,
-            contract: contract
-        ) else {
+        guard
+            let device = unsafe DeviceOwner.create(
+                selection: selection,
+                instanceDispatch: instance.dispatch,
+                contract: contract
+            )
+        else {
             throw LaneProbeFailure.contract(
                 "could not create the required \(presentation) logical device")
         }
-        guard let queue = unsafe device.queue(
-            family: selection.graphicsQueueFamily)
+        guard
+            let queue = unsafe device.queue(
+                family: selection.graphicsQueueFamily)
         else {
             throw LaneProbeFailure.contract(
                 "the selected Vulkan graphics queue is unavailable")
@@ -182,10 +192,13 @@ enum NucleusVulkanLaneProbe {
         }
         let deviceID = UInt64(deviceStat.st_rdev)
         return (
-            Int64(((deviceID >> 8) & 0xfff)
-                | ((deviceID >> 32) & ~0xfff)),
-            Int64((deviceID & 0xff)
-                | ((deviceID >> 12) & ~0xff)))
+            Int64(
+                ((deviceID >> 8) & 0xfff)
+                    | ((deviceID >> 32) & ~0xfff)),
+            Int64(
+                (deviceID & 0xff)
+                    | ((deviceID >> 12) & ~0xff))
+        )
     }
 
     private static func physicalDevice(
@@ -193,8 +206,9 @@ enum NucleusVulkanLaneProbe {
         belongsToRenderNode identity: (major: Int64, minor: Int64),
         instance: VkInstance
     ) -> Bool {
-        guard let raw = unsafe vkGetInstanceProcAddr(
-            instance, "vkGetPhysicalDeviceProperties2")
+        guard
+            let raw = unsafe vkGetInstanceProcAddr(
+                instance, "vkGetPhysicalDeviceProperties2")
         else { return false }
         let getProperties = unsafe unsafeBitCast(
             raw, to: PFN_vkGetPhysicalDeviceProperties2.self)

@@ -9,8 +9,8 @@
 // AtomicRequestBuilder — plus page-flip arming, explicit retirement, and
 // recovery-state orchestration.
 
-import NucleusCompositorDrmC
 import Glibc
+import NucleusCompositorDrmC
 
 /// The cursor-plane state one commit programs: the framebuffer to scan out and its
 /// placement. A nil placement (or `fbId == 0`) clears the plane — the pointer is off
@@ -186,7 +186,8 @@ final class DrmOutput {
         let props = AtomicPropsDiscovery.discover(
             fd: device.fileDescriptor, connectorId: connectorId, crtcId: crtcId, planeId: planeId)
         guard props.hasRequired else { return nil }
-        let cursor = cursorPlaneId != 0
+        let cursor =
+            cursorPlaneId != 0
             ? CursorPlaneProps.discover(fd: device.fileDescriptor, planeId: cursorPlaneId)
             : CursorPlaneProps()
         return DrmOutput(
@@ -206,18 +207,26 @@ final class DrmOutput {
         into builder: inout AtomicRequestBuilder, fbId: UInt32, inFenceFd: Int32 = -1
     ) {
         let p = props.primaryPlaneProps
-        builder.add(objectId: planeId, propertyId: p.fbId, value: UInt64(fbId), label: "plane.FB_ID")
-        builder.add(objectId: planeId, propertyId: p.crtcId, value: UInt64(crtcId), label: "plane.CRTC_ID")
+        builder.add(
+            objectId: planeId, propertyId: p.fbId, value: UInt64(fbId), label: "plane.FB_ID")
+        builder.add(
+            objectId: planeId, propertyId: p.crtcId, value: UInt64(crtcId), label: "plane.CRTC_ID")
         builder.add(objectId: planeId, propertyId: p.srcX, value: 0, label: "plane.SRC_X")
         builder.add(objectId: planeId, propertyId: p.srcY, value: 0, label: "plane.SRC_Y")
-        builder.add(objectId: planeId, propertyId: p.srcW, value: UInt64(width) << 16, label: "plane.SRC_W")
-        builder.add(objectId: planeId, propertyId: p.srcH, value: UInt64(height) << 16, label: "plane.SRC_H")
+        builder.add(
+            objectId: planeId, propertyId: p.srcW, value: UInt64(width) << 16, label: "plane.SRC_W")
+        builder.add(
+            objectId: planeId, propertyId: p.srcH, value: UInt64(height) << 16, label: "plane.SRC_H"
+        )
         builder.add(objectId: planeId, propertyId: p.crtcX, value: 0, label: "plane.CRTC_X")
         builder.add(objectId: planeId, propertyId: p.crtcY, value: 0, label: "plane.CRTC_Y")
-        builder.add(objectId: planeId, propertyId: p.crtcW, value: UInt64(width), label: "plane.CRTC_W")
-        builder.add(objectId: planeId, propertyId: p.crtcH, value: UInt64(height), label: "plane.CRTC_H")
+        builder.add(
+            objectId: planeId, propertyId: p.crtcW, value: UInt64(width), label: "plane.CRTC_W")
+        builder.add(
+            objectId: planeId, propertyId: p.crtcH, value: UInt64(height), label: "plane.CRTC_H")
         if p.colorRange != 0 {
-            builder.add(objectId: planeId, propertyId: p.colorRange, value: 1, label: "plane.COLOR_RANGE")
+            builder.add(
+                objectId: planeId, propertyId: p.colorRange, value: 1, label: "plane.COLOR_RANGE")
         }
         if p.inFenceFd != 0, inFenceFd >= 0 {
             builder.add(
@@ -231,23 +240,47 @@ final class DrmOutput {
     /// cursor plane. The plane presents its full BO extent (image packed top-left);
     /// the placement carries the hotspot-adjusted, scaled CRTC position (signed
     /// CRTC_X/Y when the cursor overhangs the top/left edge).
-    private func addCursorPlaneState(into builder: inout AtomicRequestBuilder, cursor: CursorCommitState?) {
+    private func addCursorPlaneState(
+        into builder: inout AtomicRequestBuilder, cursor: CursorCommitState?
+    ) {
         guard cursorPlaneId != 0, cursorProps.fbId != 0 else { return }
         let c = cursorProps
         if let cursor, cursor.fbId != 0, let p = cursor.placement {
-            builder.add(objectId: cursorPlaneId, propertyId: c.fbId, value: UInt64(cursor.fbId), label: "cursor.FB_ID")
-            builder.add(objectId: cursorPlaneId, propertyId: c.crtcId, value: UInt64(crtcId), label: "cursor.CRTC_ID")
-            if c.srcX != 0 { builder.add(objectId: cursorPlaneId, propertyId: c.srcX, value: 0, label: "cursor.SRC_X") }
-            if c.srcY != 0 { builder.add(objectId: cursorPlaneId, propertyId: c.srcY, value: 0, label: "cursor.SRC_Y") }
-            builder.add(objectId: cursorPlaneId, propertyId: c.srcW, value: p.srcW, label: "cursor.SRC_W")
-            builder.add(objectId: cursorPlaneId, propertyId: c.srcH, value: p.srcH, label: "cursor.SRC_H")
-            builder.add(objectId: cursorPlaneId, propertyId: c.crtcX, value: UInt64(bitPattern: p.crtcX), label: "cursor.CRTC_X")
-            builder.add(objectId: cursorPlaneId, propertyId: c.crtcY, value: UInt64(bitPattern: p.crtcY), label: "cursor.CRTC_Y")
-            builder.add(objectId: cursorPlaneId, propertyId: c.crtcW, value: UInt64(p.crtcW), label: "cursor.CRTC_W")
-            builder.add(objectId: cursorPlaneId, propertyId: c.crtcH, value: UInt64(p.crtcH), label: "cursor.CRTC_H")
+            builder.add(
+                objectId: cursorPlaneId, propertyId: c.fbId, value: UInt64(cursor.fbId),
+                label: "cursor.FB_ID")
+            builder.add(
+                objectId: cursorPlaneId, propertyId: c.crtcId, value: UInt64(crtcId),
+                label: "cursor.CRTC_ID")
+            if c.srcX != 0 {
+                builder.add(
+                    objectId: cursorPlaneId, propertyId: c.srcX, value: 0, label: "cursor.SRC_X")
+            }
+            if c.srcY != 0 {
+                builder.add(
+                    objectId: cursorPlaneId, propertyId: c.srcY, value: 0, label: "cursor.SRC_Y")
+            }
+            builder.add(
+                objectId: cursorPlaneId, propertyId: c.srcW, value: p.srcW, label: "cursor.SRC_W")
+            builder.add(
+                objectId: cursorPlaneId, propertyId: c.srcH, value: p.srcH, label: "cursor.SRC_H")
+            builder.add(
+                objectId: cursorPlaneId, propertyId: c.crtcX, value: UInt64(bitPattern: p.crtcX),
+                label: "cursor.CRTC_X")
+            builder.add(
+                objectId: cursorPlaneId, propertyId: c.crtcY, value: UInt64(bitPattern: p.crtcY),
+                label: "cursor.CRTC_Y")
+            builder.add(
+                objectId: cursorPlaneId, propertyId: c.crtcW, value: UInt64(p.crtcW),
+                label: "cursor.CRTC_W")
+            builder.add(
+                objectId: cursorPlaneId, propertyId: c.crtcH, value: UInt64(p.crtcH),
+                label: "cursor.CRTC_H")
         } else {
-            builder.add(objectId: cursorPlaneId, propertyId: c.fbId, value: 0, label: "cursor.FB_ID")
-            builder.add(objectId: cursorPlaneId, propertyId: c.crtcId, value: 0, label: "cursor.CRTC_ID")
+            builder.add(
+                objectId: cursorPlaneId, propertyId: c.fbId, value: 0, label: "cursor.FB_ID")
+            builder.add(
+                objectId: cursorPlaneId, propertyId: c.crtcId, value: 0, label: "cursor.CRTC_ID")
         }
     }
 
@@ -295,8 +328,9 @@ final class DrmOutput {
                 propertyId: props.crtcCtm,
                 value: 0, label: "crtc.CTM")
         case .active(let active):
-            guard gamma.ensureBlob(
-                fd: deviceFd, gammaLutProp: props.crtcGammaLut)
+            guard
+                gamma.ensureBlob(
+                    fd: deviceFd, gammaLutProp: props.crtcGammaLut)
             else { return false }
             builder.add(
                 objectId: connectorId, propertyId: props.connCrtcId,
@@ -365,12 +399,14 @@ final class DrmOutput {
     /// (DRM_MODE_ATOMIC_TEST_ONLY). The dormant-stack verification path.
     func testScanoutCommit(fbId: UInt32) -> Bool {
         guard var builder = AtomicRequestBuilder() else { return false }
-        guard addAtomicState(
-            .active(DrmAtomicOutputState.Active(
-                framebufferID: fbId,
-                vrrEnabled: false,
-                cursor: nil)),
-            into: &builder)
+        guard
+            addAtomicState(
+                .active(
+                    DrmAtomicOutputState.Active(
+                        framebufferID: fbId,
+                        vrrEnabled: false,
+                        cursor: nil)),
+                into: &builder)
         else { return false }
         return builder.validates(
             fd: deviceFd,
@@ -390,18 +426,20 @@ final class DrmOutput {
     ) -> Int32 {
         guard lifecycleState.admitsScanoutCommit else { return -EBUSY }
         guard var builder = AtomicRequestBuilder() else { return -22 }
-        guard addAtomicState(
-            .active(DrmAtomicOutputState.Active(
-                framebufferID: fbId,
-                inFenceFD: inFenceFd,
-                vrrEnabled: requestedVrr,
-                cursor: cursor)),
-            into: &builder)
+        guard
+            addAtomicState(
+                .active(
+                    DrmAtomicOutputState.Active(
+                        framebufferID: fbId,
+                        inFenceFD: inFenceFd,
+                        vrrEnabled: requestedVrr,
+                        cursor: cursor)),
+                into: &builder)
         else { return -EINVAL }
         if modeset,
-           !builder.validates(
-               fd: deviceFd,
-               flags: drmModeAtomicAllowModeset)
+            !builder.validates(
+                fd: deviceFd,
+                flags: drmModeAtomicAllowModeset)
         {
             let code = rendererErrno()
             return -(code == 0 ? EINVAL : code)
@@ -500,8 +538,8 @@ final class DrmOutput {
 
     /// Whether the degraded output is due for a recovery attempt and idle.
     func shouldAttemptRecovery(nowNs: UInt64) -> Bool {
-        recovery.isRecoveryDue(nowNs: nowNs) && !pageFlipPending &&
-            rendered.count == 0 && mailbox.pendingCount == 0
+        recovery.isRecoveryDue(nowNs: nowNs) && !pageFlipPending && rendered.count == 0
+            && mailbox.pendingCount == 0
     }
 
     func clearRecovery() {

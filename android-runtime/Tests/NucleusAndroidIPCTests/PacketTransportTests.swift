@@ -1,6 +1,6 @@
 import Glibc
 import Testing
-import NucleusAndroidGraphicsContract
+internal import NucleusAndroidGraphicsContract
 @testable import NucleusAndroidIPC
 
 @Test func seqpacketTransportPreservesEnvelopeAndDescriptorOrdering() throws {

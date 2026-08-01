@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for zxdg_popup_v6.
 
 import WaylandClientC
-public enum ZxdgPopupV6Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum ZxdgPopupV6Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zxdg_popup_v6())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == ZxdgPopupV6Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZxdgPopupV6Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zxdg_popup_v6_destroy(_proxy)
@@ -17,7 +18,7 @@ public extension WaylandProxy where Interface == ZxdgPopupV6Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func grab(seat: WaylandProxy<WlSeatClient>, serial: UInt32) throws(WaylandProxyError) {
+    package func grab(seat: WaylandProxy<WlSeatClient>, serial: UInt32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _seatProxy = try unsafe seat.requireNativeProxy()
         unsafe swift_wayland_client_request_zxdg_popup_v6_grab(_proxy, _seatProxy, serial)
@@ -25,54 +26,62 @@ public extension WaylandProxy where Interface == ZxdgPopupV6Client {
     }
 }
 @MainActor
-public protocol ZxdgPopupV6Events: AnyObject {
-    func configure(_ proxy: WaylandBorrowedProxy<ZxdgPopupV6Client>, x: Int32, y: Int32, width: Int32, height: Int32)
+package protocol ZxdgPopupV6Events: AnyObject {
+    func configure(
+        _ proxy: WaylandBorrowedProxy<ZxdgPopupV6Client>, x: Int32, y: Int32, width: Int32,
+        height: Int32)
     func popupDone(_ proxy: WaylandBorrowedProxy<ZxdgPopupV6Client>)
 }
-public extension ZxdgPopupV6Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zxdg_popup_v6_listener> = {
-        let p = UnsafeMutablePointer<zxdg_popup_v6_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zxdg_popup_v6_listener())
-        unsafe p.pointee.configure = configure_impl
-        unsafe p.pointee.popup_done = popupDone_impl
-        return unsafe p
-    }()
+package extension ZxdgPopupV6Client {
+    package nonisolated(unsafe) static let listener: UnsafeMutablePointer<zxdg_popup_v6_listener> =
+        {
+            let p = UnsafeMutablePointer<zxdg_popup_v6_listener>.allocate(capacity: 1)
+            unsafe p.initialize(to: zxdg_popup_v6_listener())
+            unsafe p.pointee.configure = configure_impl
+            unsafe p.pointee.popup_done = popupDone_impl
+            return unsafe p
+        }()
     private static func handler(_ context: WaylandClientListenerContext) -> any ZxdgPopupV6Events? {
         context.owner as? any ZxdgPopupV6Events
     }
-    private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32, Int32, Int32) -> Void = { data, proxy, x, y, width, height in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let configure_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32, Int32, Int32) ->
+            Void = { data, proxy, x, y, width, height in
+                guard let data = unsafe data, let proxy = unsafe proxy else {
+                    return
+                }
+                let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+                guard let h = handler(listenerContext) else {
+                    return
+                }
+                nonisolated(unsafe) let eventHandler = h
+                nonisolated(unsafe) let eventProxy = unsafe proxy
+                nonisolated(unsafe) let eventContext = listenerContext
+                MainActor.assumeIsolated {
+                    unsafe eventHandler.configure(
+                        WaylandBorrowedProxy<ZxdgPopupV6Client>(eventProxy), x: x, y: y,
+                        width: width, height: height)
+                }
+            }
+    private static let popupDone_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.popupDone(WaylandBorrowedProxy<ZxdgPopupV6Client>(eventProxy))
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.configure(WaylandBorrowedProxy<ZxdgPopupV6Client>(eventProxy), x: x, y: y, width: width, height: height)
-        }
-    }
-    private static let popupDone_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.popupDone(WaylandBorrowedProxy<ZxdgPopupV6Client>(eventProxy))
-        }
-    }
 }
-public extension WaylandProxy where Interface == ZxdgPopupV6Client {
-    func installListener(_ owner: any ZxdgPopupV6Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZxdgPopupV6Client {
+    package func installListener(_ owner: any ZxdgPopupV6Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe zxdg_popup_v6_add_listener(proxy, ZxdgPopupV6Client.listener, data)
         }

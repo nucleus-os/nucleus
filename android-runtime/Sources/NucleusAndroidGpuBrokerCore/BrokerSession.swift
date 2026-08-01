@@ -1,9 +1,9 @@
 import Glibc
-import NucleusAndroidGraphicsContract
-import NucleusAndroidGraphicsPlatform
-import NucleusAndroidIPC
+package import NucleusAndroidGraphicsContract
+package import NucleusAndroidGraphicsPlatform
+package import NucleusAndroidIPC
 
-public protocol BrokerRenderBackend: AnyObject {
+package protocol BrokerRenderBackend: AnyObject {
     func prepare(ring: AndroidBufferRing) throws
     func render(
         buffer: AndroidGraphicsBuffer,
@@ -15,12 +15,12 @@ public protocol BrokerRenderBackend: AnyObject {
     ) throws
 }
 
-public final class DirectVulkanBrokerRenderBackend: BrokerRenderBackend {
-    public init() {}
+package final class DirectVulkanBrokerRenderBackend: BrokerRenderBackend {
+    package init() {}
 
-    public func prepare(ring: AndroidBufferRing) throws {}
+    package func prepare(ring: AndroidBufferRing) throws {}
 
-    public func render(
+    package func render(
         buffer: AndroidGraphicsBuffer,
         frameNumber: UInt64,
         acquireTimeline: AndroidSyncobjTimeline,
@@ -37,7 +37,7 @@ public final class DirectVulkanBrokerRenderBackend: BrokerRenderBackend {
     }
 }
 
-public final class BrokerSession {
+package final class BrokerSession {
     private enum State {
         case awaitingHello
         case ready
@@ -50,7 +50,7 @@ public final class BrokerSession {
     private var nextFrameNumber: UInt64 = 1
     private var previousReleasePoint: [UInt64: UInt64] = [:]
 
-    public init(
+    package init(
         connection: BrokerPacketConnection,
         renderBackend: any BrokerRenderBackend =
             DirectVulkanBrokerRenderBackend()
@@ -59,11 +59,11 @@ public final class BrokerSession {
         self.renderBackend = renderBackend
     }
 
-    public func run() throws {
+    package func run() throws {
         while true { try handleNextPacket() }
     }
 
-    public func handleNextPacket() throws {
+    package func handleNextPacket() throws {
         let packet = try connection.receive()
         let request = packet.envelope
         let descriptors = packet.takeDescriptors()
@@ -93,9 +93,10 @@ public final class BrokerSession {
     private func handle(_ request: BrokerEnvelope) throws {
         switch (state, request.kind) {
         case (.awaitingHello, .hello):
-            try connection.send(BrokerEnvelope(
-                messageID: request.messageID,
-                kind: .helloReply))
+            try connection.send(
+                BrokerEnvelope(
+                    messageID: request.messageID,
+                    kind: .helloReply))
             state = .ready
         case (.ready, .allocate):
             guard let allocation = request.allocationRequest else {
@@ -114,9 +115,9 @@ public final class BrokerSession {
             try renderBackend.prepare(ring: ring)
             try sendAllocationReply(messageID: request.messageID, ring: ring)
             state = .allocated(ring)
-        case let (.allocated(ring), .render):
+        case (.allocated(let ring), .render):
             guard let render = request.renderRequest,
-                  let buffer = ring.buffers.first(where: { $0.id == render.bufferID })
+                let buffer = ring.buffers.first(where: { $0.id == render.bufferID })
             else {
                 throw GraphicsFailure(
                     code: "unknown_buffer",
@@ -130,8 +131,8 @@ public final class BrokerSession {
                     message: "allocated buffer has no release timeline")
             }
             guard render.frameNumber == nextFrameNumber,
-                  render.frameNumber <= UInt64.max / 2,
-                  render.releasePoint == previousReleasePoint[buffer.id]
+                render.frameNumber <= UInt64.max / 2,
+                render.releasePoint == previousReleasePoint[buffer.id]
             else {
                 throw GraphicsFailure(
                     code: "invalid_frame_sequence",
@@ -144,14 +145,15 @@ public final class BrokerSession {
                 acquirePoint: acquirePoint,
                 releaseTimeline: render.releasePoint == nil ? nil : releaseTimeline,
                 releasePoint: render.releasePoint ?? 0)
-            try connection.send(BrokerEnvelope(
-                messageID: request.messageID,
-                kind: .renderReply,
-                renderReply: RenderReply(
-                    bufferID: buffer.id,
-                    frameNumber: render.frameNumber,
-                    acquirePoint: acquirePoint,
-                    releasePoint: releasePoint)))
+            try connection.send(
+                BrokerEnvelope(
+                    messageID: request.messageID,
+                    kind: .renderReply,
+                    renderReply: RenderReply(
+                        bufferID: buffer.id,
+                        frameNumber: render.frameNumber,
+                        acquirePoint: acquirePoint,
+                        releasePoint: releasePoint)))
             previousReleasePoint[buffer.id] = releasePoint
             nextFrameNumber &+= 1
         case (.ready, .diagnose):
@@ -179,15 +181,17 @@ public final class BrokerSession {
                     let descriptor = exported.takeFileDescriptor()
                     let index = UInt8(descriptors.count)
                     descriptors.append(descriptor)
-                    slots.append(GraphicsFileDescriptorSlot(
-                        index: index,
-                        role: .dmaBufPlane,
-                        bufferID: buffer.id,
-                        planeIndex: UInt8(planeIndex)))
-                    planes.append(DmabufPlane(
-                        fdIndex: index,
-                        offset: offset,
-                        stride: stride))
+                    slots.append(
+                        GraphicsFileDescriptorSlot(
+                            index: index,
+                            role: .dmaBufPlane,
+                            bufferID: buffer.id,
+                            planeIndex: UInt8(planeIndex)))
+                    planes.append(
+                        DmabufPlane(
+                            fdIndex: index,
+                            offset: offset,
+                            stride: stride))
                 }
                 guard let releaseTimeline = ring.releaseTimeline(for: buffer.id) else {
                     throw GraphicsFailure(
@@ -196,24 +200,27 @@ public final class BrokerSession {
                 }
                 let releaseIndex = UInt8(descriptors.count)
                 descriptors.append(try releaseTimeline.exportFileDescriptor())
-                slots.append(GraphicsFileDescriptorSlot(
-                    index: releaseIndex,
-                    role: .releaseTimeline,
-                    bufferID: buffer.id))
-                brokerBuffers.append(BrokerBuffer(
-                    id: buffer.id,
-                    width: buffer.width,
-                    height: buffer.height,
-                    format: buffer.formatModifier.format,
-                    modifier: buffer.formatModifier.modifier,
-                    planes: planes,
-                    releaseTimelineFDIndex: releaseIndex))
+                slots.append(
+                    GraphicsFileDescriptorSlot(
+                        index: releaseIndex,
+                        role: .releaseTimeline,
+                        bufferID: buffer.id))
+                brokerBuffers.append(
+                    BrokerBuffer(
+                        id: buffer.id,
+                        width: buffer.width,
+                        height: buffer.height,
+                        format: buffer.formatModifier.format,
+                        modifier: buffer.formatModifier.modifier,
+                        planes: planes,
+                        releaseTimelineFDIndex: releaseIndex))
             }
             let acquireIndex = UInt8(descriptors.count)
             descriptors.append(try ring.acquireTimeline.exportFileDescriptor())
-            slots.append(GraphicsFileDescriptorSlot(
-                index: acquireIndex,
-                role: .acquireTimeline))
+            slots.append(
+                GraphicsFileDescriptorSlot(
+                    index: acquireIndex,
+                    role: .acquireTimeline))
             try connection.send(
                 BrokerEnvelope(
                     messageID: messageID,
@@ -236,9 +243,10 @@ public final class BrokerSession {
         code: String,
         message: String
     ) throws {
-        try connection.send(BrokerEnvelope(
-            messageID: messageID,
-            kind: .failure,
-            failure: GraphicsFailure(code: code, message: message)))
+        try connection.send(
+            BrokerEnvelope(
+                messageID: messageID,
+                kind: .failure,
+                failure: GraphicsFailure(code: code, message: message)))
     }
 }

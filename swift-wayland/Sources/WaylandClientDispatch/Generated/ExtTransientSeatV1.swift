@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for ext_transient_seat_v1.
 
 import WaylandClientC
-public enum ExtTransientSeatV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum ExtTransientSeatV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_ext_transient_seat_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == ExtTransientSeatV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ExtTransientSeatV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_ext_transient_seat_v1_destroy(_proxy)
@@ -19,56 +20,66 @@ public extension WaylandProxy where Interface == ExtTransientSeatV1Client {
     }
 }
 @MainActor
-public protocol ExtTransientSeatV1Events: AnyObject {
+package protocol ExtTransientSeatV1Events: AnyObject {
     func ready(_ proxy: WaylandBorrowedProxy<ExtTransientSeatV1Client>, global_name: UInt32)
     func denied(_ proxy: WaylandBorrowedProxy<ExtTransientSeatV1Client>)
 }
-public extension ExtTransientSeatV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<ext_transient_seat_v1_listener> = {
-        let p = UnsafeMutablePointer<ext_transient_seat_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: ext_transient_seat_v1_listener())
-        unsafe p.pointee.ready = ready_impl
-        unsafe p.pointee.denied = denied_impl
-        return unsafe p
-    }()
-    private static func handler(_ context: WaylandClientListenerContext) -> any ExtTransientSeatV1Events? {
+package extension ExtTransientSeatV1Client {
+    package nonisolated(unsafe) static let listener:
+        UnsafeMutablePointer<ext_transient_seat_v1_listener> = {
+            let p = UnsafeMutablePointer<ext_transient_seat_v1_listener>.allocate(capacity: 1)
+            unsafe p.initialize(to: ext_transient_seat_v1_listener())
+            unsafe p.pointee.ready = ready_impl
+            unsafe p.pointee.denied = denied_impl
+            return unsafe p
+        }()
+    private static func handler(_ context: WaylandClientListenerContext)
+        -> any ExtTransientSeatV1Events?
+    {
         context.owner as? any ExtTransientSeatV1Events
     }
-    private static let ready_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, global_name in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let ready_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = {
+            data, proxy, global_name in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.ready(
+                    WaylandBorrowedProxy<ExtTransientSeatV1Client>(eventProxy),
+                    global_name: global_name)
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
+    private static let denied_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.denied(
+                    WaylandBorrowedProxy<ExtTransientSeatV1Client>(eventProxy))
+            }
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.ready(WaylandBorrowedProxy<ExtTransientSeatV1Client>(eventProxy), global_name: global_name)
-        }
-    }
-    private static let denied_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.denied(WaylandBorrowedProxy<ExtTransientSeatV1Client>(eventProxy))
-        }
-    }
 }
-public extension WaylandProxy where Interface == ExtTransientSeatV1Client {
-    func installListener(_ owner: any ExtTransientSeatV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ExtTransientSeatV1Client {
+    package func installListener(_ owner: any ExtTransientSeatV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe ext_transient_seat_v1_add_listener(proxy, ExtTransientSeatV1Client.listener, data)
+            unsafe ext_transient_seat_v1_add_listener(
+                proxy, ExtTransientSeatV1Client.listener, data)
         }
     }
 }

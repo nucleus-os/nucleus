@@ -1,10 +1,10 @@
 // ConfigurePolicy by the production router.
 
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
-import WaylandProtocolTypes
 import NucleusRenderModel
+import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 @MainActor
 @safe final class XdgSurface: WlSurfaceRole {
@@ -54,8 +54,9 @@ import NucleusRenderModel
     ) -> XdgConfigureSerial {
         let serial = shell.nextSerial()
         resource.sendConfigure(serial: serial.rawValue)
-        configureLedger.append(XdgConfigureRecord(
-            serial: serial, roleState: roleState, initial: initial))
+        configureLedger.append(
+            XdgConfigureRecord(
+                serial: serial, roleState: roleState, initial: initial))
         return serial
     }
 
@@ -64,7 +65,8 @@ import NucleusRenderModel
     func configureToplevel(initial: Bool) {
         guard let toplevel else { return }
         toplevel.decoration?.sendConfigureIfNeeded()
-        let plan = shell.delegate?.configure(for: toplevel, initial: initial) ?? XdgToplevelConfigure()
+        let plan =
+            shell.delegate?.configure(for: toplevel, initial: initial) ?? XdgToplevelConfigure()
         toplevel.sendConfigure(plan)
         let serial = sendConfigureSerial(
             roleState: .toplevel(plan), initial: initial)
@@ -84,14 +86,19 @@ import NucleusRenderModel
         {
             return false
         }
-        let width = windowGeometry?.width
-            ?? Int32(clamping: Int(
-                max(0, surface?.committedLogicalWidth.rounded(.up) ?? 0)))
-        let height = windowGeometry?.height
-            ?? Int32(clamping: Int(
-                max(0, surface?.committedLogicalHeight.rounded(.up) ?? 0)))
-        return mapped && snapshot.isValid(
-            parentWidth: width, parentHeight: height)
+        let width =
+            windowGeometry?.width
+            ?? Int32(
+                clamping: Int(
+                    max(0, surface?.committedLogicalWidth.rounded(.up) ?? 0)))
+        let height =
+            windowGeometry?.height
+            ?? Int32(
+                clamping: Int(
+                    max(0, surface?.committedLogicalHeight.rounded(.up) ?? 0)))
+        return mapped
+            && snapshot.isValid(
+                parentWidth: width, parentHeight: height)
     }
 
     func roleObjectDestroyed(_ object: AnyObject) {
@@ -180,10 +187,12 @@ import NucleusRenderModel
         _ geometry: WlRect?, surface: WlSurface
     ) -> WlRect? {
         guard let geometry else { return nil }
-        let surfaceWidth = Int32(clamping: Int(
-            max(1, surface.committedLogicalWidth.rounded(.up))))
-        let surfaceHeight = Int32(clamping: Int(
-            max(1, surface.committedLogicalHeight.rounded(.up))))
+        let surfaceWidth = Int32(
+            clamping: Int(
+                max(1, surface.committedLogicalWidth.rounded(.up))))
+        let surfaceHeight = Int32(
+            clamping: Int(
+                max(1, surface.committedLogicalHeight.rounded(.up))))
         let x = min(max(geometry.x, 0), surfaceWidth - 1)
         let y = min(max(geometry.y, 0), surfaceHeight - 1)
         let width = min(geometry.width, surfaceWidth - x)

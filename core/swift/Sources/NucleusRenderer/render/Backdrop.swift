@@ -4,25 +4,34 @@
 // shape, then apply the tint. The foreground-vibrancy material samples the
 // backdrop content through a chroma-preserving runtime shader.
 
-import NucleusSkiaGraphiteBridge
 internal import NucleusRenderModel
+import NucleusSkiaGraphiteBridge
 
 enum Backdrop {
     static func rectF(_ r: PlanRect) -> nucleus.skia.RectF {
         var out = nucleus.skia.RectF()
-        out.x = r.x; out.y = r.y; out.width = r.w; out.height = r.h
+        out.x = r.x
+        out.y = r.y
+        out.width = r.w
+        out.height = r.h
         return out
     }
 
     static func rectF(_ f: Float4) -> nucleus.skia.RectF {
         var out = nucleus.skia.RectF()
-        out.x = f.0; out.y = f.1; out.width = f.2; out.height = f.3
+        out.x = f.0
+        out.y = f.1
+        out.width = f.2
+        out.height = f.3
         return out
     }
 
     static func color(_ c: Float4) -> nucleus.skia.Color {
         var out = nucleus.skia.Color()
-        out.r = c.0; out.g = c.1; out.b = c.2; out.a = c.3
+        out.r = c.0
+        out.g = c.1
+        out.b = c.2
+        out.a = c.3
         return out
     }
 
@@ -35,14 +44,14 @@ enum Backdrop {
     /// The chroma-preserving foreground-vibrancy SkSL: blend the sampled backdrop
     /// toward its luminance by `strength`, preserving alpha.
     static let vibrancySksl = """
-    uniform shader content;
-    uniform half strength;
-    half4 main(float2 coord) {
-        half4 px = content.eval(coord);
-        half l = dot(px.rgb, half3(0.2126, 0.7152, 0.0722));
-        return half4(mix(px.rgb, half3(l), strength), px.a);
-    }
-    """
+        uniform shader content;
+        uniform half strength;
+        half4 main(float2 coord) {
+            half4 px = content.eval(coord);
+            half l = dot(px.rgb, half3(0.2126, 0.7152, 0.0722));
+            return half4(mix(px.rgb, half3(l), strength), px.a);
+        }
+        """
 
     /// The luminance-blend strength for a vibrancy variant (dark mutes chroma more).
     static func vibrancyStrength(_ variant: ForegroundVibrancyVariant) -> Float {
@@ -87,7 +96,8 @@ enum Backdrop {
         onto canvas: nucleus.skia.Canvas
     ) -> Int {
         guard spec.enabled else { return 0 }
-        let source = unsafe spec.blendingMode == .behindWindow
+        let source =
+            unsafe spec.blendingMode == .behindWindow
             ? (prefix ?? liveSnapshot)
             : liveSnapshot
         guard unsafe source.isValid() else { return 0 }

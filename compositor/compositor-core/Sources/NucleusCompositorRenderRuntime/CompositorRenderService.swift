@@ -1,9 +1,9 @@
-public import NucleusCompositorServer
-@_spi(NucleusPlatform) public import NucleusCompositorRendererLinux
-@_spi(NucleusPlatform) import NucleusRenderer
+package import NucleusCompositorRendererLinux
+package import NucleusCompositorServer
+package import NucleusRenderer
 
 extension DRMScanoutPresenter: CompositorRenderService {
-    public func importShm(
+    package func importShm(
         previousIOSurfaceID: UInt32,
         width: UInt32,
         height: UInt32,
@@ -11,7 +11,8 @@ extension DRMScanoutPresenter: CompositorRenderService {
         stride: UInt32,
         pixels: Span<UInt8>
     ) -> UInt32 {
-        let id = previousIOSurfaceID != 0
+        let id =
+            previousIOSurfaceID != 0
             ? previousIOSurfaceID
             : allocSurfaceId()
         return registerSurfaceShm(
@@ -24,9 +25,10 @@ extension DRMScanoutPresenter: CompositorRenderService {
         ) ? id : 0
     }
 
-    public func importDmabuf(_ request: RenderDmabufImport) -> UInt32 {
+    package func importDmabuf(_ request: RenderDmabufImport) -> UInt32 {
         guard let firstPlane = request.planes.first else { return 0 }
-        let id = request.previousIOSurfaceID != 0
+        let id =
+            request.previousIOSurfaceID != 0
             ? request.previousIOSurfaceID
             : allocSurfaceId()
         let planes = request.planes.map {
@@ -52,18 +54,18 @@ extension DRMScanoutPresenter: CompositorRenderService {
         ) ? id : 0
     }
 
-    public func releaseIOSurface(_ id: UInt32) {
+    package func releaseIOSurface(_ id: UInt32) {
         guard id != 0 else { return }
         releaseSurfaceTexture(iosurfaceID: UInt64(id))
     }
 
-    public func dmabufFormats() -> [RenderDmabufFormat] {
+    package func dmabufFormats() -> [RenderDmabufFormat] {
         dmabufSupportedFormats().map {
             RenderDmabufFormat(format: $0.format, modifier: $0.modifier)
         }
     }
 
-    public func probeDmabuf(_ request: RenderDmabufProbe) -> Bool {
+    package func probeDmabuf(_ request: RenderDmabufProbe) -> Bool {
         guard let firstPlane = request.planes.first else { return false }
         return canImportSurfaceDmabuf(
             fd: firstPlane.fd,
@@ -79,7 +81,7 @@ extension DRMScanoutPresenter: CompositorRenderService {
             })
     }
 
-    public func applyGamma(_ ramp: RenderGammaRamp) -> Bool {
+    package func applyGamma(_ ramp: RenderGammaRamp) -> Bool {
         applyGamma(
             outputID: ramp.outputID,
             red: ramp.red,
@@ -87,7 +89,7 @@ extension DRMScanoutPresenter: CompositorRenderService {
             blue: ramp.blue)
     }
 
-    public func beginCaptureOutput(
+    package func beginCaptureOutput(
         outputID: UInt64,
         sourceRegion: RenderCaptureRegion?,
         completion: @escaping @MainActor (RenderPixelCapture?) -> Void
@@ -99,38 +101,41 @@ extension DRMScanoutPresenter: CompositorRenderService {
             sourceWidth: sourceRegion?.width ?? 0,
             sourceHeight: sourceRegion?.height ?? 0
         ) { capture in
-            completion(capture.map {
-                RenderPixelCapture(
-                    pixels: $0.pixels,
-                    width: $0.width,
-                    height: $0.height,
-                    originX: $0.originX,
-                    originY: $0.originY)
-            })
+            completion(
+                capture.map {
+                    RenderPixelCapture(
+                        pixels: $0.pixels,
+                        width: $0.width,
+                        height: $0.height,
+                        originX: $0.originX,
+                        originY: $0.originY)
+                })
         }
     }
 
-    public func beginReadSurface(
+    package func beginReadSurface(
         iosurfaceID: UInt32,
         completion: @escaping @MainActor (RenderPixelCapture?) -> Void
     ) -> UInt64? {
         beginReadSurfaceTextureBGRA(iosurfaceID: iosurfaceID) { capture in
-            completion(capture.map {
-                RenderPixelCapture(
-                    pixels: $0.pixels,
-                    width: $0.width,
-                    height: $0.height,
-                    originX: $0.originX,
-                    originY: $0.originY)
-            })
+            completion(
+                capture.map {
+                    RenderPixelCapture(
+                        pixels: $0.pixels,
+                        width: $0.width,
+                        height: $0.height,
+                        originX: $0.originX,
+                        originY: $0.originY)
+                })
         }
     }
 
-    public func captureSurfaceSnapshot(
+    package func captureSurfaceSnapshot(
         iosurfaceID: UInt32
     ) -> RenderSnapshotResource? {
-        guard let capture = captureSurfaceSnapshot(
-            iosurfaceID: UInt64(iosurfaceID))
+        guard
+            let capture = captureSurfaceSnapshot(
+                iosurfaceID: UInt64(iosurfaceID))
         else { return nil }
         return RenderSnapshotResource(
             handle: capture.handle,
@@ -138,7 +143,7 @@ extension DRMScanoutPresenter: CompositorRenderService {
             height: capture.height)
     }
 
-    public func beginCaptureOutput(
+    package func beginCaptureOutput(
         to request: RenderDmabufCapture,
         completion: @escaping @MainActor (Bool) -> Void
     ) -> UInt64? {

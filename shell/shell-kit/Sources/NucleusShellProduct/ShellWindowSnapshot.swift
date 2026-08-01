@@ -3,14 +3,14 @@
 /// This deliberately does not reuse a Wayland protocol record. The runtime
 /// projects whichever compositor protocol supplies the desktop model into this
 /// value, and product views remain ordinary Swift/NucleusUI consumers.
-public struct ShellWindowSnapshot: Identifiable, Sendable, Equatable {
-    public let id: UInt64
-    public var title: String
-    public var applicationID: String
-    public var isActive: Bool
-    public var isMinimized: Bool
+package struct ShellWindowSnapshot: Identifiable, Sendable, Equatable {
+    package let id: UInt64
+    package var title: String
+    package var applicationID: String
+    package var isActive: Bool
+    package var isMinimized: Bool
 
-    public init(
+    package init(
         id: UInt64,
         title: String = "",
         applicationID: String = "",
@@ -24,14 +24,14 @@ public struct ShellWindowSnapshot: Identifiable, Sendable, Equatable {
         self.isMinimized = isMinimized
     }
 
-    public var displayTitle: String {
+    package var displayTitle: String {
         if !title.isEmpty { return title }
         if !applicationID.isEmpty { return applicationID }
         return "Untitled"
     }
 }
 
-public enum ShellWindowAction: Sendable, Equatable {
+package enum ShellWindowAction: Sendable, Equatable {
     case activate
     case close
     case setMinimized(Bool)

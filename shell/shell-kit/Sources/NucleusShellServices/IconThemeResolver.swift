@@ -18,24 +18,24 @@ struct IconSearchDirectory: Sendable, Equatable {
 /// down to a 22px bar slot produces mush, and scaling a 16px one up produces
 /// blur. Scalable SVG wins outright; among bitmaps the smallest size at or above
 /// the target wins, so a downscale is always gentle.
-public final class IconThemeResolver {
+package final class IconThemeResolver {
     /// The theme to search first. Falling back through `hicolor` is the XDG
     /// contract — it is the theme every application is guaranteed to install
     /// into.
-    public var themeName: String {
+    package var themeName: String {
         didSet { if themeName != oldValue { invalidate() } }
     }
 
     /// Bumped whenever the cache is dropped. A caller holding resolved paths
     /// compares this to know its icons are stale, without being called back.
-    public private(set) var generation: UInt64 = 0
+    package private(set) var generation: UInt64 = 0
 
     private let roots: [String]
     private var directoryCache: [String: [IconSearchDirectory]] = [:]
 
     /// - Parameter roots: icon-theme roots, most specific first. Defaults to the
     ///   XDG search path.
-    public init(themeName: String = "hicolor", roots: [String]? = nil) {
+    package init(themeName: String = "hicolor", roots: [String]? = nil) {
         self.themeName = themeName
         self.roots = roots ?? IconThemeResolver.defaultRoots()
     }
@@ -67,7 +67,7 @@ public final class IconThemeResolver {
     }
 
     /// Drop everything cached. Call when the icon theme changes.
-    public func invalidate() {
+    package func invalidate() {
         directoryCache.removeAll(keepingCapacity: true)
         generation &+= 1
     }
@@ -77,7 +77,7 @@ public final class IconThemeResolver {
     /// A miss is cached as a miss. Icon lookups happen per window in a taskbar
     /// that rebuilds often, and re-walking the filesystem for an icon known to
     /// be absent is the expensive case, not the cheap one.
-    public func resolve(_ name: String, size: Int = 22) -> String? {
+    package func resolve(_ name: String, size: Int = 22) -> String? {
         // An absolute path is already an answer. Applications set icon fields to
         // full paths often enough that treating one as a theme name would fail
         // for no reason.
@@ -155,7 +155,7 @@ public final class IconThemeResolver {
                     separator: "=", maxSplits: 1,
                     omittingEmptySubsequences: false)
                 guard parts.count == 2,
-                      String(parts[0]).trimmingCharacters(in: .whitespaces)
+                    String(parts[0]).trimmingCharacters(in: .whitespaces)
                         == "Inherits"
                 else { continue }
                 return parts[1]
@@ -186,30 +186,35 @@ public final class IconThemeResolver {
                 let path = "\(themeRoot)/\(entry)"
                 if entry == "scalable" {
                     for category in subdirectories(of: path) {
-                        result.append(IconSearchDirectory(
-                            path: "\(path)/\(category)", size: 0, isScalable: true))
+                        result.append(
+                            IconSearchDirectory(
+                                path: "\(path)/\(category)", size: 0, isScalable: true))
                     }
-                    result.append(IconSearchDirectory(
-                        path: path, size: 0, isScalable: true))
+                    result.append(
+                        IconSearchDirectory(
+                            path: path, size: 0, isScalable: true))
                     continue
                 }
                 guard let size = IconThemeResolver.parseSize(entry) else {
                     // A category directory at the top level: sizes are below it.
                     for sub in subdirectories(of: path) {
                         if let nested = IconThemeResolver.parseSize(sub) {
-                            result.append(IconSearchDirectory(
-                                path: "\(path)/\(sub)", size: nested,
-                                isScalable: false))
+                            result.append(
+                                IconSearchDirectory(
+                                    path: "\(path)/\(sub)", size: nested,
+                                    isScalable: false))
                         }
                     }
                     continue
                 }
                 for category in subdirectories(of: path) {
-                    result.append(IconSearchDirectory(
-                        path: "\(path)/\(category)", size: size, isScalable: false))
+                    result.append(
+                        IconSearchDirectory(
+                            path: "\(path)/\(category)", size: size, isScalable: false))
                 }
-                result.append(IconSearchDirectory(
-                    path: path, size: size, isScalable: false))
+                result.append(
+                    IconSearchDirectory(
+                        path: path, size: size, isScalable: false))
             }
         }
         directoryCache[theme] = result

@@ -22,9 +22,11 @@ final class XdgConfigureLedger {
     func acknowledge(
         serial: XdgConfigureSerial
     ) throws(XdgConfigureLedgerError) {
-        guard let index = outstanding.firstIndex(where: {
-            $0.serial == serial
-        }) else {
+        guard
+            let index = outstanding.firstIndex(where: {
+                $0.serial == serial
+            })
+        else {
             throw .invalidSerial
         }
         acknowledged = outstanding[index]

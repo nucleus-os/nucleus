@@ -7,6 +7,7 @@ extension ColliderRuntime {
     func prepareHostToolchainBuild(
         _ preparation: HostToolchainBuildPreparation
     ) throws {
+        try prepareBuildWorkspaceContracts(preparation)
         try hostRemoveExisting(preparation.stagingRoot)
         try FileManager.default.createDirectory(
             atPath: preparation.stagingRoot.string,
@@ -20,9 +21,9 @@ extension ColliderRuntime {
         // targets must use its stable namespace rather than the runner's
         // absolute cache path.
         let llvmLibrary = FilePath(
-            "/build/build/buildbot_linux/llvm-linux-x86_64/lib")
+            "/build/build/buildbot_linux/llvm-linux-aarch64/lib")
         let buildSwiftLibrary = preparation.workspace.appending(
-            "build/buildbot_linux/swift-linux-x86_64/lib/swift/linux")
+            "build/buildbot_linux/swift-linux-aarch64/lib/swift/linux")
         let installSwiftLibrary = preparation.stagingRoot.appending(
             "usr/lib/swift/linux")
         try FileManager.default.createDirectory(
@@ -51,6 +52,51 @@ extension ColliderRuntime {
             try DurableFile.write(
                 Data(compilerConfiguration.utf8),
                 to: preparation.stagingRoot.appending("usr/bin/\(name)"))
+        }
+    }
+
+    private func prepareBuildWorkspaceContracts(
+        _ preparation: HostToolchainBuildPreparation
+    ) throws {
+        var invalidatedRoots: Set<FilePath> = []
+        for contract in preparation.contracts {
+            let requested = try BuildWorkspaceContractSnapshot(contract)
+            let existing = try? Data(
+                contentsOf: URL(fileURLWithPath: contract.stamp.string))
+            let previous = existing.flatMap {
+                try? JSONDecoder().decode(
+                    BuildWorkspaceContractSnapshot.self, from: $0)
+            }
+            var changes = requested.changes(from: previous)
+            if contract.roots.contains(where: { invalidatedRoots.contains($0) }) {
+                changes.append("upstream build contract")
+            }
+            guard !changes.isEmpty else {
+                print("==> reusing \(contract.name) Swift build workspace")
+                continue
+            }
+            for root in contract.roots {
+                try validateBuildRoot(root, workspace: preparation.workspace)
+                try hostRemoveExisting(root)
+                invalidatedRoots.insert(root)
+            }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try DurableFile.write(try encoder.encode(requested), to: contract.stamp)
+            print(
+                "==> reset \(contract.name) Swift build workspace: "
+                    + changes.joined(separator: ", "))
+        }
+    }
+
+    private func validateBuildRoot(_ root: FilePath, workspace: FilePath) throws {
+        let base = URL(fileURLWithPath: workspace.string).standardizedFileURL.path
+        let path = URL(fileURLWithPath: root.string).standardizedFileURL.path
+        guard path != base,
+            path.hasPrefix(base.hasSuffix("/") ? base : base + "/")
+        else {
+            throw RuntimeFailure.invalidOutput(
+                "Swift build-contract root escapes its workspace: \(root)")
         }
     }
 
@@ -135,7 +181,7 @@ extension ColliderRuntime {
         }
         try DurableFile.write(Data(arguments.utf8), to: staticArguments)
         let testingInterop = assembly.workspace.appending(
-            "build/buildbot_linux/swifttesting-linux-x86_64/lib/"
+            "build/buildbot_linux/swifttesting-linux-aarch64/lib/"
                 + "lib_TestingInterop.so")
         if testingInterop.isRegularFile {
             try hostCopyReplacing(
@@ -528,6 +574,29 @@ extension ColliderRuntime {
         }
         try FileManager.default.removeItem(
             atPath: validation.workDirectory.string)
+    }
+}
+
+private struct BuildWorkspaceContractSnapshot: Codable, Equatable {
+    let values: [String: String]
+    let files: [String: String]
+
+    init(_ contract: BuildWorkspaceContract) throws {
+        values = contract.values
+        files = try Dictionary(
+            uniqueKeysWithValues: contract.files.map {
+                ($0.name, try ArtifactHasher.digest(file: $0.path).description)
+            })
+    }
+
+    func changes(from previous: Self?) -> [String] {
+        guard let previous else { return ["missing build-contract stamp"] }
+        let valueChanges = Set(values.keys).union(previous.values.keys)
+            .filter { values[$0] != previous.values[$0] }
+        let fileChanges = Set(files.keys).union(previous.files.keys)
+            .filter { files[$0] != previous.files[$0] }
+        return valueChanges.map { "\($0) changed" }.sorted()
+            + fileChanges.map { "\($0) changed" }.sorted()
     }
 }
 

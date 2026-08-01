@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for zxdg_output_v1.
 
 import WaylandClientC
-public enum ZxdgOutputV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum ZxdgOutputV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zxdg_output_v1())
-    public nonisolated static let maximumVersion: UInt32 = 3
+    package nonisolated static let maximumVersion: UInt32 = 3
 }
-public extension WaylandProxy where Interface == ZxdgOutputV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZxdgOutputV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zxdg_output_v1_destroy(_proxy)
@@ -19,107 +20,125 @@ public extension WaylandProxy where Interface == ZxdgOutputV1Client {
     }
 }
 @MainActor
-public protocol ZxdgOutputV1Events: AnyObject {
+package protocol ZxdgOutputV1Events: AnyObject {
     func logicalPosition(_ proxy: WaylandBorrowedProxy<ZxdgOutputV1Client>, x: Int32, y: Int32)
     func logicalSize(_ proxy: WaylandBorrowedProxy<ZxdgOutputV1Client>, width: Int32, height: Int32)
     func done(_ proxy: WaylandBorrowedProxy<ZxdgOutputV1Client>)
     func name(_ proxy: WaylandBorrowedProxy<ZxdgOutputV1Client>, name: String)
     func description(_ proxy: WaylandBorrowedProxy<ZxdgOutputV1Client>, description: String)
 }
-public extension ZxdgOutputV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zxdg_output_v1_listener> = {
-        let p = UnsafeMutablePointer<zxdg_output_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zxdg_output_v1_listener())
-        unsafe p.pointee.logical_position = logicalPosition_impl
-        unsafe p.pointee.logical_size = logicalSize_impl
-        unsafe p.pointee.done = done_impl
-        unsafe p.pointee.name = name_impl
-        unsafe p.pointee.description = description_impl
-        return unsafe p
-    }()
-    private static func handler(_ context: WaylandClientListenerContext) -> any ZxdgOutputV1Events? {
+package extension ZxdgOutputV1Client {
+    package nonisolated(unsafe) static let listener: UnsafeMutablePointer<zxdg_output_v1_listener> =
+        {
+            let p = UnsafeMutablePointer<zxdg_output_v1_listener>.allocate(capacity: 1)
+            unsafe p.initialize(to: zxdg_output_v1_listener())
+            unsafe p.pointee.logical_position = logicalPosition_impl
+            unsafe p.pointee.logical_size = logicalSize_impl
+            unsafe p.pointee.done = done_impl
+            unsafe p.pointee.name = name_impl
+            unsafe p.pointee.description = description_impl
+            return unsafe p
+        }()
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZxdgOutputV1Events?
+    {
         context.owner as? any ZxdgOutputV1Events
     }
-    private static let logicalPosition_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = { data, proxy, x, y in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let logicalPosition_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = {
+            data, proxy, x, y in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.logicalPosition(
+                    WaylandBorrowedProxy<ZxdgOutputV1Client>(eventProxy), x: x, y: y)
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
+    private static let logicalSize_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = {
+            data, proxy, width, height in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.logicalSize(
+                    WaylandBorrowedProxy<ZxdgOutputV1Client>(eventProxy), width: width,
+                    height: height)
+            }
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.logicalPosition(WaylandBorrowedProxy<ZxdgOutputV1Client>(eventProxy), x: x, y: y)
+    private static let done_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.done(WaylandBorrowedProxy<ZxdgOutputV1Client>(eventProxy))
+            }
         }
-    }
-    private static let logicalSize_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = { data, proxy, width, height in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let name_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = {
+            data, proxy, name in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            nonisolated(unsafe) let _event_name = unsafe name
+            MainActor.assumeIsolated {
+                unsafe eventHandler.name(
+                    WaylandBorrowedProxy<ZxdgOutputV1Client>(eventProxy),
+                    name: unsafe String(cString: _event_name!))
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
+    private static let description_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = {
+            data, proxy, description in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            nonisolated(unsafe) let _event_description = unsafe description
+            MainActor.assumeIsolated {
+                unsafe eventHandler.description(
+                    WaylandBorrowedProxy<ZxdgOutputV1Client>(eventProxy),
+                    description: unsafe String(cString: _event_description!))
+            }
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.logicalSize(WaylandBorrowedProxy<ZxdgOutputV1Client>(eventProxy), width: width, height: height)
-        }
-    }
-    private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.done(WaylandBorrowedProxy<ZxdgOutputV1Client>(eventProxy))
-        }
-    }
-    private static let name_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, name in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_name = unsafe name
-        MainActor.assumeIsolated {
-            unsafe eventHandler.name(WaylandBorrowedProxy<ZxdgOutputV1Client>(eventProxy), name: unsafe String(cString: _event_name!))
-        }
-    }
-    private static let description_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, description in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_description = unsafe description
-        MainActor.assumeIsolated {
-            unsafe eventHandler.description(WaylandBorrowedProxy<ZxdgOutputV1Client>(eventProxy), description: unsafe String(cString: _event_description!))
-        }
-    }
 }
-public extension WaylandProxy where Interface == ZxdgOutputV1Client {
-    func installListener(_ owner: any ZxdgOutputV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZxdgOutputV1Client {
+    package func installListener(_ owner: any ZxdgOutputV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe zxdg_output_v1_add_listener(proxy, ZxdgOutputV1Client.listener, data)
         }

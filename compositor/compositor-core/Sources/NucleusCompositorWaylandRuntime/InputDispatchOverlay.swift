@@ -1,13 +1,15 @@
+import Glibc
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowManager
-import Glibc
+
 @MainActor
 extension InputDispatch {
     package func workspaceTargetOutput() -> UInt64 {
         let surface = keyboardFocusID()
         if surface != 0 {
-            let output = windowDriver?.windowOutput(forSurfaceId: UInt32(truncatingIfNeeded: surface)) ?? 0
+            let output =
+                windowDriver?.windowOutput(forSurfaceId: UInt32(truncatingIfNeeded: surface)) ?? 0
             if output != 0 { return output }
         }
         let layout = host.server.layout
@@ -39,9 +41,11 @@ extension InputDispatch {
         guard index != 0 else { return }
         let surface = keyboardFocusID()
         guard surface != 0 else { return }
-        let windowID = windowDriver?.windowId(forSurfaceId: UInt32(truncatingIfNeeded: surface)) ?? 0
+        let windowID =
+            windowDriver?.windowId(forSurfaceId: UInt32(truncatingIfNeeded: surface)) ?? 0
         guard windowID != 0 else { return }
-        var outputID = windowDriver?.windowOutput(forSurfaceId: UInt32(truncatingIfNeeded: surface)) ?? 0
+        var outputID =
+            windowDriver?.windowOutput(forSurfaceId: UInt32(truncatingIfNeeded: surface)) ?? 0
         if outputID == 0 { outputID = workspaceTargetOutput() }
         guard outputID != 0 else { return }
         let server = host.server

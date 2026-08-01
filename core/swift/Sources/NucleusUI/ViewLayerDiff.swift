@@ -1,4 +1,5 @@
-@_spi(NucleusRenderServer) internal import NucleusLayers
+internal import NucleusLayers
+
 internal import enum NucleusTypes.LayerKind
 internal import struct NucleusTypes.Point
 internal import struct NucleusTypes.Rect
@@ -22,11 +23,12 @@ extension ViewLayerPublisher {
             _ update: LayerPropertyUpdate,
             domain: ViewDirtyDomain
         ) {
-            authored.append(AuthoredPropertyUpdate(
-                generation: snapshot.dirtyGenerations[domain],
-                sequence: sequence,
-                update: update
-            ))
+            authored.append(
+                AuthoredPropertyUpdate(
+                    generation: snapshot.dirtyGenerations[domain],
+                    sequence: sequence,
+                    update: update
+                ))
             sequence += 1
         }
 
@@ -41,12 +43,13 @@ extension ViewLayerPublisher {
                 height: frame.height
             )
             if snapshot.clipsToBounds {
-                update.clip = ClipOp(
-                    rectX: 0,
-                    rectY: 0,
-                    rectW: Float(snapshot.frame.width),
-                    rectH: Float(snapshot.frame.height)
-                )
+                update.clip = .set(
+                    ClipOp(
+                        rectX: 0,
+                        rectY: 0,
+                        rectW: Float(snapshot.frame.width),
+                        rectH: Float(snapshot.frame.height)
+                    ))
             }
             state.frame = frame
             append(update, domain: .geometry)
@@ -86,7 +89,7 @@ extension ViewLayerPublisher {
             var update = LayerPropertyUpdate(
                 actionPolicy: policy(for: .transform, snapshot: snapshot)
             )
-            update.transform = snapshot.transform.layersTransform
+            update.transform = snapshot.transform
             state.transform = snapshot.transform
             append(update, domain: .transform)
         }
@@ -96,14 +99,17 @@ extension ViewLayerPublisher {
         )
         var styleChanged = false
         if state.clipsToBounds != snapshot.clipsToBounds {
-            let size = snapshot.clipsToBounds ? snapshot.frame : SnapshotRect(
-                x: 0, y: 0, width: 0, height: 0)
-            styleUpdate.clip = ClipOp(
-                rectX: 0,
-                rectY: 0,
-                rectW: Float(size.width),
-                rectH: Float(size.height)
-            )
+            if snapshot.clipsToBounds {
+                styleUpdate.clip = .set(
+                    ClipOp(
+                        rectX: 0,
+                        rectY: 0,
+                        rectW: Float(snapshot.frame.width),
+                        rectH: Float(snapshot.frame.height)
+                    ))
+            } else {
+                styleUpdate.clip = .clear
+            }
             state.clipsToBounds = snapshot.clipsToBounds
             styleChanged = true
         }
@@ -115,7 +121,7 @@ extension ViewLayerPublisher {
             styleChanged = true
         }
         if state.shadow != snapshot.shadow {
-            styleUpdate.shadow = (snapshot.shadow ?? .none).layersShadow
+            styleUpdate.shadow = snapshot.shadow ?? Shadow.none
             state.shadow = snapshot.shadow
             styleChanged = true
         }
@@ -125,7 +131,7 @@ extension ViewLayerPublisher {
             styleChanged = true
         }
         if snapshot.layerKind == .backdrop,
-           state.backdropMaterial != snapshot.backdropMaterial
+            state.backdropMaterial != snapshot.backdropMaterial
         {
             styleUpdate.backdropMaterial = snapshot.backdropMaterial
             state.backdropMaterial = snapshot.backdropMaterial
@@ -147,6 +153,6 @@ extension ViewLayerPublisher {
         for domain: ViewDirtyDomain,
         snapshot: ViewLayerSnapshot
     ) -> NucleusLayers.ActionPolicy {
-        (snapshot.actionPolicies[domain] ?? .none).layersPolicy
+        snapshot.actionPolicies[domain] ?? .none
     }
 }

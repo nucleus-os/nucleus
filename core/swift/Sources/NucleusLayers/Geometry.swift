@@ -6,7 +6,5 @@ public typealias GeometryPoint = NucleusTypes.Point
 public typealias GeometrySize = NucleusTypes.Size
 public typealias GeometryRect = NucleusTypes.Rect
 
-#if NUCLEUS_LAYERS_PUBLIC_NAMES
 public typealias Rect = GeometryRect
 public typealias Size = GeometrySize
-#endif

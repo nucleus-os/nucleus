@@ -1,29 +1,29 @@
+package import NucleusRenderModel
 import NucleusSkiaGraphiteBridge
-import VulkanC
-import Vulkan
 import Tracy
-public import NucleusRenderModel
+import Vulkan
+import VulkanC
+
+internal import struct NucleusTypes.OutputPixelSize
+internal import struct NucleusTypes.Rect
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Android)
 import Android
 #endif
-internal import struct NucleusTypes.OutputPixelSize
-internal import struct NucleusTypes.Rect
 @MainActor
 extension RenderCore {
     /// Observe whether an image handle has crossed the renderer's typed
     /// decode/upload boundary. This is an acceptance signal, not a draw API.
-    @_spi(NucleusPlatform)
-    public func imageResidency(
+    package func imageResidency(
         for handle: UInt64
     ) -> RenderImageResidency {
         frameDriver?.imageResidency(handle: handle) ?? .unknown
     }
 
     /// The terminal reason for the handle's current source generation.
-    @_spi(NucleusPlatform)
-    public func imageFailure(
+    package func imageFailure(
         for handle: UInt64
     ) -> ImageDecodeFailure? {
         frameDriver?.imageFailure(handle: handle)
@@ -32,7 +32,7 @@ extension RenderCore {
     /// Publish the session-lock composition. A change forces a redraw; while locked,
     /// `renderReady` also redraws every ready output each pass so the blank appears
     /// immediately and stays up regardless of tree damage.
-    public func setLockComposition(_ value: [UInt64: Set<ContextID>]?) {
+    package func setLockComposition(_ value: [UInt64: Set<ContextID>]?) {
         if value != lockComposition {
             lockComposition = value
             lockCompositionGeneration &+= 1
@@ -40,7 +40,7 @@ extension RenderCore {
         }
     }
 
-    public func attachOutputGeometry(
+    package func attachOutputGeometry(
         outputID: UInt64,
         logicalX: Double, logicalY: Double, logicalWidth: Double, logicalHeight: Double,
         pixelWidth: UInt32, pixelHeight: UInt32, fractionalScale: Double
@@ -50,7 +50,8 @@ extension RenderCore {
         }
         let metadata = OutputTargetMetadata(
             outputId: outputID,
-            logicalRect: LogicalRect(x: logicalX, y: logicalY, width: logicalWidth, height: logicalHeight),
+            logicalRect: LogicalRect(
+                x: logicalX, y: logicalY, width: logicalWidth, height: logicalHeight),
             pixelSize: PixelSize(width: pixelWidth, height: pixelHeight),
             fractionalScale: fractionalScale)
         outputTargets[outputID] = RenderTargetAssembly.make(metadata)
@@ -63,7 +64,7 @@ extension RenderCore {
     ///
     /// Passing an empty list intentionally presents no retained roots. Callers
     /// that do not install an association retain compositor-output behavior.
-    public func setOutputRootContexts(
+    package func setOutputRootContexts(
         outputID: UInt64,
         contextIDs: [UInt32]
     ) {
@@ -72,7 +73,8 @@ extension RenderCore {
             let id = ContextID(raw: rawValue)
             return rawValue != 0 && seen.insert(id).inserted ? id : nil
         }
-        guard outputRootContexts[outputID] != contexts
+        guard
+            outputRootContexts[outputID] != contexts
                 || outputRootLayerIDs[outputID] != nil
         else { return }
         outputRootContexts[outputID] = contexts
@@ -84,8 +86,7 @@ extension RenderCore {
     /// one retained context. Root IDs are layer identities returned by scene
     /// publication. An empty list deliberately clears the target until its
     /// owning window has published a root.
-    @_spi(NucleusPlatform)
-    public func setOutputRoots(
+    package func setOutputRoots(
         outputID: UInt64,
         contextID: UInt32,
         rootLayerIDs: [UInt64]
@@ -95,7 +96,8 @@ extension RenderCore {
         let roots = rootLayerIDs.filter {
             $0 != 0 && seenRoots.insert($0).inserted
         }
-        guard outputRootContexts[outputID] != contexts
+        guard
+            outputRootContexts[outputID] != contexts
                 || outputRootLayerIDs[outputID] != roots
         else { return }
         outputRootContexts[outputID] = contexts
@@ -105,7 +107,7 @@ extension RenderCore {
 
     /// Drop an output's geometry (the backend detached it) and its persistent GPU
     /// accumulator, so a removed output leaks neither.
-    public func detachOutputGeometry(outputID: UInt64) {
+    package func detachOutputGeometry(outputID: UInt64) {
         outputTargets[outputID] = nil
         outputRootContexts[outputID] = nil
         outputRootLayerIDs[outputID] = nil

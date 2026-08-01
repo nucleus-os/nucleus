@@ -1,7 +1,7 @@
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
 import NucleusTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 /// The applied core content state of one wl_surface. Surface-adjacent protocol
 /// state is direct `WlSurface` storage so nested mutation reaches it without a

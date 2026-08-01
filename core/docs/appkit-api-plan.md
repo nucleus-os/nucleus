@@ -78,9 +78,9 @@ structural blockers:
 `drawShaderRect`, and `makeRuntimeShader(sksl, uniforms, count)` already compiles SkSL —
 `Backdrop.swift:58` uses it for vibrancy. `Paint` already carries
 `blend`/`blurSigma`/`saturation`, but `drawPaintCommand` sets **only** `paint.color`. The
-capability exists; the wire cannot express it.
+capability exists; the paint-command model cannot express it.
 
-> **Resolved in Phases 2–5.** The POD carries the full style set, `drawPaintCommand`
+> **Resolved in Phases 2–5.** The command carries the full style set, `drawPaintCommand`
 > populates all of it, and paths, gradients, strokes, and compiled SkSL are reachable,
 > pixel-tested, and now *emitted* — `GraphicsContext` is the authoring surface and
 > `NucleusShellProduct` is the client using it.
@@ -141,7 +141,7 @@ only by a hypothetical future client.
 |---|---|---|
 | 0 | Render-SDK link contract | **complete** |
 | 1 | The error contract | **complete** |
-| 2 | Widen the paint POD, delete the wire fiction | **complete** |
+| 2 | Widen the paint command, delete the representation fiction | **complete** |
 | 3 | Skia facade and rasterizer | **complete** |
 | 4 | RuntimeEffectRegistrar | **complete** |
 | 5 | GraphicsContext and the vocabulary collapse | **complete** |
@@ -230,13 +230,13 @@ site throws. `shell` required zero source changes. `ActionTests` rewritten to th
 
 **Landed with:** every `try` at an overlay construction site deleted.
 
-## Phase 2 — Widen the paint POD, delete the wire fiction — complete
+## Phase 2 — Widen the paint command, delete the representation fiction — complete
 
 The premise held, and more strongly than the plan claimed. `nucleus_paint_command`,
 `nucleus_paint_command_kind`, and `artifact_store` appear **nowhere in the tree except the
 comments that reference them** — no C header, no second implementation, no generator over
 `Types.swift`. `PaintCommand` is a `Span` passed between Swift modules in one process. The
-"wire-stable discriminants" constraint was preserving compatibility with something that no
+raw-discriminant compatibility was preserving a representation for something that no
 longer exists.
 
 - **`PaintCommandKind` renumbered densely** (`rect` 0 … `textLayout` 4). The `0`/`3` gaps and
@@ -246,21 +246,19 @@ longer exists.
   Added `flags` (`stroke`/`antialias`/`evenOddFill`), `blend`, `alpha`, `blurSigma`,
   `saturation`, `effectHandle`, `payloadOffset`, `payloadLength`.
 - **`NucleusLayers.PaintCommand` collapsed to a typealias.** Beyond the plan as written, but
-  squarely its intent: the domain struct was a field-for-field copy whose `.wireValue` was a
-  pure identity map. It is now `NucleusTypes.PaintCommand` itself — the same treatment `Color`
+  squarely its intent: the domain struct was a field-for-field copy with a pure identity
+  conversion. It is now `NucleusTypes.PaintCommand` itself — the same treatment `Color`
   and `PaintCommandKind` already had in that exact file. The identity bridge is deleted and
-  `withWireCommands` maps nothing, so the widened fields were added once instead of twice.
+  `withPaintRecording` maps nothing, so the widened fields were added once instead of twice.
   This removes one of the four near-identical structs Phase 5 was scheduled to collapse.
 - **The silent-drop policy is gone.** `paintDrawCommandKind(_:) -> PaintDrawCommandKind?` is
   deleted. Translation is two exhaustive switches with no `default`, so an added kind or
   blend mode is a compile error at every site that must learn it.
-- **`PaintDrawCommand` widened to match**, and its hand-written `==` — hand-written only
-  because `Float4` is a tuple — now covers **every** stored property. This is the
-  re-registration gate; a field omitted there makes two visually different commands compare
-  equal and silently drops the repaint.
-- `PaintDrawBlendMode` is duplicated into `NucleusRenderModel` rather than imported, because
-  that module deliberately resolves no dependencies (`core/Package.swift:244-247`) — the same
-  posture `PaintDrawCommandKind` already had toward `PaintCommandKind`.
+- **Canonical `PaintCommand` equality covers every stored property.** This is the
+  re-registration gate; a field omitted there would make two visually different commands
+  compare equal and silently drop the repaint.
+- The renderer consumes the canonical `NucleusTypes` paint values directly; enum
+  translation happens only at the C++ rasterizer entry points that require numeric values.
 
 **Phase 1 residue swept.** Phase 1 verified only NucleusUI and the overlay; `NucleusApp`,
 `react-native`, `shell`, and the test targets were never rebuilt against the new signatures.
@@ -271,7 +269,7 @@ test targets.
 
 `RenderPaintContentTests`' discriminant-mapping assertions were deleted — they pinned the
 exact fiction being removed. Replaced with two behavioral tests: one varying every field of
-`PaintDrawCommand` in turn to prove each participates in equality, and one pinning that
+`PaintCommand` in turn to prove each participates in equality, and one pinning that
 commands differing only in payload slice are unequal.
 
 **Landed with:** the silent-drop `guard let … else { continue }` deleted, plus the
@@ -282,7 +280,7 @@ every existing draw still works.
 
 Added to `Graphite.hpp`/`Graphite.cpp`:
 
-- **`class Path`** (Impl-holding facade, the existing `Shader` pattern), built POD-in via
+- **`class Path`** (Impl-holding facade, the existing `Shader` pattern), built value-first via
   `makePath(verbs, verbCount, points, pointCount, evenOdd)`. A verb array that runs past the
   supplied points returns an invalid path rather than partial geometry — a malformed encoding
   fails visibly instead of rendering wrong.

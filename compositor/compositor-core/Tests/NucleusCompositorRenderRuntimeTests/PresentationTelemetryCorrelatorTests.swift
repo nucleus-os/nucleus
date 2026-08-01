@@ -1,6 +1,7 @@
+package import NucleusCompositorRendererLinux
+package import NucleusRenderer
 import Testing
-@_spi(NucleusPlatform) import NucleusRenderer
-@_spi(NucleusPlatform) import NucleusCompositorRendererLinux
+
 @testable import NucleusCompositorRenderRuntime
 
 private func frame(outputID: UInt64, serial: UInt64) -> RenderFrameTelemetry {
@@ -13,8 +14,9 @@ private func frame(outputID: UInt64, serial: UInt64) -> RenderFrameTelemetry {
 @Test func submissionMayArriveBeforeFrameTelemetry() {
     var correlator = PresentationTelemetryCorrelator()
 
-    #expect(correlator.noteSubmission(
-        outputID: 7, frameSerial: 42, atomicCommitAcceptedNs: 1_000) == nil)
+    #expect(
+        correlator.noteSubmission(
+            outputID: 7, frameSerial: 42, atomicCommitAcceptedNs: 1_000) == nil)
     let accepted = correlator.noteFrame(frame(outputID: 7, serial: 42))
 
     #expect(accepted?.frame.frameSerial == 42)
@@ -43,10 +45,12 @@ private func frame(outputID: UInt64, serial: UInt64) -> RenderFrameTelemetry {
 
     #expect(second?.frame.outputID == 20)
     #expect(first?.frame.outputID == 10)
-    #expect(correlator.notePageflip(
-        outputID: 10, frameSerial: 1, pageflipNs: 300)?.frame.frameSerial == 1)
-    #expect(correlator.notePageflip(
-        outputID: 20, frameSerial: 2, pageflipNs: 400)?.frame.frameSerial == 2)
+    #expect(
+        correlator.notePageflip(
+            outputID: 10, frameSerial: 1, pageflipNs: 300)?.frame.frameSerial == 1)
+    #expect(
+        correlator.notePageflip(
+            outputID: 20, frameSerial: 2, pageflipNs: 400)?.frame.frameSerial == 2)
 }
 
 @Test func directScanoutSerialZeroCannotShiftCompositeTelemetry() {
@@ -56,12 +60,15 @@ private func frame(outputID: UInt64, serial: UInt64) -> RenderFrameTelemetry {
         outputID: 5, frameSerial: 9, atomicCommitAcceptedNs: 900)
     #expect(composite != nil)
 
-    #expect(correlator.noteSubmission(
-        outputID: 5, frameSerial: 0, atomicCommitAcceptedNs: 950) == nil)
-    #expect(correlator.notePageflip(
-        outputID: 5, frameSerial: 0, pageflipNs: 1_000) == nil)
-    #expect(correlator.notePageflip(
-        outputID: 5, frameSerial: 9, pageflipNs: 1_100)?.frame.frameSerial == 9)
+    #expect(
+        correlator.noteSubmission(
+            outputID: 5, frameSerial: 0, atomicCommitAcceptedNs: 950) == nil)
+    #expect(
+        correlator.notePageflip(
+            outputID: 5, frameSerial: 0, pageflipNs: 1_000) == nil)
+    #expect(
+        correlator.notePageflip(
+            outputID: 5, frameSerial: 9, pageflipNs: 1_100)?.frame.frameSerial == 9)
 }
 
 @Test func staleAndUnknownPageflipsAreDiscardedByExactKey() {
@@ -70,16 +77,21 @@ private func frame(outputID: UInt64, serial: UInt64) -> RenderFrameTelemetry {
     _ = correlator.noteSubmission(
         outputID: 1, frameSerial: 11, atomicCommitAcceptedNs: 100)
 
-    #expect(correlator.notePageflip(
-        outputID: 1, frameSerial: 10, pageflipNs: 150) == nil)
-    #expect(correlator.notePageflip(
-        outputID: 2, frameSerial: 11, pageflipNs: 175) == nil)
-    #expect(correlator.notePageflip(
-        outputID: 1, frameSerial: 11, pageflipNs: 200)?.frame.frameSerial == 11)
-    #expect(correlator.notePageflip(
-        outputID: 1, frameSerial: 11, pageflipNs: 250) == nil)
+    #expect(
+        correlator.notePageflip(
+            outputID: 1, frameSerial: 10, pageflipNs: 150) == nil)
+    #expect(
+        correlator.notePageflip(
+            outputID: 2, frameSerial: 11, pageflipNs: 175) == nil)
+    #expect(
+        correlator.notePageflip(
+            outputID: 1, frameSerial: 11, pageflipNs: 200)?.frame.frameSerial == 11)
+    #expect(
+        correlator.notePageflip(
+            outputID: 1, frameSerial: 11, pageflipNs: 250) == nil)
 
     #expect(correlator.noteFrame(frame(outputID: 1, serial: 10)) == nil)
-    #expect(correlator.noteSubmission(
-        outputID: 1, frameSerial: 10, atomicCommitAcceptedNs: 300) == nil)
+    #expect(
+        correlator.noteSubmission(
+            outputID: 1, frameSerial: 10, atomicCommitAcceptedNs: 300) == nil)
 }

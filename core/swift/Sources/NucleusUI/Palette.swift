@@ -1,3 +1,5 @@
+public import NucleusTypes
+
 /// A named colour slot in a theme.
 ///
 /// The Material-3 role set the reference shell themes against, so a palette
@@ -166,7 +168,8 @@ extension Color {
     fileprivate static func highContrast(
         against background: Color
     ) -> Color {
-        let luminance = 0.2126 * background.r
+        let luminance =
+            0.2126 * background.r
             + 0.7152 * background.g
             + 0.0722 * background.b
         return luminance > 0.45

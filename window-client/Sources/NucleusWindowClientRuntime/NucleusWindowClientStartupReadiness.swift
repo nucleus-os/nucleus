@@ -1,11 +1,11 @@
 /// Renderer-independent startup acceptance facts for one desktop surface.
-public struct NucleusWindowClientStartupSurface: Sendable, Equatable {
-    public var outputID: UInt32
-    public var surfaceID: UInt64
-    public var renderOutputID: UInt64?
-    public var contentReady: Bool
+package struct NucleusWindowClientStartupSurface: Sendable, Equatable {
+    package var outputID: UInt32
+    package var surfaceID: UInt64
+    package var renderOutputID: UInt64?
+    package var contentReady: Bool
 
-    public init(
+    package init(
         outputID: UInt32,
         surfaceID: UInt64,
         renderOutputID: UInt64?,
@@ -21,13 +21,13 @@ public struct NucleusWindowClientStartupSurface: Sendable, Equatable {
 /// Monotonic startup acceptance state. A surface counts only when a frame was
 /// accepted after its required content became ready; configuration alone and a
 /// placeholder frame cannot satisfy the session protocol.
-public struct NucleusWindowClientStartupReadinessTracker: Sendable, Equatable {
+package struct NucleusWindowClientStartupReadinessTracker: Sendable, Equatable {
     private var acceptedWallpaperSurfaceIDs = Set<UInt64>()
     private var acceptedBarSurfaceIDs = Set<UInt64>()
 
-    public init() {}
+    package init() {}
 
-    public mutating func observe(
+    package mutating func observe(
         postedRenderOutputIDs: Set<UInt64>,
         liveOutputIDs: Set<UInt32>,
         wallpapers: [NucleusWindowClientStartupSurface],
@@ -50,12 +50,13 @@ public struct NucleusWindowClientStartupReadinessTracker: Sendable, Equatable {
 
         guard !liveOutputIDs.isEmpty else { return false }
         for outputID in liveOutputIDs {
-            guard let wallpaper = wallpapers.first(where: {
-                $0.outputID == outputID
-            }),
-                  let bar = bars.first(where: { $0.outputID == outputID }),
-                  acceptedWallpaperSurfaceIDs.contains(wallpaper.surfaceID),
-                  acceptedBarSurfaceIDs.contains(bar.surfaceID)
+            guard
+                let wallpaper = wallpapers.first(where: {
+                    $0.outputID == outputID
+                }),
+                let bar = bars.first(where: { $0.outputID == outputID }),
+                acceptedWallpaperSurfaceIDs.contains(wallpaper.surfaceID),
+                acceptedBarSurfaceIDs.contains(bar.surfaceID)
             else { return false }
         }
         return true

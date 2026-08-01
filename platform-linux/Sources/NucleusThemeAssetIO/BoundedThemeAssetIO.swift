@@ -6,12 +6,12 @@ import Dispatch
 /// `processor` is the only closure that may touch the filesystem. It runs on a
 /// dedicated concurrent queue, never on the caller's actor or Swift's
 /// cooperative executor.
-public actor BoundedThemeAssetIO<
+package actor BoundedThemeAssetIO<
     Key: Hashable & Sendable,
     Value: Sendable
 > {
-    public typealias Processor = @Sendable (Key) -> Value?
-    public typealias Cost = @Sendable (Value) -> Int
+    package typealias Processor = @Sendable (Key) -> Value?
+    package typealias Cost = @Sendable (Value) -> Int
 
     private struct CacheEntry {
         var value: Value
@@ -33,7 +33,7 @@ public actor BoundedThemeAssetIO<
     private var lru: [Key] = []
     private var completedCost = 0
 
-    public init(
+    package init(
         label: String,
         maximumPending: Int = 256,
         maximumConcurrent: Int = 2,
@@ -58,7 +58,7 @@ public actor BoundedThemeAssetIO<
             attributes: .concurrent)
     }
 
-    public func resolve(_ key: Key) async -> Value? {
+    package func resolve(_ key: Key) async -> Value? {
         if let entry = completed[key] {
             touch(key)
             return entry.value
@@ -82,13 +82,13 @@ public actor BoundedThemeAssetIO<
         }
     }
 
-    public func invalidateAll() {
+    package func invalidateAll() {
         completed.removeAll(keepingCapacity: true)
         lru.removeAll(keepingCapacity: true)
         completedCost = 0
     }
 
-    public var snapshot: Snapshot {
+    package var snapshot: Snapshot {
         Snapshot(
             pending: pending.count,
             running: running.count,
@@ -96,11 +96,11 @@ public actor BoundedThemeAssetIO<
             completedCost: completedCost)
     }
 
-    public struct Snapshot: Sendable, Equatable {
-        public var pending: Int
-        public var running: Int
-        public var completed: Int
-        public var completedCost: Int
+    package struct Snapshot: Sendable, Equatable {
+        package var pending: Int
+        package var running: Int
+        package var completed: Int
+        package var completedCost: Int
     }
 
     private func start(_ key: Key) {
@@ -138,7 +138,7 @@ public actor BoundedThemeAssetIO<
         lru.append(key)
         completedCost += entryCost
         while completed.count > maximumCompletedEntries
-                || completedCost > maximumCompletedCost
+            || completedCost > maximumCompletedCost
         {
             guard !lru.isEmpty else { break }
             let evicted = lru.removeFirst()

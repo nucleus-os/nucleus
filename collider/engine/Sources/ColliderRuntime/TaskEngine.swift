@@ -903,6 +903,23 @@ extension ColliderRuntime {
             encoder.append(tag: 126, string: preparation.workspace.string)
             encoder.append(tag: 127, string: preparation.stagingRoot.string)
             encoder.append(tag: 128, string: preparation.platform.rawValue)
+            for contract in preparation.contracts {
+                encoder.append(tag: 187, string: contract.name)
+                encoder.append(tag: 188, string: contract.stamp.string)
+                for root in contract.roots {
+                    encoder.append(tag: 189, string: root.string)
+                }
+                for (name, value) in contract.values.sorted(by: {
+                    $0.key < $1.key
+                }) {
+                    encoder.append(tag: 190, string: name)
+                    encoder.append(tag: 191, string: value)
+                }
+                for file in contract.files.sorted(by: { $0.name < $1.name }) {
+                    encoder.append(tag: 192, string: file.name)
+                    encoder.append(tag: 193, string: file.path.string)
+                }
+            }
         case .assembleHostToolchain(let assembly):
             encoder.append(tag: 129, string: assembly.workspace.string)
             encoder.append(tag: 130, string: assembly.archive.string)

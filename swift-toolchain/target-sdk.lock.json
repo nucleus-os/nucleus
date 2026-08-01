@@ -1,0 +1,74 @@
+{
+  "androidAPILevel": 24,
+  "androidBundleID": "swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_android",
+  "inputs": {
+    "androidSDK": {
+      "maximumResponseSize": 419430400,
+      "sha256": "c5bb1c4399375c1a59c6aa672f3f81014e111de0d464ada8ae8cc5814ce29681",
+      "url": "https://download.swift.org/swift-6.4.x-branch/android-sdk/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_android.artifactbundle.tar.gz"
+    },
+    "linuxTargetPackage": {
+      "maximumResponseSize": 1610612736,
+      "sha256": "05670a1487e907e732ca701bfda153e5f02aeac801dd3b07686f2aae4e0c6ad5",
+      "url": "https://download.swift.org/swift-6.4.x-branch/ubuntu2404/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a-ubuntu24.04.tar.gz"
+    },
+    "macOSHostPackage": {
+      "maximumResponseSize": 2147483648,
+      "sha256": "04c0f47146235a913fc88bcfba71b406788a148fc8d9c84274971d8610b59f4d",
+      "url": "https://download.swift.org/swift-6.4.x-branch/xcode/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a-osx.pkg"
+    }
+  },
+  "linuxBundleID": "nucleus-swift-6.4-linux-amd64",
+  "snapshot": "swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a",
+  "swiftSDKGeneratorCommit": "57190988c478930fbcee768f6119384e3ad5a0a8",
+  "ubuntuPackages": [
+    {
+      "sha256": "1f03b79223d9cf1a6ed3a648f6942619dcb97b2884dba8fd12e262b6771e247a",
+      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/g/glibc/libc6-dev_2.39-0ubuntu8_amd64.deb"
+    },
+    {
+      "sha256": "af36c7ac770770fe3d3c10e85d6bc538e76e57570ba7db7d397fb9f654783ef3",
+      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/g/glibc/libc6_2.39-0ubuntu8_amd64.deb"
+    },
+    {
+      "sha256": "a2bc9006026c19109de69dfac37d4393ed75abfcdcf7aeb4436dd4168ce4ab8e",
+      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/c/curl/libcurl4-openssl-dev_8.5.0-2ubuntu10_amd64.deb"
+    },
+    {
+      "sha256": "d36c9acb969dd37fdc0496120715d8bba67a5cc43a0c2569717314e6ad80020c",
+      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/g/gcc-13/libgcc-13-dev_13.2.0-23ubuntu4_amd64.deb"
+    },
+    {
+      "sha256": "a39efdcaa2245f026dc3254ce14fcff255fc430a17064632b6ba7c5da974a912",
+      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/libgcc-s1_14-20240412-0ubuntu1_amd64.deb"
+    },
+    {
+      "sha256": "18dc7c1730ad8006167f0e25289adc824b11b4cfce1baef0a1c1fb8dc044d945",
+      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/i/icu/libicu-dev_74.2-1ubuntu3_amd64.deb"
+    },
+    {
+      "sha256": "d29c97a21a3e3254731cfac186e4d4e611e5e67d2c9a0430f6acfbd9acaefa2e",
+      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/i/icu/libicu74_74.2-1ubuntu3_amd64.deb"
+    },
+    {
+      "sha256": "0e34b7a6ad0d9db6c718301a0c30a077590decbb31099d0fd6ac957222d77a94",
+      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/g/gcc-13/libstdc++-13-dev_13.2.0-23ubuntu4_amd64.deb"
+    },
+    {
+      "sha256": "4863e880d6ee538e4734c430c5579c1ac933b88a42c25bc9980d0f148c54b21e",
+      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/libstdc++6_14-20240412-0ubuntu1_amd64.deb"
+    },
+    {
+      "sha256": "21c631ba4da3d38d92a133e28a8a14278e1e00174ed135a20661d1e532e05ca5",
+      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/l/linux/linux-libc-dev_6.8.0-31.31_amd64.deb"
+    },
+    {
+      "sha256": "7360405fbf49e35dca2f7a4ebeac7d4fe5fe3b2db99adac70e11e104f53b2642",
+      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/z/zlib/zlib1g-dev_1.3.dfsg-3.1ubuntu2_amd64.deb"
+    },
+    {
+      "sha256": "0b93d16d7498f092fa3070fbbad28cdbc6b3d640f1a7681b96fc37f20d1219f1",
+      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/z/zlib/zlib1g_1.3.dfsg-3.1ubuntu2_amd64.deb"
+    }
+  ]
+}

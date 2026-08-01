@@ -10,22 +10,23 @@
 // This target deliberately does not import NucleusUI. It resolves native
 // evdev/Wayland values here and emits the process-neutral NucleusTypes record.
 
-public import WaylandClientDispatch
-import WaylandProtocolTypes
-import WaylandClient
-import WaylandProtocolsC
-import NucleusWindowClientXkbC
+package import NucleusTypes
 import NucleusWindowClientRuntime
-public import NucleusTypes
+import NucleusWindowClientXkbC
+import WaylandClient
+package import WaylandClientDispatch
+import WaylandProtocolTypes
+import WaylandProtocolsC
+
 #if canImport(Glibc)
 import Glibc
 #endif
 
-public struct NucleusDesktopDragAuthorization: Sendable, Equatable {
-    public let serial: UInt32
-    public let surface: UInt
+package struct NucleusDesktopDragAuthorization: Sendable, Equatable {
+    package let serial: UInt32
+    package let surface: UInt
 
-    public init(serial: UInt32, surface: UInt) {
+    package init(serial: UInt32, surface: UInt) {
         precondition(serial != 0)
         precondition(surface != 0)
         self.serial = serial
@@ -34,7 +35,7 @@ public struct NucleusDesktopDragAuthorization: Sendable, Equatable {
 }
 
 @MainActor
-public protocol NucleusDesktopSeatDelegate: AnyObject {
+package protocol NucleusDesktopSeatDelegate: AnyObject {
     func seat(_ seat: NucleusDesktopSeat, didProduce event: ApplicationInputEvent)
 }
 
@@ -61,11 +62,12 @@ public protocol NucleusDesktopSeatDelegate: AnyObject {
                 fileDescriptor, size)
         else { return }
         defer { unsafe nucleus_shell_unmap_keymap(mapped, size) }
-        guard let replacementKeymap = unsafe xkb_keymap_new_from_string(
-            context,
-            mapped,
-            XKB_KEYMAP_FORMAT_TEXT_V1,
-            XKB_KEYMAP_COMPILE_NO_FLAGS)
+        guard
+            let replacementKeymap = unsafe xkb_keymap_new_from_string(
+                context,
+                mapped,
+                XKB_KEYMAP_FORMAT_TEXT_V1,
+                XKB_KEYMAP_COMPILE_NO_FLAGS)
         else { return }
         guard let replacementState = unsafe xkb_state_new(replacementKeymap)
         else {
@@ -158,19 +160,18 @@ public protocol NucleusDesktopSeatDelegate: AnyObject {
 /// sends, and reports events to a delegate.
 @MainActor
 @safe public final class NucleusDesktopSeat {
-    public weak var delegate: (any NucleusDesktopSeatDelegate)?
+    package weak var delegate: (any NucleusDesktopSeatDelegate)?
 
     /// Key repeat as the compositor advertises it over `wl_keyboard.repeat_info`.
     /// A client implements repeat itself; the protocol only states the rate.
-    public private(set) var repeatRateHz: Int32 = 25
-    public private(set) var repeatDelayMs: Int32 = 600
+    package private(set) var repeatRateHz: Int32 = 25
+    package private(set) var repeatDelayMs: Int32 = 600
 
     private let seat: WaylandProxy<WlSeatClient>
     private let client: NucleusDesktopConnection
 
     /// Borrowed seat proxy used to create seat-scoped protocol extensions.
-    @_spi(NucleusWindowClientImplementation)
-    public var protocolSeat: WaylandProxy<WlSeatClient> { seat }
+    package var protocolSeat: WaylandProxy<WlSeatClient> { seat }
     private var pointer: WaylandProxy<WlPointerClient>?
     private var keyboard: WaylandProxy<WlKeyboardClient>?
     // Retained for the proxies' lifetime: `addListener` borrows its owner.
@@ -182,8 +183,7 @@ public protocol NucleusDesktopSeatDelegate: AnyObject {
     /// `wp_cursor_shape_device_v1` for this seat's pointer, when the compositor
     /// offers the protocol. Absent is normal: a compositor without it simply
     /// keeps whatever cursor it was already showing.
-    private var cursorShapeDevice:
-        WaylandProxy<WpCursorShapeDeviceV1Client>?
+    private var cursorShapeDevice: WaylandProxy<WpCursorShapeDeviceV1Client>?
     /// The serial of the last `wl_pointer.enter`. `set_shape` must quote it —
     /// the compositor rejects a cursor request that does not name the enter that
     /// gave this client the pointer.
@@ -207,10 +207,9 @@ public protocol NucleusDesktopSeatDelegate: AnyObject {
     /// The cursor-shape manager, captured at bring-up. `nil` when the compositor
     /// does not offer the protocol, which the cursor path treats as "leave the
     /// cursor alone" rather than as an error.
-    private let cursorShapeManager:
-        WaylandProxy<WpCursorShapeManagerV1Client>?
+    private let cursorShapeManager: WaylandProxy<WpCursorShapeManagerV1Client>?
 
-    public init?(client: NucleusDesktopConnection) {
+    package init?(client: NucleusDesktopConnection) {
         guard let seat = client.seat else { return nil }
         self.seat = seat
         self.client = client
@@ -239,18 +238,18 @@ public protocol NucleusDesktopSeatDelegate: AnyObject {
     // MARK: - Key repeat
 
     /// Whether a key is being held, so the host keeps scheduling wakeups.
-    public var isRepeating: Bool { heldKeycode != nil }
+    package var isRepeating: Bool { heldKeycode != nil }
 
     /// Nanoseconds until the next repeat is due, or `nil` when nothing is held.
     /// The host folds this into its poll timeout so repeats are not quantized to
     /// the frame rate.
-    public func nanosecondsUntilNextRepeat(nowNs: UInt64) -> UInt64? {
+    package func nanosecondsUntilNextRepeat(nowNs: UInt64) -> UInt64? {
         guard heldKeycode != nil else { return nil }
         return nowNs >= nextRepeatNs ? 0 : nextRepeatNs - nowNs
     }
 
     /// Emit any repeats now due.
-    public func advanceKeyRepeat(nowNs: UInt64) {
+    package func advanceKeyRepeat(nowNs: UInt64) {
         guard heldKeycode != nil, var event = heldEvent, nowNs >= nextRepeatNs else { return }
         guard repeatRateHz > 0 else { return }
         let intervalNs = UInt64(1_000_000_000 / Int64(repeatRateHz))
@@ -329,11 +328,12 @@ public protocol NucleusDesktopSeatDelegate: AnyObject {
     func updateModifiers(
         depressed: UInt32, latched: UInt32, locked: UInt32, group: UInt32
     ) {
-        guard let updated = xkb?.updateModifiers(
-            depressed: depressed,
-            latched: latched,
-            locked: locked,
-            group: group)
+        guard
+            let updated = xkb?.updateModifiers(
+                depressed: depressed,
+                latched: latched,
+                locked: locked,
+                group: group)
         else { return }
         modifiers = updated
     }
@@ -412,11 +412,12 @@ public protocol NucleusDesktopSeatDelegate: AnyObject {
     /// `wp_cursor_shape_manager_v1`: a missing cursor is a cosmetic degradation,
     /// not a failure worth propagating to a widget that only wanted a hand
     /// pointer.
-    public func setCursor(_ shape: NucleusDesktopCursorShape) {
+    package func setCursor(_ shape: NucleusDesktopCursorShape) {
         guard shape != currentCursor else { return }
         currentCursor = shape
         guard let device = cursorShapeDevice,
-              pointerEnterSerial != 0 else { return }
+            pointerEnterSerial != 0
+        else { return }
         try? device.setShape(
             serial: pointerEnterSerial,
             shape: WpCursorShapeDeviceV1Shape(
@@ -465,12 +466,12 @@ public protocol NucleusDesktopSeatDelegate: AnyObject {
     /// Consumes the pointer-down authority required by
     /// `wl_data_device.start_drag`. It is intentionally one-shot, matching the
     /// compositor's serial ledger.
-    public func takeDragAuthorization(
+    package func takeDragAuthorization(
         for surface: WaylandProxy<WlSurfaceClient>
     ) -> NucleusDesktopDragAuthorization? {
         guard !pressedPointerButtons.isEmpty,
-              let authorization = dragAuthorization,
-              authorization.surface == surface.identity
+            let authorization = dragAuthorization,
+            authorization.surface == surface.identity
         else {
             return nil
         }
@@ -512,7 +513,7 @@ public protocol NucleusDesktopSeatDelegate: AnyObject {
     private func shouldRepeat(_ event: ApplicationInputEvent) -> Bool {
         switch event.key {
         case .upArrow, .leftArrow, .rightArrow, .downArrow,
-             .pageUp, .pageDown, .delete, .forwardDelete:
+            .pageUp, .pageDown, .delete, .forwardDelete:
             return true
         case .escape, .return, .tab:
             return false
@@ -604,7 +605,8 @@ final class WindowClientPointerListener: WlPointerEvents {
     }
 
     func motion(
-        _ proxy: WaylandBorrowedProxy<WlPointerClient>, time: UInt32, surface_x: Double, surface_y: Double
+        _ proxy: WaylandBorrowedProxy<WlPointerClient>, time: UInt32, surface_x: Double,
+        surface_y: Double
     ) {
         seat.notePointerPosition(x: surface_x, y: surface_y)
         var event = seat.makeEvent(.pointerMotion)

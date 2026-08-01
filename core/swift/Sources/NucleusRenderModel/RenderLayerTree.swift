@@ -1,36 +1,28 @@
 // Retained-layer nodes and the authoritative structural tree store.
 
+package import NucleusTypes
+
 // MARK: - Node identity + role
 
 /// Backing-store layer identity. Mirrors `RenderLayer.LayerId`.
-public enum LayerId: Equatable, Sendable {
+package enum LayerId: Equatable, Sendable {
     case rasterPhase(groupId: UInt64, phaseIndex: UInt32)
 }
 
-/// Semantic role used by the consumer-side default-action lookup. Mirrors
-/// `animation.LayerRole`.
-public enum LayerRole: UInt8, Sendable {
-    case generic
-    case windowRoot
-    case windowContentViewport
-    case notification
-    case hotkeyOverlay
-    case wallpaper
-    case dock
-}
+package typealias LayerRole = NucleusTypes.LayerRole
 
 // MARK: - Damage
 
 /// Per-node invalidation flags. Mirrors `InvalidationFlags` (the packed-struct
 /// bools; `_padding` is layout-only and not modeled).
-public struct InvalidationFlags: Equatable, Sendable {
-    public var structure: Bool = false
-    public var content: Bool = false
-    public var property: Bool = false
-    public var backingReallocate: Bool = false
-    public var effectDependency: Bool = false
+package struct InvalidationFlags: Equatable, Sendable {
+    package var structure: Bool = false
+    package var content: Bool = false
+    package var property: Bool = false
+    package var backingReallocate: Bool = false
+    package var effectDependency: Bool = false
 
-    public init(
+    package init(
         structure: Bool = false,
         content: Bool = false,
         property: Bool = false,
@@ -44,30 +36,30 @@ public struct InvalidationFlags: Equatable, Sendable {
         self.effectDependency = effectDependency
     }
 
-    public static let none = InvalidationFlags()
+    package static let none = InvalidationFlags()
 
     /// True when any flag is set. Mirrors `InvalidationFlags.any`.
-    public func any() -> Bool {
+    package func any() -> Bool {
         structure || content || property || backingReallocate || effectDependency
     }
 }
 
 /// Per-node damage state. Mirrors `DamageState`.
-public struct DamageState: Equatable, Sendable {
-    public var flags = InvalidationFlags()
+package struct DamageState: Equatable, Sendable {
+    package var flags = InvalidationFlags()
     /// Union of layer-local logical paint damage since the last presented
     /// frame. `nil` while `flags.content` is true means full-bounds damage.
-    public var localContentRect: Rect?
+    package var localContentRect: RenderRect?
 
-    public init(
+    package init(
         flags: InvalidationFlags = InvalidationFlags(),
-        localContentRect: Rect? = nil
+        localContentRect: RenderRect? = nil
     ) {
         self.flags = flags
         self.localContentRect = localContentRect
     }
 
-    public mutating func markContent(_ rect: Rect?) {
+    package mutating func markContent(_ rect: RenderRect?) {
         if flags.content {
             guard let current = localContentRect, let rect else {
                 localContentRect = nil
@@ -77,7 +69,7 @@ public struct DamageState: Equatable, Sendable {
             let top = min(current.y, rect.y)
             let right = max(current.x + current.w, rect.x + rect.w)
             let bottom = max(current.y + current.h, rect.y + rect.h)
-            localContentRect = Rect(
+            localContentRect = RenderRect(
                 x: left,
                 y: top,
                 w: max(0, right - left),
@@ -93,24 +85,24 @@ public struct DamageState: Equatable, Sendable {
 
 /// A retained render-layer node. Mirrors `RenderLayer.Layer` (minus the deferred
 /// `backing`/`animations` fields — see file header).
-public struct Layer: Sendable {
-    public var id: UInt64
-    public var parent: UInt64?
+package struct Layer: Sendable {
+    package var id: UInt64
+    package var parent: UInt64?
     /// Non-nil exactly when this layer is attached as a context root.
-    public var rootContext: ContextID?
-    public var children: [UInt64] = []
-    public var kind: LayerKind
-    public var role: LayerRole = .generic
-    public var backdropAttachment: BackdropAttachment?
-    public var foregroundVibrancy: ForegroundVibrancyMode = .inherit
-    public var model = ModelState()
-    public var presentation = PresentationState()
-    public var damage = DamageState()
+    package var rootContext: ContextID?
+    package var children: [UInt64] = []
+    package var kind: LayerKind
+    package var role: LayerRole = .generic
+    package var backdropAttachment: BackdropAttachment?
+    package var foregroundVibrancy: ForegroundVibrancyMode = .inherit
+    package var model = ModelState()
+    package var presentation = PresentationState()
+    package var damage = DamageState()
     /// In-flight animations driving this node's presentation overrides. Folded
     /// in by the producer feed and advanced each frame by `RetainedTreeStore.tick`
-    public var animations: [AnimationRecord] = []
+    package var animations: [AnimationRecord] = []
 
-    public init(id: UInt64, kind: LayerKind) {
+    package init(id: UInt64, kind: LayerKind) {
         self.id = id
         self.kind = kind
     }
@@ -118,42 +110,42 @@ public struct Layer: Sendable {
     // Effective accessors: presentation override beats the model. Delegates to
     // the shared `EffectiveLayer` precedence helpers (8.3).
 
-    public func effectiveTransform() -> M44 {
+    package func effectiveTransform() -> M44 {
         EffectiveLayer.transform(model: model.properties, presentation: presentation)
     }
 
-    public func effectiveBounds() -> Bounds {
+    package func effectiveBounds() -> Bounds {
         EffectiveLayer.bounds(model: model.properties, presentation: presentation)
     }
 
-    public func effectivePosition() -> Point2D {
+    package func effectivePosition() -> Point2D {
         EffectiveLayer.position(model: model.properties, presentation: presentation)
     }
 
-    public func effectiveAnchorPoint() -> Point2D {
+    package func effectiveAnchorPoint() -> Point2D {
         EffectiveLayer.anchorPoint(model: model.properties, presentation: presentation)
     }
 
-    public func effectiveScrollOffset() -> Point2D {
+    package func effectiveScrollOffset() -> Point2D {
         presentation.override_?.scrollOffset ?? model.properties.scrollOffset
     }
 
-    public func effectiveOpacity() -> Float {
+    package func effectiveOpacity() -> Float {
         EffectiveLayer.opacity(model: model.properties, presentation: presentation)
     }
 
-    public func effectiveCornerRadii() -> Float4 {
+    package func effectiveCornerRadii() -> Float4 {
         EffectiveLayer.cornerRadii(model: model, presentation: presentation)
     }
 
     /// Renderer-authoritative content for this layer. Mirrors `presentedContent`.
-    public func presentedContent() -> LayerContent {
+    package func presentedContent() -> LayerContent {
         presentation.content
     }
 
     /// Whether this layer draws anything that contributes its own extent (vs
     /// being a pure structural container). Mirrors `layerContributesOwnExtent`.
-    public func contributesOwnExtent() -> Bool {
+    package func contributesOwnExtent() -> Bool {
         if model.visualStyle != nil { return true }
         if case .backdrop = kind { return true }
         switch presentedContent() {
@@ -166,7 +158,7 @@ public struct Layer: Sendable {
 // MARK: - Tree store
 
 /// Errors from structural tree mutations.
-public enum LayerTreeError: Error, Equatable, Sendable {
+package enum LayerTreeError: Error, Equatable, Sendable {
     case missingLayer
     case missingParentLayer
     case layerCycle
@@ -174,17 +166,17 @@ public enum LayerTreeError: Error, Equatable, Sendable {
 
 /// The retained layer tree: an id→node map plus the ordered root child list.
 /// Mirrors `RenderLayer.LayerTree`.
-public struct LayerTree: Sendable {
-    public package(set) var layers: [UInt64: Layer] = [:]
+package struct LayerTree: Sendable {
+    package var layers: [UInt64: Layer] = [:]
     /// Ordered root layers per producer context. Remote-host expansion resolves
     /// the target context here, while the compositor frame starts from
     /// `compositorContextId`.
-    public package(set) var contextRoots: [ContextID: [UInt64]] = [:]
+    package var contextRoots: [ContextID: [UInt64]] = [:]
 
-    public init() {}
+    package init() {}
 
     /// Read a node by id. Mirrors `get`.
-    public func get(_ id: UInt64) -> Layer? {
+    package func get(_ id: UInt64) -> Layer? {
         layers[id]
     }
 
@@ -195,7 +187,7 @@ public struct LayerTree: Sendable {
 
     /// Detach `id` from its parent (or the root list) and clear its parent
     /// pointer. No-op if absent. Mirrors `detach`.
-    public mutating func detach(_ id: UInt64) {
+    package mutating func detach(_ id: UInt64) {
         var ignored: UInt64 = 0
         detach(id, dictionaryProbes: &ignored)
     }
@@ -242,7 +234,7 @@ public struct LayerTree: Sendable {
 
     /// Detach `id` and remove it from the map. No-op if absent. Mirrors
     /// `removeLayer`.
-    public mutating func removeLayer(_ id: UInt64) {
+    package mutating func removeLayer(_ id: UInt64) {
         var ignored: UInt64 = 0
         removeLayer(id, dictionaryProbes: &ignored)
     }
@@ -274,7 +266,7 @@ public struct LayerTree: Sendable {
 
     /// Attach `id` as a root child at `index` (clamped). The node must exist.
     /// Mirrors `attachRoot`.
-    public mutating func attachRoot(_ id: UInt64, index: Int, contextId: ContextID) throws {
+    package mutating func attachRoot(_ id: UInt64, index: Int, contextId: ContextID) throws {
         guard let childIndex = layers.index(forKey: id) else {
             throw LayerTreeError.missingLayer
         }
@@ -331,19 +323,19 @@ public struct LayerTree: Sendable {
     }
 
     /// Ordered roots for a context.
-    public func roots(for contextId: ContextID) -> [UInt64] {
+    package func roots(for contextId: ContextID) -> [UInt64] {
         contextRoots[contextId] ?? []
     }
 
     /// Whether `id` is attached beneath a root owned by `contextId`. Explicit
     /// presentation entry roots may be nested placement layers, so ownership is
     /// established by walking their parent chain to the context root.
-    public func contains(_ id: UInt64, in contextId: ContextID) -> Bool {
+    package func contains(_ id: UInt64, in contextId: ContextID) -> Bool {
         var cursor: UInt64? = id
         var visited = Set<UInt64>()
         while let current = cursor,
-              visited.insert(current).inserted,
-              let layer = layers[current]
+            visited.insert(current).inserted,
+            let layer = layers[current]
         {
             if layer.rootContext == contextId { return true }
             cursor = layer.parent
@@ -353,7 +345,7 @@ public struct LayerTree: Sendable {
 
     /// Attach `childId` under `parentId` at `index` (clamped), refusing to
     /// create a cycle. Both nodes must exist. Mirrors `attachChild`.
-    public mutating func attachChild(parentId: UInt64, childId: UInt64, index: Int) throws {
+    package mutating func attachChild(parentId: UInt64, childId: UInt64, index: Int) throws {
         guard let parentIndex = layers.index(forKey: parentId) else {
             throw LayerTreeError.missingParentLayer
         }
@@ -381,7 +373,7 @@ public struct LayerTree: Sendable {
     ) {
         dictionaryProbes &+= 2
         guard let childIndex = layers.index(forKey: childId),
-              let parentIndex = layers.index(forKey: parentId)
+            let parentIndex = layers.index(forKey: parentId)
         else {
             preconditionFailure("validated child attachment references a missing layer")
         }
@@ -418,14 +410,14 @@ public struct LayerTree: Sendable {
 
     /// True when attaching `childId` under `parentId` would form a cycle (i.e.
     /// `childId` is `parentId` or an ancestor of it). Mirrors `wouldCreateCycle`.
-    public func wouldCreateCycle(childId: UInt64, parentId: UInt64) -> Bool {
+    package func wouldCreateCycle(childId: UInt64, parentId: UInt64) -> Bool {
         if childId == parentId { return true }
         var cursor: UInt64? = parentId
         var visited = Set<UInt64>()
         while let id = cursor {
             if id == childId { return true }
             guard visited.insert(id).inserted,
-                  let layer = layers[id]
+                let layer = layers[id]
             else {
                 return true
             }

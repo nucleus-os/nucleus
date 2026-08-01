@@ -1,8 +1,9 @@
+import Glibc
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowManager
 import NucleusDiagnostics
-import Glibc
+
 @MainActor
 extension InputDispatch {
     package var seatFocus: SeatFocus { host.server.seatFocus }
@@ -22,7 +23,8 @@ extension InputDispatch {
     package func lockBlocks(_ surfaceID: UInt64) -> Bool {
         if !lockActive() { return false }
         if surfaceID == 0 { return true }
-        let source = windowDriver?.windowSource(forSurfaceId: UInt32(truncatingIfNeeded: surfaceID)) ?? 0
+        let source =
+            windowDriver?.windowSource(forSurfaceId: UInt32(truncatingIfNeeded: surfaceID)) ?? 0
         return source != 4
     }
 
@@ -35,7 +37,8 @@ extension InputDispatch {
         seatFocus.setPointerFocus(surfaceID: surfaceID)
         if inputRouteDiagnosticsRemaining > 0 {
             inputRouteDiagnosticsRemaining -= 1
-            let source = windowDriver?.windowSource(forSurfaceId: UInt32(truncatingIfNeeded: surfaceID)) ?? 0
+            let source =
+                windowDriver?.windowSource(forSurfaceId: UInt32(truncatingIfNeeded: surfaceID)) ?? 0
             NucleusLogger(subsystem: "input-route").debug(
                 "focus old=\(old) new=\(surfaceID) source=\(source) local=\(sx),\(sy)")
         }

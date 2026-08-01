@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for wp_single_pixel_buffer_manager_v1.
 
 import WaylandClientC
-public enum WpSinglePixelBufferManagerV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum WpSinglePixelBufferManagerV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_single_pixel_buffer_manager_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == WpSinglePixelBufferManagerV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpSinglePixelBufferManagerV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_single_pixel_buffer_manager_v1_destroy(_proxy)
@@ -17,9 +18,15 @@ public extension WaylandProxy where Interface == WpSinglePixelBufferManagerV1Cli
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func createU32RgbaBuffer(r: UInt32, g: UInt32, b: UInt32, a: UInt32) throws(WaylandProxyError) -> WaylandProxy<WlBufferClient> {
+    package func createU32RgbaBuffer(r: UInt32, g: UInt32, b: UInt32, a: UInt32)
+        throws(WaylandProxyError) -> WaylandProxy<WlBufferClient>
+    {
         let _proxy = try unsafe requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_wp_single_pixel_buffer_manager_v1_create_u32_rgba_buffer(_proxy, r, g, b, a) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_wp_single_pixel_buffer_manager_v1_create_u32_rgba_buffer(
+                    _proxy, r, g, b, a)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

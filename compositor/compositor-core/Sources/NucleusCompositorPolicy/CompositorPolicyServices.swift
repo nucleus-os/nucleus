@@ -1,16 +1,16 @@
-public import NucleusCompositorServer
-public import NucleusCompositorWindowManager
-public import NucleusConfig
-public import NucleusSessionProtocol
+package import NucleusCompositorServer
+package import NucleusCompositorWindowManager
+package import NucleusConfig
+package import NucleusSessionProtocol
 
 /// Complete server-policy graph. It contains no shell UI or shell service.
 @MainActor
-public final class CompositorPolicyServices {
-    public let cursorTheme: ServerCursorThemeService
-    public let bindings: GlobalBindingResolver
-    public let policy: CompositorPolicyService
+package final class CompositorPolicyServices {
+    package let cursorTheme: ServerCursorThemeService
+    package let bindings: GlobalBindingResolver
+    package let policy: CompositorPolicyService
 
-    public init(
+    package init(
         server: NucleusCompositorServer,
         windowManager: WindowManager,
         binds: [KeyBind] = DefaultBinds.table,
@@ -30,7 +30,7 @@ public final class CompositorPolicyServices {
             configurationGeneration: configurationGeneration)
     }
 
-    public func adoptConfiguration(
+    package func adoptConfiguration(
         binds: [KeyBind],
         epoch: ConfigurationServiceEpoch,
         generation: ConfigurationGeneration
@@ -41,7 +41,7 @@ public final class CompositorPolicyServices {
             generation: generation)
     }
 
-    public func adoptConfigurationVersion(
+    package func adoptConfigurationVersion(
         epoch: ConfigurationServiceEpoch,
         generation: ConfigurationGeneration
     ) {

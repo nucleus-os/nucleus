@@ -1,4 +1,5 @@
 internal import NucleusLayers
+public import NucleusTypes
 
 /// Which scroll indicators a scroll view shows.
 public struct ScrollIndicators: OptionSet, Sendable {
@@ -381,10 +382,11 @@ open class ScrollView: View {
         dragLocation = nil
         dragTimestampNanoseconds = nil
 
-        let speed = (scrollVelocity.x * scrollVelocity.x
+        let speed =
+            (scrollVelocity.x * scrollVelocity.x
             + scrollVelocity.y * scrollVelocity.y).squareRoot()
         guard speed >= ScrollView.kineticVelocityThreshold,
-              !uiContext.environment.reducesMotion
+            !uiContext.environment.reducesMotion
         else {
             scrollVelocity = .zero
             finishInteraction()
@@ -395,9 +397,10 @@ open class ScrollView: View {
             1,
             max(0.15, speed / ScrollView.kineticDeceleration))
         let start = contentOffset
-        let target = clampedOffset(Point(
-            x: start.x + scrollVelocity.x * duration * 0.5,
-            y: start.y + scrollVelocity.y * duration * 0.5))
+        let target = clampedOffset(
+            Point(
+                x: start.x + scrollVelocity.x * duration * 0.5,
+                y: start.y + scrollVelocity.y * duration * 0.5))
         guard target != start else {
             scrollVelocity = .zero
             finishInteraction()
@@ -454,7 +457,8 @@ open class ScrollView: View {
     }
 
     private func indicatorRect(axis: ScrollAxis) -> Rect? {
-        let enabled = axis == .vertical
+        let enabled =
+            axis == .vertical
             ? indicators.contains(.vertical)
             : indicators.contains(.horizontal)
         guard enabled else { return nil }
@@ -464,7 +468,8 @@ open class ScrollView: View {
         let extent = axis == .vertical ? bounds.size.height : bounds.size.width
         let track = max(0, extent - ScrollView.indicatorInset * 2)
         guard track > 0 else { return nil }
-        let visible = axis == .vertical
+        let visible =
+            axis == .vertical
             ? clipView.frame.size.height
             : clipView.frame.size.width
         let proportion = visible / max(visible + travel, 1)
@@ -477,18 +482,22 @@ open class ScrollView: View {
 
         if axis == .vertical {
             return Rect(
-                x: max(0, bounds.size.width
-                    - ScrollView.indicatorThickness
-                    - ScrollView.indicatorInset),
+                x: max(
+                    0,
+                    bounds.size.width
+                        - ScrollView.indicatorThickness
+                        - ScrollView.indicatorInset),
                 y: position,
                 width: ScrollView.indicatorThickness,
                 height: length)
         }
         return Rect(
             x: position,
-            y: max(0, bounds.size.height
-                - ScrollView.indicatorThickness
-                - ScrollView.indicatorInset),
+            y: max(
+                0,
+                bounds.size.height
+                    - ScrollView.indicatorThickness
+                    - ScrollView.indicatorInset),
             width: length,
             height: ScrollView.indicatorThickness)
     }
@@ -591,14 +600,14 @@ open class ScrollView: View {
                         curve: .bezier(.easeOut))),
                 update: { [weak self, weak indicator] alpha in
                     guard let self,
-                          self.indicatorFadeGeneration == generation
+                        self.indicatorFadeGeneration == generation
                     else { return }
                     indicator?.alphaValue = alpha
                 },
                 completion: { [weak self, weak indicator] outcome in
                     guard let self,
-                          self.indicatorFadeGeneration == generation,
-                          outcome == .completed
+                        self.indicatorFadeGeneration == generation,
+                        outcome == .completed
                     else { return }
                     indicator?.isHidden = true
                 })

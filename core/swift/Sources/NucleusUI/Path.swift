@@ -1,3 +1,5 @@
+public import NucleusTypes
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Android)
@@ -5,13 +7,12 @@ import Android
 #elseif canImport(Darwin)
 import Darwin
 #endif
-package import NucleusTypes
 
 /// A `CGPath`-shaped geometry value built from move, line, curve, and arc
 /// segments. It contains no rendering state; the draw call supplies paint.
 ///
 /// Coordinates remain `Double` on the geometry plane and narrow to `Float`
-/// exactly once when a paint command is encoded.
+/// exactly once when a paint command is recorded.
 public struct Path: Sendable, Equatable {
     package private(set) var verbs: [PaintPathVerb] = []
     package private(set) var points: [Double] = []
@@ -68,7 +69,7 @@ public struct Path: Sendable, Equatable {
     /// stroked path.
     public mutating func addArc(in rect: Rect, start: Double, sweep: Double) {
         guard rect.isFinite, !rect.isEmpty, start.isFinite, sweep.isFinite,
-              sweep != 0
+            sweep != 0
         else { return }
 
         let startPoint = point(on: rect, degrees: start)
@@ -113,8 +114,9 @@ public struct Path: Sendable, Equatable {
         guard rect.isFinite, !rect.isEmpty else { return }
         move(to: Point(x: rect.origin.x, y: rect.origin.y))
         addLine(to: Point(x: rect.origin.x + rect.size.width, y: rect.origin.y))
-        addLine(to: Point(
-            x: rect.origin.x + rect.size.width, y: rect.origin.y + rect.size.height))
+        addLine(
+            to: Point(
+                x: rect.origin.x + rect.size.width, y: rect.origin.y + rect.size.height))
         addLine(to: Point(x: rect.origin.x, y: rect.origin.y + rect.size.height))
         close()
     }
@@ -129,8 +131,10 @@ public struct Path: Sendable, Equatable {
             addRect(rect)
             return
         }
-        let x = rect.origin.x, y = rect.origin.y
-        let w = rect.size.width, h = rect.size.height
+        let x = rect.origin.x
+        let y = rect.origin.y
+        let w = rect.size.width
+        let h = rect.size.height
         let d = r * 2
 
         move(to: Point(x: x + r, y: y))
@@ -179,7 +183,6 @@ public struct Path: Sendable, Equatable {
         let scale = max(
             1, abs(lhs.x), abs(lhs.y), abs(rhs.x), abs(rhs.y))
         let tolerance = scale * 1e-12
-        return abs(lhs.x - rhs.x) <= tolerance &&
-            abs(lhs.y - rhs.y) <= tolerance
+        return abs(lhs.x - rhs.x) <= tolerance && abs(lhs.y - rhs.y) <= tolerance
     }
 }

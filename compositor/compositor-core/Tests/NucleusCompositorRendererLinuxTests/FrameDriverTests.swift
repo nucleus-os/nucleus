@@ -1,3 +1,4 @@
+internal import NucleusAppHostProtocols
 import Testing
 import VulkanC
 import Vulkan

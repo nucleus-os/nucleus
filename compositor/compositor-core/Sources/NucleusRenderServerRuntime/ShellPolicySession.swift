@@ -3,7 +3,8 @@ import NucleusSessionProtocol
 
 extension CompositorRuntime {
     func installShellPolicyPublication() {
-        policyServices.policy.acceptedActionSink = { [weak self]
+        policyServices.policy.acceptedActionSink = {
+            [weak self]
             action, configurationIndex, value, epoch, generation in
             self?.publishAcceptedShellAction(
                 actionCode: action,
@@ -12,7 +13,8 @@ extension CompositorRuntime {
                 epoch: epoch,
                 generation: generation)
         }
-        policyServices.policy.windowMenuSink = { [weak self]
+        policyServices.policy.windowMenuSink = {
+            [weak self]
             windowID, x, y, capabilities in
             self?.publishWindowMenu(
                 windowID: windowID,
@@ -30,10 +32,11 @@ extension CompositorRuntime {
             let policy = ShellPolicyChannel(
                 owning: attachment.take())
             shellPolicyChannel = policy
-            try policy.send(ShellPolicyPublication(
-                kind: .ready,
-                configurationEpoch: configurationEpoch,
-                configurationGeneration: configurationGeneration))
+            try policy.send(
+                ShellPolicyPublication(
+                    kind: .ready,
+                    configurationEpoch: configurationEpoch,
+                    configurationGeneration: configurationGeneration))
             logRuntime("shell session: installed policy generation")
         } catch {
             logRuntime("shell policy attachment failed: \(error)")
@@ -48,8 +51,8 @@ extension CompositorRuntime {
             switch request.kind {
             case .setCursorTheme:
                 guard let theme = request.cursorTheme,
-                      !theme.isEmpty,
-                      theme.utf8.count <= 4 * 1024
+                    !theme.isEmpty,
+                    theme.utf8.count <= 4 * 1024
                 else {
                     throw ShellPolicyChannelFailure.invalidAttachment
                 }
@@ -57,8 +60,8 @@ extension CompositorRuntime {
                 frameDemand.requestFrame()
             case .selectWindowMenuItem:
                 guard let windowID = request.windowID,
-                      windowID == offeredWindowMenuID,
-                      let verb = request.windowMenuVerb
+                    windowID == offeredWindowMenuID,
+                    let verb = request.windowMenuVerb
                 else {
                     throw ShellPolicyChannelFailure.invalidAttachment
                 }
@@ -87,7 +90,7 @@ extension CompositorRuntime {
     ) {
         _ = value
         guard configurationIndex != .max,
-              Int(configurationIndex) < liveConfiguration.binds.count
+            Int(configurationIndex) < liveConfiguration.binds.count
         else { return }
         let action =
             liveConfiguration.binds[Int(configurationIndex)].action
@@ -97,12 +100,13 @@ extension CompositorRuntime {
             return
         }
         do {
-            try shellPolicyChannel?.send(ShellPolicyPublication(
-                kind: .acceptedAction,
-                action: action,
-                configurationIndex: configurationIndex,
-                configurationEpoch: epoch,
-                configurationGeneration: generation))
+            try shellPolicyChannel?.send(
+                ShellPolicyPublication(
+                    kind: .acceptedAction,
+                    action: action,
+                    configurationIndex: configurationIndex,
+                    configurationEpoch: epoch,
+                    configurationGeneration: generation))
         } catch {
             revokeShellSession()
         }
@@ -110,14 +114,15 @@ extension CompositorRuntime {
 
     func publishControlShellAction(_ action: BindAction) {
         guard action.runtimeOwner == .shell,
-              action != .showWindowMenu
+            action != .showWindowMenu
         else { return }
         do {
-            try shellPolicyChannel?.send(ShellPolicyPublication(
-                kind: .acceptedAction,
-                action: action,
-                configurationEpoch: configurationEpoch,
-                configurationGeneration: configurationGeneration))
+            try shellPolicyChannel?.send(
+                ShellPolicyPublication(
+                    kind: .acceptedAction,
+                    action: action,
+                    configurationEpoch: configurationEpoch,
+                    configurationGeneration: configurationGeneration))
         } catch {
             revokeShellSession()
         }
@@ -131,15 +136,16 @@ extension CompositorRuntime {
     ) {
         offeredWindowMenuID = windowID
         do {
-            try shellPolicyChannel?.send(ShellPolicyPublication(
-                kind: .windowMenuOffered,
-                action: .showWindowMenu,
-                configurationEpoch: configurationEpoch,
-                configurationGeneration: configurationGeneration,
-                windowID: windowID,
-                x: x,
-                y: y,
-                windowCapabilities: capabilities))
+            try shellPolicyChannel?.send(
+                ShellPolicyPublication(
+                    kind: .windowMenuOffered,
+                    action: .showWindowMenu,
+                    configurationEpoch: configurationEpoch,
+                    configurationGeneration: configurationGeneration,
+                    windowID: windowID,
+                    x: x,
+                    y: y,
+                    windowCapabilities: capabilities))
         } catch {
             revokeShellSession()
         }
@@ -158,7 +164,7 @@ extension CompositorRuntime {
         case .showWindowMenu:
             4
         case .closeWindow, .tile, .adjustBackdropIntensity,
-             .activateWorkspace, .moveWindowToWorkspace:
+            .activateWorkspace, .moveWindowToWorkspace:
             nil
         }
     }

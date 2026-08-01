@@ -1,13 +1,13 @@
-public import NucleusUI
+package import NucleusUI
 
 /// The native bar clock. Wall-clock ownership stays in the runtime; the
 /// product receives an already localized display value and retains one label.
 @MainActor
-public final class ClockWidget: BarWidget {
-    public let label: Label
-    public private(set) var displayText: String
+package final class ClockWidget: BarWidget {
+    package let label: Label
+    package private(set) var displayText: String
 
-    public override init() {
+    package override init() {
         displayText = ""
         label = Label("")
         super.init()
@@ -18,11 +18,12 @@ public final class ClockWidget: BarWidget {
         showsCapsule = false
     }
 
-    public func update(displayText: String) {
+    package func update(displayText: String) {
         guard displayText != self.displayText else { return }
         self.displayText = displayText
         label.text = displayText
-        accessibilityLabel = displayText.isEmpty
+        accessibilityLabel =
+            displayText.isEmpty
             ? "Clock unavailable"
             : "Time, \(displayText)"
         invalidateIntrinsicContentSize()
@@ -30,20 +31,20 @@ public final class ClockWidget: BarWidget {
         setNeedsDisplay()
     }
 
-    public override func viewDidChangeEffectiveAppearance() {
+    package override func viewDidChangeEffectiveAppearance() {
         label.textColor = resolve(.role(.onSurface))
         super.viewDidChangeEffectiveAppearance()
     }
 
-    public override var intrinsicContentSize: Size {
+    package override var intrinsicContentSize: Size {
         label.intrinsicContentSize
     }
 
-    public override func measure(_ constraints: LayoutConstraints) -> Size {
+    package override func measure(_ constraints: LayoutConstraints) -> Size {
         label.measure(constraints)
     }
 
-    public override func layout() {
+    package override func layout() {
         label.centerVertically(in: bounds)
     }
 }

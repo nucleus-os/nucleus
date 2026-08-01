@@ -2,30 +2,41 @@
 // Typed client descriptor and event dispatch for wl_data_device_manager.
 
 import WaylandClientC
-public enum WlDataDeviceManagerClient: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum WlDataDeviceManagerClient: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_data_device_manager())
-    public nonisolated static let maximumVersion: UInt32 = 4
+    package nonisolated static let maximumVersion: UInt32 = 4
 }
-public extension WaylandProxy where Interface == WlDataDeviceManagerClient {
-    func createDataSource() throws(WaylandProxyError) -> WaylandProxy<WlDataSourceClient> {
+package extension WaylandProxy where Interface == WlDataDeviceManagerClient {
+    package func createDataSource() throws(WaylandProxyError) -> WaylandProxy<WlDataSourceClient> {
         let _proxy = try unsafe requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_wl_data_device_manager_create_data_source(_proxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_wl_data_device_manager_create_data_source(
+                    _proxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, WlDataSourceClient.self)
     }
-    func getDataDevice(seat: WaylandProxy<WlSeatClient>) throws(WaylandProxyError) -> WaylandProxy<WlDataDeviceClient> {
+    package func getDataDevice(seat: WaylandProxy<WlSeatClient>) throws(WaylandProxyError)
+        -> WaylandProxy<WlDataDeviceClient>
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _seatProxy = try unsafe seat.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_wl_data_device_manager_get_data_device(_proxy, _seatProxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_wl_data_device_manager_get_data_device(
+                    _proxy, _seatProxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, WlDataDeviceClient.self)
     }
-    func release() throws(WaylandProxyError) {
+    package func release() throws(WaylandProxyError) {
         guard version >= 4 else {
             throw .unsupportedVersion(
                 required: 4, actual: version)

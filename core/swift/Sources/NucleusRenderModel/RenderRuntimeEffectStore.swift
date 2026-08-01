@@ -14,10 +14,10 @@
 import Synchronization
 
 /// A registered SkSL program source.
-public struct RuntimeEffectSource: Equatable, Sendable {
-    public var sksl: String
+package struct RuntimeEffectSource: Equatable, Sendable {
+    package var sksl: String
 
-    public init(sksl: String) {
+    package init(sksl: String) {
         self.sksl = sksl
     }
 }
@@ -25,7 +25,7 @@ public struct RuntimeEffectSource: Equatable, Sendable {
 /// Refcounted registry of SkSL sources keyed by an opaque handle. The renderer
 /// reads `source(_:)` to compile at frame time and caches the compiled program;
 /// compile/cache is the renderer's job. Mirrors `ImageStore`.
-public final class RuntimeEffectStore: Sendable {
+package final class RuntimeEffectStore: Sendable {
     private struct Entry {
         var source: RuntimeEffectSource
         var refs: UInt32
@@ -40,16 +40,16 @@ public final class RuntimeEffectStore: Sendable {
 
     private let state = Mutex(State())
 
-    public init() {}
+    package init() {}
 
-    public var count: Int {
+    package var count: Int {
         state.withLock { $0.entries.count }
     }
 
     /// Register (or dedupe to) an SkSL source, returning its handle at refcount
     /// ≥1. A repeat registration of the same source bumps the existing refcount.
     @discardableResult
-    public func register(_ source: RuntimeEffectSource) -> UInt64 {
+    package func register(_ source: RuntimeEffectSource) -> UInt64 {
         state.withLock { state in
             if let handle = state.byKey[source.sksl] {
                 state.entries[handle]!.refs &+= 1
@@ -65,7 +65,7 @@ public final class RuntimeEffectStore: Sendable {
     }
 
     /// Add one ref. No-op for an unknown handle.
-    public func retain(_ handle: UInt64) {
+    package func retain(_ handle: UInt64) {
         state.withLock {
             guard $0.entries[handle] != nil else { return }
             $0.entries[handle]!.refs &+= 1
@@ -73,7 +73,7 @@ public final class RuntimeEffectStore: Sendable {
     }
 
     /// Drop one ref; evict at zero. No-op for an unknown handle.
-    public func release(_ handle: UInt64) {
+    package func release(_ handle: UInt64) {
         state.withLock { state in
             guard var entry = state.entries[handle] else { return }
             if entry.refs > 1 {
@@ -89,12 +89,12 @@ public final class RuntimeEffectStore: Sendable {
 
     /// The source registered for `handle`, or nil if unknown. The renderer
     /// compiles this at rasterization time.
-    public func source(_ handle: UInt64) -> RuntimeEffectSource? {
+    package func source(_ handle: UInt64) -> RuntimeEffectSource? {
         state.withLock { $0.entries[handle]?.source }
     }
 
     /// Take cache handles evicted since the previous render-owner drain.
-    public func takeEvictedHandles() -> [UInt64] {
+    package func takeEvictedHandles() -> [UInt64] {
         state.withLock {
             let handles = $0.evictedHandles
             $0.evictedHandles.removeAll(keepingCapacity: true)

@@ -1,9 +1,9 @@
 import NucleusThemeAssetIO
+package import NucleusUI
 import Synchronization
-public import NucleusUI
 
 /// Bounded icon lookup whose filesystem work runs only on ThemeAssetIO workers.
-public final class ShellIconSourceResolver: Sendable {
+package final class ShellIconSourceResolver: Sendable {
     private struct Key: Hashable, Sendable {
         var name: String
         var theme: String
@@ -18,7 +18,7 @@ public final class ShellIconSourceResolver: Sendable {
     private let io: BoundedThemeAssetIO<Key, Resolution>
     private let generation = Mutex<UInt64>(0)
 
-    public init(themeName: String = "hicolor", roots: [String]? = nil) {
+    package init(themeName: String = "hicolor", roots: [String]? = nil) {
         let capturedRoots = roots ?? IconThemeResolver.defaultRoots()
         io = BoundedThemeAssetIO(
             label: "dev.nucleus.theme-icons",
@@ -26,32 +26,35 @@ public final class ShellIconSourceResolver: Sendable {
             maximumConcurrent: 2,
             maximumCompletedEntries: 4_096
         ) { key in
-            Resolution(path: IconThemeResolver(
-                themeName: key.theme.isEmpty ? themeName : key.theme,
-                roots: capturedRoots)
+            Resolution(
+                path: IconThemeResolver(
+                    themeName: key.theme.isEmpty ? themeName : key.theme,
+                    roots: capturedRoots
+                )
                 .resolve(
                     key.name,
                     size: max(1, Int(clamping: key.pixelSize))))
         }
     }
 
-    public var imageSourceResolver: ImageSourceResolver {
+    package var imageSourceResolver: ImageSourceResolver {
         let owner = self
         return ImageSourceResolver { query in
             guard case .icon(let name, let theme) = query.source else {
                 return nil
             }
-            return await owner.io.resolve(Key(
-                name: name,
-                theme: theme,
-                pixelSize: max(
-                    query.targetPixelWidth,
-                    query.targetPixelHeight),
-                generation: owner.generation.withLock { $0 }))?.path
+            return await owner.io.resolve(
+                Key(
+                    name: name,
+                    theme: theme,
+                    pixelSize: max(
+                        query.targetPixelWidth,
+                        query.targetPixelHeight),
+                    generation: owner.generation.withLock { $0 }))?.path
         }
     }
 
-    public func invalidate() async -> UInt64 {
+    package func invalidate() async -> UInt64 {
         let next = generation.withLock { value in
             value &+= 1
             return value

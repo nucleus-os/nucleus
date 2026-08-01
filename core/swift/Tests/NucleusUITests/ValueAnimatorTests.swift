@@ -1,6 +1,7 @@
 import NucleusUITestSupport
 import Testing
-@_spi(NucleusRenderServer) @testable import NucleusUI
+
+@testable import NucleusUI
 
 @MainActor
 @Suite(.uiContext) struct ValueAnimatorTests {
@@ -28,16 +29,19 @@ import Testing
         }
 
         #expect(frameRequests == 1)
-        #expect(context.advanceAnimations(
-            predictedPresentationNanoseconds: 1_000_000_000
-        ))
-        #expect(context.advanceAnimations(
-            predictedPresentationNanoseconds: 1_500_000_000
-        ))
+        #expect(
+            context.advanceAnimations(
+                predictedPresentationNanoseconds: 1_000_000_000
+            ))
+        #expect(
+            context.advanceAnimations(
+                predictedPresentationNanoseconds: 1_500_000_000
+            ))
         #expect(values.last == 5)
-        #expect(!context.advanceAnimations(
-            predictedPresentationNanoseconds: 2_000_000_000
-        ))
+        #expect(
+            !context.advanceAnimations(
+                predictedPresentationNanoseconds: 2_000_000_000
+            ))
         #expect(values.last == 10)
         #expect(handle.outcome == .completed)
     }

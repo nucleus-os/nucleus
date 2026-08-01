@@ -15,14 +15,15 @@
 // graph. This driver therefore receives typed protocol objects directly and uses a
 // nominal XdgToplevelID only for persistent model correlation.
 
-import WaylandServer
-import WaylandProtocolTypes
-@_spi(NucleusRenderServer) import NucleusLayers
+import Glibc
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowManager
+import NucleusDiagnostics
+package import NucleusLayers
 import NucleusRenderModel
-import Glibc
+import WaylandProtocolTypes
+import WaylandServer
 
 struct XdgCommittedContentSize: Equatable {
     var width: UInt32
@@ -120,7 +121,8 @@ final class RouterWindowDriver {
     /// renders rectangular (no client-side rounding). Mirrors the legacy
     /// `rectangularStateMask`; empty for a borderless window.
     private func rectangularStateMask(_ window: Window) -> XdgStateMask {
-        window.styleMask == .titledResizable ? [.tiledLeft, .tiledRight, .tiledTop, .tiledBottom] : []
+        window.styleMask == .titledResizable
+            ? [.tiledLeft, .tiledRight, .tiledTop, .tiledBottom] : []
     }
 
     /// Serialize an XdgStateMask into the wire xdg_toplevel.state values in canonical
@@ -162,21 +164,24 @@ final class RouterWindowDriver {
         if initial {
             // First configure: 0×0 (the client self-sizes) carrying the rectangular
             // states. The empty pending configure is queued in toplevelConfigureSent.
-            return XdgToplevelConfigure(width: 0, height: 0, states: wireStates(rectangularStateMask(window)))
+            return XdgToplevelConfigure(
+                width: 0, height: 0, states: wireStates(rectangularStateMask(window)))
         }
         if let plan = toplevelState[toplevel.id]?.pendingPlan {
             let content = window.contentRect(forFrameRect: plan.targetRect)
             var mask = plan.stateMask
             mask.formUnion(rectangularStateMask(window))
             return XdgToplevelConfigure(
-                width: Int32(content.width), height: Int32(content.height), states: wireStates(mask))
+                width: Int32(content.width), height: Int32(content.height), states: wireStates(mask)
+            )
         }
         let reason = toplevelState[toplevel.id]?.replanReason ?? .focusState
         let request = ConfigureRequest(
             windowID: windowID, reason: reason, targetRect: nil, targetOutputID: nil,
             activated: isFocused(windowID), resizing: false, tileEdges: window.tileEdges)
         guard let plan = wm.planConfigure(request) else {
-            return XdgToplevelConfigure(width: 0, height: 0, states: wireStates(rectangularStateMask(window)))
+            return XdgToplevelConfigure(
+                width: 0, height: 0, states: wireStates(rectangularStateMask(window)))
         }
         toplevelState[toplevel.id]?.pendingPlan = plan
         // The client owns only its content: configure to the content rect (the frame
@@ -213,7 +218,8 @@ final class RouterWindowDriver {
             // settling once that buffer commits. A redundant configure toward the current
             // presented frame leaves the curve untouched (no stutter / no 1-frame no-op).
             if plan.shouldPresent, plan.layoutTransitionID != 0,
-               let slot = pending?.slotGeneration {
+                let slot = pending?.slotGeneration
+            {
                 let finalRect = PresentationRect(
                     x: plan.targetRect.x, y: plan.targetRect.y,
                     w: Double(plan.targetRect.width), h: Double(plan.targetRect.height))
@@ -294,9 +300,10 @@ final class RouterWindowDriver {
         // the buffer (clients wrap the window in invisible margins); the scene feeder
         // shifts the backing by this so the geometry sub-rect aligns with the content
         // viewport. Absent a geometry the whole buffer is the content.
-        window.contentOffsetInSlot = geometry.map {
-            WindowContentOffset(x: -Double($0.x), y: -Double($0.y))
-        } ?? .init()
+        window.contentOffsetInSlot =
+            geometry.map {
+                WindowContentOffset(x: -Double($0.x), y: -Double($0.y))
+            } ?? .init()
         // The frame rect is the outer rectangle: visible content expanded by the
         // chrome insets, positioned at the latched / first-map origin.
         let insets = window.chromeInsets
@@ -385,9 +392,10 @@ final class RouterWindowDriver {
         seatDriver.surfaceUnmapped(surfaceId: surfaceID)
         wm.xdgDestroyed(windowID: entry.windowID)
         guard let window = wm.server.window(id: entry.windowID) else { return }
-        let closing = feeder?.beginClosing(
-            window: window,
-            destroyWindowOnCompletion: true) ?? false
+        let closing =
+            feeder?.beginClosing(
+                window: window,
+                destroyWindowOnCompletion: true) ?? false
         window.mapped = false
         if !closing {
             feeder?.windowUnmapped(surfaceID: surfaceID)
@@ -422,7 +430,8 @@ final class RouterWindowDriver {
     func setForeignParentImpl(childSurfaceId: UInt32, parentSurfaceId: UInt32?) {
         guard let childID = windowID(forSurfaceId: childSurfaceId) else { return }
         windowManager.xdgSetParent(
-            windowID: childID, parentWindowID: parentSurfaceId.flatMap { windowID(forSurfaceId: $0) })
+            windowID: childID,
+            parentWindowID: parentSurfaceId.flatMap { windowID(forSurfaceId: $0) })
     }
 
     func surfaceDestroyedImpl(surfaceId: UInt32) {
@@ -473,7 +482,9 @@ final class RouterWindowDriver {
         return window.currentOutputID ?? 0
     }
 
-    func currentAnimatedRect(forSurfaceId id: UInt32) -> (x: Double, y: Double, w: Double, h: Double)? {
+    func currentAnimatedRect(forSurfaceId id: UInt32) -> (
+        x: Double, y: Double, w: Double, h: Double
+    )? {
         guard let windowID = windowID(forSurfaceId: id),
             let window = server.window(id: windowID)
         else { return nil }
@@ -539,7 +550,8 @@ final class RouterWindowDriver {
         else { return false }
 
         let layout = server.layout
-        let outputID = window.currentOutputID ?? layout.primaryDisplayID() ?? layout.displays.first?.id ?? 0
+        let outputID =
+            window.currentOutputID ?? layout.primaryDisplayID() ?? layout.displays.first?.id ?? 0
         guard outputID != 0, let output = layout.display(id: outputID) else { return false }
         let r = output.logicalRect
         let zones = wm.layerShellPolicy.recalcZones(outputID: outputID) ?? LayerExclusiveZones()
@@ -669,9 +681,10 @@ final class RouterWindowDriver {
         guard let toplevel = toplevel(forWindowId: id),
             let window = wm.server.window(id: id)
         else { return }
-        let rect = targetRect.map {
-            WindowRect(x: $0.x, y: $0.y, width: $0.width, height: $0.height)
-        } ?? window.currentRect()
+        let rect =
+            targetRect.map {
+                WindowRect(x: $0.x, y: $0.y, width: $0.width, height: $0.height)
+            } ?? window.currentRect()
         window.setRequestedFrame(rect)
         let request = ConfigureRequest(
             windowID: id,
@@ -806,8 +819,9 @@ extension RouterWindowDriver: XdgShellDelegate {
         wire.constraintAdjustment = positioner.constraintAdjustment
         wire.offsetX = positioner.offsetX
         wire.offsetY = positioner.offsetY
-        guard let resolved = windowManager.resolvePopup(
-            parentID: parentWindowID, positioner: wire)
+        guard
+            let resolved = windowManager.resolvePopup(
+                parentID: parentWindowID, positioner: wire)
         else { return base }
         return WlRect(
             x: resolved.x, y: resolved.y,
@@ -821,11 +835,12 @@ extension RouterWindowDriver: XdgShellDelegate {
         serial: UInt32
     ) -> Bool {
         let surfaceID = popup.grabOriginSurface?.objectId ?? 0
-        guard seatDriver.authorizeUserIntent(
-            serial: serial,
-            seat: seat,
-            clientID: seatClientID,
-            surfaceID: surfaceID)
+        guard
+            seatDriver.authorizeUserIntent(
+                serial: serial,
+                seat: seat,
+                clientID: seatClientID,
+                surfaceID: surfaceID)
         else { return false }
         seatDriver.beginPopupGrab(popup)
         return true
@@ -910,7 +925,9 @@ extension RouterWindowDriver: LayerShellDelegate {
         sceneDriver.destroyLayerSurface(surfaceId: surfaceID)
     }
 
-    private func registerLayerExclusiveZone(surfaceId: UInt32, arrangement: ZwlrLayerSurface.LayerArrangement) {
+    private func registerLayerExclusiveZone(
+        surfaceId: UInt32, arrangement: ZwlrLayerSurface.LayerArrangement
+    ) {
         let record = LayerSurfaceRecord(
             id: UInt64(surfaceId),
             layer: arrangement.layer,
@@ -927,4 +944,3 @@ extension RouterWindowDriver: LayerShellDelegate {
         host.xwaylandHost?.updateScale()
     }
 }
-import NucleusDiagnostics

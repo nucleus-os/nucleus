@@ -7,13 +7,14 @@ import WaylandServerC
 /// type prevents resources belonging to different protocol interfaces from
 /// being mixed at Swift call sites.
 @MainActor
-@safe public final class WaylandResourceHandle<Interface: WaylandServerInterface> {
+@safe package final class WaylandResourceHandle<Interface: WaylandServerInterface> {
     private let reference: WaylandResourceReference<Interface>
 
     @unsafe
     package init?(_ resource: UnsafeMutablePointer<wl_resource>?) {
-        guard let reference =
-            unsafe WaylandResourceReference<Interface>(resource)
+        guard
+            let reference =
+                unsafe WaylandResourceReference<Interface>(resource)
         else {
             return nil
         }
@@ -28,33 +29,33 @@ import WaylandServerC
         unsafe reference.nativeResource
     }
 
-    public var referenceValue: WaylandResourceReference<Interface> {
+    package var referenceValue: WaylandResourceReference<Interface> {
         reference
     }
 
-    public var isLive: Bool {
+    package var isLive: Bool {
         reference.isLive
     }
 
-    public var version: Int32? {
+    package var version: Int32? {
         reference.version
     }
 
-    public var clientID: WaylandClientID? {
+    package var clientID: WaylandClientID? {
         reference.clientID
     }
 
-    public var objectID: UInt32? {
+    package var objectID: UInt32? {
         reference.objectID
     }
 
     @discardableResult
-    public func destroy() -> Bool {
+    package func destroy() -> Bool {
         reference.destroy()
     }
 
     @discardableResult
-    public func postNoMemory() -> Bool {
+    package func postNoMemory() -> Bool {
         reference.postNoMemory()
     }
 

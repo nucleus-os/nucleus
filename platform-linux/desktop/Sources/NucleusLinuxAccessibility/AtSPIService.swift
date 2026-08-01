@@ -1,7 +1,7 @@
 import Foundation
 import NucleusLinuxDBus
-public import NucleusLinuxReactor
-public import NucleusUI
+package import NucleusLinuxReactor
+package import NucleusUI
 
 #if canImport(FoundationInternationalization)
 import FoundationInternationalization
@@ -11,11 +11,11 @@ import FoundationInternationalization
 import Glibc
 #endif
 
-public struct AtSPIServiceError: Error, Sendable, Equatable {
-    public var operation: String
-    public var code: Int32
+package struct AtSPIServiceError: Error, Sendable, Equatable {
+    package var operation: String
+    package var code: Int32
 
-    public init(operation: String, code: Int32) {
+    package init(operation: String, code: Int32) {
         self.operation = operation
         self.code = code
     }
@@ -33,12 +33,12 @@ struct AtSPILiveResourceCounts: Sendable, Equatable {
 /// export snapshot. `process()` never waits for I/O; actions are the only calls
 /// that cross back into NucleusUI, and they run on the UI actor.
 @MainActor
-public final class AtSPIService: LinuxReactorSource {
+package final class AtSPIService: LinuxReactorSource {
     private(set) static var liveResourceCounts =
         AtSPILiveResourceCounts()
 
-    public var onAction: (@MainActor (AccessibilityActionRequest) -> Bool)?
-    public var diagnosticHandler: (@MainActor @Sendable (AtSPIServiceError, UInt64) -> Void)?
+    package var onAction: (@MainActor (AccessibilityActionRequest) -> Bool)?
+    package var diagnosticHandler: (@MainActor @Sendable (AtSPIServiceError, UInt64) -> Void)?
 
     enum ConnectionPhase {
         case idle
@@ -63,12 +63,12 @@ public final class AtSPIService: LinuxReactorSource {
     private var pendingEvents: [AtSPIEvent] = []
     private let maximumPendingEvents = 256
     private var reportedDiagnostics: Set<DiagnosticKey> = []
-    public private(set) var connectionGeneration: UInt64 = 0
+    package private(set) var connectionGeneration: UInt64 = 0
 
     var applicationBusName: String { uniqueName }
     var queuedEventCount: Int { pendingEvents.count }
 
-    public init(applicationName: String) {
+    package init(applicationName: String) {
         model = AtSPIExportModel(applicationName: applicationName)
         _ = model.apply(
             snapshot: AccessibilityTreeSnapshot(),
@@ -87,7 +87,7 @@ public final class AtSPIService: LinuxReactorSource {
         close()
     }
 
-    public func close() {
+    package func close() {
         guard !isClosed else { return }
         isClosed = true
         reconnectDeadlineMicroseconds = nil
@@ -96,15 +96,15 @@ public final class AtSPIService: LinuxReactorSource {
         disconnectTransport(flush: true)
     }
 
-    public var fileDescriptor: Int32 {
+    package var fileDescriptor: Int32 {
         connection?.fileDescriptor ?? -1
     }
 
-    public var pollEvents: Int16 {
+    package var pollEvents: Int16 {
         connection?.pollEvents ?? 0
     }
 
-    public func timeoutMicroseconds() -> UInt64? {
+    package func timeoutMicroseconds() -> UInt64? {
         let current = Self.monotonicMicroseconds()
         var timeout = reconnectDeadlineMicroseconds.map {
             $0 > current ? $0 - current : 0
@@ -116,7 +116,7 @@ public final class AtSPIService: LinuxReactorSource {
     }
 
     @discardableResult
-    public func process() -> Bool {
+    package func process() -> Bool {
         guard !isClosed else { return false }
         var changed = false
         if connection == nil {
@@ -141,7 +141,7 @@ public final class AtSPIService: LinuxReactorSource {
         }
     }
 
-    public func apply(
+    package func apply(
         snapshot: AccessibilityTreeSnapshot,
         update: AccessibilityTreeUpdate
     ) {
@@ -153,13 +153,13 @@ public final class AtSPIService: LinuxReactorSource {
         emitOrQueue(exported.events)
     }
 
-    public func transportDidFail(
+    package func transportDidFail(
         operation: String
     ) {
         transportDidFail(operation: operation, code: -ECONNRESET)
     }
 
-    public func transportDidFail(
+    package func transportDidFail(
         operation: String,
         code: Int32
     ) {
@@ -177,7 +177,7 @@ public final class AtSPIService: LinuxReactorSource {
         var generation: UInt64
     }
 
-    public var isReady: Bool { connectionPhase == .ready }
+    package var isReady: Bool { connectionPhase == .ready }
 
     private func beginConnectionAttempt() throws(DBusError) {
         precondition(connection == nil && objectRegistration == nil)

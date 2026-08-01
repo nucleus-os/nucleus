@@ -1,7 +1,7 @@
 import NucleusConfig
 import NucleusSessionProtocol
 
-public enum ShellFeedbackState: Sendable, Equatable {
+package enum ShellFeedbackState: Sendable, Equatable {
     case hidden
     case hotkey
     case windowMenu(
@@ -11,7 +11,7 @@ public enum ShellFeedbackState: Sendable, Equatable {
         capabilities: UInt32)
 }
 
-public enum ShellObservedIdleState: Sendable, Equatable {
+package enum ShellObservedIdleState: Sendable, Equatable {
     case active
     case idle
 }
@@ -22,24 +22,20 @@ public enum ShellObservedIdleState: Sendable, Equatable {
 /// retain the server's configuration epoch/generation for diagnostics and
 /// deterministic UI state.
 @MainActor
-public final class ShellActionDispatcher {
-    public let launcher: LauncherService
-    public private(set) var feedback: ShellFeedbackState = .hidden
-    public private(set) var lastAcceptedEpoch:
-        ConfigurationServiceEpoch?
-    public private(set) var lastAcceptedGeneration:
-        ConfigurationGeneration?
-    public private(set) var idleState:
-        ShellObservedIdleState = .active
-    public var onFeedbackChanged:
-        ((ShellFeedbackState) -> Void)?
+package final class ShellActionDispatcher {
+    package let launcher: LauncherService
+    package private(set) var feedback: ShellFeedbackState = .hidden
+    package private(set) var lastAcceptedEpoch: ConfigurationServiceEpoch?
+    package private(set) var lastAcceptedGeneration: ConfigurationGeneration?
+    package private(set) var idleState: ShellObservedIdleState = .active
+    package var onFeedbackChanged: ((ShellFeedbackState) -> Void)?
 
-    public init(launcher: LauncherService = LauncherService()) {
+    package init(launcher: LauncherService = LauncherService()) {
         self.launcher = launcher
     }
 
     @discardableResult
-    public func receive(
+    package func receive(
         _ publication: ShellPolicyPublication
     ) -> Bool {
         switch publication.kind {
@@ -47,8 +43,8 @@ public final class ShellActionDispatcher {
             return false
         case .acceptedAction:
             guard let action = publication.action,
-                  let epoch = publication.configurationEpoch,
-                  let generation =
+                let epoch = publication.configurationEpoch,
+                let generation =
                     publication.configurationGeneration
             else { return false }
             lastAcceptedEpoch = epoch
@@ -67,30 +63,31 @@ public final class ShellActionDispatcher {
             case .showWindowMenu:
                 return false
             case .closeWindow, .tile, .adjustBackdropIntensity,
-                 .activateWorkspace, .moveWindowToWorkspace:
+                .activateWorkspace, .moveWindowToWorkspace:
                 // These are server mechanism and must never cross this seam.
                 return false
             }
         case .windowMenuOffered:
             guard let windowID = publication.windowID,
-                  let x = publication.x,
-                  let y = publication.y,
-                  let capabilities =
+                let x = publication.x,
+                let y = publication.y,
+                let capabilities =
                     publication.windowCapabilities
             else { return false }
             lastAcceptedEpoch = publication.configurationEpoch
             lastAcceptedGeneration =
                 publication.configurationGeneration
-            setFeedback(.windowMenu(
-                windowID: windowID,
-                x: x,
-                y: y,
-                capabilities: capabilities))
+            setFeedback(
+                .windowMenu(
+                    windowID: windowID,
+                    x: x,
+                    y: y,
+                    capabilities: capabilities))
             return true
         }
     }
 
-    public func receiveIdleState(
+    package func receiveIdleState(
         _ state: ShellObservedIdleState,
         epoch: ConfigurationServiceEpoch,
         generation: ConfigurationGeneration
@@ -100,7 +97,7 @@ public final class ShellActionDispatcher {
         lastAcceptedGeneration = generation
     }
 
-    public func dismissFeedback() {
+    package func dismissFeedback() {
         setFeedback(.hidden)
     }
 

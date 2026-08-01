@@ -2,7 +2,7 @@ import Foundation
 import NucleusShellProduct
 import NucleusUI
 import NucleusUIEmbedder
-@_spi(NucleusWindowClientImplementation) import NucleusWindowClientWayland
+package import NucleusWindowClientWayland
 
 @MainActor
 struct NativeWallpaperSurface {

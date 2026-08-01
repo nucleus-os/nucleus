@@ -1,13 +1,13 @@
-public struct OutputTopologyFingerprint: Sendable, Equatable {
-    public let outputID: DisplayID
-    public let pixelWidth: UInt32
-    public let pixelHeight: UInt32
-    public let refreshMilliHz: Int32
-    public let crtcID: UInt32
-    public let primaryPlaneID: UInt32
-    public let cursorPlaneID: UInt32
+package struct OutputTopologyFingerprint: Sendable, Equatable {
+    package let outputID: DisplayID
+    package let pixelWidth: UInt32
+    package let pixelHeight: UInt32
+    package let refreshMilliHz: Int32
+    package let crtcID: UInt32
+    package let primaryPlaneID: UInt32
+    package let cursorPlaneID: UInt32
 
-    public init(
+    package init(
         outputID: DisplayID,
         pixelWidth: UInt32,
         pixelHeight: UInt32,
@@ -26,13 +26,13 @@ public struct OutputTopologyFingerprint: Sendable, Equatable {
     }
 }
 
-public struct OutputTopologyDiff: Sendable, Equatable {
-    public let removed: [DisplayID]
-    public let changed: [DisplayID]
-    public let added: [DisplayID]
-    public let unchanged: [DisplayID]
+package struct OutputTopologyDiff: Sendable, Equatable {
+    package let removed: [DisplayID]
+    package let changed: [DisplayID]
+    package let added: [DisplayID]
+    package let unchanged: [DisplayID]
 
-    public static func compute(
+    package static func compute(
         current: [OutputTopologyFingerprint],
         proposed: [OutputTopologyFingerprint],
         forceChanged: Bool = false

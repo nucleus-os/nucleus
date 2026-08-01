@@ -38,15 +38,14 @@ enum OCIExecutorResolver {
         executionPlatform: ExecutionPlatform
     ) throws -> any OCIExecutor {
         guard executionPlatform.environment == .oci,
-            executionPlatform.operatingSystem == .linux,
-            executionPlatform.architecture == .x86_64
+            executionPlatform.operatingSystem == .linux
         else {
             throw OCIExecutorFailure.unsupportedExecutionPlatform(
                 executionPlatform)
         }
 
         switch (runner.operatingSystem, runner.architecture) {
-        case (.linux, .x86_64):
+        case (.linux, .arm64), (.linux, .x86_64):
             return PodmanExecutor()
         case (.macOS, .arm64):
             return AppleContainerExecutor()
@@ -239,17 +238,24 @@ struct AppleContainerExecutor: OCIExecutor {
         temporaryDirectory: FilePath?
     ) throws -> CommandSpec {
         try validateExecutionPolicies(execution)
+        let executionID =
+            execution.hostname + "-"
+            + UUID().uuidString.prefix(12).lowercased()
         var arguments = [
             "run",
             "--rm",
             "--platform", ociPlatformName(execution.executionPlatform),
-            "--rosetta",
+        ]
+        if execution.executionPlatform.architecture == .x86_64 {
+            arguments.append("--rosetta")
+        }
+        arguments += [
             "--network", OCIBackendContract.appleOfflineNetwork,
             "--no-dns",
             "--uid", String(execution.userPolicy.userID),
             "--gid", String(execution.userPolicy.groupID),
             "--cap-drop", "ALL",
-            "--name", execution.hostname,
+            "--name", executionID,
             "--read-only",
             "--ulimit",
             "nproc=\(execution.resourceLimits.processCount):\(execution.resourceLimits.processCount)",
@@ -314,7 +320,9 @@ private func appleImageReference(_ identifier: String) -> String {
 private func validateOCIPlatform(
     _ platform: ExecutionPlatform
 ) throws {
-    guard platform == .linuxAMD64OCI else {
+    guard platform.environment == .oci,
+        platform.operatingSystem == .linux
+    else {
         throw OCIExecutorFailure.unsupportedExecutionPlatform(platform)
     }
 }

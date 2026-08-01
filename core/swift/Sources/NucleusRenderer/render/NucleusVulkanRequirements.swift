@@ -1,10 +1,10 @@
 // extensions and modern features Nucleus requires. Device creation fails closed
 // when a required feature is absent (no silent fallback).
 
-import VulkanC
 import Vulkan
+import VulkanC
 
-public enum VkRequirements {
+package enum VkRequirements {
     /// How the render core presents. Selects the process-local presentation
     /// contract at device creation. `platformDefault` is Android WSI or Linux
     /// DRM import/scanout. `waylandSwapchain` is an out-of-process Wayland
@@ -12,7 +12,7 @@ public enum VkRequirements {
     /// through `VK_KHR_wayland_surface`.
     /// `headless` creates Graphite without any presentation or external-memory contract and
     /// is the mandatory software-device test architecture.
-    public enum PresentationMode: Sendable, Equatable {
+    package enum PresentationMode: Sendable, Equatable {
         case platformDefault
         case waylandSwapchain
         case headless
@@ -21,20 +21,20 @@ public enum VkRequirements {
     /// The complete, non-negotiable Vulkan contract for one presentation
     /// architecture. A physical device is selectable only when every extension,
     /// feature, entry point, API-version, and queue requirement is satisfied.
-    public struct Contract: Sendable {
-        public let presentation: PresentationMode
-        public let minimumApiVersion: VkVersion
-        public let instanceExtensions: [String]
-        public let deviceExtensions: [String]
-        public let requiredInstanceEntryPoints: [String]
-        public let requiredDeviceEntryPoints: [String]
-        public let requiresTimelineSemaphore: Bool
-        public let requiresSynchronization2: Bool
-        public let requiresSamplerYcbcrConversion: Bool
-        public let requiresSwapchainMaintenance1: Bool
+    package struct Contract: Sendable {
+        package let presentation: PresentationMode
+        package let minimumApiVersion: VkVersion
+        package let instanceExtensions: [String]
+        package let deviceExtensions: [String]
+        package let requiredInstanceEntryPoints: [String]
+        package let requiredDeviceEntryPoints: [String]
+        package let requiresTimelineSemaphore: Bool
+        package let requiresSynchronization2: Bool
+        package let requiresSamplerYcbcrConversion: Bool
+        package let requiresSwapchainMaintenance1: Bool
     }
 
-    public static func contract(for mode: PresentationMode = .platformDefault) -> Contract {
+    package static func contract(for mode: PresentationMode = .platformDefault) -> Contract {
         let presentationEntryPoints: [String]
         switch mode {
         case .waylandSwapchain:
@@ -92,7 +92,7 @@ public enum VkRequirements {
             #if os(Android)
             requiresWSI = true
             platformInstanceEntryPoints = [
-                "vkCreateAndroidSurfaceKHR",
+                "vkCreateAndroidSurfaceKHR"
             ]
             #else
             requiresWSI = false
@@ -118,7 +118,9 @@ public enum VkRequirements {
     }
 
     /// Instance extensions required to create the Nucleus instance.
-    public static func instanceExtensions(for mode: PresentationMode = .platformDefault) -> [String] {
+    package static func instanceExtensions(for mode: PresentationMode = .platformDefault)
+        -> [String]
+    {
         var exts = [
             VK.Ext.khrGetPhysicalDeviceProperties2,
             VK.Ext.khrExternalMemoryCapabilities,
@@ -148,7 +150,8 @@ public enum VkRequirements {
     }
 
     /// Device extensions required for presentation + GPU resource sharing.
-    public static func deviceExtensions(for mode: PresentationMode = .platformDefault) -> [String] {
+    package static func deviceExtensions(for mode: PresentationMode = .platformDefault) -> [String]
+    {
         let swapchainSet: [String] = [
             VK.Ext.khrSwapchain,
             VK.Ext.khrSwapchainMaintenance1,
@@ -194,20 +197,20 @@ public enum VkRequirements {
     }
 
     /// The minimum core feature level the device must advertise.
-    public static let minimumApiVersion = VkVersion(major: 1, minor: 4)
+    package static let minimumApiVersion = VkVersion(major: 1, minor: 4)
 
 }
 
 /// A packed Vulkan API version (`VK_MAKE_API_VERSION`). Stored as the raw u32 the
 /// API uses; `major`/`minor`/`patch` decode the bitfields.
-public struct VkVersion: Equatable, Comparable, Sendable {
-    public var raw: UInt32
-    public init(raw: UInt32) { self.raw = raw }
-    public init(variant: UInt32 = 0, major: UInt32, minor: UInt32, patch: UInt32 = 0) {
+package struct VkVersion: Equatable, Comparable, Sendable {
+    package var raw: UInt32
+    package init(raw: UInt32) { self.raw = raw }
+    package init(variant: UInt32 = 0, major: UInt32, minor: UInt32, patch: UInt32 = 0) {
         self.raw = (variant << 29) | (major << 22) | (minor << 12) | patch
     }
-    public var major: UInt32 { (raw >> 22) & 0x7F }
-    public var minor: UInt32 { (raw >> 12) & 0x3FF }
-    public var patch: UInt32 { raw & 0xFFF }
-    public static func < (a: VkVersion, b: VkVersion) -> Bool { a.raw < b.raw }
+    package var major: UInt32 { (raw >> 22) & 0x7F }
+    package var minor: UInt32 { (raw >> 12) & 0x3FF }
+    package var patch: UInt32 { raw & 0xFFF }
+    package static func < (a: VkVersion, b: VkVersion) -> Bool { a.raw < b.raw }
 }

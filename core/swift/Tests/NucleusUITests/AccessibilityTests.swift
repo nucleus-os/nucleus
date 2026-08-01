@@ -1,6 +1,7 @@
 import NucleusUITestSupport
-@_spi(NucleusRenderServer) @testable import NucleusUI
 import Testing
+
+@testable import NucleusUI
 
 @MainActor
 @Suite(.uiContext) struct AccessibilityTests {
@@ -27,14 +28,16 @@ import Testing
         view.accessibilityRole = .button
         view.accessibilityTraits = [.button, .selected]
 
-        #expect(view.accessibilityProperties == AccessibilityProperties(
-            isElement: true,
-            label: "Continue",
-            hint: "Moves to the next page",
-            value: "Ready",
-            role: .button,
-            traits: [.button, .selected]
-        ))
+        #expect(
+            view.accessibilityProperties
+                == AccessibilityProperties(
+                    isElement: true,
+                    label: "Continue",
+                    hint: "Moves to the next page",
+                    value: "Ready",
+                    role: .button,
+                    traits: [.button, .selected]
+                ))
     }
 
     @Test func viewAccessibilityBatchSetterUpdatesIndividualAccessors() throws {
@@ -107,13 +110,16 @@ import Testing
         let first = scene.accessibilityTree.publish()
         let node = try #require(
             scene.accessibilityTree.snapshot.nodes[button.accessibilityID])
-        #expect(node.frameInScene
-            == Rect(x: 110, y: 70, width: 80, height: 30))
+        #expect(
+            node.frameInScene
+                == Rect(x: 110, y: 70, width: 80, height: 30))
         #expect(node.label == "Install")
         #expect(node.actions.contains(.press))
-        #expect(scene.accessibilityTree.perform(.init(
-            target: button.accessibilityID,
-            action: .press)))
+        #expect(
+            scene.accessibilityTree.perform(
+                .init(
+                    target: button.accessibilityID,
+                    action: .press)))
         #expect(presses == 1)
 
         let second = scene.accessibilityTree.publish()
@@ -136,9 +142,10 @@ import Testing
         #expect(update.inserted.isEmpty)
         #expect(update.removed.isEmpty)
         #expect(update.updated.map(\.id) == [slider.accessibilityID])
-        #expect(update.notifications.contains {
-            $0.kind == .value && $0.target == slider.accessibilityID
-        })
+        #expect(
+            update.notifications.contains {
+                $0.kind == .value && $0.target == slider.accessibilityID
+            })
     }
 
     @Test func virtualizedOffscreenItemsRemainDiscoverableAndStable()
@@ -228,10 +235,12 @@ import Testing
         #expect(lower.state.contains(.focusable))
         #expect(lower.actions.contains(.setValue))
 
-        #expect(scene.accessibilityTree.perform(.init(
-            target: lowerID,
-            action: .setValue,
-            value: 0.5)))
+        #expect(
+            scene.accessibilityTree.perform(
+                .init(
+                    target: lowerID,
+                    action: .setValue,
+                    value: 0.5)))
         #expect(slider.lowerValue == 0.5)
         _ = scene.accessibilityTree.publish()
         #expect(

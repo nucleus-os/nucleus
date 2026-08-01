@@ -1,10 +1,10 @@
-public import NucleusUI
+package import NucleusUI
 
 /// One output's retained wallpaper hierarchy.
 @MainActor
-public final class ShellWallpaperProduct {
-    public let imageView: ImageView
-    public let sourcePath: String
+package final class ShellWallpaperProduct {
+    package let imageView: ImageView
+    package let sourcePath: String
 
     init(sourcePath: String, sourceSize: Size) {
         self.sourcePath = sourcePath
@@ -21,11 +21,11 @@ public final class ShellWallpaperProduct {
 
 /// One output's retained native bar hierarchy.
 @MainActor
-public final class ShellBarProduct {
-    public let barView: BarView
-    public let taskbarWidget: TaskbarWidget
-    public let clockWidget: ClockWidget
-    public let batteryWidget: BatteryWidget
+package final class ShellBarProduct {
+    package let barView: BarView
+    package let taskbarWidget: TaskbarWidget
+    package let clockWidget: ClockWidget
+    package let batteryWidget: BatteryWidget
 
     init(
         windows: [ShellWindowSnapshot],
@@ -51,20 +51,18 @@ public final class ShellBarProduct {
 /// Process-lifetime native product composition. It retains typed state while
 /// output-specific bar view trees come and go during hotplug.
 @MainActor
-public final class ShellProductController {
-    public var onWindowAction:
-        ((UInt64, ShellWindowAction) -> Void)?
+package final class ShellProductController {
+    package var onWindowAction: ((UInt64, ShellWindowAction) -> Void)?
 
-    public private(set) var wallpapersByOutput:
-        [UInt32: ShellWallpaperProduct] = [:]
-    public private(set) var barsByOutput: [UInt32: ShellBarProduct] = [:]
-    public private(set) var windows: [ShellWindowSnapshot] = []
-    public private(set) var clockText = ""
-    public private(set) var batteryLevel: BatteryLevel = .absent
+    package private(set) var wallpapersByOutput: [UInt32: ShellWallpaperProduct] = [:]
+    package private(set) var barsByOutput: [UInt32: ShellBarProduct] = [:]
+    package private(set) var windows: [ShellWindowSnapshot] = []
+    package private(set) var clockText = ""
+    package private(set) var batteryLevel: BatteryLevel = .absent
 
-    public init() {}
+    package init() {}
 
-    public func makeWallpaper(
+    package func makeWallpaper(
         forOutput outputID: UInt32,
         sourcePath: String,
         sourceSize: Size
@@ -82,11 +80,11 @@ public final class ShellProductController {
         return wallpaper
     }
 
-    public func removeWallpaper(forOutput outputID: UInt32) {
+    package func removeWallpaper(forOutput outputID: UInt32) {
         wallpapersByOutput[outputID] = nil
     }
 
-    public func makeBar(forOutput outputID: UInt32) -> ShellBarProduct {
+    package func makeBar(forOutput outputID: UInt32) -> ShellBarProduct {
         if let existing = barsByOutput[outputID] { return existing }
         let bar = ShellBarProduct(
             windows: windows,
@@ -99,11 +97,11 @@ public final class ShellProductController {
         return bar
     }
 
-    public func removeBar(forOutput outputID: UInt32) {
+    package func removeBar(forOutput outputID: UInt32) {
         barsByOutput[outputID] = nil
     }
 
-    public func updateWindows(_ windows: [ShellWindowSnapshot]) {
+    package func updateWindows(_ windows: [ShellWindowSnapshot]) {
         guard windows != self.windows else { return }
         self.windows = windows
         for bar in barsByOutput.values {
@@ -111,7 +109,7 @@ public final class ShellProductController {
         }
     }
 
-    public func updateClock(displayText: String) {
+    package func updateClock(displayText: String) {
         guard displayText != clockText else { return }
         clockText = displayText
         for bar in barsByOutput.values {
@@ -119,7 +117,7 @@ public final class ShellProductController {
         }
     }
 
-    public func updateBattery(_ level: BatteryLevel) {
+    package func updateBattery(_ level: BatteryLevel) {
         guard level != batteryLevel else { return }
         batteryLevel = level
         for bar in barsByOutput.values {

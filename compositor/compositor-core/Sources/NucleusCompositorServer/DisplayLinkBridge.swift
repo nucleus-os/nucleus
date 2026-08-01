@@ -10,5 +10,3 @@
 // crossings (which create/remove the Swift `Display`, hence its `displayLink`),
 // so there is no separate create/destroy entry. A call naming an output with no
 // Swift `Display` is a no-op / fallback.
-
-

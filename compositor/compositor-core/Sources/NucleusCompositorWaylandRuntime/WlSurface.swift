@@ -11,13 +11,13 @@
 // The scene delegate is the seam to the live retained scene author. It receives
 // immutable commits and drives surface attach, content, layout, and damage.
 
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
-import WaylandProtocolTypes
 import NucleusCompositorServerTypes
 import NucleusRenderModel
 import NucleusTypes
+import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 @MainActor
 @safe final class WlSurface {
@@ -43,22 +43,18 @@ import NucleusTypes
     /// The live wire resource for the committed buffer. Clients may destroy a
     /// wl_buffer while its pixels remain current, so this is nil once the wire
     /// object is gone even though `hasCurrentBuffer` remains true.
-    var currentBuffer:
-        WaylandResourceReference<WlBufferServer>?
-    {
+    var currentBuffer: WaylandResourceReference<WlBufferServer>? {
         current.buffer
     }
     /// Whether the surface logically has attached content, independent of the
     /// lifetime of the client-side wl_buffer object used to supply those pixels.
     var hasCurrentBuffer: Bool { current.buffer != nil }
-    private var currentBufferReference:
-        WaylandResourceReference<WlBufferServer>?
+    private var currentBufferReference: WaylandResourceReference<WlBufferServer>?
     {
         get { current.buffer }
         set { current.buffer = newValue }
     }
-    private var currentReleaseCallback:
-        WaylandResourceReference<WlCallbackServer>?
+    private var currentReleaseCallback: WaylandResourceReference<WlCallbackServer>?
     {
         get { current.releaseCallback }
         set { current.releaseCallback = newValue }
@@ -505,7 +501,8 @@ import NucleusTypes
         let commitID = nextCommitID
         nextCommitID &+= 1
         if nextCommitID == 0 { nextCommitID = 1 }
-        let attachedBufferIsNonNull = pending.bufferAttached
+        let attachedBufferIsNonNull =
+            pending.bufferAttached
             && pending.buffer?.isLive == true
         let attachedBufferSupportsExplicitSync =
             attachedBufferIsNonNull
@@ -577,19 +574,22 @@ import NucleusTypes
             discardUnapplied(latch)
             return
         }
-        let willHaveBuffer = latch.bufferAttached
+        let willHaveBuffer =
+            latch.bufferAttached
             ? latch.buffer?.isLive == true
             : hasCurrentBuffer
-        let roleBufferPixelSize = latch.bufferAttached
+        let roleBufferPixelSize =
+            latch.bufferAttached
             ? bufferPixelSize(latch.buffer)
             : committedBufferPixelSize()
-        guard role?.validateSurfaceCommit(
-            self,
-            context: SurfaceRoleCommitContext(
-                bufferAttached: latch.bufferAttached,
-                willHaveBuffer: willHaveBuffer,
-                bufferPixelSize: roleBufferPixelSize,
-                bufferScale: latch.bufferScale)) ?? true
+        guard
+            role?.validateSurfaceCommit(
+                self,
+                context: SurfaceRoleCommitContext(
+                    bufferAttached: latch.bufferAttached,
+                    willHaveBuffer: willHaveBuffer,
+                    bufferPixelSize: roleBufferPixelSize,
+                    bufferScale: latch.bufferScale)) ?? true
         else {
             discardUnapplied(latch)
             return
@@ -600,19 +600,22 @@ import NucleusTypes
             let oldReference = currentBufferReference
             let oldWasReleased = currentBufferReleased
             currentBufferReference = latch.buffer
-            current.bufferPixelSize = latch.buffer == nil
+            current.bufferPixelSize =
+                latch.buffer == nil
                 ? BufferPixelSize()
                 : roleBufferPixelSize
             // A replaced buffer is no longer referenced; release it for client reuse.
-            let replaced = oldReference != nil
+            let replaced =
+                oldReference != nil
                 && (latch.buffer == nil
                     || oldReference?.isLive != true
                     || oldReference !== latch.buffer)
             if replaced && !oldWasReleased {
                 if let oldReference,
-                   oldReference.retainedSemanticOwner(
-                    as: DmabufBuffer.self) != nil,
-                   renderIosurfaceId != 0 {
+                    oldReference.retainedSemanticOwner(
+                        as: DmabufBuffer.self) != nil,
+                    renderIosurfaceId != 0
+                {
                     // The imported VkImage aliases client memory. Renderer retirement,
                     // not the next commit, determines when reuse is legal.
                     compositor?.deferBufferRelease(
@@ -652,7 +655,9 @@ import NucleusTypes
         // Latch surface-adjacent state: sticky fields update only when set this
         // commit.
         if latch.auxViewportSourceSet { aux.viewportSource = latch.auxViewportSource }
-        if latch.auxViewportDestinationSet { aux.viewportDestination = latch.auxViewportDestination }
+        if latch.auxViewportDestinationSet {
+            aux.viewportDestination = latch.auxViewportDestination
+        }
         if latch.auxAlphaMultiplierSet {
             aux.alphaMultiplier = latch.auxAlphaMultiplier
         }
@@ -712,10 +717,12 @@ import NucleusTypes
     }
 
     private func validateViewport(_ latch: SurfaceTransaction) -> Bool {
-        let source = latch.auxViewportSourceSet
+        let source =
+            latch.auxViewportSourceSet
             ? latch.auxViewportSource
             : aux.viewportSource
-        let destination = latch.auxViewportDestinationSet
+        let destination =
+            latch.auxViewportDestinationSet
             ? latch.auxViewportDestination
             : aux.viewportDestination
         guard let source else { return true }
@@ -728,7 +735,8 @@ import NucleusTypes
                 "fractional viewport source requires a destination size")
             return false
         }
-        let pixels = latch.bufferAttached
+        let pixels =
+            latch.bufferAttached
             ? bufferPixelSize(latch.buffer)
             : committedBufferPixelSize()
         guard pixels.width != 0, pixels.height != 0 else { return true }
@@ -845,10 +853,11 @@ import NucleusTypes
         // replacement. The compositor outlives this surface and owns the deferred
         // queue, so a destroyed wl_surface cannot orphan its wl_buffer release.
         if !currentBufferReleased,
-           let currentBufferReference,
-           currentBufferReference.retainedSemanticOwner(
-            as: DmabufBuffer.self) != nil,
-           renderIosurfaceId != 0 {
+            let currentBufferReference,
+            currentBufferReference.retainedSemanticOwner(
+                as: DmabufBuffer.self) != nil,
+            renderIosurfaceId != 0
+        {
             compositor?.deferBufferRelease(
                 iosurfaceID: renderIosurfaceId, buffer: currentBufferReference,
                 callback: currentReleaseCallback)

@@ -8,11 +8,11 @@
 // raises bad_value, a request after the wl_surface is gone raises no_surface, and
 // a second get_viewport for one surface raises viewport_exists.
 
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
-import WaylandProtocolTypes
 import NucleusTypes
+import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 @MainActor
 @safe final class WpViewporter {
@@ -24,7 +24,8 @@ extension WpViewporter: WpViewporterRequests {
     func getViewport(
         _ request: WaylandRequest<WpViewporterServer>,
         id: WlNewId<WpViewportServer>,
-                     surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>) {
+        surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>
+    ) {
         guard let surface = surfaceRes.owner(as: WlSurface.self) else { return }
         guard surface.claimAux(.viewport) else {
             request.postError(
@@ -32,14 +33,16 @@ extension WpViewporter: WpViewporterRequests {
                 message: "wl_surface already has a viewport")
             return
         }
-        guard id.create(
-            owner: { handle in
-                WpViewport(resource: handle, surface: surface)
-            },
-            installed: { viewport in
-                surface.viewport = viewport
-            }
-        ) != nil else {
+        guard
+            id.create(
+                owner: { handle in
+                    WpViewport(resource: handle, surface: surface)
+                },
+                installed: { viewport in
+                    surface.viewport = viewport
+                }
+            ) != nil
+        else {
             surface.releaseAux(.viewport)
             return
         }
@@ -73,8 +76,10 @@ extension WpViewporter: WpViewporterRequests {
 }
 
 extension WpViewport: WpViewportRequests {
-    func setSource(_ request: WaylandRequest<WpViewportServer>,
-                   x dx: Double, y dy: Double, width dw: Double, height dh: Double) {
+    func setSource(
+        _ request: WaylandRequest<WpViewportServer>,
+        x dx: Double, y dy: Double, width dw: Double, height dh: Double
+    ) {
         guard let surface else {
             request.postError(.noSurface, message: "wl_surface was destroyed")
             return

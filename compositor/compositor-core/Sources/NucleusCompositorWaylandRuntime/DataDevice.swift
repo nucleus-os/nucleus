@@ -10,12 +10,11 @@
 // client gains focus through the live seat driver.
 
 @unsafe import Glibc
-@unsafe import WaylandServerC
-@unsafe import WaylandServer
-@unsafe import WaylandServerDispatch
-import WaylandProtocolTypes
-
 internal import NucleusCompositorServer
+import WaylandProtocolTypes
+@unsafe import WaylandServer
+@unsafe import WaylandServerC
+@unsafe import WaylandServerDispatch
 
 /// The compositor-policy seam for data-device. Focus decides selection delivery;
 /// start_drag hands the drag session to the compositor's grab/hit-testing.
@@ -207,7 +206,8 @@ private final class WeakSelectionObserver {
         timeMsec: UInt32
     ) -> Bool {
         guard let drag = activeDrag else { return false }
-        let surface = surfaceID == 0
+        let surface =
+            surfaceID == 0
             ? nil
             : compositor.surface(id: UInt32(truncatingIfNeeded: surfaceID))
         let targetClientKey = surface?.protocolResource?.clientID
@@ -242,7 +242,7 @@ private final class WeakSelectionObserver {
         let offers = drag.targetOffers.compactMap(\.value)
         let accepted = offers.contains { $0.canDrop }
         guard drag.targetSurfaceID != 0,
-            (drag.source == nil || accepted)
+            drag.source == nil || accepted
         else {
             cancelActiveDrag(notifySource: true)
             return true
@@ -367,7 +367,8 @@ extension WlDataDeviceManager: WlDataDeviceManagerRequests {
     func getDataDevice(
         _ request: WaylandRequest<WlDataDeviceManagerServer>,
         id: WlNewId<WlDataDeviceServer>,
-                       seat: WaylandBorrowedObject<WlSeatServer>) {
+        seat: WaylandBorrowedObject<WlSeatServer>
+    ) {
         guard let binding = seat.owner(as: SeatBinding.self),
             seat.clientID == id.clientID
         else { return }
@@ -424,18 +425,18 @@ extension WlDataDeviceManager: WlDataDeviceManagerRequests {
         let handle = exchangeHandle
         let resourceHandle = self.resourceHandle
         dataExchange.registerSourceEvents(
-                handle,
-                onSend: { mime, fd in
-                    guard resourceHandle.isLive else {
-                        if fd >= 0 { close(fd) }
-                        return
-                    }
-                    resourceHandle.sendSend(mime_type: mime, fd: fd)
+            handle,
+            onSend: { mime, fd in
+                guard resourceHandle.isLive else {
                     if fd >= 0 { close(fd) }
-                },
-                onCancel: {
-                    resourceHandle.sendCancelled()
-                })
+                    return
+                }
+                resourceHandle.sendSend(mime_type: mime, fd: fd)
+                if fd >= 0 { close(fd) }
+            },
+            onCancel: {
+                resourceHandle.sendCancelled()
+            })
     }
 
     /// Relay a receiving client's fd to this source as a `send` event; the source
@@ -502,13 +503,17 @@ extension WlDataSource: WlDataSourceRequests {
         dataExchange.addMimeType(mime_type, to: exchangeHandle)
     }
 
-    func setActions(_ request: WaylandRequest<WlDataSourceServer>, dnd_actions: WlDataDeviceManagerDndAction) {
+    func setActions(
+        _ request: WaylandRequest<WlDataSourceServer>, dnd_actions: WlDataDeviceManagerDndAction
+    ) {
         guard dnd_actions.rawValue & ~DndActionNegotiation.allowedMask == 0 else {
-            request.postError(.invalidActionMask, message: "drag action mask contains unsupported bits")
+            request.postError(
+                .invalidActionMask, message: "drag action mask contains unsupported bits")
             return
         }
         guard !actionsSet, use == .unused else {
-            request.postError(.invalidSource, message: "drag actions can be set once before the source is used")
+            request.postError(
+                .invalidSource, message: "drag actions can be set once before the source is used")
             return
         }
         actionsSet = true
@@ -540,8 +545,7 @@ extension WlDataSource: SelectionSource {
     private weak var dragSource: WlDataSource?
     private let kind: Kind
     private let resourceHandle: WaylandResourceHandle<WlDataOfferServer>
-    fileprivate var protocolResource:
-        WaylandResourceHandle<WlDataOfferServer> { resourceHandle }
+    fileprivate var protocolResource: WaylandResourceHandle<WlDataOfferServer> { resourceHandle }
     private(set) var version: Int32
     fileprivate var acceptedMimeType: String?
     private var selectedAction: UInt32 = 0
@@ -585,8 +589,10 @@ extension WlDataSource: SelectionSource {
 }
 
 extension WlDataOffer: WlDataOfferRequests {
-    func accept(_ request: WaylandRequest<WlDataOfferServer>, serial: UInt32,
-                mime_type: String?) {
+    func accept(
+        _ request: WaylandRequest<WlDataOfferServer>, serial: UInt32,
+        mime_type: String?
+    ) {
         guard !finished else {
             request.postError(.invalidOffer, message: "offer is already finished")
             return
@@ -599,7 +605,10 @@ extension WlDataOffer: WlDataOfferRequests {
     }
 
     // receive(mime, fd): relay to the source's send event (the data transfer).
-    func receive(_ request: WaylandRequest<WlDataOfferServer>, mime_type: String, fd: consuming WaylandOwnedFileDescriptor) {
+    func receive(
+        _ request: WaylandRequest<WlDataOfferServer>, mime_type: String,
+        fd: consuming WaylandOwnedFileDescriptor
+    ) {
         guard !finished else {
             request.postError(.invalidOffer, message: "offer is already finished")
             return
@@ -614,15 +623,18 @@ extension WlDataOffer: WlDataOfferRequests {
             selectedAction == 1 || selectedAction == 2,
             !finished
         else {
-            request.postError(.invalidFinish, message: "drag offer cannot be finished in its current state")
+            request.postError(
+                .invalidFinish, message: "drag offer cannot be finished in its current state")
             return
         }
         finished = true
         manager?.finishDrag(from: self)
     }
 
-    func setActions(_ request: WaylandRequest<WlDataOfferServer>, dnd_actions: WlDataDeviceManagerDndAction,
-                    preferred_action: WlDataDeviceManagerDndAction) {
+    func setActions(
+        _ request: WaylandRequest<WlDataOfferServer>, dnd_actions: WlDataDeviceManagerDndAction,
+        preferred_action: WlDataDeviceManagerDndAction
+    ) {
         guard kind == .drag, let dragSource, !finished else {
             request.postError(.invalidOffer, message: "actions are valid only on a live drag offer")
             return
@@ -639,9 +651,12 @@ extension WlDataOffer: WlDataOfferRequests {
                 dnd_action: WlDataDeviceManagerDndAction(
                     rawValue: selectedAction))
         } catch DndActionNegotiation.ValidationError.invalidMask {
-            request.postError(.invalidActionMask, message: "destination action mask contains unsupported bits")
+            request.postError(
+                .invalidActionMask, message: "destination action mask contains unsupported bits")
         } catch {
-            request.postError(.invalidAction, message: "preferred action must be one advertised destination action")
+            request.postError(
+                .invalidAction,
+                message: "preferred action must be one advertised destination action")
         }
     }
 }
@@ -653,8 +668,7 @@ extension WlDataOffer: WlDataOfferRequests {
     private weak var seat: WlSeat?
     let clientKey: WaylandClientID
     private let resourceHandle: WaylandResourceHandle<WlDataDeviceServer>
-    fileprivate var protocolResource:
-        WaylandResourceHandle<WlDataDeviceServer> { resourceHandle }
+    fileprivate var protocolResource: WaylandResourceHandle<WlDataDeviceServer> { resourceHandle }
 
     init(
         resource: WaylandResourceHandle<WlDataDeviceServer>,
@@ -712,10 +726,12 @@ extension WlDataOffer: WlDataOfferRequests {
 
 extension WlDataDevice: WlDataDeviceRequests {
     // start_drag(source, origin, icon, serial)
-    func startDrag(_ request: WaylandRequest<WlDataDeviceServer>,
-                   source sourceRes: WaylandBorrowedObject<WlDataSourceServer>?,
-                   origin originRes: WaylandBorrowedObject<WlSurfaceServer>,
-                   icon iconRes: WaylandBorrowedObject<WlSurfaceServer>?, serial: UInt32) {
+    func startDrag(
+        _ request: WaylandRequest<WlDataDeviceServer>,
+        source sourceRes: WaylandBorrowedObject<WlDataSourceServer>?,
+        origin originRes: WaylandBorrowedObject<WlSurfaceServer>,
+        icon iconRes: WaylandBorrowedObject<WlSurfaceServer>?, serial: UInt32
+    ) {
         let source = sourceRes?.owner(as: WlDataSource.self)
         let origin = originRes.owner(as: WlSurface.self)
         let icon = iconRes?.owner(as: WlSurface.self)
@@ -736,18 +752,20 @@ extension WlDataDevice: WlDataDeviceRequests {
         }
         guard let manager else { return }
         let initialTarget = manager.host.inputHost.map { inputHost in
-                let snapshot = inputHost.dispatch.currentSnapshot()
-                let hit = routerHitTest(
-                    host: manager.host,
-                    sx: snapshot.cursorX,
-                    sy: snapshot.cursorY)
-                return (
-                    UInt64(hit.surfaceId),
-                    hit.localX,
-                    hit.localY,
-                    UInt32(truncatingIfNeeded:
-                        InputDispatch.monotonicNowNs() / 1_000_000))
-            }
+            let snapshot = inputHost.dispatch.currentSnapshot()
+            let hit = routerHitTest(
+                host: manager.host,
+                sx: snapshot.cursorX,
+                sy: snapshot.cursorY)
+            return (
+                UInt64(hit.surfaceId),
+                hit.localX,
+                hit.localY,
+                UInt32(
+                    truncatingIfNeeded:
+                        InputDispatch.monotonicNowNs() / 1_000_000)
+            )
+        }
         manager.startDrag(
             source: source,
             origin: origin,
@@ -758,13 +776,16 @@ extension WlDataDevice: WlDataDeviceRequests {
     }
 
     // set_selection(source, serial)
-    func setSelection(_ request: WaylandRequest<WlDataDeviceServer>,
-                      source sourceRes: WaylandBorrowedObject<WlDataSourceServer>?, serial: UInt32) {
+    func setSelection(
+        _ request: WaylandRequest<WlDataDeviceServer>,
+        source sourceRes: WaylandBorrowedObject<WlDataSourceServer>?, serial: UInt32
+    ) {
         let source = sourceRes?.owner(as: WlDataSource.self)
-        guard seat?.authorize(
-            serial: serial,
-            clientKey: clientKey,
-            kinds: [.pointerButton, .touchDown, .keyboardKey]) == true
+        guard
+            seat?.authorize(
+                serial: serial,
+                clientKey: clientKey,
+                kinds: [.pointerButton, .touchDown, .keyboardKey]) == true
         else { return }
         if let source, !source.claimForSelection() {
             request.postError(.usedSource, message: "data source was already used")

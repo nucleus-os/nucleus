@@ -10,6 +10,7 @@
 /// A damage rectangle in device-pixel space. Mirrors `damage.Rect`
 /// (`cg_display.PhysicalRect`).
 internal import NucleusRenderModel
+
 internal import struct NucleusTypes.Rect
 
 typealias DamageRect = PhysicalRect
@@ -125,7 +126,7 @@ struct RemoteHostSnapshot {
     var targetContextId: ContextID
     var rootLayerId: UInt64
     var contextRevision: UInt64
-    var sourceRect: NucleusRenderModel.Rect
+    var sourceRect: NucleusRenderModel.RenderRect
     var visibleRect: DamageRect
     var hostSignature: UInt64
 }
@@ -183,7 +184,7 @@ struct RemoteHostDamageFact {
     var targetContextId: ContextID
     var rootLayerId: UInt64
     var contextRevision: UInt64
-    var sourceRect: NucleusRenderModel.Rect
+    var sourceRect: NucleusRenderModel.RenderRect
     var visibleRect: DamageRect
     var hostSignature: UInt64
 }
@@ -231,14 +232,30 @@ struct SourceStats: Equatable {
     mutating func note(_ source: DamageSource, _ rect: DamageRect) {
         let area = rectArea(rect)
         switch source {
-        case .window: windowRects += 1; windowAreaPx += area
-        case .nativeLayer: nativeLayerRects += 1; nativeLayerAreaPx += area
-        case .nativeLayerStale: nativeLayerStaleRects += 1; nativeLayerStaleAreaPx += area
-        case .remoteHost: remoteHostRects += 1; remoteHostAreaPx += area
-        case .remoteHostStale: remoteHostStaleRects += 1; remoteHostStaleAreaPx += area
-        case .externalCommit: externalCommitRects += 1; externalCommitAreaPx += area
-        case .syntheticExternal: syntheticExternalRects += 1; syntheticExternalAreaPx += area
-        case .compositorExternal: compositorExternalRects += 1; compositorExternalAreaPx += area
+        case .window:
+            windowRects += 1
+            windowAreaPx += area
+        case .nativeLayer:
+            nativeLayerRects += 1
+            nativeLayerAreaPx += area
+        case .nativeLayerStale:
+            nativeLayerStaleRects += 1
+            nativeLayerStaleAreaPx += area
+        case .remoteHost:
+            remoteHostRects += 1
+            remoteHostAreaPx += area
+        case .remoteHostStale:
+            remoteHostStaleRects += 1
+            remoteHostStaleAreaPx += area
+        case .externalCommit:
+            externalCommitRects += 1
+            externalCommitAreaPx += area
+        case .syntheticExternal:
+            syntheticExternalRects += 1
+            syntheticExternalAreaPx += area
+        case .compositorExternal:
+            compositorExternalRects += 1
+            compositorExternalAreaPx += area
         }
     }
 }
@@ -298,7 +315,9 @@ final class DamageTracker {
 
     /// Retire native-layer entries not seen this frame, damaging their last rect.
     /// Mirrors `addStaleNativeLayerDamage`.
-    func addStaleNativeLayerDamage(_ state: FrameDamageCache, _ outputId: DisplayID, _ out: any DamageSink) {
+    func addStaleNativeLayerDamage(
+        _ state: FrameDamageCache, _ outputId: DisplayID, _ out: any DamageSink
+    ) {
         if !nativeLayerFrameActive { return }
         let sinks = DamageSinks(output: out)
         for (key, snapshot) in state.nativeLayers {
@@ -311,7 +330,9 @@ final class DamageTracker {
 
     /// Retire remote-host entries not seen this frame. Mirrors
     /// `addStaleRemoteHostDamage`.
-    func addStaleRemoteHostDamage(_ state: FrameDamageCache, _ outputId: DisplayID, _ out: any DamageSink) {
+    func addStaleRemoteHostDamage(
+        _ state: FrameDamageCache, _ outputId: DisplayID, _ out: any DamageSink
+    ) {
         if !remoteHostFrameActive { return }
         let sinks = DamageSinks(output: out)
         for (key, snapshot) in state.remoteHosts {
@@ -323,8 +344,10 @@ final class DamageTracker {
         }
     }
 
-    func applyLayerFacts(_ state: FrameDamageCache, _ facts: LayerDamageFacts, _ sinks: DamageSinks,
-                         _ probe: any DamageAnimationProbe) {
+    func applyLayerFacts(
+        _ state: FrameDamageCache, _ facts: LayerDamageFacts, _ sinks: DamageSinks,
+        _ probe: any DamageAnimationProbe
+    ) {
         if let fact = facts.remoteHost { trackRemoteHostDamage(state, fact, sinks, probe) }
         if let fact = facts.nativeLayer { trackNativeLayerDamage(state, fact, sinks, probe) }
         if let fact = facts.external {
@@ -332,11 +355,14 @@ final class DamageTracker {
         }
     }
 
-    func trackNativeLayerDamage(_ state: FrameDamageCache, _ fact: NativeLayerDamageFact,
-                                _ sinks: DamageSinks, _ probe: any DamageAnimationProbe) {
+    func trackNativeLayerDamage(
+        _ state: FrameDamageCache, _ fact: NativeLayerDamageFact,
+        _ sinks: DamageSinks, _ probe: any DamageAnimationProbe
+    ) {
         if !nativeLayerFrameActive { return }
         let key = NativeLayerKey(outputId: fact.outputId, layerId: fact.layerId)
-        let current = NativeLayerSnapshot(visibleRect: fact.visibleRect, visualSignature: fact.visualSignature)
+        let current = NativeLayerSnapshot(
+            visibleRect: fact.visibleRect, visualSignature: fact.visualSignature)
 
         var currentAdded = false
         var changed = false
@@ -360,8 +386,10 @@ final class DamageTracker {
         state.nativeLayerPending[key] = current
     }
 
-    func trackRemoteHostDamage(_ state: FrameDamageCache, _ fact: RemoteHostDamageFact,
-                               _ sinks: DamageSinks, _ probe: any DamageAnimationProbe) {
+    func trackRemoteHostDamage(
+        _ state: FrameDamageCache, _ fact: RemoteHostDamageFact,
+        _ sinks: DamageSinks, _ probe: any DamageAnimationProbe
+    ) {
         if !remoteHostFrameActive { return }
         remoteHostStats.seen += 1
         let key = RemoteHostKey(outputId: fact.outputId, hostLayerId: fact.hostLayerId)
@@ -373,8 +401,9 @@ final class DamageTracker {
         var currentAdded = false
         var changed = false
         if let previous = state.remoteHosts[key] {
-            if previous.targetContextId != current.targetContextId ||
-                previous.contextRevision != current.contextRevision {
+            if previous.targetContextId != current.targetContextId
+                || previous.contextRevision != current.contextRevision
+            {
                 remoteHostStats.contextChanged += 1
                 if previous.targetContextId != current.targetContextId { changed = true }
             }
@@ -424,11 +453,10 @@ func rectsEqual(_ a: DamageRect, _ b: DamageRect) -> Bool {
 }
 
 func layerRectsNearlyEqual(
-    _ a: NucleusRenderModel.Rect,
-    _ b: NucleusRenderModel.Rect
+    _ a: NucleusRenderModel.RenderRect,
+    _ b: NucleusRenderModel.RenderRect
 ) -> Bool {
-    abs(a.x - b.x) < 0.01 && abs(a.y - b.y) < 0.01 &&
-        abs(a.w - b.w) < 0.01 && abs(a.h - b.h) < 0.01
+    abs(a.x - b.x) < 0.01 && abs(a.y - b.y) < 0.01 && abs(a.w - b.w) < 0.01 && abs(a.h - b.h) < 0.01
 }
 
 func rectArea(_ rect: DamageRect) -> UInt64 {
@@ -507,7 +535,9 @@ func regionOverlapsRect(_ region: [DamageRect], _ rect: DamageRect) -> Bool {
 /// pre-expansion damage so neighbouring blurred layers don't cascade. Mirrors
 /// `reconcileBackdropBlurDamage`. Returns the count redrawn.
 @discardableResult
-func reconcileBackdropBlurDamage(_ frameDamage: DamageAccumulator, _ blurRegions: [DamageRect]) -> UInt64 {
+func reconcileBackdropBlurDamage(_ frameDamage: DamageAccumulator, _ blurRegions: [DamageRect])
+    -> UInt64
+{
     if blurRegions.isEmpty || frameDamage.isEmpty { return 0 }
     let limit = min(blurRegions.count, 64)
     var overlaps = [Bool](repeating: false, count: limit)

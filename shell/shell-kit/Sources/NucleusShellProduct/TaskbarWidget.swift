@@ -1,4 +1,4 @@
-public import NucleusUI
+package import NucleusUI
 
 @MainActor
 private final class TaskbarWindowButton: Control {
@@ -22,9 +22,10 @@ private final class TaskbarWindowButton: Control {
         snapshot = window
         label.text = window.displayTitle
         isSelected = window.isActive
-        label.textColor = resolve(snapshot.isMinimized
-            ? .role(.onSurfaceVariant)
-            : .role(.onSurface))
+        label.textColor = resolve(
+            snapshot.isMinimized
+                ? .role(.onSurfaceVariant)
+                : .role(.onSurface))
         accessibilityLabel = window.displayTitle
         accessibilityValue = window.isMinimized ? "Minimized" : nil
         invalidateIntrinsicContentSize()
@@ -33,9 +34,10 @@ private final class TaskbarWindowButton: Control {
     }
 
     override func viewDidChangeEffectiveAppearance() {
-        label.textColor = resolve(snapshot.isMinimized
-            ? .role(.onSurfaceVariant)
-            : .role(.onSurface))
+        label.textColor = resolve(
+            snapshot.isMinimized
+                ? .role(.onSurfaceVariant)
+                : .role(.onSurface))
         super.viewDidChangeEffectiveAppearance()
     }
 
@@ -51,10 +53,11 @@ private final class TaskbarWindowButton: Control {
     }
 
     override func layout() {
-        label.centerVertically(in: Rect(
-            x: 8, y: 0,
-            width: max(0, bounds.size.width - 16),
-            height: bounds.size.height))
+        label.centerVertically(
+            in: Rect(
+                x: 8, y: 0,
+                width: max(0, bounds.size.width - 16),
+                height: bounds.size.height))
     }
 
     override func draw(in context: GraphicsContext) {
@@ -77,16 +80,15 @@ private final class TaskbarWindowButton: Control {
 /// handle so title/state changes retain the control, its hover state, and its
 /// accessibility identity.
 @MainActor
-public final class TaskbarWidget: BarWidget {
-    public var onWindowAction:
-        ((UInt64, ShellWindowAction) -> Void)?
+package final class TaskbarWidget: BarWidget {
+    package var onWindowAction: ((UInt64, ShellWindowAction) -> Void)?
 
-    public private(set) var windows: [ShellWindowSnapshot] = []
+    package private(set) var windows: [ShellWindowSnapshot] = []
 
     private let row: StackView
     private var buttonsByID: [UInt64: TaskbarWindowButton] = [:]
 
-    public override init() {
+    package override init() {
         row = StackView(axis: .horizontal, spacing: 6, alignment: .center)
         super.init()
         showsCapsule = false
@@ -95,7 +97,7 @@ public final class TaskbarWidget: BarWidget {
         setBody { row }
     }
 
-    public func update(windows: [ShellWindowSnapshot]) {
+    package func update(windows: [ShellWindowSnapshot]) {
         guard windows != self.windows else { return }
         self.windows = windows
 
@@ -126,7 +128,7 @@ public final class TaskbarWidget: BarWidget {
         setNeedsDisplay()
     }
 
-    public func perform(
+    package func perform(
         _ action: ShellWindowAction,
         forWindow id: UInt64
     ) {
@@ -134,15 +136,15 @@ public final class TaskbarWidget: BarWidget {
         onWindowAction?(id, action)
     }
 
-    public override var intrinsicContentSize: Size {
+    package override var intrinsicContentSize: Size {
         row.measure(.unconstrained)
     }
 
-    public override func measure(_ constraints: LayoutConstraints) -> Size {
+    package override func measure(_ constraints: LayoutConstraints) -> Size {
         row.measure(constraints)
     }
 
-    public override func layout() {
+    package override func layout() {
         row.arrange(in: bounds)
     }
 }

@@ -1,6 +1,6 @@
 import Foundation
-import NucleusConfig
-import NucleusIPCTransport
+public import NucleusConfig
+public import NucleusIPCTransport
 
 public enum ShellPolicyChannelFailure: Error, CustomStringConvertible {
     case invalidDescriptor(String)

@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for zwp_pointer_gesture_pinch_v1.
 
 import WaylandClientC
-public enum ZwpPointerGesturePinchV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum ZwpPointerGesturePinchV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_pointer_gesture_pinch_v1())
-    public nonisolated static let maximumVersion: UInt32 = 3
+    package nonisolated static let maximumVersion: UInt32 = 3
 }
-public extension WaylandProxy where Interface == ZwpPointerGesturePinchV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpPointerGesturePinchV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zwp_pointer_gesture_pinch_v1_destroy(_proxy)
@@ -19,74 +20,106 @@ public extension WaylandProxy where Interface == ZwpPointerGesturePinchV1Client 
     }
 }
 @MainActor
-public protocol ZwpPointerGesturePinchV1Events: AnyObject {
-    func begin(_ proxy: WaylandBorrowedProxy<ZwpPointerGesturePinchV1Client>, serial: UInt32, time: UInt32, surface: WaylandBorrowedProxy<WlSurfaceClient>, fingers: UInt32)
-    func update(_ proxy: WaylandBorrowedProxy<ZwpPointerGesturePinchV1Client>, time: UInt32, dx: Double, dy: Double, scale: Double, rotation: Double)
-    func end(_ proxy: WaylandBorrowedProxy<ZwpPointerGesturePinchV1Client>, serial: UInt32, time: UInt32, cancelled: Int32)
+package protocol ZwpPointerGesturePinchV1Events: AnyObject {
+    func begin(
+        _ proxy: WaylandBorrowedProxy<ZwpPointerGesturePinchV1Client>, serial: UInt32, time: UInt32,
+        surface: WaylandBorrowedProxy<WlSurfaceClient>, fingers: UInt32)
+    func update(
+        _ proxy: WaylandBorrowedProxy<ZwpPointerGesturePinchV1Client>, time: UInt32, dx: Double,
+        dy: Double, scale: Double, rotation: Double)
+    func end(
+        _ proxy: WaylandBorrowedProxy<ZwpPointerGesturePinchV1Client>, serial: UInt32, time: UInt32,
+        cancelled: Int32)
 }
-public extension ZwpPointerGesturePinchV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_pointer_gesture_pinch_v1_listener> = {
-        let p = UnsafeMutablePointer<zwp_pointer_gesture_pinch_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwp_pointer_gesture_pinch_v1_listener())
-        unsafe p.pointee.begin = begin_impl
-        unsafe p.pointee.update = update_impl
-        unsafe p.pointee.end = end_impl
-        return unsafe p
-    }()
-    private static func handler(_ context: WaylandClientListenerContext) -> any ZwpPointerGesturePinchV1Events? {
+package extension ZwpPointerGesturePinchV1Client {
+    package nonisolated(unsafe) static let listener:
+        UnsafeMutablePointer<zwp_pointer_gesture_pinch_v1_listener> = {
+            let p = UnsafeMutablePointer<zwp_pointer_gesture_pinch_v1_listener>.allocate(
+                capacity: 1)
+            unsafe p.initialize(to: zwp_pointer_gesture_pinch_v1_listener())
+            unsafe p.pointee.begin = begin_impl
+            unsafe p.pointee.update = update_impl
+            unsafe p.pointee.end = end_impl
+            return unsafe p
+        }()
+    private static func handler(_ context: WaylandClientListenerContext)
+        -> any ZwpPointerGesturePinchV1Events?
+    {
         context.owner as? any ZwpPointerGesturePinchV1Events
     }
-    private static let begin_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, OpaquePointer?, UInt32) -> Void = { data, proxy, serial, time, surface, fingers in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let begin_impl:
+        @convention(c) (
+            UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, OpaquePointer?, UInt32
+        ) -> Void = { data, proxy, serial, time, surface, fingers in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            nonisolated(unsafe) let _event_surface = unsafe surface
+            MainActor.assumeIsolated {
+                unsafe eventHandler.begin(
+                    WaylandBorrowedProxy<ZwpPointerGesturePinchV1Client>(eventProxy),
+                    serial: serial, time: time,
+                    surface: WaylandBorrowedProxy<WlSurfaceClient>(_event_surface!),
+                    fingers: fingers)
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
+    private static let update_impl:
+        @convention(c) (
+            UnsafeMutableRawPointer?, OpaquePointer?, UInt32, wl_fixed_t, wl_fixed_t, wl_fixed_t,
+            wl_fixed_t
+        ) -> Void = { data, proxy, time, dx, dy, scale, rotation in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.update(
+                    WaylandBorrowedProxy<ZwpPointerGesturePinchV1Client>(eventProxy), time: time,
+                    dx: swift_wayland_fixed_to_double(dx), dy: swift_wayland_fixed_to_double(dy),
+                    scale: swift_wayland_fixed_to_double(scale),
+                    rotation: swift_wayland_fixed_to_double(rotation))
+            }
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_surface = unsafe surface
-        MainActor.assumeIsolated {
-            unsafe eventHandler.begin(WaylandBorrowedProxy<ZwpPointerGesturePinchV1Client>(eventProxy), serial: serial, time: time, surface: WaylandBorrowedProxy<WlSurfaceClient>(_event_surface!), fingers: fingers)
+    private static let end_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, Int32) -> Void = {
+            data, proxy, serial, time, cancelled in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.end(
+                    WaylandBorrowedProxy<ZwpPointerGesturePinchV1Client>(eventProxy),
+                    serial: serial, time: time, cancelled: cancelled)
+            }
         }
-    }
-    private static let update_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, wl_fixed_t, wl_fixed_t, wl_fixed_t, wl_fixed_t) -> Void = { data, proxy, time, dx, dy, scale, rotation in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.update(WaylandBorrowedProxy<ZwpPointerGesturePinchV1Client>(eventProxy), time: time, dx: swift_wayland_fixed_to_double(dx), dy: swift_wayland_fixed_to_double(dy), scale: swift_wayland_fixed_to_double(scale), rotation: swift_wayland_fixed_to_double(rotation))
-        }
-    }
-    private static let end_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, Int32) -> Void = { data, proxy, serial, time, cancelled in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.end(WaylandBorrowedProxy<ZwpPointerGesturePinchV1Client>(eventProxy), serial: serial, time: time, cancelled: cancelled)
-        }
-    }
 }
-public extension WaylandProxy where Interface == ZwpPointerGesturePinchV1Client {
-    func installListener(_ owner: any ZwpPointerGesturePinchV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpPointerGesturePinchV1Client {
+    package func installListener(_ owner: any ZwpPointerGesturePinchV1Events)
+        throws(WaylandProxyError)
+    {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_pointer_gesture_pinch_v1_add_listener(proxy, ZwpPointerGesturePinchV1Client.listener, data)
+            unsafe zwp_pointer_gesture_pinch_v1_add_listener(
+                proxy, ZwpPointerGesturePinchV1Client.listener, data)
         }
     }
 }

@@ -1,12 +1,11 @@
-@_spi(NucleusPlatform)
-public struct CaptureOverlay: Sendable {
-    public var rgbaPixels: [UInt8]
-    public var width: Int32
-    public var height: Int32
-    public var x: Int32
-    public var y: Int32
+package struct CaptureOverlay: Sendable {
+    package var rgbaPixels: [UInt8]
+    package var width: Int32
+    package var height: Int32
+    package var x: Int32
+    package var y: Int32
 
-    public init(
+    package init(
         rgbaPixels: [UInt8],
         width: Int32,
         height: Int32,

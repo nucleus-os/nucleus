@@ -1,7 +1,8 @@
+import NucleusTextBackend
 import NucleusUITestSupport
 import Testing
-import NucleusTextBackend
-@_spi(NucleusRenderServer) @testable import NucleusUI
+
+@testable import NucleusUI
 
 @MainActor
 @Suite(.uiContext, .serialized)
@@ -145,13 +146,17 @@ struct NucleusTextEditorStressTests {
         #expect(editor.handleEvent(key(.end)) == .handled)
         #expect(editor.selectedRange == 6..<6)
 
-        #expect(editor.handleEvent(key(
-            .home,
-            [.command])) == .handled)
+        #expect(
+            editor.handleEvent(
+                key(
+                    .home,
+                    [.command])) == .handled)
         #expect(editor.selectedRange == 0..<0)
-        #expect(editor.handleEvent(key(
-            .end,
-            [.command])) == .handled)
+        #expect(
+            editor.handleEvent(
+                key(
+                    .end,
+                    [.command])) == .handled)
         let end = editor.stringValue.utf16.count
         #expect(editor.selectedRange == end..<end)
 
@@ -191,10 +196,12 @@ struct NucleusTextEditorStressTests {
         editor.setMarkedText("にほん", selectedRange: nil)
         editor.insertText("日本")
         #expect(editor.stringValue == "ab日本")
-        #expect(editor.handleEvent(key(
-            .unknown,
-            [.command],
-            characters: "z")) == .handled)
+        #expect(
+            editor.handleEvent(
+                key(
+                    .unknown,
+                    [.command],
+                    characters: "z")) == .handled)
         #expect(editor.stringValue == "ab")
 
         let pasteboard = Pasteboard(
@@ -247,8 +254,10 @@ struct NucleusTextEditorStressTests {
             tree.snapshot.nodes[editor.accessibilityID])
         #expect(second.id == first.id)
         #expect(second.textSelection?.utf16Range == 6..<12)
-        #expect(!editor.accessibilityRects(
-            forUTF16Range: 6..<12).isEmpty)
+        #expect(
+            !editor.accessibilityRects(
+                forUTF16Range: 6..<12
+            ).isEmpty)
     }
 
     @Test

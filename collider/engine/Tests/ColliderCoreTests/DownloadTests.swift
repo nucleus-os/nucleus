@@ -337,13 +337,10 @@ struct DownloadPolicyTests {
         }
         #expect(!FileManager.default.fileExists(
             atPath: fixture.candidate.path))
-        if let enumerator = FileManager.default.enumerator(
-            at: fixture.directory.appendingPathComponent("cache"),
-            includingPropertiesForKeys: nil)
+        for url in directoryURLs(
+            at: fixture.directory.appendingPathComponent("cache"))
         {
-            for case let url as URL in enumerator {
-                #expect(!url.lastPathComponent.hasPrefix("transfer-"))
-            }
+            #expect(!url.lastPathComponent.hasPrefix("transfer-"))
         }
     }
 
@@ -359,14 +356,8 @@ struct DownloadPolicyTests {
         defer { fixture.remove() }
         try await fixture.download()
         let cache = fixture.directory.appendingPathComponent("cache")
-        let enumerator = try #require(FileManager.default.enumerator(
-            at: cache,
-            includingPropertiesForKeys: nil))
-        var manifests: [URL] = []
-        for case let url as URL in enumerator
-            where url.lastPathComponent == "manifest.json"
-        {
-            manifests.append(url)
+        let manifests = directoryURLs(at: cache).filter {
+            $0.lastPathComponent == "manifest.json"
         }
         let manifest = try String(
             contentsOf: #require(manifests.first),
@@ -549,12 +540,18 @@ private func expectFailure(
         #expect(error.description.contains(expectedMessage))
     }
     #expect(!FileManager.default.fileExists(atPath: fixture.candidate.path))
-    if let enumerator = FileManager.default.enumerator(
-        at: fixture.directory.appendingPathComponent("cache"),
-        includingPropertiesForKeys: nil)
+    for url in directoryURLs(
+        at: fixture.directory.appendingPathComponent("cache"))
     {
-        for case let url as URL in enumerator {
-            #expect(!url.lastPathComponent.hasPrefix("transfer-"))
-        }
+        #expect(!url.lastPathComponent.hasPrefix("transfer-"))
     }
+}
+
+private func directoryURLs(at root: URL) -> [URL] {
+    guard
+        let enumerator = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: nil)
+    else { return [] }
+    return enumerator.compactMap { $0 as? URL }
 }

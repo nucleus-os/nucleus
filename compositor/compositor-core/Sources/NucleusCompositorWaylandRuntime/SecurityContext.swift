@@ -12,21 +12,21 @@
 // no consent step. Those globals are hidden from sandboxed clients here.
 
 import Glibc
+import WaylandProtocolTypes
 import WaylandServer
 import WaylandServerC
 import WaylandServerDispatch
-import WaylandProtocolTypes
 
 /// The sandbox identity a client connected under.
-public struct SecurityContextIdentity: Equatable, Hashable, Sendable {
+package struct SecurityContextIdentity: Equatable, Hashable, Sendable {
     /// Reverse-DNS name of the sandbox technology, e.g. `org.flatpak`.
-    public var sandboxEngine: String
+    package var sandboxEngine: String
     /// The confined application's identifier within that engine.
-    public var appID: String
+    package var appID: String
     /// Distinguishes two instances of the same application.
-    public var instanceID: String
+    package var instanceID: String
 
-    public init(sandboxEngine: String, appID: String = "", instanceID: String = "") {
+    package init(sandboxEngine: String, appID: String = "", instanceID: String = "") {
         self.sandboxEngine = sandboxEngine
         self.appID = appID
         self.instanceID = instanceID
@@ -44,8 +44,8 @@ public struct SecurityContextIdentity: Equatable, Hashable, Sendable {
 /// The security-context manager withholds itself, so a sandboxed client cannot
 /// mint an identity — nesting is forbidden by the protocol, and hiding the
 /// global is the enforcement that makes the error unreachable in practice.
-public enum PrivilegedGlobals {
-    public static let interfaceNames: Set<String> = [
+package enum PrivilegedGlobals {
+    package static let interfaceNames: Set<String> = [
         "ext_data_control_manager_v1",
         "zwlr_data_control_manager_v1",
         "zwlr_screencopy_manager_v1",
@@ -67,7 +67,7 @@ public enum PrivilegedGlobals {
     /// Confinement is the only rule here. Xwayland's protocol is scoped to one
     /// specific client rather than to confinement, so `RouterHost` owns that
     /// rule and applies it before consulting this one.
-    public static func allows(
+    package static func allows(
         interface: String, identity: SecurityContextIdentity?
     ) -> Bool {
         guard identity != nil else { return true }

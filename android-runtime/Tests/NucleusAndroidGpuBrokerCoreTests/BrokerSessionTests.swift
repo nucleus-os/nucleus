@@ -1,9 +1,9 @@
 import Glibc
 import Testing
-import NucleusAndroidGraphicsContract
-import NucleusAndroidGraphicsPlatform
+internal import NucleusAndroidGraphicsContract
+internal import NucleusAndroidGraphicsPlatform
 @testable import NucleusAndroidGpuBrokerCore
-import NucleusAndroidIPC
+internal import NucleusAndroidIPC
 
 @Test func brokerRejectsProtocolRequestsBeforeHello() throws {
     let (client, server) = try BrokerPacketConnection.socketPair()

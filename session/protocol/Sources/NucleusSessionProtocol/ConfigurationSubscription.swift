@@ -1,7 +1,7 @@
 import Foundation
 import Glibc
 public import NucleusConfig
-import NucleusIPCTransport
+internal import NucleusIPCTransport
 
 public enum SessionProtocolVersion {
     public static let current: UInt16 = 2

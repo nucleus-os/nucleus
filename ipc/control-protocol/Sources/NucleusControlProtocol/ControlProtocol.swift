@@ -1,28 +1,28 @@
 import Foundation
-public import NucleusConfig
-public import NucleusFoundation
+package import NucleusConfig
+package import NucleusFoundation
 
-public enum ControlProtocolVersion {
-    public static let current: UInt16 = 2
+package enum ControlProtocolVersion {
+    package static let current: UInt16 = 2
 }
 
-public struct ControlRequestID:
+package struct ControlRequestID:
     RawRepresentable, Codable, Hashable, Sendable
 {
-    public var rawValue: UInt64
+    package var rawValue: UInt64
 
-    public init(rawValue: UInt64) {
+    package init(rawValue: UInt64) {
         self.rawValue = rawValue
     }
 }
 
-public struct ControlRequestEnvelope: Codable, Equatable, Sendable {
-    public var protocolVersion: UInt16
-    public var requestId: ControlRequestID
-    public var requestID: ControlRequestID { requestId }
-    public var request: ControlRequest
+package struct ControlRequestEnvelope: Codable, Equatable, Sendable {
+    package var protocolVersion: UInt16
+    package var requestId: ControlRequestID
+    package var requestID: ControlRequestID { requestId }
+    package var request: ControlRequest
 
-    public init(
+    package init(
         protocolVersion: UInt16 = ControlProtocolVersion.current,
         requestID: ControlRequestID,
         request: ControlRequest
@@ -33,13 +33,13 @@ public struct ControlRequestEnvelope: Codable, Equatable, Sendable {
     }
 }
 
-public struct ControlResponseEnvelope: Codable, Equatable, Sendable {
-    public var protocolVersion: UInt16
-    public var requestId: ControlRequestID
-    public var requestID: ControlRequestID { requestId }
-    public var response: ControlResponse
+package struct ControlResponseEnvelope: Codable, Equatable, Sendable {
+    package var protocolVersion: UInt16
+    package var requestId: ControlRequestID
+    package var requestID: ControlRequestID { requestId }
+    package var response: ControlResponse
 
-    public init(
+    package init(
         protocolVersion: UInt16 = ControlProtocolVersion.current,
         requestID: ControlRequestID,
         response: ControlResponse
@@ -50,7 +50,7 @@ public struct ControlResponseEnvelope: Codable, Equatable, Sendable {
     }
 }
 
-public enum ControlProtocolError: Error, Equatable, Sendable {
+package enum ControlProtocolError: Error, Equatable, Sendable {
     case unsupportedVersion(expected: UInt16, actual: UInt16)
     case mismatchedRequestID(
         expected: ControlRequestID,
@@ -58,7 +58,7 @@ public enum ControlProtocolError: Error, Equatable, Sendable {
 }
 
 /// One deterministic JSON envelope is carried in each `SOCK_SEQPACKET` packet.
-public enum ControlRequest: Codable, Equatable, Sendable {
+package enum ControlRequest: Codable, Equatable, Sendable {
     case version
     case action(BindAction)
     case configuration
@@ -75,7 +75,7 @@ public enum ControlRequest: Codable, Equatable, Sendable {
         case source
     }
 
-    public init(from decoder: any Decoder) throws {
+    package init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let name = try container.decode(String.self, forKey: .request)
         switch name {
@@ -102,7 +102,7 @@ public enum ControlRequest: Codable, Equatable, Sendable {
         }
     }
 
-    public func encode(to encoder: any Encoder) throws {
+    package func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
         case .version:
@@ -130,18 +130,18 @@ public enum ControlRequest: Codable, Equatable, Sendable {
     }
 }
 
-public struct ControlOutput: Codable, Equatable, Sendable {
-    public var id: OutputID
-    public var name: String
-    public var width: UInt32
-    public var height: UInt32
-    public var refreshMillihertz: UInt32
-    public var scale: Double
-    public var x: Int32
-    public var y: Int32
-    public var enabled: Bool
+package struct ControlOutput: Codable, Equatable, Sendable {
+    package var id: OutputID
+    package var name: String
+    package var width: UInt32
+    package var height: UInt32
+    package var refreshMillihertz: UInt32
+    package var scale: Double
+    package var x: Int32
+    package var y: Int32
+    package var enabled: Bool
 
-    public init(
+    package init(
         id: OutputID,
         name: String,
         width: UInt32,
@@ -164,7 +164,7 @@ public struct ControlOutput: Codable, Equatable, Sendable {
     }
 }
 
-public enum ControlErrorCode: String, Codable, Equatable, Sendable {
+package enum ControlErrorCode: String, Codable, Equatable, Sendable {
     case invalidRequest
     case ownerUnavailable
     case staleGeneration
@@ -174,32 +174,32 @@ public enum ControlErrorCode: String, Codable, Equatable, Sendable {
     case unsupportedVersion
 }
 
-public struct ControlFailure: Codable, Equatable, Sendable {
-    public var code: ControlErrorCode
-    public var message: String
+package struct ControlFailure: Codable, Equatable, Sendable {
+    package var code: ControlErrorCode
+    package var message: String
 
-    public init(code: ControlErrorCode, message: String) {
+    package init(code: ControlErrorCode, message: String) {
         self.code = code
         self.message = message
     }
 }
 
-public struct ControlOwnerAvailability: Codable, Equatable, Sendable {
-    public var available: Bool
-    public var version: String?
+package struct ControlOwnerAvailability: Codable, Equatable, Sendable {
+    package var available: Bool
+    package var version: String?
 
-    public init(available: Bool, version: String? = nil) {
+    package init(available: Bool, version: String? = nil) {
         self.available = available
         self.version = version
     }
 }
 
-public struct ControlVersionInfo: Codable, Equatable, Sendable {
-    public var controlProtocolVersion: UInt16
-    public var configurationService: ControlOwnerAvailability
-    public var renderServer: ControlOwnerAvailability
+package struct ControlVersionInfo: Codable, Equatable, Sendable {
+    package var controlProtocolVersion: UInt16
+    package var configurationService: ControlOwnerAvailability
+    package var renderServer: ControlOwnerAvailability
 
-    public init(
+    package init(
         controlProtocolVersion: UInt16 = ControlProtocolVersion.current,
         configurationService: ControlOwnerAvailability,
         renderServer: ControlOwnerAvailability
@@ -210,14 +210,14 @@ public struct ControlVersionInfo: Codable, Equatable, Sendable {
     }
 }
 
-public struct ControlConfigurationSnapshot: Codable, Equatable, Sendable {
-    public var canonicalSource: String
-    public var configuredEpochHigh: UInt64
-    public var configuredEpochLow: UInt64
-    public var configuredGeneration: UInt64
-    public var renderServerAppliedGeneration: UInt64?
+package struct ControlConfigurationSnapshot: Codable, Equatable, Sendable {
+    package var canonicalSource: String
+    package var configuredEpochHigh: UInt64
+    package var configuredEpochLow: UInt64
+    package var configuredGeneration: UInt64
+    package var renderServerAppliedGeneration: UInt64?
 
-    public init(
+    package init(
         canonicalSource: String,
         configuredEpochHigh: UInt64,
         configuredEpochLow: UInt64,
@@ -232,11 +232,11 @@ public struct ControlConfigurationSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-public struct ControlOutputSnapshot: Codable, Equatable, Sendable {
-    public var outputs: [ControlOutput]
-    public var appliedConfigurationGeneration: UInt64
+package struct ControlOutputSnapshot: Codable, Equatable, Sendable {
+    package var outputs: [ControlOutput]
+    package var appliedConfigurationGeneration: UInt64
 
-    public init(
+    package init(
         outputs: [ControlOutput],
         appliedConfigurationGeneration: UInt64
     ) {
@@ -245,11 +245,11 @@ public struct ControlOutputSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-public struct ControlBindingSnapshot: Codable, Equatable, Sendable {
-    public var binds: [KeyBind]
-    public var appliedConfigurationGeneration: UInt64
+package struct ControlBindingSnapshot: Codable, Equatable, Sendable {
+    package var binds: [KeyBind]
+    package var appliedConfigurationGeneration: UInt64
 
-    public init(
+    package init(
         binds: [KeyBind],
         appliedConfigurationGeneration: UInt64
     ) {
@@ -258,7 +258,7 @@ public struct ControlBindingSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-public enum ControlResponse: Codable, Equatable, Sendable {
+package enum ControlResponse: Codable, Equatable, Sendable {
     case version(ControlVersionInfo)
     case accepted
     case completed
@@ -279,7 +279,7 @@ public enum ControlResponse: Codable, Equatable, Sendable {
         case message
     }
 
-    public init(from decoder: any Decoder) throws {
+    package init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let name = try container.decode(String.self, forKey: .response)
         switch name {
@@ -321,7 +321,7 @@ public enum ControlResponse: Codable, Equatable, Sendable {
         }
     }
 
-    public func encode(to encoder: any Encoder) throws {
+    package func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
         case .accepted:
@@ -351,21 +351,21 @@ public enum ControlResponse: Codable, Equatable, Sendable {
     }
 }
 
-public enum ControlCoding {
-    public static func encoder() -> JSONEncoder {
+package enum ControlCoding {
+    package static func encoder() -> JSONEncoder {
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
         encoder.outputFormatting = [.sortedKeys]
         return encoder
     }
 
-    public static func decoder() -> JSONDecoder {
+    package static func decoder() -> JSONDecoder {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return decoder
     }
 
-    public static func packet(_ value: some Encodable) throws -> [UInt8] {
+    package static func packet(_ value: some Encodable) throws -> [UInt8] {
         [UInt8](try encoder().encode(value))
     }
 }

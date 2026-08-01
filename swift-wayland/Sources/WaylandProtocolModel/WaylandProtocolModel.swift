@@ -4,25 +4,25 @@ import Foundation
 import FoundationXML
 #endif
 
-public struct WaylandDescription: Equatable, Sendable {
-    public let summary: String?
-    public let body: String?
+package struct WaylandDescription: Equatable, Sendable {
+    package let summary: String?
+    package let body: String?
 
-    public init(summary: String?, body: String?) {
+    package init(summary: String?, body: String?) {
         self.summary = summary
         self.body = body
     }
 }
 
-public struct WaylandArgument: Equatable, Sendable {
-    public let name: String
-    public let type: String
-    public let interface: String?
-    public let allowNull: Bool
-    public let enumName: String?
-    public let summary: String?
+package struct WaylandArgument: Equatable, Sendable {
+    package let name: String
+    package let type: String
+    package let interface: String?
+    package let allowNull: Bool
+    package let enumName: String?
+    package let summary: String?
 
-    public init(
+    package init(
         name: String,
         type: String,
         interface: String?,
@@ -39,14 +39,14 @@ public struct WaylandArgument: Equatable, Sendable {
     }
 }
 
-public struct WaylandMessage: Equatable, Sendable {
-    public let name: String
-    public let isDestructor: Bool
-    public let since: Int
-    public var arguments: [WaylandArgument]
-    public var description: WaylandDescription?
+package struct WaylandMessage: Equatable, Sendable {
+    package let name: String
+    package let isDestructor: Bool
+    package let since: Int
+    package var arguments: [WaylandArgument]
+    package var description: WaylandDescription?
 
-    public init(
+    package init(
         name: String,
         isDestructor: Bool,
         since: Int,
@@ -61,14 +61,14 @@ public struct WaylandMessage: Equatable, Sendable {
     }
 }
 
-public struct WaylandEnumEntry: Equatable, Sendable {
-    public let name: String
-    public let value: String
-    public let summary: String?
-    public let since: Int
-    public let deprecatedSince: Int?
+package struct WaylandEnumEntry: Equatable, Sendable {
+    package let name: String
+    package let value: String
+    package let summary: String?
+    package let since: Int
+    package let deprecatedSince: Int?
 
-    public init(
+    package init(
         name: String,
         value: String,
         summary: String?,
@@ -83,14 +83,14 @@ public struct WaylandEnumEntry: Equatable, Sendable {
     }
 }
 
-public struct WaylandEnumeration: Equatable, Sendable {
-    public let name: String
-    public let isBitfield: Bool
-    public let since: Int
-    public var entries: [WaylandEnumEntry]
-    public var description: WaylandDescription?
+package struct WaylandEnumeration: Equatable, Sendable {
+    package let name: String
+    package let isBitfield: Bool
+    package let since: Int
+    package var entries: [WaylandEnumEntry]
+    package var description: WaylandDescription?
 
-    public init(
+    package init(
         name: String,
         isBitfield: Bool,
         since: Int,
@@ -105,17 +105,17 @@ public struct WaylandEnumeration: Equatable, Sendable {
     }
 }
 
-public struct WaylandInterface: Equatable, Sendable {
-    public let name: String
-    public let version: Int
-    public var requests: [WaylandMessage]
-    public var events: [WaylandMessage]
-    public var enumerations: [WaylandEnumeration]
-    public var description: WaylandDescription?
+package struct WaylandInterface: Equatable, Sendable {
+    package let name: String
+    package let version: Int
+    package var requests: [WaylandMessage]
+    package var events: [WaylandMessage]
+    package var enumerations: [WaylandEnumeration]
+    package var description: WaylandDescription?
 
-    public var requestCount: Int { requests.count }
+    package var requestCount: Int { requests.count }
 
-    public init(
+    package init(
         name: String,
         version: Int,
         requests: [WaylandMessage] = [],
@@ -132,14 +132,14 @@ public struct WaylandInterface: Equatable, Sendable {
     }
 }
 
-public struct WaylandProtocol: Equatable, Sendable {
-    public var name: String
-    public var xmlPath: String
-    public var interfaces: [WaylandInterface]
-    public var definedInterfaces: Set<String>
-    public var referencedInterfaces: Set<String>
+package struct WaylandProtocol: Equatable, Sendable {
+    package var name: String
+    package var xmlPath: String
+    package var interfaces: [WaylandInterface]
+    package var definedInterfaces: Set<String>
+    package var referencedInterfaces: Set<String>
 
-    public init(
+    package init(
         name: String = "",
         xmlPath: String = "",
         interfaces: [WaylandInterface] = [],
@@ -154,13 +154,13 @@ public struct WaylandProtocol: Equatable, Sendable {
     }
 }
 
-public enum WaylandProtocolParseError: Error, Equatable, CustomStringConvertible {
+package enum WaylandProtocolParseError: Error, Equatable, CustomStringConvertible {
     case invalidXML(path: String, message: String)
     case missingAttribute(path: String, element: String, attribute: String)
     case invalidInteger(path: String, element: String, attribute: String, value: String)
     case nestedMessage(path: String, interface: String)
 
-    public var description: String {
+    package var description: String {
         switch self {
         case .invalidXML(let path, let message):
             return "\(path): invalid Wayland protocol XML: \(message)"
@@ -174,8 +174,8 @@ public enum WaylandProtocolParseError: Error, Equatable, CustomStringConvertible
     }
 }
 
-public enum WaylandProtocolParser {
-    public static func parse(path: String) throws -> WaylandProtocol {
+package enum WaylandProtocolParser {
+    package static func parse(path: String) throws -> WaylandProtocol {
         guard let data = FileManager.default.contents(atPath: path) else {
             throw WaylandProtocolParseError.invalidXML(
                 path: path,
@@ -184,7 +184,7 @@ public enum WaylandProtocolParser {
         return try parse(data: data, path: path)
     }
 
-    public static func parse(data: Data, path: String = "<memory>") throws -> WaylandProtocol {
+    package static func parse(data: Data, path: String = "<memory>") throws -> WaylandProtocol {
         let delegate = ParserDelegate(path: path)
         let parser = XMLParser(data: data)
         parser.delegate = delegate

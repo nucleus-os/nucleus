@@ -2,24 +2,32 @@
 // Typed client descriptor and event dispatch for ext_image_copy_capture_cursor_session_v1.
 
 import WaylandClientC
-public enum ExtImageCopyCaptureCursorSessionV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum ExtImageCopyCaptureCursorSessionV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_ext_image_copy_capture_cursor_session_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == ExtImageCopyCaptureCursorSessionV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ExtImageCopyCaptureCursorSessionV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
-            unsafe swift_wayland_client_request_ext_image_copy_capture_cursor_session_v1_destroy(_proxy)
+            unsafe swift_wayland_client_request_ext_image_copy_capture_cursor_session_v1_destroy(
+                _proxy)
             return
         }
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func getCaptureSession() throws(WaylandProxyError) -> WaylandProxy<ExtImageCopyCaptureSessionV1Client> {
+    package func getCaptureSession() throws(WaylandProxyError) -> WaylandProxy<
+        ExtImageCopyCaptureSessionV1Client
+    > {
         let _proxy = try unsafe requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_ext_image_copy_capture_cursor_session_v1_get_capture_session(_proxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_ext_image_copy_capture_cursor_session_v1_get_capture_session(
+                    _proxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
@@ -27,90 +35,111 @@ public extension WaylandProxy where Interface == ExtImageCopyCaptureCursorSessio
     }
 }
 @MainActor
-public protocol ExtImageCopyCaptureCursorSessionV1Events: AnyObject {
+package protocol ExtImageCopyCaptureCursorSessionV1Events: AnyObject {
     func enter(_ proxy: WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>)
     func leave(_ proxy: WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>)
-    func position(_ proxy: WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>, x: Int32, y: Int32)
-    func hotspot(_ proxy: WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>, x: Int32, y: Int32)
+    func position(
+        _ proxy: WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>, x: Int32, y: Int32)
+    func hotspot(
+        _ proxy: WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>, x: Int32, y: Int32)
 }
-public extension ExtImageCopyCaptureCursorSessionV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<ext_image_copy_capture_cursor_session_v1_listener> = {
-        let p = UnsafeMutablePointer<ext_image_copy_capture_cursor_session_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: ext_image_copy_capture_cursor_session_v1_listener())
-        unsafe p.pointee.enter = enter_impl
-        unsafe p.pointee.leave = leave_impl
-        unsafe p.pointee.position = position_impl
-        unsafe p.pointee.hotspot = hotspot_impl
-        return unsafe p
-    }()
-    private static func handler(_ context: WaylandClientListenerContext) -> any ExtImageCopyCaptureCursorSessionV1Events? {
+package extension ExtImageCopyCaptureCursorSessionV1Client {
+    package nonisolated(unsafe) static let listener:
+        UnsafeMutablePointer<ext_image_copy_capture_cursor_session_v1_listener> = {
+            let p = UnsafeMutablePointer<ext_image_copy_capture_cursor_session_v1_listener>
+                .allocate(capacity: 1)
+            unsafe p.initialize(to: ext_image_copy_capture_cursor_session_v1_listener())
+            unsafe p.pointee.enter = enter_impl
+            unsafe p.pointee.leave = leave_impl
+            unsafe p.pointee.position = position_impl
+            unsafe p.pointee.hotspot = hotspot_impl
+            return unsafe p
+        }()
+    private static func handler(_ context: WaylandClientListenerContext)
+        -> any ExtImageCopyCaptureCursorSessionV1Events?
+    {
         context.owner as? any ExtImageCopyCaptureCursorSessionV1Events
     }
-    private static let enter_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let enter_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.enter(
+                    WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>(eventProxy))
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
+    private static let leave_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.leave(
+                    WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>(eventProxy))
+            }
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.enter(WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>(eventProxy))
+    private static let position_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = {
+            data, proxy, x, y in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.position(
+                    WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>(eventProxy),
+                    x: x, y: y)
+            }
         }
-    }
-    private static let leave_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let hotspot_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = {
+            data, proxy, x, y in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.hotspot(
+                    WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>(eventProxy),
+                    x: x, y: y)
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.leave(WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>(eventProxy))
-        }
-    }
-    private static let position_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = { data, proxy, x, y in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.position(WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>(eventProxy), x: x, y: y)
-        }
-    }
-    private static let hotspot_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = { data, proxy, x, y in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.hotspot(WaylandBorrowedProxy<ExtImageCopyCaptureCursorSessionV1Client>(eventProxy), x: x, y: y)
-        }
-    }
 }
-public extension WaylandProxy where Interface == ExtImageCopyCaptureCursorSessionV1Client {
-    func installListener(_ owner: any ExtImageCopyCaptureCursorSessionV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ExtImageCopyCaptureCursorSessionV1Client {
+    package func installListener(_ owner: any ExtImageCopyCaptureCursorSessionV1Events)
+        throws(WaylandProxyError)
+    {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe ext_image_copy_capture_cursor_session_v1_add_listener(proxy, ExtImageCopyCaptureCursorSessionV1Client.listener, data)
+            unsafe ext_image_copy_capture_cursor_session_v1_add_listener(
+                proxy, ExtImageCopyCaptureCursorSessionV1Client.listener, data)
         }
     }
 }

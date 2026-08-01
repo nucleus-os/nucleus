@@ -2,25 +2,30 @@
 // Typed client descriptor and event dispatch for ext_data_control_offer_v1.
 
 import WaylandClientC
-public enum ExtDataControlOfferV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum ExtDataControlOfferV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_ext_data_control_offer_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == ExtDataControlOfferV1Client {
-    func receive(mime_type: String, fd: consuming WaylandClientOwnedFileDescriptor) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ExtDataControlOfferV1Client {
+    package func receive(mime_type: String, fd: consuming WaylandClientOwnedFileDescriptor)
+        throws(WaylandProxyError)
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _fdDescriptor = fd.take()
         defer {
             WaylandClientOwnedFileDescriptor.closeTransferred(
                 _fdDescriptor)
         }
-        return try mime_type.withCString { (_mime_typeCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
-            unsafe swift_wayland_client_request_ext_data_control_offer_v1_receive(_proxy, _mime_typeCString, _fdDescriptor)
+        return try mime_type.withCString {
+            (_mime_typeCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_ext_data_control_offer_v1_receive(
+                _proxy, _mime_typeCString, _fdDescriptor)
             return
         }
     }
-    func destroy() throws(WaylandProxyError) {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_ext_data_control_offer_v1_destroy(_proxy)
@@ -31,40 +36,49 @@ public extension WaylandProxy where Interface == ExtDataControlOfferV1Client {
     }
 }
 @MainActor
-public protocol ExtDataControlOfferV1Events: AnyObject {
+package protocol ExtDataControlOfferV1Events: AnyObject {
     func offer(_ proxy: WaylandBorrowedProxy<ExtDataControlOfferV1Client>, mime_type: String)
 }
-public extension ExtDataControlOfferV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<ext_data_control_offer_v1_listener> = {
-        let p = UnsafeMutablePointer<ext_data_control_offer_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: ext_data_control_offer_v1_listener())
-        unsafe p.pointee.offer = offer_impl
-        return unsafe p
-    }()
-    private static func handler(_ context: WaylandClientListenerContext) -> any ExtDataControlOfferV1Events? {
+package extension ExtDataControlOfferV1Client {
+    package nonisolated(unsafe) static let listener:
+        UnsafeMutablePointer<ext_data_control_offer_v1_listener> = {
+            let p = UnsafeMutablePointer<ext_data_control_offer_v1_listener>.allocate(capacity: 1)
+            unsafe p.initialize(to: ext_data_control_offer_v1_listener())
+            unsafe p.pointee.offer = offer_impl
+            return unsafe p
+        }()
+    private static func handler(_ context: WaylandClientListenerContext)
+        -> any ExtDataControlOfferV1Events?
+    {
         context.owner as? any ExtDataControlOfferV1Events
     }
-    private static let offer_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, mime_type in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let offer_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = {
+            data, proxy, mime_type in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            nonisolated(unsafe) let _event_mime_type = unsafe mime_type
+            MainActor.assumeIsolated {
+                unsafe eventHandler.offer(
+                    WaylandBorrowedProxy<ExtDataControlOfferV1Client>(eventProxy),
+                    mime_type: unsafe String(cString: _event_mime_type!))
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_mime_type = unsafe mime_type
-        MainActor.assumeIsolated {
-            unsafe eventHandler.offer(WaylandBorrowedProxy<ExtDataControlOfferV1Client>(eventProxy), mime_type: unsafe String(cString: _event_mime_type!))
-        }
-    }
 }
-public extension WaylandProxy where Interface == ExtDataControlOfferV1Client {
-    func installListener(_ owner: any ExtDataControlOfferV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ExtDataControlOfferV1Client {
+    package func installListener(_ owner: any ExtDataControlOfferV1Events) throws(WaylandProxyError)
+    {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe ext_data_control_offer_v1_add_listener(proxy, ExtDataControlOfferV1Client.listener, data)
+            unsafe ext_data_control_offer_v1_add_listener(
+                proxy, ExtDataControlOfferV1Client.listener, data)
         }
     }
 }

@@ -1,11 +1,11 @@
-public import WaylandServerC
+package import WaylandServerC
 
 /// A read-only, request-scoped view over a Wayland `array` argument.
 ///
 /// The view exposes bytes without exposing `wl_array`. Typed loads reject
 /// misaligned sizes instead of silently truncating a malformed wire value.
 @MainActor
-@safe public struct WaylandArrayView: ~Escapable {
+@safe package struct WaylandArrayView: ~Escapable {
     @unsafe private let array: UnsafeMutablePointer<wl_array>
 
     @_lifetime(borrow array)
@@ -13,15 +13,15 @@ public import WaylandServerC
         unsafe self.array = copy array
     }
 
-    public var byteCount: Int {
+    package var byteCount: Int {
         unsafe array.pointee.size
     }
 
-    public var isEmpty: Bool {
+    package var isEmpty: Bool {
         byteCount == 0
     }
 
-    public func withUnsafeBytes<Result: ~Copyable, E: Error>(
+    package func withUnsafeBytes<Result: ~Copyable, E: Error>(
         _ body: (UnsafeRawBufferPointer) throws(E) -> Result
     ) throws(E) -> Result {
         let count = byteCount
@@ -32,7 +32,7 @@ public import WaylandServerC
             UnsafeRawBufferPointer(start: array.pointee.data, count: count))
     }
 
-    public func copiedElements<Element>(
+    package func copiedElements<Element>(
         of _: Element.Type = Element.self
     ) -> [Element]? {
         let stride = MemoryLayout<Element>.stride

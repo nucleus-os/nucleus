@@ -1,9 +1,9 @@
 import Foundation
 import Glibc
-import NucleusAndroidGraphicsContract
-import NucleusAndroidGraphicsPlatform
+internal import NucleusAndroidGraphicsContract
+internal import NucleusAndroidGraphicsPlatform
 import NucleusAndroidGpuBrokerCore
-import NucleusAndroidIPC
+internal import NucleusAndroidIPC
 import NucleusAndroidProcessLifecycleC
 import NucleusIPCTransportC
 import NucleusLinuxReactor

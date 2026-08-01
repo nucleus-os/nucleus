@@ -34,7 +34,8 @@ extension AtSPIService {
             guard let index = readInt32(message) else {
                 return invalidArguments(message)
             }
-            let path = object.childPaths.indices.contains(Int(index))
+            let path =
+                object.childPaths.indices.contains(Int(index))
                 ? object.childPaths[Int(index)]
                 : AtSPIExportModel.nullPath
             return reply(message) {
@@ -52,8 +53,8 @@ extension AtSPIService {
         case "GetIndexInParent":
             let index: Int32
             if let parentPath = object.parentPath,
-               let parent = model.objects[parentPath],
-               let found = parent.childPaths.firstIndex(of: object.path)
+                let parent = model.objects[parentPath],
+                let found = parent.childPaths.firstIndex(of: object.path)
             {
                 index = Int32(clamping: found)
             } else {
@@ -67,7 +68,6 @@ extension AtSPIService {
                 member: member)
         }
     }
-
 
     func handleApplication(
         _ message: SDBusMessage,

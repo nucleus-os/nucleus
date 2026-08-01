@@ -3,7 +3,7 @@ import Glibc
 import NucleusAndroidSharedRingC
 import Synchronization
 
-public enum GfxstreamTransportError: Error, Equatable, Sendable {
+package enum GfxstreamTransportError: Error, Equatable, Sendable {
     case createFailed(errno: Int32)
     case attachFailed(errno: Int32)
     case exportFailed(errno: Int32)
@@ -16,38 +16,39 @@ public enum GfxstreamTransportError: Error, Equatable, Sendable {
     case systemCall(errno: Int32)
 }
 
-public enum SharedCommandRingWaitPreparation: Sendable, Equatable {
+package enum SharedCommandRingWaitPreparation: Sendable, Equatable {
     case ready
     case armed
     case closed
 }
 
-public struct SharedCommandRingDiagnostic: Sendable, Equatable {
-    public let writeBackpressureCount: UInt64
-    public let readEmptyCount: UInt64
-    public let maximumOccupancy: UInt64
-    public let dataNotificationWriteCount: UInt64
-    public let dataNotificationDrainCount: UInt64
-    public let spaceNotificationWriteCount: UInt64
-    public let spaceNotificationDrainCount: UInt64
-    public let isClosed: Bool
+package struct SharedCommandRingDiagnostic: Sendable, Equatable {
+    package let writeBackpressureCount: UInt64
+    package let readEmptyCount: UInt64
+    package let maximumOccupancy: UInt64
+    package let dataNotificationWriteCount: UInt64
+    package let dataNotificationDrainCount: UInt64
+    package let spaceNotificationWriteCount: UInt64
+    package let spaceNotificationDrainCount: UInt64
+    package let isClosed: Bool
 }
 
 /// Owns shared-memory and notification descriptors without producer or
 /// consumer authority. A mapping only wires directional endpoints and exposes
 /// ring-wide diagnostics.
-@safe public final class SharedCommandRingMapping {
+@safe package final class SharedCommandRingMapping {
     private let handle: OpaquePointer
-    public let slotCount: UInt32
-    public let slotSize: UInt32
+    package let slotCount: UInt32
+    package let slotSize: UInt32
 
-    public init(
+    package init(
         slotCount: UInt32 = 256,
         slotSize: UInt32 = 64 * 1024
     ) throws {
-        guard let handle = unsafe nucleus_android_shared_ring_mapping_create(
-            slotCount,
-            slotSize)
+        guard
+            let handle = unsafe nucleus_android_shared_ring_mapping_create(
+                slotCount,
+                slotSize)
         else {
             let capturedErrno = errno
             throw GfxstreamTransportError.createFailed(
@@ -58,7 +59,7 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
         self.slotSize = slotSize
     }
 
-    public func exportFileDescriptors() throws -> (
+    package func exportFileDescriptors() throws -> (
         memory: Int32,
         dataNotification: Int32,
         spaceNotification: Int32
@@ -78,10 +79,11 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
         return (
             descriptors.memory_fd,
             descriptors.data_notification_fd,
-            descriptors.space_notification_fd)
+            descriptors.space_notification_fd
+        )
     }
 
-    public func makeProducer() throws -> SharedCommandProducer {
+    package func makeProducer() throws -> SharedCommandProducer {
         let descriptors = try exportFileDescriptors()
         return try SharedCommandProducer(
             owningMemoryFD: descriptors.memory,
@@ -89,7 +91,7 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
             spaceNotificationFD: descriptors.spaceNotification)
     }
 
-    public func makeConsumer() throws -> SharedCommandConsumer {
+    package func makeConsumer() throws -> SharedCommandConsumer {
         let descriptors = try exportFileDescriptors()
         return try SharedCommandConsumer(
             owningMemoryFD: descriptors.memory,
@@ -97,7 +99,7 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
             spaceNotificationFD: descriptors.spaceNotification)
     }
 
-    public func close() throws {
+    package func close() throws {
         let result = unsafe nucleus_android_shared_ring_mapping_close(handle)
         let capturedErrno = errno
         guard result == 0 else {
@@ -106,7 +108,7 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
         }
     }
 
-    public var diagnostic: SharedCommandRingDiagnostic {
+    package var diagnostic: SharedCommandRingDiagnostic {
         get throws {
             var value = nucleus_android_shared_ring_diagnostic()
             let result =
@@ -127,12 +129,12 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
     }
 }
 
-@safe public final class SharedCommandProducer: Sendable {
+@safe package final class SharedCommandProducer: Sendable {
     private let handle: Mutex<OpaquePointer>
-    public let slotCount: UInt32
-    public let slotSize: UInt32
+    package let slotCount: UInt32
+    package let slotSize: UInt32
 
-    public init(
+    package init(
         owningMemoryFD memoryFD: Int32,
         dataNotificationFD: Int32,
         spaceNotificationFD: Int32
@@ -141,8 +143,9 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
             memory_fd: memoryFD,
             data_notification_fd: dataNotificationFD,
             space_notification_fd: spaceNotificationFD)
-        guard let handle = unsafe nucleus_android_shared_ring_producer_attach(
-            descriptors)
+        guard
+            let handle = unsafe nucleus_android_shared_ring_producer_attach(
+                descriptors)
         else {
             let capturedErrno = errno
             if capturedErrno == EBUSY {
@@ -158,13 +161,13 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
         unsafe self.handle = Mutex(handle)
     }
 
-    public var spaceNotificationFileDescriptor: Int32 {
+    package var spaceNotificationFileDescriptor: Int32 {
         unsafe handle.withLock {
             unsafe nucleus_android_shared_ring_producer_space_notification_fd($0)
         }
     }
 
-    public func write(_ packet: Data) throws {
+    package func write(_ packet: Data) throws {
         let payloadCapacity =
             Int(slotSize) - MemoryLayout<UInt32>.size
         guard packet.count <= payloadCapacity else {
@@ -194,7 +197,7 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
         }
     }
 
-    public func prepareSpaceWait()
+    package func prepareSpaceWait()
         throws -> SharedCommandRingWaitPreparation
     {
         try unsafe handle.withLock { handle in
@@ -208,7 +211,7 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
         }
     }
 
-    public func drainSpaceNotification() throws {
+    package func drainSpaceNotification() throws {
         try unsafe handle.withLock { handle in
             let result =
                 unsafe nucleus_android_shared_ring_producer_drain_space_notification(
@@ -221,7 +224,7 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
         }
     }
 
-    public func close() throws {
+    package func close() throws {
         try unsafe handle.withLock { handle in
             let result =
                 unsafe nucleus_android_shared_ring_producer_close(handle)
@@ -233,7 +236,7 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
         }
     }
 
-    public var diagnostic: SharedCommandRingDiagnostic {
+    package var diagnostic: SharedCommandRingDiagnostic {
         get throws {
             try unsafe handle.withLock { handle in
                 var value = nucleus_android_shared_ring_diagnostic()
@@ -258,12 +261,12 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
     }
 }
 
-@safe public final class SharedCommandConsumer: Sendable {
+@safe package final class SharedCommandConsumer: Sendable {
     private let handle: Mutex<OpaquePointer>
-    public let slotCount: UInt32
-    public let slotSize: UInt32
+    package let slotCount: UInt32
+    package let slotSize: UInt32
 
-    public init(
+    package init(
         owningMemoryFD memoryFD: Int32,
         dataNotificationFD: Int32,
         spaceNotificationFD: Int32
@@ -272,8 +275,9 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
             memory_fd: memoryFD,
             data_notification_fd: dataNotificationFD,
             space_notification_fd: spaceNotificationFD)
-        guard let handle = unsafe nucleus_android_shared_ring_consumer_attach(
-            descriptors)
+        guard
+            let handle = unsafe nucleus_android_shared_ring_consumer_attach(
+                descriptors)
         else {
             let capturedErrno = errno
             if capturedErrno == EBUSY {
@@ -289,13 +293,13 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
         unsafe self.handle = Mutex(handle)
     }
 
-    public var dataNotificationFileDescriptor: Int32 {
+    package var dataNotificationFileDescriptor: Int32 {
         unsafe handle.withLock {
             unsafe nucleus_android_shared_ring_consumer_data_notification_fd($0)
         }
     }
 
-    public func read() throws -> Data {
+    package func read() throws -> Data {
         let payloadCapacity =
             Int(slotSize) - MemoryLayout<UInt32>.size
         return try unsafe handle.withLock { handle in
@@ -328,7 +332,7 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
         }
     }
 
-    public func prepareDataWait()
+    package func prepareDataWait()
         throws -> SharedCommandRingWaitPreparation
     {
         try unsafe handle.withLock { handle in
@@ -342,7 +346,7 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
         }
     }
 
-    public func drainDataNotification() throws {
+    package func drainDataNotification() throws {
         try unsafe handle.withLock { handle in
             let result =
                 unsafe nucleus_android_shared_ring_consumer_drain_data_notification(
@@ -355,7 +359,7 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
         }
     }
 
-    public func close() throws {
+    package func close() throws {
         try unsafe handle.withLock { handle in
             let result =
                 unsafe nucleus_android_shared_ring_consumer_close(handle)
@@ -367,7 +371,7 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
         }
     }
 
-    public var diagnostic: SharedCommandRingDiagnostic {
+    package var diagnostic: SharedCommandRingDiagnostic {
         get throws {
             try unsafe handle.withLock { handle in
                 var value = nucleus_android_shared_ring_diagnostic()
@@ -392,11 +396,11 @@ public struct SharedCommandRingDiagnostic: Sendable, Equatable {
     }
 }
 
-public struct GfxstreamGuestDuplexEndpoint: Sendable {
-    public let commandProducer: SharedCommandProducer
-    public let responseConsumer: SharedCommandConsumer
+package struct GfxstreamGuestDuplexEndpoint: Sendable {
+    package let commandProducer: SharedCommandProducer
+    package let responseConsumer: SharedCommandConsumer
 
-    public init(
+    package init(
         commandProducer: SharedCommandProducer,
         responseConsumer: SharedCommandConsumer
     ) {
@@ -405,11 +409,11 @@ public struct GfxstreamGuestDuplexEndpoint: Sendable {
     }
 }
 
-public struct GfxstreamHostDuplexEndpoint: Sendable {
-    public let commandConsumer: SharedCommandConsumer
-    public let responseProducer: SharedCommandProducer
+package struct GfxstreamHostDuplexEndpoint: Sendable {
+    package let commandConsumer: SharedCommandConsumer
+    package let responseProducer: SharedCommandProducer
 
-    public init(
+    package init(
         commandConsumer: SharedCommandConsumer,
         responseProducer: SharedCommandProducer
     ) {
@@ -418,8 +422,8 @@ public struct GfxstreamHostDuplexEndpoint: Sendable {
     }
 }
 
-public enum GfxstreamDuplexTransport {
-    public static func makePair(
+package enum GfxstreamDuplexTransport {
+    package static func makePair(
         slotCount: UInt32 = 256,
         slotSize: UInt32 = 64 * 1024
     ) throws -> (
@@ -442,7 +446,8 @@ public enum GfxstreamDuplexTransport {
                 responseConsumer: responseConsumer),
             host: GfxstreamHostDuplexEndpoint(
                 commandConsumer: commandConsumer,
-                responseProducer: responseProducer))
+                responseProducer: responseProducer)
+        )
     }
 }
 
@@ -462,8 +467,8 @@ private func decodeWaitPreparation(
     }
 }
 
-private extension SharedCommandRingDiagnostic {
-    init(_ value: nucleus_android_shared_ring_diagnostic) {
+extension SharedCommandRingDiagnostic {
+    fileprivate init(_ value: nucleus_android_shared_ring_diagnostic) {
         writeBackpressureCount = value.write_backpressure_count
         readEmptyCount = value.read_empty_count
         maximumOccupancy = value.maximum_occupancy

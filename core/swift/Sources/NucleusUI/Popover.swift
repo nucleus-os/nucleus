@@ -1,3 +1,5 @@
+public import NucleusTypes
+
 /// How a popup goes away.
 public struct PopoverDismissal: OptionSet, Sendable {
     public let rawValue: UInt
@@ -67,7 +69,8 @@ public final class Popover {
         focusBehavior: PopoverFocusBehavior = .nonactivating,
         level: WindowLevel = .overlay
     ) {
-        let size = content.frame.size == .zero
+        let size =
+            content.frame.size == .zero
             ? content.intrinsicContentSize
             : content.frame.size
         self.contentSize = size
@@ -98,7 +101,8 @@ public final class Popover {
         padding: EdgeInsets = EdgeInsets(top: 8, left: 10, bottom: 8, right: 10),
         level: WindowLevel = .overlay
     ) -> Popover {
-        let size = content.frame.size == .zero
+        let size =
+            content.frame.size == .zero
             ? content.intrinsicContentSize
             : content.frame.size
 

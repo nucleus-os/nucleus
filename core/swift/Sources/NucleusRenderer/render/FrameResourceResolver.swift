@@ -1,6 +1,6 @@
+internal import NucleusRenderModel
 import NucleusSkiaGraphiteBridge
 import VulkanC
-internal import NucleusRenderModel
 
 /// The single resource-resolution owner installed by `RenderCore`.
 ///
@@ -31,7 +31,7 @@ final class RenderCoreFrameResourceResolver: FrameResourceResolver {
         outputID: UInt64
     ) -> nucleus.skia.Image? {
         guard let driver = owner.frameDriver,
-              let source = owner.resourceHost.images.source(handle)
+            let source = owner.resourceHost.images.source(handle)
         else {
             return nil
         }
@@ -47,8 +47,9 @@ final class RenderCoreFrameResourceResolver: FrameResourceResolver {
         guard let driver = owner.frameDriver else { return nil }
         switch reference.role {
         case .snapshot:
-            guard let entry = owner.snapshots.resolve(
-                SnapshotHandle(raw: reference.handle.raw))
+            guard
+                let entry = owner.snapshots.resolve(
+                    SnapshotHandle(raw: reference.handle.raw))
             else {
                 return nil
             }

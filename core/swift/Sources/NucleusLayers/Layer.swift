@@ -8,11 +8,8 @@ public struct LayerID: RawRepresentable, Hashable, Sendable, Equatable {
     }
 }
 
-// The producer-side discriminant enums are wire-owned (the generated
-// discriminant enums in NucleusTypes). The composite domain structs below are
-// kept (`LayerDescriptor` carries the non-wire `targetContextID` Optional;
-// `LayerPropertyUpdate` carries the mask-gated Optional fields), and their
-// `.wireValue`/`init(wireValue:)` adapters live in DirectBridge.swift.
+// Values that pass unchanged through authoring and commit use the shared leaf
+// vocabulary. Producer-owned composites remain in NucleusLayers.
 public typealias LayerKind = NucleusTypes.LayerKind
 public typealias LayerRole = NucleusTypes.LayerRole
 public typealias ActionPolicy = NucleusTypes.ActionPolicy
@@ -63,7 +60,10 @@ public struct CornerRadii: Sendable, Equatable {
     public static let zero = CornerRadii(uniform: 0)
 
     public init(tl: Float, tr: Float, br: Float, bl: Float) {
-        self.tl = tl; self.tr = tr; self.br = br; self.bl = bl
+        self.tl = tl
+        self.tr = tr
+        self.br = br
+        self.bl = bl
     }
 
     public init(uniform: Float) {
@@ -117,22 +117,25 @@ public struct BackgroundEffectRect: Sendable, Equatable {
 }
 
 public struct BackgroundEffectRegions: Sendable, Equatable {
-    public static let maxRects = 8
-
     public var rects: [BackgroundEffectRect]
     public var wholeSurface: Bool
 
     public init(rects: [BackgroundEffectRect] = [], wholeSurface: Bool = false) {
-        self.rects = Array(rects.prefix(Self.maxRects))
+        self.rects = rects
         self.wholeSurface = wholeSurface
     }
 }
 
-/// Sparse property write: each Optional field is "present iff the
-/// corresponding mask bit is set". The mask is auto-derived in
-/// `wireValue` (see DirectBridge.swift). Compound frame writes are
-/// producer-side convenience only and expand to synchronized `position`
-/// + `bounds` writes before encoding.
+/// An authored clip mutation. Absence from `LayerPropertyUpdate` means no
+/// change; clearing is explicit rather than represented by a degenerate rectangle.
+public enum ClipMutation: Sendable, Equatable {
+    case set(ClipOp)
+    case clear
+}
+
+/// Sparse property mutation. A non-`nil` field replaces that property.
+/// Compound frame writes expand to synchronized `position` + `bounds`
+/// mutations before commit.
 public struct LayerPropertyUpdate: Sendable, Equatable {
     public var opacity: Double?
     public var isHidden: Bool?
@@ -146,7 +149,7 @@ public struct LayerPropertyUpdate: Sendable, Equatable {
     public var anchorPoint: GeometryPoint?
     public var scrollOffset: GeometryPoint?
     public var transform: GeometryTransform?
-    public var clip: ClipOp?
+    public var clip: ClipMutation?
     public var cornerRadii: CornerRadii?
     public var borderTop: BorderEdge?
     public var borderRight: BorderEdge?
@@ -177,7 +180,7 @@ public struct LayerPropertyUpdate: Sendable, Equatable {
         anchorPoint: GeometryPoint? = nil,
         scrollOffset: GeometryPoint? = nil,
         transform: GeometryTransform? = nil,
-        clip: ClipOp? = nil,
+        clip: ClipMutation? = nil,
         cornerRadii: CornerRadii? = nil,
         borderTop: BorderEdge? = nil,
         borderRight: BorderEdge? = nil,
@@ -215,9 +218,10 @@ public struct LayerPropertyUpdate: Sendable, Equatable {
     }
 
     /// Producer-side convenience that decomposes a frame rect into a
-    /// position + bounds pair. The wire never carries FRAME (Pillar B);
-    /// callers reaching for "set the frame" are routed through this.
-    public static func decomposedFrame(_ rect: GeometryRect, actionPolicy: ActionPolicy = .none) -> LayerPropertyUpdate {
+    /// position + bounds pair.
+    public static func decomposedFrame(_ rect: GeometryRect, actionPolicy: ActionPolicy = .none)
+        -> LayerPropertyUpdate
+    {
         LayerPropertyUpdate(
             actionPolicy: actionPolicy,
             position: GeometryPoint(x: rect.x, y: rect.y),
@@ -233,7 +237,7 @@ public enum LayerMutation: Sendable, Equatable {
     case detached(LayerID)
     case properties(layer: LayerID, LayerPropertyUpdate)
     case animationAdded(layer: LayerID, Animation)
-    case animationRemoved(layer: LayerID, AnimationKeyPath)
+    case animationRemoved(layer: LayerID, LayerAnimationKeyPath)
 }
 
 extension LayerMutation {
@@ -312,29 +316,22 @@ open class Layer: ~Sendable {
     public var shadowRadius: Double { descriptor.shadow.blurRadius }
 
     public func setShadowColor(_ color: Color) throws(LayerError) {
-        try setShadowComponent { $0.color = color }
+        try setShadow(descriptor.shadow.withColor(color))
     }
 
     public func setShadowOpacity(_ opacity: Double) throws(LayerError) {
-        try setShadowComponent { $0.opacity = opacity }
+        try setShadow(descriptor.shadow.withOpacity(opacity))
     }
 
     public func setShadowOffset(_ offset: GeometrySize) throws(LayerError) {
-        try setShadowComponent {
-            $0.offsetX = offset.width
-            $0.offsetY = offset.height
-        }
+        try setShadow(descriptor.shadow.withOffset(x: offset.width, y: offset.height))
     }
 
     public func setShadowRadius(_ radius: Double) throws(LayerError) {
-        try setShadowComponent { $0.blurRadius = radius }
+        try setShadow(descriptor.shadow.withBlurRadius(radius))
     }
 
-    private func setShadowComponent(
-        _ mutate: (inout Shadow) -> Void
-    ) throws(LayerError) {
-        var next = descriptor.shadow
-        mutate(&next)
+    private func setShadow(_ next: Shadow) throws(LayerError) {
         guard next != descriptor.shadow else { return }
         try setProperties(LayerPropertyUpdate(shadow: next))
     }
@@ -346,14 +343,13 @@ open class Layer: ~Sendable {
     }
 
     /// Producer-side convenience: writes `position` + `bounds` in one
-    /// transaction so the wire carries only decomposed geometry.
-    /// This follows `CALayer`'s frame behavior by expanding into
+    /// transaction. This follows `CALayer`'s frame behavior by expanding into
     /// `position` + `bounds` writes underneath.
     public func setFrame(_ rect: GeometryRect) throws(LayerError) {
         try setProperties(.decomposedFrame(rect))
     }
 
-    @_spi(NucleusRenderServer) public func apply(_ properties: LayerPropertyUpdate) {
+    package func apply(_ properties: LayerPropertyUpdate) {
         // Decomposed position+bounds writes mirror back into the
         // descriptor's `frame` so `Layer.frame` reads still report the
         // producer-authored geometry.

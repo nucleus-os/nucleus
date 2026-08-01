@@ -4,7 +4,7 @@
 /// below the UI layer and must not import it. The runtime maps `Cursor` onto this
 /// at the one place the two vocabularies meet, which is the same seam the battery
 /// widget and UPower already sit either side of.
-public enum NucleusDesktopCursorShape: UInt32, Sendable, Equatable {
+package enum NucleusDesktopCursorShape: UInt32, Sendable, Equatable {
     // `default` is a keyword; the trailing underscore is the cost of matching
     // the protocol's own naming.
     case default_ = 1

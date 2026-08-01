@@ -5,10 +5,10 @@
 //
 // Tokens are one-shot grants backed by an exact input serial from this seat.
 
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
 import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 @MainActor
 protocol XdgActivationDelegate: AnyObject {
@@ -73,8 +73,10 @@ extension XdgActivationManager: XdgActivationV1Requests {
         }
     }
 
-    func activate(_ request: WaylandRequest<XdgActivationV1Server>, token: String,
-        surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>) {
+    func activate(
+        _ request: WaylandRequest<XdgActivationV1Server>, token: String,
+        surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>
+    ) {
         let surface = surfaceRes.owner(as: WlSurface.self)
         guard surface != nil, consumeToken(token) else { return }
         delegate?.activateSurface(surface, token: token)
@@ -84,8 +86,7 @@ extension XdgActivationManager: XdgActivationV1Requests {
 /// An activation token accumulates provenance until its one commit.
 @MainActor
 @safe final class XdgActivationToken {
-    private let resource:
-        WaylandResourceHandle<XdgActivationTokenV1Server>
+    private let resource: WaylandResourceHandle<XdgActivationTokenV1Server>
     private unowned let manager: XdgActivationManager
     private var used = false
     private var serial: UInt32?
@@ -103,8 +104,10 @@ extension XdgActivationManager: XdgActivationV1Requests {
 }
 
 extension XdgActivationToken: XdgActivationTokenV1Requests {
-    func setSerial(_ request: WaylandRequest<XdgActivationTokenV1Server>, serial: UInt32,
-                   seat: WaylandBorrowedObject<WlSeatServer>) {
+    func setSerial(
+        _ request: WaylandRequest<XdgActivationTokenV1Server>, serial: UInt32,
+        seat: WaylandBorrowedObject<WlSeatServer>
+    ) {
         guard !used else {
             postAlreadyUsed(request)
             return
@@ -121,8 +124,10 @@ extension XdgActivationToken: XdgActivationTokenV1Requests {
         appID = app_id
     }
 
-    func setSurface(_ request: WaylandRequest<XdgActivationTokenV1Server>,
-                    surface: WaylandBorrowedObject<WlSurfaceServer>) {
+    func setSurface(
+        _ request: WaylandRequest<XdgActivationTokenV1Server>,
+        surface: WaylandBorrowedObject<WlSurfaceServer>
+    ) {
         guard !used else {
             postAlreadyUsed(request)
             return

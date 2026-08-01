@@ -1,8 +1,7 @@
-@_spi(NucleusWindowClientImplementation)
-import NucleusWindowClientWayland
-public import NucleusShellProduct
+package import NucleusShellProduct
 import NucleusUI
 import NucleusUIEmbedder
+package import NucleusWindowClientWayland
 
 /// Drives the session lock: request the lock, present a native lock screen on
 /// every output, route input to it, and unlock once authentication succeeds.
@@ -17,14 +16,14 @@ import NucleusUIEmbedder
 /// 2. Nothing locks automatically. An idle timer or a lid switch may call
 ///    `lock()`, but this type never decides to on its own.
 @MainActor
-public final class ShellLockController {
+package final class ShellLockController {
     /// Verifies passwords. Without one, `lock()` refuses outright.
-    public weak var authenticator: (any LockAuthenticator)?
+    package weak var authenticator: (any LockAuthenticator)?
 
     /// Fired after the session unlocks and the lock surfaces are gone.
-    public var onUnlocked: (() -> Void)?
+    package var onUnlocked: (() -> Void)?
 
-    public private(set) var isLocked = false
+    package private(set) var isLocked = false
 
     private let client: NucleusDesktopConnection
     private let surfaceRegistry: NativeSurfaceRegistry
@@ -79,7 +78,7 @@ public final class ShellLockController {
 
     /// Whether locking is possible at all: the compositor must offer the
     /// protocol and the shell must have a way to authenticate.
-    public var canLock: Bool { lockClient != nil && authenticator != nil }
+    package var canLock: Bool { lockClient != nil && authenticator != nil }
 
     /// Request the session lock.
     ///
@@ -87,7 +86,7 @@ public final class ShellLockController {
     /// locking with no way to unlock hands the session to a compositor that is
     /// deliberately fail-closed, and there is no recovery from inside.
     @discardableResult
-    public func lock() -> Bool {
+    package func lock() -> Bool {
         guard !isLocked else { return false }
         guard let lockClient else { return false }
         guard authenticator != nil else { return false }
@@ -114,15 +113,13 @@ public final class ShellLockController {
 
         let liveOutputIDs = Set(client.outputs.keys)
         for index in lockOutputs.indices.reversed()
-            where !liveOutputIDs.contains(lockOutputs[index].outputID)
-        {
+        where !liveOutputIDs.contains(lockOutputs[index].outputID) {
             tearDownLockSurface(at: index)
         }
 
         let hostedOutputIDs = Set(lockOutputs.map(\.outputID))
         for output in client.outputs.values
-            where !hostedOutputIDs.contains(output.registryName)
-        {
+        where !hostedOutputIDs.contains(output.registryName) {
             guard let surface = lockClient.lockSurface(for: output) else { continue }
 
             let origin = Point(
@@ -168,9 +165,11 @@ public final class ShellLockController {
         height: UInt32,
         focusPasswordField: Bool = true
     ) {
-        guard let index = lockOutputs.firstIndex(where: {
-            $0.surface.wlSurface.identity == surfaceID
-        }) else { return }
+        guard
+            let index = lockOutputs.firstIndex(where: {
+                $0.surface.wlSurface.identity == surfaceID
+            })
+        else { return }
 
         let scale = Double(max(1, lockOutputs[index].surface.output.scale))
         let logicalWidth = Double(width)

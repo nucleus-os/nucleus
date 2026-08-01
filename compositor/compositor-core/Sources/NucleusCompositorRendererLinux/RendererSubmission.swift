@@ -1,10 +1,10 @@
-import VulkanC
-import Vulkan
+import Glibc
 import NucleusCompositorDrmC
 import NucleusRenderModel
-@_spi(NucleusPlatform) public import NucleusRenderer
+package import NucleusRenderer
 import Tracy
-import Glibc
+import Vulkan
+import VulkanC
 
 @MainActor
 extension DRMScanoutPresenter {
@@ -38,7 +38,7 @@ extension DRMScanoutPresenter {
             UInt64(renderSyncsAwaitingGpuCompletion.count))
     }
 
-    public func renderReadyOutputs(
+    package func renderReadyOutputs(
         outputIDs: Set<UInt64>
     ) -> Bool {
         retireCompletedRenderSyncs()
@@ -48,20 +48,20 @@ extension DRMScanoutPresenter {
         return core.renderReady(backend: self)
     }
 
-    @_spi(NucleusPlatform)
-    public func takeFrameTelemetry()
+    package func takeFrameTelemetry()
         -> [RenderFrameTelemetry]
     {
         core.takeFrameTelemetry()
     }
 
-    public func setScanoutCandidates(
+    package func setScanoutCandidates(
         _ perOutput: [UInt64: ScanoutCandidate]
     ) {
         scanoutCandidates = perOutput
         for (outputID, candidate) in perOutput {
-            guard let formats =
-                primaryPlaneFormats[outputID]
+            guard
+                let formats =
+                    primaryPlaneFormats[outputID]
             else { continue }
             let eligibility = candidate.evaluate(
                 primaryPlaneFormats: formats)
@@ -95,7 +95,7 @@ extension DRMScanoutPresenter {
             primaryPlaneFormats: formats)
     }
 
-    public func setCursorImage(
+    package func setCursorImage(
         pixels: [UInt8],
         width: UInt32,
         height: UInt32,
@@ -116,7 +116,7 @@ extension DRMScanoutPresenter {
         }
     }
 
-    public func setCursorPosition(
+    package func setCursorPosition(
         x: Double,
         y: Double
     ) {
@@ -131,7 +131,7 @@ extension DRMScanoutPresenter {
         }
     }
 
-    public func gammaRampSize(
+    package func gammaRampSize(
         outputID: UInt64
     ) -> UInt32 {
         guard let binding = bindings[outputID],
@@ -141,7 +141,7 @@ extension DRMScanoutPresenter {
     }
 
     @discardableResult
-    public func applyGamma(
+    package func applyGamma(
         outputID: UInt64,
         red: [UInt16],
         green: [UInt16],
@@ -163,19 +163,19 @@ extension DRMScanoutPresenter {
         return true
     }
 
-    public func clearGamma(outputID: UInt64) {
+    package func clearGamma(outputID: UInt64) {
         bindings[outputID]?.drm.gamma.stage(
             table: nil, rampSize: 0)
     }
 
-    public func wantsPresent(
+    package func wantsPresent(
         _ outputID: UInt64
     ) -> Bool {
         cursorPresentDirty.contains(outputID)
             || forcedPresentOutputIDs.contains(outputID)
     }
 
-    public func forcePresent(outputID: UInt64) {
+    package func forcePresent(outputID: UInt64) {
         forcedPresentOutputIDs.insert(outputID)
     }
 
@@ -197,24 +197,26 @@ extension DRMScanoutPresenter {
             placement: placement)
     }
 
-    public func setLockComposition(
+    package func setLockComposition(
         _ perOutput: [UInt64: Set<UInt32>]?
     ) {
-        core.setLockComposition(perOutput.map { dictionary in
-            dictionary.mapValues { values in
-                Set(values.map { ContextID(raw: $0) })
-            }
-        })
+        core.setLockComposition(
+            perOutput.map { dictionary in
+                dictionary.mapValues { values in
+                    Set(values.map { ContextID(raw: $0) })
+                }
+            })
     }
 
-    public func presentableOutputIDs() -> [UInt64] {
-        let ids = scheduledOutputIDs.map {
-            Set(bindings.keys).intersection($0)
-        } ?? Set(bindings.keys)
+    package func presentableOutputIDs() -> [UInt64] {
+        let ids =
+            scheduledOutputIDs.map {
+                Set(bindings.keys).intersection($0)
+            } ?? Set(bindings.keys)
         return ids.sorted()
     }
 
-    public func isReadyToPresent(
+    package func isReadyToPresent(
         _ outputID: UInt64
     ) -> Bool {
         retireCompletedRenderSyncs()
@@ -225,14 +227,15 @@ extension DRMScanoutPresenter {
         return true
     }
 
-    public func acquireTarget(
+    package func acquireTarget(
         _ outputID: UInt64
     ) -> AcquiredFrameTarget? {
         guard backendState.admitsPresentation,
             let binding = bindings[outputID],
             binding.drm.lifecycleState.admitsScanoutCommit
         else { return nil }
-        guard let renderSync = unsafe DrmRenderSync(
+        guard
+            let renderSync = unsafe DrmRenderSync(
                 device: core.deviceHandle,
                 dispatch: core.deviceDispatch)
         else {
@@ -258,7 +261,7 @@ extension DRMScanoutPresenter {
             signalSemaphore: renderSync.semaphore)
     }
 
-    public func didSubmitTarget(
+    package func didSubmitTarget(
         _ outputID: UInt64
     ) -> Bool {
         guard let binding = bindings[outputID],
@@ -288,7 +291,7 @@ extension DRMScanoutPresenter {
         return true
     }
 
-    public func discardAcquiredTarget(
+    package func discardAcquiredTarget(
         _ outputID: UInt64
     ) {
         guard let binding = bindings[outputID] else {
@@ -301,7 +304,7 @@ extension DRMScanoutPresenter {
         binding.currentSlot = nil
     }
 
-    public func present(_ outputID: UInt64) -> Bool {
+    package func present(_ outputID: UInt64) -> Bool {
         guard backendState.admitsPresentation,
             let binding = bindings[outputID],
             let slot = binding.currentSlot,
@@ -365,14 +368,15 @@ extension DRMScanoutPresenter {
             binding.currentSlot = nil
             binding.pendingRenderSync = nil
             logScanout(
-                "output \(outputID): atomic scanout commit failed rc=\(result) errno=\(rendererErrno()) modeset=\(needsModeset)")
+                "output \(outputID): atomic scanout commit failed rc=\(result) errno=\(rendererErrno()) modeset=\(needsModeset)"
+            )
         }
         return result == 0
     }
 
-    public func didPresentFrame() {}
+    package func didPresentFrame() {}
 
-    public func tryDirectScanout(
+    package func tryDirectScanout(
         _ outputID: UInt64
     ) -> Bool {
         guard backendState.admitsPresentation,

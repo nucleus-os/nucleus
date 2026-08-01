@@ -50,6 +50,11 @@ public struct ExecutionPlatform: Codable, Hashable, Sendable {
         environment: .oci,
         operatingSystem: .linux,
         architecture: .x86_64)
+
+    public static let linuxARM64OCI = ExecutionPlatform(
+        environment: .oci,
+        operatingSystem: .linux,
+        architecture: .arm64)
 }
 
 public struct ArtifactTarget: Codable, Hashable, Sendable {
@@ -74,6 +79,19 @@ public struct ArtifactTarget: Codable, Hashable, Sendable {
         operatingSystem: .linux,
         architecture: .x86_64,
         abi: "glibc")
+
+    public static let linuxARM64 = ArtifactTarget(
+        operatingSystem: .linux,
+        architecture: .arm64,
+        abi: "glibc")
+
+    public static func androidARM64(apiLevel: UInt32) -> ArtifactTarget {
+        ArtifactTarget(
+            operatingSystem: .android,
+            architecture: .arm64,
+            abi: "bionic",
+            androidAPILevel: apiLevel)
+    }
 
     public static func androidX86_64(apiLevel: UInt32) -> ArtifactTarget {
         ArtifactTarget(

@@ -1,7 +1,9 @@
-import Testing
 import NucleusCompositorServer
+internal import NucleusAppHostProtocols
 import NucleusRenderModel
-@_spi(NucleusPlatform) import NucleusRenderer
+package import NucleusRenderer
+import Testing
+
 @testable import NucleusCompositorRenderRuntime
 
 private struct LifecycleTestWakeSink: AsyncRenderWakeSink {
@@ -16,14 +18,15 @@ private struct LifecycleTestWakeSink: AsyncRenderWakeSink {
     let store = RetainedTreeStore(resourceHost: resourceHost)
     #expect(server.renderService == nil)
 
-    #expect(!runtime.bringUp(
-        drmDeviceFd: -1,
-        dmabufMainDevice: 0,
-        enableValidation: false,
-        presentPolicy: .vsync,
-        store: store,
-        resourceHost: resourceHost,
-        asyncRenderWakeSink: LifecycleTestWakeSink()))
+    #expect(
+        !runtime.bringUp(
+            drmDeviceFd: -1,
+            dmabufMainDevice: 0,
+            enableValidation: false,
+            presentPolicy: .vsync,
+            store: store,
+            resourceHost: resourceHost,
+            asyncRenderWakeSink: LifecycleTestWakeSink()))
     #expect(server.renderService == nil)
     runtime.shutdown()
 }

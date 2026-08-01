@@ -1,11 +1,11 @@
-import NucleusCompositorDrmC
-@_spi(NucleusPlatform) public import NucleusRenderer
 import Glibc
+import NucleusCompositorDrmC
+package import NucleusRenderer
 
 @MainActor
 extension DRMScanoutPresenter {
     @discardableResult
-    public func registerSurfaceDmabuf(
+    package func registerSurfaceDmabuf(
         iosurfaceID: UInt64,
         fd: Int32,
         width: UInt32,
@@ -26,7 +26,8 @@ extension DRMScanoutPresenter {
         }
         let diagnostic = DiagnosticSyncFile(
             duplicating: acquireFenceFD)
-        let scanoutAcquireFenceFD = acquireFenceFD >= 0
+        let scanoutAcquireFenceFD =
+            acquireFenceFD >= 0
             ? dup(acquireFenceFD)
             : -1
         let previousRelease =
@@ -120,8 +121,9 @@ extension DRMScanoutPresenter {
         iosurfaceID: UInt64,
         validateWith drm: DrmOutput
     ) -> UInt32 {
-        guard let buffer =
-            clientScanoutBuffers[iosurfaceID]
+        guard
+            let buffer =
+                clientScanoutBuffers[iosurfaceID]
         else { return 0 }
         let framebufferID = buffer.framebufferId()
         guard framebufferID != 0,
@@ -131,7 +133,7 @@ extension DRMScanoutPresenter {
     }
 
     @discardableResult
-    public func registerSurfaceShm(
+    package func registerSurfaceShm(
         iosurfaceID: UInt64,
         pixels: Span<UInt8>,
         width: UInt32,
@@ -153,7 +155,7 @@ extension DRMScanoutPresenter {
         return registered
     }
 
-    public func releaseSurfaceTexture(
+    package func releaseSurfaceTexture(
         iosurfaceID: UInt64
     ) {
         pendingClientAcquireFenceDiagnostics[
@@ -185,13 +187,13 @@ extension DRMScanoutPresenter {
             iosurfaceID: iosurfaceID)
     }
 
-    public func dmabufSupportedFormats()
+    package func dmabufSupportedFormats()
         -> [DmaBufFormatModifier]
     {
         core.dmabufSupportedFormats()
     }
 
-    public func canImportSurfaceDmabuf(
+    package func canImportSurfaceDmabuf(
         fd: Int32,
         width: UInt32,
         height: UInt32,
@@ -208,9 +210,8 @@ extension DRMScanoutPresenter {
             planes: planes)
     }
 
-    @_spi(NucleusPlatform)
     @discardableResult
-    public func beginCaptureOutputBGRA(
+    package func beginCaptureOutputBGRA(
         outputID: UInt64,
         sourceX: Int32 = 0,
         sourceY: Int32 = 0,
@@ -227,9 +228,8 @@ extension DRMScanoutPresenter {
             completion: completion)
     }
 
-    @_spi(NucleusPlatform)
     @discardableResult
-    public func beginReadSurfaceTextureBGRA(
+    package func beginReadSurfaceTextureBGRA(
         iosurfaceID: UInt32,
         completion: @escaping @MainActor (RenderCore.PixelCapture?) -> Void
     ) -> UInt64? {
@@ -239,7 +239,7 @@ extension DRMScanoutPresenter {
     }
 
     @discardableResult
-    public func beginCaptureOutputToDmabuf(
+    package func beginCaptureOutputToDmabuf(
         outputID: UInt64,
         fd: Int32,
         width: UInt32,
@@ -254,7 +254,8 @@ extension DRMScanoutPresenter {
         overlayCursor: Bool = false,
         completion: @escaping @MainActor (Bool) -> Void
     ) -> UInt64? {
-        let overlay = overlayCursor
+        let overlay =
+            overlayCursor
             ? captureCursorOverlay(outputID: outputID)
             : nil
         return core.beginCaptureOutputToDmabuf(
@@ -273,23 +274,23 @@ extension DRMScanoutPresenter {
             completion: completion)
     }
 
-    public var hasPendingCaptureWork: Bool {
+    package var hasPendingCaptureWork: Bool {
         core.hasPendingCaptureWork
     }
 
-    public var capturePollDelay: UInt64? {
+    package var capturePollDelay: UInt64? {
         core.capturePollDelay
     }
 
-    public var captureWorkStalled: Bool {
+    package var captureWorkStalled: Bool {
         core.captureWorkStalled
     }
 
-    public func pollCaptureWork() {
+    package func pollCaptureWork() {
         core.pollCaptureWork()
     }
 
-    public func cancelCapture(_ requestID: UInt64) {
+    package func cancelCapture(_ requestID: UInt64) {
         core.cancelCapture(requestID)
     }
 
@@ -300,8 +301,9 @@ extension DRMScanoutPresenter {
             cursorImageWidth > 0,
             cursorImageHeight > 0,
             cursorPixels.count
-                >= Int(cursorImageWidth
-                    * cursorImageHeight * 4)
+                >= Int(
+                    cursorImageWidth
+                        * cursorImageHeight * 4)
         else { return nil }
         var rgba = cursorPixels
         for index in stride(
@@ -309,13 +311,15 @@ extension DRMScanoutPresenter {
         {
             rgba.swapAt(index, index + 2)
         }
-        let x = Int32(
-            ((cursorX - binding.logicalRect.x)
-                * binding.fractionalScale).rounded())
+        let x =
+            Int32(
+                ((cursorX - binding.logicalRect.x)
+                    * binding.fractionalScale).rounded())
             - cursorHotspotX
-        let y = Int32(
-            ((cursorY - binding.logicalRect.y)
-                * binding.fractionalScale).rounded())
+        let y =
+            Int32(
+                ((cursorY - binding.logicalRect.y)
+                    * binding.fractionalScale).rounded())
             - cursorHotspotY
         return CaptureOverlay(
             rgbaPixels: rgba,
@@ -326,7 +330,7 @@ extension DRMScanoutPresenter {
     }
 
     @discardableResult
-    public func registerSnapshot(
+    package func registerSnapshot(
         textureHandle: UInt64,
         width: Float,
         height: Float
@@ -337,43 +341,44 @@ extension DRMScanoutPresenter {
             height: height)
     }
 
-    public func captureSurfaceSnapshot(
+    package func captureSurfaceSnapshot(
         iosurfaceID: UInt64
     ) -> RenderCore.CapturedSnapshot? {
         core.captureSurfaceSnapshot(iosurfaceID: iosurfaceID)
     }
 
-    public var liveSnapshotCount: Int {
+    package var liveSnapshotCount: Int {
         core.liveSnapshotCount
     }
 
-    public func releaseSnapshot(
+    package func releaseSnapshot(
         _ snapshotHandle: UInt64
     ) {
         core.releaseSnapshot(snapshotHandle)
     }
 
-    public func importSyncobjTimeline(
+    package func importSyncobjTimeline(
         fd: Int32
     ) -> UInt32? {
         guard let drmDeviceFd = drmDevice.availableFileDescriptor,
-              fd >= 0
+            fd >= 0
         else {
             return nil
         }
         var handle: UInt32 = 0
-        guard unsafe drmSyncobjFDToHandle(
-            drmDeviceFd, fd, &handle) == 0,
+        guard
+            unsafe drmSyncobjFDToHandle(
+                drmDeviceFd, fd, &handle) == 0,
             handle != 0
         else { return nil }
         return handle
     }
 
-    public func destroySyncobjTimeline(
+    package func destroySyncobjTimeline(
         handle: UInt32
     ) {
         if let drmDeviceFd = drmDevice.availableFileDescriptor,
-           handle != 0
+            handle != 0
         {
             _ = drmSyncobjDestroy(
                 drmDeviceFd, handle)
@@ -384,28 +389,31 @@ extension DRMScanoutPresenter {
         _ sync: DmaBufSyncPoint
     ) -> Int32? {
         guard let drmDeviceFd = drmDevice.availableFileDescriptor,
-              sync.handle != 0
+            sync.handle != 0
         else { return nil }
         var temporary: UInt32 = 0
-        guard unsafe drmSyncobjCreate(
-            drmDeviceFd, 0, &temporary) == 0,
+        guard
+            unsafe drmSyncobjCreate(
+                drmDeviceFd, 0, &temporary) == 0,
             temporary != 0
         else { return nil }
         defer {
             _ = drmSyncobjDestroy(
                 drmDeviceFd, temporary)
         }
-        guard drmSyncobjTransfer(
-            drmDeviceFd,
-            temporary,
-            0,
-            sync.handle,
-            sync.point,
-            0) == 0
+        guard
+            drmSyncobjTransfer(
+                drmDeviceFd,
+                temporary,
+                0,
+                sync.handle,
+                sync.point,
+                0) == 0
         else { return nil }
         var fd: Int32 = -1
-        guard unsafe drmSyncobjExportSyncFile(
-            drmDeviceFd, temporary, &fd) == 0,
+        guard
+            unsafe drmSyncobjExportSyncFile(
+                drmDeviceFd, temporary, &fd) == 0,
             fd >= 0
         else { return nil }
         return fd
@@ -413,7 +421,7 @@ extension DRMScanoutPresenter {
 
     func signalSyncPoint(_ sync: DmaBufSyncPoint) {
         guard let drmDeviceFd = drmDevice.availableFileDescriptor,
-              sync.handle != 0
+            sync.handle != 0
         else { return }
         var handle = sync.handle
         var point = sync.point
@@ -424,8 +432,9 @@ extension DRMScanoutPresenter {
     private func signalRetiredCompositeRelease(
         iosurfaceID: UInt64
     ) {
-        guard var releases =
-            retiredCompositeReleaseSync[iosurfaceID],
+        guard
+            var releases =
+                retiredCompositeReleaseSync[iosurfaceID],
             !releases.isEmpty
         else { return }
         let release = releases.removeFirst()

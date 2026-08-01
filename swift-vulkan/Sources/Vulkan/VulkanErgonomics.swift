@@ -2,7 +2,7 @@
 // These are generic Swift-Vulkan utilities — not tied to any particular
 // application's instance/device creation contracts.
 
-public import VulkanC
+package import VulkanC
 
 // MARK: - Base dispatch bootstrap
 
@@ -11,7 +11,7 @@ extension VK {
     /// `vkGetInstanceProcAddr` exported by the Vulkan loader. Declared in the VK
     /// scope (not BaseDispatch) so the loader symbol is not shadowed by the
     /// stored property of the same name.
-    public static func loadBaseDispatch() -> BaseDispatch {
+    package static func loadBaseDispatch() -> BaseDispatch {
         unsafe BaseDispatch(loader: vkGetInstanceProcAddr)
     }
 }
@@ -21,8 +21,8 @@ extension VK {
 /// Checked driver for Vulkan's two-call enumerate protocol: query the count,
 /// size storage, fill, and retry on `VK_INCOMPLETE` (the set grew between
 /// calls). Returns nil on a hard error, `[]` when the count is zero.
-public enum VkEnumerate {
-    public static func array<T>(
+package enum VkEnumerate {
+    package static func array<T>(
         _ body: (_ count: UnsafeMutablePointer<UInt32>, _ out: UnsafeMutablePointer<T>?) -> VkResult
     ) -> [T]? {
         while true {
@@ -39,7 +39,7 @@ public enum VkEnumerate {
             }
             switch lastResult {
             case VK_SUCCESS: return items
-            case VK_INCOMPLETE: continue // grew between the count and fill calls
+            case VK_INCOMPLETE: continue  // grew between the count and fill calls
             default: return nil
             }
         }
@@ -52,7 +52,7 @@ public enum VkEnumerate {
 /// C strings for the duration of `body`. Every CString stays alive through the
 /// nested `withCString` scopes; no pointer escapes the call. Vulkan contracts
 /// carry an explicit count, so the pointer table itself has no trailing sentinel.
-@unsafe public func withCStringArray<R>(
+@unsafe package func withCStringArray<R>(
     _ strings: [String],
     _ body: (_ pointers: UnsafePointer<UnsafePointer<CChar>?>?, _ count: UInt32) -> R
 ) -> R {
@@ -88,12 +88,14 @@ public enum VkEnumerate {
 /// typed `PFN_vkDestroy*`; `deinit` runs it once, `take()` suppresses it.
 /// The owner never dereferences either opaque handle. Its caller must arrange
 /// Vulkan-required external synchronization while constructing or destroying it.
-@safe public struct VkOwned<Handle>: ~Copyable {
-    public let handle: Handle
+@safe package struct VkOwned<Handle>: ~Copyable {
+    package let handle: Handle
     private let device: VkDevice
     private let destroyer: (VkDevice, Handle) -> Void
 
-    public init(adopting handle: Handle, device: VkDevice, destroy: @escaping (VkDevice, Handle) -> Void) {
+    package init(
+        adopting handle: Handle, device: VkDevice, destroy: @escaping (VkDevice, Handle) -> Void
+    ) {
         self.handle = handle
         unsafe self.device = device
         unsafe self.destroyer = destroy
@@ -113,27 +115,27 @@ public enum VkEnumerate {
 /// Prefer `take()` over `release()` wherever the image outlives the box: moving
 /// the owner out restores static single-ownership, whereas a shared box only
 /// promises single destruction by convention.
-@safe public final class VkOwnedImageBox {
+@safe package final class VkOwnedImageBox {
     private var image: VkOwned<VkImage>?
-    public init(consuming image: consuming VkOwned<VkImage>) {
+    package init(consuming image: consuming VkOwned<VkImage>) {
         unsafe self.image = consume image
     }
     /// Move the held image owner out of the box, transferring destruction duty to
     /// the caller. The box is empty afterward, so any later `release()`/`deinit`
     /// — including one reached through another reference to this same box — is a
     /// no-op rather than a second destroy.
-    public func take() -> VkOwned<VkImage>? { unsafe image.take() }
+    package func take() -> VkOwned<VkImage>? { unsafe image.take() }
     /// Drop the held image now (runs its `deinit`). Safe to call once.
-    public func release() { unsafe image = nil }
+    package func release() { unsafe image = nil }
     deinit { unsafe image = nil }
 }
 
 // MARK: - Device-child resource constructors
 
 extension VK.DeviceDispatch {
-    public func createFence(_ device: VkDevice, signaled: Bool = false) -> VkOwned<VkFence>? {
+    package func createFence(_ device: VkDevice, signaled: Bool = false) -> VkOwned<VkFence>? {
         guard let create = unsafe vkCreateFence,
-              let destroy = unsafe vkDestroyFence
+            let destroy = unsafe vkDestroyFence
         else { return nil }
         var ci = unsafe VkFenceCreateInfo()
         unsafe ci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO
@@ -147,9 +149,9 @@ extension VK.DeviceDispatch {
             destroy: { d, x in unsafe destroy(d, x, nil) })
     }
 
-    public func createSemaphore(_ device: VkDevice) -> VkOwned<VkSemaphore>? {
+    package func createSemaphore(_ device: VkDevice) -> VkOwned<VkSemaphore>? {
         guard let create = unsafe vkCreateSemaphore,
-              let destroy = unsafe vkDestroySemaphore
+            let destroy = unsafe vkDestroySemaphore
         else { return nil }
         var ci = unsafe VkSemaphoreCreateInfo()
         unsafe ci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
@@ -162,9 +164,11 @@ extension VK.DeviceDispatch {
             destroy: { d, x in unsafe destroy(d, x, nil) })
     }
 
-    public func createCommandPool(_ device: VkDevice, queueFamily: UInt32) -> VkOwned<VkCommandPool>? {
+    package func createCommandPool(_ device: VkDevice, queueFamily: UInt32) -> VkOwned<
+        VkCommandPool
+    >? {
         guard let create = unsafe vkCreateCommandPool,
-              let destroy = unsafe vkDestroyCommandPool
+            let destroy = unsafe vkDestroyCommandPool
         else { return nil }
         var ci = unsafe VkCommandPoolCreateInfo()
         unsafe ci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO
@@ -179,9 +183,11 @@ extension VK.DeviceDispatch {
             destroy: { d, x in unsafe destroy(d, x, nil) })
     }
 
-    public func allocateMemory(_ device: VkDevice, info: VkMemoryAllocateInfo) -> VkOwned<VkDeviceMemory>? {
+    package func allocateMemory(_ device: VkDevice, info: VkMemoryAllocateInfo) -> VkOwned<
+        VkDeviceMemory
+    >? {
         guard let allocate = unsafe vkAllocateMemory,
-              let free = unsafe vkFreeMemory
+            let free = unsafe vkFreeMemory
         else { return nil }
         var ci = unsafe info
         unsafe ci.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO
@@ -194,9 +200,9 @@ extension VK.DeviceDispatch {
             destroy: { d, x in unsafe free(d, x, nil) })
     }
 
-    public func createBuffer(_ device: VkDevice, info: VkBufferCreateInfo) -> VkOwned<VkBuffer>? {
+    package func createBuffer(_ device: VkDevice, info: VkBufferCreateInfo) -> VkOwned<VkBuffer>? {
         guard let create = unsafe vkCreateBuffer,
-              let destroy = unsafe vkDestroyBuffer
+            let destroy = unsafe vkDestroyBuffer
         else { return nil }
         var ci = unsafe info
         unsafe ci.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO
@@ -209,9 +215,9 @@ extension VK.DeviceDispatch {
             destroy: { d, x in unsafe destroy(d, x, nil) })
     }
 
-    public func createImage(_ device: VkDevice, info: VkImageCreateInfo) -> VkOwned<VkImage>? {
+    package func createImage(_ device: VkDevice, info: VkImageCreateInfo) -> VkOwned<VkImage>? {
         guard let create = unsafe vkCreateImage,
-              let destroy = unsafe vkDestroyImage
+            let destroy = unsafe vkDestroyImage
         else { return nil }
         var ci = unsafe info
         unsafe ci.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO
@@ -224,9 +230,11 @@ extension VK.DeviceDispatch {
             destroy: { d, x in unsafe destroy(d, x, nil) })
     }
 
-    public func createImageView(_ device: VkDevice, info: VkImageViewCreateInfo) -> VkOwned<VkImageView>? {
+    package func createImageView(_ device: VkDevice, info: VkImageViewCreateInfo) -> VkOwned<
+        VkImageView
+    >? {
         guard let create = unsafe vkCreateImageView,
-              let destroy = unsafe vkDestroyImageView
+            let destroy = unsafe vkDestroyImageView
         else { return nil }
         var ci = unsafe info
         unsafe ci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO
@@ -239,9 +247,11 @@ extension VK.DeviceDispatch {
             destroy: { d, x in unsafe destroy(d, x, nil) })
     }
 
-    public func createDescriptorPool(_ device: VkDevice, info: VkDescriptorPoolCreateInfo) -> VkOwned<VkDescriptorPool>? {
+    package func createDescriptorPool(_ device: VkDevice, info: VkDescriptorPoolCreateInfo)
+        -> VkOwned<VkDescriptorPool>?
+    {
         guard let create = unsafe vkCreateDescriptorPool,
-              let destroy = unsafe vkDestroyDescriptorPool
+            let destroy = unsafe vkDestroyDescriptorPool
         else { return nil }
         var ci = unsafe info
         unsafe ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO
@@ -254,9 +264,11 @@ extension VK.DeviceDispatch {
             destroy: { d, x in unsafe destroy(d, x, nil) })
     }
 
-    public func createPipelineLayout(_ device: VkDevice, info: VkPipelineLayoutCreateInfo) -> VkOwned<VkPipelineLayout>? {
+    package func createPipelineLayout(_ device: VkDevice, info: VkPipelineLayoutCreateInfo)
+        -> VkOwned<VkPipelineLayout>?
+    {
         guard let create = unsafe vkCreatePipelineLayout,
-              let destroy = unsafe vkDestroyPipelineLayout
+            let destroy = unsafe vkDestroyPipelineLayout
         else { return nil }
         var ci = unsafe info
         unsafe ci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO

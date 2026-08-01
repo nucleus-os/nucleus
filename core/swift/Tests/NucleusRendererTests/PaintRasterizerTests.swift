@@ -1,8 +1,9 @@
-import Testing
-@testable import NucleusRenderer
-import NucleusSkiaGraphiteBridge
 import NucleusRenderModel
+import NucleusSkiaGraphiteBridge
 import NucleusTypes
+import Testing
+
+@testable import NucleusRenderer
 
 private enum PaintFixtureResources {
     case none
@@ -25,7 +26,10 @@ private enum PaintFixtureResources {
     guard unsafe surface.isValid() else { return [] }
     let canvas = unsafe surface.getCanvas()
     var clear = nucleus.skia.Color()
-    clear.r = 0; clear.g = 0; clear.b = 0; clear.a = 1
+    clear.r = 0
+    clear.g = 0
+    clear.b = 0
+    clear.a = 1
     unsafe canvas.clear(clear)
 
     switch resources {
@@ -127,9 +131,12 @@ private enum PaintFixtureResources {
     }
 
     private func rectPath(_ x: Float, _ y: Float, _ w: Float, _ h: Float)
-        -> ([PaintPathVerb], [Float]) {
-        ([.move, .line, .line, .line, .close],
-         [x, y, x + w, y, x + w, y + h, x, y + h])
+        -> ([PaintPathVerb], [Float])
+    {
+        (
+            [.move, .line, .line, .line, .close],
+            [x, y, x + w, y, x + w, y + h, x, y + h]
+        )
     }
 
     // MARK: - Geometry
@@ -511,7 +518,7 @@ private enum PaintFixtureResources {
 
 /// Stroke caps and joins.
 ///
-/// These were settable state on `GraphicsContext` that nothing encoded, so every
+/// These were settable state on `GraphicsContext` that nothing recorded, so every
 /// stroke painted butt-capped and miter-joined whatever the caller asked for.
 /// Pixels are the only honest test: a cap is a few pixels past the end of a
 /// line, and nothing short of drawing shows whether they are there.

@@ -18,9 +18,9 @@
 // callback enters that actor through the shared boundary, and generated request
 // trampolines do the same before invoking these @MainActor protocol owners.
 
-import WaylandServerC
 internal import NucleusCompositorServer
 import WaylandServer
+import WaylandServerC
 import WaylandServerDispatch
 
 /// The window-action seam the taskbar drives, by model window id. Implemented by the
@@ -73,8 +73,7 @@ extension ForeignToplevelClient: ZwlrForeignToplevelManagerV1Requests {
 @safe final class ForeignToplevelClient: DesktopModelObserver {
     private unowned let manager: ZwlrForeignToplevelManager
     private let version: Int32
-    private let resource:
-        WaylandResourceHandle<ZwlrForeignToplevelManagerV1Server>
+    private let resource: WaylandResourceHandle<ZwlrForeignToplevelManagerV1Server>
     /// Per-window wire handle, held weakly (the wl_resource owns it). A destroyed
     /// handle's box self-clears; the projection skips nil boxes.
     private var handles = WeakObjectMap<UInt64, ForeignToplevelHandle>()
@@ -109,10 +108,10 @@ extension ForeignToplevelClient: ZwlrForeignToplevelManagerV1Requests {
         guard !finished else { return }
         for change in changes {
             switch change {
-            case let .windowAdded(id): reconcile(id)
-            case let .windowChanged(id): reconcile(id)
-            case let .windowRemoved(id): closeHandle(id)
-            case let .focusChanged(id): refocus(to: id)
+            case .windowAdded(let id): reconcile(id)
+            case .windowChanged(let id): reconcile(id)
+            case .windowRemoved(let id): closeHandle(id)
+            case .focusChanged(let id): refocus(to: id)
             default: break  // space changes belong to ext-workspace
             }
         }
@@ -126,9 +125,12 @@ extension ForeignToplevelClient: ZwlrForeignToplevelManagerV1Requests {
 
     private func reconcile(_ windowID: UInt64) {
         guard resource.isLive,
-              let window = manager.server.window(id: windowID)
+            let window = manager.server.window(id: windowID)
         else { return }
-        guard qualifies(window) else { closeHandle(windowID); return }
+        guard qualifies(window) else {
+            closeHandle(windowID)
+            return
+        }
         if handle(windowID) == nil {
             createHandle(windowID)
         }
@@ -184,8 +186,9 @@ extension ForeignToplevelClient: ZwlrForeignToplevelManagerV1Requests {
             handle.outputDisplayID = nil
         }
         if let new = target,
-           let newOutput = manager.outputResource(
-            forClient: client, displayID: new) {
+            let newOutput = manager.outputResource(
+                forClient: client, displayID: new)
+        {
             handle.resource.sendOutputEnter(output: newOutput)
             handle.outputDisplayID = new
         }
@@ -237,9 +240,9 @@ extension ForeignToplevelClient: ZwlrForeignToplevelManagerV1Requests {
         activated: Bool
     ) {
         var states: [UInt32] = []
-        if window.activeMaximized { states.append(0) }   // maximized
-        if window.minimized { states.append(1) }         // minimized
-        if activated { states.append(2) }                // activated
+        if window.activeMaximized { states.append(0) }  // maximized
+        if window.minimized { states.append(1) }  // minimized
+        if activated { states.append(2) }  // activated
         if window.activeFullscreen { states.append(3) }  // fullscreen
         resource.sendState(state: states)
     }
@@ -255,8 +258,7 @@ extension ForeignToplevelClient: ZwlrForeignToplevelManagerV1Requests {
 @safe final class ForeignToplevelHandle {
     private unowned let manager: ZwlrForeignToplevelManager
     let windowID: UInt64
-    let resource:
-        WaylandResourceHandle<ZwlrForeignToplevelHandleV1Server>
+    let resource: WaylandResourceHandle<ZwlrForeignToplevelHandleV1Server>
     /// Whether the client has been told this window is activated (mirrors focus).
     var activated: Bool = false
     /// The output the client has been told this window entered (and not yet left).
@@ -302,8 +304,10 @@ extension ForeignToplevelHandle: ZwlrForeignToplevelHandleV1Requests {
     func unsetMinimized(_ request: WaylandRequest<ZwlrForeignToplevelHandleV1Server>) {
         act { $0.foreignSetMinimized(windowID: $1, false) }
     }
-    func activate(_ request: WaylandRequest<ZwlrForeignToplevelHandleV1Server>,
-                              seat: WaylandBorrowedObject<WlSeatServer>) {
+    func activate(
+        _ request: WaylandRequest<ZwlrForeignToplevelHandleV1Server>,
+        seat: WaylandBorrowedObject<WlSeatServer>
+    ) {
         guard seat.owner(as: SeatBinding.self) != nil,
             seat.clientID == request.clientID
         else { return }
@@ -314,11 +318,15 @@ extension ForeignToplevelHandle: ZwlrForeignToplevelHandleV1Requests {
     }
     // set_rectangle(surface, x, y, w, h): the taskbar minimize-animation source rect;
     // advisory, ignored.
-    func setRectangle(_ request: WaylandRequest<ZwlrForeignToplevelHandleV1Server>,
-                                  surface: WaylandBorrowedObject<WlSurfaceServer>,
-                                  x: Int32, y: Int32, width: Int32, height: Int32) {}
-    func setFullscreen(_ request: WaylandRequest<ZwlrForeignToplevelHandleV1Server>,
-                                   output: WaylandBorrowedObject<WlOutputServer>?) {
+    func setRectangle(
+        _ request: WaylandRequest<ZwlrForeignToplevelHandleV1Server>,
+        surface: WaylandBorrowedObject<WlSurfaceServer>,
+        x: Int32, y: Int32, width: Int32, height: Int32
+    ) {}
+    func setFullscreen(
+        _ request: WaylandRequest<ZwlrForeignToplevelHandleV1Server>,
+        output: WaylandBorrowedObject<WlOutputServer>?
+    ) {
         let outputID = output?.output?.outputId
         act {
             $0.foreignSetFullscreen(

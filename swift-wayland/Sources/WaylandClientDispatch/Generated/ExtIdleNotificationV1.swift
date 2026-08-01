@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for ext_idle_notification_v1.
 
 import WaylandClientC
-public enum ExtIdleNotificationV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum ExtIdleNotificationV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_ext_idle_notification_v1())
-    public nonisolated static let maximumVersion: UInt32 = 2
+    package nonisolated static let maximumVersion: UInt32 = 2
 }
-public extension WaylandProxy where Interface == ExtIdleNotificationV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ExtIdleNotificationV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_ext_idle_notification_v1_destroy(_proxy)
@@ -19,56 +20,65 @@ public extension WaylandProxy where Interface == ExtIdleNotificationV1Client {
     }
 }
 @MainActor
-public protocol ExtIdleNotificationV1Events: AnyObject {
+package protocol ExtIdleNotificationV1Events: AnyObject {
     func idled(_ proxy: WaylandBorrowedProxy<ExtIdleNotificationV1Client>)
     func resumed(_ proxy: WaylandBorrowedProxy<ExtIdleNotificationV1Client>)
 }
-public extension ExtIdleNotificationV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<ext_idle_notification_v1_listener> = {
-        let p = UnsafeMutablePointer<ext_idle_notification_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: ext_idle_notification_v1_listener())
-        unsafe p.pointee.idled = idled_impl
-        unsafe p.pointee.resumed = resumed_impl
-        return unsafe p
-    }()
-    private static func handler(_ context: WaylandClientListenerContext) -> any ExtIdleNotificationV1Events? {
+package extension ExtIdleNotificationV1Client {
+    package nonisolated(unsafe) static let listener:
+        UnsafeMutablePointer<ext_idle_notification_v1_listener> = {
+            let p = UnsafeMutablePointer<ext_idle_notification_v1_listener>.allocate(capacity: 1)
+            unsafe p.initialize(to: ext_idle_notification_v1_listener())
+            unsafe p.pointee.idled = idled_impl
+            unsafe p.pointee.resumed = resumed_impl
+            return unsafe p
+        }()
+    private static func handler(_ context: WaylandClientListenerContext)
+        -> any ExtIdleNotificationV1Events?
+    {
         context.owner as? any ExtIdleNotificationV1Events
     }
-    private static let idled_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let idled_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.idled(
+                    WaylandBorrowedProxy<ExtIdleNotificationV1Client>(eventProxy))
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
+    private static let resumed_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.resumed(
+                    WaylandBorrowedProxy<ExtIdleNotificationV1Client>(eventProxy))
+            }
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.idled(WaylandBorrowedProxy<ExtIdleNotificationV1Client>(eventProxy))
-        }
-    }
-    private static let resumed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.resumed(WaylandBorrowedProxy<ExtIdleNotificationV1Client>(eventProxy))
-        }
-    }
 }
-public extension WaylandProxy where Interface == ExtIdleNotificationV1Client {
-    func installListener(_ owner: any ExtIdleNotificationV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ExtIdleNotificationV1Client {
+    package func installListener(_ owner: any ExtIdleNotificationV1Events) throws(WaylandProxyError)
+    {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe ext_idle_notification_v1_add_listener(proxy, ExtIdleNotificationV1Client.listener, data)
+            unsafe ext_idle_notification_v1_add_listener(
+                proxy, ExtIdleNotificationV1Client.listener, data)
         }
     }
 }

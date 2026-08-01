@@ -4,10 +4,10 @@
 // the delegate and live XCursor/renderer path. The cursor is compositor-global,
 // so a device carries only the pointer authorization source.
 
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
 import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 /// The seam to the cursor renderer. Returns false for an unknown shape, which
 /// the router turns into the protocol's invalid_shape error.
@@ -66,8 +66,7 @@ func cursorShapeName(_ shape: WpCursorShapeDeviceV1Shape) -> String? {
 /// A wp_cursor_shape_device_v1: maps set_shape to the global cursor.
 @MainActor
 final class CursorShapeDevice {
-    private let resource:
-        WaylandResourceHandle<WpCursorShapeDeviceV1Server>
+    private let resource: WaylandResourceHandle<WpCursorShapeDeviceV1Server>
     private unowned let manager: CursorShapeManager
     private weak var pointer: WlPointer?
     init(
@@ -82,7 +81,10 @@ final class CursorShapeDevice {
 }
 
 extension CursorShapeDevice: WpCursorShapeDeviceV1Requests {
-    func setShape(_ request: WaylandRequest<WpCursorShapeDeviceV1Server>, serial: UInt32, shape: WpCursorShapeDeviceV1Shape) {
+    func setShape(
+        _ request: WaylandRequest<WpCursorShapeDeviceV1Server>, serial: UInt32,
+        shape: WpCursorShapeDeviceV1Shape
+    ) {
         guard pointer?.authorizesCursor(serial: serial) == true else { return }
         let ok = manager.delegate?.applyCursorShape(shape) ?? false
         if !ok {

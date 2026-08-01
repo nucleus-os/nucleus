@@ -1,6 +1,7 @@
 import NucleusConfig
 import NucleusDiagnostics
 import NucleusSessionProtocol
+
 #if canImport(Glibc)
 import Glibc
 #endif
@@ -11,7 +12,7 @@ import Glibc
 /// here so loading `NucleusShell` loads exactly one first-party framework:
 /// `NucleusShellKit`.
 @MainActor
-public func runShell() async -> Int32 {
+package func runShell() async -> Int32 {
     let socket: String?
     if let value = unsafe getenv("WAYLAND_DISPLAY") {
         socket = unsafe String(cString: value)
@@ -28,7 +29,8 @@ public func runShell() async -> Int32 {
     let policyChannel: ShellPolicyChannel?
     do {
         configuration = try SessionConfiguration.inherited()
-        guard let inheritedChannel =
+        guard
+            let inheritedChannel =
                 try ConfigurationClientChannel.inherited()
         else {
             throw ConfigurationChannelFailure.invalidDescriptor("<missing>")
@@ -54,15 +56,16 @@ public func runShell() async -> Int32 {
         return 1
     }
 
-    guard let host = ShellHost(
-        socketName: socket,
-        waylandDescriptor: nil,
-        configuration: configuration,
-        liveConfiguration: liveConfiguration,
-        configurationEpoch: configurationEpoch,
-        configurationGeneration: configurationGeneration,
-        configurationChannel: configurationChannel,
-        policyChannel: policyChannel)
+    guard
+        let host = ShellHost(
+            socketName: socket,
+            waylandDescriptor: nil,
+            configuration: configuration,
+            liveConfiguration: liveConfiguration,
+            configurationEpoch: configurationEpoch,
+            configurationGeneration: configurationGeneration,
+            configurationChannel: configurationChannel,
+            policyChannel: policyChannel)
     else {
         NucleusLogger(subsystem: "shell").error(
             "could not connect to the compositor "

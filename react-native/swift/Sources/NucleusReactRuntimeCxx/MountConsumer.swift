@@ -1,7 +1,7 @@
 import CxxStdlib
-public import NucleusUI
-import NucleusUIEmbedder
 import NucleusReactRuntimeCxxBridge
+package import NucleusUI
+import NucleusUIEmbedder
 import Synchronization
 import Tracy
 
@@ -9,7 +9,7 @@ import Tracy
 // never appears in cross-module Swift API. A tagged event retains only the data
 // its mutation uses, and component classification happens once while the C++
 // snapshot is still borrowed.
-public enum MountComponentKind: Sendable {
+package enum MountComponentKind: Sendable {
     case root
     case view
     case text
@@ -38,17 +38,17 @@ public enum MountComponentKind: Sendable {
     }
 }
 
-public struct MountViewSnapshot: Sendable {
-    public let nativeID: String
-    public let frame: Rect
+package struct MountViewSnapshot: Sendable {
+    package let nativeID: String
+    package let frame: Rect
 
-    public init(nativeID: String, frame: Rect) {
+    package init(nativeID: String, frame: Rect) {
         self.nativeID = nativeID
         self.frame = frame
     }
 }
 
-public enum MountComponentSnapshot: Sendable {
+package enum MountComponentSnapshot: Sendable {
     case root(MountViewSnapshot)
     case view(
         MountViewSnapshot,
@@ -62,7 +62,7 @@ public enum MountComponentSnapshot: Sendable {
         source: String?)
     case other
 
-    public var kind: MountComponentKind {
+    package var kind: MountComponentKind {
         switch self {
         case .root: .root
         case .view: .view
@@ -75,9 +75,9 @@ public enum MountComponentSnapshot: Sendable {
     var viewSnapshot: MountViewSnapshot? {
         switch self {
         case .root(let snapshot),
-             .view(let snapshot, _),
-             .text(let snapshot, _, _),
-             .image(let snapshot, _):
+            .view(let snapshot, _),
+            .text(let snapshot, _, _),
+            .image(let snapshot, _):
             snapshot
         case .other:
             nil
@@ -101,7 +101,7 @@ public enum MountComponentSnapshot: Sendable {
     }
 }
 
-public enum MountEvent: Sendable {
+package enum MountEvent: Sendable {
     case create(
         surfaceID: Int,
         tag: Int,
@@ -119,7 +119,7 @@ public enum MountEvent: Sendable {
         tag: Int,
         component: MountComponentSnapshot)
 
-    public init(_ mutation: nucleus.react.MountMutation) {
+    package init(_ mutation: nucleus.react.MountMutation) {
         let surfaceID = Int(mutation.surfaceId)
         switch mutation.type {
         case .Create:
@@ -162,13 +162,13 @@ public enum MountEvent: Sendable {
         }
     }
 
-    public var surfaceID: Int {
+    package var surfaceID: Int {
         switch self {
         case .create(let surfaceID, _, _, _),
-             .delete(let surfaceID, _),
-             .insert(let surfaceID, _, _, _),
-             .remove(let surfaceID, _),
-             .update(let surfaceID, _, _):
+            .delete(let surfaceID, _),
+            .insert(let surfaceID, _, _, _),
+            .remove(let surfaceID, _),
+            .update(let surfaceID, _, _):
             surfaceID
         }
     }
@@ -188,8 +188,8 @@ public enum MountEvent: Sendable {
     }
 }
 
-private extension MountComponentSnapshot {
-    init(
+extension MountComponentSnapshot {
+    fileprivate init(
         _ mutation: nucleus.react.MountMutation,
         kind: MountComponentKind
     ) {
@@ -226,21 +226,21 @@ private extension MountComponentSnapshot {
 // Swift-native snapshot of `nucleus::react::TextAttributes`. Same
 // rationale as `MountEvent` — the raw C++ struct doesn't surface in
 // cross-module Swift API signatures.
-public enum MountTextAlignment: Sendable { case natural, leading, center, trailing }
-public enum MountLineBreakMode: Sendable { case clipping, truncatingTail, wordWrapping }
+package enum MountTextAlignment: Sendable { case natural, leading, center, trailing }
+package enum MountLineBreakMode: Sendable { case clipping, truncatingTail, wordWrapping }
 
-public struct TextAttributesSnapshot: Sendable {
-    public let fontFamily: String
-    public let fontSize: Float
-    public let fontWeight: Int
-    public let fontSlant: Int
-    public let textColor: MountEventColor?
-    public let lineHeight: Double
-    public let alignment: MountTextAlignment
-    public let maximumNumberOfLines: Int
-    public let lineBreakMode: MountLineBreakMode
+package struct TextAttributesSnapshot: Sendable {
+    package let fontFamily: String
+    package let fontSize: Float
+    package let fontWeight: Int
+    package let fontSlant: Int
+    package let textColor: MountEventColor?
+    package let lineHeight: Double
+    package let alignment: MountTextAlignment
+    package let maximumNumberOfLines: Int
+    package let lineBreakMode: MountLineBreakMode
 
-    public init(
+    package init(
         fontFamily: String,
         fontSize: Float,
         fontWeight: Int,
@@ -298,10 +298,9 @@ public struct TextAttributesSnapshot: Sendable {
     }
 }
 
-// Per-surface materializer state. `attachSurface` registers the
-// context before the consumer applies any events for that surface;
-// the consumer routes incoming `didFinishTransaction` batches to the
-// matching context's registry and rootView.
+// Per-surface materializer state. `registerContext` installs the context
+// before the consumer applies events for that surface; the consumer routes
+// incoming `didFinishTransaction` batches to its registry and root view.
 @MainActor
 package final class MountSurfaceContext {
     package let surfaceID: Int
@@ -327,9 +326,9 @@ package final class MountSurfaceContext {
 // the bridge buffers each mutation through `didMount`, and on
 // `didFinishTransaction(surfaceID:)` the consumer materializes the
 // batch against the registered surface context. Events that arrive
-// after host surface registration but before a materializer context
-// is attached stay buffered; `attachSurface` immediately flushes
-// whatever has accumulated.
+// after host surface registration but before a materializer context is
+// registered stay buffered; `registerContext` immediately flushes whatever
+// has accumulated.
 private struct MountCopiedBytes: Sendable {
     var componentName: UInt64 = 0
     var text: UInt64 = 0
@@ -365,7 +364,7 @@ package typealias MountDrainOperation = @MainActor @Sendable () -> Void
 package typealias MountDrainScheduler =
     @Sendable (@escaping MountDrainOperation) -> Void
 
-public final class MountConsumer: MountingObserverHandler, Sendable {
+package final class MountConsumer: MountingObserverHandler, Sendable {
     private struct IncomingState: Sendable {
         var pending: [Int: [MountEvent]] = [:]
         var completedBatches: [CompletedBatch] = []
@@ -390,7 +389,7 @@ public final class MountConsumer: MountingObserverHandler, Sendable {
     @MainActor
     private var contextsBySurface: [Int: MountSurfaceContext] = [:]
 
-    public convenience init() {
+    package convenience init() {
         self.init(scheduleDrain: { operation in
             Task { @MainActor in
                 operation()
@@ -404,11 +403,11 @@ public final class MountConsumer: MountingObserverHandler, Sendable {
 
     // MARK: MountingObserverHandler
 
-    public func didMount(_ mutation: nucleus.react.MountMutation) {
+    package func didMount(_ mutation: nucleus.react.MountMutation) {
         enqueue(MountEvent(mutation))
     }
 
-    public func didFinishTransaction(surfaceID: Int32) {
+    package func didFinishTransaction(surfaceID: Int32) {
         let id = Int(surfaceID)
         let shouldSchedule = incoming.withLock { state in
             guard state.activeSurfaces.contains(id) else {
@@ -493,12 +492,12 @@ public final class MountConsumer: MountingObserverHandler, Sendable {
     }
 
     @MainActor
-    public func pendingCount(surfaceID: Int) -> UInt32 {
+    package func pendingCount(surfaceID: Int) -> UInt32 {
         UInt32(pendingBySurface[surfaceID]?.count ?? 0)
     }
 
     @MainActor
-    public func pendingEvents(surfaceID: Int) -> [MountEvent] {
+    package func pendingEvents(surfaceID: Int) -> [MountEvent] {
         pendingBySurface[surfaceID] ?? []
     }
 
@@ -535,7 +534,7 @@ public final class MountConsumer: MountingObserverHandler, Sendable {
     private func flush(surfaceID: Int) {
         guard let context = contextsBySurface[surfaceID] else {
             // No materializer registered yet; events stay buffered for the
-            // next attach.
+            // next context registration.
             return
         }
         let events = pendingBySurface.removeValue(forKey: surfaceID) ?? []
@@ -577,20 +576,20 @@ public final class MountConsumer: MountingObserverHandler, Sendable {
         }
 
         guard !events.isEmpty,
-              events.allSatisfy({ event in
-                  switch event {
-                  case .remove, .delete: true
-                  default: false
-                  }
-              })
+            events.allSatisfy({ event in
+                switch event {
+                case .remove, .delete: true
+                default: false
+                }
+            })
         else { return nil }
 
         var groupIndices: [ObjectIdentifier: Int] = [:]
         var removalGroups: [RemovalGroup] = []
         for event in events {
             guard case .remove(_, let childTag) = event,
-                  let child = registry.component(for: childTag)?.view,
-                  let parent = child.superview
+                let child = registry.component(for: childTag)?.view,
+                let parent = child.superview
             else { continue }
             let key = ObjectIdentifier(parent)
             if let index = groupIndices[key] {
@@ -613,7 +612,8 @@ public final class MountConsumer: MountingObserverHandler, Sendable {
             groups: UInt64(removalGroups.count),
             children: removalGroups.reduce(into: 0) {
                 $0 += UInt64($1.children.count)
-            })
+            }
+        )
     }
 
     @MainActor
@@ -768,7 +768,7 @@ public final class MountConsumer: MountingObserverHandler, Sendable {
             parent.view.insertSubview(child.view, at: index)
         case .update(_, let tag, let snapshot):
             if let child = registry.component(for: tag),
-               snapshot.kind != .other
+                snapshot.kind != .other
             {
                 child.apply(snapshot)
             }
@@ -782,19 +782,19 @@ public final class MountConsumer: MountingObserverHandler, Sendable {
     }
 }
 
-public struct MountEventColor: Sendable, Equatable {
-    public var red: Float
-    public var green: Float
-    public var blue: Float
-    public var alpha: Float
+package struct MountEventColor: Sendable, Equatable {
+    package var red: Float
+    package var green: Float
+    package var blue: Float
+    package var alpha: Float
 }
 
-private extension nucleus.react.MountMutation {
-    var swiftFrame: Rect {
+extension nucleus.react.MountMutation {
+    fileprivate var swiftFrame: Rect {
         Rect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
     }
 
-    var swiftBackgroundColor: MountEventColor? {
+    fileprivate var swiftBackgroundColor: MountEventColor? {
         guard let color = backgroundColor.value else { return nil }
         return MountEventColor(
             red: color.red,
@@ -804,17 +804,17 @@ private extension nucleus.react.MountMutation {
         )
     }
 
-    var swiftNativeID: String {
+    fileprivate var swiftNativeID: String {
         guard let id = nativeId.value else { return "" }
         return String(id)
     }
 
-    var swiftText: String {
+    fileprivate var swiftText: String {
         guard let value = text.value else { return "" }
         return String(value)
     }
 
-    var swiftImageSource: String? {
+    fileprivate var swiftImageSource: String? {
         guard let value = imageSource.value else { return nil }
         let resolved = String(value)
         return resolved.isEmpty ? nil : resolved
@@ -823,16 +823,16 @@ private extension nucleus.react.MountMutation {
 }
 
 @MainActor
-public final class ViewComponentViewRegistry {
+package final class ViewComponentViewRegistry {
     private var componentsByTag: [Int: any ReactComponentView] = [:]
 
-    public init() {}
+    package init() {}
 
-    public var components: [any ReactComponentView] {
+    package var components: [any ReactComponentView] {
         componentsByTag.values.sorted { $0.tag < $1.tag }
     }
 
-    public func component(for tag: Int) -> (any ReactComponentView)? {
+    package func component(for tag: Int) -> (any ReactComponentView)? {
         componentsByTag[tag]
     }
 
@@ -846,10 +846,10 @@ public final class ViewComponentViewRegistry {
 }
 
 @MainActor
-public struct ReactSurfaceEnvironment: Sendable, Equatable {
-    public var backingScaleFactor: BackingScaleFactor
+package struct ReactSurfaceEnvironment: Sendable, Equatable {
+    package var backingScaleFactor: BackingScaleFactor
 
-    public init(
+    package init(
         backingScaleFactor: BackingScaleFactor = .one
     ) {
         self.backingScaleFactor = backingScaleFactor
@@ -857,7 +857,7 @@ public struct ReactSurfaceEnvironment: Sendable, Equatable {
 }
 
 @MainActor
-public protocol ReactComponentView: AnyObject {
+package protocol ReactComponentView: AnyObject {
     var tag: Int { get }
     var componentName: String { get }
     var nativeID: String { get }
@@ -868,11 +868,11 @@ public protocol ReactComponentView: AnyObject {
 }
 
 @MainActor
-public class ReactBaseComponentView: ReactComponentView {
-    public let tag: Int
-    public let componentName: String
-    public private(set) var nativeID: String
-    public let view: View
+package class ReactBaseComponentView: ReactComponentView {
+    package let tag: Int
+    package let componentName: String
+    package private(set) var nativeID: String
+    package let view: View
     var environment: ReactSurfaceEnvironment
 
     init(
@@ -888,28 +888,28 @@ public class ReactBaseComponentView: ReactComponentView {
         self.environment = ReactSurfaceEnvironment()
     }
 
-    public func apply(_ snapshot: MountComponentSnapshot) {
+    package func apply(_ snapshot: MountComponentSnapshot) {
         guard let snapshot = snapshot.viewSnapshot else { return }
         nativeID = snapshot.nativeID
         view.frame = snapshot.frame
     }
 
-    public func updateEnvironment(_ environment: ReactSurfaceEnvironment) {
+    package func updateEnvironment(_ environment: ReactSurfaceEnvironment) {
         self.environment = environment
     }
 
 }
 
 @MainActor
-public final class ReactRootComponentView: ReactBaseComponentView {
+package final class ReactRootComponentView: ReactBaseComponentView {
     init(tag: Int, view: View) {
         super.init(tag: tag, componentName: "RootView", nativeID: "", view: view)
     }
 }
 
 @MainActor
-public final class ReactViewComponentView: ReactBaseComponentView {
-    public override func apply(_ snapshot: MountComponentSnapshot) {
+package final class ReactViewComponentView: ReactBaseComponentView {
+    package override func apply(_ snapshot: MountComponentSnapshot) {
         super.apply(snapshot)
         guard case .view(_, let backgroundColor) = snapshot
         else { return }
@@ -922,7 +922,7 @@ public final class ReactViewComponentView: ReactBaseComponentView {
 }
 
 @MainActor
-public final class ReactParagraphComponentView: ReactBaseComponentView {
+package final class ReactParagraphComponentView: ReactBaseComponentView {
     /// The same object as `view`, held typed so text can be applied to it.
     private let paragraphView: ReactParagraphView
 
@@ -932,7 +932,7 @@ public final class ReactParagraphComponentView: ReactBaseComponentView {
             tag: tag, componentName: componentName, nativeID: nativeID, view: paragraphView)
     }
 
-    public override func apply(_ snapshot: MountComponentSnapshot) {
+    package override func apply(_ snapshot: MountComponentSnapshot) {
         super.apply(snapshot)
         guard case .text(_, let text, let attributes) = snapshot
         else { return }
@@ -943,7 +943,7 @@ public final class ReactParagraphComponentView: ReactBaseComponentView {
         }
     }
 
-    public override func updateEnvironment(_ environment: ReactSurfaceEnvironment) {
+    package override func updateEnvironment(_ environment: ReactSurfaceEnvironment) {
         super.updateEnvironment(environment)
         let aligned = pixelAlignedEnclosing(view.frame, scale: environment.backingScaleFactor)
         if aligned != view.frame {
@@ -954,7 +954,7 @@ public final class ReactParagraphComponentView: ReactBaseComponentView {
 }
 
 @MainActor
-public enum ReactComponentViewFactory {
+package enum ReactComponentViewFactory {
     static func root(tag: Int, view: View) -> any ReactComponentView {
         ReactRootComponentView(tag: tag, view: view)
     }

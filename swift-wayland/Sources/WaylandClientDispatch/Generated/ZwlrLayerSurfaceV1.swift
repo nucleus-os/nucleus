@@ -2,50 +2,58 @@
 // Typed client descriptor and event dispatch for zwlr_layer_surface_v1.
 
 import WaylandClientC
-public enum ZwlrLayerSurfaceV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+package import WaylandProtocolTypes
+
+package enum ZwlrLayerSurfaceV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwlr_layer_surface_v1())
-    public nonisolated static let maximumVersion: UInt32 = 5
+    package nonisolated static let maximumVersion: UInt32 = 5
 }
-public import WaylandProtocolTypes
-public extension WaylandProxy where Interface == ZwlrLayerSurfaceV1Client {
-    func setSize(width: UInt32, height: UInt32) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwlrLayerSurfaceV1Client {
+    package func setSize(width: UInt32, height: UInt32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_zwlr_layer_surface_v1_set_size(_proxy, width, height)
         return
     }
-    func setAnchor(anchor: ZwlrLayerSurfaceV1Anchor) throws(WaylandProxyError) {
+    package func setAnchor(anchor: ZwlrLayerSurfaceV1Anchor) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_zwlr_layer_surface_v1_set_anchor(_proxy, anchor.rawValue)
+        unsafe swift_wayland_client_request_zwlr_layer_surface_v1_set_anchor(
+            _proxy, anchor.rawValue)
         return
     }
-    func setExclusiveZone(zone: Int32) throws(WaylandProxyError) {
+    package func setExclusiveZone(zone: Int32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_zwlr_layer_surface_v1_set_exclusive_zone(_proxy, zone)
         return
     }
-    func setMargin(top: Int32, right: Int32, bottom: Int32, left: Int32) throws(WaylandProxyError) {
+    package func setMargin(top: Int32, right: Int32, bottom: Int32, left: Int32)
+        throws(WaylandProxyError)
+    {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_zwlr_layer_surface_v1_set_margin(_proxy, top, right, bottom, left)
+        unsafe swift_wayland_client_request_zwlr_layer_surface_v1_set_margin(
+            _proxy, top, right, bottom, left)
         return
     }
-    func setKeyboardInteractivity(keyboard_interactivity: ZwlrLayerSurfaceV1KeyboardInteractivity) throws(WaylandProxyError) {
+    package func setKeyboardInteractivity(
+        keyboard_interactivity: ZwlrLayerSurfaceV1KeyboardInteractivity
+    ) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_zwlr_layer_surface_v1_set_keyboard_interactivity(_proxy, keyboard_interactivity.rawValue)
+        unsafe swift_wayland_client_request_zwlr_layer_surface_v1_set_keyboard_interactivity(
+            _proxy, keyboard_interactivity.rawValue)
         return
     }
-    func getPopup(popup: WaylandProxy<XdgPopupClient>) throws(WaylandProxyError) {
+    package func getPopup(popup: WaylandProxy<XdgPopupClient>) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _popupProxy = try unsafe popup.requireNativeProxy()
         unsafe swift_wayland_client_request_zwlr_layer_surface_v1_get_popup(_proxy, _popupProxy)
         return
     }
-    func ackConfigure(serial: UInt32) throws(WaylandProxyError) {
+    package func ackConfigure(serial: UInt32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_zwlr_layer_surface_v1_ack_configure(_proxy, serial)
         return
     }
-    func destroy() throws(WaylandProxyError) {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zwlr_layer_surface_v1_destroy(_proxy)
@@ -54,7 +62,7 @@ public extension WaylandProxy where Interface == ZwlrLayerSurfaceV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func setLayer(layer: ZwlrLayerShellV1Layer) throws(WaylandProxyError) {
+    package func setLayer(layer: ZwlrLayerShellV1Layer) throws(WaylandProxyError) {
         guard version >= 2 else {
             throw .unsupportedVersion(
                 required: 2, actual: version)
@@ -63,67 +71,80 @@ public extension WaylandProxy where Interface == ZwlrLayerSurfaceV1Client {
         unsafe swift_wayland_client_request_zwlr_layer_surface_v1_set_layer(_proxy, layer.rawValue)
         return
     }
-    func setExclusiveEdge(edge: ZwlrLayerSurfaceV1Anchor) throws(WaylandProxyError) {
+    package func setExclusiveEdge(edge: ZwlrLayerSurfaceV1Anchor) throws(WaylandProxyError) {
         guard version >= 5 else {
             throw .unsupportedVersion(
                 required: 5, actual: version)
         }
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_zwlr_layer_surface_v1_set_exclusive_edge(_proxy, edge.rawValue)
+        unsafe swift_wayland_client_request_zwlr_layer_surface_v1_set_exclusive_edge(
+            _proxy, edge.rawValue)
         return
     }
 }
 @MainActor
-public protocol ZwlrLayerSurfaceV1Events: AnyObject {
-    func configure(_ proxy: WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>, serial: UInt32, width: UInt32, height: UInt32)
+package protocol ZwlrLayerSurfaceV1Events: AnyObject {
+    func configure(
+        _ proxy: WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>, serial: UInt32, width: UInt32,
+        height: UInt32)
     func closed(_ proxy: WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>)
 }
-public extension ZwlrLayerSurfaceV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwlr_layer_surface_v1_listener> = {
-        let p = UnsafeMutablePointer<zwlr_layer_surface_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwlr_layer_surface_v1_listener())
-        unsafe p.pointee.configure = configure_impl
-        unsafe p.pointee.closed = closed_impl
-        return unsafe p
-    }()
-    private static func handler(_ context: WaylandClientListenerContext) -> any ZwlrLayerSurfaceV1Events? {
+package extension ZwlrLayerSurfaceV1Client {
+    package nonisolated(unsafe) static let listener:
+        UnsafeMutablePointer<zwlr_layer_surface_v1_listener> = {
+            let p = UnsafeMutablePointer<zwlr_layer_surface_v1_listener>.allocate(capacity: 1)
+            unsafe p.initialize(to: zwlr_layer_surface_v1_listener())
+            unsafe p.pointee.configure = configure_impl
+            unsafe p.pointee.closed = closed_impl
+            return unsafe p
+        }()
+    private static func handler(_ context: WaylandClientListenerContext)
+        -> any ZwlrLayerSurfaceV1Events?
+    {
         context.owner as? any ZwlrLayerSurfaceV1Events
     }
-    private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void = { data, proxy, serial, width, height in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let configure_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void =
+            { data, proxy, serial, width, height in
+                guard let data = unsafe data, let proxy = unsafe proxy else {
+                    return
+                }
+                let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+                guard let h = handler(listenerContext) else {
+                    return
+                }
+                nonisolated(unsafe) let eventHandler = h
+                nonisolated(unsafe) let eventProxy = unsafe proxy
+                nonisolated(unsafe) let eventContext = listenerContext
+                MainActor.assumeIsolated {
+                    unsafe eventHandler.configure(
+                        WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>(eventProxy), serial: serial,
+                        width: width, height: height)
+                }
+            }
+    private static let closed_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.closed(
+                    WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>(eventProxy))
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.configure(WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>(eventProxy), serial: serial, width: width, height: height)
-        }
-    }
-    private static let closed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.closed(WaylandBorrowedProxy<ZwlrLayerSurfaceV1Client>(eventProxy))
-        }
-    }
 }
-public extension WaylandProxy where Interface == ZwlrLayerSurfaceV1Client {
-    func installListener(_ owner: any ZwlrLayerSurfaceV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwlrLayerSurfaceV1Client {
+    package func installListener(_ owner: any ZwlrLayerSurfaceV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwlr_layer_surface_v1_add_listener(proxy, ZwlrLayerSurfaceV1Client.listener, data)
+            unsafe zwlr_layer_surface_v1_add_listener(
+                proxy, ZwlrLayerSurfaceV1Client.listener, data)
         }
     }
 }

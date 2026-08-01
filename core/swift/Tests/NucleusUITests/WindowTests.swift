@@ -1,9 +1,11 @@
 import NucleusUITestSupport
-@_spi(NucleusRenderServer) @testable import NucleusUI
+import Testing
+
 import class NucleusLayers.Context
 import struct NucleusLayers.ContextID
 import class NucleusLayers.InMemoryCommitSink
-import Testing
+
+@testable import NucleusUI
 
 @MainActor
 @Suite(.uiContext) struct WindowTests {
@@ -111,14 +113,18 @@ import Testing
         window.setContentView(root)
 
         #expect(root.frame.origin == .zero)
-        #expect(window.scenePoint(fromWindow: Point(x: 7.25, y: 9.5))
-            == Point(x: 132.75, y: 57.75))
-        #expect(window.windowPoint(fromScene: Point(x: 132.75, y: 57.75))
-            == Point(x: 7.25, y: 9.5))
-        #expect(window.sceneRect(fromWindow: Rect(x: 7.25, y: 9.5, width: 30, height: 20))
-            == Rect(x: 132.75, y: 57.75, width: 30, height: 20))
-        #expect(window.windowRect(fromScene: Rect(x: 132.75, y: 57.75, width: 30, height: 20))
-            == Rect(x: 7.25, y: 9.5, width: 30, height: 20))
+        #expect(
+            window.scenePoint(fromWindow: Point(x: 7.25, y: 9.5))
+                == Point(x: 132.75, y: 57.75))
+        #expect(
+            window.windowPoint(fromScene: Point(x: 132.75, y: 57.75))
+                == Point(x: 7.25, y: 9.5))
+        #expect(
+            window.sceneRect(fromWindow: Rect(x: 7.25, y: 9.5, width: 30, height: 20))
+                == Rect(x: 132.75, y: 57.75, width: 30, height: 20))
+        #expect(
+            window.windowRect(fromScene: Rect(x: 132.75, y: 57.75, width: 30, height: 20))
+                == Rect(x: 7.25, y: 9.5, width: 30, height: 20))
     }
 
     @Test func windowSceneOwnsOrderingVisibilityAndKeyWindow() throws {

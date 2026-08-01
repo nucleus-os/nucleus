@@ -1,8 +1,8 @@
 import Dispatch
 import Glibc
+internal import NucleusAppHostProtocols
 import NucleusRenderModel
-@_spi(NucleusPlatform) import NucleusRenderer
-internal import enum NucleusAppHostProtocols.PixelChannelOrder
+package import NucleusRenderer
 import Synchronization
 
 private final class WakeCounter: AsyncRenderWakeSink, Sendable {
@@ -46,15 +46,18 @@ enum NucleusCoreThreadSanitizerHarness {
 
         DispatchQueue.concurrentPerform(iterations: requestCount) { index in
             let handle = UInt64(index + 1)
-            let source = ImageSource(content: .raw(RawPixelBuffer(
-                width: 32,
-                height: 32,
-                order: .rgba,
-                pixels: pixels)))
-            guard sendableQueue.value.submit(
-                handle: handle,
-                generation: 1,
-                source: source)
+            let source = ImageSource(
+                content: .raw(
+                    RawPixelBuffer(
+                        width: 32,
+                        height: 32,
+                        order: .rgba,
+                        pixels: pixels)))
+            guard
+                sendableQueue.value.submit(
+                    handle: handle,
+                    generation: 1,
+                    source: source)
             else {
                 return
             }
@@ -71,8 +74,8 @@ enum NucleusCoreThreadSanitizerHarness {
                 switch result.result {
                 case .success(let image):
                     guard image.isValid,
-                          image.width == 32,
-                          image.height == 32
+                        image.width == 32,
+                        image.height == 32
                     else {
                         queue.shutdown()
                         exit(2)
@@ -90,14 +93,15 @@ enum NucleusCoreThreadSanitizerHarness {
         queue.shutdown()
 
         guard completed.count == expected,
-              wakeCounter.value > 0,
-              !queue.hasWorkers
+            wakeCounter.value > 0,
+            !queue.hasWorkers
         else {
             exit(3)
         }
-        guard exerciseQueueLifetimes(
-            wakeSink: wakeCounter,
-            pixels: pixels)
+        guard
+            exerciseQueueLifetimes(
+                wakeSink: wakeCounter,
+                pixels: pixels)
         else {
             exit(5)
         }
@@ -109,32 +113,35 @@ enum NucleusCoreThreadSanitizerHarness {
         pixels: [UInt8]
     ) -> Bool {
         for iteration in 0..<128 {
-            let workerCount = iteration.isMultiple(of: 8)
+            let workerCount =
+                iteration.isMultiple(of: 8)
                 ? 0
                 : iteration.isMultiple(of: 2) ? 2 : 1
             let queue = ImageDecodeQueue(
                 wakeSink: wakeSink,
                 workerCount: workerCount)
-            let source = ImageSource(content: .raw(RawPixelBuffer(
-                width: 32,
-                height: 32,
-                order: .rgba,
-                pixels: pixels)))
+            let source = ImageSource(
+                content: .raw(
+                    RawPixelBuffer(
+                        width: 32,
+                        height: 32,
+                        order: .rgba,
+                        pixels: pixels)))
             if workerCount == 0 {
                 guard !queue.hasWorkers,
-                      !queue.submit(
-                          handle: UInt64(iteration + 1),
-                          generation: 1,
-                          source: source)
+                    !queue.submit(
+                        handle: UInt64(iteration + 1),
+                        generation: 1,
+                        source: source)
                 else {
                     return false
                 }
             } else {
                 guard queue.hasWorkers,
-                      queue.submit(
-                          handle: UInt64(iteration + 1),
-                          generation: 1,
-                          source: source)
+                    queue.submit(
+                        handle: UInt64(iteration + 1),
+                        generation: 1,
+                        source: source)
                 else {
                     return false
                 }
@@ -167,7 +174,7 @@ enum NucleusCoreThreadSanitizerHarness {
             images.release(imageHandle)
         }
         guard images.count == 0,
-              images.takeMutations() == [.evict(handle: imageHandle)]
+            images.takeMutations() == [.evict(handle: imageHandle)]
         else { return false }
 
         let effects = RuntimeEffectStore()
@@ -184,7 +191,7 @@ enum NucleusCoreThreadSanitizerHarness {
             effects.release(effectHandle)
         }
         guard effects.count == 0,
-              effects.takeEvictedHandles() == [effectHandle]
+            effects.takeEvictedHandles() == [effectHandle]
         else { return false }
 
         let snapshots = SnapshotService()

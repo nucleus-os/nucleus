@@ -6,11 +6,11 @@
 // wl_surface is owned solely by its resource's user_data), used to drive the
 // presentation tick across every surface.
 
-import WaylandServerC
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowManager
 import WaylandServer
+import WaylandServerC
 import WaylandServerDispatch
 
 struct PresentedSurfaceCommit: Sendable, Equatable {
@@ -108,9 +108,10 @@ final class WlCompositor {
             }
             return
         }
-        deferredBufferReleases[iosurfaceID, default: []].append(DeferredBufferRelease(
-            buffer: buffer,
-            callback: callback))
+        deferredBufferReleases[iosurfaceID, default: []].append(
+            DeferredBufferRelease(
+                buffer: buffer,
+                callback: callback))
     }
 
     /// The renderer retired one imported generation under this stable IOSurface id.
@@ -118,8 +119,11 @@ final class WlCompositor {
     func retireBuffer(iosurfaceID: UInt32) {
         guard var releases = deferredBufferReleases[iosurfaceID], !releases.isEmpty else { return }
         let release = releases.removeFirst()
-        if releases.isEmpty { deferredBufferReleases[iosurfaceID] = nil }
-        else { deferredBufferReleases[iosurfaceID] = releases }
+        if releases.isEmpty {
+            deferredBufferReleases[iosurfaceID] = nil
+        } else {
+            deferredBufferReleases[iosurfaceID] = releases
+        }
         release.buffer.handle.sendRelease()
         if let callback = release.callback {
             callback.handle.sendDone(callback_data: 0)
@@ -147,7 +151,10 @@ final class WlCompositor {
         discardSubmittedFrames(outputID: id)
         var sawDead = false
         for box in surfaces {
-            guard let surface = box.surface else { sawDead = true; continue }
+            guard let surface = box.surface else {
+                sawDead = true
+                continue
+            }
             surface.removeEnteredOutput(id)
             if let layer = surface.role as? ZwlrLayerSurface,
                 layer.outputID == id
@@ -226,8 +233,9 @@ final class WlCompositor {
                 let surface = surface(renderIOSurfaceID: renderID),
                 let commitID = surface.noteSampled(submissionID: submissionID)
             else { continue }
-            sampled.append(PresentedSurfaceCommit(
-                surfaceID: surface.id, commitID: commitID))
+            sampled.append(
+                PresentedSurfaceCommit(
+                    surfaceID: surface.id, commitID: commitID))
         }
         sampled.sort {
             if $0.surfaceID != $1.surfaceID {
@@ -380,15 +388,19 @@ final class WlCompositor {
     /// The live surface with this process-unique compositor identity.
     func surface(id: UInt32) -> WlSurface? {
         guard let box = surfacesByObjectId[id] else { return nil }
-        guard let s = box.surface else { surfacesByObjectId[id] = nil; return nil }
+        guard let s = box.surface else {
+            surfacesByObjectId[id] = nil
+            return nil
+        }
         return s
     }
 
     private func surface(
         renderIOSurfaceID: UInt32
     ) -> WlSurface? {
-        guard let box =
-            surfacesByRenderIOSurfaceID[renderIOSurfaceID]
+        guard
+            let box =
+                surfacesByRenderIOSurfaceID[renderIOSurfaceID]
         else { return nil }
         guard let surface = box.surface else {
             surfacesByRenderIOSurfaceID[
@@ -424,7 +436,10 @@ final class WlCompositor {
         var count: UInt32 = 0
         var sawDead = false
         for box in surfaces {
-            guard let s = box.surface else { sawDead = true; continue }
+            guard let s = box.surface else {
+                sawDead = true
+                continue
+            }
             if let xdg = s.role as? XdgSurface, let popup = xdg.popup,
                 popup.parent?.surface === parent
             {
@@ -439,7 +454,10 @@ final class WlCompositor {
         var found = false
         var sawDead = false
         for box in surfaces {
-            guard let surface = box.surface else { sawDead = true; continue }
+            guard let surface = box.surface else {
+                sawDead = true
+                continue
+            }
             if let layer = surface.role as? ZwlrLayerSurface,
                 layer.mapped,
                 layer.outputID == outputID

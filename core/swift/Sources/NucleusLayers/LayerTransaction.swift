@@ -15,7 +15,7 @@ public struct LayerTransactionBatch: Sendable {
     public var detached: [LayerID]
     public var propertyUpdates: [(layer: LayerID, properties: LayerPropertyUpdate)]
     public var animationsAdded: [(layer: LayerID, animation: Animation)]
-    public var animationsRemoved: [(layer: LayerID, keyPath: AnimationKeyPath)]
+    public var animationsRemoved: [(layer: LayerID, keyPath: LayerAnimationKeyPath)]
 }
 
 @MainActor
@@ -41,21 +41,7 @@ public final class InMemoryCommitSink: CommitSink, ~Sendable {
     }
 }
 
-// The production render commit sink lives outside NucleusLayers so consumers
-// that don't bridge to the compositor never reference production host wiring.
-
-public enum TransactionBatchMaterializer {
-    @MainActor
-    public static func materialize(
-        _ transaction: borrowing LayerTransaction
-    ) -> LayerTransactionBatch {
-        transaction.materializedBatch()
-    }
-}
-
-#if NUCLEUS_LAYERS_PUBLIC_NAMES
 public typealias Transaction = LayerTransaction
-#endif
 
 @MainActor
 public struct LayerTransaction: ~Copyable, ~Sendable {
@@ -137,7 +123,11 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
     {
         try requireSameContext(layer)
         layer.apply(properties)
-        mutations.append(.properties(layer: layer.id, properties))
+        var committedProperties = properties
+        if properties.isHidden != nil {
+            committedProperties.opacity = layer.descriptor.isHidden ? 0 : layer.descriptor.opacity
+        }
+        mutations.append(.properties(layer: layer.id, committedProperties))
     }
 
     public mutating func detach(_ layer: Layer) throws(LayerError) {
@@ -158,7 +148,7 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
         mutations.append(.animationAdded(layer: layer.id, animation))
     }
 
-    public mutating func removeAnimation(for keyPath: AnimationKeyPath, from layer: Layer)
+    public mutating func removeAnimation(for keyPath: LayerAnimationKeyPath, from layer: Layer)
         throws(LayerError)
     {
         try requireSameContext(layer)
@@ -174,8 +164,7 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
     ) throws(LayerError) {
         let content = try PaintContent.register(
             commands, payload: payload, width: width, height: height, in: context)
-        try setContent(LayerContent(content), for: layer)
-        withExtendedLifetime(content) {}
+        try setContent(.paint(content), for: layer)
     }
 
     public mutating func setContent(_ content: LayerContent, for layer: Layer) throws(LayerError) {
@@ -191,7 +180,7 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
         completed = true
     }
 
-    /// Discards the pending FFI-side commit. Local Swift state is **not**
+    /// Discards the pending commit batch. Local Swift state is **not**
     /// rolled back — corresponds to `CATransaction`, where calling `commit` /
     /// abandoning the transaction does not undo property writes already
     /// made on the layer model. Once you set `position`, it stays set.
@@ -209,10 +198,10 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
     ///
     /// Local Swift model state (Layer.descriptor / Layer.parent / Layer.sublayers)
     /// is updated **eagerly at the call site** by the caller — this method
-    /// is only responsible for journaling the mutation so the FFI layer
-    /// learns about it on the next commit / flush.
+    /// is only responsible for journaling the mutation so the commit sink
+    /// receives it on the next commit / flush.
     @MainActor
-    @_spi(NucleusRenderServer) public static func appendAmbient(
+    package static func appendAmbient(
         _ mutation: LayerMutation, in context: Context
     ) {
         context.transactionStack.append(mutation)
@@ -244,7 +233,7 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
         var detached: [LayerID] = []
         var properties: [(layer: LayerID, properties: LayerPropertyUpdate)] = []
         var animationsAdded: [(layer: LayerID, animation: Animation)] = []
-        var animationsRemoved: [(layer: LayerID, keyPath: AnimationKeyPath)] = []
+        var animationsRemoved: [(layer: LayerID, keyPath: LayerAnimationKeyPath)] = []
 
         for mutation in mutations {
             switch mutation {
@@ -291,6 +280,3 @@ public struct LayerTransaction: ~Copyable, ~Sendable {
     }
 
 }
-
-// C-side wire transaction interop was deleted with the old host bridge; this
-// module owns only the app-facing transaction model.

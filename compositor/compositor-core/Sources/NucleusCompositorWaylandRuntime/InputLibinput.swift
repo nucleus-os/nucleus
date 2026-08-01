@@ -47,7 +47,8 @@ import NucleusCompositorInputC
         defer { unsafe udev_device_unref(dev) }
         let action = unsafe udev_device_get_action(dev).map { unsafe String(cString: $0) } ?? ""
         let sysname = unsafe udev_device_get_sysname(dev).map { unsafe String(cString: $0) } ?? ""
-        let subsystem = unsafe udev_device_get_subsystem(dev).map { unsafe String(cString: $0) } ?? ""
+        let subsystem =
+            unsafe udev_device_get_subsystem(dev).map { unsafe String(cString: $0) } ?? ""
         return HotplugEvent(action: action, sysname: sysname, subsystem: subsystem)
     }
 }
@@ -62,7 +63,9 @@ import NucleusCompositorInputC
     /// callback; there is no reverse retain from the seat.
     private let seat: SeatSession
 
-    private init(udev: OpaquePointer, interface: UnsafeMutablePointer<libinput_interface>, seat: SeatSession) {
+    private init(
+        udev: OpaquePointer, interface: UnsafeMutablePointer<libinput_interface>, seat: SeatSession
+    ) {
         unsafe self.udev = udev
         unsafe self.interface = interface
         self.seat = seat
@@ -76,7 +79,7 @@ import NucleusCompositorInputC
         unsafe interface.pointee = libinput_interface(
             open_restricted: { path, _, data in
                 guard let path = unsafe path,
-                      let seat = unsafe LibinputBackend.seat(data)
+                    let seat = unsafe LibinputBackend.seat(data)
                 else { return -1 }
                 return unsafe seat.openDevice(path: path)
             },

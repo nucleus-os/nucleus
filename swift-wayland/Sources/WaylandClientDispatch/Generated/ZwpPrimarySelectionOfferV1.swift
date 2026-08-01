@@ -2,25 +2,30 @@
 // Typed client descriptor and event dispatch for zwp_primary_selection_offer_v1.
 
 import WaylandClientC
-public enum ZwpPrimarySelectionOfferV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum ZwpPrimarySelectionOfferV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_primary_selection_offer_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == ZwpPrimarySelectionOfferV1Client {
-    func receive(mime_type: String, fd: consuming WaylandClientOwnedFileDescriptor) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpPrimarySelectionOfferV1Client {
+    package func receive(mime_type: String, fd: consuming WaylandClientOwnedFileDescriptor)
+        throws(WaylandProxyError)
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _fdDescriptor = fd.take()
         defer {
             WaylandClientOwnedFileDescriptor.closeTransferred(
                 _fdDescriptor)
         }
-        return try mime_type.withCString { (_mime_typeCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
-            unsafe swift_wayland_client_request_zwp_primary_selection_offer_v1_receive(_proxy, _mime_typeCString, _fdDescriptor)
+        return try mime_type.withCString {
+            (_mime_typeCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_zwp_primary_selection_offer_v1_receive(
+                _proxy, _mime_typeCString, _fdDescriptor)
             return
         }
     }
-    func destroy() throws(WaylandProxyError) {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zwp_primary_selection_offer_v1_destroy(_proxy)
@@ -31,40 +36,51 @@ public extension WaylandProxy where Interface == ZwpPrimarySelectionOfferV1Clien
     }
 }
 @MainActor
-public protocol ZwpPrimarySelectionOfferV1Events: AnyObject {
+package protocol ZwpPrimarySelectionOfferV1Events: AnyObject {
     func offer(_ proxy: WaylandBorrowedProxy<ZwpPrimarySelectionOfferV1Client>, mime_type: String)
 }
-public extension ZwpPrimarySelectionOfferV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_primary_selection_offer_v1_listener> = {
-        let p = UnsafeMutablePointer<zwp_primary_selection_offer_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zwp_primary_selection_offer_v1_listener())
-        unsafe p.pointee.offer = offer_impl
-        return unsafe p
-    }()
-    private static func handler(_ context: WaylandClientListenerContext) -> any ZwpPrimarySelectionOfferV1Events? {
+package extension ZwpPrimarySelectionOfferV1Client {
+    package nonisolated(unsafe) static let listener:
+        UnsafeMutablePointer<zwp_primary_selection_offer_v1_listener> = {
+            let p = UnsafeMutablePointer<zwp_primary_selection_offer_v1_listener>.allocate(
+                capacity: 1)
+            unsafe p.initialize(to: zwp_primary_selection_offer_v1_listener())
+            unsafe p.pointee.offer = offer_impl
+            return unsafe p
+        }()
+    private static func handler(_ context: WaylandClientListenerContext)
+        -> any ZwpPrimarySelectionOfferV1Events?
+    {
         context.owner as? any ZwpPrimarySelectionOfferV1Events
     }
-    private static let offer_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, mime_type in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let offer_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = {
+            data, proxy, mime_type in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            nonisolated(unsafe) let _event_mime_type = unsafe mime_type
+            MainActor.assumeIsolated {
+                unsafe eventHandler.offer(
+                    WaylandBorrowedProxy<ZwpPrimarySelectionOfferV1Client>(eventProxy),
+                    mime_type: unsafe String(cString: _event_mime_type!))
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_mime_type = unsafe mime_type
-        MainActor.assumeIsolated {
-            unsafe eventHandler.offer(WaylandBorrowedProxy<ZwpPrimarySelectionOfferV1Client>(eventProxy), mime_type: unsafe String(cString: _event_mime_type!))
-        }
-    }
 }
-public extension WaylandProxy where Interface == ZwpPrimarySelectionOfferV1Client {
-    func installListener(_ owner: any ZwpPrimarySelectionOfferV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpPrimarySelectionOfferV1Client {
+    package func installListener(_ owner: any ZwpPrimarySelectionOfferV1Events)
+        throws(WaylandProxyError)
+    {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_primary_selection_offer_v1_add_listener(proxy, ZwpPrimarySelectionOfferV1Client.listener, data)
+            unsafe zwp_primary_selection_offer_v1_add_listener(
+                proxy, ZwpPrimarySelectionOfferV1Client.listener, data)
         }
     }
 }

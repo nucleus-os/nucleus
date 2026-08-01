@@ -472,7 +472,7 @@ The retained renderer exposes only behavior that reaches the live transaction pa
 
    - `LayerTransaction.beginTransition`
    - `LayerTransaction.clearTransition`
-   - `EncodedTransaction.transitions`
+   - `LayerTransactionBatch.transitions`
    - `TransitionRecord` when no remaining live user exists
 
 6. Remove `WindowSceneAuthor.clearTransition`.

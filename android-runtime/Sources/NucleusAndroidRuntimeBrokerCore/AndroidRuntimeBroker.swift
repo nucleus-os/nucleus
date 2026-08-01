@@ -1,21 +1,21 @@
 import Foundation
 import Glibc
-import NucleusAndroidRuntimeBridgeProtocol
+internal import NucleusAndroidRuntimeBridgeProtocol
 import NucleusAndroidRuntimeCore
 
-public struct AndroidRuntimeBrokerConfiguration: Sendable {
-    public let androidRoot: URL
-    public let sessionRuntimeDirectory: URL
-    public let diagnosticsRunDirectory: URL
-    public let waylandSocket: String
-    public let gfxstreamBrokerExecutable: URL
-    public let displayHostExecutable: URL
-    public let privilegedHelperExecutable: URL
-    public let swiftRuntime: AndroidSwiftRuntime
-    public let timeoutSeconds: UInt32
-    public let gfxstreamBrokerEnvironment: [String: String]
+package struct AndroidRuntimeBrokerConfiguration: Sendable {
+    package let androidRoot: URL
+    package let sessionRuntimeDirectory: URL
+    package let diagnosticsRunDirectory: URL
+    package let waylandSocket: String
+    package let gfxstreamBrokerExecutable: URL
+    package let displayHostExecutable: URL
+    package let privilegedHelperExecutable: URL
+    package let swiftRuntime: AndroidSwiftRuntime
+    package let timeoutSeconds: UInt32
+    package let gfxstreamBrokerEnvironment: [String: String]
 
-    public init(
+    package init(
         androidRoot: URL,
         sessionRuntimeDirectory: URL,
         diagnosticsRunDirectory: URL,
@@ -60,7 +60,7 @@ public struct AndroidRuntimeBrokerConfiguration: Sendable {
         self.gfxstreamBrokerEnvironment = gfxstreamBrokerEnvironment
     }
 }
-public func runAndroidRuntimeBroker<
+package func runAndroidRuntimeBroker<
     RuntimeHost: AndroidRuntimeHost
 >(
     configuration: AndroidRuntimeBrokerConfiguration,
@@ -163,7 +163,7 @@ public func runAndroidRuntimeBroker<
                     "Android runtime service group ended unexpectedly")
             }
             group.cancelAll()
-            while let _ = try await group.next() {}
+            while (try await group.next()) != nil {}
         }
         try await session.cleanup()
     } catch is CancellationError {

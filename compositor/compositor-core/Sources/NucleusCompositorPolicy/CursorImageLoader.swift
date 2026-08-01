@@ -2,11 +2,11 @@ import Foundation
 
 /// Server-owned XCursor asset loader. Theme preference originates in ShellKit;
 /// parsing, validation, fallback pixels, and renderer publication stay here.
-public final class CursorImageLoader: Sendable {
+package final class CursorImageLoader: Sendable {
     private let theme: String
     private let paths: [URL]
 
-    public init(
+    package init(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) {
         theme =

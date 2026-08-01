@@ -1,4 +1,4 @@
-public import NucleusUI
+package import NucleusUI
 
 /// A thing that sits in the bar.
 ///
@@ -12,29 +12,29 @@ public import NucleusUI
 /// by assignment if it did; it reports that it was activated and the bar decides
 /// what opens.
 @MainActor
-open class BarWidget: View {
+package class BarWidget: View {
     /// Re-read whatever this widget displays and update its views.
     ///
     /// Called when the bar is told the world changed. The default does nothing,
     /// because a widget driven purely by property assignment — which most are —
     /// has already updated by the time anyone could call this.
-    open func refresh() {}
+    package func refresh() {}
 
     /// The widget was activated — clicked, or otherwise asked to open its panel.
     ///
     /// The rect is the widget's frame in bar coordinates, so a panel can be
     /// anchored under the thing that opened it.
-    public var onActivateWidget: ((BarWidget, Rect) -> Void)?
+    package var onActivateWidget: ((BarWidget, Rect) -> Void)?
 
     /// Names the panel this widget opens, for the registry that will own panels.
     /// Empty means the widget opens nothing.
-    public var panelIdentifier: String = ""
+    package var panelIdentifier: String = ""
 
     /// Whether the bar draws a capsule behind this widget.
     ///
     /// Consecutive capsule widgets share one, which is why this is the bar's
     /// decision to render and the widget's only to declare.
-    public var showsCapsule: Bool = true {
+    package var showsCapsule: Bool = true {
         didSet { if showsCapsule != oldValue { barNeedsChromeUpdate?() } }
     }
 
@@ -43,12 +43,12 @@ open class BarWidget: View {
     var barNeedsChromeUpdate: (() -> Void)?
 
     /// The colour the widget's own content draws in.
-    public var contentTint: ColorSpec = .role(.onSurface) {
+    package var contentTint: ColorSpec = .role(.onSurface) {
         didSet { if contentTint != oldValue { setNeedsDisplay() } }
     }
 
     /// Report activation, with this widget's frame in the bar's coordinates.
-    public func activate() {
+    package func activate() {
         let anchor = barCoordinateFrame()
         onActivateWidget?(self, anchor)
     }

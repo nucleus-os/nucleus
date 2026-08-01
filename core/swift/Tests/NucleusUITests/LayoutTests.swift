@@ -1,6 +1,7 @@
 import NucleusUITestSupport
-@_spi(NucleusRenderServer) @testable import NucleusUI
 import Testing
+
+@testable import NucleusUI
 
 @MainActor
 @Suite(.uiContext) struct LayoutTests {
@@ -79,18 +80,22 @@ import Testing
 
         let firstSize = first.intrinsicContentSize
         let secondSize = second.intrinsicContentSize
-        #expect(first.frame == Rect(
-            x: 0,
-            y: (100 - firstSize.height) / 2,
-            width: firstSize.width,
-            height: firstSize.height
-        ))
-        #expect(second.frame == Rect(
-            x: firstSize.width + 10,
-            y: (100 - secondSize.height) / 2,
-            width: secondSize.width,
-            height: secondSize.height
-        ))
+        #expect(
+            first.frame
+                == Rect(
+                    x: 0,
+                    y: (100 - firstSize.height) / 2,
+                    width: firstSize.width,
+                    height: firstSize.height
+                ))
+        #expect(
+            second.frame
+                == Rect(
+                    x: firstSize.width + 10,
+                    y: (100 - secondSize.height) / 2,
+                    width: secondSize.width,
+                    height: secondSize.height
+                ))
     }
 
     @Test func textLayoutExposesFontMetricsAndBaselines() throws {
@@ -100,17 +105,21 @@ import Testing
             font: font,
             textSystem: testTextSystem())
 
-        #expect(layout.intrinsicSize.width == TextLayout.measureWidth(
-            "gy", font: font, in: testTextSystem()))
+        #expect(
+            layout.intrinsicSize.width
+                == TextLayout.measureWidth(
+                    "gy", font: font, in: testTextSystem()))
         #expect(layout.intrinsicSize.height == layout.usedRect.size.height)
         #expect(layout.firstBaselineOffsetFromTop < layout.intrinsicSize.height)
         #expect(layout.lastBaselineOffsetFromBottom > 0)
 
         let context = GraphicsContext(textSystem: testTextSystem())
         context.fillColor = Color(1, 1, 1, 1)
-        context.draw(layout, in: Rect(
-            x: 0, y: 0,
-            width: layout.usedRect.size.width, height: layout.usedRect.size.height))
+        context.draw(
+            layout,
+            in: Rect(
+                x: 0, y: 0,
+                width: layout.usedRect.size.width, height: layout.usedRect.size.height))
         let textCommand = try #require(context.recording.commands.first)
         #expect(textCommand.kind == .textLayout)
         #expect(textCommand.y == 0)
@@ -118,13 +127,14 @@ import Testing
     }
 
     @Test func fontResolutionExposesBackendSelectedIdentity() throws {
-        let font = Font(descriptor: FontDescriptor(
-            familyName: "DefinitelyMissingNucleusFont",
-            pointSize: 14,
-            weight: .semibold,
-            width: .condensed,
-            slant: .italic
-        ))
+        let font = Font(
+            descriptor: FontDescriptor(
+                familyName: "DefinitelyMissingNucleusFont",
+                pointSize: 14,
+                weight: .semibold,
+                width: .condensed,
+                slant: .italic
+            ))
         let resolved = font.resolvedDescriptor(in: testTextSystem())
 
         #expect(!resolved.familyName.isEmpty)
@@ -132,25 +142,29 @@ import Testing
         #expect(!resolved.postScriptName.isEmpty)
         #expect(resolved.pointSize == 14)
         #expect(resolved.width == .standard)
-        #expect(resolved.slant == .upright || resolved.slant == .italic || resolved.slant == .oblique)
-        #expect(resolved != ResolvedFontDescriptor(
-            familyName: "DefinitelyMissingNucleusFont",
-            postScriptName: "DefinitelyMissingNucleusFont",
-            pointSize: 14,
-            weight: font.weight,
-            width: font.width,
-            slant: font.slant
-        ))
+        #expect(
+            resolved.slant == .upright || resolved.slant == .italic || resolved.slant == .oblique)
+        #expect(
+            resolved
+                != ResolvedFontDescriptor(
+                    familyName: "DefinitelyMissingNucleusFont",
+                    postScriptName: "DefinitelyMissingNucleusFont",
+                    pointSize: 14,
+                    weight: font.weight,
+                    width: font.width,
+                    slant: font.slant
+                ))
     }
 
     @Test func fontDescriptorCarriesAppFacingTraitsThroughFontValues() throws {
-        var font = Font(descriptor: FontDescriptor(
-            familyName: "Inter",
-            pointSize: 0,
-            weight: .medium,
-            width: .expanded,
-            slant: .oblique
-        ))
+        var font = Font(
+            descriptor: FontDescriptor(
+                familyName: "Inter",
+                pointSize: 0,
+                weight: .medium,
+                width: .expanded,
+                slant: .oblique
+            ))
 
         #expect(font.descriptor.familyName == "Inter")
         #expect(font.pointSize == 1)
@@ -230,9 +244,11 @@ import Testing
             #expect(rects[0].rect.size.height > 0)
             #expect(rects[0].direction == .leftToRight)
         } else {
-            #expect(layout.selectionRects(
-                forUTF16Range: 0..<5,
-                in: testTextSystem()).isEmpty)
+            #expect(
+                layout.selectionRects(
+                    forUTF16Range: 0..<5,
+                    in: testTextSystem()
+                ).isEmpty)
         }
     }
 
@@ -248,8 +264,10 @@ import Testing
 
         #expect(layout.text == "Nucleus compositor")
         #expect(layout.textRuns.count == 2)
-        #expect(layout.intrinsicSize.width > TextLayout.measureWidth(
-            "Nucleus", font: titleFont, in: testTextSystem()))
+        #expect(
+            layout.intrinsicSize.width
+                > TextLayout.measureWidth(
+                    "Nucleus", font: titleFont, in: testTextSystem()))
 
         let context = GraphicsContext(textSystem: testTextSystem())
         context.fillColor = Color(1, 1, 1, 1)
@@ -280,7 +298,7 @@ import Testing
                     font: .systemFont(ofSize: 10),
                     color: Color(0.72, 0.78, 0.86, 1)
                 )
-            )
+            ),
         ])
         let paragraphStyle = ParagraphStyle(
             alignment: .leading,
@@ -296,10 +314,12 @@ import Testing
 
         #expect(attributedText.string == "Nucleus text")
         #expect(result.lines.count == 1)
-        #expect(result.usedRect.size.width > TextLayout.measureWidth(
-            "Nucleus",
-            font: .systemFont(ofSize: 14, weight: .semibold),
-            in: testTextSystem()))
+        #expect(
+            result.usedRect.size.width
+                > TextLayout.measureWidth(
+                    "Nucleus",
+                    font: .systemFont(ofSize: 14, weight: .semibold),
+                    in: testTextSystem()))
         let line = try #require(result.lines.first)
         #expect(line.sourceUTF16Range == 0..<attributedText.string.utf16.count)
         #expect(line.endExcludingWhitespace == attributedText.string.utf16.count)
@@ -364,7 +384,8 @@ import Testing
         let secondHeight = second.intrinsicContentSize.height
         // Only the margins offset the children — the stack's own origin does not.
         #expect(first.frame == Rect(x: 5, y: 4, width: 108, height: firstHeight))
-        #expect(second.frame == Rect(x: 5, y: 4 + firstHeight + 3, width: 108, height: secondHeight))
+        #expect(
+            second.frame == Rect(x: 5, y: 4 + firstHeight + 3, width: 108, height: secondHeight))
         #expect(hidden.frame == Rect(x: 0, y: 0, width: 0, height: 0))
     }
 
@@ -421,8 +442,9 @@ import Testing
         #expect(inner.maxWidth == 88)
         #expect(inner.maxHeight == 40)
         // An unbounded axis stays unbounded rather than going negative.
-        #expect(LayoutConstraints.unconstrained
-            .inset(by: EdgeInsets(top: 10, left: 10)).maxWidth == .infinity)
+        #expect(
+            LayoutConstraints.unconstrained
+                .inset(by: EdgeInsets(top: 10, left: 10)).maxWidth == .infinity)
     }
 
     @Test func constraintsCanonicalizeEveryInvalidRangeAndResult() {
@@ -431,8 +453,10 @@ import Testing
             maxWidth: -.infinity,
             minHeight: .infinity,
             maxHeight: -10)
-        #expect(constraints == LayoutConstraints(
-            minWidth: 0, maxWidth: 0, minHeight: 0, maxHeight: 0))
+        #expect(
+            constraints
+                == LayoutConstraints(
+                    minWidth: 0, maxWidth: 0, minHeight: 0, maxHeight: 0))
         #expect(constraints.constrain(Size(width: .nan, height: .infinity)) == .zero)
 
         let reversed = LayoutConstraints(
@@ -457,7 +481,8 @@ import Testing
         stack.addArrangedSubview(second)
 
         let measured = stack.measure(.unconstrained)
-        let expectedHeight = first.intrinsicContentSize.height
+        let expectedHeight =
+            first.intrinsicContentSize.height
             + second.intrinsicContentSize.height + 4 + 4
         #expect(abs(measured.height - expectedHeight) < 0.001)
         #expect(measured.width > 0)
@@ -589,8 +614,8 @@ import Testing
         stack.alignment = .lastBaseline
         stack.layoutIfNeeded()
         #expect(
-            first.frame.origin.y + first.frame.size.height - 3 ==
-                second.frame.origin.y + second.frame.size.height - 7)
+            first.frame.origin.y + first.frame.size.height - 3 == second.frame.origin.y
+                + second.frame.size.height - 7)
     }
 
     @Test func layoutBasisOverridesTheMeasuredMainAxisSize() throws {

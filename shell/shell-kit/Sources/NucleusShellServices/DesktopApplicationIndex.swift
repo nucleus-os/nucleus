@@ -1,20 +1,20 @@
-public import Foundation
+package import Foundation
 
 #if os(Linux)
 import Glibc
 #endif
 
-public typealias LaunchableAppID = String
+package typealias LaunchableAppID = String
 
-public struct LaunchableAppRecord: Sendable, Equatable {
-    public var id: LaunchableAppID
-    public var name: String
-    public var desktopFileID: String
-    public var iconName: String
-    public var executable: [String]
-    public var categories: [String]
+package struct LaunchableAppRecord: Sendable, Equatable {
+    package var id: LaunchableAppID
+    package var name: String
+    package var desktopFileID: String
+    package var iconName: String
+    package var executable: [String]
+    package var categories: [String]
 
-    public init(
+    package init(
         id: LaunchableAppID,
         name: String,
         desktopFileID: String,
@@ -31,14 +31,14 @@ public struct LaunchableAppRecord: Sendable, Equatable {
     }
 }
 
-public struct DesktopApplicationIndex: Sendable {
-    public var applications: [LaunchableAppRecord]
+package struct DesktopApplicationIndex: Sendable {
+    package var applications: [LaunchableAppRecord]
 
-    public init(applications: [LaunchableAppRecord] = []) {
+    package init(applications: [LaunchableAppRecord] = []) {
         self.applications = applications
     }
 
-    public static func resolved(
+    package static func resolved(
         environment: [String: String]? = nil,
         fileManager: FileManager = .default
     ) -> DesktopApplicationIndex {
@@ -48,11 +48,11 @@ public struct DesktopApplicationIndex: Sendable {
                 fileManager: fileManager))
     }
 
-    public func app(id: LaunchableAppID) -> LaunchableAppRecord? {
+    package func app(id: LaunchableAppID) -> LaunchableAppRecord? {
         applications.first { $0.id == id }
     }
 
-    public func preferredApp(matching ids: [String], executable fallbackExecutable: String? = nil)
+    package func preferredApp(matching ids: [String], executable fallbackExecutable: String? = nil)
         -> LaunchableAppRecord?
     {
         for id in ids {
@@ -174,7 +174,7 @@ public struct DesktopApplicationIndex: Sendable {
         return dirs
     }
 
-    public static func appDiscoveryEnvironment(
+    package static func appDiscoveryEnvironment(
         base: [String: String] = ProcessInfo.processInfo.environment,
         currentValue: ((String) -> String?)? = nil
     ) -> [String: String] {

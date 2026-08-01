@@ -42,13 +42,19 @@ private let maxDisplay: UInt8 = 32
             _ = unsafe unlink(fsPath)  // remove stale fs socket (lock held ⇒ safe)
 
             guard let absFd = unsafe bindAbstract(fsPath) else {
-                close(lockFd); _ = unsafe unlink(lockPath); continue
+                close(lockFd)
+                _ = unsafe unlink(lockPath)
+                continue
             }
             guard let fsFd = unsafe bindFilesystem(fsPath) else {
-                close(absFd); close(lockFd); _ = unsafe unlink(lockPath); continue
+                close(absFd)
+                close(lockFd)
+                _ = unsafe unlink(lockPath)
+                continue
             }
             close(lockFd)  // lock file remains; fd not needed
-            return XwaylandDisplay(number: n, lockPath: lockPath, fsPath: fsPath, abstractFd: absFd, fsFd: fsFd)
+            return XwaylandDisplay(
+                number: n, lockPath: lockPath, fsPath: fsPath, abstractFd: absFd, fsFd: fsFd)
         }
         return nil
     }
@@ -85,7 +91,9 @@ private let maxDisplay: UInt8 = 32
             let bytes = Array((pad + pidStr + "\n").utf8)
             let written = bytes.withUnsafeBytes { unsafe write(fd, $0.baseAddress, $0.count) }
             if written != bytes.count {
-                close(fd); _ = unsafe unlink(path); return -1
+                close(fd)
+                _ = unsafe unlink(path)
+                return -1
             }
             return fd
         }
@@ -121,7 +129,10 @@ private let maxDisplay: UInt8 = 32
             unsafe bind(fd, $0, addrLen) == 0
         }
     }
-    if !ok || listen(fd, 1) != 0 { close(fd); return nil }
+    if !ok || listen(fd, 1) != 0 {
+        close(fd)
+        return nil
+    }
     return fd
 }
 
@@ -140,6 +151,9 @@ private let maxDisplay: UInt8 = 32
             unsafe bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
         }
     }
-    if !ok || listen(fd, 1) != 0 { close(fd); return nil }
+    if !ok || listen(fd, 1) != 0 {
+        close(fd)
+        return nil
+    }
     return fd
 }

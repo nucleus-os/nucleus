@@ -1,22 +1,23 @@
-import NucleusCompositorServer // private framework implementation
-import NucleusCompositorServerTypes
+import Glibc
+import NucleusAppHostBundle
 import NucleusCompositorPolicy
 import NucleusCompositorRenderRuntime
 import NucleusCompositorRenderSession
 import NucleusCompositorRendererLinux
-import NucleusCompositorWaylandRuntime
-import NucleusCompositorWindowScene
-import NucleusCompositorWindowManager
+import NucleusCompositorServer  // private framework implementation
+import NucleusCompositorServerTypes
 import NucleusCompositorSignalC
-import NucleusAppHostBundle
-import NucleusRenderHost
-import NucleusRenderModel
+import NucleusCompositorWaylandRuntime
+import NucleusCompositorWindowManager
+import NucleusCompositorWindowScene
 import NucleusConfig
+import NucleusDiagnostics
 import NucleusLinuxDBus
 import NucleusLinuxReactor
+import NucleusRenderHost
+import NucleusRenderModel
 import NucleusSessionProtocol
 import Tracy
-import Glibc
 
 // The compositor runtime root. `CompositorRuntime` owns the awaitable Linux host
 // reactor, brings the compositor up (CompositorBringup.swift),
@@ -74,8 +75,7 @@ final class CompositorRuntime {
     var configurationGeneration: ConfigurationGeneration
     let configurationChannel: ConfigurationClientChannel?
     let controlChannel: RenderServerControlChannel
-    let shellPolicyAttachments:
-        ShellPolicyAttachmentChannel?
+    let shellPolicyAttachments: ShellPolicyAttachmentChannel?
     var shellPolicyChannel: ShellPolicyChannel?
     var offeredWindowMenuID: UInt64?
     let controlEpoch: RenderServerEpoch
@@ -224,7 +224,8 @@ final class CompositorRuntime {
     }
 
     func sessionResume() -> Bool {
-        let resumed = renderRuntime.resumeSession()
+        let resumed =
+            renderRuntime.resumeSession()
             && outputTopology.reconcile(forceReattach: true)
         retirement.noteResume(succeeded: resumed)
         guard resumed else {
@@ -290,11 +291,12 @@ final class CompositorRuntime {
         to interests: inout [LinuxReactorInterest]
     ) {
         guard fileDescriptor >= 0, events != 0 else { return }
-        interests.append(LinuxReactorInterest(
-            token: Self.token(kind, instance),
-            fileDescriptor: fileDescriptor,
-            events: events,
-            mode: mode))
+        interests.append(
+            LinuxReactorInterest(
+                token: Self.token(kind, instance),
+                fileDescriptor: fileDescriptor,
+                events: events,
+                mode: mode))
     }
 
     private func appendLinuxSource<Source: LinuxReactorSource>(
@@ -444,7 +446,8 @@ final class CompositorRuntime {
                     shutdownDisposition = disposition
                     if disposition == .drmDeviceCloseRequired {
                         logRuntime(
-                            "shutdown: atomic retirement did not complete; DRM device close will terminate kernel scanout ownership")
+                            "shutdown: atomic retirement did not complete; DRM device close will terminate kernel scanout ownership"
+                        )
                     }
                     break runtimeLoop
                 case .waiting:
@@ -463,7 +466,8 @@ final class CompositorRuntime {
                         guard case .queued = display.redrawState else {
                             return false
                         }
-                        return (display.displayLink.targetPresentNs()
+                        return
+                            (display.displayLink.targetPresentNs()
                             ?? display.displayLink.predictedPresentNs(0)) <= nowNs
                     }
                 let dueOutputIDs = Set(dueDisplays.map(\.id))
@@ -481,7 +485,8 @@ final class CompositorRuntime {
                     display.noteSceneAuthorPass()
                     if waylandRuntime.authorSceneFrame(
                         outputId: display.id,
-                        predictedPresentNs: display.displayLink.predictedPresentNs(0)) {
+                        predictedPresentNs: display.displayLink.predictedPresentNs(0))
+                    {
                         display.requestRedraw(.animation)
                     }
                 }
@@ -520,12 +525,11 @@ final class CompositorRuntime {
             // it is a ceiling, not a fixed cadence.
             let timeout: UInt64?
             if exitRequested,
-               let deadline = retirement.shutdownRetryDeadlineNanoseconds
+                let deadline = retirement.shutdownRetryDeadlineNanoseconds
             {
                 let now = Self.monotonicNowNs()
                 timeout = now >= deadline ? 0 : deadline - now
-            } else if let retry = retirement.pauseRetryDeadlineNanoseconds
-            {
+            } else if let retry = retirement.pauseRetryDeadlineNanoseconds {
                 let now = Self.monotonicNowNs()
                 timeout = now >= retry ? 0 : retry - now
             } else {
@@ -545,7 +549,8 @@ final class CompositorRuntime {
             }
             waitZone.end()
 
-            let dispatchZone = Trace.beginZone("runtime.completion_drain", color: Trace.Color.yellow)
+            let dispatchZone = Trace.beginZone(
+                "runtime.completion_drain", color: Trace.Color.yellow)
             for event in batch.events {
                 dispatch(event)
             }
@@ -651,8 +656,10 @@ final class CompositorRuntime {
 
     private func dispatch(_ event: LinuxReactorEvent) {
         let token = event.token
-        guard let kind = LoopKind(rawValue: UInt8(
-            truncatingIfNeeded: token >> Self.loopKindShift))
+        guard
+            let kind = LoopKind(
+                rawValue: UInt8(
+                    truncatingIfNeeded: token >> Self.loopKindShift))
         else { return }
         Trace.plot(
             "swift.runtime.loop.last_completion_kind",
@@ -720,7 +727,7 @@ final class CompositorRuntime {
         case .udev:
             if result.isReadable {
                 if waylandRuntime.drainDrmHotplug(),
-                   !paused, !exitRequested
+                    !paused, !exitRequested
                 {
                     _ = outputTopology.reconcile()
                 }
@@ -737,8 +744,9 @@ final class CompositorRuntime {
             }
         case .xwaylandListen:
             if result.isReadable {
-                let descriptor = Int32(bitPattern: UInt32(
-                    truncatingIfNeeded: token & Self.instMask))
+                let descriptor = Int32(
+                    bitPattern: UInt32(
+                        truncatingIfNeeded: token & Self.instMask))
                 _ = waylandRuntime.xwaylandDisplayReadable(descriptor)
             } else if result.isTerminal {
                 logRuntime("Xwayland listen descriptor closed")
@@ -873,8 +881,9 @@ final class CompositorRuntime {
                     hasAlphaModifier: r.hasAlphaModifier,
                     currentWidth: r.currentWidth, currentHeight: r.currentHeight,
                     dmabuf: r.dmabuf.map {
-                        ScanoutDmabufInfo(format: $0.format, modifier: $0.modifier,
-                                          width: $0.width, height: $0.height)
+                        ScanoutDmabufInfo(
+                            format: $0.format, modifier: $0.modifier,
+                            width: $0.width, height: $0.height)
                     })
             }
             result[display.id] = ScanoutCandidate(
@@ -900,4 +909,3 @@ func logRuntime(_ message: String) {
 // the server's `sessionControl`, installed at bring-up.
 extension CompositorRuntime: CompositorSessionControl {
 }
-import NucleusDiagnostics

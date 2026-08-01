@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for wl_touch.
 
 import WaylandClientC
-public enum WlTouchClient: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum WlTouchClient: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_touch())
-    public nonisolated static let maximumVersion: UInt32 = 10
+    package nonisolated static let maximumVersion: UInt32 = 10
 }
-public extension WaylandProxy where Interface == WlTouchClient {
-    func release() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WlTouchClient {
+    package func release() throws(WaylandProxyError) {
         guard version >= 3 else {
             throw .unsupportedVersion(
                 required: 3, actual: version)
@@ -23,17 +24,21 @@ public extension WaylandProxy where Interface == WlTouchClient {
     }
 }
 @MainActor
-public protocol WlTouchEvents: AnyObject {
-    func down(_ proxy: WaylandBorrowedProxy<WlTouchClient>, serial: UInt32, time: UInt32, surface: WaylandBorrowedProxy<WlSurfaceClient>, id: Int32, x: Double, y: Double)
+package protocol WlTouchEvents: AnyObject {
+    func down(
+        _ proxy: WaylandBorrowedProxy<WlTouchClient>, serial: UInt32, time: UInt32,
+        surface: WaylandBorrowedProxy<WlSurfaceClient>, id: Int32, x: Double, y: Double)
     func up(_ proxy: WaylandBorrowedProxy<WlTouchClient>, serial: UInt32, time: UInt32, id: Int32)
-    func motion(_ proxy: WaylandBorrowedProxy<WlTouchClient>, time: UInt32, id: Int32, x: Double, y: Double)
+    func motion(
+        _ proxy: WaylandBorrowedProxy<WlTouchClient>, time: UInt32, id: Int32, x: Double, y: Double)
     func frame(_ proxy: WaylandBorrowedProxy<WlTouchClient>)
     func cancel(_ proxy: WaylandBorrowedProxy<WlTouchClient>)
-    func shape(_ proxy: WaylandBorrowedProxy<WlTouchClient>, id: Int32, major: Double, minor: Double)
+    func shape(
+        _ proxy: WaylandBorrowedProxy<WlTouchClient>, id: Int32, major: Double, minor: Double)
     func orientation(_ proxy: WaylandBorrowedProxy<WlTouchClient>, id: Int32, orientation: Double)
 }
-public extension WlTouchClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_touch_listener> = {
+package extension WlTouchClient {
+    package nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_touch_listener> = {
         let p = UnsafeMutablePointer<wl_touch_listener>.allocate(capacity: 1)
         unsafe p.initialize(to: wl_touch_listener())
         unsafe p.pointee.down = down_impl
@@ -48,115 +53,142 @@ public extension WlTouchClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any WlTouchEvents? {
         context.owner as? any WlTouchEvents
     }
-    private static let down_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, OpaquePointer?, Int32, wl_fixed_t, wl_fixed_t) -> Void = { data, proxy, serial, time, surface, id, x, y in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let down_impl:
+        @convention(c) (
+            UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, OpaquePointer?, Int32,
+            wl_fixed_t, wl_fixed_t
+        ) -> Void = { data, proxy, serial, time, surface, id, x, y in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            nonisolated(unsafe) let _event_surface = unsafe surface
+            MainActor.assumeIsolated {
+                unsafe eventHandler.down(
+                    WaylandBorrowedProxy<WlTouchClient>(eventProxy), serial: serial, time: time,
+                    surface: WaylandBorrowedProxy<WlSurfaceClient>(_event_surface!), id: id,
+                    x: swift_wayland_fixed_to_double(x), y: swift_wayland_fixed_to_double(y))
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
+    private static let up_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, Int32) -> Void = {
+            data, proxy, serial, time, id in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.up(
+                    WaylandBorrowedProxy<WlTouchClient>(eventProxy), serial: serial, time: time,
+                    id: id)
+            }
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_surface = unsafe surface
-        MainActor.assumeIsolated {
-            unsafe eventHandler.down(WaylandBorrowedProxy<WlTouchClient>(eventProxy), serial: serial, time: time, surface: WaylandBorrowedProxy<WlSurfaceClient>(_event_surface!), id: id, x: swift_wayland_fixed_to_double(x), y: swift_wayland_fixed_to_double(y))
+    private static let motion_impl:
+        @convention(c) (
+            UnsafeMutableRawPointer?, OpaquePointer?, UInt32, Int32, wl_fixed_t, wl_fixed_t
+        ) -> Void = { data, proxy, time, id, x, y in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.motion(
+                    WaylandBorrowedProxy<WlTouchClient>(eventProxy), time: time, id: id,
+                    x: swift_wayland_fixed_to_double(x), y: swift_wayland_fixed_to_double(y))
+            }
         }
-    }
-    private static let up_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, Int32) -> Void = { data, proxy, serial, time, id in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let frame_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.frame(WaylandBorrowedProxy<WlTouchClient>(eventProxy))
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
+    private static let cancel_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.cancel(WaylandBorrowedProxy<WlTouchClient>(eventProxy))
+            }
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.up(WaylandBorrowedProxy<WlTouchClient>(eventProxy), serial: serial, time: time, id: id)
+    private static let shape_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, wl_fixed_t, wl_fixed_t) ->
+            Void = { data, proxy, id, major, minor in
+                guard let data = unsafe data, let proxy = unsafe proxy else {
+                    return
+                }
+                let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+                guard let h = handler(listenerContext) else {
+                    return
+                }
+                nonisolated(unsafe) let eventHandler = h
+                nonisolated(unsafe) let eventProxy = unsafe proxy
+                nonisolated(unsafe) let eventContext = listenerContext
+                MainActor.assumeIsolated {
+                    unsafe eventHandler.shape(
+                        WaylandBorrowedProxy<WlTouchClient>(eventProxy), id: id,
+                        major: swift_wayland_fixed_to_double(major),
+                        minor: swift_wayland_fixed_to_double(minor))
+                }
+            }
+    private static let orientation_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, wl_fixed_t) -> Void = {
+            data, proxy, id, orientation in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.orientation(
+                    WaylandBorrowedProxy<WlTouchClient>(eventProxy), id: id,
+                    orientation: swift_wayland_fixed_to_double(orientation))
+            }
         }
-    }
-    private static let motion_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, Int32, wl_fixed_t, wl_fixed_t) -> Void = { data, proxy, time, id, x, y in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.motion(WaylandBorrowedProxy<WlTouchClient>(eventProxy), time: time, id: id, x: swift_wayland_fixed_to_double(x), y: swift_wayland_fixed_to_double(y))
-        }
-    }
-    private static let frame_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.frame(WaylandBorrowedProxy<WlTouchClient>(eventProxy))
-        }
-    }
-    private static let cancel_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.cancel(WaylandBorrowedProxy<WlTouchClient>(eventProxy))
-        }
-    }
-    private static let shape_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, wl_fixed_t, wl_fixed_t) -> Void = { data, proxy, id, major, minor in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.shape(WaylandBorrowedProxy<WlTouchClient>(eventProxy), id: id, major: swift_wayland_fixed_to_double(major), minor: swift_wayland_fixed_to_double(minor))
-        }
-    }
-    private static let orientation_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, wl_fixed_t) -> Void = { data, proxy, id, orientation in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.orientation(WaylandBorrowedProxy<WlTouchClient>(eventProxy), id: id, orientation: swift_wayland_fixed_to_double(orientation))
-        }
-    }
 }
-public extension WaylandProxy where Interface == WlTouchClient {
-    func installListener(_ owner: any WlTouchEvents) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WlTouchClient {
+    package func installListener(_ owner: any WlTouchEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe wl_touch_add_listener(proxy, WlTouchClient.listener, data)
         }

@@ -8,8 +8,8 @@
 // hardware-independently; the rasterization into a cache surface runs
 // best-effort over a real Graphite recorder.
 
-import NucleusSkiaGraphiteBridge
 internal import NucleusRenderModel
+import NucleusSkiaGraphiteBridge
 internal import NucleusTypes
 
 /// Per-frame counters of producer GPU work (a representative subset of the
@@ -82,11 +82,12 @@ final class TextureProducer {
     static func supersededKeys(
         in keys: Set<ProducerCacheKey>, replacing key: ProducerCacheKey
     ) -> Set<ProducerCacheKey> {
-        Set(keys.filter {
-            $0.kind == key.kind
-                && ($0.revision != key.revision
-                    || $0.imageDependencies != key.imageDependencies)
-        })
+        Set(
+            keys.filter {
+                $0.kind == key.kind
+                    && ($0.revision != key.revision
+                        || $0.imageDependencies != key.imageDependencies)
+            })
     }
 
     /// Reclaim the cache texture for a single layer (its content is gone). Releases
@@ -156,7 +157,7 @@ final class TextureProducer {
                     && $0.height == height
             }
             guard let oldKey,
-                  let oldHandle = handlesByKey[oldKey]
+                let oldHandle = handlesByKey[oldKey]
             else {
                 return nil
             }
@@ -197,12 +198,13 @@ final class TextureProducer {
             keysByLayer[layerId]?.remove(oldKey)
             failedKeys.remove(oldKey)
         }
-        failedKeys = Set(failedKeys.filter {
-            !($0.layerId == layerId
-                && $0.kind == kind
-                && ($0.revision != revision
-                    || $0.imageDependencies != imageDependencies))
-        })
+        failedKeys = Set(
+            failedKeys.filter {
+                !($0.layerId == layerId
+                    && $0.kind == kind
+                    && ($0.revision != revision
+                        || $0.imageDependencies != imageDependencies))
+            })
 
         let handle = registry.allocRendererHandle()
         unsafe registry.register(
@@ -280,7 +282,7 @@ final class TextureProducer {
         authoredHeight: Float,
         contentWidth: Int32,
         contentHeight: Int32,
-        localDamage: NucleusRenderModel.Rect? = nil,
+        localDamage: NucleusRenderModel.RenderRect? = nil,
         resolveImage: (UInt64) -> nucleus.skia.Image?,
         resolveEffect: (UInt64) -> nucleus.skia.RuntimeEffect?
     ) -> UInt64? {
@@ -311,22 +313,22 @@ final class TextureProducer {
     }
 
     static func rasterDamage(
-        _ damage: NucleusRenderModel.Rect,
+        _ damage: NucleusRenderModel.RenderRect,
         scaleX: Float,
         scaleY: Float,
         width: Int32,
         height: Int32
     ) -> PlanRect? {
         guard damage.x.isFinite,
-              damage.y.isFinite,
-              damage.w.isFinite,
-              damage.h.isFinite,
-              damage.w > 0,
-              damage.h > 0,
-              scaleX.isFinite,
-              scaleY.isFinite,
-              scaleX > 0,
-              scaleY > 0
+            damage.y.isFinite,
+            damage.w.isFinite,
+            damage.h.isFinite,
+            damage.w > 0,
+            damage.h > 0,
+            scaleX.isFinite,
+            scaleY.isFinite,
+            scaleX > 0,
+            scaleY > 0
         else {
             return nil
         }
@@ -340,9 +342,9 @@ final class TextureProducer {
             ((damage.y + damage.h) * scaleY).rounded(.up))
         guard right > left, bottom > top else { return nil }
         if left == 0,
-           top == 0,
-           right == Float(width),
-           bottom == Float(height)
+            top == 0,
+            right == Float(width),
+            bottom == Float(height)
         {
             return nil
         }

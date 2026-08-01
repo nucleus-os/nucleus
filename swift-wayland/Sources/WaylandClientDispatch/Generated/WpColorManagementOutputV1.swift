@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for wp_color_management_output_v1.
 
 import WaylandClientC
-public enum WpColorManagementOutputV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum WpColorManagementOutputV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_color_management_output_v1())
-    public nonisolated static let maximumVersion: UInt32 = 2
+    package nonisolated static let maximumVersion: UInt32 = 2
 }
-public extension WaylandProxy where Interface == WpColorManagementOutputV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpColorManagementOutputV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_color_management_output_v1_destroy(_proxy)
@@ -17,9 +18,15 @@ public extension WaylandProxy where Interface == WpColorManagementOutputV1Client
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func getImageDescription() throws(WaylandProxyError) -> WaylandProxy<WpImageDescriptionV1Client> {
+    package func getImageDescription() throws(WaylandProxyError) -> WaylandProxy<
+        WpImageDescriptionV1Client
+    > {
         let _proxy = try unsafe requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_wp_color_management_output_v1_get_image_description(_proxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_wp_color_management_output_v1_get_image_description(
+                    _proxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
@@ -27,39 +34,48 @@ public extension WaylandProxy where Interface == WpColorManagementOutputV1Client
     }
 }
 @MainActor
-public protocol WpColorManagementOutputV1Events: AnyObject {
+package protocol WpColorManagementOutputV1Events: AnyObject {
     func imageDescriptionChanged(_ proxy: WaylandBorrowedProxy<WpColorManagementOutputV1Client>)
 }
-public extension WpColorManagementOutputV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wp_color_management_output_v1_listener> = {
-        let p = UnsafeMutablePointer<wp_color_management_output_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wp_color_management_output_v1_listener())
-        unsafe p.pointee.image_description_changed = imageDescriptionChanged_impl
-        return unsafe p
-    }()
-    private static func handler(_ context: WaylandClientListenerContext) -> any WpColorManagementOutputV1Events? {
+package extension WpColorManagementOutputV1Client {
+    package nonisolated(unsafe) static let listener:
+        UnsafeMutablePointer<wp_color_management_output_v1_listener> = {
+            let p = UnsafeMutablePointer<wp_color_management_output_v1_listener>.allocate(
+                capacity: 1)
+            unsafe p.initialize(to: wp_color_management_output_v1_listener())
+            unsafe p.pointee.image_description_changed = imageDescriptionChanged_impl
+            return unsafe p
+        }()
+    private static func handler(_ context: WaylandClientListenerContext)
+        -> any WpColorManagementOutputV1Events?
+    {
         context.owner as? any WpColorManagementOutputV1Events
     }
-    private static let imageDescriptionChanged_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let imageDescriptionChanged_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.imageDescriptionChanged(
+                    WaylandBorrowedProxy<WpColorManagementOutputV1Client>(eventProxy))
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.imageDescriptionChanged(WaylandBorrowedProxy<WpColorManagementOutputV1Client>(eventProxy))
-        }
-    }
 }
-public extension WaylandProxy where Interface == WpColorManagementOutputV1Client {
-    func installListener(_ owner: any WpColorManagementOutputV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpColorManagementOutputV1Client {
+    package func installListener(_ owner: any WpColorManagementOutputV1Events)
+        throws(WaylandProxyError)
+    {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wp_color_management_output_v1_add_listener(proxy, WpColorManagementOutputV1Client.listener, data)
+            unsafe wp_color_management_output_v1_add_listener(
+                proxy, WpColorManagementOutputV1Client.listener, data)
         }
     }
 }

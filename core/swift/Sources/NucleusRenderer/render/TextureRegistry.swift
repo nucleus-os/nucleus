@@ -10,9 +10,9 @@
 // wrap (`wrapBackendImage`) compiles here; the live DMA-BUF import and Vulkan
 // ownership remain in the renderer.
 
-import VulkanC
-import Vulkan
 import NucleusSkiaGraphiteBridge
+import Vulkan
+import VulkanC
 
 /// Reclaimable 2D rect allocator with free-list coalescing: best-fit on the
 /// short axis, split along the axis that leaves the larger leftover strip
@@ -108,13 +108,27 @@ struct GuillotineAllocator {
     private static func tryMerge(_ a: inout Rect, _ b: Rect) -> Bool {
         // Horizontal merge: same y/h, abutting in x.
         if a.y == b.y && a.h == b.h {
-            if a.x + a.w == b.x { a.w += b.w; return true }
-            if b.x + b.w == a.x { a.x = b.x; a.w += b.w; return true }
+            if a.x + a.w == b.x {
+                a.w += b.w
+                return true
+            }
+            if b.x + b.w == a.x {
+                a.x = b.x
+                a.w += b.w
+                return true
+            }
         }
         // Vertical merge: same x/w, abutting in y.
         if a.x == b.x && a.w == b.w {
-            if a.y + a.h == b.y { a.h += b.h; return true }
-            if b.y + b.h == a.y { a.y = b.y; a.h += b.h; return true }
+            if a.y + a.h == b.y {
+                a.h += b.h
+                return true
+            }
+            if b.y + b.h == a.y {
+                a.y = b.y
+                a.h += b.h
+                return true
+            }
         }
         return false
     }

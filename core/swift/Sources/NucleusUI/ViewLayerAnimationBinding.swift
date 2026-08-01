@@ -1,4 +1,4 @@
-@_spi(NucleusRenderServer) internal import NucleusLayers
+internal import NucleusLayers
 
 extension ViewLayerPublisher {
     func publishAnimations(
@@ -12,13 +12,15 @@ extension ViewLayerPublisher {
         where request.generation > state.animationGeneration {
             switch request.operation {
             case .add(let animation):
-                transaction.mutations.append(.animationAdded(
-                    layer: state.layer.id,
-                    animation))
+                transaction.mutations.append(
+                    .animationAdded(
+                        layer: state.layer.id,
+                        animation))
             case .remove(let keyPath):
-                transaction.mutations.append(.animationRemoved(
-                    layer: state.layer.id,
-                    keyPath))
+                transaction.mutations.append(
+                    .animationRemoved(
+                        layer: state.layer.id,
+                        keyPath))
             }
             state.animationGeneration = max(
                 state.animationGeneration,
@@ -46,10 +48,11 @@ extension ViewLayerPublisher {
     func bindAnimationPresentationTiming(
         to transaction: inout LayerTransaction
     ) throws(LayerError) {
-        guard transaction.mutations.contains(where: {
-            if case .animationAdded = $0 { return true }
-            return false
-        }), !(context.commitSink is InMemoryCommitSink)
+        guard
+            transaction.mutations.contains(where: {
+                if case .animationAdded = $0 { return true }
+                return false
+            }), !(context.commitSink is InMemoryCommitSink)
         else { return }
         let report = try context.queryDisplayLink()
         transaction.predictedPresentationNanoseconds =

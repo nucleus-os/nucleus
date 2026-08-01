@@ -85,7 +85,7 @@ struct TextureQuad {
     var opaqueRect: PlanRect?
     var foregroundVibrancy: ForegroundVibrancy?
     /// Layer-local logical paint damage. Nil means a complete texture rebuild.
-    var localPaintDamage: Rect?
+    var localPaintDamage: RenderRect?
 }
 
 /// A solid fill. Mirrors `FillQuad`.
@@ -223,7 +223,7 @@ struct LayerFrameSnapshot: Equatable {
 struct FramePaintRequest {
     var layerID: UInt64
     var reference: PlanTextureReference
-    var localDamage: Rect?
+    var localDamage: RenderRect?
 }
 
 /// Ordered, deduplicated resource dependencies for the final operation stream.
@@ -264,17 +264,18 @@ struct FrameResourceSummary {
                 textureReferences.append(reference)
             }
             if quad.role == .content,
-               clientSurfaceSet.insert(handle.raw).inserted
+                clientSurfaceSet.insert(handle.raw).inserted
             {
                 clientSurfaceIDs.append(handle.raw)
             }
             if quad.role == .paint,
-               paintReferenceSet.insert(reference).inserted
+                paintReferenceSet.insert(reference).inserted
             {
-                paintRequests.append(FramePaintRequest(
-                    layerID: quad.layerId,
-                    reference: reference,
-                    localDamage: quad.localPaintDamage))
+                paintRequests.append(
+                    FramePaintRequest(
+                        layerID: quad.layerId,
+                        reference: reference,
+                        localDamage: quad.localPaintDamage))
             }
         case .shadowQuad(let quad):
             if let handle = quad.texture {
@@ -286,7 +287,7 @@ struct FrameResourceSummary {
                 }
             }
             if let material = quad.material,
-               shadowLayerSet.insert(material.layerId).inserted
+                shadowLayerSet.insert(material.layerId).inserted
             {
                 shadowMaterials.append(material)
             }
@@ -401,7 +402,8 @@ final class FramePlan {
             return quad.color.3 >= 0.999 && quad.blendMode == .src && quad.maskRRect == nil
                 ? quad.dst : nil
         case .visualStyle(let quad):
-            let square = quad.cornerRadii.0 == 0 && quad.cornerRadii.1 == 0
+            let square =
+                quad.cornerRadii.0 == 0 && quad.cornerRadii.1 == 0
                 && quad.cornerRadii.2 == 0 && quad.cornerRadii.3 == 0
             return quad.alpha >= 0.999 && quad.backgroundColor.3 >= 0.999 && square
                 ? quad.dst : nil
@@ -410,25 +412,33 @@ final class FramePlan {
     }
 
     private static func outwardRect(_ rect: PlanRect) -> RegionRect? {
-        let x0 = rect.x.rounded(.down), y0 = rect.y.rounded(.down)
-        let x1 = (rect.x + rect.w).rounded(.up), y1 = (rect.y + rect.h).rounded(.up)
+        let x0 = rect.x.rounded(.down)
+        let y0 = rect.y.rounded(.down)
+        let x1 = (rect.x + rect.w).rounded(.up)
+        let y1 = (rect.y + rect.h).rounded(.up)
         return integerRect(x0: x0, y0: y0, x1: x1, y1: y1)
     }
 
     private static func inwardRect(_ rect: PlanRect) -> RegionRect? {
-        let x0 = rect.x.rounded(.up), y0 = rect.y.rounded(.up)
-        let x1 = (rect.x + rect.w).rounded(.down), y1 = (rect.y + rect.h).rounded(.down)
+        let x0 = rect.x.rounded(.up)
+        let y0 = rect.y.rounded(.up)
+        let x1 = (rect.x + rect.w).rounded(.down)
+        let y1 = (rect.y + rect.h).rounded(.down)
         return integerRect(x0: x0, y0: y0, x1: x1, y1: y1)
     }
 
     private static func integerRect(x0: Float, y0: Float, x1: Float, y1: Float) -> RegionRect? {
-        let dx0 = Double(x0), dy0 = Double(y0), dx1 = Double(x1), dy1 = Double(y1)
-        let width = dx1 - dx0, height = dy1 - dy0
+        let dx0 = Double(x0)
+        let dy0 = Double(y0)
+        let dx1 = Double(x1)
+        let dy1 = Double(y1)
+        let width = dx1 - dx0
+        let height = dy1 - dy0
         guard dx0.isFinite, dy0.isFinite, dx1.isFinite, dy1.isFinite,
-              width > 0, height > 0,
-              dx0 >= Double(Int32.min), dy0 >= Double(Int32.min),
-              dx1 <= Double(Int32.max), dy1 <= Double(Int32.max),
-              width <= Double(Int32.max), height <= Double(Int32.max)
+            width > 0, height > 0,
+            dx0 >= Double(Int32.min), dy0 >= Double(Int32.min),
+            dx1 <= Double(Int32.max), dy1 <= Double(Int32.max),
+            width <= Double(Int32.max), height <= Double(Int32.max)
         else { return nil }
         return RegionRect(
             x: Int32(dx0), y: Int32(dy0),

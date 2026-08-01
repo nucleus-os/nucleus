@@ -1,6 +1,6 @@
 internal import NucleusTextCxxBridge
 internal import NucleusTextRenderingBridge
-public import NucleusUI
+package import NucleusUI
 import Tracy
 
 /// Skia/SkParagraph implementation of NucleusUI's pure Swift text boundary.
@@ -8,17 +8,18 @@ import Tracy
 /// Hosts install this once at bring-up; merely importing NucleusUI no longer
 /// loads a C++ module or silently chooses a native backend.
 @MainActor
-public final class SkiaTextLayoutBackend: TextLayoutBackend {
-    public private(set) var generation: UInt64 = 1
+package final class SkiaTextLayoutBackend: TextLayoutBackend {
+    package private(set) var generation: UInt64 = 1
 
-    public init() {}
+    package init() {}
 
     @discardableResult
-    public static func install(in system: TextSystem) -> Bool {
+    package static func install(in system: TextSystem) -> Bool {
         let bridgeStatus =
             nucleus.text.installTextRenderingBridge()
-        guard bridgeStatus
-            != nucleus.text.TextRenderingBridgeInstallStatus
+        guard
+            bridgeStatus
+                != nucleus.text.TextRenderingBridgeInstallStatus
                 .conflictingProvider
         else {
             return false
@@ -28,19 +29,19 @@ public final class SkiaTextLayoutBackend: TextLayoutBackend {
     }
 
     @discardableResult
-    public static func installIfNeeded(
+    package static func installIfNeeded(
         in system: TextSystem
     ) -> Bool {
         guard !system.hasInstalledBackend else { return true }
         return install(in: system)
     }
 
-    public func invalidateFontCollection() {
+    package func invalidateFontCollection() {
         nucleus.text.TextLayoutService().invalidateFontCollection()
         generation &+= 1
     }
 
-    public func resolveFont(_ descriptor: FontDescriptor) -> ResolvedFontDescriptor? {
+    package func resolveFont(_ descriptor: FontDescriptor) -> ResolvedFontDescriptor? {
         let service = nucleus.text.TextLayoutService()
         var resolved = nucleus.text.ResolvedFontDescriptor()
         return unsafe withUTF8View(descriptor.familyName) { familyView -> ResolvedFontDescriptor? in
@@ -56,7 +57,8 @@ public final class SkiaTextLayoutBackend: TextLayoutBackend {
                 return nil
             }
             return ResolvedFontDescriptor(
-                familyName: stringFromFixedBuffer(resolved.familyName, count: resolved.familyNameLength),
+                familyName: stringFromFixedBuffer(
+                    resolved.familyName, count: resolved.familyNameLength),
                 postScriptName: stringFromFixedBuffer(
                     resolved.postScriptName,
                     count: resolved.postScriptNameLength
@@ -69,7 +71,7 @@ public final class SkiaTextLayoutBackend: TextLayoutBackend {
         }
     }
 
-    public func fontMetrics(for descriptor: FontDescriptor) -> FontMetrics? {
+    package func fontMetrics(for descriptor: FontDescriptor) -> FontMetrics? {
         let service = nucleus.text.TextLayoutService()
         var metrics = nucleus.text.FontMetrics()
         return unsafe withUTF8View(descriptor.familyName) { familyView -> FontMetrics? in
@@ -94,7 +96,7 @@ public final class SkiaTextLayoutBackend: TextLayoutBackend {
         }
     }
 
-    public func createLayout(
+    package func createLayout(
         _ attributedText: AttributedText,
         containerWidth: Double?,
         paragraphStyle: ParagraphStyle,
@@ -130,19 +132,24 @@ public final class SkiaTextLayoutBackend: TextLayoutBackend {
             }
             var scaledParagraph = paragraphStyle
             scaledParagraph.lineSpacing *= Double(scale)
-            scaledParagraph.minimumLineHeight = scaledParagraph.minimumLineHeight.map { $0 * Double(scale) }
-            scaledParagraph.maximumLineHeight = scaledParagraph.maximumLineHeight.map { $0 * Double(scale) }
+            scaledParagraph.minimumLineHeight = scaledParagraph.minimumLineHeight.map {
+                $0 * Double(scale)
+            }
+            scaledParagraph.maximumLineHeight = scaledParagraph.maximumLineHeight.map {
+                $0 * Double(scale)
+            }
             let resolvedRuns = scaledRuns.map { run in
                 var copy = run
-                var lineHeight = copy.style.lineHeight
+                var lineHeight =
+                    copy.style.lineHeight
                     ?? Double(copy.font.pointSize)
-                        + scaledParagraph.lineSpacing
+                    + scaledParagraph.lineSpacing
                 lineHeight = max(
                     lineHeight,
                     scaledParagraph.minimumLineHeight ?? 0
                 )
                 if let maximum = scaledParagraph.maximumLineHeight,
-                   maximum > 0
+                    maximum > 0
                 {
                     lineHeight = min(lineHeight, maximum)
                 }
@@ -220,27 +227,29 @@ public final class SkiaTextLayoutBackend: TextLayoutBackend {
         }
     }
 
-    public func retainLayout(_ handle: TextLayoutHandle) {
+    package func retainLayout(_ handle: TextLayoutHandle) {
         guard handle.rawValue != 0 else { return }
         nucleus.text.TextLayoutService().retain(handle.rawValue)
     }
 
-    public func releaseLayout(_ handle: TextLayoutHandle) {
+    package func releaseLayout(_ handle: TextLayoutHandle) {
         guard handle.rawValue != 0 else { return }
         nucleus.text.TextLayoutService().release(handle.rawValue)
     }
 
-    public func glyphPosition(
+    package func glyphPosition(
         at point: Point,
         in handle: TextLayoutHandle
     ) -> TextGlyphPosition? {
         var position = nucleus.text.TextPosition()
-        guard unsafe nucleus.text.TextLayoutService().glyphPositionAt(
-            handle.rawValue,
-            Float(point.x),
-            Float(point.y),
-            &position
-        ) else {
+        guard
+            unsafe nucleus.text.TextLayoutService().glyphPositionAt(
+                handle.rawValue,
+                Float(point.x),
+                Float(point.y),
+                &position
+            )
+        else {
             return nil
         }
         return TextGlyphPosition(
@@ -249,18 +258,20 @@ public final class SkiaTextLayoutBackend: TextLayoutBackend {
         )
     }
 
-    public func caretGeometry(
+    package func caretGeometry(
         atUTF16Offset offset: Int,
         affinity: TextAffinity,
         in handle: TextLayoutHandle
     ) -> TextCaretGeometry? {
         var caret = nucleus.text.TextCaret()
-        guard unsafe nucleus.text.TextLayoutService().caretForOffset(
-            handle.rawValue,
-            offset.clampedUInt32,
-            affinity.cValue,
-            &caret
-        ) else {
+        guard
+            unsafe nucleus.text.TextLayoutService().caretForOffset(
+                handle.rawValue,
+                offset.clampedUInt32,
+                affinity.cValue,
+                &caret
+            )
+        else {
             return nil
         }
         return TextCaretGeometry(
@@ -275,7 +286,7 @@ public final class SkiaTextLayoutBackend: TextLayoutBackend {
         )
     }
 
-    public func selectionRects(
+    package func selectionRects(
         forUTF16Range range: Range<Int>,
         in handle: TextLayoutHandle
     ) -> [TextSelectionRect]? {
@@ -283,14 +294,16 @@ public final class SkiaTextLayoutBackend: TextLayoutBackend {
         let end = max(range.lowerBound, range.upperBound).clampedUInt32
         var rectCount: UInt32 = 0
         let service = nucleus.text.TextLayoutService()
-        guard unsafe service.rectsForRange(
-            handle.rawValue,
-            start,
-            end,
-            nil,
-            0,
-            &rectCount
-        ) else {
+        guard
+            unsafe service.rectsForRange(
+                handle.rawValue,
+                start,
+                end,
+                nil,
+                0,
+                &rectCount
+            )
+        else {
             return nil
         }
         guard rectCount > 0 else { return [] }
@@ -342,46 +355,46 @@ package func withCTextRuns<T>(
     return textBytes.withUnsafeBufferPointer { textBuffer in
         familyBytes.withUnsafeBufferPointer { familyBuffer in
             localeBytes.withUnsafeBufferPointer { localeBuffer in
-            var cRuns = unsafe Array(
-                repeating: nucleus.text.TextRunView(), count: runs.count)
-            for index in runs.indices {
-                let runColor = runs[index].color ?? Color(1, 1, 1, 1)
+                var cRuns = unsafe Array(
+                    repeating: nucleus.text.TextRunView(), count: runs.count)
+                for index in runs.indices {
+                    let runColor = runs[index].color ?? Color(1, 1, 1, 1)
 
-                let family = familyOffsets[index]
-                unsafe cRuns[index].fontFamily = textStringView(
-                    base: familyBuffer.baseAddress,
-                    offset: family.offset,
-                    length: family.length
-                )
-                unsafe cRuns[index].locale = textStringView(
-                    base: localeBuffer.baseAddress,
-                    offset: 0,
-                    length: localeBuffer.count
-                )
-                let text = textOffsets[index]
-                unsafe cRuns[index].text = textStringView(
-                    base: textBuffer.baseAddress,
-                    offset: text.offset,
-                    length: text.length
-                )
-                unsafe cRuns[index].pointSize = runs[index].font.pointSize
-                unsafe cRuns[index].lineHeight = Float(
-                    runs[index].style.lineHeight ?? 0
-                )
-                unsafe cRuns[index].baselineShift = Float(
-                    runs[index].style.baselineOffset
-                )
-                unsafe cRuns[index].weight = runs[index].font.weight.cValue
-                unsafe cRuns[index].width = runs[index].font.width.cValue
-                unsafe cRuns[index].slant = runs[index].font.slant.cValue
-                unsafe cRuns[index].underline = runs[index].style.underline
-                unsafe cRuns[index].strikeThrough = runs[index].style.strikethrough
-                unsafe cRuns[index].red = runColor.r
-                unsafe cRuns[index].green = runColor.g
-                unsafe cRuns[index].blue = runColor.b
-                unsafe cRuns[index].alpha = runColor.a
-            }
-            return cRuns.withUnsafeBufferPointer(body)
+                    let family = familyOffsets[index]
+                    unsafe cRuns[index].fontFamily = textStringView(
+                        base: familyBuffer.baseAddress,
+                        offset: family.offset,
+                        length: family.length
+                    )
+                    unsafe cRuns[index].locale = textStringView(
+                        base: localeBuffer.baseAddress,
+                        offset: 0,
+                        length: localeBuffer.count
+                    )
+                    let text = textOffsets[index]
+                    unsafe cRuns[index].text = textStringView(
+                        base: textBuffer.baseAddress,
+                        offset: text.offset,
+                        length: text.length
+                    )
+                    unsafe cRuns[index].pointSize = runs[index].font.pointSize
+                    unsafe cRuns[index].lineHeight = Float(
+                        runs[index].style.lineHeight ?? 0
+                    )
+                    unsafe cRuns[index].baselineShift = Float(
+                        runs[index].style.baselineOffset
+                    )
+                    unsafe cRuns[index].weight = runs[index].font.weight.cValue
+                    unsafe cRuns[index].width = runs[index].font.width.cValue
+                    unsafe cRuns[index].slant = runs[index].font.slant.cValue
+                    unsafe cRuns[index].underline = runs[index].style.underline
+                    unsafe cRuns[index].strikeThrough = runs[index].style.strikethrough
+                    unsafe cRuns[index].red = runColor.r
+                    unsafe cRuns[index].green = runColor.g
+                    unsafe cRuns[index].blue = runColor.b
+                    unsafe cRuns[index].alpha = runColor.a
+                }
+                return cRuns.withUnsafeBufferPointer(body)
             }
         }
     }
@@ -393,8 +406,9 @@ package func withUTF8View<T>(_ text: String?, _ body: (nucleus.text.TextStringVi
     }
     let bytes = Array(text.utf8)
     return bytes.withUnsafeBufferPointer { buffer in
-        unsafe body(textStringView(
-            base: buffer.baseAddress, offset: 0, length: buffer.count))
+        unsafe body(
+            textStringView(
+                base: buffer.baseAddress, offset: 0, length: buffer.count))
     }
 }
 
@@ -408,7 +422,8 @@ private func textStringView(
     }
     var view = unsafe nucleus.text.TextStringView()
     unsafe view.data = UnsafeRawPointer(
-        base.advanced(by: offset)).assumingMemoryBound(to: CChar.self)
+        base.advanced(by: offset)
+    ).assumingMemoryBound(to: CChar.self)
     unsafe view.size = length
     return unsafe view
 }
@@ -484,8 +499,8 @@ extension TextDirection {
     }
 }
 
-private extension TextLayoutLine {
-    init(
+extension TextLayoutLine {
+    fileprivate init(
         _ metrics: nucleus.text.TextLineMetrics,
         sourceText: String,
         didExceedMaximumLineCount: Bool,
@@ -505,11 +520,13 @@ private extension TextLayoutLine {
         )
         let isLastVisibleLine = metrics.isLastVisibleLine || lineIndex == lineCount - 1
         self.init(
-            text: sourceText.utf16Substring(start: sourceRange.lowerBound, end: sourceRange.upperBound),
+            text: sourceText.utf16Substring(
+                start: sourceRange.lowerBound, end: sourceRange.upperBound),
             frame: frame,
             baselineOffsetFromTop: Double(metrics.baseline - metrics.y) * coordinateScale,
             sourceUTF16Range: sourceRange,
-            endExcludingWhitespace: sourceText.clampedUTF16Offset(Int(metrics.endExcludingWhitespace)),
+            endExcludingWhitespace: sourceText.clampedUTF16Offset(
+                Int(metrics.endExcludingWhitespace)),
             endIncludingNewline: sourceText.clampedUTF16Offset(Int(metrics.endIncludingNewline)),
             lineNumber: Int(metrics.lineNumber),
             typographicAscent: Double(metrics.ascent) * coordinateScale,
@@ -517,13 +534,14 @@ private extension TextLayoutLine {
             unscaledAscent: Double(metrics.unscaledAscent) * coordinateScale,
             isHardBreak: metrics.hardBreak,
             isLastVisibleLine: isLastVisibleLine,
-            isTruncated: didExceedMaximumLineCount && isLastVisibleLine && lineBreakMode == .byTruncatingTail
+            isTruncated: didExceedMaximumLineCount && isLastVisibleLine
+                && lineBreakMode == .byTruncatingTail
         )
     }
 }
 
-package extension Font.Weight {
-    init(cValue: UInt32) {
+extension Font.Weight {
+    package init(cValue: UInt32) {
         switch cValue {
         case nucleus.text.FontWeightMedium:
             self = .medium
@@ -536,7 +554,7 @@ package extension Font.Weight {
         }
     }
 
-    var cValue: UInt32 {
+    package var cValue: UInt32 {
         switch self {
         case .regular:
             nucleus.text.FontWeightRegular
@@ -550,8 +568,8 @@ package extension Font.Weight {
     }
 }
 
-package extension Font.Width {
-    init(cValue: UInt32) {
+extension Font.Width {
+    package init(cValue: UInt32) {
         switch cValue {
         case nucleus.text.FontWidthCompressed:
             self = .compressed
@@ -564,7 +582,7 @@ package extension Font.Width {
         }
     }
 
-    var cValue: UInt32 {
+    package var cValue: UInt32 {
         switch self {
         case .compressed:
             nucleus.text.FontWidthCompressed
@@ -578,8 +596,8 @@ package extension Font.Width {
     }
 }
 
-package extension Font.Slant {
-    init(cValue: UInt32) {
+extension Font.Slant {
+    package init(cValue: UInt32) {
         switch cValue {
         case nucleus.text.FontSlantItalic:
             self = .italic
@@ -590,7 +608,7 @@ package extension Font.Slant {
         }
     }
 
-    var cValue: UInt32 {
+    package var cValue: UInt32 {
         switch self {
         case .upright:
             nucleus.text.FontSlantUpright
@@ -602,18 +620,18 @@ package extension Font.Slant {
     }
 }
 
-private extension String {
-    func clampedUTF16Offset(_ offset: Int) -> Int {
+extension String {
+    fileprivate func clampedUTF16Offset(_ offset: Int) -> Int {
         max(0, min(offset, utf16.count))
     }
 
-    func clampedUTF16Range(start: Int, end: Int) -> Range<Int> {
+    fileprivate func clampedUTF16Range(start: Int, end: Int) -> Range<Int> {
         let clampedStart = clampedUTF16Offset(start)
         let clampedEnd = max(clampedStart, clampedUTF16Offset(end))
         return clampedStart..<clampedEnd
     }
 
-    func utf16Substring(start: Int, end: Int) -> String {
+    fileprivate func utf16Substring(start: Int, end: Int) -> String {
         let range = clampedUTF16Range(start: start, end: end)
         let clampedStart = range.lowerBound
         let clampedEnd = range.upperBound
@@ -629,8 +647,8 @@ private extension String {
     }
 }
 
-private extension Int {
-    var clampedUInt32: UInt32 {
+extension Int {
+    fileprivate var clampedUInt32: UInt32 {
         UInt32(Swift.max(0, Swift.min(self, Int(UInt32.max))))
     }
 }

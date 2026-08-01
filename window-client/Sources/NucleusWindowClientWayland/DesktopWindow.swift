@@ -1,5 +1,5 @@
-import NucleusWindowClientContracts
-import WaylandClientDispatch
+public import NucleusWindowClientContracts
+package import WaylandClientDispatch
 
 @MainActor
 public final class NucleusDesktopWindow:
@@ -8,8 +8,7 @@ public final class NucleusDesktopWindow:
     let surface: WaylandProxy<WlSurfaceClient>
     fileprivate let xdgSurface: WaylandProxy<XdgSurfaceClient>
     private let toplevel: WaylandProxy<XdgToplevelClient>
-    private var alpha:
-        WaylandProxy<WpAlphaModifierSurfaceV1Client>?
+    private var alpha: WaylandProxy<WpAlphaModifierSurfaceV1Client>?
     private var pendingWidth: Int32 = 0
     private var pendingHeight: Int32 = 0
     private var closed = false
@@ -89,7 +88,8 @@ public final class NucleusDesktopWindow:
         guard let alpha else {
             throw .capabilityUnavailable
         }
-        let factor = value == 1
+        let factor =
+            value == 1
             ? UInt32.max
             : UInt32(
                 (value * Double(UInt32.max)).rounded())
@@ -110,25 +110,25 @@ public final class NucleusDesktopWindow:
         }
     }
 
-    @_spi(NucleusWindowClientImplementation)
-    public func withUnsafeNativeSurface<Result>(
+    package func withUnsafeNativeSurface<Result>(
         _ body: (OpaquePointer) throws -> Result
     ) throws -> Result {
         try unsafe surface.withUnsafeNativeProxy(body)
     }
 
-    public func configure(
+    package func configure(
         _ proxy: WaylandBorrowedProxy<XdgSurfaceClient>,
         serial: UInt32
     ) {
         try? xdgSurface.ackConfigure(serial: serial)
-        onEvent?(.configured(
-            width: pendingWidth,
-            height: pendingHeight,
-            serial: serial))
+        onEvent?(
+            .configured(
+                width: pendingWidth,
+                height: pendingHeight,
+                serial: serial))
     }
 
-    public func configure(
+    package func configure(
         _ proxy: WaylandBorrowedProxy<XdgToplevelClient>,
         width: Int32,
         height: Int32,
@@ -138,19 +138,19 @@ public final class NucleusDesktopWindow:
         pendingHeight = max(0, height)
     }
 
-    public func close(
+    package func close(
         _ proxy: WaylandBorrowedProxy<XdgToplevelClient>
     ) {
         onEvent?(.closeRequested)
     }
 
-    public func configureBounds(
+    package func configureBounds(
         _ proxy: WaylandBorrowedProxy<XdgToplevelClient>,
         width: Int32,
         height: Int32
     ) {}
 
-    public func wmCapabilities(
+    package func wmCapabilities(
         _ proxy: WaylandBorrowedProxy<XdgToplevelClient>,
         capabilities: WaylandClientArrayView
     ) {}
@@ -163,9 +163,10 @@ public final class NucleusDesktopPopup:
     private let surface: WaylandProxy<WlSurfaceClient>
     private let xdgSurface: WaylandProxy<XdgSurfaceClient>
     private let popup: WaylandProxy<XdgPopupClient>
-    private var pendingGeometry: (
-        x: Int32, y: Int32, width: Int32, height: Int32
-    ) = (0, 0, 0, 0)
+    private var pendingGeometry:
+        (
+            x: Int32, y: Int32, width: Int32, height: Int32
+        ) = (0, 0, 0, 0)
     private var closed = false
 
     public var onEvent: ((NucleusDesktopPopupEvent) -> Void)?
@@ -216,27 +217,27 @@ public final class NucleusDesktopPopup:
         try? surface.destroy()
     }
 
-    @_spi(NucleusWindowClientImplementation)
-    public func withUnsafeNativeSurface<Result>(
+    package func withUnsafeNativeSurface<Result>(
         _ body: (OpaquePointer) throws -> Result
     ) throws -> Result {
         try unsafe surface.withUnsafeNativeProxy(body)
     }
 
-    public func configure(
+    package func configure(
         _ proxy: WaylandBorrowedProxy<XdgSurfaceClient>,
         serial: UInt32
     ) {
         try? xdgSurface.ackConfigure(serial: serial)
-        onEvent?(.configured(
-            x: pendingGeometry.x,
-            y: pendingGeometry.y,
-            width: pendingGeometry.width,
-            height: pendingGeometry.height,
-            serial: serial))
+        onEvent?(
+            .configured(
+                x: pendingGeometry.x,
+                y: pendingGeometry.y,
+                width: pendingGeometry.width,
+                height: pendingGeometry.height,
+                serial: serial))
     }
 
-    public func configure(
+    package func configure(
         _ proxy: WaylandBorrowedProxy<XdgPopupClient>,
         x: Int32,
         y: Int32,
@@ -246,19 +247,19 @@ public final class NucleusDesktopPopup:
         pendingGeometry = (x, y, max(0, width), max(0, height))
     }
 
-    public func popupDone(
+    package func popupDone(
         _ proxy: WaylandBorrowedProxy<XdgPopupClient>
     ) {
         onEvent?(.dismissed)
     }
 
-    public func repositioned(
+    package func repositioned(
         _ proxy: WaylandBorrowedProxy<XdgPopupClient>,
         token: UInt32
     ) {}
 }
 
-public extension NucleusDesktopConnection {
+package extension NucleusDesktopConnection {
     func createWindow(
         configuration: NucleusDesktopWindowConfiguration
     ) throws(NucleusDesktopWindowError) -> NucleusDesktopWindow {

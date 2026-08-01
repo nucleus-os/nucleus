@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for xdg_toplevel_icon_manager_v1.
 
 import WaylandClientC
-public enum XdgToplevelIconManagerV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum XdgToplevelIconManagerV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_xdg_toplevel_icon_manager_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == XdgToplevelIconManagerV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == XdgToplevelIconManagerV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_xdg_toplevel_icon_manager_v1_destroy(_proxy)
@@ -17,73 +18,91 @@ public extension WaylandProxy where Interface == XdgToplevelIconManagerV1Client 
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func createIcon() throws(WaylandProxyError) -> WaylandProxy<XdgToplevelIconV1Client> {
+    package func createIcon() throws(WaylandProxyError) -> WaylandProxy<XdgToplevelIconV1Client> {
         let _proxy = try unsafe requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_xdg_toplevel_icon_manager_v1_create_icon(_proxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_xdg_toplevel_icon_manager_v1_create_icon(_proxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, XdgToplevelIconV1Client.self)
     }
-    func setIcon(toplevel: WaylandProxy<XdgToplevelClient>, icon: WaylandProxy<XdgToplevelIconV1Client>?) throws(WaylandProxyError) {
+    package func setIcon(
+        toplevel: WaylandProxy<XdgToplevelClient>, icon: WaylandProxy<XdgToplevelIconV1Client>?
+    ) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _toplevelProxy = try unsafe toplevel.requireNativeProxy()
         let _iconProxy = try unsafe icon?.requireNativeProxy()
-        unsafe swift_wayland_client_request_xdg_toplevel_icon_manager_v1_set_icon(_proxy, _toplevelProxy, _iconProxy)
+        unsafe swift_wayland_client_request_xdg_toplevel_icon_manager_v1_set_icon(
+            _proxy, _toplevelProxy, _iconProxy)
         return
     }
 }
 @MainActor
-public protocol XdgToplevelIconManagerV1Events: AnyObject {
+package protocol XdgToplevelIconManagerV1Events: AnyObject {
     func iconSize(_ proxy: WaylandBorrowedProxy<XdgToplevelIconManagerV1Client>, size: Int32)
     func done(_ proxy: WaylandBorrowedProxy<XdgToplevelIconManagerV1Client>)
 }
-public extension XdgToplevelIconManagerV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<xdg_toplevel_icon_manager_v1_listener> = {
-        let p = UnsafeMutablePointer<xdg_toplevel_icon_manager_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: xdg_toplevel_icon_manager_v1_listener())
-        unsafe p.pointee.icon_size = iconSize_impl
-        unsafe p.pointee.done = done_impl
-        return unsafe p
-    }()
-    private static func handler(_ context: WaylandClientListenerContext) -> any XdgToplevelIconManagerV1Events? {
+package extension XdgToplevelIconManagerV1Client {
+    package nonisolated(unsafe) static let listener:
+        UnsafeMutablePointer<xdg_toplevel_icon_manager_v1_listener> = {
+            let p = UnsafeMutablePointer<xdg_toplevel_icon_manager_v1_listener>.allocate(
+                capacity: 1)
+            unsafe p.initialize(to: xdg_toplevel_icon_manager_v1_listener())
+            unsafe p.pointee.icon_size = iconSize_impl
+            unsafe p.pointee.done = done_impl
+            return unsafe p
+        }()
+    private static func handler(_ context: WaylandClientListenerContext)
+        -> any XdgToplevelIconManagerV1Events?
+    {
         context.owner as? any XdgToplevelIconManagerV1Events
     }
-    private static let iconSize_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32) -> Void = { data, proxy, size in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let iconSize_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32) -> Void = {
+            data, proxy, size in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.iconSize(
+                    WaylandBorrowedProxy<XdgToplevelIconManagerV1Client>(eventProxy), size: size)
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
+    private static let done_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.done(
+                    WaylandBorrowedProxy<XdgToplevelIconManagerV1Client>(eventProxy))
+            }
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.iconSize(WaylandBorrowedProxy<XdgToplevelIconManagerV1Client>(eventProxy), size: size)
-        }
-    }
-    private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.done(WaylandBorrowedProxy<XdgToplevelIconManagerV1Client>(eventProxy))
-        }
-    }
 }
-public extension WaylandProxy where Interface == XdgToplevelIconManagerV1Client {
-    func installListener(_ owner: any XdgToplevelIconManagerV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == XdgToplevelIconManagerV1Client {
+    package func installListener(_ owner: any XdgToplevelIconManagerV1Events)
+        throws(WaylandProxyError)
+    {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe xdg_toplevel_icon_manager_v1_add_listener(proxy, XdgToplevelIconManagerV1Client.listener, data)
+            unsafe xdg_toplevel_icon_manager_v1_add_listener(
+                proxy, XdgToplevelIconManagerV1Client.listener, data)
         }
     }
 }

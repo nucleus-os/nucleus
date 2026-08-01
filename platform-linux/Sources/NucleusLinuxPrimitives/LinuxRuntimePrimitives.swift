@@ -2,8 +2,8 @@ import Glibc
 import NucleusLinuxPrimitivesC
 
 /// The process-wide Linux monotonic clock, expressed as saturating nanoseconds.
-public enum LinuxMonotonicClock {
-    public static func nowNanoseconds() -> UInt64 {
+package enum LinuxMonotonicClock {
+    package static func nowNanoseconds() -> UInt64 {
         var value = timespec()
         guard unsafe clock_gettime(CLOCK_MONOTONIC, &value) == 0,
             value.tv_sec >= 0,
@@ -23,8 +23,8 @@ public enum LinuxMonotonicClock {
 /// The value cannot escape the borrow supplied by
 /// `LinuxOwnedFileDescriptor.withBorrowedDescriptor`. It never closes the
 /// underlying descriptor and never implies ownership.
-@safe public struct LinuxBorrowedFileDescriptor: ~Escapable, Sendable {
-    public let rawValue: Int32
+@safe package struct LinuxBorrowedFileDescriptor: ~Escapable, Sendable {
+    package let rawValue: Int32
 
     init(_ rawValue: Int32) {
         self.rawValue = rawValue
@@ -36,10 +36,10 @@ public enum LinuxMonotonicClock {
 /// This value is move-only: ownership cannot be accidentally aliased. Use
 /// `duplicate()` when the kernel object needs a second independently owned
 /// descriptor, or `withBorrowedDescriptor` for a scoped syscall borrow.
-@safe public struct LinuxOwnedFileDescriptor: ~Copyable, Sendable {
+@safe package struct LinuxOwnedFileDescriptor: ~Copyable, Sendable {
     private var descriptor: Int32
 
-    public init(adopting descriptor: Int32) {
+    package init(adopting descriptor: Int32) {
         precondition(descriptor >= 0, "cannot own an invalid file descriptor")
         self.descriptor = descriptor
     }
@@ -49,7 +49,7 @@ public enum LinuxMonotonicClock {
         return descriptor
     }
 
-    public borrowing func withBorrowedDescriptor<
+    package borrowing func withBorrowedDescriptor<
         Result: ~Copyable, Failure: Error
     >(
         _ body: (borrowing LinuxBorrowedFileDescriptor) throws(Failure) -> Result
@@ -57,13 +57,13 @@ public enum LinuxMonotonicClock {
         try body(LinuxBorrowedFileDescriptor(validDescriptor()))
     }
 
-    public borrowing func duplicate() -> LinuxOwnedFileDescriptor? {
+    package borrowing func duplicate() -> LinuxOwnedFileDescriptor? {
         let copy = dup(validDescriptor())
         guard copy >= 0 else { return nil }
         return LinuxOwnedFileDescriptor(adopting: copy)
     }
 
-    public consuming func take() -> Int32 {
+    package consuming func take() -> Int32 {
         let result = validDescriptor()
         descriptor = -1
         return result
@@ -81,18 +81,18 @@ public enum LinuxMonotonicClock {
 /// Use this only when value copies must intentionally keep the same descriptor
 /// alive. The handle itself is never exposed as owned: callers receive a lexical
 /// borrow, or explicitly duplicate it into unique ownership.
-@safe public final class LinuxSharedFileDescriptor: Sendable {
+@safe package final class LinuxSharedFileDescriptor: Sendable {
     private let descriptor: LinuxOwnedFileDescriptor
 
-    public init(adopting descriptor: Int32) {
+    package init(adopting descriptor: Int32) {
         self.descriptor = LinuxOwnedFileDescriptor(adopting: descriptor)
     }
 
-    public init(adopting descriptor: consuming LinuxOwnedFileDescriptor) {
+    package init(adopting descriptor: consuming LinuxOwnedFileDescriptor) {
         self.descriptor = consume descriptor
     }
 
-    public func withBorrowedDescriptor<
+    package func withBorrowedDescriptor<
         Result: ~Copyable, Failure: Error
     >(
         _ body: (borrowing LinuxBorrowedFileDescriptor) throws(Failure) -> Result
@@ -100,16 +100,16 @@ public enum LinuxMonotonicClock {
         try descriptor.withBorrowedDescriptor(body)
     }
 
-    public func duplicate() -> LinuxOwnedFileDescriptor? {
+    package func duplicate() -> LinuxOwnedFileDescriptor? {
         descriptor.duplicate()
     }
 }
 
-public struct LinuxFileError: Error, Equatable, Sendable {
-    public let operation: String
-    public let code: Int32
+package struct LinuxFileError: Error, Equatable, Sendable {
+    package let operation: String
+    package let code: Int32
 
-    public init(operation: String, code: Int32) {
+    package init(operation: String, code: Int32) {
         self.operation = operation
         self.code = code
     }
@@ -120,11 +120,11 @@ public struct LinuxFileError: Error, Equatable, Sendable {
 /// Creation is transactional: a partially written or unsealed descriptor never
 /// escapes. Successful values forbid writes, growth, shrinking, and additional
 /// seal changes before they can be shared with another process.
-@safe public struct LinuxSealedFile: ~Copyable, Sendable {
+@safe package struct LinuxSealedFile: ~Copyable, Sendable {
     private var descriptor: LinuxOwnedFileDescriptor
-    public let size: Int
+    package let size: Int
 
-    public init(name: String, bytes: borrowing [UInt8]) throws(LinuxFileError) {
+    package init(name: String, bytes: borrowing [UInt8]) throws(LinuxFileError) {
         let raw = name.withCString { namePointer in
             unsafe nucleus_linux_create_sealable_memfd(namePointer)
         }
@@ -170,7 +170,7 @@ public struct LinuxFileError: Error, Equatable, Sendable {
         self.size = bytes.count
     }
 
-    public borrowing func withBorrowedDescriptor<
+    package borrowing func withBorrowedDescriptor<
         Result: ~Copyable, Failure: Error
     >(
         _ body: (borrowing LinuxBorrowedFileDescriptor) throws(Failure) -> Result
@@ -178,11 +178,11 @@ public struct LinuxFileError: Error, Equatable, Sendable {
         try descriptor.withBorrowedDescriptor(body)
     }
 
-    public borrowing func duplicateDescriptor() -> LinuxOwnedFileDescriptor? {
+    package borrowing func duplicateDescriptor() -> LinuxOwnedFileDescriptor? {
         descriptor.duplicate()
     }
 
-    public consuming func takeDescriptor() -> LinuxOwnedFileDescriptor {
+    package consuming func takeDescriptor() -> LinuxOwnedFileDescriptor {
         consume descriptor
     }
 }

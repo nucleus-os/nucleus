@@ -1,12 +1,12 @@
-import NucleusTypes
+package import NucleusCompositorServer
 import NucleusCompositorServerTypes
-public import NucleusCompositorServer
+import NucleusTypes
 
 @MainActor
 extension WindowManager {
-    public func xwaylandApplyMetadata(windowID: UInt64, metadata: XwaylandWindowMetadata) {
+    package func xwaylandApplyMetadata(windowID: UInt64, metadata: XwaylandWindowMetadata) {
         guard let role = xwaylandRole(windowID: windowID),
-              let window = server.window(id: windowID)
+            let window = server.window(id: windowID)
         else { return }
 
         role.overrideRedirect = metadata.overrideRedirect
@@ -25,15 +25,19 @@ extension WindowManager {
         role.urgent = metadata.hints.urgent || metadata.netState.contains(.demandsAttention)
         role.decorationsOff = metadata.hints.decorationsOff
 
-        window.managedAppWindow = !metadata.overrideRedirect &&
-            metadata.windowTypes.intersection(XwaylandWindowType([.dock, .desktop, .notification, .tooltip])).isEmpty
+        window.managedAppWindow =
+            !metadata.overrideRedirect
+            && metadata.windowTypes.intersection(
+                XwaylandWindowType([.dock, .desktop, .notification, .tooltip])
+            ).isEmpty
         window.wantsKeyboardFocus = role.wantsKeyboardFocus
         window.requestedFullscreen = metadata.netState.contains(.fullscreen)
         window.requestedMaximized = !window.requestedFullscreen && metadata.netState.maximized
-        window.level = metadata.netState.contains(.above) ? 1 : (metadata.netState.contains(.below) ? -1 : 0)
+        window.level =
+            metadata.netState.contains(.above) ? 1 : (metadata.netState.contains(.below) ? -1 : 0)
     }
 
-    public func xwaylandNetStateSnapshot(windowID: UInt64) -> XwaylandNetState {
+    package func xwaylandNetStateSnapshot(windowID: UInt64) -> XwaylandNetState {
         guard let role = xwaylandRole(windowID: windowID) else { return [] }
         var state = role.netState
         if let window = server.window(id: windowID) {
@@ -59,9 +63,9 @@ extension WindowManager {
         return state
     }
 
-    public func xwaylandHandleStateRequest(_ request: XwaylandStateRequest) -> XwaylandStatePlan {
+    package func xwaylandHandleStateRequest(_ request: XwaylandStateRequest) -> XwaylandStatePlan {
         guard let role = xwaylandRole(windowID: request.windowID),
-              let window = server.window(id: request.windowID)
+            let window = server.window(id: request.windowID)
         else { return XwaylandStatePlan() }
 
         var state = xwaylandNetStateSnapshot(windowID: request.windowID)
@@ -137,7 +141,7 @@ extension WindowManager {
         )
     }
 
-    public func xwaylandFocusPlan(windowID: UInt64) -> XwaylandFocusPlan {
+    package func xwaylandFocusPlan(windowID: UInt64) -> XwaylandFocusPlan {
         guard let role = xwaylandRole(windowID: windowID) else {
             return XwaylandFocusPlan(actions: UInt32(xwaylandFocusDenied))
         }
@@ -149,7 +153,9 @@ extension WindowManager {
                 activeX11Window: activeXwaylandXID(),
                 previousX11Window: activeXwaylandXID(),
                 focusedX11Window: activeXwaylandXID(),
-                deniedSyncState: activeWindowID.map { xwaylandNetStateSnapshot(windowID: $0).rawValue } ?? 0
+                deniedSyncState: activeWindowID.map {
+                    xwaylandNetStateSnapshot(windowID: $0).rawValue
+                } ?? 0
             )
         }
 
@@ -176,7 +182,7 @@ extension WindowManager {
         )
     }
 
-    public func xwaylandClearFocusPlan() -> XwaylandFocusPlan {
+    package func xwaylandClearFocusPlan() -> XwaylandFocusPlan {
         let previous = activeXwaylandXID()
         activeXwaylandWindowID = nil
         return XwaylandFocusPlan(
@@ -187,7 +193,7 @@ extension WindowManager {
         )
     }
 
-    public func xwaylandClosePlan(windowID: UInt64) -> XwaylandClosePlan {
+    package func xwaylandClosePlan(windowID: UInt64) -> XwaylandClosePlan {
         guard let role = xwaylandRole(windowID: windowID) else { return XwaylandClosePlan() }
         return XwaylandClosePlan(
             action: role.protocols.contains(.deleteWindow)
@@ -196,9 +202,9 @@ extension WindowManager {
         )
     }
 
-    public func xwaylandClientListIncludes(windowID: UInt64) -> Bool {
+    package func xwaylandClientListIncludes(windowID: UInt64) -> Bool {
         guard let role = xwaylandRole(windowID: windowID),
-              let window = server.window(id: windowID)
+            let window = server.window(id: windowID)
         else { return false }
         return !role.overrideRedirect && window.managedAppWindow
     }
@@ -206,19 +212,20 @@ extension WindowManager {
     /// EWMH client windows in the compositor's authoritative back-to-front
     /// stacking order. Override-redirect and non-app utility surfaces are omitted
     /// from the managed client list.
-    public func xwaylandClientXIDs() -> [UInt32] {
+    package func xwaylandClientXIDs() -> [UInt32] {
         server.windows.windows.compactMap { window in
-            guard xwaylandClientListIncludes(
-                windowID: window.id),
+            guard
+                xwaylandClientListIncludes(
+                    windowID: window.id),
                 let xid = xwaylandXIDByWindow[window.id]
             else { return nil }
             return UInt32(truncatingIfNeeded: xid)
         }
     }
 
-    public func activeXwaylandXID() -> UInt64 {
+    package func activeXwaylandXID() -> UInt64 {
         guard let activeXwaylandWindowID,
-              let xid = xwaylandXIDByWindow[activeXwaylandWindowID]
+            let xid = xwaylandXIDByWindow[activeXwaylandWindowID]
         else { return 0 }
         return xid
     }

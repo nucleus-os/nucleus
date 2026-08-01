@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for wp_viewporter.
 
 import WaylandClientC
-public enum WpViewporterClient: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum WpViewporterClient: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_viewporter())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == WpViewporterClient {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpViewporterClient {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_viewporter_destroy(_proxy)
@@ -17,10 +18,15 @@ public extension WaylandProxy where Interface == WpViewporterClient {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func getViewport(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<WpViewportClient> {
+    package func getViewport(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError)
+        -> WaylandProxy<WpViewportClient>
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_wp_viewporter_get_viewport(_proxy, _surfaceProxy) else {
+        guard
+            let _created = unsafe swift_wayland_client_request_wp_viewporter_get_viewport(
+                _proxy, _surfaceProxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

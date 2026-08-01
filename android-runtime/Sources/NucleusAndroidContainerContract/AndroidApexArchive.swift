@@ -1,16 +1,16 @@
 import Foundation
 
-public struct AndroidApexPayload: Equatable, Sendable {
-    public let offset: UInt64
-    public let size: UInt64
+package struct AndroidApexPayload: Equatable, Sendable {
+    package let offset: UInt64
+    package let size: UInt64
 
-    public init(offset: UInt64, size: UInt64) {
+    package init(offset: UInt64, size: UInt64) {
         self.offset = offset
         self.size = size
     }
 }
 
-public enum AndroidApexArchiveError: Error, Equatable {
+package enum AndroidApexArchiveError: Error, Equatable {
     case invalidArchive
     case zip64Unsupported
     case missingPayload
@@ -19,8 +19,8 @@ public enum AndroidApexArchiveError: Error, Equatable {
     case unalignedPayload(UInt64)
 }
 
-public enum AndroidApexArchive {
-    public static func payload(
+package enum AndroidApexArchive {
+    package static func payload(
         in archive: URL
     ) throws -> AndroidApexPayload {
         let handle = try FileHandle(forReadingFrom: archive)

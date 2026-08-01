@@ -1,6 +1,5 @@
 import NucleusSessionProtocol
-@_spi(NucleusWindowClientImplementation)
-import NucleusWindowClientWayland
+package import NucleusWindowClientWayland
 
 @MainActor
 extension ShellHost {
@@ -13,8 +12,8 @@ extension ShellHost {
                 return
             }
             guard publication.kind == .snapshot,
-                  publication.projectionKind == .shell,
-                  let projection = publication.shellConfiguration
+                publication.projectionKind == .shell,
+                let projection = publication.shellConfiguration
             else {
                 writeErr(
                     "nucleus-shell: unexpected configuration publication")
@@ -22,10 +21,11 @@ extension ShellHost {
             }
             if publication.epoch == configurationEpoch {
                 guard publication.generation > configurationGeneration else {
-                    try configurationChannel.send(.reject(
-                        epoch: publication.epoch,
-                        generation: publication.generation,
-                        reason: "stale generation"))
+                    try configurationChannel.send(
+                        .reject(
+                            epoch: publication.epoch,
+                            generation: publication.generation,
+                            reason: "stale generation"))
                     return
                 }
             }
@@ -45,9 +45,10 @@ extension ShellHost {
         configureIdleNotification()
         if policyReady, let policyChannel {
             do {
-                try policyChannel.send(ShellPolicyRequest(
-                    kind: .setCursorTheme,
-                    cursorTheme: liveConfiguration.cursorTheme))
+                try policyChannel.send(
+                    ShellPolicyRequest(
+                        kind: .setCursorTheme,
+                        cursorTheme: liveConfiguration.cursorTheme))
             } catch {
                 writeErr(
                     "nucleus-shell: cursor preference publication failed: \(error)")
@@ -60,9 +61,9 @@ extension ShellHost {
         idleNotification?.destroy()
         idleNotification = nil
         guard liveConfiguration.idleTimeoutSeconds > 0,
-              liveConfiguration.idleTimeoutSeconds
+            liveConfiguration.idleTimeoutSeconds
                 <= UInt32.max / 1000,
-              let notification = NucleusDesktopIdleNotification(
+            let notification = NucleusDesktopIdleNotification(
                 client: client,
                 timeoutMilliseconds:
                     liveConfiguration.idleTimeoutSeconds * 1000)
@@ -91,7 +92,8 @@ extension ShellHost {
         _ diagnostics: [ConfigurationDiagnosticPublication]
     ) {
         for diagnostic in diagnostics {
-            let path = diagnostic.keyPath.isEmpty
+            let path =
+                diagnostic.keyPath.isEmpty
                 ? ""
                 : diagnostic.keyPath.joined(separator: ".") + ": "
             writeErr(

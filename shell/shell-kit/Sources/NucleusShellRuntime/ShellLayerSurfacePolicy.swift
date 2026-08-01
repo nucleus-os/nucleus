@@ -1,5 +1,4 @@
-@_spi(NucleusWindowClientImplementation)
-import NucleusWindowClientWayland
+package import NucleusWindowClientWayland
 
 extension NucleusDesktopLayerSurfaceConfiguration {
     static func shellBar(

@@ -1,3 +1,5 @@
+public import NucleusTypes
+
 /// Modifier keys held when an event occurred. Corresponds to `NSEvent.ModifierFlags`.
 public struct EventModifierFlags: OptionSet, Sendable, Hashable {
     public var rawValue: UInt32
@@ -386,9 +388,9 @@ public struct Event: Sendable, Equatable {
     public var isPointerEvent: Bool {
         switch type {
         case .pointerDown, .pointerUp, .pointerMoved, .pointerDragged,
-             .pointerEntered, .pointerExited, .scrollWheel,
-             .pointerCancelled,
-             .touchDown, .touchMoved, .touchUp, .touchCancelled:
+            .pointerEntered, .pointerExited, .scrollWheel,
+            .pointerCancelled,
+            .touchDown, .touchMoved, .touchUp, .touchCancelled:
             true
         case .action, .keyDown, .keyUp, .flagsChanged:
             false

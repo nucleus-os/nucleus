@@ -8,7 +8,8 @@ private let testBuilder = SwiftOCIConfiguration(
     imageID: FilePath("/cache/build-containers/swift/image-reference"),
     sourceWorkspace: FilePath("/source"),
     recipeRoot: FilePath("/workspace/swift-toolchain"),
-    buildWorkspace: FilePath("/platform/candidate/toolchain-build"),
+    buildWorkspace: FilePath(
+        "/cache/swift-build-workspaces/linux-arm64-host/workspace"),
     compilerCache: FilePath("/cache/ccache/swift"),
     candidate: FilePath("/platform/candidate"))
 
@@ -33,7 +34,7 @@ private let testBuilder = SwiftOCIConfiguration(
         ],
         operation: .prepareOCIImage(
             OCIImagePreparation(
-                executionPlatform: .linuxAMD64OCI,
+                executionPlatform: .linuxARM64OCI,
                 context: testBuilder.recipeRoot,
                 containerFile: testBuilder.recipeRoot.appending("Containerfile"),
                 imageID: testBuilder.imageID,
@@ -145,7 +146,8 @@ private func isContainerizedDependencyOperation(
             builderContext: FilePath("/workspace/swift-toolchain/build-container"),
             builderImageID: FilePath("/cache/build-containers/swift/image-reference"),
             sourceWorkspace: FilePath("/source"),
-            buildWorkspace: FilePath("/platform/candidate/toolchain-build"),
+            buildWorkspace: FilePath(
+                "/cache/swift-build-workspaces/linux-arm64-host/workspace"),
             sourceRepositories: [FilePath("swift")],
             sourceID: "test",
             hostCC: FilePath("/usr/bin/clang"),
@@ -196,6 +198,9 @@ private func isContainerizedDependencyOperation(
             < index("toolchain.android-sdk-test-aarch64"))
     #expect(
         index("toolchain.android-sdk-test-aarch64")
+            < index("toolchain.complete-generation"))
+    #expect(
+        index("toolchain.complete-generation")
             < index("toolchain.activate-generation"))
     #expect(
         index("toolchain.activate-generation")
@@ -211,8 +216,25 @@ private func isContainerizedDependencyOperation(
     #expect(sourceValidation.workspaceRoot == FilePath("/source"))
     #expect(sourceValidation.repositories == [FilePath("swift")])
 
+    guard
+        case .prepareHostToolchainBuild(let hostPreparation)? =
+            tasks["toolchain.host-prepare"]?.operation
+    else {
+        Issue.record("host preparation must enforce shared-workspace contracts")
+        return
+    }
+    #expect(
+        hostPreparation.stagingRoot
+            == FilePath("/platform/candidate/host-staging"))
+    #expect(hostPreparation.contracts.map(\.name) == ["host", "Android"])
+    #expect(
+        hostPreparation.contracts[0].roots.contains(
+            FilePath(
+                "/cache/swift-build-workspaces/linux-arm64-host/workspace/build/buildbot_linux"
+            )))
+
     let upstreamArchive = FilePath(
-        "/platform/candidate/toolchain-build/.nucleus-upstream-toolchain.tar.gz")
+        "/platform/candidate/host-upstream-toolchain.tar.gz")
     let installedDriver = FilePath(
         "/platform/candidate/toolchain/usr/bin/swift-driver")
     #expect(
@@ -267,12 +289,14 @@ private func isContainerizedDependencyOperation(
                 "android-sdk",
             ])
     #expect(hostBuild.containerEnvironment["CCACHE_DIR"] == "/ccache")
+    #expect(hostBuild.containerEnvironment["CCACHE_BASEDIR"] == "/")
+    #expect(hostBuild.containerEnvironment["CCACHE_COMPILERCHECK"] == "content")
     #expect(hostBuild.containerEnvironment["SWIFTC"] == nil)
     #expect(hostBuild.containerEnvironment["SWIFT_EXEC"] == nil)
     #expect(
         hostBuild.containerEnvironment["LD_LIBRARY_PATH"]?.hasPrefix(
-            "/build/.nucleus-candidate-install/usr/lib:"
-                + "/build/.nucleus-candidate-install/usr/lib/swift/linux:"
+            "/candidate/host-staging/usr/lib:"
+                + "/candidate/host-staging/usr/lib/swift/linux:"
         ) == true)
     #expect(
         hostBuild.containerEnvironment["PATH"]?.contains(
@@ -281,6 +305,8 @@ private func isContainerizedDependencyOperation(
         hostBuild.containerEnvironment["PATH"]?.contains(
             "/opt/cmake/bin") == true)
     #expect(androidBuild.containerEnvironment["CCACHE_DIR"] == "/ccache")
+    #expect(androidBuild.containerEnvironment["CCACHE_BASEDIR"] == "/")
+    #expect(androidBuild.containerEnvironment["CCACHE_COMPILERCHECK"] == "content")
     #expect(
         androidBuild.containerEnvironment["PATH"]?.contains(
             "/opt/cmake/bin") == true)
@@ -320,7 +346,8 @@ private func isContainerizedDependencyOperation(
 
 private func generationConfiguration(
     sourceWorkspace: FilePath,
-    buildWorkspace: FilePath = FilePath("/platform/candidate/toolchain-build"),
+    buildWorkspace: FilePath = FilePath(
+        "/cache/swift-build-workspaces/linux-arm64-host/workspace"),
     generation: String
 ) -> SwiftPlatformGenerationConfiguration {
     SwiftPlatformGenerationConfiguration(
@@ -349,42 +376,4 @@ private func generationConfiguration(
         sdkDiscoveryLink: FilePath("/home/.swiftpm/swift-sdks/bundle"),
         sdkDiscoveryDisplacedItem: FilePath("/home/.swiftpm/swift-sdks/.legacy"),
         environment: [:])
-}
-
-@Test func obsoleteCrossBuildRootsAreSupersededWithoutDeletingReusableRoots() throws {
-    let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "swift-platform-roots-\(UUID().uuidString)", isDirectory: true)
-    defer { try? FileManager.default.removeItem(at: workspace) }
-    let build = workspace.appendingPathComponent("build", isDirectory: true)
-    let current = "2026-07-28T22-06-32Z-52418"
-    let retired = "2026-07-25T20-20-34Z-1147833"
-    for name in [
-        "android-aarch64",
-        "android-x86_64",
-        "android-aarch64-\(current)",
-        "android-x86_64-\(current)",
-        "android-aarch64-\(retired)",
-        "android-aarch64-macos-\(retired)",
-        // The host build root belongs to no generation and is not a cross build.
-        "buildbot_linux",
-    ] {
-        try FileManager.default.createDirectory(
-            at: build.appendingPathComponent(name, isDirectory: true),
-            withIntermediateDirectories: true)
-    }
-
-    let superseded = SwiftPlatformColliderRecipe.supersededAndroidBuildRoots(
-        generationConfiguration(
-            sourceWorkspace: FilePath("/workspace/swift-toolchain/source"),
-            buildWorkspace: FilePath(workspace.path),
-            generation: current))
-
-    let names = superseded.map(\.lastComponent?.string)
-    #expect(
-        names == [
-            "android-aarch64-\(retired)",
-            "android-aarch64-\(current)",
-            "android-aarch64-macos-\(retired)",
-            "android-x86_64-\(current)",
-        ])
 }

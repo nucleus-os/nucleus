@@ -29,10 +29,7 @@ public enum ImplicitActionTemplate: Sendable, Equatable {
 }
 
 public struct ImplicitActionEntry: Sendable, Equatable {
-    public enum KeyPath: UInt8, Sendable {
-        case frame = 1
-        case opacity = 2
-    }
+    public typealias KeyPath = NucleusTypes.ImplicitActionKeyPath
 
     public let role: LayerRole
     public let keyPath: KeyPath
@@ -91,15 +88,15 @@ public enum ImplicitActionPolicy {
     }
 
     public static func rows(settings: Settings) -> [NucleusTypes.ImplicitActionRow] {
-        entries(settings: settings).map(wireRow)
+        entries(settings: settings).map(row)
     }
 
-    private static func wireRow(_ entry: ImplicitActionEntry) -> NucleusTypes.ImplicitActionRow {
+    private static func row(_ entry: ImplicitActionEntry) -> NucleusTypes.ImplicitActionRow {
         switch entry.template {
         case .spring(let mass, let stiffness, let damping):
             return .init(
                 role: entry.role,
-                keyPath: NucleusTypes.ImplicitActionKeyPath(rawValue: entry.keyPath.rawValue)!,
+                keyPath: entry.keyPath,
                 kind: .spring,
                 mass: mass, stiffness: stiffness, damping: damping,
                 duration: 0, c1x: 0, c1y: 0, c2x: 0, c2y: 0
@@ -107,7 +104,7 @@ public enum ImplicitActionPolicy {
         case .scalar(let duration, let timingFunction):
             return .init(
                 role: entry.role,
-                keyPath: NucleusTypes.ImplicitActionKeyPath(rawValue: entry.keyPath.rawValue)!,
+                keyPath: entry.keyPath,
                 kind: .scalar,
                 mass: 0, stiffness: 0, damping: 0, duration: duration,
                 c1x: timingFunction.c1x, c1y: timingFunction.c1y,

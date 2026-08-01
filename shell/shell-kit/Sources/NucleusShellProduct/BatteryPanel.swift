@@ -1,4 +1,4 @@
-public import NucleusUI
+package import NucleusUI
 
 /// The panel a battery widget opens: the same reading, spelled out.
 ///
@@ -7,15 +7,15 @@ public import NucleusUI
 /// things a user actually wants ("how long have I got?", "is it charging?") do
 /// not fit in twenty pixels.
 @MainActor
-public final class BatteryPanel: View {
-    public private(set) var level: BatteryLevel
+package final class BatteryPanel: View {
+    package private(set) var level: BatteryLevel
 
     private let headline: Label
     private let detail: Label
 
     private static let width: Double = 200
 
-    public init(level: BatteryLevel) {
+    package init(level: BatteryLevel) {
         self.level = level
         headline = Label("")
         detail = Label("")
@@ -34,13 +34,13 @@ public final class BatteryPanel: View {
         apply()
     }
 
-    public override func viewDidChangeEffectiveAppearance() {
+    package override func viewDidChangeEffectiveAppearance() {
         headline.textColor = resolve(.role(.onSurface))
         detail.textColor = resolve(.role(.onSurfaceVariant))
         super.viewDidChangeEffectiveAppearance()
     }
 
-    public func update(_ level: BatteryLevel) {
+    package func update(_ level: BatteryLevel) {
         guard level != self.level else { return }
         self.level = level
         apply()
@@ -73,9 +73,10 @@ public final class BatteryPanel: View {
             : "\(duration) remaining"
     }
 
-    public override var intrinsicContentSize: Size {
+    package override var intrinsicContentSize: Size {
         let headlineSize = headline.intrinsicContentSize
-        let detailSize = detailText.isEmpty
+        let detailSize =
+            detailText.isEmpty
             ? Size.zero
             : detail.intrinsicContentSize
         let spacing: Double = detailText.isEmpty ? 0 : 4
@@ -84,7 +85,7 @@ public final class BatteryPanel: View {
             height: headlineSize.height + spacing + detailSize.height)
     }
 
-    public override func layout() {
+    package override func layout() {
         let headlineSize = headline.intrinsicContentSize
         headline.frame = Rect(
             x: 0, y: 0, width: bounds.size.width, height: headlineSize.height)

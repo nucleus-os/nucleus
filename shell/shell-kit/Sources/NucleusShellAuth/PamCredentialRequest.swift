@@ -10,12 +10,12 @@ package struct PamCredentialRequest: ~Copyable {
         password: UnsafeRawBufferPointer
     ) {
         guard service.count <= PamHelperWire.maximumServiceBytes,
-              password.count <= PamHelperWire.maximumPasswordBytes
+            password.count <= PamHelperWire.maximumPasswordBytes
         else { return nil }
         let fields = service.count.addingReportingOverflow(password.count)
         let framed = fields.partialValue.addingReportingOverflow(8)
         guard !fields.overflow, !framed.overflow,
-              framed.partialValue <= 4_096
+            framed.partialValue <= 4_096
         else { return nil }
         var bytes: [UInt8] = []
         bytes.reserveCapacity(framed.partialValue)

@@ -36,7 +36,9 @@ import NucleusSkiaGraphiteBridge
 enum SnapshotCapture {
     /// The device-space pixel size of a world rect mapped through a uniform
     /// `scale` (the translate+scale the compositor uses), rounded out. Pure.
-    static func deviceSize(localWidth: Float, localHeight: Float, scale: Float) -> (width: Int32, height: Int32) {
+    static func deviceSize(localWidth: Float, localHeight: Float, scale: Float) -> (
+        width: Int32, height: Int32
+    ) {
         let w = Int32(max(0, (localWidth * scale).rounded()))
         let h = Int32(max(0, (localHeight * scale).rounded()))
         return (w, h)
@@ -44,7 +46,9 @@ enum SnapshotCapture {
 
     /// Allocate a render texture to draw a capture into. Mirrors
     /// `RenderTextureCapture.begin`. Nil if the surface cannot be allocated.
-    static func begin(recorder: nucleus.skia.Recorder, width: Int32, height: Int32) -> CaptureTarget? {
+    static func begin(recorder: nucleus.skia.Recorder, width: Int32, height: Int32)
+        -> CaptureTarget?
+    {
         guard width > 0, height > 0 else { return nil }
         let surface = unsafe recorder.makeOffscreenSurface(width, height)
         guard unsafe surface.isValid() else { return nil }
@@ -60,7 +64,8 @@ enum SnapshotCapture {
         into registry: TextureRegistry, contentRevision: UInt64
     ) -> UInt64? {
         guard unsafe source.isValid(),
-              let target = unsafe begin(recorder: recorder, width: width, height: height) else { return nil }
+            let target = unsafe begin(recorder: recorder, width: width, height: height)
+        else { return nil }
         let canvas = unsafe target.canvas
         var clear = nucleus.skia.Color()
         clear.a = 0

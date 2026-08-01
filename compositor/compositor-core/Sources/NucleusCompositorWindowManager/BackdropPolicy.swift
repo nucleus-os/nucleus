@@ -1,6 +1,6 @@
-public import NucleusTypes
 import NucleusCompositorServerTypes
-@_spi(NucleusRenderServer) import NucleusLayers
+package import NucleusLayers
+package import NucleusTypes
 
 /// Swift-owned policy that turns per-layer `BackdropMaterial` intent
 /// plus current frame state into the per-frame `BackdropDraw` list consumed by
@@ -13,29 +13,29 @@ import NucleusCompositorServerTypes
 /// The FFI seam (`nucleus_compositor_backdrop_policy_resolve`) and its call site
 /// are added with the render-walker consumer.
 @MainActor
-public enum BackdropPolicy {
+package enum BackdropPolicy {
 
     /// Per-layer input to the policy. `frame` is in output-space
     /// pixels (the same coordinate space the policy returns clipped
     /// regions in).
-    public struct LayerInput: Sendable, Equatable {
-        public let layerID: UInt64
-        public let frame: Rect
-        public let material: BackdropMaterialKind
-        public let blendingMode: BackdropBlendingMode
-        public let requestedState: BackdropState
-        public let appearance: BackdropAppearance
-        public let isEmphasized: Bool
-        public let producerGroupID: UInt64
+    package struct LayerInput: Sendable, Equatable {
+        package let layerID: UInt64
+        package let frame: Rect
+        package let material: BackdropMaterialKind
+        package let blendingMode: BackdropBlendingMode
+        package let requestedState: BackdropState
+        package let appearance: BackdropAppearance
+        package let isEmphasized: Bool
+        package let producerGroupID: UInt64
         /// Window this layer belongs to (for `.followsWindowActiveState`
         /// resolution). `nil` for unowned layers (shell overlays).
-        public let owningWindowID: UInt64?
+        package let owningWindowID: UInt64?
         /// True when this layer is wholly opaque and contributes to
         /// occlusion of layers below it. Backdrop layers themselves are
         /// not opaque (the blur is sampled through them).
-        public let isOpaqueOccluder: Bool
+        package let isOpaqueOccluder: Bool
 
-        public init(
+        package init(
             layerID: UInt64,
             frame: Rect,
             material: BackdropMaterialKind,
@@ -63,7 +63,7 @@ public enum BackdropPolicy {
     /// Resolved appearance — `auto` is collapsed by the policy. The
     /// renderer never sees `auto` in a draw so a mid-frame appearance
     /// change does not split a frame visually.
-    public enum ResolvedAppearance: UInt8, Sendable, Equatable {
+    package enum ResolvedAppearance: UInt8, Sendable, Equatable {
         case light = 1
         case dark = 2
     }
@@ -79,14 +79,14 @@ public enum BackdropPolicy {
     /// shape, mask, tint, opacity) are spliced in from
     /// the originating `BackdropAttachment` keyed on `layerID`, so the
     /// Swift surface and the FFI buffer stay narrow.
-    public struct Draw: Sendable, Equatable {
-        public let layerID: UInt64
-        public let region: Rect
-        public let groupID: UInt64
-        public let resolvedState: BackdropState
-        public let resolvedAppearance: ResolvedAppearance
+    package struct Draw: Sendable, Equatable {
+        package let layerID: UInt64
+        package let region: Rect
+        package let groupID: UInt64
+        package let resolvedState: BackdropState
+        package let resolvedAppearance: ResolvedAppearance
 
-        public init(
+        package init(
             layerID: UInt64,
             region: Rect,
             groupID: UInt64,
@@ -103,22 +103,22 @@ public enum BackdropPolicy {
 
     /// Output-space rectangle. Width/height are non-negative; an empty
     /// rect (any dimension <= 0) means "no area."
-    public struct Rect: Sendable, Equatable {
-        public var x: Double
-        public var y: Double
-        public var width: Double
-        public var height: Double
+    package struct Rect: Sendable, Equatable {
+        package var x: Double
+        package var y: Double
+        package var width: Double
+        package var height: Double
 
-        public init(x: Double, y: Double, width: Double, height: Double) {
+        package init(x: Double, y: Double, width: Double, height: Double) {
             self.x = x
             self.y = y
             self.width = width
             self.height = height
         }
 
-        public var isEmpty: Bool { width <= 0 || height <= 0 }
-        public var maxX: Double { x + width }
-        public var maxY: Double { y + height }
+        package var isEmpty: Bool { width <= 0 || height <= 0 }
+        package var maxX: Double { x + width }
+        package var maxY: Double { y + height }
     }
 
     /// Per-frame accessibility / appearance inputs. `reduceTransparency`
@@ -126,10 +126,10 @@ public enum BackdropPolicy {
     /// resolved desktop appearance (from the org.freedesktop.appearance
     /// portal) used to collapse a layer's `.auto` request to a concrete
     /// `.light` / `.dark`.
-    public struct Accessibility: Sendable {
-        public let reduceTransparency: Bool
-        public let systemAppearance: ResolvedAppearance
-        public init(
+    package struct Accessibility: Sendable {
+        package let reduceTransparency: Bool
+        package let systemAppearance: ResolvedAppearance
+        package init(
             reduceTransparency: Bool = false,
             systemAppearance: ResolvedAppearance = .light
         ) {
@@ -149,7 +149,7 @@ public enum BackdropPolicy {
     ///   is key (e.g. all minimized).
     /// - Parameter accessibility: per-frame accessibility settings.
     /// - Returns: backdrop draws in the same z-order as the input.
-    public static func resolve(
+    package static func resolve(
         layers: [LayerInput],
         keyWindowID: UInt64?,
         accessibility: Accessibility = .init(),
@@ -173,13 +173,15 @@ public enum BackdropPolicy {
                 opaqueAbove.append(layerSpan[j].frame)
             }
             guard let clipped = clip(frame: candidate.frame, subtracting: opaqueAbove) else {
-                continue // fully occluded
+                continue  // fully occluded
             }
 
             let retained = resolvedMaterials[candidate.layerID]
-            let resolvedState = retained?.resolvedState ?? resolveState(
-                requested: candidate.requestedState, owningWindowID: candidate.owningWindowID,
-                keyWindowID: keyWindowID)
+            let resolvedState =
+                retained?.resolvedState
+                ?? resolveState(
+                    requested: candidate.requestedState, owningWindowID: candidate.owningWindowID,
+                    keyWindowID: keyWindowID)
 
             let groupID = resolveGroup(
                 material: candidate.material,
@@ -188,16 +190,19 @@ public enum BackdropPolicy {
                 layerID: candidate.layerID
             )
 
-            let resolvedAppearance = retained?.resolvedAppearance ?? resolveAppearance(
-                requested: candidate.appearance, systemDefault: accessibility.systemAppearance)
+            let resolvedAppearance =
+                retained?.resolvedAppearance
+                ?? resolveAppearance(
+                    requested: candidate.appearance, systemDefault: accessibility.systemAppearance)
 
-            draws.append(.init(
-                layerID: candidate.layerID,
-                region: clipped,
-                groupID: groupID,
-                resolvedState: resolvedState,
-                resolvedAppearance: resolvedAppearance
-            ))
+            draws.append(
+                .init(
+                    layerID: candidate.layerID,
+                    region: clipped,
+                    groupID: groupID,
+                    resolvedState: resolvedState,
+                    resolvedAppearance: resolvedAppearance
+                ))
         }
         return draws
     }
@@ -285,8 +290,8 @@ public enum BackdropPolicy {
 
 // MARK: - Geometry helpers
 
-private extension BackdropPolicy {
-    static func appendRectMinus(_ a: Rect, _ b: Rect, into out: inout [Rect]) {
+extension BackdropPolicy {
+    fileprivate static func appendRectMinus(_ a: Rect, _ b: Rect, into out: inout [Rect]) {
         // Compute a - b (set difference) as up to four axis-aligned rects.
         let ix = max(a.x, b.x)
         let iy = max(a.y, b.y)
@@ -315,7 +320,7 @@ private extension BackdropPolicy {
         }
     }
 
-    static func boundingBox(of rects: [Rect]) -> Rect? {
+    fileprivate static func boundingBox(of rects: [Rect]) -> Rect? {
         guard let first = rects.first else { return nil }
         var minX = first.x
         var minY = first.y

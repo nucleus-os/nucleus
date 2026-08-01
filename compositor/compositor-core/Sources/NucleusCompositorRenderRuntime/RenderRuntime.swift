@@ -1,3 +1,5 @@
+package import NucleusAppHostProtocols
+
 // The executable-owned render-runtime owner: brings up the Swift render path over a
 // DRM master fd, drives per-frame rendering, and routes client-buffer uploads,
 // DRM events, and session pause/resume into the shared retained tree.
@@ -12,38 +14,38 @@
 // the compositor's single main-loop thread alongside the commit sink and tree.
 
 import Glibc
-@_spi(NucleusPlatform) public import NucleusRenderer
-@_spi(NucleusPlatform) public import NucleusCompositorRendererLinux
-public import NucleusRenderModel
+package import NucleusCompositorRendererLinux
+package import NucleusCompositorServer
+package import NucleusLayers
 import NucleusRenderHost
-public import NucleusCompositorServer
+package import NucleusRenderModel
+package import NucleusRenderer
 import Tracy
-@_spi(NucleusRenderServer) import NucleusLayers
 
 @MainActor
-public final class RenderRuntime {
-    public struct OutputInfo: Sendable, Equatable {
-        public let topologyGeneration: UInt64
-        public let id: UInt64
-        public let pixelWidth: UInt32
-        public let pixelHeight: UInt32
-        public let refreshMhz: Int32
-        public let physicalWidthMM: Int32
-        public let physicalHeightMM: Int32
-        public let crtcID: UInt32
-        public let primaryPlaneID: UInt32
-        public let cursorPlaneID: UInt32
+package final class RenderRuntime {
+    package struct OutputInfo: Sendable, Equatable {
+        package let topologyGeneration: UInt64
+        package let id: UInt64
+        package let pixelWidth: UInt32
+        package let pixelHeight: UInt32
+        package let refreshMhz: Int32
+        package let physicalWidthMM: Int32
+        package let physicalHeightMM: Int32
+        package let crtcID: UInt32
+        package let primaryPlaneID: UInt32
+        package let cursorPlaneID: UInt32
     }
-    public struct OutputTopologyProposal: Sendable, Equatable {
-        public let generation: UInt64
-        public let outputs: [OutputInfo]
+    package struct OutputTopologyProposal: Sendable, Equatable {
+        package let generation: UInt64
+        package let outputs: [OutputInfo]
     }
     private unowned let server: NucleusCompositorServer
     private var renderer: DRMScanoutPresenter?
     private weak var retainedStore: RetainedTreeStore?
     private var telemetryCorrelator = PresentationTelemetryCorrelator()
 
-    public init(server: NucleusCompositorServer) {
+    package init(server: NucleusCompositorServer) {
         self.server = server
     }
 
@@ -56,7 +58,7 @@ public final class RenderRuntime {
     /// Bring up the Swift render runtime over the DRM master fd and install the
     /// Swift-direct commit sink (transactions fold into the shared retained tree).
     /// Returns false when the GPU/GBM stack is unavailable. Idempotent.
-    public func bringUp(
+    package func bringUp(
         drmDeviceFd: Int32,
         dmabufMainDevice: UInt64,
         enableValidation: Bool,
@@ -69,7 +71,8 @@ public final class RenderRuntime {
             server.renderService = renderer
             return true
         }
-        guard let runtime = DRMScanoutPresenter.create(
+        guard
+            let runtime = DRMScanoutPresenter.create(
                 drmDeviceFd: drmDeviceFd,
                 enableValidation: enableValidation,
                 presentPolicy: presentPolicy,
@@ -87,7 +90,7 @@ public final class RenderRuntime {
 
     /// Discover and globally allocate every connected DRM output without changing
     /// live KMS bindings. The composition root applies the returned proposal.
-    public func proposeOutputTopology() -> OutputTopologyProposal? {
+    package func proposeOutputTopology() -> OutputTopologyProposal? {
         guard let proposal = renderer?.proposeConnectedOutputTopology() else {
             return nil
         }
@@ -95,17 +98,17 @@ public final class RenderRuntime {
             generation: proposal.generation,
             outputs: proposal.outputs.map {
                 OutputInfo(
-                topologyGeneration: $0.topologyGeneration,
-                id: $0.id, pixelWidth: $0.pixelWidth, pixelHeight: $0.pixelHeight,
-                refreshMhz: $0.refreshMhz, physicalWidthMM: $0.physicalWidthMM,
-                physicalHeightMM: $0.physicalHeightMM,
-                crtcID: $0.crtcID, primaryPlaneID: $0.primaryPlaneID,
-                cursorPlaneID: $0.cursorPlaneID)
+                    topologyGeneration: $0.topologyGeneration,
+                    id: $0.id, pixelWidth: $0.pixelWidth, pixelHeight: $0.pixelHeight,
+                    refreshMhz: $0.refreshMhz, physicalWidthMM: $0.physicalWidthMM,
+                    physicalHeightMM: $0.physicalHeightMM,
+                    crtcID: $0.crtcID, primaryPlaneID: $0.primaryPlaneID,
+                    cursorPlaneID: $0.cursorPlaneID)
             })
     }
 
     /// Apply one member of the current topology proposal.
-    public func applyProposedOutput(
+    package func applyProposedOutput(
         _ output: OutputInfo,
         logicalX: Double, logicalY: Double,
         logicalWidth: Double, logicalHeight: Double,
@@ -131,25 +134,25 @@ public final class RenderRuntime {
     }
 
     /// Whether an output is currently set to drive variable refresh.
-    public func adaptiveSyncEnabled(outputID: UInt64) -> Bool {
+    package func adaptiveSyncEnabled(outputID: UInt64) -> Bool {
         renderer?.adaptiveSyncEnabled(outputID: outputID) ?? false
     }
 
     @discardableResult
-    public func retireOutput(
+    package func retireOutput(
         _ outputID: UInt64
     ) -> RendererRetirementResult {
         renderer?.retireOutput(outputID) ?? .complete
     }
 
     @discardableResult
-    public func retireOutputs(
+    package func retireOutputs(
         _ outputIDs: Set<UInt64>
     ) -> RendererRetirementResult {
         renderer?.retireOutputs(outputIDs) ?? .complete
     }
 
-    public func commitProposedTopology(
+    package func commitProposedTopology(
         generation: UInt64, appliedOutputIDs: Set<UInt64>
     ) {
         renderer?.commitProposedTopology(
@@ -158,30 +161,30 @@ public final class RenderRuntime {
 
     /// Drain pending DRM events (page-flip completions) on the master fd. Called
     /// from the reactor's DRM-readiness handler.
-    public func handleDrmEvents() {
+    package func handleDrmEvents() {
         renderer?.handleDrmEvents()
     }
 
     /// Suspend the render session on VT-switch-away (drop DRM master + cancel
     /// pending flips).
     @discardableResult
-    public func pauseSession() -> RendererRetirementResult {
+    package func pauseSession() -> RendererRetirementResult {
         renderer?.pauseSessionChecked() ?? .complete
     }
 
     /// Resume the render session on VT-switch-back (reacquire DRM master).
     @discardableResult
-    public func resumeSession() -> Bool {
+    package func resumeSession() -> Bool {
         renderer?.resumeSessionChecked() ?? false
     }
 
-    public func prepareShutdown() -> RendererRetirementResult {
+    package func prepareShutdown() -> RendererRetirementResult {
         renderer?.prepareShutdown() ?? .complete
     }
 
     /// Advance animations to the current present time, then render + flip every
     /// output with pending damage. Returns true if any output flipped this vblank.
-    public func renderOutputs(_ outputIDs: Set<UInt64>) -> Bool {
+    package func renderOutputs(_ outputIDs: Set<UInt64>) -> Bool {
         guard !outputIDs.isEmpty else { return false }
         let presentNs = monotonicNowNs()
         guard let runtime = renderer else { return false }
@@ -206,7 +209,8 @@ public final class RenderRuntime {
     private func plotSignedIntervalMilliseconds(
         _ name: String, from startNs: UInt64, to endNs: UInt64
     ) {
-        let value = endNs >= startNs
+        let value =
+            endNs >= startNs
             ? Double(endNs - startNs) / 1_000_000.0
             : -Double(startNs - endNs) / 1_000_000.0
         Trace.plot(name, value)
@@ -245,20 +249,24 @@ public final class RenderRuntime {
         plotMilliseconds("swift.renderer.frame.driver_total_ms", timing.totalNs)
         plotMilliseconds(
             "swift.renderer.frame.driver_residual_ms",
-            saturatingResidual(total: timing.totalNs, phases: [
-                timing.planNs, timing.resolveNs, timing.accumulatorNs, timing.damageNs,
-                timing.compositeNs, timing.blitNs, timing.frameSnapNs,
-                timing.submitNs,
-            ]))
+            saturatingResidual(
+                total: timing.totalNs,
+                phases: [
+                    timing.planNs, timing.resolveNs, timing.accumulatorNs, timing.damageNs,
+                    timing.compositeNs, timing.blitNs, timing.frameSnapNs,
+                    timing.submitNs,
+                ]))
         plotMilliseconds(
             "swift.renderer.frame.resource_summary_ms",
             timing.resourceSummaryNs)
         plotMilliseconds("swift.renderer.frame.record_total_ms", frame.recordNs)
         plotMilliseconds(
             "swift.renderer.frame.record_residual_ms",
-            saturatingResidual(total: frame.recordNs, phases: [
-                frame.targetWrapNs, frame.treeSnapshotNs, timing.totalNs,
-            ]))
+            saturatingResidual(
+                total: frame.recordNs,
+                phases: [
+                    frame.targetWrapNs, frame.treeSnapshotNs, timing.totalNs,
+                ]))
         plotMilliseconds("swift.renderer.frame.fence_export_ms", frame.backendFinalizeNs)
         plotMilliseconds("swift.renderer.frame.atomic_commit_ms", frame.backendPresentNs)
         plotMilliseconds("swift.renderer.frame.record_to_submit_ms", frame.recordToSubmitNs)
@@ -294,7 +302,8 @@ public final class RenderRuntime {
     }
 
     private func publishPresentedFrame(_ presented: PresentedCompositeFrame) {
-        let submitToPageflipNs = presented.pageflipNs >= presented.atomicCommitAcceptedNs
+        let submitToPageflipNs =
+            presented.pageflipNs >= presented.atomicCommitAcceptedNs
             ? presented.pageflipNs - presented.atomicCommitAcceptedNs : 0
         Trace.plot("swift.renderer.pageflip.output_id", presented.frame.outputID)
         Trace.plot("swift.renderer.pageflip.frame_serial", presented.frame.frameSerial)
@@ -326,7 +335,8 @@ public final class RenderRuntime {
             }
         }
         if let renderCompleteNs = fences.renderCompleteNs {
-            let submitToRenderNs = renderCompleteNs >= presented.atomicCommitAcceptedNs
+            let submitToRenderNs =
+                renderCompleteNs >= presented.atomicCommitAcceptedNs
                 ? renderCompleteNs - presented.atomicCommitAcceptedNs : 0
             plotSignedIntervalMilliseconds(
                 "swift.renderer.frame.submit_to_render_complete_ms",
@@ -355,55 +365,63 @@ public final class RenderRuntime {
     /// with the kernel flip timestamp (ns) + vblank sequence. The composition root wires
     /// these to the output's `DisplayLink` present-id accounting, the session-lock
     /// present ack, and the client frame/feedback tick. Call after `bringUp`.
-    public func installPresentReport(
-        submitted: @escaping @MainActor (
-            _ outputID: UInt64,
-            _ outputGeneration: UInt64,
-            _ submissionID: UInt64,
-            _ sampledIOSurfaceIDs: [UInt64]
-        ) -> Void,
-        presented: @escaping @MainActor (
-            _ outputID: UInt64,
-            _ outputGeneration: UInt64,
-            _ submissionID: UInt64,
-            _ presentationNs: UInt64,
-            _ sequence: UInt64
-        ) -> Void,
-        discarded: @escaping @MainActor (
-            _ outputID: UInt64,
-            _ outputGeneration: UInt64,
-            _ submissionID: UInt64
-        ) -> Void
+    package func installPresentReport(
+        submitted:
+            @escaping @MainActor (
+                _ outputID: UInt64,
+                _ outputGeneration: UInt64,
+                _ submissionID: UInt64,
+                _ sampledIOSurfaceIDs: [UInt64]
+            ) -> Void,
+        presented:
+            @escaping @MainActor (
+                _ outputID: UInt64,
+                _ outputGeneration: UInt64,
+                _ submissionID: UInt64,
+                _ presentationNs: UInt64,
+                _ sequence: UInt64
+            ) -> Void,
+        discarded:
+            @escaping @MainActor (
+                _ outputID: UInt64,
+                _ outputGeneration: UInt64,
+                _ submissionID: UInt64
+            ) -> Void
     ) {
-        renderer?.onOutputSubmitted = { [weak self]
+        renderer?.onOutputSubmitted = {
+            [weak self]
             outputID, outputGeneration, submissionID, frameSerial,
             acceptedNs, sampledIOSurfaceIDs in
             guard let self else { return }
             if let accepted = self.telemetryCorrelator.noteSubmission(
                 outputID: outputID, frameSerial: frameSerial,
                 atomicCommitAcceptedNs: acceptedNs),
-               let stats = self.renderer?.clientUploadStats {
+                let stats = self.renderer?.clientUploadStats
+            {
                 self.publishAcceptedFrame(accepted, uploadStats: stats)
             }
             submitted(
                 outputID, outputGeneration, submissionID,
                 sampledIOSurfaceIDs)
         }
-        renderer?.onOutputPresented = { [weak self]
+        renderer?.onOutputPresented = {
+            [weak self]
             outputID, outputGeneration, submissionID, frameSerial,
             presentationNs, sequence, fenceTelemetry in
             guard let self else { return }
             if let sample = self.telemetryCorrelator.notePageflip(
                 outputID: outputID, frameSerial: frameSerial,
                 pageflipNs: presentationNs,
-                fenceTelemetry: fenceTelemetry) {
+                fenceTelemetry: fenceTelemetry)
+            {
                 self.publishPresentedFrame(sample)
             }
             presented(
                 outputID, outputGeneration, submissionID,
                 presentationNs, sequence)
         }
-        renderer?.onOutputPresentationDiscarded = { [weak self]
+        renderer?.onOutputPresentationDiscarded = {
+            [weak self]
             outputID, outputGeneration, submissionID, frameSerial in
             guard let self else { return }
             self.telemetryCorrelator.discard(
@@ -412,7 +430,7 @@ public final class RenderRuntime {
         }
     }
 
-    public func installSurfaceRetirement(
+    package func installSurfaceRetirement(
         _ retired: @escaping @MainActor (UInt32) -> Void
     ) {
         renderer?.onSurfaceBufferRetired = { retired(UInt32(truncatingIfNeeded: $0)) }
@@ -422,41 +440,42 @@ public final class RenderRuntime {
     /// mapped ext-session-lock surfaces to composite over the opaque ground while
     /// locked. nil = unlocked. The render core restricts each output's scanout to
     /// these contexts — the single choke point for the `locked` invariant.
-    public func setLockComposition(_ perOutput: [UInt64: Set<UInt32>]?) {
+    package func setLockComposition(_ perOutput: [UInt64: Set<UInt32>]?) {
         renderer?.setLockComposition(perOutput)
     }
 
     /// Push this frame's per-output direct-scanout candidates, built by the
     /// composition root from the live window model. The backend evaluates each against
     /// its cached primary-plane formats and promotes eligible buffers during presentation.
-    public func setScanoutCandidates(_ perOutput: [UInt64: ScanoutCandidate]) {
+    package func setScanoutCandidates(_ perOutput: [UInt64: ScanoutCandidate]) {
         renderer?.setScanoutCandidates(perOutput)
     }
 
     /// Upload a new cursor image to every output's hardware cursor plane.
     /// The composition root calls this only when the cursor image changes.
-    public func setCursorImage(
+    package func setCursorImage(
         pixels: [UInt8], width: UInt32, height: UInt32, hotspotX: Int32, hotspotY: Int32
     ) {
-        renderer?.setCursorImage(pixels: pixels, width: width, height: height,
-                               hotspotX: hotspotX, hotspotY: hotspotY)
+        renderer?.setCursorImage(
+            pixels: pixels, width: width, height: height,
+            hotspotX: hotspotX, hotspotY: hotspotY)
     }
 
     /// Update the live pointer position for the hardware cursor plane. Called each
     /// frame; re-places the plane on the next commit with no upload.
-    public func setCursorPosition(x: Double, y: Double) {
+    package func setCursorPosition(x: Double, y: Double) {
         renderer?.setCursorPosition(x: x, y: y)
     }
 
     /// Whether any layer in the authoritative Swift tree has an in-flight animation.
     /// The frame-demand path reads this to keep driving frames while animations
     /// advance.
-    public var hasActiveAnimations: Bool {
+    package var hasActiveAnimations: Bool {
         retainedStore?.hasActiveAnimations ?? false
     }
 
     /// Tear down after every KMS output retired transactionally.
-    public func shutdown() {
+    package func shutdown() {
         server.renderService = nil
         guard let runtime = renderer else { return }
         runtime.shutdown()
@@ -466,7 +485,7 @@ public final class RenderRuntime {
     /// Tear down after the composition root has closed/revoked the primary DRM
     /// device. Kernel scanout references ended at close, so the full renderer
     /// graph is released instead of intentionally leaked.
-    public func shutdownAfterDrmDeviceLoss() {
+    package func shutdownAfterDrmDeviceLoss() {
         server.renderService = nil
         guard let runtime = renderer else { return }
         runtime.shutdownAfterDrmDeviceLoss()
@@ -477,7 +496,7 @@ public final class RenderRuntime {
     /// the session owner closes it. Resource destructors subsequently skip DRM
     /// ioctls while retaining their userspace objects until kernel close ends
     /// scanout ownership.
-    public func revokeDrmDevice() {
+    package func revokeDrmDevice() {
         renderer?.revokeDrmDevice()
     }
 

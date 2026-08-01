@@ -4,9 +4,9 @@
 residency is a generation-aware renderer state machine over an explicitly bounded
 decode request.**
 
-An image is not layer content. `LayerContent` is `.none`/`.paint`/`.external`/`.snapshot`,
-mirrored across three definitions and a wire format; adding an `.image` case would be
-four edits to say something `PaintCommand(kind: .image)` already says. Images stay
+An image is not layer content. Producer-owned `LayerContent` is
+`.none`/`.paint`/`.external`/`.snapshot` and lowers into renderer-retained content;
+adding an `.image` case would duplicate something `PaintCommand(kind: .image)` already says. Images stay
 inside `.paint` layers, and everything below extends the paint path rather than the
 layer model.
 

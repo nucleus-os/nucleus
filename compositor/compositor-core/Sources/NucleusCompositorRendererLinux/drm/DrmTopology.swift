@@ -172,8 +172,9 @@ enum DrmTopologyPlanner {
             var options: [PipelineOption] = []
             for crtcID in compatibleCrtcs.sorted() {
                 for plane in primaryPlanes where plane.compatibleCrtcIDs.contains(crtcID) {
-                    options.append(PipelineOption(
-                        crtcID: crtcID, primaryPlaneID: plane.planeID))
+                    options.append(
+                        PipelineOption(
+                            crtcID: crtcID, primaryPlaneID: plane.planeID))
                 }
             }
             guard !options.isEmpty else {
@@ -185,9 +186,11 @@ enum DrmTopologyPlanner {
             }
             let old = previousByConnector[connector.connectorID]
             options.sort {
-                let lhsOld = old?.crtcID == $0.crtcID
+                let lhsOld =
+                    old?.crtcID == $0.crtcID
                     && old?.primaryPlaneID == $0.primaryPlaneID
-                let rhsOld = old?.crtcID == $1.crtcID
+                let rhsOld =
+                    old?.crtcID == $1.crtcID
                     && old?.primaryPlaneID == $1.primaryPlaneID
                 if lhsOld != rhsOld { return lhsOld }
                 let lhsCurrent = connector.currentCrtcID == $0.crtcID
@@ -196,8 +199,9 @@ enum DrmTopologyPlanner {
                 if $0.crtcID != $1.crtcID { return $0.crtcID < $1.crtcID }
                 return $0.primaryPlaneID < $1.primaryPlaneID
             }
-            eligible.append(EligibleConnector(
-                connector: connector, mode: mode, options: options))
+            eligible.append(
+                EligibleConnector(
+                    connector: connector, mode: mode, options: options))
         }
 
         // Most-constrained-first reduces the search tree. Final scoring and the
@@ -291,22 +295,25 @@ enum DrmTopologyPlanner {
                     && !usedCursorPlanes.contains($0.planeID)
             }
             let previousCursor = previousByConnector[connectorID]?.cursorPlaneID
-            let cursor = compatibleCursorPlanes.first {
-                $0.planeID == previousCursor
-            } ?? compatibleCursorPlanes.first
+            let cursor =
+                compatibleCursorPlanes.first {
+                    $0.planeID == previousCursor
+                } ?? compatibleCursorPlanes.first
             if let cursor { usedCursorPlanes.insert(cursor.planeID) }
-            assignments.append(DrmPipelineAssignment(
-                connectorID: connectorID,
-                crtcID: pipeline.crtcID,
-                primaryPlaneID: pipeline.primaryPlaneID,
-                cursorPlaneID: cursor?.planeID,
-                mode: item.mode))
+            assignments.append(
+                DrmPipelineAssignment(
+                    connectorID: connectorID,
+                    crtcID: pipeline.crtcID,
+                    primaryPlaneID: pipeline.primaryPlaneID,
+                    cursorPlaneID: cursor?.planeID,
+                    mode: item.mode))
         }
 
         var rejections = immediateRejections
         for item in eligible where best[item.connector.connectorID] == nil {
-            rejections.append(DrmTopologyRejection(
-                connectorID: item.connector.connectorID, reason: .allocationConflict))
+            rejections.append(
+                DrmTopologyRejection(
+                    connectorID: item.connector.connectorID, reason: .allocationConflict))
         }
         rejections.sort { $0.connectorID < $1.connectorID }
 
@@ -318,7 +325,8 @@ enum DrmTopologyPlanner {
                 !$0.compatibleCrtcIDs.isDisjoint(with: connector.compatibleCrtcIDs)
             }.map { String($0.planeID.rawValue) }.joined(separator: ",")
             diagnostics.append(
-                "connector \(connector.connectorID.rawValue): crtcs=[\(crtcs)] primary_planes=[\(primary)]")
+                "connector \(connector.connectorID.rawValue): crtcs=[\(crtcs)] primary_planes=[\(primary)]"
+            )
         }
         for rejection in rejections {
             diagnostics.append(
@@ -333,8 +341,9 @@ enum DrmTopologyPlanner {
     }
 
     static func selectMode(for connector: DrmConnectorCandidate) -> DrmModeInfo? {
-        guard let preferred = connector.modes.first(where: \.isPreferred)
-            ?? connector.modes.first
+        guard
+            let preferred = connector.modes.first(where: \.isPreferred)
+                ?? connector.modes.first
         else { return nil }
         return connector.modes
             .filter {
@@ -396,18 +405,20 @@ enum DrmTopologyDiscovery {
                 {
                     compatible.insert(crtcID)
                 }
-                let rawKind = DrmProperties.findValue(
-                    fd: fd, objectId: rawPlaneID, kind: .plane, name: "type") ?? 0
+                let rawKind =
+                    DrmProperties.findValue(
+                        fd: fd, objectId: rawPlaneID, kind: .plane, name: "type") ?? 0
                 let kind: DrmPlaneKind
                 switch rawKind {
                 case planeTypePrimary: kind = .primary
                 case planeTypeCursor: kind = .cursor
                 default: kind = .overlay
                 }
-                planes.append(DrmPlaneCandidate(
-                    planeID: PlaneID(rawValue: plane.planeId),
-                    kind: kind,
-                    compatibleCrtcIDs: compatible))
+                planes.append(
+                    DrmPlaneCandidate(
+                        planeID: PlaneID(rawValue: plane.planeId),
+                        kind: kind,
+                        compatibleCrtcIDs: compatible))
             }
         }
 
@@ -425,17 +436,18 @@ enum DrmTopologyDiscovery {
             let currentCrtcID = encoders[currentEncoderID]?.currentCrtcID
             let properties = DrmProperties.enumerate(
                 fd: fd, objectId: rawConnectorID, kind: .connector)
-            connectors.append(DrmConnectorCandidate(
-                connectorID: ConnectorID(rawValue: connector.connectorId),
-                encoderCandidates: encoderCandidates,
-                modes: connector.modes,
-                currentCrtcID: currentCrtcID,
-                currentMode: currentCrtcID.flatMap { currentModes[$0] },
-                physicalSizeMM: PhysicalSize(
-                    widthMM: Int32(clamping: connector.mmWidth),
-                    heightMM: Int32(clamping: connector.mmHeight)),
-                vrrCapable: (DrmProperties.findValue(
-                    in: properties, name: "vrr_capable") ?? 0) != 0))
+            connectors.append(
+                DrmConnectorCandidate(
+                    connectorID: ConnectorID(rawValue: connector.connectorId),
+                    encoderCandidates: encoderCandidates,
+                    modes: connector.modes,
+                    currentCrtcID: currentCrtcID,
+                    currentMode: currentCrtcID.flatMap { currentModes[$0] },
+                    physicalSizeMM: PhysicalSize(
+                        widthMM: Int32(clamping: connector.mmWidth),
+                        heightMM: Int32(clamping: connector.mmHeight)),
+                    vrrCapable: (DrmProperties.findValue(
+                        in: properties, name: "vrr_capable") ?? 0) != 0))
         }
 
         return DrmTopologyInventory(

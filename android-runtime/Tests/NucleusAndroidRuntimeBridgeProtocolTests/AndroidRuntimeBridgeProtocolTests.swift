@@ -1,6 +1,6 @@
 import Foundation
 import Glibc
-import NucleusAndroidRuntimeBridgeProtocol
+internal import NucleusAndroidRuntimeBridgeProtocol
 import NucleusAndroidRuntimeCore
 import NucleusIPCTransport
 import Testing

@@ -5,8 +5,8 @@
 // serialization sits between the plan and the renderer, and no Swift callback
 // runs during recording/submission (the façade submit path is pure C++).
 
-import NucleusSkiaGraphiteBridge
 internal import NucleusRenderModel
+import NucleusSkiaGraphiteBridge
 
 struct RenderResult {
     var imageWidth: Int32
@@ -19,13 +19,19 @@ struct RenderResult {
 @safe enum FramePlanRenderer {
     static func rectF(_ r: PlanRect) -> nucleus.skia.RectF {
         var out = nucleus.skia.RectF()
-        out.x = r.x; out.y = r.y; out.width = r.w; out.height = r.h
+        out.x = r.x
+        out.y = r.y
+        out.width = r.w
+        out.height = r.h
         return out
     }
 
     static func color(_ c: Float4) -> nucleus.skia.Color {
         var out = nucleus.skia.Color()
-        out.r = c.0; out.g = c.1; out.b = c.2; out.a = c.3
+        out.r = c.0
+        out.g = c.1
+        out.b = c.2
+        out.a = c.3
         return out
     }
 
@@ -65,79 +71,81 @@ struct RenderResult {
         resolveTexture: (PlanTextureReference) -> nucleus.skia.Image?,
         resolveShadow: (UInt64) -> nucleus.skia.Image? = { _ in nil }
     ) -> Int {
-            switch op {
-            case .fillQuad(let quad):
-                var paint = nucleus.skia.Paint()
-                paint.color = color(quad.color)
-                paint.blend = blend(quad.blendMode)
-                if let mask = quad.maskRRect {
-                    unsafe canvas.save()
-                    unsafe canvas.clipRRect(rectF(mask.rect), radii(mask), true)
-                    unsafe canvas.drawRect(rectF(quad.dst), paint)
-                    unsafe canvas.restore()
-                } else {
-                    unsafe canvas.drawRect(rectF(quad.dst), paint)
-                }
-                return 1
+        switch op {
+        case .fillQuad(let quad):
+            var paint = nucleus.skia.Paint()
+            paint.color = color(quad.color)
+            paint.blend = blend(quad.blendMode)
+            if let mask = quad.maskRRect {
+                unsafe canvas.save()
+                unsafe canvas.clipRRect(rectF(mask.rect), radii(mask), true)
+                unsafe canvas.drawRect(rectF(quad.dst), paint)
+                unsafe canvas.restore()
+            } else {
+                unsafe canvas.drawRect(rectF(quad.dst), paint)
+            }
+            return 1
 
-            case .visualStyle(let quad):
-                var style = nucleus.skia.StyledRRect()
-                style.rect = rectF(quad.dst)
-                style.radii = nucleus.skia.RRectRadii(
-                    topLeft: quad.cornerRadii.0, topRight: quad.cornerRadii.1,
-                    bottomRight: quad.cornerRadii.2, bottomLeft: quad.cornerRadii.3)
-                style.background = color(quad.backgroundColor)
-                style.borderTopWidth = quad.borderWidths.0
-                style.borderRightWidth = quad.borderWidths.1
-                style.borderBottomWidth = quad.borderWidths.2
-                style.borderLeftWidth = quad.borderWidths.3
-                style.borderTopColor = color(quad.borderTopColor)
-                style.borderRightColor = color(quad.borderRightColor)
-                style.borderBottomColor = color(quad.borderBottomColor)
-                style.borderLeftColor = color(quad.borderLeftColor)
-                unsafe canvas.drawStyledRRect(style, quad.alpha)
-                return 1
+        case .visualStyle(let quad):
+            var style = nucleus.skia.StyledRRect()
+            style.rect = rectF(quad.dst)
+            style.radii = nucleus.skia.RRectRadii(
+                topLeft: quad.cornerRadii.0, topRight: quad.cornerRadii.1,
+                bottomRight: quad.cornerRadii.2, bottomLeft: quad.cornerRadii.3)
+            style.background = color(quad.backgroundColor)
+            style.borderTopWidth = quad.borderWidths.0
+            style.borderRightWidth = quad.borderWidths.1
+            style.borderBottomWidth = quad.borderWidths.2
+            style.borderLeftWidth = quad.borderWidths.3
+            style.borderTopColor = color(quad.borderTopColor)
+            style.borderRightColor = color(quad.borderRightColor)
+            style.borderBottomColor = color(quad.borderBottomColor)
+            style.borderLeftColor = color(quad.borderLeftColor)
+            unsafe canvas.drawStyledRRect(style, quad.alpha)
+            return 1
 
-            case .textureQuad(let quad):
-                guard let handle = quad.texture,
-                      let image = unsafe resolveTexture(PlanTextureReference(
+        case .textureQuad(let quad):
+            guard let handle = quad.texture,
+                let image = unsafe resolveTexture(
+                    PlanTextureReference(
                         role: quad.role, handle: handle))
-                else { return 0 }
-                var paint = nucleus.skia.Paint()
-                paint.alpha = quad.alpha
-                paint.blend = blend(quad.blendMode)
-                if let mask = quad.maskRRect {
-                    unsafe canvas.save()
-                    unsafe canvas.clipRRect(rectF(mask.rect), radii(mask), true)
-                    unsafe canvas.drawImageRect(
-                        image, rectF(quad.src), rectF(quad.dst), paint)
-                    unsafe canvas.restore()
-                } else {
-                    unsafe canvas.drawImageRect(
-                        image, rectF(quad.src), rectF(quad.dst), paint)
-                }
-                return 1
-
-            case .shadowQuad(let quad):
-                let image: nucleus.skia.Image?
-                if let texture = quad.texture {
-                    unsafe image = resolveTexture(PlanTextureReference(
-                        role: .shadow, handle: texture))
-                } else if let material = quad.material {
-                    unsafe image = resolveShadow(material.layerId)
-                } else {
-                    unsafe image = nil
-                }
-                guard let image = unsafe image else { return 0 }
-                var paint = nucleus.skia.Paint()
-                paint.alpha = quad.alpha
+            else { return 0 }
+            var paint = nucleus.skia.Paint()
+            paint.alpha = quad.alpha
+            paint.blend = blend(quad.blendMode)
+            if let mask = quad.maskRRect {
+                unsafe canvas.save()
+                unsafe canvas.clipRRect(rectF(mask.rect), radii(mask), true)
                 unsafe canvas.drawImageRect(
                     image, rectF(quad.src), rectF(quad.dst), paint)
-                return 1
-
-            case .backdrop:
-                return 0
+                unsafe canvas.restore()
+            } else {
+                unsafe canvas.drawImageRect(
+                    image, rectF(quad.src), rectF(quad.dst), paint)
             }
+            return 1
+
+        case .shadowQuad(let quad):
+            let image: nucleus.skia.Image?
+            if let texture = quad.texture {
+                unsafe image = resolveTexture(
+                    PlanTextureReference(
+                        role: .shadow, handle: texture))
+            } else if let material = quad.material {
+                unsafe image = resolveShadow(material.layerId)
+            } else {
+                unsafe image = nil
+            }
+            guard let image = unsafe image else { return 0 }
+            var paint = nucleus.skia.Paint()
+            paint.alpha = quad.alpha
+            unsafe canvas.drawImageRect(
+                image, rectF(quad.src), rectF(quad.dst), paint)
+            return 1
+
+        case .backdrop:
+            return 0
+        }
     }
 
     /// Render `plan` into a fresh offscreen target (the standalone tail the

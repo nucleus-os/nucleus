@@ -1,21 +1,21 @@
-public import NucleusCompositorServerTypes
-public import NucleusCompositorServer
+package import NucleusCompositorServer
+package import NucleusCompositorServerTypes
 
 @MainActor
 extension WindowManager {
-    public func interactiveGrabActive() -> Bool {
+    package func interactiveGrabActive() -> Bool {
         interaction.hasGrab
     }
 
-    public func nextLayoutTransitionID() -> UInt64 {
+    package func nextLayoutTransitionID() -> UInt64 {
         interaction.allocLayoutTransitionID()
     }
 
-    public func evaluateFocusOnMap(windowID: UInt64) -> Bool {
+    package func evaluateFocusOnMap(windowID: UInt64) -> Bool {
         shouldFocusOnMap(windowID: windowID)
     }
 
-    public func seedInteractiveStartContext(
+    package func seedInteractiveStartContext(
         windowID: UInt64,
         cursorX: Double,
         cursorY: Double,
@@ -29,7 +29,7 @@ extension WindowManager {
         )
     }
 
-    public func beginInteractiveMove(windowID: UInt64, serial: UInt32) {
+    package func beginInteractiveMove(windowID: UInt64, serial: UInt32) {
         _ = serial
         let context = takeInteractiveStartContext(windowID: windowID)
         interaction.beginInteractiveMove(
@@ -40,7 +40,7 @@ extension WindowManager {
         )
     }
 
-    public func beginInteractiveResize(windowID: UInt64, serial: UInt32, edges: WireResizeEdges) {
+    package func beginInteractiveResize(windowID: UInt64, serial: UInt32, edges: WireResizeEdges) {
         _ = serial
         let context = takeInteractiveStartContext(windowID: windowID)
         interaction.beginInteractiveResize(
@@ -52,7 +52,7 @@ extension WindowManager {
         )
     }
 
-    public func updateInteractiveGrab(
+    package func updateInteractiveGrab(
         cursorX: Double,
         cursorY: Double
     ) -> WireInteractionGrabUpdate? {
@@ -61,15 +61,15 @@ extension WindowManager {
         return update
     }
 
-    public func endInteractiveGrab() {
+    package func endInteractiveGrab() {
         interaction.endInteractiveGrab()
     }
 
-    public func clearGrabFor(windowID: UInt64) {
+    package func clearGrabFor(windowID: UInt64) {
         interaction.clearGrab(forWindow: windowID)
     }
 
-    public func fullscreenRelinquishPlan(
+    package func fullscreenRelinquishPlan(
         outputID: UInt64,
         exceptID: UInt64
     ) throws(HostCallError) -> [UInt64] {
@@ -80,7 +80,7 @@ extension WindowManager {
         )
     }
 
-    public func migrateOffOutput(
+    package func migrateOffOutput(
         windowID: UInt64,
         removedOutputID: UInt64,
         hasFallbackOutputID: Bool,
@@ -114,7 +114,7 @@ extension WindowManager {
         )
     }
 
-    public func nativeCommandPolicy(windowID: UInt64) -> Bool {
+    package func nativeCommandPolicy(windowID: UInt64) -> Bool {
         // Shell-owned layer surfaces (the bar, overlays) speak Command natively.
         if server.window(id: windowID)?.source == .layerShell { return true }
         // xdg toplevels match on their application id.

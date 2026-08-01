@@ -11,8 +11,8 @@ extension CompositorRuntime {
                 return
             }
             guard publication.kind == .snapshot,
-                  publication.projectionKind == .renderServer,
-                  let projection =
+                publication.projectionKind == .renderServer,
+                let projection =
                     publication.renderServerConfiguration
             else {
                 logRuntime("config: rejected unexpected publication")
@@ -20,10 +20,11 @@ extension CompositorRuntime {
             }
             if publication.epoch == configurationEpoch {
                 guard publication.generation > configurationGeneration else {
-                    try configurationChannel.send(.reject(
-                        epoch: publication.epoch,
-                        generation: publication.generation,
-                        reason: "stale generation"))
+                    try configurationChannel.send(
+                        .reject(
+                            epoch: publication.epoch,
+                            generation: publication.generation,
+                            reason: "stale generation"))
                     return
                 }
             }
@@ -66,7 +67,8 @@ extension CompositorRuntime {
         _ diagnostics: [ConfigurationDiagnosticPublication]
     ) {
         for diagnostic in diagnostics {
-            let path = diagnostic.keyPath.isEmpty
+            let path =
+                diagnostic.keyPath.isEmpty
                 ? ""
                 : diagnostic.keyPath.joined(separator: ".") + ": "
             logRuntime("config: \(path)\(diagnostic.message)")

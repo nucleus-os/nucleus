@@ -5,14 +5,14 @@
 // Libwayland request entry is isolated by the generated dispatch boundary; these
 // delegate conformances therefore remain typed and main-actor-isolated throughout.
 
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
+import Glibc
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
-import NucleusRenderModel
-import Glibc
 import NucleusLinuxPrimitives
+import NucleusRenderModel
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 @MainActor
 final class RouterRenderDriver {
@@ -124,7 +124,9 @@ extension RouterRenderDriver: DrmSyncobjDelegate {
 
 extension ScreencopyResult {
     /// The capture-failed sentinel — the router sends `failed` to the client.
-    static var failed: ScreencopyResult { .init(ok: false, tvSecHi: 0, tvSecLo: 0, tvNsec: 0, flags: 0) }
+    static var failed: ScreencopyResult {
+        .init(ok: false, tvSecHi: 0, tvSecLo: 0, tvNsec: 0, flags: 0)
+    }
 }
 
 // zwlr_screencopy: advertise an output's capturable buffer, then copy the
@@ -139,7 +141,7 @@ extension RouterRenderDriver: ScreencopyDelegate {
         output: WlOutput?, region: WlRect?
     ) -> ScreencopyConfiguration? {
         guard let output, output.info.outputId != 0,
-              var params = RenderBridge.screencopyParams(
+            var params = RenderBridge.screencopyParams(
                 server: server,
                 outputId: output.info.outputId)
         else { return nil }
@@ -152,12 +154,13 @@ extension RouterRenderDriver: ScreencopyDelegate {
         // clipped intersection into the actual pixel extent once, then retain
         // that exact source rectangle with the advertised frame parameters.
         let logical = output.logicalRect
-        guard let projectedX = Self.projectCaptureAxis(
+        guard
+            let projectedX = Self.projectCaptureAxis(
                 origin: region.x,
                 length: region.width,
                 logicalExtent: logical.width,
                 pixelExtent: params.width),
-              let projectedY = Self.projectCaptureAxis(
+            let projectedY = Self.projectCaptureAxis(
                 origin: region.y,
                 length: region.height,
                 logicalExtent: logical.height,
@@ -185,8 +188,8 @@ extension RouterRenderDriver: ScreencopyDelegate {
         pixelExtent: UInt32
     ) -> (origin: Int32, length: Int32)? {
         guard length > 0,
-              logicalExtent > 0,
-              let pixelExtent = Int32(exactly: pixelExtent)
+            logicalExtent > 0,
+            let pixelExtent = Int32(exactly: pixelExtent)
         else { return nil }
         let requestedStart = Int64(origin)
         let requestedEnd = requestedStart + Int64(length)
@@ -202,8 +205,8 @@ extension RouterRenderDriver: ScreencopyDelegate {
         var pixelEnd = endProduct / logicalExtent64
         if endProduct % logicalExtent64 != 0 { pixelEnd += 1 }
         guard pixelEnd > pixelStart,
-              let projectedStart = Int32(exactly: pixelStart),
-              let projectedLength = Int32(exactly: pixelEnd - pixelStart)
+            let projectedStart = Int32(exactly: pixelStart),
+            let projectedLength = Int32(exactly: pixelEnd - pixelStart)
         else { return nil }
         return (projectedStart, projectedLength)
     }
@@ -249,25 +252,26 @@ extension RouterRenderDriver: ScreencopyDelegate {
         completion: @escaping @MainActor (ScreencopyResult) -> Void
     ) -> UInt64? {
         guard buffer.isLive else { return nil }
-        guard let currentParams = RenderBridge.screencopyParams(
-            server: server,
-            outputId: outputId)
+        guard
+            let currentParams = RenderBridge.screencopyParams(
+                server: server,
+                outputId: outputId)
         else { return nil }
         if let source = configuration.sourceRegion {
             let endX = Int64(source.x) + Int64(source.width)
             let endY = Int64(source.y) + Int64(source.height)
             guard source.x >= 0,
-                  source.y >= 0,
-                  source.width > 0,
-                  source.height > 0,
-                  UInt32(source.width) == configuration.params.width,
-                  UInt32(source.height) == configuration.params.height,
-                  endX <= Int64(currentParams.width),
-                  endY <= Int64(currentParams.height)
+                source.y >= 0,
+                source.width > 0,
+                source.height > 0,
+                UInt32(source.width) == configuration.params.width,
+                UInt32(source.height) == configuration.params.height,
+                endX <= Int64(currentParams.width),
+                endY <= Int64(currentParams.height)
             else { return nil }
         } else {
             guard currentParams.width == configuration.params.width,
-                  currentParams.height == configuration.params.height
+                currentParams.height == configuration.params.height
             else { return nil }
         }
 
@@ -299,7 +303,8 @@ extension RouterRenderDriver: ScreencopyDelegate {
         // XRGB8888 byte order — the block forces composition so this is current content),
         // then copy the requested region into the client buffer.
         guard buffer.shmMetadata != nil else { return nil }
-        let sourceRegion = preferRegionReadback
+        let sourceRegion =
+            preferRegionReadback
             ? configuration.sourceRegion.map {
                 RenderCaptureRegion(
                     x: $0.x, y: $0.y,
@@ -343,45 +348,48 @@ extension RouterRenderDriver: ScreencopyDelegate {
         let pixelCount = outW.multipliedReportingOverflow(by: outH)
         let byteCount = pixelCount.partialValue.multipliedReportingOverflow(by: 4)
         guard outW > 0,
-              outH > 0,
-              !pixelCount.overflow,
-              !byteCount.overflow,
-              capture.pixels.count >= byteCount.partialValue
+            outH > 0,
+            !pixelCount.overflow,
+            !byteCount.overflow,
+            capture.pixels.count >= byteCount.partialValue
         else { return false }
 
         guard let copyWidth = Int(exactly: configuration.params.width),
-              let copyHeight = Int(exactly: configuration.params.height)
+            let copyHeight = Int(exactly: configuration.params.height)
         else { return false }
-        let sourceRegion = configuration.sourceRegion ?? WlRect(
-            x: 0, y: 0,
-            width: Int32(clamping: outW),
-            height: Int32(clamping: outH))
+        let sourceRegion =
+            configuration.sourceRegion
+            ?? WlRect(
+                x: 0, y: 0,
+                width: Int32(clamping: outW),
+                height: Int32(clamping: outH))
         let rx = Int(sourceRegion.x) - capture.originX
         let ry = Int(sourceRegion.y) - capture.originY
         guard rx >= 0,
-              ry >= 0,
-              Int(sourceRegion.width) == copyWidth,
-              Int(sourceRegion.height) == copyHeight,
-              rx <= outW - copyWidth,
-              ry <= outH - copyHeight
+            ry >= 0,
+            Int(sourceRegion.width) == copyWidth,
+            Int(sourceRegion.height) == copyHeight,
+            rx <= outW - copyWidth,
+            ry <= outH - copyHeight
         else { return false }
 
-        return (try? buffer.withMutableShmBytes { metadata, destination in
-            guard copyWidth == metadata.width,
-                copyHeight == metadata.height,
-                copyWidth > 0,
-                copyHeight > 0,
-                metadata.stride >= copyWidth * 4
-            else { return false }
-            let rowBytes = copyWidth * 4
-            return destination.copyRows(
-                from: capture.pixels,
-                sourceOffset: (ry * outW + rx) * 4,
-                sourceStride: outW * 4,
-                destinationStride: metadata.stride,
-                rowBytes: rowBytes,
-                rowCount: copyHeight)
-        }) ?? false
+        return
+            (try? buffer.withMutableShmBytes { metadata, destination in
+                guard copyWidth == metadata.width,
+                    copyHeight == metadata.height,
+                    copyWidth > 0,
+                    copyHeight > 0,
+                    metadata.stride >= copyWidth * 4
+                else { return false }
+                let rowBytes = copyWidth * 4
+                return destination.copyRows(
+                    from: capture.pixels,
+                    sourceOffset: (ry * outW + rx) * 4,
+                    sourceStride: outW * 4,
+                    destinationStride: metadata.stride,
+                    rowBytes: rowBytes,
+                    rowCount: copyHeight)
+            }) ?? false
     }
 
     /// Translate a Wayland-owned destination buffer into the neutral capture
@@ -417,12 +425,15 @@ extension RouterRenderDriver: ScreencopyDelegate {
     ) {
         guard let output = server.layout.display(id: outputId) else { return }
         let cursor = server.cursor
-        let cw = Int(cursor.width), ch = Int(cursor.height)
+        let cw = Int(cursor.width)
+        let ch = Int(cursor.height)
         guard cw > 0, ch > 0, cursor.pixels.count >= cw * ch * 4 else { return }
         let scale = output.fractionalScale
-        let originX = Int(((server.events.cursorX - output.logicalRect.x) * scale).rounded())
+        let originX =
+            Int(((server.events.cursorX - output.logicalRect.x) * scale).rounded())
             - Int(cursor.hotSpotX) - captureOriginX
-        let originY = Int(((server.events.cursorY - output.logicalRect.y) * scale).rounded())
+        let originY =
+            Int(((server.events.cursorY - output.logicalRect.y) * scale).rounded())
             - Int(cursor.hotSpotY) - captureOriginY
         for cy in 0..<ch {
             let dy = originY + cy

@@ -2,22 +2,28 @@
 // Typed client descriptor and event dispatch for org_kde_kwin_blur_manager.
 
 import WaylandClientC
-public enum OrgKdeKwinBlurManagerClient: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum OrgKdeKwinBlurManagerClient: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_org_kde_kwin_blur_manager())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == OrgKdeKwinBlurManagerClient {
-    func create(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<OrgKdeKwinBlurClient> {
+package extension WaylandProxy where Interface == OrgKdeKwinBlurManagerClient {
+    package func create(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError)
+        -> WaylandProxy<OrgKdeKwinBlurClient>
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_org_kde_kwin_blur_manager_create(_proxy, _surfaceProxy) else {
+        guard
+            let _created = unsafe swift_wayland_client_request_org_kde_kwin_blur_manager_create(
+                _proxy, _surfaceProxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, OrgKdeKwinBlurClient.self)
     }
-    func unset(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) {
+    package func unset(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
         unsafe swift_wayland_client_request_org_kde_kwin_blur_manager_unset(_proxy, _surfaceProxy)

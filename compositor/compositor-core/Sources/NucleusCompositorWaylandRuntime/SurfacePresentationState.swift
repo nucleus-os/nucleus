@@ -1,7 +1,7 @@
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
 import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 /// Exact commit-owned frame callback and presentation-feedback state.
 @MainActor
@@ -21,8 +21,7 @@ import WaylandProtocolTypes
 
     private struct CommitResources {
         var frameCallbacks: [WaylandResourceReference<WlCallbackServer>]
-        var feedbacks:
-            [WaylandResourceReference<WpPresentationFeedbackServer>]
+        var feedbacks: [WaylandResourceReference<WpPresentationFeedbackServer>]
         var sampledSubmissionIDs: Set<UInt64> = []
         var presented: PresentedSample?
     }
@@ -83,8 +82,8 @@ import WaylandProtocolTypes
         else { return }
         let timestampNs =
             (UInt64(tvSecHi) << 32 | UInt64(tvSecLo))
-                &* 1_000_000_000
-                &+ UInt64(tvNsec)
+            &* 1_000_000_000
+            &+ UInt64(tvNsec)
         for callback in resources.frameCallbacks {
             guard callback.handle.sendDone(callback_data: timeMs) else {
                 continue

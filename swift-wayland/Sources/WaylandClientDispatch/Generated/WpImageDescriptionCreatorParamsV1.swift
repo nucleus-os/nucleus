@@ -2,17 +2,23 @@
 // Typed client descriptor and event dispatch for wp_image_description_creator_params_v1.
 
 import WaylandClientC
-public enum WpImageDescriptionCreatorParamsV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+package import WaylandProtocolTypes
+
+package enum WpImageDescriptionCreatorParamsV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_image_description_creator_params_v1())
-    public nonisolated static let maximumVersion: UInt32 = 2
+    package nonisolated static let maximumVersion: UInt32 = 2
 }
-public import WaylandProtocolTypes
-public extension WaylandProxy where Interface == WpImageDescriptionCreatorParamsV1Client {
-    func create() throws(WaylandProxyError) -> WaylandProxy<WpImageDescriptionV1Client> {
+package extension WaylandProxy where Interface == WpImageDescriptionCreatorParamsV1Client {
+    package func create() throws(WaylandProxyError) -> WaylandProxy<WpImageDescriptionV1Client> {
         let _proxy = try unsafe requireNativeProxy()
-        let _result = try { () throws(WaylandProxyError) -> WaylandProxy<WpImageDescriptionV1Client> in
-            guard let _created = unsafe swift_wayland_client_request_wp_image_description_creator_params_v1_create(_proxy) else {
+        let _result = try {
+            () throws(WaylandProxyError) -> WaylandProxy<WpImageDescriptionV1Client> in
+            guard
+                let _created =
+                    unsafe swift_wayland_client_request_wp_image_description_creator_params_v1_create(
+                        _proxy)
+            else {
                 throw WaylandProxyError.proxyCreationFailed
             }
             return unsafe makeOwnedProxy(
@@ -21,49 +27,66 @@ public extension WaylandProxy where Interface == WpImageDescriptionCreatorParams
         try unsafe invalidateAfterProtocolDestructor()
         return _result
     }
-    func setTfNamed(tf: WpColorManagerV1TransferFunction) throws(WaylandProxyError) {
+    package func setTfNamed(tf: WpColorManagerV1TransferFunction) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_wp_image_description_creator_params_v1_set_tf_named(_proxy, tf.rawValue)
+        unsafe swift_wayland_client_request_wp_image_description_creator_params_v1_set_tf_named(
+            _proxy, tf.rawValue)
         return
     }
-    func setTfPower(eexp: UInt32) throws(WaylandProxyError) {
+    package func setTfPower(eexp: UInt32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_wp_image_description_creator_params_v1_set_tf_power(_proxy, eexp)
+        unsafe swift_wayland_client_request_wp_image_description_creator_params_v1_set_tf_power(
+            _proxy, eexp)
         return
     }
-    func setPrimariesNamed(primaries: WpColorManagerV1Primaries) throws(WaylandProxyError) {
+    package func setPrimariesNamed(primaries: WpColorManagerV1Primaries) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_wp_image_description_creator_params_v1_set_primaries_named(_proxy, primaries.rawValue)
+        unsafe swift_wayland_client_request_wp_image_description_creator_params_v1_set_primaries_named(
+            _proxy, primaries.rawValue)
         return
     }
-    func setPrimaries(r_x: Int32, r_y: Int32, g_x: Int32, g_y: Int32, b_x: Int32, b_y: Int32, w_x: Int32, w_y: Int32) throws(WaylandProxyError) {
+    package func setPrimaries(
+        r_x: Int32, r_y: Int32, g_x: Int32, g_y: Int32, b_x: Int32, b_y: Int32, w_x: Int32,
+        w_y: Int32
+    ) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_wp_image_description_creator_params_v1_set_primaries(_proxy, r_x, r_y, g_x, g_y, b_x, b_y, w_x, w_y)
+        unsafe swift_wayland_client_request_wp_image_description_creator_params_v1_set_primaries(
+            _proxy, r_x, r_y, g_x, g_y, b_x, b_y, w_x, w_y)
         return
     }
-    func setLuminances(min_lum: UInt32, max_lum: UInt32, reference_lum: UInt32) throws(WaylandProxyError) {
+    package func setLuminances(min_lum: UInt32, max_lum: UInt32, reference_lum: UInt32)
+        throws(WaylandProxyError)
+    {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_wp_image_description_creator_params_v1_set_luminances(_proxy, min_lum, max_lum, reference_lum)
+        unsafe swift_wayland_client_request_wp_image_description_creator_params_v1_set_luminances(
+            _proxy, min_lum, max_lum, reference_lum)
         return
     }
-    func setMasteringDisplayPrimaries(r_x: Int32, r_y: Int32, g_x: Int32, g_y: Int32, b_x: Int32, b_y: Int32, w_x: Int32, w_y: Int32) throws(WaylandProxyError) {
+    package func setMasteringDisplayPrimaries(
+        r_x: Int32, r_y: Int32, g_x: Int32, g_y: Int32, b_x: Int32, b_y: Int32, w_x: Int32,
+        w_y: Int32
+    ) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_wp_image_description_creator_params_v1_set_mastering_display_primaries(_proxy, r_x, r_y, g_x, g_y, b_x, b_y, w_x, w_y)
+        unsafe swift_wayland_client_request_wp_image_description_creator_params_v1_set_mastering_display_primaries(
+            _proxy, r_x, r_y, g_x, g_y, b_x, b_y, w_x, w_y)
         return
     }
-    func setMasteringLuminance(min_lum: UInt32, max_lum: UInt32) throws(WaylandProxyError) {
+    package func setMasteringLuminance(min_lum: UInt32, max_lum: UInt32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_wp_image_description_creator_params_v1_set_mastering_luminance(_proxy, min_lum, max_lum)
+        unsafe swift_wayland_client_request_wp_image_description_creator_params_v1_set_mastering_luminance(
+            _proxy, min_lum, max_lum)
         return
     }
-    func setMaxCll(max_cll: UInt32) throws(WaylandProxyError) {
+    package func setMaxCll(max_cll: UInt32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_wp_image_description_creator_params_v1_set_max_cll(_proxy, max_cll)
+        unsafe swift_wayland_client_request_wp_image_description_creator_params_v1_set_max_cll(
+            _proxy, max_cll)
         return
     }
-    func setMaxFall(max_fall: UInt32) throws(WaylandProxyError) {
+    package func setMaxFall(max_fall: UInt32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_wp_image_description_creator_params_v1_set_max_fall(_proxy, max_fall)
+        unsafe swift_wayland_client_request_wp_image_description_creator_params_v1_set_max_fall(
+            _proxy, max_fall)
         return
     }
 }

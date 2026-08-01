@@ -6,8 +6,8 @@
 // The router owns the request/publish mechanics and SceneFeeder lowers the
 // published region into the renderer's backdrop-effect pass.
 
-import WaylandServerC
 import WaylandServer
+import WaylandServerC
 import WaylandServerDispatch
 
 /// The render seam for KDE blur. `wholeSurface` true means blur behind the entire
@@ -33,7 +33,8 @@ extension OrgKdeKwinBlurManager: OrgKdeKwinBlurManagerRequests {
     func create(
         _ request: WaylandRequest<OrgKdeKwinBlurManagerServer>,
         id: WlNewId<OrgKdeKwinBlurServer>,
-                surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>) {
+        surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>
+    ) {
         guard let surface = surfaceRes.owner(as: WlSurface.self) else { return }
         _ = id.create { handle in
             OrgKdeKwinBlur(resource: handle, manager: self, surface: surface)
@@ -41,8 +42,10 @@ extension OrgKdeKwinBlurManager: OrgKdeKwinBlurManagerRequests {
     }
 
     // unset(surface): remove the blur effect without needing the blur object.
-    func unset(_ request: WaylandRequest<OrgKdeKwinBlurManagerServer>,
-               surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>) {
+    func unset(
+        _ request: WaylandRequest<OrgKdeKwinBlurManagerServer>,
+        surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>
+    ) {
         guard let surface = surfaceRes.owner(as: WlSurface.self) else { return }
         delegate?.kdeBlurCleared(surface)
     }
@@ -79,8 +82,10 @@ extension OrgKdeKwinBlur: OrgKdeKwinBlurRequests {
     }
 
     // set_region(region): null region blurs the whole surface.
-    func setRegion(_ request: WaylandRequest<OrgKdeKwinBlurServer>,
-                   region regionRes: WaylandBorrowedObject<WlRegionServer>?) {
+    func setRegion(
+        _ request: WaylandRequest<OrgKdeKwinBlurServer>,
+        region regionRes: WaylandBorrowedObject<WlRegionServer>?
+    ) {
         if let region = regionRes?.owner(as: WlRegion.self) {
             pendingRegion = region.snapshot()
             pendingWholeSurface = false

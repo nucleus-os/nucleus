@@ -1,3 +1,5 @@
+public import NucleusTypes
+
 /// A dividing rule.
 ///
 /// The orientation is inferred from the stack it sits in, because that is what

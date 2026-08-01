@@ -121,3 +121,12 @@ public protocol IOSurfaceLifecycle: AnyObject, Sendable {
     func retain(handle: UInt64)
     func release(handle: UInt64)
 }
+
+/// Receives frame demand produced by asynchronous renderer work.
+///
+/// Implementations are owned by the platform host and must be safe to call
+/// from a renderer pthread. They wake the host event loop without entering
+/// main-actor render state directly.
+public protocol AsyncRenderWakeSink: Sendable {
+    nonisolated func signalRenderWork()
+}

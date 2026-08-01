@@ -45,8 +45,10 @@ struct TouchCoordinateSpace {
 enum InputEventNormalize {
     private static func timestampNs(msec: UInt32) -> UInt64 { UInt64(msec) &* 1_000_000 }
 
-    private static func record(kind: WireEventKind, snapshot: InputStreamSnapshot,
-                               timeMsec: UInt32, x: Double, y: Double) -> WireEventRecord {
+    private static func record(
+        kind: WireEventKind, snapshot: InputStreamSnapshot,
+        timeMsec: UInt32, x: Double, y: Double
+    ) -> WireEventRecord {
         var r = WireEventRecord()
         r.kind = kind
         r.flags = snapshot.flags
@@ -56,8 +58,10 @@ enum InputEventNormalize {
         return r
     }
 
-    @unsafe static func translate(_ event: OpaquePointer, snapshot: InputStreamSnapshot,
-                          scale: Double, touchSpace: TouchCoordinateSpace? = nil) -> NormalizedEventBatch {
+    @unsafe static func translate(
+        _ event: OpaquePointer, snapshot: InputStreamSnapshot,
+        scale: Double, touchSpace: TouchCoordinateSpace? = nil
+    ) -> NormalizedEventBatch {
         let type = unsafe libinput_event_get_type(event)
         let s = scale > 0 ? scale : 1.0
         var batch = NormalizedEventBatch()
@@ -65,12 +69,14 @@ enum InputEventNormalize {
         switch type {
         case LIBINPUT_EVENT_KEYBOARD_KEY:
             guard let kb = unsafe libinput_event_get_keyboard_event(event) else { return batch }
-            let pressed = unsafe libinput_event_keyboard_get_key_state(kb) == LIBINPUT_KEY_STATE_PRESSED
+            let pressed =
+                unsafe libinput_event_keyboard_get_key_state(kb) == LIBINPUT_KEY_STATE_PRESSED
             let keycode = unsafe libinput_event_keyboard_get_key(kb)
             let seatCount = unsafe libinput_event_keyboard_get_seat_key_count(kb)
-            var r = record(kind: pressed ? .keyDown : .keyUp, snapshot: snapshot,
-                           timeMsec: unsafe libinput_event_keyboard_get_time(kb),
-                           x: snapshot.cursorX, y: snapshot.cursorY)
+            var r = record(
+                kind: pressed ? .keyDown : .keyUp, snapshot: snapshot,
+                timeMsec: unsafe libinput_event_keyboard_get_time(kb),
+                x: snapshot.cursorX, y: snapshot.cursorY)
             r.data0 = UInt64(keycode)
             r.data1 = 0  // not a repeat
             r.data2 = UInt64(seatCount)
@@ -84,9 +90,10 @@ enum InputEventNormalize {
             // acceleration-independent, so the same divisor applies to both pairs.
             let dxU = unsafe libinput_event_pointer_get_dx_unaccelerated(ptr) / s
             let dyU = unsafe libinput_event_pointer_get_dy_unaccelerated(ptr) / s
-            var r = record(kind: snapshot.dragKind, snapshot: snapshot,
-                           timeMsec: unsafe libinput_event_pointer_get_time(ptr),
-                           x: snapshot.cursorX + dx, y: snapshot.cursorY + dy)
+            var r = record(
+                kind: snapshot.dragKind, snapshot: snapshot,
+                timeMsec: unsafe libinput_event_pointer_get_time(ptr),
+                x: snapshot.cursorX + dx, y: snapshot.cursorY + dy)
             r.data0 = dx.bitPattern
             r.data1 = dy.bitPattern
             r.data2 = dxU.bitPattern
@@ -96,24 +103,29 @@ enum InputEventNormalize {
 
         case LIBINPUT_EVENT_POINTER_BUTTON:
             guard let ptr = unsafe libinput_event_get_pointer_event(event) else { return batch }
-            let pressed = unsafe libinput_event_pointer_get_button_state(ptr) == LIBINPUT_BUTTON_STATE_PRESSED
+            let pressed =
+                unsafe libinput_event_pointer_get_button_state(ptr) == LIBINPUT_BUTTON_STATE_PRESSED
             let button = unsafe libinput_event_pointer_get_button(ptr)
-            var r = record(kind: buttonKind(button: button, pressed: pressed), snapshot: snapshot,
-                           timeMsec: unsafe libinput_event_pointer_get_time(ptr),
-                           x: snapshot.cursorX, y: snapshot.cursorY)
+            var r = record(
+                kind: buttonKind(button: button, pressed: pressed), snapshot: snapshot,
+                timeMsec: unsafe libinput_event_pointer_get_time(ptr),
+                x: snapshot.cursorX, y: snapshot.cursorY)
             r.data0 = UInt64(button)
             r.data1 = 1  // click_state
             batch.records.append(r)
             batch.needsPointerFrame = true
 
         case LIBINPUT_EVENT_POINTER_SCROLL_WHEEL,
-             LIBINPUT_EVENT_POINTER_SCROLL_FINGER,
-             LIBINPUT_EVENT_POINTER_SCROLL_CONTINUOUS:
+            LIBINPUT_EVENT_POINTER_SCROLL_FINGER,
+            LIBINPUT_EVENT_POINTER_SCROLL_CONTINUOUS:
             guard let ptr = unsafe libinput_event_get_pointer_event(event) else { return batch }
             let isWheel = type == LIBINPUT_EVENT_POINTER_SCROLL_WHEEL
-            let source: UInt64 = isWheel ? 0 : (type == LIBINPUT_EVENT_POINTER_SCROLL_FINGER ? 1 : 2)
+            let source: UInt64 =
+                isWheel ? 0 : (type == LIBINPUT_EVENT_POINTER_SCROLL_FINGER ? 1 : 2)
             let timeMsec = unsafe libinput_event_pointer_get_time(ptr)
-            for axis in [LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL, LIBINPUT_POINTER_AXIS_SCROLL_HORIZONTAL] {
+            for axis in [
+                LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL, LIBINPUT_POINTER_AXIS_SCROLL_HORIZONTAL,
+            ] {
                 guard unsafe libinput_event_pointer_has_axis(ptr, axis) != 0 else { continue }
                 let delta = unsafe libinput_event_pointer_get_scroll_value(ptr, axis)
                 var value120: Int32 = 0
@@ -125,8 +137,9 @@ enum InputEventNormalize {
                 }
                 // Finger/continuous zero-delta is meaningful (emits axis_stop).
                 let orientation: UInt64 = axis == LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL ? 0 : 1
-                var r = record(kind: .scrollWheel, snapshot: snapshot, timeMsec: timeMsec,
-                               x: snapshot.cursorX, y: snapshot.cursorY)
+                var r = record(
+                    kind: .scrollWheel, snapshot: snapshot, timeMsec: timeMsec,
+                    x: snapshot.cursorX, y: snapshot.cursorY)
                 r.data0 = delta.bitPattern
                 r.data1 = UInt64(UInt32(bitPattern: value120))
                 r.data2 = orientation
@@ -137,32 +150,41 @@ enum InputEventNormalize {
 
         case LIBINPUT_EVENT_TOUCH_DOWN, LIBINPUT_EVENT_TOUCH_MOTION:
             guard let touch = unsafe libinput_event_get_touch_event(event), let space = touchSpace,
-                  space.width > 0, space.height > 0 else { return batch }
-            let x = unsafe space.x
+                space.width > 0, space.height > 0
+            else { return batch }
+            let x =
+                unsafe space.x
                 + libinput_event_touch_get_x_transformed(touch, space.width)
-            let y = unsafe space.y
+            let y =
+                unsafe space.y
                 + libinput_event_touch_get_y_transformed(touch, space.height)
             var r = record(
                 kind: type == LIBINPUT_EVENT_TOUCH_DOWN ? .touchDown : .touchMotion,
-                snapshot: snapshot, timeMsec: unsafe libinput_event_touch_get_time(touch), x: x, y: y)
+                snapshot: snapshot, timeMsec: unsafe libinput_event_touch_get_time(touch), x: x,
+                y: y)
             r.data0 = UInt64(UInt32(bitPattern: unsafe libinput_event_touch_get_seat_slot(touch)))
             batch.records.append(r)
 
         case LIBINPUT_EVENT_TOUCH_UP:
             guard let touch = unsafe libinput_event_get_touch_event(event) else { return batch }
-            var r = record(kind: .touchUp, snapshot: snapshot,
-                           timeMsec: unsafe libinput_event_touch_get_time(touch),
-                           x: snapshot.cursorX, y: snapshot.cursorY)
+            var r = record(
+                kind: .touchUp, snapshot: snapshot,
+                timeMsec: unsafe libinput_event_touch_get_time(touch),
+                x: snapshot.cursorX, y: snapshot.cursorY)
             r.data0 = UInt64(UInt32(bitPattern: unsafe libinput_event_touch_get_seat_slot(touch)))
             batch.records.append(r)
 
         case LIBINPUT_EVENT_TOUCH_CANCEL:
-            batch.records.append(record(kind: .touchCancel, snapshot: snapshot,
-                                        timeMsec: 0, x: snapshot.cursorX, y: snapshot.cursorY))
+            batch.records.append(
+                record(
+                    kind: .touchCancel, snapshot: snapshot,
+                    timeMsec: 0, x: snapshot.cursorX, y: snapshot.cursorY))
 
         case LIBINPUT_EVENT_TOUCH_FRAME:
-            batch.records.append(record(kind: .touchFrame, snapshot: snapshot,
-                                        timeMsec: 0, x: snapshot.cursorX, y: snapshot.cursorY))
+            batch.records.append(
+                record(
+                    kind: .touchFrame, snapshot: snapshot,
+                    timeMsec: 0, x: snapshot.cursorX, y: snapshot.cursorY))
 
         default:
             break

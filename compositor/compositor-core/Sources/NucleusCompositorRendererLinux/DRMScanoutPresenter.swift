@@ -14,27 +14,27 @@
 // every binding's ring (scanout images + BOs + KMS fbs), then the core drops the
 // Graphite context and then the Vulkan device.
 
-import VulkanC
-import Vulkan
-import NucleusCompositorDrmC
-public import NucleusRenderModel
-@_spi(NucleusPlatform) public import NucleusRenderer
 import Glibc
+import NucleusCompositorDrmC
+package import NucleusRenderModel
+package import NucleusRenderer
+import Vulkan
+import VulkanC
 
 /// The DRM/KMS presentation backend. Constructed at compositor bring-up with the
 /// DRM master fd; outputs are attached as the display layout resolves; the reactor
 /// drives `renderReadyOutputs`. `@MainActor`: the render path runs on the main-loop
 /// executor alongside Wayland and DRM ownership.
 @MainActor
-@safe public final class DRMScanoutPresenter: PresentationBackend {
-    public var defersGpuResourceRetirement: Bool { true }
+@safe package final class DRMScanoutPresenter: PresentationBackend {
+    package var defersGpuResourceRetirement: Bool { true }
     let core: RenderCore
-    public var onSurfaceBufferRetired: (@MainActor (UInt64) -> Void)?
+    package var onSurfaceBufferRetired: (@MainActor (UInt64) -> Void)?
 
     /// The authoritative retained tree (the core owns it; exposed for the runtime
     /// owner's tick + animation reads).
-    public var store: RetainedTreeStore { core.store }
-    public var clientUploadStats: RenderCore.ClientUploadStats { core.clientUploadStats }
+    package var store: RetainedTreeStore { core.store }
+    package var clientUploadStats: RenderCore.ClientUploadStats { core.clientUploadStats }
 
     var gbmBox: GbmDevice?
     let gbmHandle: OpaquePointer
@@ -46,11 +46,11 @@ import Glibc
     let drmCaps: DrmCaps
     let presentPolicy: RendererPresentPolicy
     let presentationClock: DrmPresentationClock
-    public var presentationClockID: UInt32 {
+    package var presentationClockID: UInt32 {
         DrmPresentationClock.clockID
     }
     /// Render-node `dev_t` advertised through linux-dmabuf feedback.
-    public var dmabufMainDevice: UInt64 = 0
+    package var dmabufMainDevice: UInt64 = 0
 
     var bindings: [UInt64: RenderOutputBinding] = [:]
     /// Render-complete semaphores borrowed by submitted GPU work. Their submission
@@ -71,36 +71,43 @@ import Glibc
     /// The most recently discovered, globally allocated topology. Discovery does
     /// not mutate live KMS state; the composition root chooses which assignments
     /// to attach and then commits the successful subset.
-    var pendingTopology: (
-        inventory: DrmTopologyInventory,
-        result: DrmTopologyPlanningResult
-    )?
+    var pendingTopology:
+        (
+            inventory: DrmTopologyInventory,
+            result: DrmTopologyPlanningResult
+        )?
     var backendState: DrmBackendState = .resuming
 
     /// Internal present-report seam installed by the composition root. Composite
     /// submissions carry their exact frame serial; direct scanout carries serial zero.
     /// The acceptance timestamp is sampled immediately after the successful atomic
     /// commit. Page flips carry the same serial.
-    @_spi(NucleusPlatform)
-    public var onOutputSubmitted: (@MainActor (
-        _ outputID: UInt64, _ outputGeneration: UInt64,
-        _ submissionID: UInt64, _ frameSerial: UInt64,
-        _ atomicCommitAcceptedNs: UInt64, _ sampledIOSurfaceIDs: [UInt64]
-    ) -> Void)?
-    @_spi(NucleusPlatform)
-    public var onOutputPresented: (@MainActor (
-        _ outputID: UInt64, _ outputGeneration: UInt64,
-        _ submissionID: UInt64, _ frameSerial: UInt64,
-        _ presentationNs: UInt64, _ sequence: UInt64,
-        _ fenceTelemetry: CompositeFenceTelemetry
-    ) -> Void)?
-    @_spi(NucleusPlatform)
-    public var onOutputPresentationDiscarded: (@MainActor (
-        _ outputID: UInt64,
-        _ outputGeneration: UInt64,
-        _ submissionID: UInt64,
-        _ frameSerial: UInt64
-    ) -> Void)?
+    package var onOutputSubmitted:
+        (
+            @MainActor (
+                _ outputID: UInt64, _ outputGeneration: UInt64,
+                _ submissionID: UInt64, _ frameSerial: UInt64,
+                _ atomicCommitAcceptedNs: UInt64, _ sampledIOSurfaceIDs: [UInt64]
+            ) -> Void
+        )?
+    package var onOutputPresented:
+        (
+            @MainActor (
+                _ outputID: UInt64, _ outputGeneration: UInt64,
+                _ submissionID: UInt64, _ frameSerial: UInt64,
+                _ presentationNs: UInt64, _ sequence: UInt64,
+                _ fenceTelemetry: CompositeFenceTelemetry
+            ) -> Void
+        )?
+    package var onOutputPresentationDiscarded:
+        (
+            @MainActor (
+                _ outputID: UInt64,
+                _ outputGeneration: UInt64,
+                _ submissionID: UInt64,
+                _ frameSerial: UInt64
+            ) -> Void
+        )?
 
     // Per-surface release syncobj points (explicit sync): signaled when the buffer
     // is no longer referenced (next upload / release / after the frame presents).
@@ -158,8 +165,10 @@ import Glibc
     /// The driver's max cursor size (the cursor BO dimensions), queried once. Falls
     /// back to 64×64 when the caps are unavailable.
     lazy var cursorPlaneSize: (width: UInt32, height: UInt32) = {
-        return (drmCaps.cursorWidth > 0 ? UInt32(drmCaps.cursorWidth) : 64,
-                drmCaps.cursorHeight > 0 ? UInt32(drmCaps.cursorHeight) : 64)
+        return (
+            drmCaps.cursorWidth > 0 ? UInt32(drmCaps.cursorWidth) : 64,
+            drmCaps.cursorHeight > 0 ? UInt32(drmCaps.cursorHeight) : 64
+        )
     }()
 
     /// Bring up the render core + the DRM/KMS backend over the DRM master fd:
@@ -186,22 +195,20 @@ import Glibc
         // The core fires this when a client surface's previous backing is dropped
         // (shm upload over a dmabuf, or surface release) so the buffer's release
         // syncobj is signaled.
-        core.onSurfaceReleaseSync = { [weak self] id in self?.retiredCompositeBacking(iosurfaceID: id) }
+        core.onSurfaceReleaseSync = { [weak self] id in
+            self?.retiredCompositeBacking(iosurfaceID: id)
+        }
     }
 
-
     /// Allocate a fresh non-zero IOSurface id for a new client surface.
-    public func allocSurfaceId() -> UInt32 { core.allocSurfaceId() }
-
-
-
+    package func allocSurfaceId() -> UInt32 { core.allocSurfaceId() }
 
     /// Suspend the session on VT-switch-away. This never blocks the main actor.
     /// Outstanding kernel presentation state leaves the backend in `.pausing`;
     /// the composition root retries without admitting new presents and
     /// acknowledges libseat only on a terminal result.
     @discardableResult
-    public func pauseSessionChecked() -> RendererRetirementResult {
+    package func pauseSessionChecked() -> RendererRetirementResult {
         switch backendState {
         case .inactive:
             return .complete
@@ -236,7 +243,7 @@ import Glibc
     /// Resume starts a recovery transaction. Presentation remains disabled until
     /// the composition root discovers, applies, and commits a complete topology.
     @discardableResult
-    public func resumeSessionChecked() -> Bool {
+    package func resumeSessionChecked() -> Bool {
         guard case .inactive = backendState else {
             return backendState.admitsPresentation
         }
@@ -253,28 +260,27 @@ import Glibc
 
     /// `PresentationBackend` lifecycle entry points. The composition root uses
     /// the checked variants above so session-control failure can fail closed.
-    public func pauseSession() {
+    package func pauseSession() {
         _ = pauseSessionChecked()
     }
 
-    public func resumeSession() {
+    package func resumeSession() {
         _ = resumeSessionChecked()
     }
 
     /// Disable every live output without waiting. The compositor calls this while
     /// its reactor still owns DRM readiness; `.draining` means keep the loop alive
     /// and retry while every scanout owner remains retained.
-    public func prepareShutdown() -> RendererRetirementResult {
+    package func prepareShutdown() -> RendererRetirementResult {
         retireOutputs(Set(bindings.keys))
     }
-
 
     // MARK: - Teardown
 
     /// Tear down after a successful transactional output retirement. The reactor
     /// must have driven `prepareShutdown()` to `.complete`, so no kernel scanout
     /// owner may remain here.
-    public func shutdown() {
+    package func shutdown() {
         logRendererDrm("shutdown: validating kernel scanout retirement")
         precondition(
             !bindings.values.contains(where: { $0.drm.active }),
@@ -291,7 +297,7 @@ import Glibc
     /// Tear down after the session owner has revoked the primary DRM device.
     /// Device close is the terminal kernel lifetime barrier when an atomic
     /// disable cannot complete; it replaces the old process-lifetime leak.
-    public func shutdownAfterDrmDeviceLoss() {
+    package func shutdownAfterDrmDeviceLoss() {
         precondition(drmDevice.isRevoked)
         logRendererDrm("shutdown: DRM device revoked; releasing renderer resources")
         core.waitForGpuIdle()
@@ -304,7 +310,7 @@ import Glibc
     /// composition root calls this immediately before returning the fd to
     /// libseat; object ownership itself remains intact until close has ended the
     /// kernel's scanout references.
-    public func revokeDrmDevice() {
+    package func revokeDrmDevice() {
         drmDevice.revoke()
     }
 

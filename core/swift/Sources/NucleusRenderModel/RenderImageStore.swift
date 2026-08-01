@@ -10,7 +10,7 @@
 import Synchronization
 
 /// Where an image's bytes come from.
-public enum ImageContent: Equatable, Sendable {
+package enum ImageContent: Equatable, Sendable {
     /// A file to decode. The overwhelmingly common case.
     case file(path: String)
     /// Encoded bytes already in memory — a `data:` URI, or anything else that
@@ -21,18 +21,20 @@ public enum ImageContent: Equatable, Sendable {
 }
 
 /// A registered image source: what to draw, and the bounds to decode within.
-public struct ImageSource: Equatable, Sendable {
-    public var content: ImageContent
-    public var maxWidth: UInt32
-    public var maxHeight: UInt32
+package struct ImageSource: Equatable, Sendable {
+    package var content: ImageContent
+    package var maxWidth: UInt32
+    package var maxHeight: UInt32
 
-    public init(content: ImageContent, maxWidth: UInt32 = 0, maxHeight: UInt32 = 0) {
+    package init(content: ImageContent, maxWidth: UInt32 = 0, maxHeight: UInt32 = 0) {
         self.content = content
         if case .raw(let buffer) = content {
-            self.maxWidth = maxWidth > 0
+            self.maxWidth =
+                maxWidth > 0
                 ? maxWidth
                 : UInt32(clamping: buffer.width)
-            self.maxHeight = maxHeight > 0
+            self.maxHeight =
+                maxHeight > 0
                 ? maxHeight
                 : UInt32(clamping: buffer.height)
         } else {
@@ -41,12 +43,12 @@ public struct ImageSource: Equatable, Sendable {
         }
     }
 
-    public init(path: String, maxWidth: UInt32, maxHeight: UInt32) {
+    package init(path: String, maxWidth: UInt32, maxHeight: UInt32) {
         self.init(content: .file(path: path), maxWidth: maxWidth, maxHeight: maxHeight)
     }
 
     /// The file path, when this source is one. Nil for in-memory sources.
-    public var path: String? {
+    package var path: String? {
         if case .file(let path) = content { return path }
         return nil
     }
@@ -81,7 +83,7 @@ public struct ImageSource: Equatable, Sendable {
     }
 }
 
-public enum ImageStoreMutation: Equatable, Sendable {
+package enum ImageStoreMutation: Equatable, Sendable {
     case retry(handle: UInt64)
     case replace(handle: UInt64, source: ImageSource)
     case evict(handle: UInt64)
@@ -90,7 +92,7 @@ public enum ImageStoreMutation: Equatable, Sendable {
 /// Refcounted registry of image sources keyed by an opaque handle. The renderer
 /// reads `source(_:)` to decode/upload at frame time; decode/cache is the
 /// renderer's job.
-public final class ImageStore: Sendable {
+package final class ImageStore: Sendable {
     private struct Entry {
         var source: ImageSource
         var refs: UInt32
@@ -105,9 +107,9 @@ public final class ImageStore: Sendable {
 
     private let state = Mutex(State())
 
-    public init() {}
+    package init() {}
 
-    public var count: Int {
+    package var count: Int {
         state.withLock { $0.entries.count }
     }
 
@@ -115,7 +117,7 @@ public final class ImageStore: Sendable {
     /// ≥1. A repeat registration of the same source bumps the existing refcount.
     /// Mirrors `adoptPrepared` keyed on the source.
     @discardableResult
-    public func register(_ source: ImageSource) -> UInt64 {
+    package func register(_ source: ImageSource) -> UInt64 {
         state.withLock { state in
             let key = source.dedupeKey
             if let handle = state.byKey[key] {
@@ -132,7 +134,7 @@ public final class ImageStore: Sendable {
     }
 
     /// Add one ref. No-op for an unknown handle. Mirrors `retain`.
-    public func retain(_ handle: UInt64) {
+    package func retain(_ handle: UInt64) {
         state.withLock {
             guard $0.entries[handle] != nil else { return }
             $0.entries[handle]!.refs &+= 1
@@ -140,7 +142,7 @@ public final class ImageStore: Sendable {
     }
 
     /// Drop one ref; evict at zero. No-op for an unknown handle. Mirrors `release`.
-    public func release(_ handle: UInt64) {
+    package func release(_ handle: UInt64) {
         state.withLock { state in
             guard var entry = state.entries[handle] else { return }
             if entry.refs > 1 {
@@ -158,7 +160,7 @@ public final class ImageStore: Sendable {
     ///
     /// Failure is terminal until this operation is requested explicitly.
     @discardableResult
-    public func retry(_ handle: UInt64) -> Bool {
+    package func retry(_ handle: UInt64) -> Bool {
         state.withLock { state in
             guard state.entries[handle] != nil else { return false }
             state.mutations.append(.retry(handle: handle))
@@ -172,7 +174,7 @@ public final class ImageStore: Sendable {
     /// handle. Replacement refuses to steal a source identity already owned by
     /// another live handle.
     @discardableResult
-    public func replace(
+    package func replace(
         _ handle: UInt64,
         with source: ImageSource
     ) -> Bool {
@@ -186,21 +188,22 @@ public final class ImageStore: Sendable {
             entry.source = source
             state.entries[handle] = entry
             state.byKey[newKey] = handle
-            state.mutations.append(.replace(
-                handle: handle,
-                source: source))
+            state.mutations.append(
+                .replace(
+                    handle: handle,
+                    source: source))
             return true
         }
     }
 
     /// The source registered for `handle`, or nil if unknown. The renderer
     /// decodes/uploads this at rasterization time.
-    public func source(_ handle: UInt64) -> ImageSource? {
+    package func source(_ handle: UInt64) -> ImageSource? {
         state.withLock { $0.entries[handle]?.source }
     }
 
     /// Take explicit lifecycle mutations since the prior render-owner drain.
-    public func takeMutations() -> [ImageStoreMutation] {
+    package func takeMutations() -> [ImageStoreMutation] {
         state.withLock {
             let mutations = $0.mutations
             $0.mutations.removeAll(keepingCapacity: true)

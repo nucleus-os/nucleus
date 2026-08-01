@@ -14,9 +14,9 @@
 // live hit-testing and button path. Generated dispatch enters the main actor before
 // the manager invokes this typed policy seam.
 
-import WaylandServerC
-import WaylandServer
 internal import NucleusCompositorServer
+import WaylandServer
+import WaylandServerC
 
 @MainActor
 final class RouterDataDeviceDriver {

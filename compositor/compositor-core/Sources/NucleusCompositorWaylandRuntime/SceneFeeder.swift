@@ -18,14 +18,16 @@
 // clock (`Display.predictedPresentNs`), and the committed buffer geometry
 // (`Window.committedBufferSize`/`contentOffsetInSlot`).
 
-@_spi(NucleusRenderServer) import NucleusLayers
+import Glibc
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowScene
+import NucleusDiagnostics
+package import NucleusLayers
+import Tracy
+
 import struct NucleusRenderModel.TextureHandle
 import struct NucleusTypes.BufferPixelSize
-import Tracy
-import Glibc
 
 @MainActor
 final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
@@ -151,9 +153,7 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
             if iosurfaceID != 0 {
                 try author.setContent(
                     surfaceID: UInt64(surfaceID),
-                    content: LayerContent(
-                        kind: .external,
-                        handle: UInt64(iosurfaceID)),
+                    content: .external(IOSurfaceContent(handle: UInt64(iosurfaceID))),
                     contentSample: sample)
             }
         }
@@ -186,21 +186,25 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
             RenderBridge.requestFrame(server: server, forWindowID: window.id)
         }
         guard window.surfaceObjectId != 0,
-              let service = renderService,
-              let iosurfaceID = explicitIOSurfaceID
+            let service = renderService,
+            let iosurfaceID = explicitIOSurfaceID
                 ?? compositor?.surface(
                     id: window.surfaceObjectId)?.renderIosurfaceId,
-              iosurfaceID != 0,
-              let snapshot = service.captureSurfaceSnapshot(
+            iosurfaceID != 0,
+            let snapshot = service.captureSurfaceSnapshot(
                 iosurfaceID: iosurfaceID)
         else { return }
 
         let surfaceID = UInt64(window.surfaceObjectId)
-        guard authoring("begin tile crossfade", surfaceID: surfaceID, {
-            try author.beginContentCrossfade(
-                surfaceID: surfaceID,
-                snapshotHandle: snapshot.handle)
-        }) else {
+        guard
+            authoring(
+                "begin tile crossfade", surfaceID: surfaceID,
+                {
+                    try author.beginContentCrossfade(
+                        surfaceID: surfaceID,
+                        snapshotHandle: snapshot.handle)
+                })
+        else {
             service.releaseSnapshot(snapshot.handle)
             return
         }
@@ -235,24 +239,29 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
             return true
         }
         guard window.visibleInScene(),
-              window.source == .xdg || window.source == .xwayland,
-              window.surfaceObjectId != 0,
-              let service = renderService
+            window.source == .xdg || window.source == .xwayland,
+            window.surfaceObjectId != 0,
+            let service = renderService
         else { return false }
-        let iosurfaceID = explicitIOSurfaceID
+        let iosurfaceID =
+            explicitIOSurfaceID
             ?? compositor?.surface(id: window.surfaceObjectId)?.renderIosurfaceId
             ?? 0
         guard iosurfaceID != 0,
-              let snapshot = service.captureSurfaceSnapshot(
+            let snapshot = service.captureSurfaceSnapshot(
                 iosurfaceID: iosurfaceID)
         else { return false }
 
         let surfaceID = UInt64(window.surfaceObjectId)
-        guard authoring("begin closing fade", surfaceID: surfaceID, {
-            try author.beginContentCrossfade(
-                surfaceID: surfaceID,
-                snapshotHandle: snapshot.handle)
-        }) else {
+        guard
+            authoring(
+                "begin closing fade", surfaceID: surfaceID,
+                {
+                    try author.beginContentCrossfade(
+                        surfaceID: surfaceID,
+                        snapshotHandle: snapshot.handle)
+                })
+        else {
             service.releaseSnapshot(snapshot.handle)
             return false
         }
@@ -342,19 +351,28 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
         preserveScene: Bool
     ) -> Bool {
         guard let generation = window.activeTransitionGeneration(),
-              window.surfaceObjectId != 0
+            window.surfaceObjectId != 0
         else { return true }
         let surfaceID = UInt64(window.surfaceObjectId)
-        guard authoring("end snapshot transition", surfaceID: surfaceID, {
-            try author.endContentCrossfade(surfaceID: surfaceID)
-        }) else { return false }
+        guard
+            authoring(
+                "end snapshot transition", surfaceID: surfaceID,
+                {
+                    try author.endContentCrossfade(surfaceID: surfaceID)
+                })
+        else { return false }
         if !preserveScene {
-            guard authoring("remove closing scene", surfaceID: surfaceID, {
-                try author.surfaceDestroyed(surfaceID: surfaceID)
-            }) else { return false }
+            guard
+                authoring(
+                    "remove closing scene", surfaceID: surfaceID,
+                    {
+                        try author.surfaceDestroyed(surfaceID: surfaceID)
+                    })
+            else { return false }
         }
-        guard let retirement = window.takePresentationTransition(
-            generation: generation)
+        guard
+            let retirement = window.takePresentationTransition(
+                generation: generation)
         else { return false }
         transitionMetrics.acceptedRemovals &+= 1
         Trace.plot(
@@ -421,7 +439,7 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
         authoring("publish content", surfaceID: UInt64(surfaceID)) {
             try author.setContent(
                 surfaceID: UInt64(surfaceID),
-                content: LayerContent(kind: .external, handle: UInt64(iosurfaceID)),
+                content: .external(IOSurfaceContent(handle: UInt64(iosurfaceID))),
                 contentSample: sample)
         }
     }
@@ -469,7 +487,7 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
             try author.layoutChildSurface(surfaceID: UInt64(surfaceID), frame: frame)
             try author.setContent(
                 surfaceID: UInt64(surfaceID),
-                content: LayerContent(kind: .external, handle: UInt64(iosurfaceID)),
+                content: .external(IOSurfaceContent(handle: UInt64(iosurfaceID))),
                 contentSample: sample)
         }
     }
@@ -491,7 +509,7 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
             try author.layoutChildSurface(surfaceID: UInt64(surfaceID), frame: frame)
             try author.setContent(
                 surfaceID: UInt64(surfaceID),
-                content: LayerContent(kind: .external, handle: UInt64(iosurfaceID)),
+                content: .external(IOSurfaceContent(handle: UInt64(iosurfaceID))),
                 contentSample: sample)
         }
     }
@@ -510,13 +528,15 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
     /// on a managed window — the Swift-side replacement for the substrate
     /// `updateSurfaceOutputState` / `noteSurfaceOutput` affinity computation. A
     /// layer-shell window keeps its pinned output (set at content publish).
-    private func updateSurfaceMembership(window: Window, x: Double, y: Double, w: Double, h: Double) {
+    private func updateSurfaceMembership(window: Window, x: Double, y: Double, w: Double, h: Double)
+    {
         var ids: Set<UInt64> = []
         var dominantID: UInt64?
         var dominantArea = 0.0
         for display in server.layout.displays {
             let r = display.logicalRect
-            let area = Self.overlapArea(x: x, y: y, w: w, h: h, rx: r.x, ry: r.y, rw: r.width, rh: r.height)
+            let area = Self.overlapArea(
+                x: x, y: y, w: w, h: h, rx: r.x, ry: r.y, rw: r.width, rh: r.height)
             guard area > 0 else { continue }
             ids.insert(display.id)
             if area > dominantArea {
@@ -531,7 +551,9 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
             }
         }
         if window.isManagedAppWindow() { window.currentOutputID = dominantID }
-        if window.surfaceObjectId != 0, let surface = compositor?.surface(id: window.surfaceObjectId) {
+        if window.surfaceObjectId != 0,
+            let surface = compositor?.surface(id: window.surfaceObjectId)
+        {
             surface.updateEnteredOutputs(ids)
         }
     }
@@ -589,7 +611,9 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
         }
     }
 
-    private static func backgroundEffectRegions(from region: RegionSnapshot?) -> BackgroundEffectRegions {
+    private static func backgroundEffectRegions(from region: RegionSnapshot?)
+        -> BackgroundEffectRegions
+    {
         guard let region else { return BackgroundEffectRegions() }
         guard region.rectangleCount <= BackgroundEffectRegions.maxRects else {
             return BackgroundEffectRegions(rects: [], wholeSurface: true)
@@ -669,22 +693,24 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
             let insets = window.chromeInsets
             let authored = authoring("apply window layout", surfaceID: surfaceID) {
                 try author.applyLayout(
-                surfaceID: surfaceID,
-                // The eased PRESENTED outer frame (root authored crisp at this size).
-                frame: GeometryRect(x: presented.x, y: presented.y, width: presented.w, height: presented.h),
-                // The client's committed visible extent — the only layer carrying the
-                // presented/base scale, so it settles to identity.
-                baseSize: GeometrySize(width: max(1, base.w), height: max(1, base.h)),
-                // The full committed buffer, shifted by the negated geometry origin so
-                // the visible sub-rect aligns with the content viewport.
-                backingFrame: GeometryRect(
-                    x: offset.x, y: offset.y,
-                    width: max(1, buffer.w), height: max(1, buffer.h)),
-                chromeInsets: NucleusCompositorWindowScene.WindowEdgeInsets(
-                    top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right),
-                chromeFocused: window.id == focusedID,
-                windowOpacity: window.windowPresentationOpacity(),
-                overlayOpacity: window.transitionOverlayOpacity())
+                    surfaceID: surfaceID,
+                    // The eased PRESENTED outer frame (root authored crisp at this size).
+                    frame: GeometryRect(
+                        x: presented.x, y: presented.y, width: presented.w, height: presented.h),
+                    // The client's committed visible extent — the only layer carrying the
+                    // presented/base scale, so it settles to identity.
+                    baseSize: GeometrySize(width: max(1, base.w), height: max(1, base.h)),
+                    // The full committed buffer, shifted by the negated geometry origin so
+                    // the visible sub-rect aligns with the content viewport.
+                    backingFrame: GeometryRect(
+                        x: offset.x, y: offset.y,
+                        width: max(1, buffer.w), height: max(1, buffer.h)),
+                    chromeInsets: NucleusCompositorWindowScene.WindowEdgeInsets(
+                        top: insets.top, left: insets.left, bottom: insets.bottom,
+                        right: insets.right),
+                    chromeFocused: window.id == focusedID,
+                    windowOpacity: window.windowPresentationOpacity(),
+                    overlayOpacity: window.transitionOverlayOpacity())
             }
             if authored {
                 if window.hasActiveClosingFade(), !closingInFlight {
@@ -697,21 +723,21 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
                     continue
                 }
                 if hadTileTransition, !tileInFlight,
-                   !finishTransition(
-                    window: window,
-                    preserveScene: true)
+                    !finishTransition(
+                        window: window,
+                        preserveScene: true)
                 {
                     anyInFlight = true
                 }
-                authoredWindows.append(PresentedWindow(
-                    windowID: window.id,
-                    surfaceID: window.surfaceObjectId,
-                    source: window.source.rawValue,
-                    frame: presented))
+                authoredWindows.append(
+                    PresentedWindow(
+                        windowID: window.id,
+                        surfaceID: window.surfaceObjectId,
+                        source: window.source.rawValue,
+                        frame: presented))
             }
         }
         pendingWindowsByOutput[outputID] = authoredWindows.reversed()
         return anyInFlight
     }
 }
-import NucleusDiagnostics

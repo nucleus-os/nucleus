@@ -1,10 +1,13 @@
+import Glibc
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowManager
-import Glibc
+
 @MainActor
 extension InputDispatch {
-    package func chromeHitUnderCursor() -> (windowID: UInt64, surfaceID: UInt64, region: ChromeRegion, edges: UInt32)? {
+    package func chromeHitUnderCursor() -> (
+        windowID: UInt64, surfaceID: UInt64, region: ChromeRegion, edges: UInt32
+    )? {
         let hit = routerHitTest(host: host, sx: cursorX, sy: cursorY)
         let region = ChromeRegion(rawValue: hit.chromeRegion) ?? .content
         if region == .content || hit.windowId == 0 { return nil }
@@ -21,7 +24,9 @@ extension InputDispatch {
         armedChromeButton = nil
         raiseWindow(chrome.windowID)
         if chrome.surfaceID != 0,
-            windowDriver?.focusSurfaceForPress(surfaceId: UInt32(truncatingIfNeeded: chrome.surfaceID)) == true {
+            windowDriver?.focusSurfaceForPress(
+                surfaceId: UInt32(truncatingIfNeeded: chrome.surfaceID)) == true
+        {
             setKeyboardFocusSurface(chrome.surfaceID)
         }
         switch chrome.region {
@@ -34,7 +39,8 @@ extension InputDispatch {
             if isTitlebarDoubleClick(windowID: chrome.windowID, timeMsec: timeMsec) {
                 lastTitlebarPress = nil
                 if chrome.surfaceID != 0 {
-                    windowDriver?.toggleMaximize(surfaceId: UInt32(truncatingIfNeeded: chrome.surfaceID))
+                    windowDriver?.toggleMaximize(
+                        surfaceId: UInt32(truncatingIfNeeded: chrome.surfaceID))
                 }
                 return true
             }
@@ -64,9 +70,14 @@ extension InputDispatch {
         if let chrome, chrome.windowID == armed.windowID, chrome.region == armed.region {
             switch armed.region {
             case .closeButton:
-                if chrome.surfaceID != 0 { windowDriver?.close(surfaceId: UInt32(truncatingIfNeeded: chrome.surfaceID)) }
+                if chrome.surfaceID != 0 {
+                    windowDriver?.close(surfaceId: UInt32(truncatingIfNeeded: chrome.surfaceID))
+                }
             case .maximizeButton:
-                if chrome.surfaceID != 0 { windowDriver?.toggleMaximize(surfaceId: UInt32(truncatingIfNeeded: chrome.surfaceID)) }
+                if chrome.surfaceID != 0 {
+                    windowDriver?.toggleMaximize(
+                        surfaceId: UInt32(truncatingIfNeeded: chrome.surfaceID))
+                }
             case .minimizeButton:
                 _ = windowDriver?.minimize(windowId: armed.windowID)
             default:
@@ -95,22 +106,27 @@ extension InputDispatch {
                 targetRoot = root
                 hovered = code
                 if let armed = armedChromeButton, armed.windowID == windowID,
-                    chromeButtonCode(armed.region) == code {
+                    chromeButtonCode(armed.region) == code
+                {
                     pressed = code
                 }
             }
         }
         if let prev = chromeButtonVisual {
-            if prev.windowID == targetID && prev.hovered == hovered && prev.pressed == pressed { return }
+            if prev.windowID == targetID && prev.hovered == hovered && prev.pressed == pressed {
+                return
+            }
             if prev.windowID != targetID && (prev.hovered != 0 || prev.pressed != 0) {
-                host.feeder?.setChromeButtonState(rootSurfaceID: prev.rootSurface, hovered: 0, pressed: 0)
+                host.feeder?.setChromeButtonState(
+                    rootSurfaceID: prev.rootSurface, hovered: 0, pressed: 0)
             }
         }
         if targetID == 0 {
             chromeButtonVisual = nil
             return
         }
-        host.feeder?.setChromeButtonState(rootSurfaceID: targetRoot, hovered: hovered, pressed: pressed)
+        host.feeder?.setChromeButtonState(
+            rootSurfaceID: targetRoot, hovered: hovered, pressed: pressed)
         chromeButtonVisual = (targetID, targetRoot, hovered, pressed)
     }
 
@@ -141,7 +157,10 @@ extension InputDispatch {
     }
 
     package func resizeCursorName(edges: UInt32) -> String {
-        let left = edges & 1 != 0, right = edges & 2 != 0, top = edges & 4 != 0, bottom = edges & 8 != 0
+        let left = edges & 1 != 0
+        let right = edges & 2 != 0
+        let top = edges & 4 != 0
+        let bottom = edges & 8 != 0
         if (top && left) || (bottom && right) { return "nwse-resize" }
         if (top && right) || (bottom && left) { return "nesw-resize" }
         if left || right { return "ew-resize" }
@@ -192,12 +211,14 @@ extension InputDispatch {
     }
 
     package func beginInteractiveMoveFromChrome(windowID: UInt64) {
-        guard windowID != 0, let wd = windowDriver, wd.canInteract(windowId: windowID) else { return }
+        guard windowID != 0, let wd = windowDriver, wd.canInteract(windowId: windowID) else {
+            return
+        }
         raiseWindow(windowID)
         let tile = host.server.window(id: windowID)?.tileEdges
         let hadTile = tile.map { $0.left || $0.right || $0.top || $0.bottom } ?? false
         guard let presented = host.feeder?.presentedWindow(windowID: windowID)?.frame,
-              let r = wd.beginDirectManipulation(windowId: windowID, presented: presented)
+            let r = wd.beginDirectManipulation(windowId: windowID, presented: presented)
         else { return }
         // Drag start un-tiles so the client redraws full decorations.
         if hadTile { wd.configureInteractive(windowId: windowID, resizing: false) }
@@ -209,10 +230,11 @@ extension InputDispatch {
     }
 
     package func beginInteractiveResizeFromChrome(windowID: UInt64, edges: UInt32) {
-        guard edges != 0, windowID != 0, let wd = windowDriver, wd.canInteract(windowId: windowID) else { return }
+        guard edges != 0, windowID != 0, let wd = windowDriver, wd.canInteract(windowId: windowID)
+        else { return }
         raiseWindow(windowID)
         guard let presented = host.feeder?.presentedWindow(windowID: windowID)?.frame,
-              let r = wd.beginDirectManipulation(windowId: windowID, presented: presented)
+            let r = wd.beginDirectManipulation(windowId: windowID, presented: presented)
         else { return }
         var re = WireResizeEdges()
         re.left = edges & 1 != 0
@@ -227,9 +249,10 @@ extension InputDispatch {
     }
 
     package func updateInteractiveGrab() {
-        guard let update = host.windowManager.updateInteractiveGrab(
-            cursorX: cursorX,
-            cursorY: cursorY)
+        guard
+            let update = host.windowManager.updateInteractiveGrab(
+                cursorX: cursorX,
+                cursorY: cursorY)
         else { return }
         let windowID = update.windowId
         let previousRect = host.server

@@ -16,12 +16,14 @@
 import Glibc
 #elseif canImport(Android)
 import Android
+#elseif canImport(Darwin)
+import Darwin
 #endif
 
 // MARK: - Key paths + values
 
-/// The animatable property a record drives. Mirrors `animation.AnimationKeyPath`.
-public enum AnimationKeyPath: UInt8, Sendable {
+/// The animatable property a record drives. Mirrors `animation.RenderAnimationKeyPath`.
+package enum RenderAnimationKeyPath: Hashable, Sendable {
     case positionX
     case positionY
     case opacity
@@ -55,8 +57,8 @@ public enum AnimationKeyPath: UInt8, Sendable {
     var isTransformComponent: Bool {
         switch self {
         case .transformScaleX, .transformScaleY, .transformScaleZ,
-             .transformRotationX, .transformRotationY, .transformRotationZ,
-             .transformTranslationX, .transformTranslationY, .transformTranslationZ:
+            .transformRotationX, .transformRotationY, .transformRotationZ,
+            .transformTranslationX, .transformTranslationY, .transformTranslationZ:
             return true
         default:
             return false
@@ -64,11 +66,11 @@ public enum AnimationKeyPath: UInt8, Sendable {
     }
 }
 
-public typealias AnimationSlotKey = AnimationKeyPath
+package typealias AnimationSlotKey = RenderAnimationKeyPath
 
 /// Tagged value returned by an animation step. Frame-typed animations return
 /// `.frame`; everything else `.scalar`. Mirrors `animation.AnimationValue`.
-public enum AnimationValue: Equatable, Sendable {
+package enum AnimationValue: Equatable, Sendable {
     case scalar(Float)
     case frame(Frame)
     case transform(M44)
@@ -83,44 +85,44 @@ public enum AnimationValue: Equatable, Sendable {
 
 /// One step's evaluation: the interpolated value + whether the animation is
 /// complete. Mirrors `animation.AnimationResult`.
-public struct AnimationResult: Equatable, Sendable {
-    public var value: AnimationValue
-    public var done: Bool
+package struct AnimationResult: Equatable, Sendable {
+    package var value: AnimationValue
+    package var done: Bool
 
-    public init(value: AnimationValue, done: Bool) {
+    package init(value: AnimationValue, done: Bool) {
         self.value = value
         self.done = done
     }
 }
 
 /// Opaque animation identity (0 = none). Mirrors `animation.AnimationID`.
-public struct AnimationID: Equatable, Hashable, Sendable {
-    public var raw: UInt64 = 0
-    public init(raw: UInt64 = 0) { self.raw = raw }
-    public static let none = AnimationID(raw: 0)
+package struct AnimationID: Equatable, Hashable, Sendable {
+    package var raw: UInt64 = 0
+    package init(raw: UInt64 = 0) { self.raw = raw }
+    package static let none = AnimationID(raw: 0)
 }
 
 /// Opaque completion token (0 = none). Mirrors `animation.CompletionToken`.
-public struct CompletionToken: Equatable, Hashable, Sendable {
-    public var raw: UInt64 = 0
-    public init(raw: UInt64 = 0) { self.raw = raw }
-    public static let none = CompletionToken(raw: 0)
+package struct CompletionToken: Equatable, Hashable, Sendable {
+    package var raw: UInt64 = 0
+    package init(raw: UInt64 = 0) { self.raw = raw }
+    package static let none = CompletionToken(raw: 0)
 }
 
 // MARK: - Basic (timed bezier) animations
 
 /// Timed cubic-bezier scalar interpolation. Mirrors `animation.BasicAnimation`.
-public struct BasicAnimation: Equatable, Sendable {
-    public var keyPath: AnimationKeyPath
-    public var fromValue: Float
-    public var toValue: Float
-    public var duration: Double = 0.25
-    public var timingFunction: TimingFunction = .default
-    public var beginTime: Double = 0
-    public var elapsed: Double = 0
+package struct BasicAnimation: Equatable, Sendable {
+    package var keyPath: RenderAnimationKeyPath
+    package var fromValue: Float
+    package var toValue: Float
+    package var duration: Double = 0.25
+    package var timingFunction: TimingFunction = .default
+    package var beginTime: Double = 0
+    package var elapsed: Double = 0
 
-    public init(
-        keyPath: AnimationKeyPath, fromValue: Float, toValue: Float,
+    package init(
+        keyPath: RenderAnimationKeyPath, fromValue: Float, toValue: Float,
         duration: Double = 0.25, timingFunction: TimingFunction = .default,
         beginTime: Double = 0
     ) {
@@ -132,7 +134,7 @@ public struct BasicAnimation: Equatable, Sendable {
         self.beginTime = beginTime
     }
 
-    public mutating func evaluateAt(_ presentTimeS: Double) -> AnimationResult {
+    package mutating func evaluateAt(_ presentTimeS: Double) -> AnimationResult {
         let elapsedS = max(0, presentTimeS - beginTime)
         elapsed = elapsedS
         return evaluateElapsed(elapsedS)
@@ -153,21 +155,21 @@ public struct BasicAnimation: Equatable, Sendable {
 
 /// Damped-harmonic-oscillator scalar interpolation. Mirrors
 /// `animation.SpringAnimation`.
-public struct SpringAnimation: Equatable, Sendable {
-    public var keyPath: AnimationKeyPath
-    public var fromValue: Float
-    public var toValue: Float
-    public var mass: Float = 1.0
-    public var stiffness: Float = 100.0
-    public var damping: Float = 10.0
-    public var initialVelocity: Float = 0.0
-    public var beginTime: Double = 0
-    public var currentValueScalar: Float = 0
-    public var velocity: Float = 0
-    public var initialized: Bool = false
+package struct SpringAnimation: Equatable, Sendable {
+    package var keyPath: RenderAnimationKeyPath
+    package var fromValue: Float
+    package var toValue: Float
+    package var mass: Float = 1.0
+    package var stiffness: Float = 100.0
+    package var damping: Float = 10.0
+    package var initialVelocity: Float = 0.0
+    package var beginTime: Double = 0
+    package var currentValueScalar: Float = 0
+    package var velocity: Float = 0
+    package var initialized: Bool = false
 
-    public init(
-        keyPath: AnimationKeyPath, fromValue: Float, toValue: Float,
+    package init(
+        keyPath: RenderAnimationKeyPath, fromValue: Float, toValue: Float,
         mass: Float = 1.0, stiffness: Float = 100.0, damping: Float = 10.0,
         initialVelocity: Float = 0.0, beginTime: Double = 0
     ) {
@@ -225,7 +227,9 @@ public struct SpringAnimation: Equatable, Sendable {
         return AnimationResult(value: .scalar(currentValueScalar), done: settled)
     }
 
-    mutating func evaluateAt(_ presentTimeS: Double, _ previousPresentTimeS: Double) -> AnimationResult {
+    mutating func evaluateAt(_ presentTimeS: Double, _ previousPresentTimeS: Double)
+        -> AnimationResult
+    {
         if !initialized {
             currentValueScalar = fromValue
             velocity = initialVelocity
@@ -246,17 +250,17 @@ public struct SpringAnimation: Equatable, Sendable {
 
 /// Compound-frame counterpart of `BasicAnimation`. Mirrors
 /// `animation.BasicFrameAnimation`.
-public struct BasicFrameAnimation: Equatable, Sendable {
-    public var keyPath: AnimationKeyPath
-    public var fromValue: Frame
-    public var toValue: Frame
-    public var duration: Double = 0.25
-    public var timingFunction: TimingFunction = .default
-    public var beginTime: Double = 0
-    public var elapsed: Double = 0
+package struct BasicFrameAnimation: Equatable, Sendable {
+    package var keyPath: RenderAnimationKeyPath
+    package var fromValue: Frame
+    package var toValue: Frame
+    package var duration: Double = 0.25
+    package var timingFunction: TimingFunction = .default
+    package var beginTime: Double = 0
+    package var elapsed: Double = 0
 
-    public init(
-        keyPath: AnimationKeyPath, fromValue: Frame, toValue: Frame,
+    package init(
+        keyPath: RenderAnimationKeyPath, fromValue: Frame, toValue: Frame,
         duration: Double = 0.25, timingFunction: TimingFunction = .default,
         beginTime: Double = 0
     ) {
@@ -268,7 +272,7 @@ public struct BasicFrameAnimation: Equatable, Sendable {
         self.beginTime = beginTime
     }
 
-    public mutating func evaluateAt(_ presentTimeS: Double) -> AnimationResult {
+    package mutating func evaluateAt(_ presentTimeS: Double) -> AnimationResult {
         let elapsedS = max(0, presentTimeS - beginTime)
         elapsed = elapsedS
         return evaluateElapsed(elapsedS)
@@ -299,17 +303,17 @@ public struct BasicFrameAnimation: Equatable, Sendable {
 /// Matrix interpolation deliberately preserves arbitrary affine, perspective,
 /// reflection, and shear values. Higher-level component animations continue to
 /// use their dedicated slots when decomposition semantics are required.
-public struct BasicTransformAnimation: Equatable, Sendable {
-    public var keyPath: AnimationKeyPath
-    public var fromValue: M44
-    public var toValue: M44
-    public var duration: Double = 0.25
-    public var timingFunction: TimingFunction = .default
-    public var beginTime: Double = 0
-    public var elapsed: Double = 0
+package struct BasicTransformAnimation: Equatable, Sendable {
+    package var keyPath: RenderAnimationKeyPath
+    package var fromValue: M44
+    package var toValue: M44
+    package var duration: Double = 0.25
+    package var timingFunction: TimingFunction = .default
+    package var beginTime: Double = 0
+    package var elapsed: Double = 0
 
-    public init(
-        keyPath: AnimationKeyPath = .transform,
+    package init(
+        keyPath: RenderAnimationKeyPath = .transform,
         fromValue: M44,
         toValue: M44,
         duration: Double = 0.25,
@@ -324,7 +328,7 @@ public struct BasicTransformAnimation: Equatable, Sendable {
         self.beginTime = beginTime
     }
 
-    public mutating func evaluateAt(_ presentTimeS: Double) -> AnimationResult {
+    package mutating func evaluateAt(_ presentTimeS: Double) -> AnimationResult {
         let elapsedS = max(0, presentTimeS - beginTime)
         elapsed = elapsedS
         return evaluateElapsed(elapsedS)
@@ -341,37 +345,39 @@ public struct BasicTransformAnimation: Equatable, Sendable {
 
     var currentValue: AnimationValue {
         let t: Float = duration > 0 ? Float(min(elapsed / duration, 1)) : 1
-        return .transform(Self.interpolate(
-            fromValue,
-            toValue,
-            timingFunction.evaluate(t)
-        ))
+        return .transform(
+            Self.interpolate(
+                fromValue,
+                toValue,
+                timingFunction.evaluate(t)
+            ))
     }
 
     private static func interpolate(_ from: M44, _ to: M44, _ t: Float) -> M44 {
-        M44(m: zip(from.m, to.m).map { start, end in
-            start + (end - start) * t
-        })
+        M44(
+            m: zip(from.m, to.m).map { start, end in
+                start + (end - start) * t
+            })
     }
 }
 
 /// Spring interpolation for a complete 4×4 transform. Each matrix component
 /// follows the same oscillator and the record settles only when every component
 /// has converged.
-public struct SpringTransformAnimation: Equatable, Sendable {
-    public var keyPath: AnimationKeyPath
-    public var fromValue: M44
-    public var toValue: M44
-    public var mass: Float = 1
-    public var stiffness: Float = 100
-    public var damping: Float = 10
-    public var beginTime: Double = 0
-    public var currentValue: M44
-    public var velocity: [Float]
-    public var initialized: Bool = false
+package struct SpringTransformAnimation: Equatable, Sendable {
+    package var keyPath: RenderAnimationKeyPath
+    package var fromValue: M44
+    package var toValue: M44
+    package var mass: Float = 1
+    package var stiffness: Float = 100
+    package var damping: Float = 10
+    package var beginTime: Double = 0
+    package var currentValue: M44
+    package var velocity: [Float]
+    package var initialized: Bool = false
 
-    public init(
-        keyPath: AnimationKeyPath = .transform,
+    package init(
+        keyPath: RenderAnimationKeyPath = .transform,
         fromValue: M44,
         toValue: M44,
         mass: Float = 1,
@@ -403,7 +409,8 @@ public struct SpringTransformAnimation: Equatable, Sendable {
             return AnimationResult(value: .transform(currentValue), done: false)
         }
 
-        let startS = previousPresentTimeS > beginTime
+        let startS =
+            previousPresentTimeS > beginTime
             ? previousPresentTimeS
             : beginTime
         let dt = Float(min(max(0, presentTimeS - startS), 0.05))
@@ -429,23 +436,21 @@ public struct SpringTransformAnimation: Equatable, Sendable {
                 let decay = expf(-w0 * zeta * dt)
                 let cosine = cosf(wd * dt)
                 let sine = sinf(wd * dt)
-                newDisplacement = decay * (
-                    displacement * cosine +
-                    ((oldVelocity + w0 * zeta * displacement) / wd) * sine
-                )
-                newVelocity = decay * (
-                    oldVelocity * cosine -
-                    ((oldVelocity * w0 * zeta + displacement * w0 * w0) / wd) * sine
-                )
+                newDisplacement =
+                    decay
+                    * (displacement * cosine + ((oldVelocity + w0 * zeta * displacement) / wd)
+                        * sine)
+                newVelocity =
+                    decay
+                    * (oldVelocity * cosine
+                        - ((oldVelocity * w0 * zeta + displacement * w0 * w0) / wd) * sine)
             }
             next[index] = newDisplacement + toValue.m[index]
             velocity[index] = newVelocity
             let travel = abs(toValue.m[index] - fromValue.m[index])
             let threshold = max(0.0001, travel * 0.005)
             allSettled =
-                allSettled &&
-                abs(newDisplacement) < threshold &&
-                abs(newVelocity) < threshold
+                allSettled && abs(newDisplacement) < threshold && abs(newVelocity) < threshold
         }
 
         currentValue = allSettled ? toValue : M44(m: next)
@@ -459,21 +464,21 @@ public struct SpringTransformAnimation: Equatable, Sendable {
 /// Compound-frame counterpart of `SpringAnimation`: each edge runs an
 /// independent oscillator with shared spring parameters and a shared settle
 /// decision. Mirrors `animation.SpringFrameAnimation`.
-public struct SpringFrameAnimation: Equatable, Sendable {
-    public var keyPath: AnimationKeyPath
-    public var fromValue: Frame
-    public var toValue: Frame
-    public var mass: Float = 1.0
-    public var stiffness: Float = 784.0
-    public var damping: Float = 56.0
-    public var initialVelocity: Frame = Frame(left: 0, top: 0, right: 0, bottom: 0)
-    public var beginTime: Double = 0
-    public var currentValueFrame: Frame = Frame(left: 0, top: 0, right: 0, bottom: 0)
-    public var velocity: Frame = Frame(left: 0, top: 0, right: 0, bottom: 0)
-    public var initialized: Bool = false
+package struct SpringFrameAnimation: Equatable, Sendable {
+    package var keyPath: RenderAnimationKeyPath
+    package var fromValue: Frame
+    package var toValue: Frame
+    package var mass: Float = 1.0
+    package var stiffness: Float = 784.0
+    package var damping: Float = 56.0
+    package var initialVelocity: Frame = Frame(left: 0, top: 0, right: 0, bottom: 0)
+    package var beginTime: Double = 0
+    package var currentValueFrame: Frame = Frame(left: 0, top: 0, right: 0, bottom: 0)
+    package var velocity: Frame = Frame(left: 0, top: 0, right: 0, bottom: 0)
+    package var initialized: Bool = false
 
-    public init(
-        keyPath: AnimationKeyPath, fromValue: Frame, toValue: Frame,
+    package init(
+        keyPath: RenderAnimationKeyPath, fromValue: Frame, toValue: Frame,
         mass: Float = 1.0, stiffness: Float = 784.0, damping: Float = 56.0,
         initialVelocity: Frame = Frame(left: 0, top: 0, right: 0, bottom: 0),
         beginTime: Double = 0
@@ -488,14 +493,17 @@ public struct SpringFrameAnimation: Equatable, Sendable {
         self.beginTime = beginTime
     }
 
-    static func stepEdge(_ x: Float, _ v: Float, _ w0: Float, _ zeta: Float, _ dtF: Float) -> (x: Float, v: Float) {
+    static func stepEdge(_ x: Float, _ v: Float, _ w0: Float, _ zeta: Float, _ dtF: Float) -> (
+        x: Float, v: Float
+    ) {
         if zeta >= 1.0 {
             let expTerm = expf(-w0 * zeta * dtF)
             let c1 = x
             let c2 = v + w0 * zeta * x
             return (
                 x: (c1 + c2 * dtF) * expTerm,
-                v: (c2 - w0 * zeta * (c1 + c2 * dtF)) * expTerm)
+                v: (c2 - w0 * zeta * (c1 + c2 * dtF)) * expTerm
+            )
         } else {
             let wd = w0 * (1.0 - zeta * zeta).squareRoot()
             let expTerm = expf(-w0 * zeta * dtF)
@@ -503,11 +511,12 @@ public struct SpringFrameAnimation: Equatable, Sendable {
             let sinTerm = sinf(wd * dtF)
             return (
                 x: expTerm * (x * cosTerm + ((v + w0 * zeta * x) / wd) * sinTerm),
-                v: expTerm * ((v * cosTerm) - ((v * w0 * zeta + x * w0 * w0) / wd) * sinTerm))
+                v: expTerm * ((v * cosTerm) - ((v * w0 * zeta + x * w0 * w0) / wd) * sinTerm)
+            )
         }
     }
 
-    public mutating func step(_ dt: Double) -> AnimationResult {
+    package mutating func step(_ dt: Double) -> AnimationResult {
         if !initialized {
             currentValueFrame = fromValue
             velocity = initialVelocity
@@ -520,8 +529,10 @@ public struct SpringFrameAnimation: Equatable, Sendable {
 
         let sl = Self.stepEdge(currentValueFrame.left - toValue.left, velocity.left, w0, zeta, dtF)
         let st = Self.stepEdge(currentValueFrame.top - toValue.top, velocity.top, w0, zeta, dtF)
-        let sr = Self.stepEdge(currentValueFrame.right - toValue.right, velocity.right, w0, zeta, dtF)
-        let sb = Self.stepEdge(currentValueFrame.bottom - toValue.bottom, velocity.bottom, w0, zeta, dtF)
+        let sr = Self.stepEdge(
+            currentValueFrame.right - toValue.right, velocity.right, w0, zeta, dtF)
+        let sb = Self.stepEdge(
+            currentValueFrame.bottom - toValue.bottom, velocity.bottom, w0, zeta, dtF)
 
         currentValueFrame = Frame(
             left: sl.x + toValue.left, top: st.x + toValue.top,
@@ -536,8 +547,9 @@ public struct SpringFrameAnimation: Equatable, Sendable {
         let threshold = max(0.5, maxTravel * 0.005)
 
         let settled =
-            abs(sl.x) < threshold && abs(st.x) < threshold && abs(sr.x) < threshold && abs(sb.x) < threshold &&
-            abs(sl.v) < threshold && abs(st.v) < threshold && abs(sr.v) < threshold && abs(sb.v) < threshold
+            abs(sl.x) < threshold && abs(st.x) < threshold && abs(sr.x) < threshold
+            && abs(sb.x) < threshold && abs(sl.v) < threshold && abs(st.v) < threshold
+            && abs(sr.v) < threshold && abs(sb.v) < threshold
 
         if settled {
             currentValueFrame = toValue
@@ -546,7 +558,9 @@ public struct SpringFrameAnimation: Equatable, Sendable {
         return AnimationResult(value: .frame(currentValueFrame), done: settled)
     }
 
-    mutating func evaluateAt(_ presentTimeS: Double, _ previousPresentTimeS: Double) -> AnimationResult {
+    mutating func evaluateAt(_ presentTimeS: Double, _ previousPresentTimeS: Double)
+        -> AnimationResult
+    {
         if !initialized {
             currentValueFrame = fromValue
             velocity = initialVelocity
@@ -568,7 +582,7 @@ public struct SpringFrameAnimation: Equatable, Sendable {
 // MARK: - Animation union
 
 /// One of the four animation variants. Mirrors `animation.Animation`.
-public enum Animation: Equatable, Sendable {
+package enum Animation: Equatable, Sendable {
     case basic(BasicAnimation)
     case spring(SpringAnimation)
     case basicFrame(BasicFrameAnimation)
@@ -576,7 +590,7 @@ public enum Animation: Equatable, Sendable {
     case basicTransform(BasicTransformAnimation)
     case springTransform(SpringTransformAnimation)
 
-    public var keyPath: AnimationKeyPath {
+    package var keyPath: RenderAnimationKeyPath {
         switch self {
         case .basic(let a): return a.keyPath
         case .spring(let a): return a.keyPath
@@ -587,18 +601,30 @@ public enum Animation: Equatable, Sendable {
         }
     }
 
-    public mutating func evaluateAt(_ presentTimeS: Double, _ previousPresentTimeS: Double) -> AnimationResult {
+    package mutating func evaluateAt(_ presentTimeS: Double, _ previousPresentTimeS: Double)
+        -> AnimationResult
+    {
         switch self {
         case .basic(var a):
-            let r = a.evaluateAt(presentTimeS); self = .basic(a); return r
+            let r = a.evaluateAt(presentTimeS)
+            self = .basic(a)
+            return r
         case .basicFrame(var a):
-            let r = a.evaluateAt(presentTimeS); self = .basicFrame(a); return r
+            let r = a.evaluateAt(presentTimeS)
+            self = .basicFrame(a)
+            return r
         case .spring(var a):
-            let r = a.evaluateAt(presentTimeS, previousPresentTimeS); self = .spring(a); return r
+            let r = a.evaluateAt(presentTimeS, previousPresentTimeS)
+            self = .spring(a)
+            return r
         case .springFrame(var a):
-            let r = a.evaluateAt(presentTimeS, previousPresentTimeS); self = .springFrame(a); return r
+            let r = a.evaluateAt(presentTimeS, previousPresentTimeS)
+            self = .springFrame(a)
+            return r
         case .basicTransform(var a):
-            let r = a.evaluateAt(presentTimeS); self = .basicTransform(a); return r
+            let r = a.evaluateAt(presentTimeS)
+            self = .basicTransform(a)
+            return r
         case .springTransform(var a):
             let r = a.evaluateAt(presentTimeS, previousPresentTimeS)
             self = .springTransform(a)
@@ -606,12 +632,20 @@ public enum Animation: Equatable, Sendable {
         }
     }
 
-    public mutating func setBeginTime(_ beginTimeS: Double) {
+    package mutating func setBeginTime(_ beginTimeS: Double) {
         switch self {
-        case .basic(var a): a.beginTime = beginTimeS; self = .basic(a)
-        case .spring(var a): a.beginTime = beginTimeS; self = .spring(a)
-        case .basicFrame(var a): a.beginTime = beginTimeS; self = .basicFrame(a)
-        case .springFrame(var a): a.beginTime = beginTimeS; self = .springFrame(a)
+        case .basic(var a):
+            a.beginTime = beginTimeS
+            self = .basic(a)
+        case .spring(var a):
+            a.beginTime = beginTimeS
+            self = .spring(a)
+        case .basicFrame(var a):
+            a.beginTime = beginTimeS
+            self = .basicFrame(a)
+        case .springFrame(var a):
+            a.beginTime = beginTimeS
+            self = .springFrame(a)
         case .basicTransform(var a):
             a.beginTime = beginTimeS
             self = .basicTransform(a)
@@ -661,19 +695,19 @@ public enum Animation: Equatable, Sendable {
 
 /// One in-flight animation bound to a layer slot. Mirrors
 /// `animation.AnimationRecord`.
-public struct AnimationRecord: Equatable, Sendable {
-    public var id: AnimationID
-    public var layerId: UInt64
-    public var keyPath: AnimationKeyPath
-    public var slotKey: AnimationSlotKey
-    public var completionToken: CompletionToken
-    public var transactionId: UInt64
+package struct AnimationRecord: Equatable, Sendable {
+    package var id: AnimationID
+    package var layerId: UInt64
+    package var keyPath: RenderAnimationKeyPath
+    package var slotKey: AnimationSlotKey
+    package var completionToken: CompletionToken
+    package var transactionId: UInt64
     /// A zero presentation timestamp defers the animation start until the
     /// renderer's first predicted-presentation tick.
-    public var beginTimePending: Bool
-    public var animation: Animation
+    package var beginTimePending: Bool
+    package var animation: Animation
 
-    public init(
+    package init(
         id: AnimationID, layerId: UInt64, animation: Animation,
         completionToken: CompletionToken = .none, transactionId: UInt64 = 0,
         slotKey: AnimationSlotKey? = nil,
@@ -692,7 +726,7 @@ public struct AnimationRecord: Equatable, Sendable {
 }
 
 /// Why an animation stopped. Mirrors `animation.AnimationStopReason`.
-public enum AnimationStopReason: Equatable, Sendable {
+package enum AnimationStopReason: Equatable, Sendable {
     case completed
     case replaced
     case removed
@@ -703,37 +737,39 @@ public enum AnimationStopReason: Equatable, Sendable {
 
 /// Lifecycle event emitted by the engine for transaction-completion matching.
 /// Mirrors `animation.AnimationEvent`.
-public enum AnimationEvent: Equatable, Sendable {
-    case started(animationId: AnimationID, layerId: UInt64, keyPath: AnimationKeyPath,
-                 completionToken: CompletionToken, transactionId: UInt64)
-    case stopped(animationId: AnimationID, layerId: UInt64, keyPath: AnimationKeyPath,
-                 completionToken: CompletionToken, transactionId: UInt64,
-                 finished: Bool, reason: AnimationStopReason)
+package enum AnimationEvent: Equatable, Sendable {
+    case started(
+        animationId: AnimationID, layerId: UInt64, keyPath: RenderAnimationKeyPath,
+        completionToken: CompletionToken, transactionId: UInt64)
+    case stopped(
+        animationId: AnimationID, layerId: UInt64, keyPath: RenderAnimationKeyPath,
+        completionToken: CompletionToken, transactionId: UInt64,
+        finished: Bool, reason: AnimationStopReason)
 }
 
 /// Renderer-side request to remove one property animation.
-public struct AnimationRemoval: Equatable, Sendable {
-    public var layerId: UInt64
-    public var keyPath: AnimationKeyPath
+package struct AnimationRemoval: Equatable, Sendable {
+    package var layerId: UInt64
+    package var keyPath: RenderAnimationKeyPath
 
-    public init(layerId: UInt64, keyPath: AnimationKeyPath) {
+    package init(layerId: UInt64, keyPath: RenderAnimationKeyPath) {
         self.layerId = layerId
         self.keyPath = keyPath
     }
 }
 
-public enum PresentationCompletionOutcome: Equatable, Sendable {
+package enum PresentationCompletionOutcome: Equatable, Sendable {
     case completed
     case cancelled
     case superseded
     case failed
 }
 
-public struct PresentationCompletionEvent: Equatable, Sendable {
-    public var token: UInt64
-    public var outcome: PresentationCompletionOutcome
+package struct PresentationCompletionEvent: Equatable, Sendable {
+    package var token: UInt64
+    package var outcome: PresentationCompletionOutcome
 
-    public init(token: UInt64, outcome: PresentationCompletionOutcome) {
+    package init(token: UInt64, outcome: PresentationCompletionOutcome) {
         self.token = token
         self.outcome = outcome
     }
@@ -748,24 +784,27 @@ extension Layer {
         for i in animations.indices where animations[i].slotKey == record.slotKey {
             var next = record
             copyVelocity(from: animations[i].animation, into: &next.animation)
-            events.append(.stopped(
-                animationId: animations[i].id, layerId: animations[i].layerId,
-                keyPath: animations[i].keyPath, completionToken: animations[i].completionToken,
-                transactionId: animations[i].transactionId, finished: false, reason: .replaced))
+            events.append(
+                .stopped(
+                    animationId: animations[i].id, layerId: animations[i].layerId,
+                    keyPath: animations[i].keyPath, completionToken: animations[i].completionToken,
+                    transactionId: animations[i].transactionId, finished: false, reason: .replaced))
             animations[i] = next
-            events.append(.started(
-                animationId: next.id, layerId: next.layerId, keyPath: next.keyPath,
-                completionToken: next.completionToken, transactionId: next.transactionId))
+            events.append(
+                .started(
+                    animationId: next.id, layerId: next.layerId, keyPath: next.keyPath,
+                    completionToken: next.completionToken, transactionId: next.transactionId))
             return
         }
         animations.append(record)
-        events.append(.started(
-            animationId: record.id, layerId: record.layerId, keyPath: record.keyPath,
-            completionToken: record.completionToken, transactionId: record.transactionId))
+        events.append(
+            .started(
+                animationId: record.id, layerId: record.layerId, keyPath: record.keyPath,
+                completionToken: record.completionToken, transactionId: record.transactionId))
     }
 
     mutating func removeAnimation(
-        for keyPath: AnimationKeyPath,
+        for keyPath: RenderAnimationKeyPath,
         reason: AnimationStopReason = .removed,
         events: inout [AnimationEvent]
     ) {
@@ -776,15 +815,16 @@ extension Layer {
             guard animations[index].slotKey == keyPath else { continue }
             let record = animations.remove(at: index)
             removedTransform = removedTransform || record.keyPath.isTransformComponent
-            events.append(.stopped(
-                animationId: record.id,
-                layerId: record.layerId,
-                keyPath: record.keyPath,
-                completionToken: record.completionToken,
-                transactionId: record.transactionId,
-                finished: false,
-                reason: reason
-            ))
+            events.append(
+                .stopped(
+                    animationId: record.id,
+                    layerId: record.layerId,
+                    keyPath: record.keyPath,
+                    completionToken: record.completionToken,
+                    transactionId: record.transactionId,
+                    finished: false,
+                    reason: reason
+                ))
         }
         if removedTransform {
             rebuildTransformOverride()
@@ -834,10 +874,12 @@ extension Layer {
                 }
                 animations.swapAt(i, animations.count - 1)
                 animations.removeLast()
-                events.append(.stopped(
-                    animationId: record.id, layerId: record.layerId, keyPath: record.keyPath,
-                    completionToken: record.completionToken, transactionId: record.transactionId,
-                    finished: true, reason: .completed))
+                events.append(
+                    .stopped(
+                        animationId: record.id, layerId: record.layerId, keyPath: record.keyPath,
+                        completionToken: record.completionToken,
+                        transactionId: record.transactionId,
+                        finished: true, reason: .completed))
             } else {
                 if isTransform {
                     transformTouched = true
@@ -855,7 +897,7 @@ extension Layer {
     /// Write an active animation's value into the presentation override.
     /// Mirrors `writeAnimatedField`.
     private mutating func writeAnimatedField(
-        _ keyPath: AnimationKeyPath, _ value: AnimationValue
+        _ keyPath: RenderAnimationKeyPath, _ value: AnimationValue
     ) {
         switch keyPath {
         case .positionX:
@@ -919,8 +961,8 @@ extension Layer {
             ov.cornerRadiusUniform = value.scalarOrZero
             presentation.override_ = ov
         case .transformScaleX, .transformScaleY, .transformScaleZ,
-             .transformRotationX, .transformRotationY, .transformRotationZ,
-             .transformTranslationX, .transformTranslationY, .transformTranslationZ:
+            .transformRotationX, .transformRotationY, .transformRotationZ,
+            .transformTranslationX, .transformTranslationY, .transformTranslationZ:
             break  // handled by rebuildTransformOverride
         }
     }
@@ -928,7 +970,7 @@ extension Layer {
     /// Commit an animation's final value to the model on completion. Mirrors
     /// `commitModelField`.
     private mutating func commitModelField(
-        _ keyPath: AnimationKeyPath, _ value: AnimationValue
+        _ keyPath: RenderAnimationKeyPath, _ value: AnimationValue
     ) {
         switch keyPath {
         case .positionX: model.properties.position.x = value.scalarOrZero
@@ -965,15 +1007,15 @@ extension Layer {
             model.visualRevision &+= 1
             model.compositeRevision &+= 1
         case .transformScaleX, .transformScaleY, .transformScaleZ,
-             .transformRotationX, .transformRotationY, .transformRotationZ,
-             .transformTranslationX, .transformTranslationY, .transformTranslationZ:
+            .transformRotationX, .transformRotationY, .transformRotationZ,
+            .transformTranslationX, .transformTranslationY, .transformTranslationZ:
             break
         }
     }
 
     /// Clear one override field on completion, collapsing the override to nil
     /// when fully empty. Mirrors `clearOverrideField`.
-    private mutating func clearOverrideField(_ keyPath: AnimationKeyPath) {
+    private mutating func clearOverrideField(_ keyPath: RenderAnimationKeyPath) {
         guard var ov = presentation.override_ else { return }
         switch keyPath {
         case .positionX, .positionY: ov.position = nil
@@ -987,13 +1029,13 @@ extension Layer {
             ov.bounds = nil
         case .cornerRadius: ov.cornerRadiusUniform = nil
         case .transformScaleX, .transformScaleY, .transformScaleZ,
-             .transformRotationX, .transformRotationY, .transformRotationZ,
-             .transformTranslationX, .transformTranslationY, .transformTranslationZ:
+            .transformRotationX, .transformRotationY, .transformRotationZ,
+            .transformTranslationX, .transformTranslationY, .transformTranslationZ:
             break
         }
-        if ov.transform == nil && ov.opacity == nil && ov.position == nil &&
-            ov.bounds == nil && ov.anchorPoint == nil && ov.scrollOffset == nil &&
-            ov.cornerRadiusUniform == nil {
+        if ov.transform == nil && ov.opacity == nil && ov.position == nil && ov.bounds == nil
+            && ov.anchorPoint == nil && ov.scrollOffset == nil && ov.cornerRadiusUniform == nil
+        {
             presentation.override_ = nil
         } else {
             presentation.override_ = ov
@@ -1003,24 +1045,48 @@ extension Layer {
     /// Rebuild the combined transform override from all transform-component
     /// animations on this layer. Mirrors `rebuildTransformOverride`.
     private mutating func rebuildTransformOverride() {
-        var tx: Float = 0, ty: Float = 0, tz: Float = 0
-        var sx: Float = 1, sy: Float = 1, sz: Float = 1
-        var rx: Float = 0, ry: Float = 0, rz: Float = 0
+        var tx: Float = 0
+        var ty: Float = 0
+        var tz: Float = 0
+        var sx: Float = 1
+        var sy: Float = 1
+        var sz: Float = 1
+        var rx: Float = 0
+        var ry: Float = 0
+        var rz: Float = 0
         var hasTransform = false
 
         for record in animations {
             let av = record.animation.currentValue
             guard case .scalar(let value) = av else { continue }
             switch record.keyPath {
-            case .transformScaleX: sx = value; hasTransform = true
-            case .transformScaleY: sy = value; hasTransform = true
-            case .transformScaleZ: sz = value; hasTransform = true
-            case .transformRotationX: rx = value; hasTransform = true
-            case .transformRotationY: ry = value; hasTransform = true
-            case .transformRotationZ: rz = value; hasTransform = true
-            case .transformTranslationX: tx = value; hasTransform = true
-            case .transformTranslationY: ty = value; hasTransform = true
-            case .transformTranslationZ: tz = value; hasTransform = true
+            case .transformScaleX:
+                sx = value
+                hasTransform = true
+            case .transformScaleY:
+                sy = value
+                hasTransform = true
+            case .transformScaleZ:
+                sz = value
+                hasTransform = true
+            case .transformRotationX:
+                rx = value
+                hasTransform = true
+            case .transformRotationY:
+                ry = value
+                hasTransform = true
+            case .transformRotationZ:
+                rz = value
+                hasTransform = true
+            case .transformTranslationX:
+                tx = value
+                hasTransform = true
+            case .transformTranslationY:
+                ty = value
+                hasTransform = true
+            case .transformTranslationZ:
+                tz = value
+                hasTransform = true
             default: break
             }
         }
@@ -1036,9 +1102,9 @@ extension Layer {
             return
         }
         ov.transform = nil
-        if ov.opacity == nil && ov.position == nil && ov.bounds == nil &&
-            ov.anchorPoint == nil && ov.scrollOffset == nil &&
-            ov.cornerRadiusUniform == nil {
+        if ov.opacity == nil && ov.position == nil && ov.bounds == nil && ov.anchorPoint == nil
+            && ov.scrollOffset == nil && ov.cornerRadiusUniform == nil
+        {
             presentation.override_ = nil
         } else {
             presentation.override_ = ov

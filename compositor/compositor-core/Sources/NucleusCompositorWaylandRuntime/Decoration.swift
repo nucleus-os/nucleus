@@ -5,10 +5,10 @@
 // xdg_toplevel/xdg_surface configure cycle so the client applies the decoration
 // choice atomically with the window state.
 
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
 import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 /// mode enum: client_side=1, server_side=2.
 @MainActor
@@ -56,8 +56,7 @@ extension XdgDecorationManager: ZxdgDecorationManagerV1Requests {
 @safe final class XdgToplevelDecoration {
     private unowned let manager: XdgDecorationManager
     private weak var toplevel: XdgToplevel?
-    private let resource:
-        WaylandResourceHandle<ZxdgToplevelDecorationV1Server>
+    private let resource: WaylandResourceHandle<ZxdgToplevelDecorationV1Server>
     private var clientRequested: UInt32?
     private var lastSent: UInt32?
 
@@ -74,7 +73,8 @@ extension XdgDecorationManager: ZxdgDecorationManagerV1Requests {
     /// Resolve the effective mode and emit configure(mode) if it changed. Called
     /// from XdgSurface immediately before the rest of the configure cycle.
     func sendConfigureIfNeeded() {
-        let mode = manager.delegate?.resolveDecorationMode(for: toplevel, clientRequested: clientRequested)
+        let mode =
+            manager.delegate?.resolveDecorationMode(for: toplevel, clientRequested: clientRequested)
             ?? (clientRequested ?? 2)
         guard mode != lastSent else { return }
         lastSent = mode
@@ -92,7 +92,10 @@ extension XdgDecorationManager: ZxdgDecorationManagerV1Requests {
 }
 
 extension XdgToplevelDecoration: ZxdgToplevelDecorationV1Requests {
-    func setMode(_ request: WaylandRequest<ZxdgToplevelDecorationV1Server>, mode: ZxdgToplevelDecorationV1Mode) {
+    func setMode(
+        _ request: WaylandRequest<ZxdgToplevelDecorationV1Server>,
+        mode: ZxdgToplevelDecorationV1Mode
+    ) {
         guard mode == .clientSide || mode == .serverSide else {
             request.postError(.unconfiguredBuffer, message: "invalid decoration mode")
             return

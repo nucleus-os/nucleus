@@ -1,20 +1,19 @@
 import NucleusAppHostBundle
-import NucleusUI
-import NucleusTextBackend
-import NucleusUIEmbedder
 import NucleusLayers
-import NucleusRenderHost
-@_spi(NucleusWindowClientImplementation)
-import NucleusWindowClientWayland
-import NucleusWindowClientContracts
-import NucleusWindowClientPasteboard
-import NucleusWindowClientInput
-import NucleusShellAuth
-import NucleusLinuxDBus
 import NucleusLinuxAccessibility
-import NucleusShellServices
+import NucleusLinuxDBus
 import NucleusLinuxEnvironment
 import NucleusLinuxReactor
+import NucleusRenderHost
+import NucleusShellAuth
+import NucleusShellServices
+import NucleusTextBackend
+import NucleusUI
+import NucleusUIEmbedder
+import NucleusWindowClientContracts
+import NucleusWindowClientInput
+import NucleusWindowClientPasteboard
+package import NucleusWindowClientWayland
 
 @MainActor
 extension ShellHost {
@@ -29,7 +28,7 @@ extension ShellHost {
                 runtimeHost: hostBundle.layersHost,
                 requestFrame: { [weak self] in
                     self?.requestRender(nativeSceneChanged: true)
-            })
+                })
             let services = UIHostServices(
                 textSystem: textSystem,
                 pasteboard: Pasteboard(
@@ -152,7 +151,7 @@ extension ShellHost {
         let pasteboard = nativePublicationContext.semanticContext
             .services.pasteboard
         guard let seat,
-              let adapter = NucleusDesktopPasteboardAdapter(
+            let adapter = NucleusDesktopPasteboardAdapter(
                 client: client,
                 seat: seat,
                 pollSetDidChange: { [weak reactor] in reactor?.wake() },

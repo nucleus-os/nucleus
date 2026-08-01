@@ -3,6 +3,14 @@ import Foundation
 import SystemPackage
 
 extension ColliderRuntime {
+    public func validateSwiftSourceWorkspace(
+        _ validation: SwiftSourceWorkspaceValidation
+    ) async throws {
+        try await validateSwiftSourceWorkspace(
+            validation,
+            stage: TaskID(rawValue: "toolchain.source-preflight"))
+    }
+
     func validateSwiftSourceWorkspace(
         _ validation: SwiftSourceWorkspaceValidation,
         stage: TaskID

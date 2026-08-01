@@ -16,41 +16,39 @@
 /// Owns the authoritative `LayerTree` and the present-demand bookkeeping the
 /// frame loop reads.
 @MainActor
-public final class RetainedTreeStore {
+package final class RetainedTreeStore {
     /// The authoritative scene. Read by the frame-plan walk each frame.
-    public private(set) var tree = LayerTree()
+    package private(set) var tree = LayerTree()
 
     /// Monotonic counter bumped on every non-empty ingest. The frame loop pairs
     /// it with the last-presented revision to detect un-presented work without
     /// re-scanning the tree.
-    public private(set) var revision: UInt64 = 0
+    package private(set) var revision: UInt64 = 0
 
     /// True when committed work has not yet been presented. Set by any non-empty
     /// ingest, cleared by `markPresented`. Drives the render-demand `frameDue`
     /// term.
-    public private(set) var presentDirty = false
+    package private(set) var presentDirty = false
 
     /// The present time the last `tick` advanced to (seconds). Spring animations
     /// integrate over `[previous, present]`, so the first tick after a record is
     /// added starts from its begin time.
-    public private(set) var previousPresentTimeS: Double = 0
+    package private(set) var previousPresentTimeS: Double = 0
 
     /// Accumulated animation lifecycle events (started on add, stopped on tick),
     /// for the producer feed's transaction-completion matching. Drained by
     /// `drainAnimationEvents`.
-    public private(set) var animationEvents: [AnimationEvent] = []
+    package private(set) var animationEvents: [AnimationEvent] = []
     private var activeAnimationsByCompletionToken: [UInt64: Int] = [:]
-    private var terminalCompletionsAwaitingPresentation: [
-        UInt64: PresentationCompletionOutcome
-    ] = [:]
-    private var completionObservers: [
-        UInt64: @MainActor (PresentationCompletionEvent) -> Void
-    ] = [:]
+    private var terminalCompletionsAwaitingPresentation: [UInt64: PresentationCompletionOutcome] =
+        [:]
+    private var completionObservers: [UInt64: @MainActor (PresentationCompletionEvent) -> Void] =
+        [:]
     private var nextCompletionObserverID: UInt64 = 1
     private var nextImplicitAnimationID: UInt64 = 1
-    public let resourceHost: SwiftResourceHost
+    package let resourceHost: SwiftResourceHost
 
-    public init(
+    package init(
         resourceHost: SwiftResourceHost
     ) {
         self.resourceHost = resourceHost
@@ -60,7 +58,7 @@ public final class RetainedTreeStore {
     /// transaction is a no-op — it neither bumps the revision nor dirties the
     /// present state, matching the queue's coalescing contract.
     @discardableResult
-    public func ingest(
+    package func ingest(
         _ incoming: Transaction
     ) -> Result<Void, TransactionApplier.ApplyError> {
         var txn = incoming
@@ -70,15 +68,16 @@ public final class RetainedTreeStore {
         for removal in txn.removed {
             guard let layer = tree.layers[removal.nodeId] else { continue }
             for record in layer.animations {
-                lifecycleEvents.append(.stopped(
-                    animationId: record.id,
-                    layerId: record.layerId,
-                    keyPath: record.keyPath,
-                    completionToken: record.completionToken,
-                    transactionId: record.transactionId,
-                    finished: false,
-                    reason: .layerRemoved
-                ))
+                lifecycleEvents.append(
+                    .stopped(
+                        animationId: record.id,
+                        layerId: record.layerId,
+                        keyPath: record.keyPath,
+                        completionToken: record.completionToken,
+                        transactionId: record.transactionId,
+                        finished: false,
+                        reason: .layerRemoved
+                    ))
             }
         }
         let result = TransactionApplier.apply(txn, to: &tree)
@@ -111,9 +110,9 @@ public final class RetainedTreeStore {
         animationEvents.append(contentsOf: lifecycleEvents)
         processAnimationLifecycle(lifecycleEvents)
         if txn.completionToken != 0,
-           !txn.animationsAdded.contains(where: {
-               $0.completionToken.raw == txn.completionToken
-           })
+            !txn.animationsAdded.contains(where: {
+                $0.completionToken.raw == txn.completionToken
+            })
         {
             mergeTerminalOutcome(.completed, for: txn.completionToken)
         }
@@ -125,12 +124,12 @@ public final class RetainedTreeStore {
     /// The current authoritative tree. Handed to `PresentationWalk.buildFramePlan`
     /// each frame; value semantics give the walk a stable snapshot even if a
     /// commit lands mid-frame.
-    public func snapshot() -> LayerTree { tree }
+    package func snapshot() -> LayerTree { tree }
 
     /// Producer-authored final value for an animatable property.
-    public func modelValue(
+    package func modelValue(
         layerID: UInt64,
-        keyPath: AnimationKeyPath
+        keyPath: RenderAnimationKeyPath
     ) -> AnimationValue? {
         guard let layer = tree.layers[layerID] else { return nil }
         return value(for: keyPath, on: layer, usesPresentation: false)
@@ -138,9 +137,9 @@ public final class RetainedTreeStore {
 
     /// Value currently displayed by the renderer, including any in-flight
     /// presentation override.
-    public func presentationValue(
+    package func presentationValue(
         layerID: UInt64,
-        keyPath: AnimationKeyPath
+        keyPath: RenderAnimationKeyPath
     ) -> AnimationValue? {
         guard let layer = tree.layers[layerID] else { return nil }
         return value(for: keyPath, on: layer, usesPresentation: true)
@@ -149,11 +148,11 @@ public final class RetainedTreeStore {
     /// The ids of every layer currently in the tree (across all contexts) — the
     /// liveness set the renderer reclaims per-layer GPU caches against when a
     /// layer is removed.
-    public var liveLayerIDs: Set<UInt64> { Set(tree.layers.keys) }
+    package var liveLayerIDs: Set<UInt64> { Set(tree.layers.keys) }
 
     /// True when any retained node carries unconsumed invalidation. The aggregate
     /// the render-demand predicate reads alongside `presentDirty`.
-    public var hasPendingDamage: Bool {
+    package var hasPendingDamage: Bool {
         for (_, node) in tree.layers where node.damage.flags.any() { return true }
         return false
     }
@@ -161,7 +160,7 @@ public final class RetainedTreeStore {
     /// True when any retained node has an in-flight animation. Continuous
     /// animation demand drives the frame loop independently of committed-content
     /// damage. Mirrors `RenderServer.hasActiveAnimations`.
-    public var hasActiveAnimations: Bool {
+    package var hasActiveAnimations: Bool {
         for (_, node) in tree.layers where !node.animations.isEmpty { return true }
         return false
     }
@@ -174,7 +173,7 @@ public final class RetainedTreeStore {
     /// animation is still running. Mirrors `Composition.tickAnimations` →
     /// `tickTreeToPresentTimeAndApplyWithSink`.
     @discardableResult
-    public func tick(presentTimeNs: UInt64) -> Bool {
+    package func tick(presentTimeNs: UInt64) -> Bool {
         let presentTimeS = Double(presentTimeNs) / 1_000_000_000.0
         let previous = previousPresentTimeS
         previousPresentTimeS = presentTimeS
@@ -205,7 +204,9 @@ public final class RetainedTreeStore {
     /// feed's entry for in-flight animations; also dirties the node. No-op when
     /// the layer is absent. Mirrors `addAnimationToLayer` +
     /// `seedAnimationStartValueOnLayer`.
-    public func addAnimation(layerId: UInt64, _ record: AnimationRecord, seedStartValue: Bool = true) {
+    package func addAnimation(
+        layerId: UInt64, _ record: AnimationRecord, seedStartValue: Bool = true
+    ) {
         guard let index = tree.layers.index(forKey: layerId) else { return }
         var node = MutableRef(&tree.layers.values[index])
         let firstNewEvent = animationEvents.count
@@ -218,14 +219,14 @@ public final class RetainedTreeStore {
 
     /// Drain the accumulated animation lifecycle events (clearing the buffer).
     /// The producer feed consumes these for transaction-completion matching.
-    public func drainAnimationEvents() -> [AnimationEvent] {
+    package func drainAnimationEvents() -> [AnimationEvent] {
         let events = animationEvents
         animationEvents.removeAll(keepingCapacity: true)
         return events
     }
 
     @discardableResult
-    public func addCompletionObserver(
+    package func addCompletionObserver(
         _ observer: @escaping @MainActor (PresentationCompletionEvent) -> Void
     ) -> UInt64 {
         let id = nextCompletionObserverID
@@ -235,14 +236,14 @@ public final class RetainedTreeStore {
         return id
     }
 
-    public func removeCompletionObserver(_ id: UInt64) {
+    package func removeCompletionObserver(_ id: UInt64) {
         completionObservers[id] = nil
     }
 
     /// Acknowledge that a frame carrying the committed work has presented: clear
     /// the present-dirty flag and every node's per-frame damage so the next
     /// frame's demand reflects only work committed after this point.
-    public func markPresented() {
+    package func markPresented() {
         presentDirty = false
         // As in `tick`, snapshot indices before taking exclusive references and
         // avoid re-hashing every retained layer just to clear frame-local state.
@@ -347,11 +348,11 @@ public final class RetainedTreeStore {
             guard let layer = tree.layers[update.nodeId] else { continue }
 
             if update.usesDefaultFrameAction,
-               let target = update.frame,
-               let parameters = table.frameFor(layer.role),
-               !transaction.animationsAdded.contains(where: {
-                   $0.layerId == update.nodeId && $0.slotKey == .frame
-               })
+                let target = update.frame,
+                let parameters = table.frameFor(layer.role),
+                !transaction.animationsAdded.contains(where: {
+                    $0.layerId == update.nodeId && $0.slotKey == .frame
+                })
             {
                 let position = layer.effectivePosition()
                 let bounds = layer.effectiveBounds()
@@ -362,55 +363,59 @@ public final class RetainedTreeStore {
                     bottom: position.y + bounds.h
                 )
                 if from != target {
-                    records.append(AnimationRecord(
-                        id: allocateImplicitAnimationID(),
-                        layerId: update.nodeId,
-                        animation: .springFrame(SpringFrameAnimation(
-                            keyPath: .frame,
-                            fromValue: from,
-                            toValue: target,
-                            mass: parameters.mass,
-                            stiffness: parameters.stiffness,
-                            damping: parameters.damping,
-                            beginTime: transaction.animationBeginTimeSeconds
-                        )),
-                        completionToken: CompletionToken(
-                            raw: transaction.completionToken
-                        ),
-                        transactionId: transaction.revision,
-                        beginTimePending:
-                            transaction.animationBeginTimePending
-                    ))
+                    records.append(
+                        AnimationRecord(
+                            id: allocateImplicitAnimationID(),
+                            layerId: update.nodeId,
+                            animation: .springFrame(
+                                SpringFrameAnimation(
+                                    keyPath: .frame,
+                                    fromValue: from,
+                                    toValue: target,
+                                    mass: parameters.mass,
+                                    stiffness: parameters.stiffness,
+                                    damping: parameters.damping,
+                                    beginTime: transaction.animationBeginTimeSeconds
+                                )),
+                            completionToken: CompletionToken(
+                                raw: transaction.completionToken
+                            ),
+                            transactionId: transaction.revision,
+                            beginTimePending:
+                                transaction.animationBeginTimePending
+                        ))
                 }
             }
 
             if update.usesDefaultOpacityAction,
-               let target = update.opacity,
-               let parameters = table.opacityFor(layer.role),
-               !transaction.animationsAdded.contains(where: {
-                   $0.layerId == update.nodeId && $0.slotKey == .opacity
-               })
+                let target = update.opacity,
+                let parameters = table.opacityFor(layer.role),
+                !transaction.animationsAdded.contains(where: {
+                    $0.layerId == update.nodeId && $0.slotKey == .opacity
+                })
             {
                 let from = layer.effectiveOpacity()
                 if from != target {
-                    records.append(AnimationRecord(
-                        id: allocateImplicitAnimationID(),
-                        layerId: update.nodeId,
-                        animation: .basic(BasicAnimation(
-                            keyPath: .opacity,
-                            fromValue: from,
-                            toValue: target,
-                            duration: parameters.duration,
-                            timingFunction: parameters.timingFunction,
-                            beginTime: transaction.animationBeginTimeSeconds
-                        )),
-                        completionToken: CompletionToken(
-                            raw: transaction.completionToken
-                        ),
-                        transactionId: transaction.revision,
-                        beginTimePending:
-                            transaction.animationBeginTimePending
-                    ))
+                    records.append(
+                        AnimationRecord(
+                            id: allocateImplicitAnimationID(),
+                            layerId: update.nodeId,
+                            animation: .basic(
+                                BasicAnimation(
+                                    keyPath: .opacity,
+                                    fromValue: from,
+                                    toValue: target,
+                                    duration: parameters.duration,
+                                    timingFunction: parameters.timingFunction,
+                                    beginTime: transaction.animationBeginTimeSeconds
+                                )),
+                            completionToken: CompletionToken(
+                                raw: transaction.completionToken
+                            ),
+                            transactionId: transaction.revision,
+                            beginTimePending:
+                                transaction.animationBeginTimePending
+                        ))
                 }
             }
         }
@@ -429,20 +434,24 @@ public final class RetainedTreeStore {
     }
 
     private func value(
-        for keyPath: AnimationKeyPath,
+        for keyPath: RenderAnimationKeyPath,
         on layer: Layer,
         usesPresentation: Bool
     ) -> AnimationValue? {
-        let position = usesPresentation
+        let position =
+            usesPresentation
             ? layer.effectivePosition()
             : layer.model.properties.position
-        let bounds = usesPresentation
+        let bounds =
+            usesPresentation
             ? layer.effectiveBounds()
             : layer.model.properties.bounds
-        let anchor = usesPresentation
+        let anchor =
+            usesPresentation
             ? layer.effectiveAnchorPoint()
             : layer.model.properties.anchorPoint
-        let scroll = usesPresentation
+        let scroll =
+            usesPresentation
             ? layer.effectiveScrollOffset()
             : layer.model.properties.scrollOffset
         return switch keyPath {
@@ -473,16 +482,17 @@ public final class RetainedTreeStore {
         case .scrollOffsetX: .scalar(scroll.x)
         case .scrollOffsetY: .scalar(scroll.y)
         case .frame:
-            .frame(Frame(
-                left: position.x,
-                top: position.y,
-                right: position.x + bounds.w,
-                bottom: position.y + bounds.h
-            ))
+            .frame(
+                Frame(
+                    left: position.x,
+                    top: position.y,
+                    right: position.x + bounds.w,
+                    bottom: position.y + bounds.h
+                ))
         case .transformScaleX, .transformScaleY, .transformScaleZ,
-             .transformRotationX, .transformRotationY, .transformRotationZ,
-             .transformTranslationX, .transformTranslationY,
-             .transformTranslationZ:
+            .transformRotationX, .transformRotationY, .transformRotationZ,
+            .transformTranslationX, .transformTranslationY,
+            .transformTranslationZ:
             nil
         }
     }

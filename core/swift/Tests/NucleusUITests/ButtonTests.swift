@@ -1,6 +1,7 @@
 import NucleusUITestSupport
-@_spi(NucleusRenderServer) @testable import NucleusUI
 import Testing
+
+@testable import NucleusUI
 
 @MainActor
 @Suite(.uiContext) struct ButtonTests {

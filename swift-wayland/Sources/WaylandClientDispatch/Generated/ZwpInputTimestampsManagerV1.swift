@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for zwp_input_timestamps_manager_v1.
 
 import WaylandClientC
-public enum ZwpInputTimestampsManagerV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum ZwpInputTimestampsManagerV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_input_timestamps_manager_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == ZwpInputTimestampsManagerV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpInputTimestampsManagerV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zwp_input_timestamps_manager_v1_destroy(_proxy)
@@ -17,28 +18,46 @@ public extension WaylandProxy where Interface == ZwpInputTimestampsManagerV1Clie
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func getKeyboardTimestamps(keyboard: WaylandProxy<WlKeyboardClient>) throws(WaylandProxyError) -> WaylandProxy<ZwpInputTimestampsV1Client> {
+    package func getKeyboardTimestamps(keyboard: WaylandProxy<WlKeyboardClient>)
+        throws(WaylandProxyError) -> WaylandProxy<ZwpInputTimestampsV1Client>
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _keyboardProxy = try unsafe keyboard.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_zwp_input_timestamps_manager_v1_get_keyboard_timestamps(_proxy, _keyboardProxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_zwp_input_timestamps_manager_v1_get_keyboard_timestamps(
+                    _proxy, _keyboardProxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, ZwpInputTimestampsV1Client.self)
     }
-    func getPointerTimestamps(pointer: WaylandProxy<WlPointerClient>) throws(WaylandProxyError) -> WaylandProxy<ZwpInputTimestampsV1Client> {
+    package func getPointerTimestamps(pointer: WaylandProxy<WlPointerClient>)
+        throws(WaylandProxyError) -> WaylandProxy<ZwpInputTimestampsV1Client>
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _pointerProxy = try unsafe pointer.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_zwp_input_timestamps_manager_v1_get_pointer_timestamps(_proxy, _pointerProxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_zwp_input_timestamps_manager_v1_get_pointer_timestamps(
+                    _proxy, _pointerProxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, ZwpInputTimestampsV1Client.self)
     }
-    func getTouchTimestamps(touch: WaylandProxy<WlTouchClient>) throws(WaylandProxyError) -> WaylandProxy<ZwpInputTimestampsV1Client> {
+    package func getTouchTimestamps(touch: WaylandProxy<WlTouchClient>) throws(WaylandProxyError)
+        -> WaylandProxy<ZwpInputTimestampsV1Client>
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _touchProxy = try unsafe touch.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_zwp_input_timestamps_manager_v1_get_touch_timestamps(_proxy, _touchProxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_zwp_input_timestamps_manager_v1_get_touch_timestamps(
+                    _proxy, _touchProxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

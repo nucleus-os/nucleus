@@ -3,7 +3,6 @@ import Foundation
 import SystemPackage
 import Testing
 
-#if os(Linux)
 @Test func colliderFileLockRetainsKernelOwnershipUntilDescriptorClosure() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-file-lock-\(UUID().uuidString)")
@@ -35,4 +34,3 @@ import Testing
     withExtendedLifetime(replacement) {}
     _ = owner
 }
-#endif

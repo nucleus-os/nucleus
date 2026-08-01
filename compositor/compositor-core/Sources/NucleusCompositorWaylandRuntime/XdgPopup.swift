@@ -1,7 +1,8 @@
 // ConfigurePolicy by the production router.
 
-import WaylandServerC
+import NucleusRenderModel
 import WaylandServer
+import WaylandServerC
 import WaylandServerDispatch
 
 @MainActor
@@ -60,10 +61,12 @@ import WaylandServerDispatch
         guard positioner.parentConfigureSerial == nil,
             surface.hasCurrentBuffer
         else { return false }
-        let width = Int32(clamping: Int(
-            max(0, surface.committedLogicalWidth.rounded(.up))))
-        let height = Int32(clamping: Int(
-            max(0, surface.committedLogicalHeight.rounded(.up))))
+        let width = Int32(
+            clamping: Int(
+                max(0, surface.committedLogicalWidth.rounded(.up))))
+        let height = Int32(
+            clamping: Int(
+                max(0, surface.committedLogicalHeight.rounded(.up))))
         return positioner.isValid(
             parentWidth: width, parentHeight: height)
     }
@@ -87,8 +90,9 @@ import WaylandServerDispatch
     func configure(positioner: XdgPositionerSnapshot) -> WlRect {
         self.positioner = positioner
         let base = positioner.resolve()
-        placement = shell.delegate?.resolvePopup(
-            self, positioner: positioner, base: base) ?? base
+        placement =
+            shell.delegate?.resolvePopup(
+                self, positioner: positioner, base: base) ?? base
         resource.sendConfigure(
             x: placement.x, y: placement.y,
             width: placement.width, height: placement.height)
@@ -125,9 +129,10 @@ import WaylandServerDispatch
 
 extension XdgPopup: XdgPopupRequests {
     func destroy(_ request: WaylandRequest<XdgPopupServer>) {
-        guard shell.canDestroyPopup(
-            self,
-            clientID: request.clientID)
+        guard
+            shell.canDestroyPopup(
+                self,
+                clientID: request.clientID)
         else {
             xdgSurface?.postWmError(
                 .notTheTopmostPopup,
@@ -140,7 +145,8 @@ extension XdgPopup: XdgPopupRequests {
     }
 
     func grab(
-        _ request: WaylandRequest<XdgPopupServer>, seat: WaylandBorrowedObject<WlSeatServer>, serial: UInt32
+        _ request: WaylandRequest<XdgPopupServer>, seat: WaylandBorrowedObject<WlSeatServer>,
+        serial: UInt32
     ) {
         guard let seatOwner = seat.owner(as: SeatBinding.self)?.seat,
             let seatClientID = seat.clientID,
@@ -178,4 +184,3 @@ extension XdgPopup: XdgPopupRequests {
             roleState: .popup(placement), initial: false)
     }
 }
-import NucleusRenderModel

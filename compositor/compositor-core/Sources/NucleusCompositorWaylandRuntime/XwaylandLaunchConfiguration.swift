@@ -23,7 +23,7 @@ struct XwaylandLaunchConfiguration: Equatable {
 
     var executableIsValid: Bool {
         guard executablePath.hasPrefix("/"),
-              unsafe access(executablePath, X_OK) == 0
+            unsafe access(executablePath, X_OK) == 0
         else {
             return false
         }

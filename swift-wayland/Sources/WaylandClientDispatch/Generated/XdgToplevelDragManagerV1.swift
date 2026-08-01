@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for xdg_toplevel_drag_manager_v1.
 
 import WaylandClientC
-public enum XdgToplevelDragManagerV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum XdgToplevelDragManagerV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_xdg_toplevel_drag_manager_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == XdgToplevelDragManagerV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == XdgToplevelDragManagerV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_xdg_toplevel_drag_manager_v1_destroy(_proxy)
@@ -17,10 +18,16 @@ public extension WaylandProxy where Interface == XdgToplevelDragManagerV1Client 
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func getXdgToplevelDrag(data_source: WaylandProxy<WlDataSourceClient>) throws(WaylandProxyError) -> WaylandProxy<XdgToplevelDragV1Client> {
+    package func getXdgToplevelDrag(data_source: WaylandProxy<WlDataSourceClient>)
+        throws(WaylandProxyError) -> WaylandProxy<XdgToplevelDragV1Client>
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _data_sourceProxy = try unsafe data_source.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_xdg_toplevel_drag_manager_v1_get_xdg_toplevel_drag(_proxy, _data_sourceProxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_xdg_toplevel_drag_manager_v1_get_xdg_toplevel_drag(
+                    _proxy, _data_sourceProxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

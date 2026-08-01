@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for xdg_session_v1.
 
 import WaylandClientC
-public enum XdgSessionV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum XdgSessionV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_xdg_session_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == XdgSessionV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == XdgSessionV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_xdg_session_v1_destroy(_proxy)
@@ -17,7 +18,7 @@ public extension WaylandProxy where Interface == XdgSessionV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func remove() throws(WaylandProxyError) {
+    package func remove() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_xdg_session_v1_remove(_proxy)
@@ -26,103 +27,128 @@ public extension WaylandProxy where Interface == XdgSessionV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func addToplevel(toplevel: WaylandProxy<XdgToplevelClient>, name: String) throws(WaylandProxyError) -> WaylandProxy<XdgToplevelSessionV1Client> {
+    package func addToplevel(toplevel: WaylandProxy<XdgToplevelClient>, name: String)
+        throws(WaylandProxyError) -> WaylandProxy<XdgToplevelSessionV1Client>
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _toplevelProxy = try unsafe toplevel.requireNativeProxy()
-        return try name.withCString { (_nameCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> WaylandProxy<XdgToplevelSessionV1Client> in
-            guard let _created = unsafe swift_wayland_client_request_xdg_session_v1_add_toplevel(_proxy, _toplevelProxy, _nameCString) else {
+        return try name.withCString {
+            (_nameCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> WaylandProxy<
+                XdgToplevelSessionV1Client
+            > in
+            guard
+                let _created = unsafe swift_wayland_client_request_xdg_session_v1_add_toplevel(
+                    _proxy, _toplevelProxy, _nameCString)
+            else {
                 throw WaylandProxyError.proxyCreationFailed
             }
             return unsafe makeOwnedProxy(
                 adopting: _created, XdgToplevelSessionV1Client.self)
         }
     }
-    func restoreToplevel(toplevel: WaylandProxy<XdgToplevelClient>, name: String) throws(WaylandProxyError) -> WaylandProxy<XdgToplevelSessionV1Client> {
+    package func restoreToplevel(toplevel: WaylandProxy<XdgToplevelClient>, name: String)
+        throws(WaylandProxyError) -> WaylandProxy<XdgToplevelSessionV1Client>
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _toplevelProxy = try unsafe toplevel.requireNativeProxy()
-        return try name.withCString { (_nameCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> WaylandProxy<XdgToplevelSessionV1Client> in
-            guard let _created = unsafe swift_wayland_client_request_xdg_session_v1_restore_toplevel(_proxy, _toplevelProxy, _nameCString) else {
+        return try name.withCString {
+            (_nameCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> WaylandProxy<
+                XdgToplevelSessionV1Client
+            > in
+            guard
+                let _created = unsafe swift_wayland_client_request_xdg_session_v1_restore_toplevel(
+                    _proxy, _toplevelProxy, _nameCString)
+            else {
                 throw WaylandProxyError.proxyCreationFailed
             }
             return unsafe makeOwnedProxy(
                 adopting: _created, XdgToplevelSessionV1Client.self)
         }
     }
-    func removeToplevel(name: String) throws(WaylandProxyError) {
+    package func removeToplevel(name: String) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        return try name.withCString { (_nameCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+        return try name.withCString {
+            (_nameCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_xdg_session_v1_remove_toplevel(_proxy, _nameCString)
             return
         }
     }
 }
 @MainActor
-public protocol XdgSessionV1Events: AnyObject {
+package protocol XdgSessionV1Events: AnyObject {
     func created(_ proxy: WaylandBorrowedProxy<XdgSessionV1Client>, session_id: String)
     func restored(_ proxy: WaylandBorrowedProxy<XdgSessionV1Client>)
     func replaced(_ proxy: WaylandBorrowedProxy<XdgSessionV1Client>)
 }
-public extension XdgSessionV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<xdg_session_v1_listener> = {
-        let p = UnsafeMutablePointer<xdg_session_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: xdg_session_v1_listener())
-        unsafe p.pointee.created = created_impl
-        unsafe p.pointee.restored = restored_impl
-        unsafe p.pointee.replaced = replaced_impl
-        return unsafe p
-    }()
-    private static func handler(_ context: WaylandClientListenerContext) -> any XdgSessionV1Events? {
+package extension XdgSessionV1Client {
+    package nonisolated(unsafe) static let listener: UnsafeMutablePointer<xdg_session_v1_listener> =
+        {
+            let p = UnsafeMutablePointer<xdg_session_v1_listener>.allocate(capacity: 1)
+            unsafe p.initialize(to: xdg_session_v1_listener())
+            unsafe p.pointee.created = created_impl
+            unsafe p.pointee.restored = restored_impl
+            unsafe p.pointee.replaced = replaced_impl
+            return unsafe p
+        }()
+    private static func handler(_ context: WaylandClientListenerContext) -> any XdgSessionV1Events?
+    {
         context.owner as? any XdgSessionV1Events
     }
-    private static let created_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, session_id in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let created_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = {
+            data, proxy, session_id in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            nonisolated(unsafe) let _event_session_id = unsafe session_id
+            MainActor.assumeIsolated {
+                unsafe eventHandler.created(
+                    WaylandBorrowedProxy<XdgSessionV1Client>(eventProxy),
+                    session_id: unsafe String(cString: _event_session_id!))
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
+    private static let restored_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.restored(WaylandBorrowedProxy<XdgSessionV1Client>(eventProxy))
+            }
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_session_id = unsafe session_id
-        MainActor.assumeIsolated {
-            unsafe eventHandler.created(WaylandBorrowedProxy<XdgSessionV1Client>(eventProxy), session_id: unsafe String(cString: _event_session_id!))
+    private static let replaced_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.replaced(WaylandBorrowedProxy<XdgSessionV1Client>(eventProxy))
+            }
         }
-    }
-    private static let restored_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.restored(WaylandBorrowedProxy<XdgSessionV1Client>(eventProxy))
-        }
-    }
-    private static let replaced_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.replaced(WaylandBorrowedProxy<XdgSessionV1Client>(eventProxy))
-        }
-    }
 }
-public extension WaylandProxy where Interface == XdgSessionV1Client {
-    func installListener(_ owner: any XdgSessionV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == XdgSessionV1Client {
+    package func installListener(_ owner: any XdgSessionV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe xdg_session_v1_add_listener(proxy, XdgSessionV1Client.listener, data)
         }

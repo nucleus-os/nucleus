@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for wp_pointer_warp_v1.
 
 import WaylandClientC
-public enum WpPointerWarpV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum WpPointerWarpV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_pointer_warp_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == WpPointerWarpV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpPointerWarpV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_pointer_warp_v1_destroy(_proxy)
@@ -17,11 +18,16 @@ public extension WaylandProxy where Interface == WpPointerWarpV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func warpPointer(surface: WaylandProxy<WlSurfaceClient>, pointer: WaylandProxy<WlPointerClient>, x: Double, y: Double, serial: UInt32) throws(WaylandProxyError) {
+    package func warpPointer(
+        surface: WaylandProxy<WlSurfaceClient>, pointer: WaylandProxy<WlPointerClient>, x: Double,
+        y: Double, serial: UInt32
+    ) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
         let _pointerProxy = try unsafe pointer.requireNativeProxy()
-        unsafe swift_wayland_client_request_wp_pointer_warp_v1_warp_pointer(_proxy, _surfaceProxy, _pointerProxy, swift_wayland_fixed_from_double(x), swift_wayland_fixed_from_double(y), serial)
+        unsafe swift_wayland_client_request_wp_pointer_warp_v1_warp_pointer(
+            _proxy, _surfaceProxy, _pointerProxy, swift_wayland_fixed_from_double(x),
+            swift_wayland_fixed_from_double(y), serial)
         return
     }
 }

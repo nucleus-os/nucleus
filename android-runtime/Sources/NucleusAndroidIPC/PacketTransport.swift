@@ -1,18 +1,18 @@
 import Foundation
-import NucleusAndroidGraphicsContract
-import NucleusIPCTransport
+package import NucleusAndroidGraphicsContract
+package import NucleusIPCTransport
 
-public typealias PeerCredentials = IPCPeerCredentials
+package typealias PeerCredentials = IPCPeerCredentials
 
-public enum PacketTransportError: Error, Equatable {
+package enum PacketTransportError: Error, Equatable {
     case systemCall(operation: String, errno: Int32)
     case packetTooLarge(Int)
     case invalidPacket
     case unauthorizedPeer(expectedUserID: UInt32, actualUserID: UInt32)
 }
 
-public final class ReceivedBrokerPacket {
-    public let envelope: BrokerEnvelope
+package final class ReceivedBrokerPacket {
+    package let envelope: BrokerEnvelope
     private var descriptors: [OwnedFileDescriptor]
 
     init(envelope: BrokerEnvelope, descriptors: [OwnedFileDescriptor]) {
@@ -20,25 +20,25 @@ public final class ReceivedBrokerPacket {
         self.descriptors = descriptors
     }
 
-    public var descriptorCount: Int { descriptors.count }
+    package var descriptorCount: Int { descriptors.count }
 
-    public func takeDescriptors() -> [Int32] {
+    package func takeDescriptors() -> [Int32] {
         let taken = descriptors.map { $0.take() }
         descriptors.removeAll(keepingCapacity: false)
         return taken
     }
 }
 
-public final class BrokerPacketConnection: @unchecked Sendable {
+package final class BrokerPacketConnection: @unchecked Sendable {
     private let connection: PacketConnection
 
-    public var fileDescriptor: Int32 { connection.fileDescriptor }
+    package var fileDescriptor: Int32 { connection.fileDescriptor }
 
     fileprivate init(_ connection: PacketConnection) {
         self.connection = connection
     }
 
-    public init(owning fileDescriptor: Int32) {
+    package init(owning fileDescriptor: Int32) {
         connection = PacketConnection(owning: fileDescriptor)
     }
 
@@ -46,7 +46,7 @@ public final class BrokerPacketConnection: @unchecked Sendable {
         connection = PacketConnection(borrowing: fileDescriptor)
     }
 
-    public static func connect(path: String) throws -> BrokerPacketConnection {
+    package static func connect(path: String) throws -> BrokerPacketConnection {
         do {
             return BrokerPacketConnection(
                 try PacketConnection.connect(path: path))
@@ -55,7 +55,7 @@ public final class BrokerPacketConnection: @unchecked Sendable {
         }
     }
 
-    public static func socketPair() throws
+    package static func socketPair() throws
         -> (BrokerPacketConnection, BrokerPacketConnection)
     {
         do {
@@ -69,11 +69,11 @@ public final class BrokerPacketConnection: @unchecked Sendable {
         }
     }
 
-    public var peerCredentials: PeerCredentials? {
+    package var peerCredentials: PeerCredentials? {
         connection.peerCredentials
     }
 
-    public func requirePeer(userID: UInt32) throws {
+    package func requirePeer(userID: UInt32) throws {
         do {
             try connection.requirePeer(userID: userID)
         } catch {
@@ -81,7 +81,7 @@ public final class BrokerPacketConnection: @unchecked Sendable {
         }
     }
 
-    public func send(
+    package func send(
         _ envelope: BrokerEnvelope,
         descriptors: [Int32] = []
     ) throws {
@@ -100,7 +100,7 @@ public final class BrokerPacketConnection: @unchecked Sendable {
         }
     }
 
-    public func receive() throws -> ReceivedBrokerPacket {
+    package func receive() throws -> ReceivedBrokerPacket {
         let packet: ReceivedPacket
         do {
             packet = try connection.receive(
@@ -141,13 +141,13 @@ public final class BrokerPacketConnection: @unchecked Sendable {
     }
 }
 
-public final class BrokerPacketListener: @unchecked Sendable {
+package final class BrokerPacketListener: @unchecked Sendable {
     private let listener: PacketListener
 
-    public var fileDescriptor: Int32 { listener.fileDescriptor }
-    public var path: String { listener.path }
+    package var fileDescriptor: Int32 { listener.fileDescriptor }
+    package var path: String { listener.path }
 
-    public init(path: String, mode: UInt32 = 0o600) throws {
+    package init(path: String, mode: UInt32 = 0o600) throws {
         do {
             listener = try PacketListener(path: path, mode: mode)
         } catch {
@@ -155,7 +155,7 @@ public final class BrokerPacketListener: @unchecked Sendable {
         }
     }
 
-    public func accept(expectedUserID: UInt32) throws
+    package func accept(expectedUserID: UInt32) throws
         -> BrokerPacketConnection
     {
         do {

@@ -1,12 +1,12 @@
-public import NucleusCompositorServerTypes
-@_spi(NucleusRenderServer) public import NucleusLayers
+package import NucleusCompositorServerTypes
+package import NucleusLayers
 
 /// A change to the observable desktop model — the typed stream the external-shell
 /// management protocols (and any other consumer) project. Identity is by id;
 /// `windowChanged` is coarse (some projected-relevant property changed) and the
 /// observer re-reads the current `Window`, which is idempotent on the wire.
 /// Observers must tolerate a change for an id they do not know.
-public enum DesktopChange: Sendable, Equatable {
+package enum DesktopChange: Sendable, Equatable {
     case windowAdded(WindowID)
     case windowRemoved(WindowID)
     case windowChanged(WindowID)
@@ -18,13 +18,13 @@ public enum DesktopChange: Sendable, Equatable {
     case windowSpaceChanged(window: WindowID, space: SpaceID?)
 }
 
-public enum OutputAvailability: Sendable, Equatable {
+package enum OutputAvailability: Sendable, Equatable {
     case available
     case suspendedNoOutputs
 }
 
 @MainActor
-public protocol DesktopModelObserver: AnyObject {
+package protocol DesktopModelObserver: AnyObject {
     /// One coalesced batch per per-iteration drain. On registration the observer
     /// is replayed the current model state as synthetic `*Added`/`focusChanged`
     /// changes through this same method, so it has a single apply path.
@@ -32,18 +32,18 @@ public protocol DesktopModelObserver: AnyObject {
 }
 
 @MainActor
-public final class Connection {
-    public let id: UInt64
-    public var contextID: ContextID?
+package final class Connection {
+    package let id: UInt64
+    package var contextID: ContextID?
 
-    public init(id: UInt64, contextID: ContextID? = nil) {
+    package init(id: UInt64, contextID: ContextID? = nil) {
         self.id = id
         self.contextID = contextID
     }
 }
 
 @MainActor
-public final class EventServer {
+package final class EventServer {
     private struct PointerBounds {
         var minX: Double
         var minY: Double
@@ -89,7 +89,9 @@ public final class EventServer {
             otherButtonCount = 0
         }
 
-        mutating func apply(_ event: inout WireEventRecord, bounds: PointerBounds) -> WireEventStateChange {
+        mutating func apply(_ event: inout WireEventRecord, bounds: PointerBounds)
+            -> WireEventStateChange
+        {
             var change = WireEventStateChange()
             switch event.kind {
             case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
@@ -102,8 +104,9 @@ public final class EventServer {
                 cursorY = clamped.1
                 change.cursorMoved = (oldX != cursorX || oldY != cursorY)
             case .leftMouseDown, .rightMouseDown, .otherMouseDown,
-                 .leftMouseUp, .rightMouseUp, .otherMouseUp:
-                applyButton(button: UInt32(truncatingIfNeeded: event.data0), down: isButtonDown(event.kind))
+                .leftMouseUp, .rightMouseUp, .otherMouseUp:
+                applyButton(
+                    button: UInt32(truncatingIfNeeded: event.data0), down: isButtonDown(event.kind))
                 event.x = cursorX
                 event.y = cursorY
                 change.buttonChanged = true
@@ -138,9 +141,11 @@ public final class EventServer {
 
     private var state = StreamState()
 
-    public init() {}
+    package init() {}
 
-    public func dispatch(_ event: WireEventRecord, bounds: WirePointerBounds) -> WireEventDispatchDecision {
+    package func dispatch(_ event: WireEventRecord, bounds: WirePointerBounds)
+        -> WireEventDispatchDecision
+    {
         var accepted = event
         let pointerBounds = PointerBounds(wireValue: bounds)
 
@@ -155,56 +160,56 @@ public final class EventServer {
         return decision
     }
 
-    public func resetInputState() {
+    package func resetInputState() {
         state.resetInput()
     }
 
-    public func setFlags(_ flags: UInt64) {
+    package func setFlags(_ flags: UInt64) {
         state.flags = flags
     }
 
-    public func setCursor(x: Double, y: Double) {
+    package func setCursor(x: Double, y: Double) {
         state.cursorX = x
         state.cursorY = y
     }
 
     /// The accepted cursor position (the hardware cursor-plane path reads this).
-    public var cursorX: Double { state.cursorX }
-    public var cursorY: Double { state.cursorY }
+    package var cursorX: Double { state.cursorX }
+    package var cursorY: Double { state.cursorY }
 
-    public func reset() {
+    package func reset() {
         state = StreamState()
     }
 }
 
 @MainActor
-public final class CursorServer {
-    public var imageHandle: UInt64 = 0
-    public var hotSpotX: Int32 = 0
-    public var hotSpotY: Int32 = 0
-    public var width: UInt32 = 0
-    public var height: UInt32 = 0
+package final class CursorServer {
+    package var imageHandle: UInt64 = 0
+    package var hotSpotX: Int32 = 0
+    package var hotSpotY: Int32 = 0
+    package var width: UInt32 = 0
+    package var height: UInt32 = 0
 
     /// The current cursor's ARGB8888 pixels (tightly packed, `width * height * 4`
     /// bytes, row stride `width * 4`), retained so the hardware cursor-plane path can
     /// upload them. Empty until a cursor image is applied.
-    public private(set) var pixels: [UInt8] = []
+    package private(set) var pixels: [UInt8] = []
     /// Bumps on every image change. The cursor-plane feed re-uploads the KMS cursor BO
     /// only when this changes, so per-frame position updates cost no re-upload.
-    public private(set) var generation: UInt64 = 0
+    package private(set) var generation: UInt64 = 0
 
     /// The theme name of the current cursor, or nil when it is a client-provided image
     /// (`wl_pointer.set_cursor`) or hidden. The theme path (`cursorApplyNamed`) dedupes
     /// against this to skip redundant reloads; a client image clears it so a following
     /// theme apply is not skipped.
-    public private(set) var themeName: String?
+    package private(set) var themeName: String?
 
-    public init() {}
+    package init() {}
 
     /// Replace the current cursor with a client-provided image (`set_cursor`), retaining
     /// its pixels + hotspot and clearing the theme-name marker. `pixels` is
     /// tightly-packed ARGB8888 (`width * height * 4`).
-    public func setImage(
+    package func setImage(
         pixels: [UInt8], width: UInt32, height: UInt32, hotSpotX: Int32, hotSpotY: Int32
     ) {
         self.pixels = pixels
@@ -219,20 +224,22 @@ public final class CursorServer {
 
     /// Apply a named theme cursor's image, tagging it with `name` so a repeat apply of
     /// the same name is a no-op for the caller to skip.
-    public func applyTheme(
-        name: String, pixels: [UInt8], width: UInt32, height: UInt32, hotSpotX: Int32, hotSpotY: Int32
+    package func applyTheme(
+        name: String, pixels: [UInt8], width: UInt32, height: UInt32, hotSpotX: Int32,
+        hotSpotY: Int32
     ) {
-        setImage(pixels: pixels, width: width, height: height, hotSpotX: hotSpotX, hotSpotY: hotSpotY)
+        setImage(
+            pixels: pixels, width: width, height: height, hotSpotX: hotSpotX, hotSpotY: hotSpotY)
         self.themeName = name
     }
 
     /// Hide the cursor (client passed a nil surface to `set_cursor`): an empty image the
     /// cursor plane renders as fully transparent.
-    public func hide() {
+    package func hide() {
         setImage(pixels: [], width: 0, height: 0, hotSpotX: 0, hotSpotY: 0)
     }
 
-    public func reset() {
+    package func reset() {
         imageHandle = 0
         hotSpotX = 0
         hotSpotY = 0
@@ -245,32 +252,32 @@ public final class CursorServer {
 }
 
 @MainActor
-public final class SeatFocus {
-    public private(set) var pointerSurfaceID: UInt64 = 0
-    public private(set) var keyboardSurfaceID: UInt64 = 0
-    public private(set) var buttonCount: UInt32 = 0
-    public private(set) var lastPointerButtonSerial: UInt32 = 0
-    public private(set) var lastPointerButtonSurfaceID: UInt64 = 0
+package final class SeatFocus {
+    package private(set) var pointerSurfaceID: UInt64 = 0
+    package private(set) var keyboardSurfaceID: UInt64 = 0
+    package private(set) var buttonCount: UInt32 = 0
+    package private(set) var lastPointerButtonSerial: UInt32 = 0
+    package private(set) var lastPointerButtonSurfaceID: UInt64 = 0
 
-    public init() {}
+    package init() {}
 
-    public func setPointerFocus(surfaceID: UInt64) {
+    package func setPointerFocus(surfaceID: UInt64) {
         pointerSurfaceID = surfaceID
     }
 
-    public func clearPointerFocus() {
+    package func clearPointerFocus() {
         pointerSurfaceID = 0
     }
 
-    public func setKeyboardFocus(surfaceID: UInt64) {
+    package func setKeyboardFocus(surfaceID: UInt64) {
         keyboardSurfaceID = surfaceID
     }
 
-    public func clearKeyboardFocus() {
+    package func clearKeyboardFocus() {
         keyboardSurfaceID = 0
     }
 
-    public func recordPointerButton(state: UInt32, serial: UInt32, focusedSurfaceID: UInt64) {
+    package func recordPointerButton(state: UInt32, serial: UInt32, focusedSurfaceID: UInt64) {
         if state == 1 {
             buttonCount &+= 1
         } else if buttonCount > 0 {
@@ -282,19 +289,19 @@ public final class SeatFocus {
         }
     }
 
-    public func resetPointerButtons() {
+    package func resetPointerButtons() {
         buttonCount = 0
         lastPointerButtonSerial = 0
         lastPointerButtonSurfaceID = 0
     }
 
-    public func invalidateSurface(id: UInt64) {
+    package func invalidateSurface(id: UInt64) {
         if pointerSurfaceID == id { pointerSurfaceID = 0 }
         if keyboardSurfaceID == id { keyboardSurfaceID = 0 }
         if lastPointerButtonSurfaceID == id { resetPointerButtons() }
     }
 
-    public var snapshot: WireSeatFocusSnapshot {
+    package var snapshot: WireSeatFocusSnapshot {
         var snapshot = WireSeatFocusSnapshot()
         snapshot.pointerSurfaceId = pointerSurfaceID
         snapshot.keyboardSurfaceId = keyboardSurfaceID
@@ -304,7 +311,7 @@ public final class SeatFocus {
         return snapshot
     }
 
-    public func reset() {
+    package func reset() {
         pointerSurfaceID = 0
         keyboardSurfaceID = 0
         resetPointerButtons()
@@ -312,40 +319,40 @@ public final class SeatFocus {
 }
 
 @MainActor
-public final class DisplayServer {
-    public let layout: DesktopLayout
+package final class DisplayServer {
+    package let layout: DesktopLayout
 
-    public init(layout: DesktopLayout) {
+    package init(layout: DesktopLayout) {
         self.layout = layout
     }
 }
 
-public struct LayerGeometry: Sendable, Equatable {
-    public var layerID: UInt64
-    public var rect: RenderRect
+package struct LayerGeometry: Sendable, Equatable {
+    package var layerID: UInt64
+    package var rect: RenderRect
 }
 
 @MainActor
-public final class Composition {
-    public private(set) var rootLayerID: UInt64 = 0
-    public private(set) var shellOverlayHostLayerID: UInt64 = 0
+package final class Composition {
+    package private(set) var rootLayerID: UInt64 = 0
+    package private(set) var shellOverlayHostLayerID: UInt64 = 0
     private var nextLayerID: UInt64 = 1
 
-    public init() {}
+    package init() {}
 
-    public func allocLayerID() -> UInt64 {
+    package func allocLayerID() -> UInt64 {
         let id = nextLayerID
         nextLayerID &+= 1
         if nextLayerID == 0 { nextLayerID = 1 }
         return id
     }
 
-    public func ensureRoots() {
+    package func ensureRoots() {
         if rootLayerID == 0 { rootLayerID = allocLayerID() }
         if shellOverlayHostLayerID == 0 { shellOverlayHostLayerID = allocLayerID() }
     }
 
-    public func reset() {
+    package func reset() {
         rootLayerID = 0
         shellOverlayHostLayerID = 0
         nextLayerID = 1
@@ -357,13 +364,17 @@ public final class Composition {
 /// types into the `.server` layer. `kind`: pass/consume/deferred; `action`/`value`
 /// follow the shell keybind-action table (the compositor executes compositor-owned
 /// actions, the shell executes its own through the seam's other methods).
-public struct KeybindOutcome: Sendable {
-    public enum Kind: UInt8, Sendable { case pass = 0, consume = 1, deferred = 2 }
-    public var kind: Kind
-    public var action: UInt8
-    public var configurationIndex: UInt32
-    public var value: UInt32
-    public init(
+package struct KeybindOutcome: Sendable {
+    package enum Kind: UInt8, Sendable {
+        case pass = 0
+        case consume = 1
+        case deferred = 2
+    }
+    package var kind: Kind
+    package var action: UInt8
+    package var configurationIndex: UInt32
+    package var value: UInt32
+    package init(
         kind: Kind,
         action: UInt8,
         configurationIndex: UInt32 = .max,
@@ -382,7 +393,7 @@ public struct KeybindOutcome: Sendable {
 /// the process through `acceptedShellAction`; no shell implementation module is
 /// loaded into the compositor.
 @MainActor
-public protocol CompositorPolicy: AnyObject {
+package protocol CompositorPolicy: AnyObject {
     func dispatchKeybind(keycode: UInt32, modifiers: UInt64, pressed: Bool) -> KeybindOutcome
     func cursorApplyDefault()
     func cursorApplyNamed(_ name: String)
@@ -402,7 +413,7 @@ public protocol CompositorPolicy: AnyObject {
 /// switch resume/pause and process-exit — without importing it (the area DAG
 /// forbids substrate → runtime). The runtime conforms + installs the instance.
 @MainActor
-public protocol CompositorSessionControl: AnyObject {
+package protocol CompositorSessionControl: AnyObject {
     func sessionResume() -> Bool
     /// Begin VT deactivation. Returns true when DRM state is already retired and
     /// libseat may be acknowledged before the callback returns. False defers the
@@ -415,7 +426,7 @@ public protocol CompositorSessionControl: AnyObject {
 /// implementation lives with the Swift input dispatcher; the server only knows
 /// the policy-level fact that an output is leaving.
 @MainActor
-public protocol CompositorInputControl: AnyObject {
+package protocol CompositorInputControl: AnyObject {
     func displayWillRemove(hasFallbackDisplay: Bool)
     /// Run a window-menu verb (close/minimize/maximize/fullscreen/move/resize) the
     /// overlay reported back to the shell, against the router window model. The shell
@@ -429,27 +440,27 @@ public protocol CompositorInputControl: AnyObject {
 }
 
 @MainActor
-public final class NucleusCompositorServer {
-    public weak var policy: (any CompositorPolicy)?
-    public weak var inputControl: (any CompositorInputControl)?
+package final class NucleusCompositorServer {
+    package weak var policy: (any CompositorPolicy)?
+    package weak var inputControl: (any CompositorInputControl)?
     /// The composition root's session lifecycle, injected at bring-up (the input
     /// host's VT enable/disable + exit reach it through here).
-    public weak var sessionControl: (any CompositorSessionControl)?
+    package weak var sessionControl: (any CompositorSessionControl)?
     /// The render service installed after successful GPU bring-up and cleared
     /// before teardown. The weak reference does not extend renderer lifetime.
-    public weak var renderService: (any CompositorRenderService)?
-    public private(set) var outputAvailability: OutputAvailability =
+    package weak var renderService: (any CompositorRenderService)?
+    package private(set) var outputAvailability: OutputAvailability =
         .suspendedNoOutputs
 
-    public let layout = DesktopLayout()
-    public let windows = WindowList()
-    public let spaces = Spaces()
-    public let composition = Composition()
-    public let events = EventServer()
-    public let cursor = CursorServer()
-    public let seatFocus = SeatFocus()
-    public let dataExchange = DataExchangeService()
-    public lazy var displayServer = DisplayServer(layout: layout)
+    package let layout = DesktopLayout()
+    package let windows = WindowList()
+    package let spaces = Spaces()
+    package let composition = Composition()
+    package let events = EventServer()
+    package let cursor = CursorServer()
+    package let seatFocus = SeatFocus()
+    package let dataExchange = DataExchangeService()
+    package lazy var displayServer = DisplayServer(layout: layout)
 
     private var nextWindowID: WindowID = 1
 
@@ -459,7 +470,7 @@ public final class NucleusCompositorServer {
     private var observers: [WeakObserver] = []
     private var pendingChanges: [DesktopChange] = []
 
-    public init() {
+    package init() {
         windows.onChange = { [weak self] change in self?.recordChange(change) }
         spaces.onChange = { [weak self] change in
             // A workspace state change (assignment / active-space switch) can hide or
@@ -471,7 +482,7 @@ public final class NucleusCompositorServer {
     }
 
     @discardableResult
-    public func transitionOutputAvailability(
+    package func transitionOutputAvailability(
         to availability: OutputAvailability
     ) -> Bool {
         guard outputAvailability != availability else { return false }
@@ -484,9 +495,10 @@ public final class NucleusCompositorServer {
     /// called from `windowNoteSurfaceOutput` after the output resolves). No-op for
     /// layer-shell / unmapped / outputless windows; `assignToActiveSpace` self-guards
     /// a deliberate same-output assignment, so re-calls are idempotent.
-    public func assignWorkspaceIfReady(id: WindowID) {
+    package func assignWorkspaceIfReady(id: WindowID) {
         guard let window = windows.window(id: id), window.mapped, window.isManagedAppWindow(),
-              window.layerHost == nil, let outputID = window.currentOutputID else { return }
+            window.layerHost == nil, let outputID = window.currentOutputID
+        else { return }
         spaces.assignToActiveSpace(window: id, outputID: outputID)
     }
 
@@ -502,24 +514,24 @@ public final class NucleusCompositorServer {
     /// Record a model change for the next per-iteration drain. No-op when nothing
     /// observes — a freshly registered observer is replayed the full snapshot, so
     /// changes from before its registration are irrelevant to it.
-    public func recordChange(_ change: DesktopChange) {
+    package func recordChange(_ change: DesktopChange) {
         guard !observers.isEmpty else { return }
         pendingChanges.append(change)
     }
 
-    public func addObserver(_ observer: any DesktopModelObserver) {
+    package func addObserver(_ observer: any DesktopModelObserver) {
         observers.removeAll { $0.value == nil || $0.value === observer }
         observers.append(WeakObserver(value: observer))
         observer.desktopModelDidChange(snapshotChanges())
     }
 
-    public func removeObserver(_ observer: any DesktopModelObserver) {
+    package func removeObserver(_ observer: any DesktopModelObserver) {
         observers.removeAll { $0.value == nil || $0.value === observer }
     }
 
     /// Dispatch the coalesced pending changes to every observer. Called once per
     /// event-loop iteration, after dispatch settles and before the client flush.
-    public func drainChanges() {
+    package func drainChanges() {
         observers.removeAll { $0.value == nil }
         guard !pendingChanges.isEmpty else { return }
         let batch = Self.coalesce(pendingChanges)
@@ -547,7 +559,7 @@ public final class NucleusCompositorServer {
         var result: [DesktopChange] = []
         result.reserveCapacity(changes.count)
         for change in changes {
-            if case let .windowChanged(id) = change, !seenChanged.insert(id).inserted {
+            if case .windowChanged(let id) = change, !seenChanged.insert(id).inserted {
                 continue
             }
             result.append(change)
@@ -556,7 +568,7 @@ public final class NucleusCompositorServer {
     }
 
     @discardableResult
-    public func createWindow(source: WindowSource, id requestedID: WindowID = 0) -> Window {
+    package func createWindow(source: WindowSource, id requestedID: WindowID = 0) -> Window {
         let id = requestedID == 0 ? nextWindowID : requestedID
         nextWindowID = max(nextWindowID, id + 1)
         if let existing = windows.window(id: id) { return existing }
@@ -573,17 +585,17 @@ public final class NucleusCompositorServer {
     }
 
     @discardableResult
-    public func destroyWindow(id: WindowID) -> Bool {
+    package func destroyWindow(id: WindowID) -> Bool {
         guard let window = windows.remove(id: id) else { return false }
         window.changeRecorder = nil
         return true
     }
 
-    public func window(id: WindowID) -> Window? {
+    package func window(id: WindowID) -> Window? {
         windows.window(id: id)
     }
 
-    public func reset() {
+    package func reset() {
         for window in windows.windows { window.changeRecorder = nil }
         windows.reset()
         nextWindowID = 1
@@ -607,11 +619,11 @@ public final class NucleusCompositorServer {
 extension NucleusCompositorServer {
     /// The front-most managed, fullscreen, visible window whose policy output is
     /// `output`, or nil.
-    public func fullscreenOwner(onOutput output: DisplayID) -> Window? {
+    package func fullscreenOwner(onOutput output: DisplayID) -> Window? {
         for window in windows.windowsFrontToBack {
             guard window.isManagedAppWindow(), window.activeFullscreen,
-                  window.mapped, !window.minimized,
-                  spaces.policyOutputID(for: window, layout: layout) == output
+                window.mapped, !window.minimized,
+                spaces.policyOutputID(for: window, layout: layout) == output
             else { continue }
             return window
         }
@@ -621,10 +633,11 @@ extension NucleusCompositorServer {
     /// Whether `window` is fully occluded by its output's fullscreen owner: the
     /// cross-level rule decides, with same-level cases tie-broken by back-to-front
     /// z-order (a window behind the owner is occluded).
-    public func isOccludedByFullscreen(_ window: Window) -> Bool {
-        guard let output = spaces.policyOutputID(
-            for: window,
-            layout: layout)
+    package func isOccludedByFullscreen(_ window: Window) -> Bool {
+        guard
+            let output = spaces.policyOutputID(
+                for: window,
+                layout: layout)
         else { return false }
         return isOccludedByFullscreen(window, owner: fullscreenOwner(onOutput: output))
     }
@@ -632,11 +645,11 @@ extension NucleusCompositorServer {
     /// The occlusion decision against an already-resolved output fullscreen `owner`
     /// (nil = none). Lets a caller that tests many windows resolve owners once (see
     /// `fullscreenOccludedWindowIDs`) instead of rescanning per window.
-    public func isOccludedByFullscreen(_ window: Window, owner: Window?) -> Bool {
+    package func isOccludedByFullscreen(_ window: Window, owner: Window?) -> Bool {
         guard let owner else { return false }
         if let decided = window.occludedByFullscreen(at: owner) { return decided }
         guard let windowIndex = windows.backToFrontIndex(of: window.id),
-              let ownerIndex = windows.backToFrontIndex(of: owner.id)
+            let ownerIndex = windows.backToFrontIndex(of: owner.id)
         else { return false }
         return windowIndex < ownerIndex
     }
@@ -645,26 +658,28 @@ extension NucleusCompositorServer {
     /// output's fullscreen owner. O(n) for a caller (hit-test, render) that would
     /// otherwise call `isOccludedByFullscreen` — each an O(n) owner rescan — per
     /// window. Empty when no output has a fullscreen owner.
-    public func fullscreenOccludedWindowIDs() -> Set<WindowID> {
+    package func fullscreenOccludedWindowIDs() -> Set<WindowID> {
         // Front-most fullscreen owner per output, in one front-to-back pass (the
         // first qualifying window for an output is its front-most = its owner).
         var owners: [DisplayID: Window] = [:]
         for window in windows.windowsFrontToBack {
             guard window.isManagedAppWindow(), window.activeFullscreen,
-                  window.mapped, !window.minimized
+                window.mapped, !window.minimized
             else { continue }
-            guard let output = spaces.policyOutputID(
-                for: window,
-                layout: layout)
+            guard
+                let output = spaces.policyOutputID(
+                    for: window,
+                    layout: layout)
             else { continue }
             if owners[output] == nil { owners[output] = window }
         }
         guard !owners.isEmpty else { return [] }
         var occluded: Set<WindowID> = []
         for window in windows.windows {
-            guard let output = spaces.policyOutputID(
-                for: window,
-                layout: layout)
+            guard
+                let output = spaces.policyOutputID(
+                    for: window,
+                    layout: layout)
             else { continue }
             if isOccludedByFullscreen(window, owner: owners[output]) { occluded.insert(window.id) }
         }

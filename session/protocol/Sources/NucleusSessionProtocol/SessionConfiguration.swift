@@ -1,5 +1,5 @@
 import Glibc
-import NucleusIPCTransport
+internal import NucleusIPCTransport
 
 public enum SessionPresentMode: UInt8, Sendable, Equatable {
     case vsync = 0

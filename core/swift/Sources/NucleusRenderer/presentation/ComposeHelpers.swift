@@ -33,18 +33,20 @@ enum ComposeHelpers {
     /// Scale a clip operation from model bounds to effective bounds. Mirrors
     /// `scaledClipForBounds`.
     static func scaledClipForBounds(
-        clip: ClipOp?,
+        clip: RenderClip?,
         modelBounds: Bounds,
         effectiveBounds: Bounds
-    ) -> ClipOp? {
+    ) -> RenderClip? {
         guard let c = clip else { return nil }
         let sx: Float = abs(modelBounds.w) > 1e-7 ? effectiveBounds.w / modelBounds.w : 1.0
         let sy: Float = abs(modelBounds.h) > 1e-7 ? effectiveBounds.h / modelBounds.h : 1.0
         let radiusScale = min(sx, sy)
-        return ClipOp(
+        return RenderClip(
             rect: (c.rect.0 * sx, c.rect.1 * sy, c.rect.2 * sx, c.rect.3 * sy),
-            radii: (c.radii.0 * radiusScale, c.radii.1 * radiusScale,
-                    c.radii.2 * radiusScale, c.radii.3 * radiusScale),
+            radii: (
+                c.radii.0 * radiusScale, c.radii.1 * radiusScale,
+                c.radii.2 * radiusScale, c.radii.3 * radiusScale
+            ),
             antiAlias: c.antiAlias,
             transform: c.transform
         )

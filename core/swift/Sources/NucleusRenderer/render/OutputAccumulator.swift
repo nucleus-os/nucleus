@@ -125,7 +125,8 @@ struct AccumulatorState: Equatable {
         let canvas = unsafe target.getCanvas()
         guard unsafe canvas.isValid() else { return false }
         var dst = nucleus.skia.RectF()
-        dst.x = 0; dst.y = 0
+        dst.x = 0
+        dst.y = 0
         dst.width = Float(unsafe target.width())
         dst.height = Float(unsafe target.height())
         var paint = nucleus.skia.Paint()

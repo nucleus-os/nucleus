@@ -1,8 +1,8 @@
-public import NucleusUI
+package import NucleusUI
 
 /// What a password attempt produced. The view never decides this itself — it
 /// hands the attempt to an authenticator and renders the answer.
-public enum LockAuthenticationOutcome: Sendable, Equatable {
+package enum LockAuthenticationOutcome: Sendable, Equatable {
     case accepted
     /// Wrong credentials. The message is shown to the user, so it must never
     /// contain anything derived from what they typed.
@@ -25,7 +25,7 @@ public enum LockAuthenticationOutcome: Sendable, Equatable {
 /// synchronous one would freeze the lock screen for the duration of a
 /// deliberately slow check.
 @MainActor
-public protocol LockAuthenticator: AnyObject {
+package protocol LockAuthenticator: AnyObject {
     func authenticate(
         password: consuming SecureBytes,
         completion: @escaping (LockAuthenticationOutcome) -> Void)
@@ -38,26 +38,26 @@ public protocol LockAuthenticator: AnyObject {
 /// is the runtime's job and the credential check is the authenticator's. This
 /// view's whole responsibility is presenting the prompt and reporting attempts.
 @MainActor
-public final class LockScreenView: View {
-    public let promptLabel: Label
-    public let passwordField: TextField
-    public let statusLabel: Label
+package final class LockScreenView: View {
+    package let promptLabel: Label
+    package let passwordField: TextField
+    package let statusLabel: Label
 
     /// Verifies attempts. With none set the field still works and every attempt
     /// reports unavailable — a lock screen that cannot authenticate must fail
     /// closed, never open.
-    public weak var authenticator: (any LockAuthenticator)?
+    package weak var authenticator: (any LockAuthenticator)?
 
     /// Called on a successful attempt. The runtime unlocks the session here.
-    public var onAuthenticated: (() -> Void)?
+    package var onAuthenticated: (() -> Void)?
 
     /// Whether an attempt is in flight. A second Return while one is pending is
     /// ignored, so a held key cannot queue attempts against the backend.
-    public private(set) var isAuthenticating = false
+    package private(set) var isAuthenticating = false
 
     private let column: StackView
 
-    public init(prompt: String = "Enter your password") {
+    package init(prompt: String = "Enter your password") {
         column = StackView(axis: .vertical, spacing: 10, alignment: .center)
         promptLabel = Label(prompt)
         passwordField = TextField(string: "", isSecure: true)
@@ -90,26 +90,27 @@ public final class LockScreenView: View {
 
     /// The field takes focus so typing lands somewhere without a click — there
     /// is nothing else on a lock screen to click.
-    public func focusPasswordField() {
+    package func focusPasswordField() {
         _ = window?.makeFirstResponder(passwordField)
     }
 
-    public override func layout() {
+    package override func layout() {
         // Centred both ways. The column measures itself from its children, so
         // nothing here hardcodes the field's or the labels' sizes.
         let size = column.measure(LayoutConstraints(maxWidth: bounds.size.width))
         let width = max(size.width, 260)
-        column.arrange(in: Rect(
-            x: (bounds.size.width - width) / 2,
-            y: (bounds.size.height - size.height) / 2,
-            width: width,
-            height: size.height))
+        column.arrange(
+            in: Rect(
+                x: (bounds.size.width - width) / 2,
+                y: (bounds.size.height - size.height) / 2,
+                width: width,
+                height: size.height))
     }
 
     /// Submit the current password. Clears the field immediately, whatever the
     /// outcome — a password must not sit in a widget waiting to be shoulder-read
     /// or recovered from a later state dump.
-    public func submit() {
+    package func submit() {
         guard !isAuthenticating else { return }
         guard let authenticator else {
             // Fail closed: no backend means no entry, and say so honestly rather
@@ -145,7 +146,7 @@ public final class LockScreenView: View {
     /// Drop the entered password and its undo history. `stringValue` alone would
     /// leave the old text recoverable through undo, which on a lock screen is a
     /// credential sitting in a buffer.
-    public func clearPassword() {
+    package func clearPassword() {
         passwordField.stringValue = ""
         passwordField.discardUndoHistory()
     }

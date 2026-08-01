@@ -1,3 +1,6 @@
+public import NucleusTypes
+import Tracy
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Android)
@@ -409,12 +412,14 @@ public final class TextSystem {
                 paragraphStyle: paragraphStyle
             )
         }
-        guard let measured = backend.createLayout(
-            attributedText,
-            containerWidth: containerWidth,
-            paragraphStyle: paragraphStyle,
-            scale: 1
-        ), measured.handle.rawValue != 0 else {
+        guard
+            let measured = backend.createLayout(
+                attributedText,
+                containerWidth: containerWidth,
+                paragraphStyle: paragraphStyle,
+                scale: 1
+            ), measured.handle.rawValue != 0
+        else {
             report(.layoutFailed)
             return fallbackLayout(
                 attributedText,
@@ -438,8 +443,8 @@ public final class TextSystem {
 
     package func makeLayoutLease(for layout: TextLayout, scale: Float = 1) -> TextLayoutLease? {
         if scale == 1,
-           let storage = layout.storage,
-           storage.isCurrent(in: self)
+            let storage = layout.storage,
+            storage.isCurrent(in: self)
         {
             retainedLayoutHitCount &+= 1
             publishTraceMetrics()
@@ -449,12 +454,14 @@ public final class TextSystem {
             report(.missingBackend)
             return nil
         }
-        guard let measured = backend.createLayout(
-            AttributedText(runs: layout.textRuns),
-            containerWidth: layout.containerWidth,
-            paragraphStyle: layout.paragraphStyle,
-            scale: scale
-        ), measured.handle.rawValue != 0 else {
+        guard
+            let measured = backend.createLayout(
+                AttributedText(runs: layout.textRuns),
+                containerWidth: layout.containerWidth,
+                paragraphStyle: layout.paragraphStyle,
+                scale: scale
+            ), measured.handle.rawValue != 0
+        else {
             report(.resourceCreationFailed)
             return nil
         }
@@ -490,11 +497,13 @@ public final class TextSystem {
         at point: Point,
         in layout: TextLayout
     ) -> TextGlyphPosition? {
-        guard let line = layout.lines.first(where: {
-            let minimum = $0.frame.origin.y
-            let maximum = minimum + $0.frame.size.height
-            return point.y >= minimum && point.y <= maximum
-        }) ?? layout.lines.last else {
+        guard
+            let line = layout.lines.first(where: {
+                let minimum = $0.frame.origin.y
+                let maximum = minimum + $0.frame.size.height
+                return point.y >= minimum && point.y <= maximum
+            }) ?? layout.lines.last
+        else {
             return nil
         }
         let count = max(0, line.sourceUTF16Range.count)
@@ -520,13 +529,14 @@ public final class TextSystem {
             guard lower < upper else { return nil }
             let count = max(1, line.sourceUTF16Range.count)
             let unit = line.frame.size.width / Double(count)
-            return TextSelectionRect(rect: Rect(
-                x: line.frame.origin.x
-                    + Double(lower - line.sourceUTF16Range.lowerBound) * unit,
-                y: line.frame.origin.y,
-                width: Double(upper - lower) * unit,
-                height: line.frame.size.height
-            ))
+            return TextSelectionRect(
+                rect: Rect(
+                    x: line.frame.origin.x
+                        + Double(lower - line.sourceUTF16Range.lowerBound) * unit,
+                    y: line.frame.origin.y,
+                    width: Double(upper - lower) * unit,
+                    height: line.frame.size.height
+                ))
         }
     }
 
@@ -575,13 +585,16 @@ public final class TextSystem {
         let naturalWidth = Double(text.utf16.count) * glyphAdvance
         let widthLimit = containerWidth.map { max(0, $0) }
         let canWrap = paragraphStyle.lineBreakMode.isWrapping && (widthLimit ?? 0) > 0
-        let unitsPerLine = canWrap
+        let unitsPerLine =
+            canWrap
             ? max(1, Int((widthLimit ?? naturalWidth) / glyphAdvance))
             : max(1, text.utf16.count)
-        let naturalLineCount = text.isEmpty
+        let naturalLineCount =
+            text.isEmpty
             ? 0
             : max(1, Int(ceil(Double(text.utf16.count) / Double(unitsPerLine))))
-        let visibleCount = paragraphStyle.maximumLineCount == 0
+        let visibleCount =
+            paragraphStyle.maximumLineCount == 0
             ? naturalLineCount
             : min(naturalLineCount, paragraphStyle.maximumLineCount)
         let exceeds = visibleCount < naturalLineCount
@@ -590,7 +603,8 @@ public final class TextSystem {
         for lineIndex in 0..<visibleCount {
             let start = lineIndex * unitsPerLine
             let end = min(text.utf16.count, start + unitsPerLine)
-            let lineWidth = widthLimit.map { min($0, Double(end - start) * glyphAdvance) }
+            let lineWidth =
+                widthLimit.map { min($0, Double(end - start) * glyphAdvance) }
                 ?? Double(end - start) * glyphAdvance
             let x: Double
             switch paragraphStyle.alignment {
@@ -602,33 +616,37 @@ public final class TextSystem {
                 x = max(0, (widthLimit ?? lineWidth) - lineWidth)
             }
             let range = start..<end
-            lines.append(TextLayoutLine(
-                text: text.utf16Substring(in: range),
-                frame: Rect(
-                    x: x,
-                    y: Double(lineIndex) * (lineHeight + paragraphStyle.lineSpacing),
-                    width: lineWidth,
-                    height: lineHeight
-                ),
-                baselineOffsetFromTop: Double(metrics.firstBaselineOffsetFromTop),
-                sourceUTF16Range: range,
-                endExcludingWhitespace: end,
-                endIncludingNewline: end,
-                lineNumber: lineIndex,
-                typographicAscent: Double(metrics.ascender),
-                typographicDescent: Double(metrics.descender),
-                unscaledAscent: Double(metrics.ascender),
-                isLastVisibleLine: lineIndex == visibleCount - 1,
-                isTruncated: exceeds && lineIndex == visibleCount - 1
-            ))
+            lines.append(
+                TextLayoutLine(
+                    text: text.utf16Substring(in: range),
+                    frame: Rect(
+                        x: x,
+                        y: Double(lineIndex) * (lineHeight + paragraphStyle.lineSpacing),
+                        width: lineWidth,
+                        height: lineHeight
+                    ),
+                    baselineOffsetFromTop: Double(metrics.firstBaselineOffsetFromTop),
+                    sourceUTF16Range: range,
+                    endExcludingWhitespace: end,
+                    endIncludingNewline: end,
+                    lineNumber: lineIndex,
+                    typographicAscent: Double(metrics.ascender),
+                    typographicDescent: Double(metrics.descender),
+                    unscaledAscent: Double(metrics.ascender),
+                    isLastVisibleLine: lineIndex == visibleCount - 1,
+                    isTruncated: exceeds && lineIndex == visibleCount - 1
+                ))
         }
-        let usedWidth = widthLimit ?? min(
-            naturalWidth,
-            lines.map { $0.frame.origin.x + $0.frame.size.width }.max() ?? 0
-        )
-        let usedHeight = lines.last.map {
-            $0.frame.origin.y + $0.frame.size.height
-        } ?? 0
+        let usedWidth =
+            widthLimit
+            ?? min(
+                naturalWidth,
+                lines.map { $0.frame.origin.x + $0.frame.size.width }.max() ?? 0
+            )
+        let usedHeight =
+            lines.last.map {
+                $0.frame.origin.y + $0.frame.size.height
+            } ?? 0
         return TextLayoutResult(
             usedRect: Rect(x: 0, y: 0, width: usedWidth, height: usedHeight),
             lines: lines,
@@ -648,8 +666,8 @@ public final class TextSystem {
     }
 }
 
-private extension LineBreakMode {
-    var isWrapping: Bool {
+extension LineBreakMode {
+    fileprivate var isWrapping: Bool {
         switch self {
         case .byWordWrapping, .byCharacterWrapping:
             true
@@ -659,8 +677,8 @@ private extension LineBreakMode {
     }
 }
 
-private extension String {
-    func utf16Substring(in range: Range<Int>) -> String {
+extension String {
+    fileprivate func utf16Substring(in range: Range<Int>) -> String {
         let lower = max(0, min(range.lowerBound, utf16.count))
         let upper = max(lower, min(range.upperBound, utf16.count))
         let start = utf16.index(utf16.startIndex, offsetBy: lower)
@@ -674,4 +692,3 @@ private extension String {
         return String(self[stringStart..<stringEnd])
     }
 }
-import Tracy

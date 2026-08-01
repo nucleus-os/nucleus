@@ -1,3 +1,5 @@
+internal import NucleusAppHostProtocols
+
 // The Android renderer: lifecycle bookkeeping over the shared render stack. Each
 // live-surface frame drives the `@MainActor` `AndroidRenderEngine` (the `RenderCore`
 // + the `AndroidVulkanPresenter` swapchain backend) through `MainActor.assumeIsolated`:
@@ -8,8 +10,8 @@
 // generation changes (resize / rotation / re-create). There is no CPU rendering path.
 
 import NucleusAndroidC
-@_spi(NucleusPlatform) internal import NucleusRenderer
 internal import NucleusRenderModel
+internal import NucleusRenderer
 import Synchronization
 
 /// Android already owns a continuously posted Choreographer callback while the
@@ -63,7 +65,7 @@ struct AndroidRenderer {
     var detach_count: UInt64 = 0
     var last_frame_time_nanos: Int64 = 0
     var drained_event_count: UInt64 = 0
-    var last_event_hash: UInt32 = 2166136261
+    var last_event_hash: UInt32 = 2_166_136_261
     var render_attempt_count: UInt64 = 0
     var render_post_count: UInt64 = 0
     var render_failure_count: UInt64 = 0
@@ -155,7 +157,7 @@ struct AndroidRenderer {
     }
 
     func smokeValue() -> Int32 {
-        var hash: UInt32 = 2166136261
+        var hash: UInt32 = 2_166_136_261
         hash = nucMix(hash, attached ? 1 : 0)
         hash = nucMix(hash, started ? 1 : 0)
         hash = nucMix(hash, surface_available_at_attach ? 1 : 0)
@@ -172,14 +174,16 @@ struct AndroidRenderer {
         hash = nucMix(hash, UInt32(bitPattern: last_render_status.rawValue))
         hash = nucMix(hash, UInt32(bitPattern: last_buffer_width))
         hash = nucMix(hash, UInt32(bitPattern: last_buffer_height))
-        return Int32(hash & 0x7fffffff)
+        return Int32(hash & 0x7fff_ffff)
     }
 
     private mutating func renderVulkanFrame() -> RenderStatus {
         guard let window = unsafe surface.window else { return .no_surface }
         if surface.width <= 0 || surface.height <= 0 { return .invalid_surface }
-        let width = surface.width, height = surface.height
-        let generation = surface.generation, frameTime = last_frame_time_nanos
+        let width = surface.width
+        let height = surface.height
+        let generation = surface.generation
+        let frameTime = last_frame_time_nanos
         _ = asyncRenderWake.consume()
         // The ANativeWindow pointer is not Sendable; pass it as a bit pattern across
         // the main-actor closure boundary and reconstruct inside.
@@ -195,8 +199,9 @@ struct AndroidRenderer {
         let previousGeneration = engineSurfaceGeneration
         let result: (status: RenderStatus, width: Int32, height: Int32) =
             MainActor.assumeIsolated {
-                guard let window = unsafe UnsafeMutableRawPointer(
-                    bitPattern: windowBits)
+                guard
+                    let window = unsafe UnsafeMutableRawPointer(
+                        bitPattern: windowBits)
                 else {
                     return (.no_surface, 0, 0)
                 }
@@ -206,7 +211,8 @@ struct AndroidRenderer {
                 }
                 if localEngine == nil {
                     let host = localResourceHost ?? SwiftResourceHost()
-                    let store = localRetainedStore
+                    let store =
+                        localRetainedStore
                         ?? RetainedTreeStore(resourceHost: host)
                     localResourceHost = host
                     localRetainedStore = store

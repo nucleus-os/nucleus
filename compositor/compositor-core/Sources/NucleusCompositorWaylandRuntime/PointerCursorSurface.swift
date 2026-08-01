@@ -11,11 +11,11 @@
 // focus leaves (InputDispatch restores the default), the binding is cleared and later
 // commits from the now-unfocused surface no longer touch the cursor.
 
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
-internal import NucleusCompositorServer
 import Glibc
+internal import NucleusCompositorServer
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 /// The current client cursor-surface binding (the focused client's `set_cursor`).
 /// Main-actor: set/read on the single compositor thread.
@@ -77,7 +77,8 @@ final class PointerCursorSurface {
         guard surface.objectId == surfaceId, surfaceId != 0 else { return }
         cancelPendingCapture()
         if let buffer = surface.currentBuffer,
-           let shm = Self.cursorImageFromShm(buffer) {
+            let shm = Self.cursorImageFromShm(buffer)
+        {
             surface.releaseCurrentBufferImmediately()
             server.cursor.setImage(
                 pixels: shm.pixels,
@@ -89,7 +90,7 @@ final class PointerCursorSurface {
         }
         let iosurfaceID = surface.renderIosurfaceId
         guard iosurfaceID != 0,
-              let service = server.renderService
+            let service = server.renderService
         else { return }
         let generation = captureGeneration
         pendingCaptureID = service.beginReadSurface(
@@ -98,11 +99,11 @@ final class PointerCursorSurface {
             guard let self, generation == self.captureGeneration else { return }
             self.pendingCaptureID = nil
             guard let surface,
-                  surface.objectId == self.surfaceId,
-                  surface.renderIosurfaceId == iosurfaceID,
-                  let capture,
-                  let width = UInt32(exactly: capture.width),
-                  let height = UInt32(exactly: capture.height)
+                surface.objectId == self.surfaceId,
+                surface.renderIosurfaceId == iosurfaceID,
+                let capture,
+                let width = UInt32(exactly: capture.width),
+                let height = UInt32(exactly: capture.height)
             else { return }
             self.server.cursor.setImage(
                 pixels: capture.pixels,
@@ -135,15 +136,17 @@ final class PointerCursorSurface {
             guard isReadableCursorShmFormat(metadata.format),
                 metadata.stride >= metadata.width * 4
             else { return nil }
-            guard let pixels = bytes.copiedRows(
-                rowBytes: metadata.width * 4,
-                rowCount: metadata.height,
-                sourceStride: metadata.stride)
+            guard
+                let pixels = bytes.copiedRows(
+                    rowBytes: metadata.width * 4,
+                    rowCount: metadata.height,
+                    sourceStride: metadata.stride)
             else { return nil }
             return (
                 pixels,
                 UInt32(metadata.width),
-                UInt32(metadata.height))
+                UInt32(metadata.height)
+            )
         }) ?? nil
     }
 

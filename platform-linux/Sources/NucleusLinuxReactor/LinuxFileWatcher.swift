@@ -14,18 +14,18 @@ import Glibc
 /// Single-threaded on the owner's actor. Holds an owned inotify descriptor and
 /// a raw read buffer, so it is a reference type with explicit teardown.
 @MainActor
-@safe public final class LinuxFileWatcher: LinuxReactorSource {
+@safe package final class LinuxFileWatcher: LinuxReactorSource {
     /// What the watcher observed since the last drain.
-    public struct Change: Equatable, Sendable {
+    package struct Change: Equatable, Sendable {
         /// The file was created, replaced, or written in place.
-        public var contentChanged = false
+        package var contentChanged = false
         /// The file was removed or renamed away.
-        public var removed = false
+        package var removed = false
         /// The watched directory itself moved or disappeared. The owner must
         /// discard this source and periodically attempt to create a new one.
-        public var watchInvalidated = false
+        package var watchInvalidated = false
 
-        public var isEmpty: Bool {
+        package var isEmpty: Bool {
             !contentChanged && !removed && !watchInvalidated
         }
     }
@@ -40,7 +40,7 @@ import Glibc
     private let fileName: String
     private let buffer: UnsafeMutableRawPointer
     /// Fired on the owner's actor when a drain observed something relevant.
-    public var onChange: (@MainActor (Change) -> Void)?
+    package var onChange: (@MainActor (Change) -> Void)?
 
     /// Watch `path`. Returns nil when inotify is unavailable or the parent
     /// directory does not exist.
@@ -49,7 +49,7 @@ import Glibc
     /// synthesizing around: it means the user has never written a
     /// configuration, so there is nothing to reload yet, and creating one is
     /// already a deliberate act they can follow with a restart.
-    public init?(path: String) {
+    package init?(path: String) {
         let separator = path.lastIndex(of: "/")
         guard let separator, separator != path.startIndex else { return nil }
         let directory = String(path[path.startIndex..<separator])
@@ -62,7 +62,8 @@ import Glibc
         // rename; CREATE catches a fresh file; DELETE and MOVED_FROM catch
         // removal, which must fall back to defaults rather than keep stale
         // settings that no file supports any more.
-        let mask = UInt32(IN_CLOSE_WRITE) | UInt32(IN_MOVED_TO)
+        let mask =
+            UInt32(IN_CLOSE_WRITE) | UInt32(IN_MOVED_TO)
             | UInt32(IN_CREATE) | UInt32(IN_DELETE) | UInt32(IN_MOVED_FROM)
             | UInt32(IN_DELETE_SELF) | UInt32(IN_MOVE_SELF)
         // The String → const char* bridge is the unsafe part, not the call.
@@ -86,20 +87,20 @@ import Glibc
 
     // MARK: LinuxReactorSource
 
-    public var fileDescriptor: Int32 { descriptor }
-    public var pollEvents: Int16 { Int16(POLLIN) }
+    package var fileDescriptor: Int32 { descriptor }
+    package var pollEvents: Int16 { Int16(POLLIN) }
     /// Purely descriptor-driven; it never needs a timeout wake.
-    public func timeoutMicroseconds() -> UInt64? { nil }
+    package func timeoutMicroseconds() -> UInt64? { nil }
 
     @discardableResult
-    public func process() -> Bool {
+    package func process() -> Bool {
         let change = drain()
         guard !change.isEmpty else { return false }
         onChange?(change)
         return true
     }
 
-    public func transportDidFail(operation: String) {
+    package func transportDidFail(operation: String) {
         // A dead inotify descriptor costs reload, not the session. The owner
         // logs; there is nothing to repair here without re-creating the
         // watcher, which the owner decides.
@@ -131,13 +132,15 @@ import Glibc
                 start: buffer, count: byteCount)
             let mask = unsafe raw.loadUnaligned(
                 fromByteOffset: offset + 4, as: UInt32.self)
-            let nameLength = Int(unsafe raw.loadUnaligned(
-                fromByteOffset: offset + 12, as: UInt32.self))
+            let nameLength = Int(
+                unsafe raw.loadUnaligned(
+                    fromByteOffset: offset + 12, as: UInt32.self))
             let nameStart = offset + Self.headerSize
             guard nameStart + nameLength <= byteCount else { break }
 
-            if mask & (UInt32(IN_DELETE_SELF) | UInt32(IN_MOVE_SELF)
-                | UInt32(IN_IGNORED)) != 0
+            if mask
+                & (UInt32(IN_DELETE_SELF) | UInt32(IN_MOVE_SELF)
+                    | UInt32(IN_IGNORED)) != 0
             {
                 change.watchInvalidated = true
                 change.removed = true

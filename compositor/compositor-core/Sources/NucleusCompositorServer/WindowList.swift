@@ -1,5 +1,5 @@
 @MainActor
-public final class WindowList {
+package final class WindowList {
     private var items: [Window] = []
     /// Identity index over `items`. The authoritative `id -> Window` map (the server
     /// delegates `window(id:)` here rather than keeping a parallel dictionary), which
@@ -12,27 +12,27 @@ public final class WindowList {
     private var focusedWindowID: WindowID?
     /// Records lifecycle/focus changes for the observation stream. Set by the
     /// owning `NucleusCompositorServer`; nil leaves the list silent.
-    public var onChange: ((DesktopChange) -> Void)?
+    package var onChange: ((DesktopChange) -> Void)?
 
-    public init() {}
+    package init() {}
 
-    public var windows: [Window] { items }
-    public var windowCount: Int { items.count }
-    public var focusedWindow: Window? { focusedWindowID.flatMap(window(id:)) }
+    package var windows: [Window] { items }
+    package var windowCount: Int { items.count }
+    package var focusedWindow: Window? { focusedWindowID.flatMap(window(id:)) }
 
-    public func window(id: WindowID) -> Window? {
+    package func window(id: WindowID) -> Window? {
         byID[id]
     }
 
     /// Resolve the window backing a Wayland surface wire id (`Window.surfaceObjectId`).
     /// The router's input/session-lock crossings use this to answer "which window owns
     /// this surface" without holding a window pointer across the `@c` boundary.
-    public func window(bySurfaceObjectId surfaceObjectId: UInt32) -> Window? {
+    package func window(bySurfaceObjectId surfaceObjectId: UInt32) -> Window? {
         guard surfaceObjectId != 0 else { return nil }
         return bySurfaceObjectId[surfaceObjectId]
     }
 
-    public func add(_ window: Window) {
+    package func add(_ window: Window) {
         if byID[window.id] != nil { return }
         items.insert(window, at: insertionIndex(forLevel: window.level))
         byID[window.id] = window
@@ -55,7 +55,7 @@ public final class WindowList {
     }
 
     @discardableResult
-    public func remove(id: WindowID) -> Window? {
+    package func remove(id: WindowID) -> Window? {
         guard let index = items.firstIndex(where: { $0.id == id }) else { return nil }
         let removed = items.remove(at: index)
         byID[id] = nil
@@ -72,7 +72,7 @@ public final class WindowList {
     }
 
     @discardableResult
-    public func raise(id: WindowID) -> Bool {
+    package func raise(id: WindowID) -> Bool {
         guard byID[id] != nil else { return false }
         // Raise the whole window family (the clicked window's root ancestor and
         // all of its descendants), not just the one window, so a parent and its
@@ -96,8 +96,8 @@ public final class WindowList {
         var guardCount = 0
         while guardCount < items.count {
             guard let window = window(id: current),
-                  let parent = window.parentWindowID,
-                  byID[parent] != nil
+                let parent = window.parentWindowID,
+                byID[parent] != nil
             else { return current }
             current = parent
             guardCount += 1
@@ -116,14 +116,14 @@ public final class WindowList {
     }
 
     @discardableResult
-    public func restackByLevel(id: WindowID) -> Bool {
+    package func restackByLevel(id: WindowID) -> Bool {
         raise(id: id)
     }
 
     @discardableResult
-    public func place(id: WindowID, below siblingID: WindowID) -> Bool {
+    package func place(id: WindowID, below siblingID: WindowID) -> Bool {
         guard let windowIndex = items.firstIndex(where: { $0.id == id }),
-              let siblingIndex = items.firstIndex(where: { $0.id == siblingID })
+            let siblingIndex = items.firstIndex(where: { $0.id == siblingID })
         else { return false }
         let window = items.remove(at: windowIndex)
         let adjustedSiblingIndex = windowIndex < siblingIndex ? siblingIndex - 1 : siblingIndex
@@ -140,7 +140,7 @@ public final class WindowList {
     }
 
     @discardableResult
-    public func focus(id: WindowID) -> Bool {
+    package func focus(id: WindowID) -> Bool {
         guard byID[id] != nil else { return false }
         guard focusedWindowID != id else { return true }
         focusedWindowID = id
@@ -148,25 +148,25 @@ public final class WindowList {
         return true
     }
 
-    public func orderedIDs() -> [WindowID] {
+    package func orderedIDs() -> [WindowID] {
         items.map(\.id)
     }
 
-    public func frontToBackOrderedIDs() -> [WindowID] {
+    package func frontToBackOrderedIDs() -> [WindowID] {
         items.reversed().map(\.id)
     }
 
     /// Windows ordered front-most first (top of the z-order first). The inverse
     /// of the back-to-front `windows` accessor.
-    public var windowsFrontToBack: [Window] { items.reversed() }
+    package var windowsFrontToBack: [Window] { items.reversed() }
 
     /// Back-to-front z-order index of `id` (0 = farthest back), or nil if absent.
     /// The tiebreak coordinate the fullscreen-occlusion predicate compares.
-    public func backToFrontIndex(of id: WindowID) -> Int? {
+    package func backToFrontIndex(of id: WindowID) -> Int? {
         items.firstIndex { $0.id == id }
     }
 
-    public func reset() {
+    package func reset() {
         for window in items {
             window.onSurfaceObjectIdChange = nil
             window.onLevelChange = nil
@@ -193,10 +193,10 @@ public final class WindowList {
     }
 }
 
-public struct WindowTransition: Sendable, Equatable {
-    public var id: UInt64 = 0
-    public var outputID: DisplayID?
-    public var participantCount: UInt32 = 0
+package struct WindowTransition: Sendable, Equatable {
+    package var id: UInt64 = 0
+    package var outputID: DisplayID?
+    package var participantCount: UInt32 = 0
 
-    public var isActive: Bool { id != 0 }
+    package var isActive: Bool { id != 0 }
 }

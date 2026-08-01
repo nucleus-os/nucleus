@@ -1,10 +1,11 @@
-@_spi(NucleusRenderServer) public import NucleusLayers
+package import NucleusLayers
 import NucleusRenderHost
-public import struct NucleusTypes.Rect
+
+package import struct NucleusTypes.Rect
 
 /// Failure type for the scene author's rich-throwing entry points. One case: the
 /// caller maps any thrown layer/transaction error to this single tag.
-public enum HostCallError: Error {
+package enum HostCallError: Error {
     case failed
 }
 
@@ -13,20 +14,20 @@ public enum HostCallError: Error {
 /// the content viewport (and the scaled backing) by these within the presented
 /// outer frame, leaving the band for compositor-drawn chrome. All zero for
 /// undecorated and fullscreen windows.
-public struct WindowEdgeInsets: Sendable, Equatable {
-    public var top: Double
-    public var left: Double
-    public var bottom: Double
-    public var right: Double
+package struct WindowEdgeInsets: Sendable, Equatable {
+    package var top: Double
+    package var left: Double
+    package var bottom: Double
+    package var right: Double
 
-    public init(top: Double = 0, left: Double = 0, bottom: Double = 0, right: Double = 0) {
+    package init(top: Double = 0, left: Double = 0, bottom: Double = 0, right: Double = 0) {
         self.top = top
         self.left = left
         self.bottom = bottom
         self.right = right
     }
 
-    public static let zero = WindowEdgeInsets()
+    package static let zero = WindowEdgeInsets()
 }
 
 private struct AuthoredWindowLayout: Equatable {
@@ -40,8 +41,8 @@ private struct AuthoredWindowLayout: Equatable {
 }
 
 @MainActor
-public final class WindowSceneAuthor {
-    public typealias CommitSinkFactory = @MainActor () throws(LayerError) -> any CommitSink
+package final class WindowSceneAuthor {
+    package typealias CommitSinkFactory = @MainActor () throws(LayerError) -> any CommitSink
 
     private static let windowCornerRadius: Float = 10
 
@@ -81,7 +82,7 @@ public final class WindowSceneAuthor {
         let index: UInt32
     }
 
-    public init(commitSinkFactory: @escaping CommitSinkFactory) {
+    package init(commitSinkFactory: @escaping CommitSinkFactory) {
         self.commitSinkFactory = commitSinkFactory
     }
 
@@ -91,9 +92,10 @@ public final class WindowSceneAuthor {
     ) -> [LocalLayerTopology] {
         layerIDs.compactMap { id in
             guard let layer = context.layers[id] else { return nil }
-            let index = layer.parent?.sublayers.firstIndex {
-                $0 === layer
-            }.map(UInt32.init) ?? UInt32.max
+            let index =
+                layer.parent?.sublayers.firstIndex {
+                    $0 === layer
+                }.map(UInt32.init) ?? UInt32.max
             return LocalLayerTopology(
                 id: id,
                 descriptor: layer.descriptor,
@@ -125,8 +127,8 @@ public final class WindowSceneAuthor {
             var parent = item.parentID
             var visited: Set<LayerID> = []
             while let id = parent,
-                  visited.insert(id).inserted,
-                  let next = byID[id]
+                visited.insert(id).inserted,
+                let next = byID[id]
             {
                 result += 1
                 parent = next.parentID
@@ -153,7 +155,7 @@ public final class WindowSceneAuthor {
     /// Ensure the compositor-root context (`.compositor`) and its root container exist.
     /// Idempotent. The root context's well-known id makes the render server compose
     /// every hosted window context beneath this container.
-    public func ensureCompositorRoot() throws {
+    package func ensureCompositorRoot() throws {
         if rootContext != nil { return }
         let context = try Context(id: .compositor, commitSink: commitSinkFactory())
         var rootID = LayerID(rawValue: 0)
@@ -177,7 +179,8 @@ public final class WindowSceneAuthor {
         var containerID = LayerID(rawValue: 0)
         try rootContext.transaction { transaction in
             let container = transaction.createLayer(LayerDescriptor(kind: .container))
-            let host = transaction.createLayer(LayerDescriptor(kind: .host, targetContextID: windowContext.id))
+            let host = transaction.createLayer(
+                LayerDescriptor(kind: .host, targetContextID: windowContext.id))
             // Establish the container's ancestry first. Besides matching the
             // back-to-front ownership order, this keeps transaction validation
             // from having to reason about a child whose new parent has not itself
@@ -194,7 +197,7 @@ public final class WindowSceneAuthor {
 
     /// Re-attach each hosted window's container into the compositor root at its
     /// back-to-front z-index. The per-frame z-order sync, driven by the feeder.
-    public func setWindowOrder(_ surfaceIDsBackToFront: [UInt64]) throws {
+    package func setWindowOrder(_ surfaceIDsBackToFront: [UInt64]) throws {
         guard surfaceIDsBackToFront != lastWindowOrder else { return }
         guard let rootContext else { return }
         let rootLayer = rootContext.importExistingLayer(id: compositorRoot)
@@ -215,7 +218,7 @@ public final class WindowSceneAuthor {
         lastWindowOrder = surfaceIDsBackToFront
     }
 
-    public func scene(for surfaceID: UInt64) -> WindowScene? {
+    package func scene(for surfaceID: UInt64) -> WindowScene? {
         scenes[surfaceID]
     }
 
@@ -223,7 +226,7 @@ public final class WindowSceneAuthor {
     /// compositor-root host). The session-lock composition uses this to name the
     /// contexts the locked scanout path is allowed to compose. nil for an unknown or
     /// child surface.
-    public func contextID(forSurface surfaceID: UInt64) -> ContextID? {
+    package func contextID(forSurface surfaceID: UInt64) -> ContextID? {
         contexts[surfaceID]?.id
     }
 
@@ -242,7 +245,7 @@ public final class WindowSceneAuthor {
     /// feeder supplies only the surface id + frame). Returns the backing layer id (the
     /// surface's external-content target the feeder records for the content publish).
     @discardableResult
-    public func surfaceAttached(surfaceID: UInt64, frame: GeometryRect = .zero) throws -> UInt64 {
+    package func surfaceAttached(surfaceID: UInt64, frame: GeometryRect = .zero) throws -> UInt64 {
         if let scene = scenes[surfaceID] {
             return scene.backingLayer?.rawValue ?? 0
         }
@@ -253,15 +256,18 @@ public final class WindowSceneAuthor {
         var popupID = LayerID(rawValue: 0)
         var backingID = LayerID(rawValue: 0)
         try context.transaction { transaction in
-            let root = transaction.createLayer(.init(role: .windowRoot, frame: frame, shadow: Self.defaultWindowShadow))
-            let content = transaction.createLayer(.init(
-                role: .windowContentViewport,
-                frame: GeometryRect(x: 0, y: 0, width: frame.width, height: frame.height)
-            ))
+            let root = transaction.createLayer(
+                .init(role: .windowRoot, frame: frame, shadow: Self.defaultWindowShadow))
+            let content = transaction.createLayer(
+                .init(
+                    role: .windowContentViewport,
+                    frame: GeometryRect(x: 0, y: 0, width: frame.width, height: frame.height)
+                ))
             let popup = transaction.createLayer()
-            let backing = transaction.createLayer(.init(
-                frame: GeometryRect(x: 0, y: 0, width: frame.width, height: frame.height)
-            ))
+            let backing = transaction.createLayer(
+                .init(
+                    frame: GeometryRect(x: 0, y: 0, width: frame.width, height: frame.height)
+                ))
             try transaction.insert(root)
             try transaction.insert(content, into: root, at: 0)
             try transaction.insert(popup, into: root, at: UInt32.max)
@@ -275,11 +281,12 @@ public final class WindowSceneAuthor {
             var contentStyle = LayerPropertyUpdate.decomposedFrame(
                 GeometryRect(x: 0, y: 0, width: frame.width, height: frame.height)
             )
-            contentStyle.clip = Self.clip(for: frame, squareTop: false)
+            contentStyle.clip = .set(Self.clip(for: frame, squareTop: false))
             try transaction.setProperties(contentStyle, for: content)
 
             try transaction.setProperties(
-                .decomposedFrame(GeometryRect(x: 0, y: 0, width: frame.width, height: frame.height)),
+                .decomposedFrame(
+                    GeometryRect(x: 0, y: 0, width: frame.width, height: frame.height)),
                 for: popup
             )
 
@@ -302,7 +309,7 @@ public final class WindowSceneAuthor {
         return backingID.rawValue
     }
 
-    public func surfaceDestroyed(surfaceID: UInt64) throws {
+    package func surfaceDestroyed(surfaceID: UInt64) throws {
         if let hosting = hostingBySurface[surfaceID], let rootContext {
             let topology = captureTopology(
                 in: rootContext,
@@ -310,7 +317,9 @@ public final class WindowSceneAuthor {
             do {
                 try rootContext.transaction { transaction in
                     if let host = rootContext.layers[hosting.host] { try transaction.remove(host) }
-                    if let container = rootContext.layers[hosting.container] { try transaction.remove(container) }
+                    if let container = rootContext.layers[hosting.container] {
+                        try transaction.remove(container)
+                    }
                 }
             } catch {
                 restoreTopology(topology, in: rootContext)
@@ -353,9 +362,9 @@ public final class WindowSceneAuthor {
     }
 
     /// What a child surface parents under in its parent window's scene.
-    public enum ChildSurfaceKind: Sendable {
+    package enum ChildSurfaceKind: Sendable {
         case subsurface  // under the parent's content viewport, composited with the window
-        case popup       // under the parent's popup layer, above the window content
+        case popup  // under the parent's popup layer, above the window content
     }
 
     /// Attach a child surface (subsurface/popup) as a single backing layer in its
@@ -364,14 +373,16 @@ public final class WindowSceneAuthor {
     /// to 0 if the parent has no scene yet. Adds a per-child sub-layer under the
     /// window's content/popup root.
     @discardableResult
-    public func childSurfaceAttached(
+    package func childSurfaceAttached(
         surfaceID: UInt64,
         parentSurfaceID: UInt64,
         kind: ChildSurfaceKind,
         frame: GeometryRect
     ) throws -> UInt64 {
         if let scene = scenes[surfaceID] { return scene.backingLayer?.rawValue ?? 0 }
-        guard let parentContext = contexts[parentSurfaceID], let parentScene = scenes[parentSurfaceID] else {
+        guard let parentContext = contexts[parentSurfaceID],
+            let parentScene = scenes[parentSurfaceID]
+        else {
             return 0
         }
         let hostLayerID = (kind == .popup) ? parentScene.popupLayer : parentScene.contentLayer
@@ -399,7 +410,7 @@ public final class WindowSceneAuthor {
     }
 
     /// Reposition/resize a child surface's backing layer within its parent context.
-    public func layoutChildSurface(surfaceID: UInt64, frame: GeometryRect) throws {
+    package func layoutChildSurface(surfaceID: UInt64, frame: GeometryRect) throws {
         guard childSurfaces.contains(surfaceID),
             let context = contexts[surfaceID], let scene = scenes[surfaceID],
             let backingID = scene.backingLayer
@@ -413,7 +424,7 @@ public final class WindowSceneAuthor {
     /// Tear down a child surface: remove only its own backing layer; the parent
     /// window's scene is untouched (the child shares the parent's context). No-ops
     /// for a non-child surface id, so it is safe to call on every surface teardown.
-    public func childSurfaceDetached(surfaceID: UInt64) throws {
+    package func childSurfaceDetached(surfaceID: UInt64) throws {
         guard childSurfaces.contains(surfaceID),
             let context = contexts[surfaceID], let scene = scenes[surfaceID]
         else { return }
@@ -437,7 +448,7 @@ public final class WindowSceneAuthor {
         // The context belongs to the parent window — never cleared here.
     }
 
-    public func applyLayout(
+    package func applyLayout(
         surfaceID: UInt64,
         frame: GeometryRect,
         baseSize: GeometrySize,
@@ -457,7 +468,11 @@ public final class WindowSceneAuthor {
             overlayOpacity: overlayOpacity)
         guard authoredLayouts[surfaceID] != layout else { return }
         try context.transaction { transaction in
-            try applyGeometry(frame: frame, baseSize: baseSize, backingFrame: backingFrame, chromeInsets: chromeInsets, chromeFocused: chromeFocused, windowOpacity: windowOpacity, overlayOpacity: overlayOpacity, scene: &scene, context: context, transaction: &transaction)
+            try applyGeometry(
+                frame: frame, baseSize: baseSize, backingFrame: backingFrame,
+                chromeInsets: chromeInsets, chromeFocused: chromeFocused,
+                windowOpacity: windowOpacity, overlayOpacity: overlayOpacity, scene: &scene,
+                context: context, transaction: &transaction)
         }
         scene.frame = frame
         scenes[surfaceID] = scene
@@ -470,16 +485,17 @@ public final class WindowSceneAuthor {
     /// to the backing, opacity from the spring's remaining displacement — so it overlays the
     /// live backing exactly and dissolves in step with the motion. `endContentCrossfade`
     /// removes it once the opacity has reached zero at settle.
-    public func beginContentCrossfade(
+    package func beginContentCrossfade(
         surfaceID: UInt64,
         snapshotHandle: UInt64
     ) throws(HostCallError) {
         guard let context = contexts[surfaceID], var scene = scenes[surfaceID]
         else { throw .failed }
         do {
-            let previousTopology = scene.overlaySnapshotLayer.map {
-                captureTopology(in: context, layerIDs: [$0])
-            } ?? []
+            let previousTopology =
+                scene.overlaySnapshotLayer.map {
+                    captureTopology(in: context, layerIDs: [$0])
+                } ?? []
             var overlayID: LayerID? = nil
             do {
                 try context.transaction { transaction in
@@ -490,15 +506,22 @@ public final class WindowSceneAuthor {
                     // committed state with neither the old nor new overlay because a
                     // superseding transition happened to fail halfway through.
                     if let existing = scene.overlaySnapshotLayer,
-                       let layer = context.layers[existing]
+                        let layer = context.layers[existing]
                     {
                         try transaction.remove(layer)
                     }
-                    let overlay = transaction.createLayer(.init(
-                        initialContent: LayerContent(kind: .snapshot, handle: snapshotHandle)
-                    ))
+                    let overlay = transaction.createLayer(
+                        .init(
+                            initialContent: .snapshot(
+                                SnapshotContent(
+                                    handle: snapshotHandle,
+                                    resourceHostHandle: context.commitSink.resourceHostHandle,
+                                    resourceLifetime: context.runtimeHost.resourceLifetime,
+                                    retain: false))
+                        ))
                     overlayID = overlay.id
-                    try transaction.insert(overlay, into: context.layers[scene.contentLayer]!, at: 1)
+                    try transaction.insert(
+                        overlay, into: context.layers[scene.contentLayer]!, at: 1)
                 }
             } catch {
                 restoreTopology(
@@ -516,14 +539,17 @@ public final class WindowSceneAuthor {
     }
 
     /// Remove the snapshot-overlay layer and clear the scene's crossfade state.
-    public func endContentCrossfade(surfaceID: UInt64) throws(HostCallError) {
+    package func endContentCrossfade(surfaceID: UInt64) throws(HostCallError) {
         guard let context = contexts[surfaceID], var scene = scenes[surfaceID] else { return }
         do {
-            let topology = scene.overlaySnapshotLayer.map {
-                captureTopology(in: context, layerIDs: [$0])
-            } ?? []
+            let topology =
+                scene.overlaySnapshotLayer.map {
+                    captureTopology(in: context, layerIDs: [$0])
+                } ?? []
             do {
-                if let overlayID = scene.overlaySnapshotLayer, let overlay = context.layers[overlayID] {
+                if let overlayID = scene.overlaySnapshotLayer,
+                    let overlay = context.layers[overlayID]
+                {
                     try context.transaction { transaction in try transaction.remove(overlay) }
                 }
             } catch {
@@ -538,7 +564,7 @@ public final class WindowSceneAuthor {
         }
     }
 
-    public func setContent(
+    package func setContent(
         surfaceID: UInt64,
         content: LayerContent,
         contentSample: ContentSample? = nil
@@ -551,11 +577,12 @@ public final class WindowSceneAuthor {
             guard let target = context.layers[targetID] else {
                 return
             }
-            try transaction.setProperties(LayerPropertyUpdate(content: content, contentSample: contentSample), for: target)
+            try transaction.setProperties(
+                LayerPropertyUpdate(content: content, contentSample: contentSample), for: target)
         }
     }
 
-    public func setBackgroundEffect(
+    package func setBackgroundEffect(
         surfaceID: UInt64,
         enabled: Bool,
         regions: BackgroundEffectRegions = BackgroundEffectRegions()
@@ -577,13 +604,17 @@ public final class WindowSceneAuthor {
     /// Repaint the traffic-light cluster for a hover/press change, independent of layout.
     /// `hovered`/`pressed` are 1-based button codes (0 = none, 1 = close, 2 = minimize,
     /// 3 = maximize). The cluster is repainted only when the pair actually changes.
-    public func setChromeButtonState(surfaceID: UInt64, hovered: UInt32, pressed: UInt32) throws(HostCallError) {
+    package func setChromeButtonState(surfaceID: UInt64, hovered: UInt32, pressed: UInt32)
+        throws(HostCallError)
+    {
         guard let context = contexts[surfaceID], var scene = scenes[surfaceID] else { return }
-        guard scene.titlebarButtonsHovered != hovered || scene.titlebarButtonsPressed != pressed else { return }
+        guard scene.titlebarButtonsHovered != hovered || scene.titlebarButtonsPressed != pressed
+        else { return }
         defer { scenes[surfaceID] = scene }
         scene.titlebarButtonsHovered = hovered
         scene.titlebarButtonsPressed = pressed
-        guard let buttonID = scene.titlebarButtonLayer, let buttonLayer = context.layers[buttonID] else {
+        guard let buttonID = scene.titlebarButtonLayer, let buttonLayer = context.layers[buttonID]
+        else {
             return
         }
         let focused = scene.titlebarButtonsFocused ?? false
@@ -606,8 +637,10 @@ public final class WindowSceneAuthor {
         }
     }
 
-    public func setOpacity(surfaceID: UInt64, opacity: Double) throws {
-        guard let context = contexts[surfaceID], let scene = scenes[surfaceID], let root = context.layers[scene.rootLayer] else {
+    package func setOpacity(surfaceID: UInt64, opacity: Double) throws {
+        guard let context = contexts[surfaceID], let scene = scenes[surfaceID],
+            let root = context.layers[scene.rootLayer]
+        else {
             return
         }
         try context.transaction { transaction in
@@ -619,13 +652,13 @@ public final class WindowSceneAuthor {
     /// backing only. Window-manager opacity continues to live on the scene
     /// root, so server-owned transitions multiply with client content alpha
     /// instead of overwriting it.
-    public func setContentOpacity(
+    package func setContentOpacity(
         surfaceID: UInt64,
         opacity: Double
     ) throws {
         guard let context = contexts[surfaceID],
-              let scene = scenes[surfaceID],
-              let target = context.layers[
+            let scene = scenes[surfaceID],
+            let target = context.layers[
                 scene.backingLayer ?? scene.contentLayer]
         else {
             return
@@ -637,21 +670,25 @@ public final class WindowSceneAuthor {
         }
     }
 
-    public func animateOpacity(
+    package func animateOpacity(
         surfaceID: UInt64,
         from: Double,
         to: Double,
         duration: Double,
         completionToken: UInt64
     ) throws(HostCallError) {
-        guard let context = contexts[surfaceID], let scene = scenes[surfaceID], let root = context.layers[scene.rootLayer] else {
+        guard let context = contexts[surfaceID], let scene = scenes[surfaceID],
+            let root = context.layers[scene.rootLayer]
+        else {
             return
         }
         do {
             var transaction = LayerTransaction(context: context, completionToken: completionToken)
             try transaction.setProperties(LayerPropertyUpdate(opacity: to), for: root)
             try transaction.add(
-                .scalar(keyPath: .opacity, from: from, to: to, duration: duration, curve: .bezier(.easeOut)),
+                .scalar(
+                    keyPath: .opacity, from: from, to: to, duration: duration,
+                    curve: .bezier(.easeOut)),
                 to: root
             )
             try transaction.commit()
@@ -741,7 +778,8 @@ public final class WindowSceneAuthor {
             update.transform = GeometryTransform.identity
             update.shadow = Self.defaultWindowShadow
             update.cornerRadii = Self.windowCornerRadii
-            let border: BorderEdge = hasChrome
+            let border: BorderEdge =
+                hasChrome
                 ? BorderEdge(width: Self.windowBorderWidth, color: Self.windowBorderColor)
                 : .none
             update.borderTop = border
@@ -753,7 +791,8 @@ public final class WindowSceneAuthor {
         }
         // Content: the inset content viewport within the frame, no scale, rounded-corner
         // clip at the viewport size → crisp corners that clip the live backing below.
-        let contentLocalFrame = GeometryRect(x: 0, y: 0, width: contentViewport.width, height: contentViewport.height)
+        let contentLocalFrame = GeometryRect(
+            x: 0, y: 0, width: contentViewport.width, height: contentViewport.height)
         if let content = context.layers[scene.contentLayer] {
             var update = LayerPropertyUpdate.decomposedFrame(contentViewport, actionPolicy: .none)
             update.transform = GeometryTransform.identity
@@ -761,7 +800,7 @@ public final class WindowSceneAuthor {
             // provides the rounded top); the seam where content meets the
             // titlebar stays square and flush. A borderless window rounds all
             // four corners since it has no titlebar above it.
-            update.clip = Self.clip(for: contentLocalFrame, squareTop: hasChrome)
+            update.clip = .set(Self.clip(for: contentLocalFrame, squareTop: hasChrome))
             try transaction.setProperties(update, for: content)
         }
         // Popup: sibling of content under root, anchored at the content origin (popups are
@@ -814,7 +853,8 @@ public final class WindowSceneAuthor {
         // borderless. The bottom corners are square so it meets the content cleanly; the
         // top corners match the window radius.
         if hasChrome {
-            let titlebarFrame = GeometryRect(x: 0, y: 0, width: frame.width, height: chromeInsets.top)
+            let titlebarFrame = GeometryRect(
+                x: 0, y: 0, width: frame.width, height: chromeInsets.top)
             let titlebar: Layer
             if let existing = scene.titlebarLayer, let layer = context.layers[existing] {
                 titlebar = layer
@@ -857,7 +897,8 @@ public final class WindowSceneAuthor {
             // window width), so it is laid out once and only repainted when key-window focus
             // flips — never per resize frame. Circle positions mirror
             // `NucleusCompositorServer.WindowFrameView.ButtonLayout`, the canonical button geometry.
-            let clusterFrame = GeometryRect(x: 0, y: 0, width: Self.trafficLightClusterWidth, height: chromeInsets.top)
+            let clusterFrame = GeometryRect(
+                x: 0, y: 0, width: Self.trafficLightClusterWidth, height: chromeInsets.top)
             let buttonLayer: Layer
             if let existing = scene.titlebarButtonLayer, let layer = context.layers[existing] {
                 buttonLayer = layer
@@ -868,7 +909,8 @@ public final class WindowSceneAuthor {
                 scene.titlebarButtonsFocused = nil
                 buttonLayer = created
             }
-            try transaction.setProperties(.decomposedFrame(clusterFrame, actionPolicy: .none), for: buttonLayer)
+            try transaction.setProperties(
+                .decomposedFrame(clusterFrame, actionPolicy: .none), for: buttonLayer)
             scene.titlebarHeight = chromeInsets.top
             // Hover/press are driven independently by `setChromeButtonState`; a layout pass
             // only needs to repaint when key-window focus flips, carrying the current
@@ -937,15 +979,16 @@ public final class WindowSceneAuthor {
                 color = Color(color.r * 0.7, color.g * 0.7, color.b * 0.7, color.a)
             }
             let centerX = Float(trafficLightLeadingInset + Double(index) * trafficLightSpacing)
-            commands.append(PaintCommand(
-                kind: .roundedRect,
-                x: centerX - d / 2,
-                y: y,
-                w: d,
-                h: d,
-                radius: d / 2,
-                color: color
-            ))
+            commands.append(
+                PaintCommand(
+                    kind: .roundedRect,
+                    x: centerX - d / 2,
+                    y: y,
+                    w: d,
+                    h: d,
+                    radius: d / 2,
+                    color: color
+                ))
         }
         return commands
     }

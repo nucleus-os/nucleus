@@ -34,7 +34,7 @@ public struct InputSequenceID: RawRepresentable, Codable, Hashable, Sendable {
 
 // MARK: - Output and presentation values
 
-public enum OutputTransform: UInt8, Sendable, CaseIterable {
+public enum OutputTransform: Sendable, CaseIterable {
     case normal
     case rotate90
     case rotate180
@@ -65,13 +65,13 @@ public struct RefreshRate: Equatable, Sendable {
     }
 }
 
-public enum ColorPrimaries: UInt8, Sendable {
+public enum ColorPrimaries: Sendable {
     case sRGB
     case displayP3
     case rec2020
 }
 
-public enum TransferFunction: UInt8, Sendable {
+public enum TransferFunction: Sendable {
     case sRGB
     case linear
     case perceptualQuantizer
@@ -161,7 +161,7 @@ public struct PresentationCapabilities: OptionSet, Sendable {
 
 // MARK: - Role-neutral application input
 
-public enum InputEventKind: UInt8, Sendable, Equatable {
+public enum InputEventKind: Sendable, Equatable {
     case pointerEnter
     case pointerLeave
     case pointerMotion
@@ -221,7 +221,7 @@ public struct PointerButtonSet: OptionSet, Sendable {
     }
 }
 
-public enum PointerToolKind: UInt8, Sendable, Equatable {
+public enum PointerToolKind: Sendable, Equatable {
     case unknown
     case mouse
     case finger
@@ -338,7 +338,7 @@ public struct PhysicalKey: RawRepresentable, Hashable, Sendable {
     ]
 }
 
-public enum InputScrollSource: UInt8, Sendable, Equatable {
+public enum InputScrollSource: Sendable, Equatable {
     case unknown
     case wheel
     case finger
@@ -346,7 +346,7 @@ public enum InputScrollSource: UInt8, Sendable, Equatable {
     case wheelTilt
 }
 
-public enum InputScrollPhase: UInt8, Sendable, Equatable {
+public enum InputScrollPhase: Sendable, Equatable {
     case none
     case began
     case changed
@@ -427,7 +427,7 @@ public struct ApplicationInputEvent: Sendable, Equatable {
     }
 }
 
-public enum WindowLifecycleEvent: UInt8, Sendable {
+public enum WindowLifecycleEvent: Sendable {
     case created
     case shown
     case hidden
@@ -453,7 +453,7 @@ public struct WindowLifecycleUpdate: Sendable {
     }
 }
 
-public enum RenderUploadKind: UInt8, Sendable {
+public enum RenderUploadKind: Sendable {
     case image
     case pixels
     case paintCommands

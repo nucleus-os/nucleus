@@ -1,4 +1,4 @@
-public import NucleusUI
+package import NucleusUI
 
 /// The bar: three sections of widgets, with chrome drawn behind them.
 ///
@@ -6,14 +6,14 @@ public import NucleusUI
 /// left and right, because the same bar runs vertically down a screen edge and
 /// "left" would then be a lie.
 @MainActor
-public final class BarView: View {
-    public enum Section: Sendable, Equatable, CaseIterable {
+package final class BarView: View {
+    package enum Section: Sendable, Equatable, CaseIterable {
         case start, center, end
     }
 
     /// Which way the bar runs. A vertical bar stacks its widgets and the
     /// sections run top, middle, bottom.
-    public var axis: StackView.Axis = .horizontal {
+    package var axis: StackView.Axis = .horizontal {
         didSet {
             guard axis != oldValue else { return }
             for stack in sectionStacks.values { stack.axis = axis }
@@ -21,7 +21,7 @@ public final class BarView: View {
         }
     }
 
-    public var thickness: Double = 30 {
+    package var thickness: Double = 30 {
         didSet {
             guard thickness != oldValue else { return }
             invalidateIntrinsicContentSize()
@@ -30,7 +30,7 @@ public final class BarView: View {
     }
 
     /// Space between widgets within a section.
-    public var widgetSpacing: Double = 6 {
+    package var widgetSpacing: Double = 6 {
         didSet {
             guard widgetSpacing != oldValue else { return }
             for stack in sectionStacks.values { stack.spacing = widgetSpacing }
@@ -39,20 +39,20 @@ public final class BarView: View {
     }
 
     /// Room between the bar's edge and the start and end sections.
-    public var edgeMargin: Double = 10 {
+    package var edgeMargin: Double = 10 {
         didSet { if edgeMargin != oldValue { setNeedsLayout() } }
     }
 
     /// Padding inside a capsule, around the widgets it covers.
-    public var capsulePadding: Double = 6 {
+    package var capsulePadding: Double = 6 {
         didSet { if capsulePadding != oldValue { updateChrome() } }
     }
 
-    public var capsuleColor: ColorSpec = .role(.surfaceVariant) {
+    package var capsuleColor: ColorSpec = .role(.surfaceVariant) {
         didSet { if capsuleColor != oldValue { updateChrome() } }
     }
 
-    public var hoverColor: ColorSpec = .role(.hover) {
+    package var hoverColor: ColorSpec = .role(.hover) {
         didSet { if hoverColor != oldValue { updateChrome() } }
     }
 
@@ -67,7 +67,7 @@ public final class BarView: View {
     private var sectionStacks: [Section: StackView] = [:]
     private var widgets: [Section: [BarWidget]] = [:]
 
-    public override init() {
+    package override init() {
         super.init()
         // A layer-shell panel owns its complete visual surface. Relying on the
         // render accumulator's fallback clear leaves the Wayland buffer
@@ -86,7 +86,7 @@ public final class BarView: View {
 
     // MARK: - Widgets
 
-    public func widgets(in section: Section) -> [BarWidget] {
+    package func widgets(in section: Section) -> [BarWidget] {
         widgets[section] ?? []
     }
 
@@ -96,7 +96,7 @@ public final class BarView: View {
     /// what a configuration reload produces: the widget list is authored as a
     /// list, and reconciling it item by item would be inventing an edit script
     /// nobody wrote.
-    public func setWidgets(_ replacement: [BarWidget], in section: Section) {
+    package func setWidgets(_ replacement: [BarWidget], in section: Section) {
         guard let stack = sectionStacks[section] else { return }
         for widget in widgets[section] ?? [] {
             widget.barNeedsChromeUpdate = nil
@@ -112,24 +112,24 @@ public final class BarView: View {
     }
 
     /// Every widget, in section order.
-    public var allWidgets: [BarWidget] {
+    package var allWidgets: [BarWidget] {
         Section.allCases.flatMap { widgets[$0] ?? [] }
     }
 
     /// Ask every widget to re-read what it displays.
-    public func refreshWidgets() {
+    package func refreshWidgets() {
         for widget in allWidgets { widget.refresh() }
     }
 
     // MARK: - Layout
 
-    public override var intrinsicContentSize: Size {
+    package override var intrinsicContentSize: Size {
         axis == .horizontal
             ? Size(width: 0, height: thickness)
             : Size(width: thickness, height: 0)
     }
 
-    public override func layout() {
+    package override func layout() {
         super.layout()
         let size = bounds.size
         underlay.frame = Rect(origin: .zero, size: size)
@@ -175,17 +175,19 @@ public final class BarView: View {
     /// Recompute the capsules and hover highlights drawn behind the widgets.
     func updateChrome() {
         var runs: [BarUnderlayView.Shape] = []
-        let radius = axis == .horizontal
+        let radius =
+            axis == .horizontal
             ? bounds.size.height / 2
             : bounds.size.width / 2
 
         for section in Section.allCases {
             for run in capsuleRuns(in: section) {
                 guard let box = unionFrame(of: run) else { continue }
-                runs.append(BarUnderlayView.Shape(
-                    rect: box.insetBy(-capsulePadding),
-                    cornerRadius: radius,
-                    color: resolve(capsuleColor)))
+                runs.append(
+                    BarUnderlayView.Shape(
+                        rect: box.insetBy(-capsulePadding),
+                        cornerRadius: radius,
+                        color: resolve(capsuleColor)))
             }
         }
 
@@ -194,10 +196,11 @@ public final class BarView: View {
         var hovers: [BarUnderlayView.Shape] = []
         for widget in allWidgets where widget.isHovered {
             guard let box = unionFrame(of: [widget]) else { continue }
-            hovers.append(BarUnderlayView.Shape(
-                rect: box.insetBy(-capsulePadding / 2),
-                cornerRadius: radius,
-                color: resolve(hoverColor)))
+            hovers.append(
+                BarUnderlayView.Shape(
+                    rect: box.insetBy(-capsulePadding / 2),
+                    cornerRadius: radius,
+                    color: resolve(hoverColor)))
         }
 
         underlay.shapes = runs + hovers

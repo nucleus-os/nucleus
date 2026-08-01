@@ -6,6 +6,7 @@
 
 /// Where a layer's texture content comes from. Mirrors `TextureContentKind`.
 internal import NucleusRenderModel
+
 internal import struct NucleusTypes.Rect
 
 enum TextureContentKind {
@@ -30,19 +31,24 @@ struct TextureContent {
 
 /// Lower a content layer into a textured quad. Nil when fully clipped. Mirrors
 /// `lowerTextureQuad`.
-func lowerTextureQuad(_ target: RenderTarget, _ input: LayerInput, _ content: TextureContent) -> TextureQuad? {
+func lowerTextureQuad(_ target: RenderTarget, _ input: LayerInput, _ content: TextureContent)
+    -> TextureQuad?
+{
     let frac = target.fractionalScale
     let targetSize = Bounds(w: Float(input.layerRect.width), h: Float(input.layerRect.height))
 
     // A non-identity world scale makes the layer's world rect differ from its
     // model bounds; the texture must then FILL the scaled rect. The threshold
     // ignores sub-pixel rounding so identity layers keep the native mapping.
-    let layerIsScaled = abs(targetSize.w - input.bounds.w) > 0.5 || abs(targetSize.h - input.bounds.h) > 0.5
-    let contentOverflows = content.logicalSize.w > targetSize.w || content.logicalSize.h > targetSize.h
+    let layerIsScaled =
+        abs(targetSize.w - input.bounds.w) > 0.5 || abs(targetSize.h - input.bounds.h) > 0.5
+    let contentOverflows =
+        content.logicalSize.w > targetSize.w || content.logicalSize.h > targetSize.h
     let fillRect = contentOverflows || layerIsScaled
     let renderedW: Double = fillRect ? Double(targetSize.w) : Double(content.logicalSize.w)
     let renderedH: Double = fillRect ? Double(targetSize.h) : Double(content.logicalSize.h)
-    let rendered = LogicalRect(x: input.layerRect.x, y: input.layerRect.y, width: renderedW, height: renderedH)
+    let rendered = LogicalRect(
+        x: input.layerRect.x, y: input.layerRect.y, width: renderedW, height: renderedH)
     guard let visible = clipLayerRect(input.clip, rendered) else { return nil }
 
     // For a scaled layer the buffer stretches across the rendered extent, so the
@@ -63,7 +69,9 @@ func lowerTextureQuad(_ target: RenderTarget, _ input: LayerInput, _ content: Te
         w: Float(visible.width * frac),
         h: Float(visible.height * frac))
 
-    let opaqueRect: PlanRect? = (contentMask == nil && content.opaqueFullSurface && input.combinedOpacity >= 0.999) ? dst : nil
+    let opaqueRect: PlanRect? =
+        (contentMask == nil && content.opaqueFullSurface && input.combinedOpacity >= 0.999)
+        ? dst : nil
 
     return TextureQuad(
         layerId: input.layerId,
@@ -96,6 +104,8 @@ func roundedClipMask(_ target: RenderTarget, _ clip: ClipState) -> RRectMask? {
             x: Float(logicalToTargetPhysicalX(target, rect.x)),
             y: Float(logicalToTargetPhysicalY(target, rect.y)),
             w: maskW, h: maskH),
-        radii: (Float(Double(radii.0) * frac), Float(Double(radii.1) * frac),
-                Float(Double(radii.2) * frac), Float(Double(radii.3) * frac)))
+        radii: (
+            Float(Double(radii.0) * frac), Float(Double(radii.1) * frac),
+            Float(Double(radii.2) * frac), Float(Double(radii.3) * frac)
+        ))
 }

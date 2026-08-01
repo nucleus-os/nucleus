@@ -1,12 +1,13 @@
-import NucleusUITestSupport
 import NucleusTypes
-@_spi(NucleusRenderServer) @testable import NucleusUI
+import NucleusUITestSupport
 import Testing
+
+@testable import NucleusUI
 
 @MainActor
 @Suite(.uiContext) struct GeometryTransactionTests {
-    // Geometry/effect struct layout is pinned by the generated `NucleusTypes`
-    // module.
+    // Geometry and effect behavior is shared through `NucleusTypes`; memory
+    // layout is not part of this same-build Swift contract.
 
     @Test func directFrameSetGet() throws {
         let view = View()
@@ -42,10 +43,11 @@ import Testing
         #expect(!view.isHidden)
 
         try Transaction.run(in: view) {
-            view.setProperties(ViewProperties(
-                frame: Rect(x: 11, y: 12, width: 13, height: 14),
-                isHidden: true
-            ))
+            view.setProperties(
+                ViewProperties(
+                    frame: Rect(x: 11, y: 12, width: 13, height: 14),
+                    isHidden: true
+                ))
 
             // Eager local apply — visible inside the transaction body.
             #expect(view.frame == Rect(x: 11, y: 12, width: 13, height: 14))
@@ -59,7 +61,8 @@ import Testing
         view.isHidden = (true)
         #expect(view.isHidden)
 
-        view.setProperties(ViewProperties(frame: Rect(x: 1, y: 2, width: 3, height: 4), isHidden: false))
+        view.setProperties(
+            ViewProperties(frame: Rect(x: 1, y: 2, width: 3, height: 4), isHidden: false))
         #expect(view.frame == Rect(x: 1, y: 2, width: 3, height: 4))
         #expect(!view.isHidden)
     }

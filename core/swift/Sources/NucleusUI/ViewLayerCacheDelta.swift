@@ -1,4 +1,4 @@
-@_spi(NucleusRenderServer) internal import NucleusLayers
+internal import NucleusLayers
 
 extension ViewLayerPublisher {
     struct VisualLayerCache: ~Sendable {

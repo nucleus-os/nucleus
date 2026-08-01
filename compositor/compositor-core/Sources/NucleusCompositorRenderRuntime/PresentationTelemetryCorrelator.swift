@@ -1,5 +1,5 @@
-@_spi(NucleusPlatform) import NucleusRenderer
-@_spi(NucleusPlatform) import NucleusCompositorRendererLinux
+package import NucleusCompositorRendererLinux
+package import NucleusRenderer
 
 struct AcceptedCompositeFrame: Equatable {
     let frame: RenderFrameTelemetry
@@ -34,7 +34,7 @@ struct PresentationTelemetryCorrelator {
         guard frameSerial != 0 else { return nil }
         let key = Key(outputID: outputID, frameSerial: frameSerial)
         guard !discardedCompletions.contains(key), submissions[key] == nil,
-              acceptedFrames[key] == nil
+            acceptedFrames[key] == nil
         else { return nil }
         submissions[key] = atomicCommitAcceptedNs
         return acceptIfComplete(key)
@@ -44,7 +44,7 @@ struct PresentationTelemetryCorrelator {
         guard frame.frameSerial != 0 else { return nil }
         let key = Key(outputID: frame.outputID, frameSerial: frame.frameSerial)
         guard !discardedCompletions.contains(key), frames[key] == nil,
-              acceptedFrames[key] == nil
+            acceptedFrames[key] == nil
         else { return nil }
         frames[key] = frame
         return acceptIfComplete(key)

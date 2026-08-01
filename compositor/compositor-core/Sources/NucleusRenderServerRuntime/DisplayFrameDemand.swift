@@ -1,7 +1,7 @@
-import NucleusCompositorServer // private framework implementation
-import NucleusCompositorRenderRuntime
-import Tracy
 import Glibc
+import NucleusCompositorRenderRuntime
+import NucleusCompositorServer  // private framework implementation
+import Tracy
 
 /// Per-output frame-demand orchestration — the Swift owner of frame demand.
 ///
@@ -60,7 +60,7 @@ final class DisplayFrameDemand {
     func sync() {
         let layout = server.layout
         guard server.outputAvailability == .available,
-              !layout.displays.isEmpty
+            !layout.displays.isEmpty
         else {
             return
         }
@@ -83,7 +83,8 @@ final class DisplayFrameDemand {
         let range = frameRangeName(display)
         if display.displayLink.submittedFrameOpen {
             Trace.frameMarkEnd(range)
-            Trace.message("frame superseded: \(display.displayLink.outputTag)", color: Trace.Color.yellow)
+            Trace.message(
+                "frame superseded: \(display.displayLink.outputTag)", color: Trace.Color.yellow)
         }
         Trace.frameMarkStart(range)
     }
@@ -130,18 +131,14 @@ final class DisplayFrameDemand {
         Trace.plot(
             plotName(display, "render_without_submission"),
             redraw.renderPassesWithoutSubmission)
-        for (index, count) in
-            redraw.coalescedByReason.enumerated()
-        {
+        for (index, count) in redraw.coalescedByReason.enumerated() {
             Trace.plot(
                 plotName(
                     display,
                     "coalesced_reason_\(index)"),
                 count)
         }
-        for (index, residenceNs) in
-            redraw.stateResidenceNs.enumerated()
-        {
+        for (index, residenceNs) in redraw.stateResidenceNs.enumerated() {
             Trace.plot(
                 plotName(
                     display,

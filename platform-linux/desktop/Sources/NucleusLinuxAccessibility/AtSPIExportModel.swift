@@ -180,7 +180,7 @@ package struct AtSPIExportModel: Sendable {
             var projectedCount = 0
             for id in changedIDs.sorted() {
                 guard let node = snapshot.nodes[id],
-                      let path = idToPath[id]
+                    let path = idToPath[id]
                 else { continue }
                 if let previous = objects[path] {
                     changedObjects[path] = previous
@@ -211,66 +211,74 @@ package struct AtSPIExportModel: Sendable {
         for path in added where path != Self.rootPath {
             guard let object = objects[path] else { continue }
             if Self.isWindowRole(object.role) {
-                events.append(.init(
-                    kind: .windowCreated,
-                    sourcePath: path))
+                events.append(
+                    .init(
+                        kind: .windowCreated,
+                        sourcePath: path))
             }
-            events.append(.init(
-                kind: .childrenAdded,
-                sourcePath: object.parentPath ?? Self.rootPath,
-                relatedPath: path,
-                detail: "add"))
+            events.append(
+                .init(
+                    kind: .childrenAdded,
+                    sourcePath: object.parentPath ?? Self.rootPath,
+                    relatedPath: path,
+                    detail: "add"))
         }
         for path in removed where path != Self.rootPath {
             guard let object = removedObjects[path] else { continue }
-            events.append(.init(
-                kind: .childrenRemoved,
-                sourcePath: object.parentPath ?? Self.rootPath,
-                relatedPath: path,
-                detail: "remove"))
+            events.append(
+                .init(
+                    kind: .childrenRemoved,
+                    sourcePath: object.parentPath ?? Self.rootPath,
+                    relatedPath: path,
+                    detail: "remove"))
             if Self.isWindowRole(object.role) {
-                events.append(.init(
-                    kind: .windowDestroyed,
-                    sourcePath: path))
+                events.append(
+                    .init(
+                        kind: .windowDestroyed,
+                        sourcePath: path))
             }
         }
         for path in changedObjects.keys.sorted() {
             guard let old = changedObjects[path],
-                  let current = objects[path],
-                  old != current
+                let current = objects[path],
+                old != current
             else { continue }
             if old.states != current.states {
-                events.append(.init(
-                    kind: .stateChanged,
-                    sourcePath: path,
-                    detail: "accessible-state",
-                    detail1: 1))
+                events.append(
+                    .init(
+                        kind: .stateChanged,
+                        sourcePath: path,
+                        detail: "accessible-state",
+                        detail1: 1))
             }
             if old.name != current.name {
-                events.append(.init(
-                    kind: .propertyChanged,
-                    sourcePath: path,
-                    detail: "accessible-name",
-                    text: current.name))
+                events.append(
+                    .init(
+                        kind: .propertyChanged,
+                        sourcePath: path,
+                        detail: "accessible-name",
+                        text: current.name))
             }
             if old.description != current.description {
-                events.append(.init(
-                    kind: .propertyChanged,
-                    sourcePath: path,
-                    detail: "accessible-description",
-                    text: current.description))
+                events.append(
+                    .init(
+                        kind: .propertyChanged,
+                        sourcePath: path,
+                        detail: "accessible-description",
+                        text: current.description))
             }
             if current.interfaces.contains(AtSPIInterface.text),
-               !current.isSecure,
-               old.text != current.text
+                !current.isSecure,
+                old.text != current.text
             {
-                events.append(.init(
-                    kind: .textChanged,
-                    sourcePath: path,
-                    detail: "insert",
-                    detail1: 0,
-                    detail2: Int32(clamping: current.text.count),
-                    text: current.text))
+                events.append(
+                    .init(
+                        kind: .textChanged,
+                        sourcePath: path,
+                        detail: "insert",
+                        detail1: 0,
+                        detail2: Int32(clamping: current.text.count),
+                        text: current.text))
             }
         }
         for notification in update.notifications {
@@ -283,37 +291,43 @@ package struct AtSPIExportModel: Sendable {
             guard let path = currentPath ?? oldPath else { continue }
             switch notification.kind {
             case .focus:
-                events.append(.init(
-                    kind: .focus,
-                    sourcePath: path,
-                    detail1: 1))
+                events.append(
+                    .init(
+                        kind: .focus,
+                        sourcePath: path,
+                        detail1: 1))
             case .value:
-                events.append(.init(
-                    kind: .valueChanged,
-                    sourcePath: path,
-                    detail: "accessible-value",
-                    text: objects[path]?.valueText))
+                events.append(
+                    .init(
+                        kind: .valueChanged,
+                        sourcePath: path,
+                        detail: "accessible-value",
+                        text: objects[path]?.valueText))
             case .selection:
-                events.append(.init(
-                    kind: .selectionChanged,
-                    sourcePath: path))
+                events.append(
+                    .init(
+                        kind: .selectionChanged,
+                        sourcePath: path))
             case .structure:
                 // Add/remove events above carry the concrete child reference.
                 break
             case .bounds:
-                events.append(.init(
-                    kind: .boundsChanged,
-                    sourcePath: path))
+                events.append(
+                    .init(
+                        kind: .boundsChanged,
+                        sourcePath: path))
             case .announcement:
-                events.append(.init(
-                    kind: .announcement,
-                    sourcePath: path,
-                    text: notification.announcement))
+                events.append(
+                    .init(
+                        kind: .announcement,
+                        sourcePath: path,
+                        text: notification.announcement))
             case .liveRegion:
-                events.append(.init(
-                    kind: .liveRegion,
-                    sourcePath: path,
-                    text: notification.announcement))
+                events.append(
+                    .init(
+                        kind: .liveRegion,
+                        sourcePath: path,
+                        text: notification.announcement))
             }
         }
 
@@ -408,8 +422,10 @@ package struct AtSPIExportModel: Sendable {
             textSelection: node.textSelection,
             relationships: Dictionary(
                 uniqueKeysWithValues: node.relationships.map {
-                    (relationshipCode($0.key),
-                     $0.value.compactMap { idToPath[$0] })
+                    (
+                        relationshipCode($0.key),
+                        $0.value.compactMap { idToPath[$0] }
+                    )
                 }),
             isSecure: node.state.contains(.secure))
     }

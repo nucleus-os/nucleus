@@ -1,38 +1,38 @@
 /// One DMA-BUF plane. The file descriptor is borrowed for the synchronous
 /// service call; the render owner duplicates it before returning when retained.
-public struct RenderDmabufPlane: Equatable, Sendable {
-    public let fd: Int32
-    public let offset: UInt32
-    public let stride: UInt32
+package struct RenderDmabufPlane: Equatable, Sendable {
+    package let fd: Int32
+    package let offset: UInt32
+    package let stride: UInt32
 
-    public init(fd: Int32, offset: UInt32, stride: UInt32) {
+    package init(fd: Int32, offset: UInt32, stride: UInt32) {
         self.fd = fd
         self.offset = offset
         self.stride = stride
     }
 }
 
-public struct RenderSyncPoint: Equatable, Sendable {
-    public let handle: UInt32
-    public let point: UInt64
+package struct RenderSyncPoint: Equatable, Sendable {
+    package let handle: UInt32
+    package let point: UInt64
 
-    public init(handle: UInt32, point: UInt64) {
+    package init(handle: UInt32, point: UInt64) {
         self.handle = handle
         self.point = point
     }
 }
 
-public struct RenderDmabufImport: Equatable, Sendable {
-    public let previousIOSurfaceID: UInt32
-    public let width: UInt32
-    public let height: UInt32
-    public let drmFormat: UInt32
-    public let modifier: UInt64
-    public let planes: [RenderDmabufPlane]
-    public let acquire: RenderSyncPoint?
-    public let release: RenderSyncPoint?
+package struct RenderDmabufImport: Equatable, Sendable {
+    package let previousIOSurfaceID: UInt32
+    package let width: UInt32
+    package let height: UInt32
+    package let drmFormat: UInt32
+    package let modifier: UInt64
+    package let planes: [RenderDmabufPlane]
+    package let acquire: RenderSyncPoint?
+    package let release: RenderSyncPoint?
 
-    public init(
+    package init(
         previousIOSurfaceID: UInt32,
         width: UInt32,
         height: UInt32,
@@ -53,14 +53,14 @@ public struct RenderDmabufImport: Equatable, Sendable {
     }
 }
 
-public struct RenderDmabufProbe: Equatable, Sendable {
-    public let width: UInt32
-    public let height: UInt32
-    public let drmFormat: UInt32
-    public let modifier: UInt64
-    public let planes: [RenderDmabufPlane]
+package struct RenderDmabufProbe: Equatable, Sendable {
+    package let width: UInt32
+    package let height: UInt32
+    package let drmFormat: UInt32
+    package let modifier: UInt64
+    package let planes: [RenderDmabufPlane]
 
-    public init(
+    package init(
         width: UInt32,
         height: UInt32,
         drmFormat: UInt32,
@@ -75,23 +75,23 @@ public struct RenderDmabufProbe: Equatable, Sendable {
     }
 }
 
-public struct RenderDmabufFormat: Equatable, Sendable {
-    public let format: UInt32
-    public let modifier: UInt64
+package struct RenderDmabufFormat: Equatable, Sendable {
+    package let format: UInt32
+    package let modifier: UInt64
 
-    public init(format: UInt32, modifier: UInt64) {
+    package init(format: UInt32, modifier: UInt64) {
         self.format = format
         self.modifier = modifier
     }
 }
 
-public struct RenderGammaRamp: Equatable, Sendable {
-    public let outputID: UInt64
-    public let red: [UInt16]
-    public let green: [UInt16]
-    public let blue: [UInt16]
+package struct RenderGammaRamp: Equatable, Sendable {
+    package let outputID: UInt64
+    package let red: [UInt16]
+    package let green: [UInt16]
+    package let blue: [UInt16]
 
-    public init(
+    package init(
         outputID: UInt64,
         red: [UInt16],
         green: [UInt16],
@@ -104,13 +104,13 @@ public struct RenderGammaRamp: Equatable, Sendable {
     }
 }
 
-public struct RenderCaptureRegion: Equatable, Sendable {
-    public let x: Int32
-    public let y: Int32
-    public let width: Int32
-    public let height: Int32
+package struct RenderCaptureRegion: Equatable, Sendable {
+    package let x: Int32
+    package let y: Int32
+    package let width: Int32
+    package let height: Int32
 
-    public init(x: Int32, y: Int32, width: Int32, height: Int32) {
+    package init(x: Int32, y: Int32, width: Int32, height: Int32) {
         self.x = x
         self.y = y
         self.width = width
@@ -118,17 +118,17 @@ public struct RenderCaptureRegion: Equatable, Sendable {
     }
 }
 
-public struct RenderDmabufCapture: Equatable, Sendable {
-    public let outputID: UInt64
-    public let width: UInt32
-    public let height: UInt32
-    public let drmFormat: UInt32
-    public let modifier: UInt64
-    public let planes: [RenderDmabufPlane]
-    public let sourceRegion: RenderCaptureRegion?
-    public let overlaysCursor: Bool
+package struct RenderDmabufCapture: Equatable, Sendable {
+    package let outputID: UInt64
+    package let width: UInt32
+    package let height: UInt32
+    package let drmFormat: UInt32
+    package let modifier: UInt64
+    package let planes: [RenderDmabufPlane]
+    package let sourceRegion: RenderCaptureRegion?
+    package let overlaysCursor: Bool
 
-    public init(
+    package init(
         outputID: UInt64,
         width: UInt32,
         height: UInt32,
@@ -149,14 +149,14 @@ public struct RenderDmabufCapture: Equatable, Sendable {
     }
 }
 
-public struct RenderPixelCapture: Equatable, Sendable {
-    public var pixels: [UInt8]
-    public let width: Int
-    public let height: Int
-    public let originX: Int
-    public let originY: Int
+package struct RenderPixelCapture: Equatable, Sendable {
+    package var pixels: [UInt8]
+    package let width: Int
+    package let height: Int
+    package let originX: Int
+    package let originY: Int
 
-    public init(
+    package init(
         pixels: [UInt8], width: Int, height: Int,
         originX: Int = 0, originY: Int = 0
     ) {
@@ -170,12 +170,12 @@ public struct RenderPixelCapture: Equatable, Sendable {
 
 /// An immutable renderer-owned surface capture. `handle` is a snapshot handle
 /// suitable for retained `.snapshot` layer content, not a client IOSurface id.
-public struct RenderSnapshotResource: Equatable, Sendable {
-    public let handle: UInt64
-    public let width: UInt32
-    public let height: UInt32
+package struct RenderSnapshotResource: Equatable, Sendable {
+    package let handle: UInt64
+    package let width: UInt32
+    package let height: UInt32
 
-    public init(handle: UInt64, width: UInt32, height: UInt32) {
+    package init(handle: UInt64, width: UInt32, height: UInt32) {
         self.handle = handle
         self.width = width
         self.height = height
@@ -186,7 +186,7 @@ public struct RenderSnapshotResource: Equatable, Sendable {
 /// on the compositor main actor; GPU captures complete only when the host polls
 /// capture work between reactor waits.
 @MainActor
-public protocol CompositorRenderService: AnyObject {
+package protocol CompositorRenderService: AnyObject {
     /// Copies the borrowed SHM pixels before returning. The span makes the
     /// readable extent part of the call and cannot escape into service state.
     func importShm(

@@ -12,8 +12,8 @@
 // notifications are suppressed while any inhibitor is live; input-only
 // notifications (get_input_idle_notification, v2) ignore inhibitors.
 
-import WaylandServerC
 import WaylandServer
+import WaylandServerC
 import WaylandServerDispatch
 
 @MainActor
@@ -105,7 +105,8 @@ extension IdleManager: ZwpIdleInhibitManagerV1Requests {
     func createInhibitor(
         _ request: WaylandRequest<ZwpIdleInhibitManagerV1Server>,
         id: WlNewId<ZwpIdleInhibitorV1Server>,
-                         surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>) {
+        surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>
+    ) {
         let surface = surfaceRes.owner(as: WlSurface.self)
         _ = id.create(
             owner: { handle in
@@ -122,13 +123,15 @@ extension IdleManager: ExtIdleNotifierV1Requests {
     func getIdleNotification(
         _ request: WaylandRequest<ExtIdleNotifierV1Server>,
         id: WlNewId<ExtIdleNotificationV1Server>,
-                             timeout: UInt32, seat: WaylandBorrowedObject<WlSeatServer>) {
+        timeout: UInt32, seat: WaylandBorrowedObject<WlSeatServer>
+    ) {
         makeNotification(id: id, timeout: timeout, inputOnly: false)
     }
     func getInputIdleNotification(
         _ request: WaylandRequest<ExtIdleNotifierV1Server>,
         id: WlNewId<ExtIdleNotificationV1Server>,
-                                  timeout: UInt32, seat: WaylandBorrowedObject<WlSeatServer>) {
+        timeout: UInt32, seat: WaylandBorrowedObject<WlSeatServer>
+    ) {
         makeNotification(id: id, timeout: timeout, inputOnly: true)
     }
 }
@@ -137,8 +140,7 @@ extension IdleManager: ExtIdleNotifierV1Requests {
 /// alive; the surface association keeps the inhibition scoped to its owner.
 @MainActor
 final class IdleInhibitor {
-    private let resource:
-        WaylandResourceHandle<ZwpIdleInhibitorV1Server>
+    private let resource: WaylandResourceHandle<ZwpIdleInhibitorV1Server>
     private weak var manager: IdleManager?
     private weak var surface: WlSurface?
 
@@ -163,8 +165,7 @@ final class IdleInhibitor {
     let timeoutMs: UInt32
     let inputOnly: Bool
     private(set) var idled = false
-    private let resource:
-        WaylandResourceHandle<ExtIdleNotificationV1Server>
+    private let resource: WaylandResourceHandle<ExtIdleNotificationV1Server>
 
     init(
         resource: WaylandResourceHandle<ExtIdleNotificationV1Server>,

@@ -1,8 +1,9 @@
+import Glibc
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowManager
-import Glibc
 import NucleusLinuxPrimitives
+
 @MainActor
 extension InputDispatch {
     static func monotonicNowNs() -> UInt64 {
@@ -27,7 +28,9 @@ extension InputDispatch {
 
     /// Begin a compositor-driven interactive move/resize grab (the window-menu
     /// Move/Resize verbs, reached from the overlay publication callback).
-    func beginInteractiveMove(windowID: UInt64) { beginInteractiveMoveFromChrome(windowID: windowID) }
+    func beginInteractiveMove(windowID: UInt64) {
+        beginInteractiveMoveFromChrome(windowID: windowID)
+    }
     func beginInteractiveResize(windowID: UInt64, edges: UInt32) {
         beginInteractiveResizeFromChrome(windowID: windowID, edges: edges)
     }
@@ -50,7 +53,9 @@ extension InputDispatch {
     func clearKeyboardFocus(ifWindow windowID: UInt64) {
         let surfaceID = keyboardFocusID()
         if surfaceID == 0 { return }
-        guard windowDriver?.windowId(forSurfaceId: UInt32(truncatingIfNeeded: surfaceID)) == windowID else { return }
+        guard
+            windowDriver?.windowId(forSurfaceId: UInt32(truncatingIfNeeded: surfaceID)) == windowID
+        else { return }
         clearKeyboardFocus()
     }
 
@@ -67,7 +72,8 @@ extension InputDispatch {
         otherButtonCount = 0
         let target = keyboardFocusID()
         if target != 0 {
-            seatDelivery.keyboardModifiers(surfaceID: target, depressed: 0, latched: 0, locked: 0, group: 0)
+            seatDelivery.keyboardModifiers(
+                surfaceID: target, depressed: 0, latched: 0, locked: 0, group: 0)
         }
         seatFocus.resetPointerButtons()
         host.windowManager.endInteractiveGrab()
@@ -110,7 +116,8 @@ extension InputDispatch {
     package func isKey(_ k: WireEventKind) -> Bool { k == .keyDown || k == .keyUp }
 
     package func isMotion(_ k: WireEventKind) -> Bool {
-        k == .mouseMoved || k == .leftMouseDragged || k == .rightMouseDragged || k == .otherMouseDragged
+        k == .mouseMoved || k == .leftMouseDragged || k == .rightMouseDragged
+            || k == .otherMouseDragged
     }
 
     package func isButtonDown(_ k: WireEventKind) -> Bool {

@@ -11,10 +11,10 @@
 
 import Glibc
 import NucleusLinuxPrimitives
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
 import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 /// One advertised format + DRM modifier the compositor can import.
 struct DmabufFormat: Equatable {
@@ -134,9 +134,10 @@ protocol DmabufDelegate: AnyObject {
             appendLE32(&table, 0)
             appendLE64(&table, f.modifier)
         }
-        guard let tableFile = try? LinuxSealedFile(
-            name: "nucleus-dmabuf-table",
-            bytes: table)
+        guard
+            let tableFile = try? LinuxSealedFile(
+                name: "nucleus-dmabuf-table",
+                bytes: table)
         else {
             resource.postNoMemory()
             return
@@ -192,8 +193,7 @@ extension ZwpLinuxDmabuf: ZwpLinuxDmabufV1Requests {
 /// produces a wl_buffer or a failure.
 @MainActor
 @safe final class ZwpLinuxBufferParams {
-    private let resource:
-        WaylandResourceHandle<ZwpLinuxBufferParamsV1Server>
+    private let resource: WaylandResourceHandle<ZwpLinuxBufferParamsV1Server>
     private weak var manager: ZwpLinuxDmabuf?
     private var planes: [Int: DmabufPlane] = [:]
     private var modifier: UInt64?
@@ -261,8 +261,9 @@ extension ZwpLinuxDmabuf: ZwpLinuxDmabufV1Requests {
         }
         let ordered = layouts.indices.map { planes[$0]! }
         let modifier = self.modifier ?? 0
-        let supported = manager?.supportedFormats().contains(
-            DmabufFormat(format: format, modifier: modifier)) ?? false
+        let supported =
+            manager?.supportedFormats().contains(
+                DmabufFormat(format: format, modifier: modifier)) ?? false
         guard supported else {
             resource.postError(
                 .invalidFormat,
@@ -277,7 +278,8 @@ extension ZwpLinuxDmabuf: ZwpLinuxDmabufV1Requests {
 extension ZwpLinuxBufferParams: ZwpLinuxBufferParamsV1Requests {
     // add(fd, plane_idx, offset, stride, modifier_hi, modifier_lo)
     func add(
-        _ request: WaylandRequest<ZwpLinuxBufferParamsV1Server>, fd: consuming WaylandOwnedFileDescriptor, plane_idx planeIdx: UInt32,
+        _ request: WaylandRequest<ZwpLinuxBufferParamsV1Server>,
+        fd: consuming WaylandOwnedFileDescriptor, plane_idx planeIdx: UInt32,
         offset: UInt32, stride: UInt32, modifier_hi modHi: UInt32, modifier_lo modLo: UInt32
     ) {
         guard planeIdx < 4 else {
@@ -309,9 +311,10 @@ extension ZwpLinuxBufferParams: ZwpLinuxBufferParamsV1Requests {
         format: UInt32, flags: ZwpLinuxBufferParamsV1Flags
     ) {
         guard let manager = manager else { return }
-        guard let attrs = assemble(
-            width: width, height: height, format: format,
-            flags: flags.rawValue)
+        guard
+            let attrs = assemble(
+                width: width, height: height, format: format,
+                flags: flags.rawValue)
         else {
             return  // protocol error already posted
         }
@@ -333,9 +336,10 @@ extension ZwpLinuxBufferParams: ZwpLinuxBufferParamsV1Requests {
         width: Int32, height: Int32, format: UInt32, flags: ZwpLinuxBufferParamsV1Flags
     ) {
         guard let manager = manager else { return }
-        guard let attrs = assemble(
-            width: width, height: height, format: format,
-            flags: flags.rawValue)
+        guard
+            let attrs = assemble(
+                width: width, height: height, format: format,
+                flags: flags.rawValue)
         else {
             return
         }
@@ -378,7 +382,8 @@ private final class DmabufFeedback {
 // MARK: - little-endian + wl_array helpers
 
 private func appendLE16(_ out: inout [UInt8], _ v: UInt16) {
-    out.append(UInt8(v & 0xff)); out.append(UInt8((v >> 8) & 0xff))
+    out.append(UInt8(v & 0xff))
+    out.append(UInt8((v >> 8) & 0xff))
 }
 private func appendLE32(_ out: inout [UInt8], _ v: UInt32) {
     for i in 0..<4 { out.append(UInt8((v >> (8 * i)) & 0xff)) }

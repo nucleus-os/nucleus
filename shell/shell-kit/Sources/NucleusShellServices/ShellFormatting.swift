@@ -1,7 +1,7 @@
-public import Foundation
+package import Foundation
 
-public enum ShellFormatting {
-    public static func clockStyle(
+package enum ShellFormatting {
+    package static func clockStyle(
         locale: Locale = .current,
         timeZone: TimeZone = .current
     ) -> Date.FormatStyle {
@@ -20,7 +20,7 @@ public enum ShellFormatting {
         return style.minute(.twoDigits)
     }
 
-    public static func wallpaperPath(
+    package static func wallpaperPath(
         configuredPath: String?,
         homeDirectory: URL
     ) -> String {

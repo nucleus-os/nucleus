@@ -2,14 +2,15 @@
 // Typed client descriptor and event dispatch for xdg_toplevel.
 
 import WaylandClientC
-public enum XdgToplevelClient: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+package import WaylandProtocolTypes
+
+package enum XdgToplevelClient: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_xdg_toplevel())
-    public nonisolated static let maximumVersion: UInt32 = 7
+    package nonisolated static let maximumVersion: UInt32 = 7
 }
-public import WaylandProtocolTypes
-public extension WaylandProxy where Interface == XdgToplevelClient {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == XdgToplevelClient {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_xdg_toplevel_destroy(_proxy)
@@ -18,90 +19,102 @@ public extension WaylandProxy where Interface == XdgToplevelClient {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func setParent(parent: WaylandProxy<XdgToplevelClient>?) throws(WaylandProxyError) {
+    package func setParent(parent: WaylandProxy<XdgToplevelClient>?) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _parentProxy = try unsafe parent?.requireNativeProxy()
         unsafe swift_wayland_client_request_xdg_toplevel_set_parent(_proxy, _parentProxy)
         return
     }
-    func setTitle(title: String) throws(WaylandProxyError) {
+    package func setTitle(title: String) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        return try title.withCString { (_titleCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+        return try title.withCString {
+            (_titleCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_xdg_toplevel_set_title(_proxy, _titleCString)
             return
         }
     }
-    func setAppId(app_id: String) throws(WaylandProxyError) {
+    package func setAppId(app_id: String) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        return try app_id.withCString { (_app_idCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+        return try app_id.withCString {
+            (_app_idCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_xdg_toplevel_set_app_id(_proxy, _app_idCString)
             return
         }
     }
-    func showWindowMenu(seat: WaylandProxy<WlSeatClient>, serial: UInt32, x: Int32, y: Int32) throws(WaylandProxyError) {
+    package func showWindowMenu(
+        seat: WaylandProxy<WlSeatClient>, serial: UInt32, x: Int32, y: Int32
+    ) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _seatProxy = try unsafe seat.requireNativeProxy()
-        unsafe swift_wayland_client_request_xdg_toplevel_show_window_menu(_proxy, _seatProxy, serial, x, y)
+        unsafe swift_wayland_client_request_xdg_toplevel_show_window_menu(
+            _proxy, _seatProxy, serial, x, y)
         return
     }
-    func move(seat: WaylandProxy<WlSeatClient>, serial: UInt32) throws(WaylandProxyError) {
+    package func move(seat: WaylandProxy<WlSeatClient>, serial: UInt32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _seatProxy = try unsafe seat.requireNativeProxy()
         unsafe swift_wayland_client_request_xdg_toplevel_move(_proxy, _seatProxy, serial)
         return
     }
-    func resize(seat: WaylandProxy<WlSeatClient>, serial: UInt32, edges: XdgToplevelResizeEdge) throws(WaylandProxyError) {
+    package func resize(
+        seat: WaylandProxy<WlSeatClient>, serial: UInt32, edges: XdgToplevelResizeEdge
+    ) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _seatProxy = try unsafe seat.requireNativeProxy()
-        unsafe swift_wayland_client_request_xdg_toplevel_resize(_proxy, _seatProxy, serial, edges.rawValue)
+        unsafe swift_wayland_client_request_xdg_toplevel_resize(
+            _proxy, _seatProxy, serial, edges.rawValue)
         return
     }
-    func setMaxSize(width: Int32, height: Int32) throws(WaylandProxyError) {
+    package func setMaxSize(width: Int32, height: Int32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_xdg_toplevel_set_max_size(_proxy, width, height)
         return
     }
-    func setMinSize(width: Int32, height: Int32) throws(WaylandProxyError) {
+    package func setMinSize(width: Int32, height: Int32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_xdg_toplevel_set_min_size(_proxy, width, height)
         return
     }
-    func setMaximized() throws(WaylandProxyError) {
+    package func setMaximized() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_xdg_toplevel_set_maximized(_proxy)
         return
     }
-    func unsetMaximized() throws(WaylandProxyError) {
+    package func unsetMaximized() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_xdg_toplevel_unset_maximized(_proxy)
         return
     }
-    func setFullscreen(output: WaylandProxy<WlOutputClient>?) throws(WaylandProxyError) {
+    package func setFullscreen(output: WaylandProxy<WlOutputClient>?) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _outputProxy = try unsafe output?.requireNativeProxy()
         unsafe swift_wayland_client_request_xdg_toplevel_set_fullscreen(_proxy, _outputProxy)
         return
     }
-    func unsetFullscreen() throws(WaylandProxyError) {
+    package func unsetFullscreen() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_xdg_toplevel_unset_fullscreen(_proxy)
         return
     }
-    func setMinimized() throws(WaylandProxyError) {
+    package func setMinimized() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_xdg_toplevel_set_minimized(_proxy)
         return
     }
 }
 @MainActor
-public protocol XdgToplevelEvents: AnyObject {
-    func configure(_ proxy: WaylandBorrowedProxy<XdgToplevelClient>, width: Int32, height: Int32, states: WaylandClientArrayView)
+package protocol XdgToplevelEvents: AnyObject {
+    func configure(
+        _ proxy: WaylandBorrowedProxy<XdgToplevelClient>, width: Int32, height: Int32,
+        states: WaylandClientArrayView)
     func close(_ proxy: WaylandBorrowedProxy<XdgToplevelClient>)
-    func configureBounds(_ proxy: WaylandBorrowedProxy<XdgToplevelClient>, width: Int32, height: Int32)
-    func wmCapabilities(_ proxy: WaylandBorrowedProxy<XdgToplevelClient>, capabilities: WaylandClientArrayView)
+    func configureBounds(
+        _ proxy: WaylandBorrowedProxy<XdgToplevelClient>, width: Int32, height: Int32)
+    func wmCapabilities(
+        _ proxy: WaylandBorrowedProxy<XdgToplevelClient>, capabilities: WaylandClientArrayView)
 }
-public extension XdgToplevelClient {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<xdg_toplevel_listener> = {
+package extension XdgToplevelClient {
+    package nonisolated(unsafe) static let listener: UnsafeMutablePointer<xdg_toplevel_listener> = {
         let p = UnsafeMutablePointer<xdg_toplevel_listener>.allocate(capacity: 1)
         unsafe p.initialize(to: xdg_toplevel_listener())
         unsafe p.pointee.configure = configure_impl
@@ -113,71 +126,85 @@ public extension XdgToplevelClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any XdgToplevelEvents? {
         context.owner as? any XdgToplevelEvents
     }
-    private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, width, height, states in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let configure_impl:
+        @convention(c) (
+            UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32, UnsafeMutablePointer<wl_array>?
+        ) -> Void = { data, proxy, width, height, states in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            nonisolated(unsafe) let _event_states = unsafe states
+            MainActor.assumeIsolated {
+                unsafe eventHandler.configure(
+                    WaylandBorrowedProxy<XdgToplevelClient>(eventProxy), width: width,
+                    height: height, states: WaylandClientArrayView(_event_states!))
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
+    private static let close_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.close(WaylandBorrowedProxy<XdgToplevelClient>(eventProxy))
+            }
         }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_states = unsafe states
-        MainActor.assumeIsolated {
-            unsafe eventHandler.configure(WaylandBorrowedProxy<XdgToplevelClient>(eventProxy), width: width, height: height, states: WaylandClientArrayView(_event_states!))
+    private static let configureBounds_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = {
+            data, proxy, width, height in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.configureBounds(
+                    WaylandBorrowedProxy<XdgToplevelClient>(eventProxy), width: width,
+                    height: height)
+            }
         }
-    }
-    private static let close_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.close(WaylandBorrowedProxy<XdgToplevelClient>(eventProxy))
-        }
-    }
-    private static let configureBounds_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = { data, proxy, width, height in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.configureBounds(WaylandBorrowedProxy<XdgToplevelClient>(eventProxy), width: width, height: height)
-        }
-    }
-    private static let wmCapabilities_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, capabilities in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_capabilities = unsafe capabilities
-        MainActor.assumeIsolated {
-            unsafe eventHandler.wmCapabilities(WaylandBorrowedProxy<XdgToplevelClient>(eventProxy), capabilities: WaylandClientArrayView(_event_capabilities!))
-        }
-    }
+    private static let wmCapabilities_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_array>?)
+            -> Void = { data, proxy, capabilities in
+                guard let data = unsafe data, let proxy = unsafe proxy else {
+                    return
+                }
+                let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+                guard let h = handler(listenerContext) else {
+                    return
+                }
+                nonisolated(unsafe) let eventHandler = h
+                nonisolated(unsafe) let eventProxy = unsafe proxy
+                nonisolated(unsafe) let eventContext = listenerContext
+                nonisolated(unsafe) let _event_capabilities = unsafe capabilities
+                MainActor.assumeIsolated {
+                    unsafe eventHandler.wmCapabilities(
+                        WaylandBorrowedProxy<XdgToplevelClient>(eventProxy),
+                        capabilities: WaylandClientArrayView(_event_capabilities!))
+                }
+            }
 }
-public extension WaylandProxy where Interface == XdgToplevelClient {
-    func installListener(_ owner: any XdgToplevelEvents) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == XdgToplevelClient {
+    package func installListener(_ owner: any XdgToplevelEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe xdg_toplevel_add_listener(proxy, XdgToplevelClient.listener, data)
         }

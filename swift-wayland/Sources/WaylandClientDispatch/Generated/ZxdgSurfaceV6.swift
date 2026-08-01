@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for zxdg_surface_v6.
 
 import WaylandClientC
-public enum ZxdgSurfaceV6Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum ZxdgSurfaceV6Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zxdg_surface_v6())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == ZxdgSurfaceV6Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZxdgSurfaceV6Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zxdg_surface_v6_destroy(_proxy)
@@ -17,67 +18,82 @@ public extension WaylandProxy where Interface == ZxdgSurfaceV6Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func getToplevel() throws(WaylandProxyError) -> WaylandProxy<ZxdgToplevelV6Client> {
+    package func getToplevel() throws(WaylandProxyError) -> WaylandProxy<ZxdgToplevelV6Client> {
         let _proxy = try unsafe requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_zxdg_surface_v6_get_toplevel(_proxy) else {
+        guard
+            let _created = unsafe swift_wayland_client_request_zxdg_surface_v6_get_toplevel(_proxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, ZxdgToplevelV6Client.self)
     }
-    func getPopup(parent: WaylandProxy<ZxdgSurfaceV6Client>, positioner: WaylandProxy<ZxdgPositionerV6Client>) throws(WaylandProxyError) -> WaylandProxy<ZxdgPopupV6Client> {
+    package func getPopup(
+        parent: WaylandProxy<ZxdgSurfaceV6Client>, positioner: WaylandProxy<ZxdgPositionerV6Client>
+    ) throws(WaylandProxyError) -> WaylandProxy<ZxdgPopupV6Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _parentProxy = try unsafe parent.requireNativeProxy()
         let _positionerProxy = try unsafe positioner.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_zxdg_surface_v6_get_popup(_proxy, _parentProxy, _positionerProxy) else {
+        guard
+            let _created = unsafe swift_wayland_client_request_zxdg_surface_v6_get_popup(
+                _proxy, _parentProxy, _positionerProxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, ZxdgPopupV6Client.self)
     }
-    func setWindowGeometry(x: Int32, y: Int32, width: Int32, height: Int32) throws(WaylandProxyError) {
+    package func setWindowGeometry(x: Int32, y: Int32, width: Int32, height: Int32)
+        throws(WaylandProxyError)
+    {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_zxdg_surface_v6_set_window_geometry(_proxy, x, y, width, height)
+        unsafe swift_wayland_client_request_zxdg_surface_v6_set_window_geometry(
+            _proxy, x, y, width, height)
         return
     }
-    func ackConfigure(serial: UInt32) throws(WaylandProxyError) {
+    package func ackConfigure(serial: UInt32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_zxdg_surface_v6_ack_configure(_proxy, serial)
         return
     }
 }
 @MainActor
-public protocol ZxdgSurfaceV6Events: AnyObject {
+package protocol ZxdgSurfaceV6Events: AnyObject {
     func configure(_ proxy: WaylandBorrowedProxy<ZxdgSurfaceV6Client>, serial: UInt32)
 }
-public extension ZxdgSurfaceV6Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zxdg_surface_v6_listener> = {
-        let p = UnsafeMutablePointer<zxdg_surface_v6_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zxdg_surface_v6_listener())
-        unsafe p.pointee.configure = configure_impl
-        return unsafe p
-    }()
-    private static func handler(_ context: WaylandClientListenerContext) -> any ZxdgSurfaceV6Events? {
+package extension ZxdgSurfaceV6Client {
+    package nonisolated(unsafe) static let listener:
+        UnsafeMutablePointer<zxdg_surface_v6_listener> = {
+            let p = UnsafeMutablePointer<zxdg_surface_v6_listener>.allocate(capacity: 1)
+            unsafe p.initialize(to: zxdg_surface_v6_listener())
+            unsafe p.pointee.configure = configure_impl
+            return unsafe p
+        }()
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZxdgSurfaceV6Events?
+    {
         context.owner as? any ZxdgSurfaceV6Events
     }
-    private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let configure_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = {
+            data, proxy, serial in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.configure(
+                    WaylandBorrowedProxy<ZxdgSurfaceV6Client>(eventProxy), serial: serial)
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.configure(WaylandBorrowedProxy<ZxdgSurfaceV6Client>(eventProxy), serial: serial)
-        }
-    }
 }
-public extension WaylandProxy where Interface == ZxdgSurfaceV6Client {
-    func installListener(_ owner: any ZxdgSurfaceV6Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZxdgSurfaceV6Client {
+    package func installListener(_ owner: any ZxdgSurfaceV6Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe zxdg_surface_v6_add_listener(proxy, ZxdgSurfaceV6Client.listener, data)
         }

@@ -2,7 +2,7 @@ import Glibc
 import Testing
 import NucleusAndroidDrmC
 import NucleusAndroidDrmCTestSupport
-import NucleusAndroidGraphicsContract
+internal import NucleusAndroidGraphicsContract
 @testable import NucleusAndroidGraphicsPlatform
 
 private struct RawGraphicsTestError: Error, CustomStringConvertible {

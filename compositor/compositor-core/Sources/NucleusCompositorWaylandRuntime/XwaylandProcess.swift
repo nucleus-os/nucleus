@@ -55,7 +55,7 @@ final class XwaylandProcess {
         var tracePair: [Int32] = [-1, -1]
         var useTrace = false
         if traceEnabled,
-           unsafe pipe2(&tracePair, O_CLOEXEC | O_NONBLOCK) == 0
+            unsafe pipe2(&tracePair, O_CLOEXEC | O_NONBLOCK) == 0
         {
             useTrace = true
             ownedDescriptors.insert(contentsOf: tracePair)
@@ -85,7 +85,8 @@ final class XwaylandProcess {
         // The compositor is multithreaded by this point. Only posix_spawn may
         // cross the process boundary; a Swift fork child can deadlock before
         // exec on a runtime or allocator lock inherited from another thread.
-        let sources = [wlChild, wmChild, dfChild, abstractFd, fsFd]
+        let sources =
+            [wlChild, wmChild, dfChild, abstractFd, fsFd]
             + (useTrace ? [tracePair[1]] : [])
         var spawnSources: [Int32] = []
         for source in sources {
@@ -99,7 +100,8 @@ final class XwaylandProcess {
 
         // Work from high-numbered duplicates so file actions cannot overwrite
         // another source while assigning the stable child descriptor contract.
-        let childFDs: [Int32] = [3, 4, 5, 6, 7]
+        let childFDs: [Int32] =
+            [3, 4, 5, 6, 7]
             + (useTrace ? [Int32(STDOUT_FILENO)] : [])
         var actions = unsafe posix_spawn_file_actions_t()
         guard unsafe posix_spawn_file_actions_init(&actions) == 0 else {
@@ -107,8 +109,9 @@ final class XwaylandProcess {
         }
         defer { unsafe posix_spawn_file_actions_destroy(&actions) }
         for (source, target) in zip(spawnSources, childFDs) {
-            guard unsafe posix_spawn_file_actions_adddup2(
-                &actions, source, target) == 0
+            guard
+                unsafe posix_spawn_file_actions_adddup2(
+                    &actions, source, target) == 0
             else {
                 return false
             }
@@ -127,14 +130,15 @@ final class XwaylandProcess {
             }
         }
         guard outputAction == 0,
-              unsafe posix_spawn_file_actions_adddup2(
+            unsafe posix_spawn_file_actions_adddup2(
                 &actions, STDOUT_FILENO, STDERR_FILENO) == 0
         else {
             return false
         }
         for source in spawnSources {
-            guard unsafe posix_spawn_file_actions_addclose(
-                &actions, source) == 0
+            guard
+                unsafe posix_spawn_file_actions_addclose(
+                    &actions, source) == 0
             else {
                 return false
             }
@@ -152,8 +156,9 @@ final class XwaylandProcess {
         where descriptor >= 0
             && !stableChildDescriptors.contains(descriptor)
         {
-            guard unsafe posix_spawn_file_actions_addclose(
-                &actions, descriptor) == 0
+            guard
+                unsafe posix_spawn_file_actions_addclose(
+                    &actions, descriptor) == 0
             else {
                 return false
             }
@@ -171,10 +176,11 @@ final class XwaylandProcess {
         for signal in [SIGINT, SIGQUIT, SIGTERM, SIGHUP, SIGPIPE] {
             unsafe sigaddset(&defaultSignals, signal)
         }
-        guard unsafe posix_spawnattr_setsigdefault(
-            &attributes, &defaultSignals) == 0,
-              unsafe posix_spawnattr_setsigmask(&attributes, &emptyMask) == 0,
-              unsafe posix_spawnattr_setflags(
+        guard
+            unsafe posix_spawnattr_setsigdefault(
+                &attributes, &defaultSignals) == 0,
+            unsafe posix_spawnattr_setsigmask(&attributes, &emptyMask) == 0,
+            unsafe posix_spawnattr_setflags(
                 &attributes,
                 Int16(POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK)) == 0
         else {
@@ -205,8 +211,9 @@ final class XwaylandProcess {
         // Adopt only after spawn succeeds. This keeps every file-action failure
         // descriptor-only and prevents a failed launch from leaving a live
         // server-side Wayland client behind.
-        guard let waylandClient = host.runtime?.router.display.createManagedClient(
-            fd: wlPair[0])
+        guard
+            let waylandClient = host.runtime?.router.display.createManagedClient(
+                fd: wlPair[0])
         else {
             terminateFailedSpawn(child)
             return false
@@ -269,9 +276,18 @@ final class XwaylandProcess {
         host.xwaylandClientID = nil
         waylandClient?.destroy()
         waylandClient = nil
-        if displayPipeRd >= 0 { close(displayPipeRd); displayPipeRd = -1 }
-        if wmFd >= 0 { close(wmFd); wmFd = -1 }
-        if tracePipeRd >= 0 { close(tracePipeRd); tracePipeRd = -1 }
+        if displayPipeRd >= 0 {
+            close(displayPipeRd)
+            displayPipeRd = -1
+        }
+        if wmFd >= 0 {
+            close(wmFd)
+            wmFd = -1
+        }
+        if tracePipeRd >= 0 {
+            close(tracePipeRd)
+            tracePipeRd = -1
+        }
         traceSink = nil
         guard pid > 0 else { return }
 

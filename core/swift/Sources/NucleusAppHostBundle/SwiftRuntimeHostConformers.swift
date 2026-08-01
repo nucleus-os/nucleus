@@ -5,8 +5,9 @@
 // an identity bind, no-op lifecycle). `nucleus_app_host_bundle_install_production`
 // constructs them directly alongside the `SwiftResourceHost`-backed conformers.
 
-import NucleusTypes
 import NucleusAppHostProtocols
+import NucleusTypes
+import Synchronization
 
 #if canImport(Glibc)
 import Glibc
@@ -15,8 +16,6 @@ import Android
 #elseif canImport(Darwin)
 import Darwin
 #endif
-
-import Synchronization
 
 // MARK: - Context-id allocation
 
@@ -57,7 +56,7 @@ final class SwiftContextIDAllocator: ContextIDAllocator {
                 let id = state.nextReserved
                 state.nextReserved =
                     state.nextReserved == UInt32.max
-                        ? 0 : state.nextReserved &+ 1
+                    ? 0 : state.nextReserved &+ 1
                 if isWellKnown(id) { continue }
                 if state.reserved.contains(id) { continue }
                 state.reserved.insert(id)
@@ -84,7 +83,7 @@ final class SwiftContextIDAllocator: ContextIDAllocator {
 
 /// A present-report source predicting one frame (16.667 ms) ahead of the monotonic
 /// clock. Per-output present-id
-/// machinery is dormant here (`nextPresentId` is always 1).
+/// machinery is dormant here (`nextPresentID` is always 1).
 @MainActor
 final class SwiftDisplayLinkSource: DisplayLinkSource {
     private static let frameIntervalNs: UInt64 = 16_666_667
@@ -93,9 +92,9 @@ final class SwiftDisplayLinkSource: DisplayLinkSource {
         if contextID == 0 { throw DisplayLinkError.invalidArgument }
         let predicted = saturatingAdd(monotonicNowNs(), Self.frameIntervalNs)
         return NucleusTypes.PresentReport(
-            predictedPresentationNs: predicted,
-            targetPresentationNs: predicted,
-            nextPresentId: 1)
+            predictedPresentationNanoseconds: predicted,
+            targetPresentationNanoseconds: predicted,
+            nextPresentID: 1)
     }
 
     private func monotonicNowNs() -> UInt64 {

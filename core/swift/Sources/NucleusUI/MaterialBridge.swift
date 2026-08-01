@@ -1,4 +1,5 @@
 package import NucleusLayers
+
 internal import struct NucleusTypes.VisualEffect
 
 /// Internal bridge between the AppKit-shaped public API
@@ -36,9 +37,11 @@ enum MaterialBridge {
         case .systemThinMaterialLight:
             ResolvedStyle(material: .headerView, isEmphasized: false, forcedAppearance: .light)
         case .systemMaterialLight:
-            ResolvedStyle(material: .contentBackground, isEmphasized: false, forcedAppearance: .light)
+            ResolvedStyle(
+                material: .contentBackground, isEmphasized: false, forcedAppearance: .light)
         case .systemThickMaterialLight:
-            ResolvedStyle(material: .windowBackground, isEmphasized: false, forcedAppearance: .light)
+            ResolvedStyle(
+                material: .windowBackground, isEmphasized: false, forcedAppearance: .light)
         case .systemChromeMaterialLight:
             ResolvedStyle(material: .titlebar, isEmphasized: false, forcedAppearance: .light)
         // Explicit dark variants.
@@ -47,7 +50,8 @@ enum MaterialBridge {
         case .systemThinMaterialDark:
             ResolvedStyle(material: .headerView, isEmphasized: false, forcedAppearance: .dark)
         case .systemMaterialDark:
-            ResolvedStyle(material: .contentBackground, isEmphasized: false, forcedAppearance: .dark)
+            ResolvedStyle(
+                material: .contentBackground, isEmphasized: false, forcedAppearance: .dark)
         case .systemThickMaterialDark:
             ResolvedStyle(material: .windowBackground, isEmphasized: false, forcedAppearance: .dark)
         case .systemChromeMaterialDark:
@@ -58,9 +62,11 @@ enum MaterialBridge {
         case .extraLight:
             ResolvedStyle(material: .headerView, isEmphasized: false, forcedAppearance: .light)
         case .light:
-            ResolvedStyle(material: .contentBackground, isEmphasized: false, forcedAppearance: .light)
+            ResolvedStyle(
+                material: .contentBackground, isEmphasized: false, forcedAppearance: .light)
         case .dark:
-            ResolvedStyle(material: .contentBackground, isEmphasized: false, forcedAppearance: .dark)
+            ResolvedStyle(
+                material: .contentBackground, isEmphasized: false, forcedAppearance: .dark)
         case .regular:
             ResolvedStyle(material: .contentBackground, isEmphasized: false, forcedAppearance: nil)
         case .prominent:
@@ -73,15 +79,19 @@ enum MaterialBridge {
     /// `VisualEffectView.effect` getter. Picks the closest adaptive
     /// style so round-tripping via `init(effect:)` does not lose the
     /// inherited-appearance default.
-    static func effect(material: VisualEffectView.Material, blendingMode: VisualEffectView.BlendingMode, isEmphasized: Bool) -> (any VisualEffect)? {
-        let style: BlurEffect.Style? = switch material {
-        case .toolTip: .systemUltraThinMaterial
-        case .headerView: .systemThinMaterial
-        case .contentBackground: .systemMaterial
-        case .windowBackground: .systemThickMaterial
-        case .titlebar: .systemChromeMaterial
-        default: nil
-        }
+    static func effect(
+        material: VisualEffectView.Material, blendingMode: VisualEffectView.BlendingMode,
+        isEmphasized: Bool
+    ) -> (any VisualEffect)? {
+        let style: BlurEffect.Style? =
+            switch material {
+            case .toolTip: .systemUltraThinMaterial
+            case .headerView: .systemThinMaterial
+            case .contentBackground: .systemMaterial
+            case .windowBackground: .systemThickMaterial
+            case .titlebar: .systemChromeMaterial
+            default: nil
+            }
         return style.map { BlurEffect(style: $0) }
     }
 
@@ -101,8 +111,8 @@ enum MaterialBridge {
         let radius = max(0, cornerRadius)
         return BackdropMaterial(
             material: kind(for: material),
-            blendingMode: blendingMode.cValue,
-            state: state.cValue,
+            blendingMode: blendingMode.backdropBlendingMode,
+            state: state.backdropState,
             appearance: appearance.backdropAppearance,
             emphasized: isEmphasized,
             maskKind: maskImage == nil ? .none : .image,
@@ -135,7 +145,7 @@ enum MaterialBridge {
 }
 
 extension VisualEffectView.BlendingMode {
-    package var cValue: BackdropBlendingMode {
+    package var backdropBlendingMode: BackdropBlendingMode {
         switch self {
         case .behindWindow: .behindWindow
         case .withinWindow: .withinWindow
@@ -144,7 +154,7 @@ extension VisualEffectView.BlendingMode {
 }
 
 extension VisualEffectView.State {
-    package var cValue: BackdropState {
+    package var backdropState: BackdropState {
         switch self {
         case .followsWindowActiveState: .followsWindowActiveState
         case .active: .active

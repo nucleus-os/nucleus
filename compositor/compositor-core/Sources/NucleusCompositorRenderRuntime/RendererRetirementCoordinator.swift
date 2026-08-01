@@ -1,16 +1,16 @@
-public import NucleusCompositorRendererLinux
+package import NucleusCompositorRendererLinux
 
 /// Value state machine for the host-visible portion of renderer retirement.
 /// The compositor runtime remains the sole owner of libseat, topology, and the
 /// renderer; this value only makes retry/deadline decisions explicit and
 /// deterministic.
-public struct RendererRetirementCoordinator: Sendable {
-    public enum ShutdownDisposition: Sendable, Equatable {
+package struct RendererRetirementCoordinator: Sendable {
+    package enum ShutdownDisposition: Sendable, Equatable {
         case outputsDisabled
         case drmDeviceCloseRequired
     }
 
-    public enum Phase: Sendable, Equatable {
+    package enum Phase: Sendable, Equatable {
         case active
         case pausing(retryAtNanoseconds: UInt64)
         case paused
@@ -20,23 +20,23 @@ public struct RendererRetirementCoordinator: Sendable {
         case finished(ShutdownDisposition)
     }
 
-    public enum PauseDecision: Sendable, Equatable {
+    package enum PauseDecision: Sendable, Equatable {
         case waiting(retryAtNanoseconds: UInt64)
         case acknowledge(cleanlyRetired: Bool)
     }
 
-    public enum ShutdownDecision: Sendable, Equatable {
+    package enum ShutdownDecision: Sendable, Equatable {
         case waiting(
             retryAtNanoseconds: UInt64,
             deadlineNanoseconds: UInt64)
         case readyToExit(ShutdownDisposition)
     }
 
-    public private(set) var phase: Phase = .active
-    public let retryDelayNanoseconds: UInt64
-    public let shutdownGraceNanoseconds: UInt64
+    package private(set) var phase: Phase = .active
+    package let retryDelayNanoseconds: UInt64
+    package let shutdownGraceNanoseconds: UInt64
 
-    public init(
+    package init(
         retryDelayNanoseconds: UInt64,
         shutdownGraceNanoseconds: UInt64
     ) {
@@ -45,7 +45,7 @@ public struct RendererRetirementCoordinator: Sendable {
         self.shutdownGraceNanoseconds = shutdownGraceNanoseconds
     }
 
-    public var hasStartedShutdown: Bool {
+    package var hasStartedShutdown: Bool {
         switch phase {
         case .shuttingDown, .finished:
             true
@@ -54,22 +54,22 @@ public struct RendererRetirementCoordinator: Sendable {
         }
     }
 
-    public var pauseRetryDeadlineNanoseconds: UInt64? {
+    package var pauseRetryDeadlineNanoseconds: UInt64? {
         guard case .pausing(let retryAt) = phase else { return nil }
         return retryAt
     }
 
-    public var shutdownRetryDeadlineNanoseconds: UInt64? {
+    package var shutdownRetryDeadlineNanoseconds: UInt64? {
         guard case .shuttingDown(_, let retryAt) = phase else { return nil }
         return retryAt
     }
 
-    public func pauseRetryIsDue(at nowNanoseconds: UInt64) -> Bool {
+    package func pauseRetryIsDue(at nowNanoseconds: UInt64) -> Bool {
         guard let retryAt = pauseRetryDeadlineNanoseconds else { return false }
         return nowNanoseconds >= retryAt
     }
 
-    public mutating func applyPauseResult(
+    package mutating func applyPauseResult(
         _ result: RendererRetirementResult,
         nowNanoseconds: UInt64
     ) -> PauseDecision {
@@ -91,11 +91,11 @@ public struct RendererRetirementCoordinator: Sendable {
         }
     }
 
-    public mutating func noteResume(succeeded: Bool) {
+    package mutating func noteResume(succeeded: Bool) {
         phase = succeeded ? .active : .paused
     }
 
-    public mutating func applyShutdownResult(
+    package mutating func applyShutdownResult(
         _ result: RendererRetirementResult,
         nowNanoseconds: UInt64
     ) -> ShutdownDecision {

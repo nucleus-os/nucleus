@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for wp_fractional_scale_v1.
 
 import WaylandClientC
-public enum WpFractionalScaleV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum WpFractionalScaleV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_fractional_scale_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == WpFractionalScaleV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpFractionalScaleV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_fractional_scale_v1_destroy(_proxy)
@@ -19,39 +20,46 @@ public extension WaylandProxy where Interface == WpFractionalScaleV1Client {
     }
 }
 @MainActor
-public protocol WpFractionalScaleV1Events: AnyObject {
+package protocol WpFractionalScaleV1Events: AnyObject {
     func preferredScale(_ proxy: WaylandBorrowedProxy<WpFractionalScaleV1Client>, scale: UInt32)
 }
-public extension WpFractionalScaleV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wp_fractional_scale_v1_listener> = {
-        let p = UnsafeMutablePointer<wp_fractional_scale_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: wp_fractional_scale_v1_listener())
-        unsafe p.pointee.preferred_scale = preferredScale_impl
-        return unsafe p
-    }()
-    private static func handler(_ context: WaylandClientListenerContext) -> any WpFractionalScaleV1Events? {
+package extension WpFractionalScaleV1Client {
+    package nonisolated(unsafe) static let listener:
+        UnsafeMutablePointer<wp_fractional_scale_v1_listener> = {
+            let p = UnsafeMutablePointer<wp_fractional_scale_v1_listener>.allocate(capacity: 1)
+            unsafe p.initialize(to: wp_fractional_scale_v1_listener())
+            unsafe p.pointee.preferred_scale = preferredScale_impl
+            return unsafe p
+        }()
+    private static func handler(_ context: WaylandClientListenerContext)
+        -> any WpFractionalScaleV1Events?
+    {
         context.owner as? any WpFractionalScaleV1Events
     }
-    private static let preferredScale_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, scale in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let preferredScale_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = {
+            data, proxy, scale in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.preferredScale(
+                    WaylandBorrowedProxy<WpFractionalScaleV1Client>(eventProxy), scale: scale)
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.preferredScale(WaylandBorrowedProxy<WpFractionalScaleV1Client>(eventProxy), scale: scale)
-        }
-    }
 }
-public extension WaylandProxy where Interface == WpFractionalScaleV1Client {
-    func installListener(_ owner: any WpFractionalScaleV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpFractionalScaleV1Client {
+    package func installListener(_ owner: any WpFractionalScaleV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wp_fractional_scale_v1_add_listener(proxy, WpFractionalScaleV1Client.listener, data)
+            unsafe wp_fractional_scale_v1_add_listener(
+                proxy, WpFractionalScaleV1Client.listener, data)
         }
     }
 }

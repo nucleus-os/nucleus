@@ -69,7 +69,7 @@ host_toolchain() {
 android_linkage() {
   local install_root="$1"
   shift
-  local tools=/opt/android-ndk-r30-beta2/toolchains/llvm/prebuilt/linux-x86_64/bin
+  local tools=/usr/bin
   local architecture library dynamic symbols
   for architecture in "$@"; do
     library="$install_root/install-$architecture/usr/lib/swift/android/libswiftCore.so"
@@ -121,7 +121,7 @@ android_sdk() {
     [[ -n "$binary" ]] || fail "$mode Android consumer executable is missing"
     local machine
     machine="$(
-      /opt/android-ndk-r30-beta2/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf \
+      /usr/bin/llvm-readelf \
         -h "$binary" | grep -F 'Machine:'
     )"
     grep -Fq "$expected_machine" <<<"$machine" \

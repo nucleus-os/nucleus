@@ -1,4 +1,4 @@
-public import NucleusUI
+package import NucleusUI
 
 /// What a battery indicator displays.
 ///
@@ -6,17 +6,17 @@ public import NucleusUI
 /// renders this and nothing else — it never sees a bus, a service, or a device
 /// path — so the same widget serves any power source and can be tested by
 /// assignment.
-public struct BatteryLevel: Sendable, Equatable {
+package struct BatteryLevel: Sendable, Equatable {
     /// 0...1. Clamped on construction, because a widget that draws a fill wider
     /// than its body because a service reported 101% is a bug at the wrong end.
-    public var fraction: Double
-    public var isCharging: Bool
+    package var fraction: Double
+    package var isCharging: Bool
     /// Whether a battery exists at all. A desktop has none, which is not zero
     /// percent — the widget hides rather than showing an empty battery.
-    public var isPresent: Bool
-    public var secondsRemaining: Int64?
+    package var isPresent: Bool
+    package var secondsRemaining: Int64?
 
-    public init(
+    package init(
         fraction: Double,
         isCharging: Bool = false,
         isPresent: Bool = true,
@@ -28,10 +28,10 @@ public struct BatteryLevel: Sendable, Equatable {
         self.secondsRemaining = secondsRemaining
     }
 
-    public static let absent = BatteryLevel(fraction: 0, isPresent: false)
+    package static let absent = BatteryLevel(fraction: 0, isPresent: false)
 
     /// Rounded percentage for display.
-    public var percentageText: String {
+    package var percentageText: String {
         "\(Int((fraction * 100).rounded()))%"
     }
 }
@@ -43,42 +43,42 @@ public struct BatteryLevel: Sendable, Equatable {
 /// everything after that is property assignment on retained views. There is no
 /// tree, no diff, and no re-description.
 @MainActor
-public final class BatteryWidget: BarWidget {
-    public private(set) var level: BatteryLevel = .absent
+package final class BatteryWidget: BarWidget {
+    package private(set) var level: BatteryLevel = .absent
 
     /// Called when the widget is clicked, with the anchor its panel should open
     /// against. The widget does not present the panel itself: it has no scene,
     /// and a widget that reached for one would be a widget that could not be
     /// tested by assignment.
-    public var onActivate: ((BatteryWidget, Rect) -> Void)?
+    package var onActivate: ((BatteryWidget, Rect) -> Void)?
 
     /// The panel this widget's click opens, built from the current reading.
-    public func makePanel() -> BatteryPanel {
+    package func makePanel() -> BatteryPanel {
         BatteryPanel(level: level)
     }
 
-    public var showsPercentage: Bool = true {
+    package var showsPercentage: Bool = true {
         didSet { if showsPercentage != oldValue { applyLevel() } }
     }
 
     /// Below this fraction the cell draws in `warningTint`.
-    public var warningThreshold: Double = 0.2 {
+    package var warningThreshold: Double = 0.2 {
         didSet { if warningThreshold != oldValue { setNeedsDisplay() } }
     }
 
     /// Colours are stored as *intent* and resolved at paint time, so a retheme
     /// repaints the widget without rebuilding it.
-    public var tint: ColorSpec = .role(.onSurface) {
+    package var tint: ColorSpec = .role(.onSurface) {
         didSet { if tint != oldValue { refreshColors() } }
     }
-    public var warningTint: ColorSpec = .role(.error) {
+    package var warningTint: ColorSpec = .role(.error) {
         didSet { if warningTint != oldValue { setNeedsDisplay() } }
     }
-    public var chargingTint: ColorSpec = .role(.primary) {
+    package var chargingTint: ColorSpec = .role(.primary) {
         didSet { if chargingTint != oldValue { setNeedsDisplay() } }
     }
 
-    public let percentageLabel: Label
+    package let percentageLabel: Label
 
     private static let cellWidth: Double = 22
     private static let cellHeight: Double = 12
@@ -86,7 +86,7 @@ public final class BatteryWidget: BarWidget {
     private static let terminalHeight: Double = 5
     private static let labelSpacing: Double = 5
 
-    public override init() {
+    package override init() {
         percentageLabel = Label("")
         super.init()
         percentageLabel.font = .systemFont(ofSize: 11)
@@ -101,9 +101,10 @@ public final class BatteryWidget: BarWidget {
         applyLevel()
     }
 
-    public override func handleEvent(_ event: Event) -> EventHandling {
+    package override func handleEvent(_ event: Event) -> EventHandling {
         guard event.type == .pointerDown, event.button == .left,
-              level.isPresent else {
+            level.isPresent
+        else {
             return .notHandled
         }
         // The anchor is the widget itself, so the panel stays put while the
@@ -113,7 +114,7 @@ public final class BatteryWidget: BarWidget {
     }
 
     /// Take a new reading. The whole update path: assign, invalidate, done.
-    public func update(_ level: BatteryLevel) {
+    package func update(_ level: BatteryLevel) {
         guard level != self.level else { return }
         self.level = level
         applyLevel()
@@ -137,7 +138,7 @@ public final class BatteryWidget: BarWidget {
         setNeedsDisplay()
     }
 
-    public override func viewDidChangeEffectiveAppearance() {
+    package override func viewDidChangeEffectiveAppearance() {
         refreshColors()
         super.viewDidChangeEffectiveAppearance()
     }
@@ -167,7 +168,7 @@ public final class BatteryWidget: BarWidget {
 
     // MARK: - Layout
 
-    public override var intrinsicContentSize: Size {
+    package override var intrinsicContentSize: Size {
         let cell = BatteryWidget.cellWidth + BatteryWidget.terminalWidth
         guard showsPercentage, level.isPresent else {
             return Size(width: cell, height: BatteryWidget.cellHeight)
@@ -178,7 +179,7 @@ public final class BatteryWidget: BarWidget {
             height: max(BatteryWidget.cellHeight, label.height))
     }
 
-    public override func layout() {
+    package override func layout() {
         let label = percentageLabel.intrinsicContentSize
         percentageLabel.frame = Rect(
             x: BatteryWidget.cellWidth + BatteryWidget.terminalWidth
@@ -190,7 +191,7 @@ public final class BatteryWidget: BarWidget {
 
     // MARK: - Drawing
 
-    public override func draw(in context: GraphicsContext) {
+    package override func draw(in context: GraphicsContext) {
         guard level.isPresent else { return }
 
         // The hover backing belongs to the bar, which draws it in a layer
@@ -206,8 +207,9 @@ public final class BatteryWidget: BarWidget {
         // than straddling the edge.
         var outline = Path()
         outline.addRoundedRect(
-            Rect(x: 0.5, y: top + 0.5,
-                 width: body.size.width - 1, height: body.size.height - 1),
+            Rect(
+                x: 0.5, y: top + 0.5,
+                width: body.size.width - 1, height: body.size.height - 1),
             radius: 2.5)
         context.strokeColor = resolve(tint.opacity(0.75))
         context.lineWidth = 1

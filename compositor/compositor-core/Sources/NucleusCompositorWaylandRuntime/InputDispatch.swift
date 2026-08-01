@@ -17,10 +17,10 @@
 // InputHost for seat/libinput bring-up while the reactor
 // still drives those lifecycle edges.
 
+import Glibc
 internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowManager
-import Glibc
 
 // Cursor mechanism and accepted shell-action publication run through the
 // server-owned `CompositorPolicy` seam. No shell module is loaded here.
@@ -92,7 +92,8 @@ final class InputDispatch {
     // Chrome interaction state.
     package var armedChromeButton: (windowID: UInt64, region: ChromeRegion)?
     package var lastTitlebarPress: (windowID: UInt64, timeMsec: UInt32)?
-    package var chromeButtonVisual: (windowID: UInt64, rootSurface: UInt64, hovered: UInt32, pressed: UInt32)?
+    package var chromeButtonVisual:
+        (windowID: UInt64, rootSurface: UInt64, hovered: UInt32, pressed: UInt32)?
 
     init(xkb: XkbKeyboard, host: RouterHost) {
         self.xkb = xkb
@@ -150,7 +151,7 @@ final class InputDispatch {
             processCursorMotion(event)
             return .delivered
         case .leftMouseDown, .rightMouseDown, .otherMouseDown,
-             .leftMouseUp, .rightMouseUp, .otherMouseUp:
+            .leftMouseUp, .rightMouseUp, .otherMouseUp:
             handleMouseButton(event)
             return .delivered
         case .scrollWheel:

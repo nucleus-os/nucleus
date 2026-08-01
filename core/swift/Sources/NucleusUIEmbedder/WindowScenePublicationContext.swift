@@ -1,5 +1,5 @@
-public import NucleusLayers
-public import NucleusUI
+package import NucleusLayers
+package import NucleusUI
 
 // The embedder tier may name layer-model types directly; that is what
 // distinguishes it from the product tier. NucleusUI used to re-export
@@ -8,14 +8,14 @@ public import NucleusUI
 // `NucleusLayers`.
 
 @MainActor
-public final class WindowScenePublicationContext: ~Sendable {
-    public let semanticContext: UIContext
+package final class WindowScenePublicationContext: ~Sendable {
+    package let semanticContext: UIContext
     /// The context embedder-owned content is minted into, so an embedder can
     /// build its own scene-attached objects (the compositor's hosted surfaces)
     /// in the same context as this scene's layers.
-    public let visualContext: Context
+    package let visualContext: Context
 
-    public init(
+    package init(
         visualContextID: ContextID = .shellOverlay,
         commitSink: any CommitSink,
         services: UIHostServices,
@@ -38,7 +38,7 @@ public final class WindowScenePublicationContext: ~Sendable {
         }
     }
 
-    public func withSemanticContext<T>(
+    package func withSemanticContext<T>(
         _ body: () throws -> T
     ) rethrows -> T {
         try Application.withContexts(
@@ -48,7 +48,7 @@ public final class WindowScenePublicationContext: ~Sendable {
         )
     }
 
-    public func makeWindowScene(windows: [Window]) -> WindowScene {
+    package func makeWindowScene(windows: [Window]) -> WindowScene {
         WindowScene(
             windows: windows,
             uiContext: semanticContext,

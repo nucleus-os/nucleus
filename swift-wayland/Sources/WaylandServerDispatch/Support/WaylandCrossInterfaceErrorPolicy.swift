@@ -1,9 +1,9 @@
-import WaylandServer
 import WaylandProtocolTypes
+import WaylandServer
 
-public extension WaylandRequest
+extension WaylandRequest
 where Interface == ZxdgDecorationManagerV1Server {
-    func postToplevelDecorationAlreadyConstructedError(
+    package func postToplevelDecorationAlreadyConstructedError(
         message: String
     ) {
         postError(
@@ -12,10 +12,10 @@ where Interface == ZxdgDecorationManagerV1Server {
     }
 }
 
-public extension WaylandResourceHandle
+extension WaylandResourceHandle
 where Interface == ZxdgDecorationManagerV1Server {
     @discardableResult
-    func postToplevelDecorationAlreadyConstructedError(
+    package func postToplevelDecorationAlreadyConstructedError(
         message: String
     ) -> Bool {
         postError(
@@ -24,19 +24,19 @@ where Interface == ZxdgDecorationManagerV1Server {
     }
 }
 
-public extension WaylandRequest
+extension WaylandRequest
 where Interface == ZwlrLayerSurfaceV1Server {
-    func postLayerShellInvalidLayerError(message: String) {
+    package func postLayerShellInvalidLayerError(message: String) {
         postError(
             code: ZwlrLayerShellV1Error.invalidLayer.rawValue,
             message: message)
     }
 }
 
-public extension WaylandResourceHandle
+extension WaylandResourceHandle
 where Interface == ZwlrLayerSurfaceV1Server {
     @discardableResult
-    func postLayerShellInvalidLayerError(message: String) -> Bool {
+    package func postLayerShellInvalidLayerError(message: String) -> Bool {
         postError(
             code: ZwlrLayerShellV1Error.invalidLayer.rawValue,
             message: message)

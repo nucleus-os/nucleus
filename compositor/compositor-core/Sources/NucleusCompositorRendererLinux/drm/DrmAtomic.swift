@@ -50,14 +50,17 @@ import NucleusCompositorDrmC
     mutating func add(objectId: UInt32, propertyId: UInt32, value: UInt64, label: String) -> Bool {
         let rc = unsafe drmModeAtomicAddProperty(
             req, objectId, propertyId, value)
-        entries.append(Entry(objectId: objectId, propertyId: propertyId, value: value, label: label))
+        entries.append(
+            Entry(objectId: objectId, propertyId: propertyId, value: value, label: label))
         return rc >= 0
     }
 
     /// Submit the staged request. Returns libdrm's result (0 on success, a
     /// negative errno otherwise). `flags` carries `DRM_MODE_ATOMIC_*` /
     /// `DRM_MODE_PAGE_FLIP_*`; `userData` is handed back on the page-flip event.
-    borrowing func commit(fd: Int32, flags: UInt32, userData: UnsafeMutableRawPointer? = nil) -> Int32 {
+    borrowing func commit(fd: Int32, flags: UInt32, userData: UnsafeMutableRawPointer? = nil)
+        -> Int32
+    {
         unsafe drmModeAtomicCommit(fd, req, flags, userData)
     }
 
@@ -103,9 +106,8 @@ struct PlaneAtomicProps: Sendable, Equatable {
     /// The geometry + framebuffer props a scanout commit cannot omit. IN_FENCE_FD
     /// and COLOR_RANGE are optional.
     var hasRequired: Bool {
-        fbId != 0 && crtcId != 0 &&
-            srcX != 0 && srcY != 0 && srcW != 0 && srcH != 0 &&
-            crtcX != 0 && crtcY != 0 && crtcW != 0 && crtcH != 0
+        fbId != 0 && crtcId != 0 && srcX != 0 && srcY != 0 && srcW != 0 && srcH != 0 && crtcX != 0
+            && crtcY != 0 && crtcW != 0 && crtcH != 0
     }
 }
 
@@ -164,7 +166,8 @@ enum AtomicPropsDiscovery {
         func findCrtc(_ name: String) -> UInt32 { DrmProperties.findId(in: crtc, name: name) }
         func findCrtcValue(_ name: String) -> UInt32 {
             guard let value = DrmProperties.findValue(in: crtc, name: name),
-                  let narrowed = UInt32(exactly: value) else { return 0 }
+                let narrowed = UInt32(exactly: value)
+            else { return 0 }
             return narrowed
         }
         func findPlane(_ name: String) -> UInt32 { DrmProperties.findId(in: plane, name: name) }

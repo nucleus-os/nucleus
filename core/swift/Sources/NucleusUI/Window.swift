@@ -1,4 +1,5 @@
-@_spi(NucleusRenderServer) internal import NucleusLayers
+internal import NucleusLayers
+public import NucleusTypes
 
 public enum WindowRole: Sendable, Equatable {
     case application
@@ -25,10 +26,10 @@ public struct WindowStyleMask: OptionSet, Sendable {
     public let rawValue: UInt
     public init(rawValue: UInt) { self.rawValue = rawValue }
 
-    public static let titled              = WindowStyleMask(rawValue: 1 << 0)
-    public static let closable            = WindowStyleMask(rawValue: 1 << 1)
-    public static let miniaturizable      = WindowStyleMask(rawValue: 1 << 2)
-    public static let resizable           = WindowStyleMask(rawValue: 1 << 3)
+    public static let titled = WindowStyleMask(rawValue: 1 << 0)
+    public static let closable = WindowStyleMask(rawValue: 1 << 1)
+    public static let miniaturizable = WindowStyleMask(rawValue: 1 << 2)
+    public static let resizable = WindowStyleMask(rawValue: 1 << 3)
     public static let fullSizeContentView = WindowStyleMask(rawValue: 1 << 4)
 }
 
@@ -311,7 +312,7 @@ open class Window: Responder, ~Sendable {
     public func makeFirstResponder(_ responder: Responder?) -> Bool {
         if firstResponder === responder { return true }
         if let responder,
-           !responderBelongsToActiveFocusScope(responder)
+            !responderBelongsToActiveFocusScope(responder)
         {
             return false
         }
@@ -352,18 +353,18 @@ open class Window: Responder, ~Sendable {
     @discardableResult
     package func deliverKeyEvent(_ event: Event) -> EventHandling {
         if event.type == .keyDown,
-           event.keyCode == .return,
-           !(firstResponder is Button),
-           let button = rootView?.defaultButton()
+            event.keyCode == .return,
+            !(firstResponder is Button),
+            let button = rootView?.defaultButton()
         {
             button.performPress()
             return .handled
         }
         let routed = firstResponder?.deliverEvent(event) ?? .notHandled
         guard routed == .notHandled,
-              event.type == .keyDown,
-              event.keyCode == .return,
-              let button = rootView?.defaultButton()
+            event.type == .keyDown,
+            event.keyCode == .return,
+            let button = rootView?.defaultButton()
         else { return routed }
         button.performPress()
         return .handled

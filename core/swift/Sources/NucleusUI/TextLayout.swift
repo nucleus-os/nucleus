@@ -1,3 +1,5 @@
+public import NucleusTypes
+
 public enum TextAlignment: Sendable, Equatable {
     case leading
     case center
@@ -81,7 +83,8 @@ public struct TextLayoutLine: Sendable, Equatable {
         self.frame = frame
         self.baselineOffsetFromTop = baselineOffsetFromTop
         self.typographicAscent = typographicAscent ?? baselineOffsetFromTop
-        self.typographicDescent = typographicDescent ?? max(0, frame.size.height - baselineOffsetFromTop)
+        self.typographicDescent =
+            typographicDescent ?? max(0, frame.size.height - baselineOffsetFromTop)
         self.unscaledAscent = unscaledAscent ?? self.typographicAscent
         self.isHardBreak = isHardBreak
         self.isLastVisibleLine = isLastVisibleLine
@@ -197,14 +200,10 @@ public struct TextLayout: Sendable, Equatable {
     }
 
     public static func == (lhs: TextLayout, rhs: TextLayout) -> Bool {
-        lhs.text == rhs.text &&
-            lhs.font == rhs.font &&
-            lhs.textRuns == rhs.textRuns &&
-            lhs.containerWidth == rhs.containerWidth &&
-            lhs.paragraphStyle == rhs.paragraphStyle &&
-            lhs.usedRect == rhs.usedRect &&
-            lhs.lines == rhs.lines &&
-            lhs.didExceedMaximumLineCount == rhs.didExceedMaximumLineCount
+        lhs.text == rhs.text && lhs.font == rhs.font && lhs.textRuns == rhs.textRuns
+            && lhs.containerWidth == rhs.containerWidth && lhs.paragraphStyle == rhs.paragraphStyle
+            && lhs.usedRect == rhs.usedRect && lhs.lines == rhs.lines
+            && lhs.didExceedMaximumLineCount == rhs.didExceedMaximumLineCount
     }
 
     public var intrinsicSize: Size {
@@ -260,8 +259,8 @@ public struct TextLayout: Sendable, Equatable {
         in textSystem: TextSystem
     ) -> TextGlyphPosition? {
         if let storage,
-           storage.isCurrent(in: textSystem),
-           let position = storage.glyphPosition(at: point)
+            storage.isCurrent(in: textSystem),
+            let position = storage.glyphPosition(at: point)
         {
             return position
         }
@@ -275,22 +274,23 @@ public struct TextLayout: Sendable, Equatable {
         in textSystem: TextSystem
     ) -> TextCaretGeometry? {
         if let storage,
-           storage.isCurrent(in: textSystem),
-           let geometry = storage.caretGeometry(
-               atUTF16Offset: max(0, min(offset, text.utf16.count)),
-               affinity: affinity
-           )
+            storage.isCurrent(in: textSystem),
+            let geometry = storage.caretGeometry(
+                atUTF16Offset: max(0, min(offset, text.utf16.count)),
+                affinity: affinity
+            )
         {
             return geometry
         }
         let clamped = max(0, min(offset, text.utf16.count))
         if clamped == 0, let first = lines.first {
-            return TextCaretGeometry(rect: Rect(
-                x: first.frame.origin.x,
-                y: first.frame.origin.y,
-                width: 1,
-                height: first.frame.size.height
-            ))
+            return TextCaretGeometry(
+                rect: Rect(
+                    x: first.frame.origin.x,
+                    y: first.frame.origin.y,
+                    width: 1,
+                    height: first.frame.size.height
+                ))
         }
         let rects = textSystem.fallbackSelectionRects(
             forUTF16Range: 0..<clamped,
@@ -317,8 +317,8 @@ public struct TextLayout: Sendable, Equatable {
         let upper = max(lower, min(range.upperBound, text.utf16.count))
         let clamped = lower..<upper
         if let storage,
-           storage.isCurrent(in: textSystem),
-           let rects = storage.selectionRects(forUTF16Range: clamped)
+            storage.isCurrent(in: textSystem),
+            let rects = storage.selectionRects(forUTF16Range: clamped)
         {
             return rects
         }

@@ -11,9 +11,9 @@ import SwiftSyntaxBuilder
 struct SwiftSourceFileBuilder {
     private var declarations: [DeclSyntax] = []
 
-    mutating func addImport(_ module: String, public isPublic: Bool = false) {
-        let modifiers: DeclModifierListSyntax = isPublic
-            ? [DeclModifierSyntax(name: .keyword(.public))]
+    mutating func addImport(_ module: String, packageAccess: Bool = false) {
+        let modifiers: DeclModifierListSyntax = packageAccess
+            ? [DeclModifierSyntax(name: .keyword(.package))]
             : []
         let declaration = ImportDeclSyntax(
             modifiers: modifiers,

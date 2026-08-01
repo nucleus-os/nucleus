@@ -49,7 +49,7 @@ the scrolled views neither redraw nor re-record.
 Phases 1 through 4 are complete. Phase 5 is Port 3's, and lands with the tracking work.
 
 The discovery that shaped Phase 4: `scrollOffset` **already existed** on `LayerPropertyUpdate`,
-and was already carried through the layer model, the wire types, the lowering, and the render
+and was already carried through the layer transaction batch, semantic lowering, and the render
 model's `RenderTransactionApply` — and was then consumed by nothing. `layerLocalMatrix` reads
 position, anchor, and transform, and the walk passed each layer's world matrix to its children
 untouched. The field was inert end to end. Honouring it turned out to be one helper and one line at

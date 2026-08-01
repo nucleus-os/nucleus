@@ -113,8 +113,9 @@ enum InputDeviceConfiguration {
         if unsafe libinput_device_config_tap_get_finger_count(device) > 0 {
             return .touchpad
         }
-        guard unsafe libinput_device_has_capability(
-            device, LIBINPUT_DEVICE_CAP_POINTER) != 0
+        guard
+            unsafe libinput_device_has_capability(
+                device, LIBINPUT_DEVICE_CAP_POINTER) != 0
         else { return .unclassified }
 
         if let udev = unsafe libinput_device_get_udev_device(device) {
@@ -144,7 +145,9 @@ enum InputDeviceConfiguration {
 
         if let tap = settings.tap {
             _ = unsafe libinput_device_config_tap_set_enabled(
-                device, tap ? LIBINPUT_CONFIG_TAP_ENABLED
+                device,
+                tap
+                    ? LIBINPUT_CONFIG_TAP_ENABLED
                     : LIBINPUT_CONFIG_TAP_DISABLED)
         }
         if let map = settings.tapButtonMap {
@@ -162,12 +165,16 @@ enum InputDeviceConfiguration {
         }
         if let dwt = settings.disableWhileTyping {
             _ = unsafe libinput_device_config_dwt_set_enabled(
-                device, dwt ? LIBINPUT_CONFIG_DWT_ENABLED
+                device,
+                dwt
+                    ? LIBINPUT_CONFIG_DWT_ENABLED
                     : LIBINPUT_CONFIG_DWT_DISABLED)
         }
         if let dwtp = settings.disableWhileTrackpointing {
             _ = unsafe libinput_device_config_dwtp_set_enabled(
-                device, dwtp ? LIBINPUT_CONFIG_DWTP_ENABLED
+                device,
+                dwtp
+                    ? LIBINPUT_CONFIG_DWTP_ENABLED
                     : LIBINPUT_CONFIG_DWTP_DISABLED)
         }
         if let natural = settings.naturalScroll {
@@ -194,7 +201,8 @@ enum InputDeviceConfiguration {
         if let middle = settings.middleEmulation {
             _ = unsafe libinput_device_config_middle_emulation_set_enabled(
                 device,
-                middle ? LIBINPUT_CONFIG_MIDDLE_EMULATION_ENABLED
+                middle
+                    ? LIBINPUT_CONFIG_MIDDLE_EMULATION_ENABLED
                     : LIBINPUT_CONFIG_MIDDLE_EMULATION_DISABLED)
         }
         if let left = settings.leftHanded {

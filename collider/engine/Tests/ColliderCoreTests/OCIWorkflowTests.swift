@@ -152,12 +152,29 @@ import Testing
         executionPlatform: .linuxAMD64OCI)
     #expect(macOS.backend == .appleContainer)
 
+    let nativeARM64 = try OCIExecutorResolver.resolve(
+        runner: RunnerPlatform(
+            operatingSystem: .linux,
+            architecture: .arm64),
+        executionPlatform: .linuxARM64OCI)
+    #expect(nativeARM64.backend == .podman)
+
+    let macOSARM64 = try OCIExecutorResolver.resolve(
+        runner: RunnerPlatform(
+            operatingSystem: .macOS,
+            architecture: .arm64),
+        executionPlatform: .linuxARM64OCI)
+    #expect(macOSARM64.backend == .appleContainer)
+
     #expect(throws: OCIExecutorFailure.self) {
         try OCIExecutorResolver.resolve(
             runner: RunnerPlatform(
-                operatingSystem: .linux,
+                operatingSystem: .macOS,
                 architecture: .arm64),
-            executionPlatform: .linuxAMD64OCI)
+            executionPlatform: ExecutionPlatform(
+                environment: .native,
+                operatingSystem: .linux,
+                architecture: .arm64))
     }
 }
 
@@ -282,6 +299,18 @@ import Testing
     #expect(
         command.arguments.contains(OCIBackendContract.appleOfflineNetwork))
     #expect(command.arguments.contains("--no-dns"))
+    let nameIndex = try #require(command.arguments.firstIndex(of: "--name"))
+    let executionName = command.arguments[nameIndex + 1]
+    #expect(
+        executionName.hasPrefix("fixture-build-")
+            && executionName != "fixture-build")
+    let secondCommand = try executor.runCommand(
+        execution,
+        imageID: digest,
+        temporaryDirectory: nil)
+    let secondNameIndex = try #require(
+        secondCommand.arguments.firstIndex(of: "--name"))
+    #expect(secondCommand.arguments[secondNameIndex + 1] != executionName)
     #expect(command.arguments.contains("ALL"))
     #expect(command.arguments.contains("--read-only"))
     #expect(command.arguments.contains("--tmpfs"))
@@ -294,4 +323,29 @@ import Testing
         command.arguments.contains(
             "type=bind,source=/var/nucleus/output,target=/output"))
     #expect(!command.arguments.contains(where: { $0.contains("podman") }))
+
+    let armExecution = OCIExecution(
+        executionPlatform: .linuxARM64OCI,
+        artifactTarget: .linuxARM64,
+        imageID: root.appending("arm-image-id"),
+        hostname: "fixture-arm-build",
+        workingDirectory: "/source",
+        hostWorkingDirectory: root,
+        mounts: [],
+        networkPolicy: .externalDisabled,
+        userPolicy: .builder,
+        capabilityPolicy: .dropAll,
+        privilegePolicy: .prohibitAcquisition,
+        processFilesystemPolicy: .standard,
+        resourceLimits: .build,
+        containerEnvironment: [:],
+        command: ["uname", "-m"],
+        environment: ["PATH": "/usr/bin"],
+        output: .logged)
+    let armCommand = try executor.runCommand(
+        armExecution,
+        imageID: digest,
+        temporaryDirectory: nil)
+    #expect(armCommand.arguments.contains("linux/arm64"))
+    #expect(!armCommand.arguments.contains("--rosetta"))
 }

@@ -1,24 +1,21 @@
 public import NucleusTypes
 
-// `AnimationKeyPath` is wire-owned (the generated discriminant enum). The
-// domain `Animation` is kept as the producer-side spec; its
-// `wireValue(layerID:)` adapter is defined in DirectBridge.swift.
-public typealias AnimationKeyPath = NucleusTypes.AnimationKeyPath
+// Authored animation properties pass unchanged through the commit stage.
+public typealias LayerAnimationKeyPath = NucleusTypes.LayerAnimationKeyPath
 
-/// Wire-shaped animation timing descriptor. Carries one of: linear (no
+/// Animation timing descriptor. Carries one of: linear (no
 /// params), cubic-bezier control points, or spring physics parameters —
-/// the consumer evaluator dispatches on `kind`. This is the generated wire
-/// type itself (`kind` is the typed `AnimationCurveKind`); the `.linear` /
-/// `.bezier` / `.spring` factories are the relocated conveniences.
-public typealias AnimationCurveKind = NucleusTypes.AnimationCurveKind
+/// the consumer evaluator switches exhaustively over the enum.
 public typealias AnimationCurve = NucleusTypes.AnimationCurve
 
-/// Tagged-union animation endpoint. The consumer reads exactly one
-/// field per endpoint based on the record's `keyPath`. Producers
-/// construct via the type-safe factory methods (`scalar(_:)`,
-/// `rect(_:)`, `transform(_:)`). This is the generated wire type itself;
-/// the factories below are the relocated conveniences.
-public typealias AnimationEndpoint = NucleusTypes.AnimationEndpoint
+/// Producer-owned animation value. Associated values prevent a scalar
+/// animation from carrying unused geometry and transform storage.
+public enum AnimationEndpoint: Sendable, Equatable {
+    case scalar(Double)
+    case transform(GeometryTransform)
+
+    public static let zero = AnimationEndpoint.scalar(0)
+}
 
 /// Cubic-bezier timing function. Apple `CAMediaTimingFunction` layout:
 /// two control points in [0, 1] × [0, 1] define the easing curve between
@@ -30,8 +27,10 @@ public struct BezierCurve: Sendable, Equatable {
     public var p2y: Float
 
     public init(_ p1x: Float, _ p1y: Float, _ p2x: Float, _ p2y: Float) {
-        self.p1x = p1x; self.p1y = p1y
-        self.p2x = p2x; self.p2y = p2y
+        self.p1x = p1x
+        self.p1y = p1y
+        self.p2x = p2x
+        self.p2y = p2y
     }
 
     public static let linear = BezierCurve(0, 0, 1, 1)
@@ -65,63 +64,27 @@ public struct SpringCurve: Sendable, Equatable {
 }
 
 extension AnimationCurve {
-    public static let linear = AnimationCurve(kind: .linear)
-
     public static func bezier(_ curve: BezierCurve) -> AnimationCurve {
-        AnimationCurve(
-            kind: .bezier,
-            bezierP1x: curve.p1x, bezierP1y: curve.p1y,
-            bezierP2x: curve.p2x, bezierP2y: curve.p2y
-        )
+        .bezier(p1x: curve.p1x, p1y: curve.p1y, p2x: curve.p2x, p2y: curve.p2y)
     }
 
     public static func spring(_ curve: SpringCurve) -> AnimationCurve {
-        AnimationCurve(
-            kind: .spring,
-            springStiffness: curve.stiffness,
-            springDamping: curve.damping,
-            springMass: curve.mass,
-            springInitialVelocity: curve.initialVelocity
-        )
-    }
-}
-
-extension AnimationEndpoint {
-    public static let zero = AnimationEndpoint(
-        scalar: 0,
-        point: .zero,
-        size: .zero,
-        rect: .zero,
-        transform: .identity
-    )
-
-    public static func scalar(_ value: Double) -> AnimationEndpoint {
-        var e = zero
-        e.scalar = value
-        return e
-    }
-
-    public static func rect(_ value: GeometryRect) -> AnimationEndpoint {
-        var e = zero
-        e.rect = value
-        return e
-    }
-
-    public static func transform(_ value: GeometryTransform) -> AnimationEndpoint {
-        var e = zero
-        e.transform = value
-        return e
+        .spring(
+            stiffness: curve.stiffness,
+            damping: curve.damping,
+            mass: curve.mass,
+            initialVelocity: curve.initialVelocity)
     }
 }
 
 /// Producer-side animation specification. Keyed by `keyPath`; the
-/// consumer reads `from`/`to` against the union field that matches the
+/// consumer reads `from`/`to` against the endpoint case that matches the
 /// key path. `curve` selects the per-frame sampling rule (linear,
 /// cubic-bezier, or spring physics — all evaluated consumer-side).
 public struct Animation: Sendable, Equatable {
     public var id: UInt64
     public var completionToken: UInt64
-    public var keyPath: AnimationKeyPath
+    public var keyPath: LayerAnimationKeyPath
     public var duration: Double
     public var fromEndpoint: AnimationEndpoint
     public var toEndpoint: AnimationEndpoint
@@ -130,7 +93,7 @@ public struct Animation: Sendable, Equatable {
     public init(
         id: UInt64 = 0,
         completionToken: UInt64 = 0,
-        keyPath: AnimationKeyPath = .opacity,
+        keyPath: LayerAnimationKeyPath = .opacity,
         duration: Double,
         from: AnimationEndpoint = .zero,
         to: AnimationEndpoint = .zero,
@@ -149,7 +112,7 @@ public struct Animation: Sendable, Equatable {
     /// read via `endpoint.scalar` (opacity, corner_radius, scroll_offset_*,
     /// position_*, anchor_point_*, bounds_*, border_*_width).
     public static func scalar(
-        keyPath: AnimationKeyPath,
+        keyPath: LayerAnimationKeyPath,
         from: Double,
         to: Double,
         duration: Double,

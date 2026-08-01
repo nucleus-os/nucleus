@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for zxdg_imported_v1.
 
 import WaylandClientC
-public enum ZxdgImportedV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum ZxdgImportedV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zxdg_imported_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == ZxdgImportedV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZxdgImportedV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zxdg_imported_v1_destroy(_proxy)
@@ -17,7 +18,7 @@ public extension WaylandProxy where Interface == ZxdgImportedV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func setParentOf(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) {
+    package func setParentOf(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
         unsafe swift_wayland_client_request_zxdg_imported_v1_set_parent_of(_proxy, _surfaceProxy)
@@ -25,37 +26,42 @@ public extension WaylandProxy where Interface == ZxdgImportedV1Client {
     }
 }
 @MainActor
-public protocol ZxdgImportedV1Events: AnyObject {
+package protocol ZxdgImportedV1Events: AnyObject {
     func destroyed(_ proxy: WaylandBorrowedProxy<ZxdgImportedV1Client>)
 }
-public extension ZxdgImportedV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zxdg_imported_v1_listener> = {
-        let p = UnsafeMutablePointer<zxdg_imported_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zxdg_imported_v1_listener())
-        unsafe p.pointee.destroyed = destroyed_impl
-        return unsafe p
-    }()
-    private static func handler(_ context: WaylandClientListenerContext) -> any ZxdgImportedV1Events? {
+package extension ZxdgImportedV1Client {
+    package nonisolated(unsafe) static let listener:
+        UnsafeMutablePointer<zxdg_imported_v1_listener> = {
+            let p = UnsafeMutablePointer<zxdg_imported_v1_listener>.allocate(capacity: 1)
+            unsafe p.initialize(to: zxdg_imported_v1_listener())
+            unsafe p.pointee.destroyed = destroyed_impl
+            return unsafe p
+        }()
+    private static func handler(_ context: WaylandClientListenerContext)
+        -> any ZxdgImportedV1Events?
+    {
         context.owner as? any ZxdgImportedV1Events
     }
-    private static let destroyed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let destroyed_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.destroyed(
+                    WaylandBorrowedProxy<ZxdgImportedV1Client>(eventProxy))
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.destroyed(WaylandBorrowedProxy<ZxdgImportedV1Client>(eventProxy))
-        }
-    }
 }
-public extension WaylandProxy where Interface == ZxdgImportedV1Client {
-    func installListener(_ owner: any ZxdgImportedV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZxdgImportedV1Client {
+    package func installListener(_ owner: any ZxdgImportedV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe zxdg_imported_v1_add_listener(proxy, ZxdgImportedV1Client.listener, data)
         }

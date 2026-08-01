@@ -18,9 +18,9 @@
 // rather than being partially honored. Rejecting inside the protocol contract
 // is not a shortfall; silently applying half of an atomic request would be.
 
+import WaylandProtocolTypes
 import WaylandServer
 import WaylandServerDispatch
-import WaylandProtocolTypes
 
 /// One head's requested state, after validation.
 package struct OutputConfigurationRequest: Equatable, Sendable {
@@ -135,9 +135,11 @@ package enum OutputConfigurationRejection: Equatable, Sendable {
     func publish(heads infos: [OutputInfo], serial: UInt32) {
         guard !stopped else { return }
         for info in infos {
-            guard let head = resource.createHead(owner: { handle in
-                OutputHead(resource: handle, outputID: info.outputId)
-            }) else { continue }
+            guard
+                let head = resource.createHead(owner: { handle in
+                    OutputHead(resource: handle, outputID: info.outputId)
+                })
+            else { continue }
             head.send(info)
             heads[ObjectIdentifier(head)] = info.outputId
             headOwners.append(head)
@@ -391,7 +393,8 @@ package enum OutputConfigurationRejection: Equatable, Sendable {
 
 /// One head's requested settings inside a configuration.
 @MainActor
-@safe final class OutputConfigurationHead:
+@safe
+final class OutputConfigurationHead:
     ZwlrOutputConfigurationHeadV1Requests
 {
     private unowned let configuration: OutputConfiguration

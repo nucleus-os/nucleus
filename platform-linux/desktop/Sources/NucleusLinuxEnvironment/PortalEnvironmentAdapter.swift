@@ -1,14 +1,15 @@
-public import NucleusLinuxDBus
-public import NucleusLinuxReactor
-public import NucleusUI
+package import NucleusLinuxDBus
+package import NucleusLinuxReactor
+package import NucleusUI
+
 #if canImport(Glibc)
 import Glibc
 #endif
 
-public typealias PortalEnvironmentSettings = DesktopPortalSettings
+package typealias PortalEnvironmentSettings = DesktopPortalSettings
 
 extension DesktopPortalSettings {
-    public func normalized(
+    package func normalized(
         fallback: UIEnvironment = UIEnvironment()
     ) -> UIEnvironment {
         UIEnvironment(
@@ -33,13 +34,13 @@ extension DesktopPortalSettings {
 /// the compositor and out-of-process shell drive this same concrete owner from
 /// their existing reactors.
 @MainActor
-public final class PortalEnvironmentAdapter: LinuxReactorSource {
-    public static let service = DesktopPortalSettingsEndpoint.service
-    public static let path = DesktopPortalSettingsEndpoint.path
-    public static let interface = DesktopPortalSettingsEndpoint.interface
+package final class PortalEnvironmentAdapter: LinuxReactorSource {
+    package static let service = DesktopPortalSettingsEndpoint.service
+    package static let path = DesktopPortalSettingsEndpoint.path
+    package static let interface = DesktopPortalSettingsEndpoint.interface
 
-    public private(set) var environment: UIEnvironment
-    public var onChange: (@MainActor (UIEnvironment) -> Void)?
+    package private(set) var environment: UIEnvironment
+    package var onChange: (@MainActor (UIEnvironment) -> Void)?
 
     private var connection: DBusConnection?
     private var subscription: DBusSubscription?
@@ -47,11 +48,10 @@ public final class PortalEnvironmentAdapter: LinuxReactorSource {
     private var stopped = true
     private var reconnectDeadlineNanoseconds: UInt64?
     private var reconnectDelayNanoseconds: UInt64 = 100_000_000
-    private let connectionFactory:
-        @MainActor () throws(DBusError) -> DBusConnection
+    private let connectionFactory: @MainActor () throws(DBusError) -> DBusConnection
     private let nowNanoseconds: @MainActor () -> UInt64
 
-    public init(environment: UIEnvironment = UIEnvironment()) {
+    package init(environment: UIEnvironment = UIEnvironment()) {
         self.environment = environment
         self.connectionFactory = {
             () throws(DBusError) -> DBusConnection in
@@ -72,7 +72,7 @@ public final class PortalEnvironmentAdapter: LinuxReactorSource {
     }
 
     @discardableResult
-    public func start() -> UIEnvironment {
+    package func start() -> UIEnvironment {
         stopTransport()
         stopped = false
         reconnectDeadlineNanoseconds = nil
@@ -81,22 +81,22 @@ public final class PortalEnvironmentAdapter: LinuxReactorSource {
         return environment
     }
 
-    public func stop() {
+    package func stop() {
         stopped = true
         reconnectDeadlineNanoseconds = nil
         stopTransport()
         onChange = nil
     }
 
-    public var fileDescriptor: Int32 {
+    package var fileDescriptor: Int32 {
         connection?.fileDescriptor ?? -1
     }
 
-    public var pollEvents: Int16 {
+    package var pollEvents: Int16 {
         connection?.pollEvents ?? 0
     }
 
-    public func timeoutMicroseconds() -> UInt64? {
+    package func timeoutMicroseconds() -> UInt64? {
         if let connection {
             return connection.timeoutMicroseconds()
         }
@@ -107,7 +107,7 @@ public final class PortalEnvironmentAdapter: LinuxReactorSource {
     }
 
     @discardableResult
-    public func process() -> Bool {
+    package func process() -> Bool {
         guard !stopped else { return false }
         if let connection {
             do {
@@ -118,22 +118,24 @@ public final class PortalEnvironmentAdapter: LinuxReactorSource {
                 return true
             }
         }
-        guard reconnectDeadlineNanoseconds.map({
-            nowNanoseconds() >= $0
-        }) ?? true else {
+        guard
+            reconnectDeadlineNanoseconds.map({
+                nowNanoseconds() >= $0
+            }) ?? true
+        else {
             return false
         }
         attemptConnect()
         return connection != nil
     }
 
-    public func transportDidFail(operation: String) {
+    package func transportDidFail(operation: String) {
         guard !stopped else { return }
         stopTransport()
         scheduleReconnect()
     }
 
-    public func refresh() {
+    package func refresh() {
         guard let connection else { return }
         refreshRequest?.cancel()
         do {
@@ -164,12 +166,12 @@ public final class PortalEnvironmentAdapter: LinuxReactorSource {
             let connection = try connectionFactory()
             let subscription = try connection.subscribe(
                 matching: """
-                type='signal',\
-                sender='\(Self.service)',\
-                path='\(Self.path)',\
-                interface='\(Self.interface)',\
-                member='\(DesktopPortalSettingsEndpoint.settingChanged)'
-                """
+                    type='signal',\
+                    sender='\(Self.service)',\
+                    path='\(Self.path)',\
+                    interface='\(Self.interface)',\
+                    member='\(DesktopPortalSettingsEndpoint.settingChanged)'
+                    """
             ) { [weak self] in
                 self?.refresh()
             }
@@ -189,7 +191,8 @@ public final class PortalEnvironmentAdapter: LinuxReactorSource {
         let now = nowNanoseconds()
         let addition = now.addingReportingOverflow(
             reconnectDelayNanoseconds)
-        reconnectDeadlineNanoseconds = addition.overflow
+        reconnectDeadlineNanoseconds =
+            addition.overflow
             ? UInt64.max : addition.partialValue
         reconnectDelayNanoseconds = min(
             reconnectDelayNanoseconds &* 2,

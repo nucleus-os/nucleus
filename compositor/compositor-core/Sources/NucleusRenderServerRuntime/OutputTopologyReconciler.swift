@@ -1,10 +1,10 @@
-import NucleusCompositorRenderRuntime // private framework implementation
+import NucleusCompositorRenderRuntime  // private framework implementation
 import NucleusCompositorRendererLinux
 import NucleusCompositorServer
-import NucleusConfig
 import NucleusCompositorServerTypes
 import NucleusCompositorWaylandRuntime
 import NucleusCompositorWindowManager
+import NucleusConfig
 
 struct PlannedOutput: Equatable {
     let renderer: RenderRuntime.OutputInfo
@@ -214,7 +214,8 @@ final class OutputTopologyReconciler {
 
     private func rememberPlacement(_ output: AppliedOutput) {
         rememberedPlacements[output.id] = (
-            output.configuration.logicalX, output.configuration.logicalY)
+            output.configuration.logicalX, output.configuration.logicalY
+        )
     }
 
     private func withdraw(_ output: AppliedOutput) {
@@ -233,16 +234,19 @@ final class OutputTopologyReconciler {
         // Resolve the name first: it is what a configuration entry is keyed
         // by, so nothing below can be decided without it.
         let outputName = name ?? "DRM-\(planned.id)"
-        let override = protocolOverrides[planned.id]
+        let override =
+            protocolOverrides[planned.id]
             ?? outputOverrides.entry(named: outputName)
 
         // A configured scale outranks the remembered one — a reload that left
         // the old value in place would look like it had silently failed.
         let scale = override?.scale ?? previous?.fractionalScale ?? defaultScale
-        let integerScale = override?.scale.map {
-            UInt32(max(1.0, $0.rounded(.up)))
-        } ?? previous?.scale ?? UInt32(max(1.0, scale.rounded(.up)))
-        let placement = override?.position.map { ($0.x, $0.y) }
+        let integerScale =
+            override?.scale.map {
+                UInt32(max(1.0, $0.rounded(.up)))
+            } ?? previous?.scale ?? UInt32(max(1.0, scale.rounded(.up)))
+        let placement =
+            override?.position.map { ($0.x, $0.y) }
             ?? previous.map { ($0.logicalX, $0.logicalY) }
             ?? rememberedPlacements[planned.id].map { ($0.x, $0.y) }
             ?? nextPlacement()
@@ -261,16 +265,17 @@ final class OutputTopologyReconciler {
             scale: integerScale,
             fractionalScale: scale,
             mode: mode)
-        guard renderRuntime.applyProposedOutput(
-            planned.renderer,
-            logicalX: configuration.logicalX,
-            logicalY: configuration.logicalY,
-            logicalWidth: configuration.logicalWidth
-                ?? Double(planned.renderer.pixelWidth) / scale,
-            logicalHeight: configuration.logicalHeight
-                ?? Double(planned.renderer.pixelHeight) / scale,
-            fractionalScale: scale,
-            adaptiveSync: override?.adaptiveSync)
+        guard
+            renderRuntime.applyProposedOutput(
+                planned.renderer,
+                logicalX: configuration.logicalX,
+                logicalY: configuration.logicalY,
+                logicalWidth: configuration.logicalWidth
+                    ?? Double(planned.renderer.pixelWidth) / scale,
+                logicalHeight: configuration.logicalHeight
+                    ?? Double(planned.renderer.pixelHeight) / scale,
+                fractionalScale: scale,
+                adaptiveSync: override?.adaptiveSync)
         else {
             logRuntime("output topology: failed to attach output \(planned.id)")
             return nil
@@ -334,9 +339,10 @@ final class OutputTopologyReconciler {
     private func refreshServerDisplay(
         _ output: AppliedOutput
     ) {
-        guard let display =
-            server.layout.display(
-                id: output.id)
+        guard
+            let display =
+                server.layout.display(
+                    id: output.id)
         else { return }
         display.apply(output.configuration)
         display.physicalWidthMM =
@@ -350,7 +356,8 @@ final class OutputTopologyReconciler {
     private func nextPlacement() -> (Double, Double) {
         let layout = server.layout
         guard let bounds = layout.desktopBounds() else { return (0, 0) }
-        let primaryY = layout.primaryDisplayID()
+        let primaryY =
+            layout.primaryDisplayID()
             .flatMap { layout.display(id: $0)?.logicalRect.y }
             ?? bounds.y
         return (bounds.maxX, primaryY)

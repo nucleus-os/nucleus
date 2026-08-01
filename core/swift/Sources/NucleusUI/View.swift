@@ -1,6 +1,5 @@
-@_spi(NucleusRenderServer) package import NucleusLayers
-internal import enum NucleusTypes.LayerKind
-internal import struct NucleusTypes.Rect
+package import NucleusLayers
+public import NucleusTypes
 
 @MainActor
 open class View: Responder, Accessible, ~Sendable {
@@ -41,11 +40,10 @@ open class View: Responder, Accessible, ~Sendable {
     package var storedDragSource: DragSourceConfiguration?
     package var storedDropDestination: DropDestinationConfiguration?
     package var storedDropDestinationGeneration: UInt64
-    package var animationRequests: [AnimationKeyPath: ViewAnimationRequest]
+    package var animationRequests: [LayerAnimationKeyPath: ViewAnimationRequest]
     package var animationHandles: [UInt64: AnimationHandle]
-    package var currentAnimationHandleIDs: [AnimationKeyPath: UInt64]
-    package var ownedObservationTokens:
-        [ObjectIdentifier: RetainedObservationToken]
+    package var currentAnimationHandleIDs: [LayerAnimationKeyPath: UInt64]
+    package var ownedObservationTokens: [ObjectIdentifier: RetainedObservationToken]
     package var storedFadeTargetOpacity: Double?
     package var dirtyGenerations: ViewDirtyGenerations
     package var subtreeDirtyGenerations: ViewDirtyGenerations
@@ -172,7 +170,7 @@ open class View: Responder, Accessible, ~Sendable {
         self.storedAlphaValue = layerDescriptor.opacity
         self.storedBoundsOrigin = .zero
         self.storedClipsToBounds = false
-        self.storedShadow = Shadow(layerDescriptor.shadow)
+        self.storedShadow = layerDescriptor.shadow
         self.storedIsHitTestingEnabled = true
         super.init()
         uiContext.registerEnvironmentConsumer(self)
@@ -190,10 +188,12 @@ open class View: Responder, Accessible, ~Sendable {
     }
 
     public func insertSubview(_ child: View, at requestedIndex: Int) {
-        let currentIndex = child.parentView === self
+        let currentIndex =
+            child.parentView === self
             ? childViewIndices[child.id]
             : nil
-        let finalCount = childViews.count
+        let finalCount =
+            childViews.count
             - (currentIndex == nil ? 0 : 1)
         let index = min(max(0, requestedIndex), finalCount)
         if currentIndex == index {
@@ -237,9 +237,10 @@ open class View: Responder, Accessible, ~Sendable {
     /// transaction-sized teardown use this instead of repeatedly shifting and
     /// reindexing the same sibling array.
     public func removeSubviews(_ children: [View]) {
-        let removedIDs = Set(children.lazy.compactMap { child in
-            child.parentView === self ? child.id : nil
-        })
+        let removedIDs = Set(
+            children.lazy.compactMap { child in
+                child.parentView === self ? child.id : nil
+            })
         guard !removedIDs.isEmpty else { return }
 
         var retained: [View] = []
@@ -252,7 +253,7 @@ open class View: Responder, Accessible, ~Sendable {
             child.notifyRetainedHierarchyWillDetach()
             child.window?.windowScene?.cancelInputSequences(capturedBy: child)
             if let owningViewController = child.owningViewController,
-               owningViewController.rootView === child
+                owningViewController.rootView === child
             {
                 owningViewController.clearLoadedView()
             }
@@ -287,7 +288,7 @@ open class View: Responder, Accessible, ~Sendable {
             self.isHidden = isHidden
         }
         if let backdropMaterial = properties.backdropMaterial,
-           backdropMaterial != semanticBackdropMaterial
+            backdropMaterial != semanticBackdropMaterial
         {
             semanticBackdropMaterial = backdropMaterial
             recordMutation(.style)
@@ -542,9 +543,9 @@ open class View: Responder, Accessible, ~Sendable {
 
     private func invalidateActiveTextInputGeometry() {
         guard let window,
-              let activeClient = window.textInputContext.activeClient,
-              let activeView = activeClient as? View,
-              activeView === self || activeView.isDescendant(of: self)
+            let activeClient = window.textInputContext.activeClient,
+            let activeView = activeClient as? View,
+            activeView === self || activeView.isDescendant(of: self)
         else { return }
         window.textInputContext.invalidateState(for: activeClient)
     }
@@ -604,7 +605,7 @@ open class View: Responder, Accessible, ~Sendable {
 
     open func drawFocusRing(in context: GraphicsContext) {
         guard isFocused, drawsFocusRing,
-              bounds.size.width > 0, bounds.size.height > 0
+            bounds.size.width > 0, bounds.size.height > 0
         else { return }
         var path = Path()
         path.addRoundedRect(

@@ -1,13 +1,13 @@
-import NucleusUITestSupport
 import Glibc
 import NucleusRenderServerTestSupport
-import NucleusWindowClientContracts
-@_spi(NucleusWindowClientImplementation)
-import NucleusWindowClientWayland
 import NucleusUI
+import NucleusUITestSupport
+import NucleusWindowClientContracts
+package import NucleusWindowClientWayland
 import Testing
 import WaylandClientC
 import WaylandClientDispatch
+
 @testable import NucleusCompositorWaylandRuntime
 @testable import NucleusWindowClientInput
 
@@ -37,21 +37,22 @@ struct NucleusDesktopTextInputWireTests {
 
     @Test func outputGlobalRemovalInvalidatesTheCapabilityAndTopology() throws {
         let fixture = try #require(WaylandRouterTestFixture())
-        fixture.runtime.applyOutput(OutputInfo(
-            outputId: 41,
-            x: 0,
-            y: 0,
-            physicalWidthMm: 600,
-            physicalHeightMm: 340,
-            pixelWidth: 1920,
-            pixelHeight: 1080,
-            refreshMhz: 60_000,
-            scale: 1,
-            name: "fixture-output",
-            description: "Fixture Output",
-            logicalWidth: 1920,
-            logicalHeight: 1080,
-            fractionalScale: 1))
+        fixture.runtime.applyOutput(
+            OutputInfo(
+                outputId: 41,
+                x: 0,
+                y: 0,
+                physicalWidthMm: 600,
+                physicalHeightMm: 340,
+                pixelWidth: 1920,
+                pixelHeight: 1080,
+                refreshMhz: 60_000,
+                scale: 1,
+                name: "fixture-output",
+                description: "Fixture Output",
+                logicalWidth: 1920,
+                logicalHeight: 1080,
+                fractionalScale: 1))
         let peer = try Peer(runtime: fixture.runtime)
         let outputCapability = try #require(
             peer.client.capability(for: .output))
@@ -83,16 +84,18 @@ struct NucleusDesktopTextInputWireTests {
             peer.client.capability(for: .windowManagement))
         #expect(windowCapability.isValid)
 
-        let window = try peer.client.createWindow(configuration: .init(
-            title: "Fixture",
-            applicationID: "org.nucleus.fixture"))
+        let window = try peer.client.createWindow(
+            configuration: .init(
+                title: "Fixture",
+                applicationID: "org.nucleus.fixture"))
         var windowEvents: [NucleusDesktopWindowEvent] = []
         window.onEvent = { windowEvents.append($0) }
         Peer.pump(fixture.runtime, client: peer.client)
-        #expect(windowEvents.contains { event in
-            if case .configured = event { return true }
-            return false
-        })
+        #expect(
+            windowEvents.contains { event in
+                if case .configured = event { return true }
+                return false
+            })
         try window.setContentGeometry(width: 640, height: 480)
         Peer.pump(fixture.runtime, client: peer.client)
 
@@ -175,7 +178,8 @@ struct NucleusDesktopTextInputWireTests {
             events: Int16(POLLIN),
             revents: 0)
         let pollResult = unsafe poll(&descriptor, 1, 0)
-        let readable = pollResult > 0
+        let readable =
+            pollResult > 0
             && descriptor.revents & Int16(POLLIN) != 0
         return preparation.read.complete(readable: readable)
     }
@@ -204,13 +208,15 @@ struct NucleusDesktopTextInputWireTests {
                 close(sockets[1])
                 throw TextInputWireFailure.serverAttach
             }
-            client = try #require(NucleusDesktopConnection(
-                connectedFileDescriptor: sockets[1]))
+            client = try #require(
+                NucleusDesktopConnection(
+                    connectedFileDescriptor: sockets[1]))
             Self.pump(runtime, client: client)
             seat = try #require(NucleusDesktopSeat(client: client))
-            guard let createdTextInput = NucleusDesktopTextInput(
-                client: client,
-                seat: seat.protocolSeat)
+            guard
+                let createdTextInput = NucleusDesktopTextInput(
+                    client: client,
+                    seat: seat.protocolSeat)
             else { throw TextInputWireFailure.serverAttach }
             textInput = createdTextInput
             let createdSurface = try client.createSurface()
@@ -270,13 +276,14 @@ struct NucleusDesktopTextInputWireTests {
             title: "Text Input",
             frame: Rect(x: 100, y: 80, width: 260, height: 100))
         window.setContentView(root)
-        window.setSurfaceAssociation(WindowSurfaceAssociation(
-            surfaceID: PresentationSurfaceID(
-                rawValue: UInt64(peer.surfaceID)),
-            transform: WindowSurfaceTransform(
-                windowOriginInSurface: Point(x: 7.25, y: 3.5),
-                surfaceOriginInOutput: Point(x: 100, y: 80),
-                backingScaleFactor: BackingScaleFactor(1.5))))
+        window.setSurfaceAssociation(
+            WindowSurfaceAssociation(
+                surfaceID: PresentationSurfaceID(
+                    rawValue: UInt64(peer.surfaceID)),
+                transform: WindowSurfaceTransform(
+                    windowOriginInSurface: Point(x: 7.25, y: 3.5),
+                    surfaceOriginInOutput: Point(x: 100, y: 80),
+                    backingScaleFactor: BackingScaleFactor(1.5))))
         window.installTextInputAdapter(peer.textInput)
         window.orderFront()
         let scene = WindowScene(inMemoryWindows: [window])
@@ -293,10 +300,12 @@ struct NucleusDesktopTextInputWireTests {
         #expect(initial.enabled)
         #expect(initial.focusedSurfaceID == peer.serverSurfaceID)
         #expect(initial.surroundingText == initialContext.text)
-        #expect(initial.cursorByteOffset
-            == Int32(initialContext.cursorByteOffset))
-        #expect(initial.anchorByteOffset
-            == Int32(initialContext.anchorByteOffset))
+        #expect(
+            initial.cursorByteOffset
+                == Int32(initialContext.cursorByteOffset))
+        #expect(
+            initial.anchorByteOffset
+                == Int32(initialContext.anchorByteOffset))
         #expect(initial.contentPurpose == 0)
         #expect(initial.contentHint & 0x3 == 0x3)
         #expect(initial.cursorRectangle == nil)
@@ -308,11 +317,13 @@ struct NucleusDesktopTextInputWireTests {
         let candidate = try #require(field.textInputCandidateGeometry)
         let expectedGeometry = try #require(
             NucleusDesktopTextInput.wireRectangle(candidate.rect))
-        #expect(appliedGeometry == TextInputServerRectangle(
-            x: expectedGeometry.x,
-            y: expectedGeometry.y,
-            width: expectedGeometry.width,
-            height: expectedGeometry.height))
+        #expect(
+            appliedGeometry
+                == TextInputServerRectangle(
+                    x: expectedGeometry.x,
+                    y: expectedGeometry.y,
+                    width: expectedGeometry.width,
+                    height: expectedGeometry.height))
 
         func expectUpdatedCandidateGeometry(
             _ mutation: () -> Void
@@ -325,12 +336,14 @@ struct NucleusDesktopTextInputWireTests {
                 field.textInputCandidateGeometry)
             let expected = try #require(
                 NucleusDesktopTextInput.wireRectangle(candidate.rect))
-            #expect(runtime.textInputManager.latestSnapshot?
-                .cursorRectangle == TextInputServerRectangle(
-                    x: expected.x,
-                    y: expected.y,
-                    width: expected.width,
-                    height: expected.height))
+            #expect(
+                runtime.textInputManager.latestSnapshot?
+                    .cursorRectangle
+                    == TextInputServerRectangle(
+                        x: expected.x,
+                        y: expected.y,
+                        width: expected.width,
+                        height: expected.height))
         }
         try expectUpdatedCandidateGeometry {
             field.frame.origin.x += 4
@@ -342,13 +355,14 @@ struct NucleusDesktopTextInputWireTests {
             root.transform = .translation(x: 3, y: 2)
         }
         try expectUpdatedCandidateGeometry {
-            window.setSurfaceAssociation(WindowSurfaceAssociation(
-                surfaceID: PresentationSurfaceID(
-                    rawValue: UInt64(peer.surfaceID)),
-                transform: WindowSurfaceTransform(
-                    windowOriginInSurface: Point(x: 9.75, y: 6.25),
-                    surfaceOriginInOutput: Point(x: 140, y: 95),
-                    backingScaleFactor: BackingScaleFactor(Double(2)))))
+            window.setSurfaceAssociation(
+                WindowSurfaceAssociation(
+                    surfaceID: PresentationSurfaceID(
+                        rawValue: UInt64(peer.surfaceID)),
+                    transform: WindowSurfaceTransform(
+                        windowOriginInSurface: Point(x: 9.75, y: 6.25),
+                        surfaceOriginInOutput: Point(x: 140, y: 95),
+                        backingScaleFactor: BackingScaleFactor(Double(2)))))
         }
 
         field.stringValue = "ab😀cd"
@@ -359,20 +373,22 @@ struct NucleusDesktopTextInputWireTests {
             runtime.textInputManager.latestSnapshot?.commitCount)
         var submitCount = 0
         field.onSubmit { _ in submitCount += 1 }
-        #expect(runtime.textInputManager.send(
-            TextInputServerEventBatch(
-                preedit: (
-                    text: "にほん",
-                    cursorBegin: 3,
-                    cursorEnd: 6),
-                commit: "界",
-                deleteBefore: 2,
-                preeditHints: [
-                    (start: 0, end: 3, hint: 5),
-                    (start: 3, end: 6, hint: 1),
-                ],
-                language: "ja-JP",
-                action: 1)))
+        #expect(
+            runtime.textInputManager.send(
+                TextInputServerEventBatch(
+                    preedit: (
+                        text: "にほん",
+                        cursorBegin: 3,
+                        cursorEnd: 6
+                    ),
+                    commit: "界",
+                    deleteBefore: 2,
+                    preeditHints: [
+                        (start: 0, end: 3, hint: 5),
+                        (start: 3, end: 6, hint: 1),
+                    ],
+                    language: "ja-JP",
+                    action: 1)))
         Peer.pump(runtime, client: peer.client)
         #expect(field.stringValue == "ab😀界にほん")
         #expect(field.markedRange == 5..<8)
@@ -380,8 +396,9 @@ struct NucleusDesktopTextInputWireTests {
         #expect(field.inputLanguage == "ja-JP")
         #expect(submitCount == 1)
 
-        #expect(runtime.textInputManager.send(
-            TextInputServerEventBatch(commit: "日本")))
+        #expect(
+            runtime.textInputManager.send(
+                TextInputServerEventBatch(commit: "日本")))
         Peer.pump(runtime, client: peer.client)
         #expect(field.stringValue == "ab😀界日本")
         #expect(!field.hasMarkedText)
@@ -398,32 +415,38 @@ struct NucleusDesktopTextInputWireTests {
         #expect(secureState.anchorByteOffset == nil)
         #expect(secureState.contentPurpose == 8)
         #expect(secureState.contentHint & 0xc0 == 0xc0)
-        #expect(!runtime.textInputManager.snapshots[
-            secureHistoryStart...].contains {
+        #expect(
+            !runtime.textInputManager.snapshots[
+                secureHistoryStart...
+            ].contains {
                 $0.surroundingText?.contains("swordfish") == true
             })
 
-        #expect(runtime.textInputManager.send(
-            TextInputServerEventBatch(
-                commit: "stale",
-                doneSerial: oldSessionSerial)))
+        #expect(
+            runtime.textInputManager.send(
+                TextInputServerEventBatch(
+                    commit: "stale",
+                    doneSerial: oldSessionSerial)))
         Peer.pump(runtime, client: peer.client)
         #expect(secure.stringValue == "swordfish")
 
-        #expect(runtime.textInputManager.send(
-            TextInputServerEventBatch(commit: "✓")))
+        #expect(
+            runtime.textInputManager.send(
+                TextInputServerEventBatch(commit: "✓")))
         Peer.pump(runtime, client: peer.client)
         #expect(secure.stringValue == "swordfish✓")
-        #expect(runtime.textInputManager.latestSnapshot?
-            .surroundingText == nil)
+        #expect(
+            runtime.textInputManager.latestSnapshot?
+                .surroundingText == nil)
 
         window.installTextInputAdapter(nil)
         Peer.pump(runtime, client: peer.client)
         #expect(runtime.textInputManager.latestSnapshot?.enabled == false)
         runtime.setFixtureKeyboardFocus(surfaceID: 0)
         Peer.pump(runtime, client: peer.client)
-        #expect(runtime.textInputManager.latestSnapshot?
-            .focusedSurfaceID == nil)
+        #expect(
+            runtime.textInputManager.latestSnapshot?
+                .focusedSurfaceID == nil)
 
         try scene.disconnect()
         peer.textInput.close()

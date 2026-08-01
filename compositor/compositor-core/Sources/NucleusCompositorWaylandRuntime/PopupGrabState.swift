@@ -23,9 +23,10 @@ final class PopupGrabState {
     func dismissIfOutside(_ target: WlSurface) -> Bool {
         compact()
         guard !stack.isEmpty else { return false }
-        let grabbedSurfaceIDs = Set(stack.liveValues().compactMap {
-            $0.xdgSurface?.surface?.objectId
-        })
+        let grabbedSurfaceIDs = Set(
+            stack.liveValues().compactMap {
+                $0.xdgSurface?.surface?.objectId
+            })
         guard !grabbedSurfaceIDs.contains(target.objectId) else {
             return false
         }

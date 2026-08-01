@@ -1,23 +1,24 @@
 import NucleusUITestSupport
 import Testing
-import class NucleusUI.GraphicsContext
-import enum NucleusUI.LineCap
-import enum NucleusUI.LineJoin
-import enum NucleusUI.Shading
+
+import struct NucleusTypes.Color
+import struct NucleusTypes.PaintCommand
+import enum NucleusTypes.PaintPathVerb
+import enum NucleusTypes.PaintPayload
 import struct NucleusUI.AffineTransform
 import struct NucleusUI.Color
 import struct NucleusUI.GradientStop
+import class NucleusUI.GraphicsContext
 import struct NucleusUI.ImageHandle
+import enum NucleusUI.LineCap
+import enum NucleusUI.LineJoin
 import struct NucleusUI.Path
 import struct NucleusUI.Point
 import struct NucleusUI.Rect
-import enum NucleusTypes.PaintPayload
-import enum NucleusTypes.PaintPathVerb
-import struct NucleusTypes.PaintCommand
-import struct NucleusTypes.Color
+import enum NucleusUI.Shading
 
 private typealias UIColor = NucleusUI.Color
-private typealias WireColor = NucleusTypes.Color
+private typealias PaintColor = NucleusTypes.Color
 
 /// The payload blob is the one format written by `GraphicsContext` and read by
 /// the rasterizer. Both sides live in different modules, so these tests pin the
@@ -32,15 +33,16 @@ private typealias WireColor = NucleusTypes.Color
             points: [1, 2, 3, 4],
             scalars: [0.25, 0.75],
             colors: [
-                WireColor(r: 1, g: 0, b: 0, a: 1),
-                WireColor(r: 0, g: 0, b: 1, a: 0.5),
+                PaintColor(r: 1, g: 0, b: 0, a: 1),
+                PaintColor(r: 0, g: 0, b: 1, a: 0.5),
             ])
 
         let regions = try #require(
             PaintPayload.decode(blob, offset: slice.offset, length: slice.length))
-        #expect(regions.verbs == [
-            PaintPathVerb.move, PaintPathVerb.line, PaintPathVerb.close,
-        ])
+        #expect(
+            regions.verbs == [
+                PaintPathVerb.move, PaintPathVerb.line, PaintPathVerb.close,
+            ])
         #expect(regions.points == [1, 2, 3, 4])
         #expect(regions.scalars == [0.25, 0.75])
         #expect(regions.colors.count == 2)
@@ -189,12 +191,12 @@ private typealias WireColor = NucleusTypes.Color
 
 /// Stroke style reaching the command.
 ///
-/// `lineCap` and `lineJoin` were public settable state that nothing encoded, so
+/// `lineCap` and `lineJoin` were public settable state that nothing recorded, so
 /// a caller could ask for a rounded stroke and get a butt-capped one with no
 /// indication anything had been ignored. The rasterizer's half is covered by
 /// pixels in `StrokeCapJoinTests`; this is the producer's half.
 @MainActor
-@Suite(.uiContext) struct StrokeStyleEncodingTests {
+@Suite(.uiContext) struct StrokeStyleRecordingTests {
     private func strokedCommand(
         cap: LineCap, join: LineJoin
     ) -> PaintCommand? {
@@ -217,14 +219,14 @@ private typealias WireColor = NucleusTypes.Color
         #expect(command?.flags.contains(.joinBevel) == false)
     }
 
-    @Test func eachCapEncodesDistinctly() {
+    @Test func eachCapIsRecordedDistinctly() {
         #expect(strokedCommand(cap: .round, join: .miter)?.flags.contains(.capRound) == true)
         #expect(strokedCommand(cap: .square, join: .miter)?.flags.contains(.capSquare) == true)
         // A cap must not imply the other one.
         #expect(strokedCommand(cap: .round, join: .miter)?.flags.contains(.capSquare) == false)
     }
 
-    @Test func eachJoinEncodesDistinctly() {
+    @Test func eachJoinIsRecordedDistinctly() {
         #expect(strokedCommand(cap: .butt, join: .round)?.flags.contains(.joinRound) == true)
         #expect(strokedCommand(cap: .butt, join: .bevel)?.flags.contains(.joinBevel) == true)
         #expect(strokedCommand(cap: .butt, join: .round)?.flags.contains(.joinBevel) == false)
@@ -245,7 +247,7 @@ private typealias WireColor = NucleusTypes.Color
 
 /// What the recorder does with the current transform.
 @MainActor
-@Suite(.uiContext) struct TransformEncodingTests {
+@Suite(.uiContext) struct TransformRecordingTests {
     private func imageCommand(
         _ configure: (GraphicsContext) -> Void
     ) -> NucleusTypes.PaintCommand? {
@@ -331,10 +333,11 @@ private typealias WireColor = NucleusTypes.Color
         let command = try #require(recording.commands.first)
         #expect(command.kind == .path)
         #expect(command.flags.contains(.hasTransform))
-        let regions = try #require(PaintPayload.decode(
-            recording.payload,
-            offset: command.payloadOffset,
-            length: command.payloadLength))
+        let regions = try #require(
+            PaintPayload.decode(
+                recording.payload,
+                offset: command.payloadOffset,
+                length: command.payloadLength))
         #expect(Array(regions.points.prefix(4)) == [0, 0, 10, 0])
         #expect(Array(regions.scalars.prefix(4)) == [0, 0, 10, 0])
     }
@@ -346,8 +349,8 @@ private typealias WireColor = NucleusTypes.Color
         sourceLocation: SourceLocation = #_sourceLocation
     ) {
         #expect(
-            abs((point?.x ?? .infinity) - expected.x) < 1e-9 &&
-                abs((point?.y ?? .infinity) - expected.y) < 1e-9,
+            abs((point?.x ?? .infinity) - expected.x) < 1e-9
+                && abs((point?.y ?? .infinity) - expected.y) < 1e-9,
             sourceLocation: sourceLocation)
     }
 
@@ -442,10 +445,11 @@ private typealias WireColor = NucleusTypes.Color
                 ]))
         let recording = gradientContext.recording
         let command = try #require(recording.commands.first)
-        let regions = try #require(PaintPayload.decode(
-            recording.payload,
-            offset: command.payloadOffset,
-            length: command.payloadLength))
+        let regions = try #require(
+            PaintPayload.decode(
+                recording.payload,
+                offset: command.payloadOffset,
+                length: command.payloadLength))
         #expect(Array(regions.scalars.dropFirst(4)) == [0, 0, 1])
         #expect(regions.colors[0].r == 0)
         #expect(regions.colors[1].r == 1, "equal stops preserve input order")

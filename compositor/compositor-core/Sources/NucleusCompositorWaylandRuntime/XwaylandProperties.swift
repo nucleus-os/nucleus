@@ -17,8 +17,9 @@ typealias PropReply = UnsafePointer<xcb_get_property_reply_t>
 /// or nil if empty / not an 8-bit property.
 @unsafe func parseTextProperty(_ reply: PropReply) -> String? {
     guard unsafe reply.pointee.format == 8,
-          unsafe reply.pointee.value_len > 0,
-          let raw = unsafe xcb_get_property_value(reply) else { return nil }
+        unsafe reply.pointee.value_len > 0,
+        let raw = unsafe xcb_get_property_value(reply)
+    else { return nil }
     let bytes = unsafe UnsafeRawBufferPointer(
         start: raw, count: Int(reply.pointee.value_len))
     return unsafe String(decoding: bytes, as: UTF8.self)
@@ -28,10 +29,12 @@ typealias PropReply = UnsafePointer<xcb_get_property_reply_t>
 /// (ICCCM §4.1.2.5).
 @unsafe func parseWmClass(_ reply: PropReply) -> (instance: String?, className: String?) {
     guard unsafe reply.pointee.format == 8,
-          unsafe reply.pointee.value_len > 0,
-          let raw = unsafe xcb_get_property_value(reply) else { return (nil, nil) }
-    let b = unsafe Array(UnsafeRawBufferPointer(
-        start: raw, count: Int(reply.pointee.value_len)))
+        unsafe reply.pointee.value_len > 0,
+        let raw = unsafe xcb_get_property_value(reply)
+    else { return (nil, nil) }
+    let b = unsafe Array(
+        UnsafeRawBufferPointer(
+            start: raw, count: Int(reply.pointee.value_len)))
 
     let split = b.firstIndex(of: 0) ?? b.count
     let instance = split > 0 ? String(decoding: b[0..<split], as: UTF8.self) : nil
@@ -41,7 +44,8 @@ typealias PropReply = UnsafePointer<xcb_get_property_reply_t>
     if classStart < b.count, let nul = b[classStart...].firstIndex(of: 0) {
         classEnd = nul
     }
-    let className = classEnd > classStart ? String(decoding: b[classStart..<classEnd], as: UTF8.self) : nil
+    let className =
+        classEnd > classStart ? String(decoding: b[classStart..<classEnd], as: UTF8.self) : nil
     return (instance, className)
 }
 
@@ -49,8 +53,9 @@ typealias PropReply = UnsafePointer<xcb_get_property_reply_t>
 /// _NET_WM_SYNC_REQUEST_COUNTER. Nil if not a non-empty 32-bit property.
 @unsafe func parseCardinal(_ reply: PropReply) -> UInt32? {
     guard unsafe reply.pointee.format == 32,
-          unsafe reply.pointee.value_len > 0,
-          let raw = unsafe xcb_get_property_value(reply) else { return nil }
+        unsafe reply.pointee.value_len > 0,
+        let raw = unsafe xcb_get_property_value(reply)
+    else { return nil }
     return unsafe raw.loadUnaligned(as: UInt32.self)
 }
 
@@ -58,11 +63,12 @@ typealias PropReply = UnsafePointer<xcb_get_property_reply_t>
 /// (vals[2]) means the client wants no decorations.
 @unsafe func parseMotifDecorationsOff(_ reply: PropReply) -> Bool {
     guard unsafe reply.pointee.format == 32,
-          unsafe reply.pointee.value_len >= 5,
-          let raw = unsafe xcb_get_property_value(reply) else { return false }
+        unsafe reply.pointee.value_len >= 5,
+        let raw = unsafe xcb_get_property_value(reply)
+    else { return false }
     let flags = unsafe raw.loadUnaligned(fromByteOffset: 0, as: UInt32.self)
     let decorations = unsafe raw.loadUnaligned(
-        fromByteOffset: 8, as: UInt32.self) // vals[2]
+        fromByteOffset: 8, as: UInt32.self)  // vals[2]
     let MWM_HINTS_DECORATIONS: UInt32 = 1 << 1
     return (flags & MWM_HINTS_DECORATIONS) != 0 && decorations == 0
 }
@@ -74,8 +80,10 @@ typealias PropReply = UnsafePointer<xcb_get_property_reply_t>
     let type = unsafe reply.pointee.type
     guard type == XCB_ATOM_ATOM.rawValue || type == XCB_ATOM_NONE.rawValue else { return nil }
     if type == XCB_ATOM_ATOM.rawValue,
-       unsafe reply.pointee.format != 32
-    { return nil }
+        unsafe reply.pointee.format != 32
+    {
+        return nil
+    }
     if type == XCB_ATOM_NONE.rawValue {
         return []
     }
@@ -96,22 +104,29 @@ typealias PropReply = UnsafePointer<xcb_get_property_reply_t>
     let type = unsafe reply.pointee.type
     guard type == XCB_ATOM_ATOM.rawValue || type == XCB_ATOM_NONE.rawValue else { return nil }
     if type == XCB_ATOM_ATOM.rawValue,
-       unsafe reply.pointee.format != 32
-    { return nil }
+        unsafe reply.pointee.format != 32
+    {
+        return nil
+    }
 
     var p = WmProtocols()
     if type != XCB_ATOM_NONE.rawValue,
-       unsafe reply.pointee.value_len > 0,
-       let raw = unsafe xcb_get_property_value(reply)
+        unsafe reply.pointee.value_len > 0,
+        let raw = unsafe xcb_get_property_value(reply)
     {
         let count = unsafe Int(reply.pointee.value_len)
         for i in 0..<count {
             let a = unsafe raw.loadUnaligned(
                 fromByteOffset: i * 4, as: xcb_atom_t.self)
-            if a == atoms[.WM_DELETE_WINDOW] { p.deleteWindow = true }
-            else if a == atoms[.WM_TAKE_FOCUS] { p.takeFocus = true }
-            else if a == atoms[._NET_WM_PING] { p.ping = true }
-            else if a == atoms[._NET_WM_SYNC_REQUEST] { p.syncRequest = true }
+            if a == atoms[.WM_DELETE_WINDOW] {
+                p.deleteWindow = true
+            } else if a == atoms[.WM_TAKE_FOCUS] {
+                p.takeFocus = true
+            } else if a == atoms[._NET_WM_PING] {
+                p.ping = true
+            } else if a == atoms[._NET_WM_SYNC_REQUEST] {
+                p.syncRequest = true
+            }
         }
     }
     return p
@@ -121,22 +136,27 @@ typealias PropReply = UnsafePointer<xcb_get_property_reply_t>
 @unsafe func parseNormalHints(_ reply: PropReply) -> SizeHints {
     var dest = SizeHints()
     var hints = xcb_size_hints_t()
-    guard unsafe xcb_icccm_get_wm_size_hints_from_reply(
-        &hints, UnsafeMutablePointer(mutating: reply)) != 0
+    guard
+        unsafe xcb_icccm_get_wm_size_hints_from_reply(
+            &hints, UnsafeMutablePointer(mutating: reply)) != 0
     else { return dest }
 
     func u16(_ v: Int32) -> UInt16 { UInt16(max(0, v)) }
     if hints.flags & XCB_ICCCM_SIZE_HINT_P_MIN_SIZE.rawValue != 0 {
-        dest.minWidth = u16(hints.min_width); dest.minHeight = u16(hints.min_height)
+        dest.minWidth = u16(hints.min_width)
+        dest.minHeight = u16(hints.min_height)
     }
     if hints.flags & XCB_ICCCM_SIZE_HINT_P_MAX_SIZE.rawValue != 0 {
-        dest.maxWidth = u16(hints.max_width); dest.maxHeight = u16(hints.max_height)
+        dest.maxWidth = u16(hints.max_width)
+        dest.maxHeight = u16(hints.max_height)
     }
     if hints.flags & XCB_ICCCM_SIZE_HINT_BASE_SIZE.rawValue != 0 {
-        dest.baseWidth = u16(hints.base_width); dest.baseHeight = u16(hints.base_height)
+        dest.baseWidth = u16(hints.base_width)
+        dest.baseHeight = u16(hints.base_height)
     }
     if hints.flags & XCB_ICCCM_SIZE_HINT_P_RESIZE_INC.rawValue != 0 {
-        dest.incWidth = u16(hints.width_inc); dest.incHeight = u16(hints.height_inc)
+        dest.incWidth = u16(hints.width_inc)
+        dest.incHeight = u16(hints.height_inc)
     }
     return dest
 }
@@ -145,8 +165,9 @@ typealias PropReply = UnsafePointer<xcb_get_property_reply_t>
 @unsafe func parseWmHints(_ reply: PropReply) -> WmHints {
     var dest = WmHints()
     var hints = xcb_icccm_wm_hints_t()
-    guard unsafe xcb_icccm_get_wm_hints_from_reply(
-        &hints, UnsafeMutablePointer(mutating: reply)) != 0
+    guard
+        unsafe xcb_icccm_get_wm_hints_from_reply(
+            &hints, UnsafeMutablePointer(mutating: reply)) != 0
     else { return dest }
 
     // xcb_icccm_wm_hints_t.flags is int32_t (unlike size hints' uint32_t).

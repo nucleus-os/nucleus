@@ -7,12 +7,12 @@
 // Swift `SessionLockGate` behind the SessionLockDelegate. `locked` is emitted
 // only once the gate reports every output has presented a locked frame.
 
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
-import WaylandProtocolTypes
 import NucleusRenderModel
 import NucleusTypes
+import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 /// The security-gate seam. begin arms the gate (false denies the lock → finished);
 /// end disarms it on unlock; surfaceMapped
@@ -130,8 +130,9 @@ extension ExtSessionLock: ExtSessionLockV1Requests {
     func getLockSurface(
         _ request: WaylandRequest<ExtSessionLockV1Server>,
         id: WlNewId<ExtSessionLockSurfaceV1Server>,
-                        surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>,
-                        output outputRes: WaylandBorrowedObject<WlOutputServer>) {
+        surface surfaceRes: WaylandBorrowedObject<WlSurfaceServer>,
+        output outputRes: WaylandBorrowedObject<WlOutputServer>
+    ) {
         guard let manager,
             let surface = surfaceRes.owner(as: WlSurface.self)
         else { return }
@@ -182,8 +183,7 @@ extension ExtSessionLock: ExtSessionLockV1Requests {
     private weak var surface: WlSurface?
     private weak var output: WlOutput?
     var outputID: UInt64 { output?.info.outputId ?? 0 }
-    private let resource:
-        WaylandResourceHandle<ExtSessionLockSurfaceV1Server>
+    private let resource: WaylandResourceHandle<ExtSessionLockSurfaceV1Server>
     private var lastConfigureSerial: UInt32 = 0
     private var ackedSerial: UInt32?
     /// The most recently configured surface-local (logical) size — the buffer a client

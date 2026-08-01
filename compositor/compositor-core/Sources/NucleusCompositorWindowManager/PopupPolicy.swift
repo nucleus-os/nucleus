@@ -1,6 +1,6 @@
-import NucleusTypes
-public import NucleusCompositorServerTypes
 import NucleusCompositorServer
+package import NucleusCompositorServerTypes
+import NucleusTypes
 
 private struct PopupRect: Equatable {
     var x: Int32
@@ -119,7 +119,9 @@ private struct PopupPositioner {
 
 @MainActor
 extension WindowManager {
-    public func resolvePopup(parentID: UInt64, positioner cPositioner: WirePopupPositioner) -> WirePopupResolvedRect? {
+    package func resolvePopup(parentID: UInt64, positioner cPositioner: WirePopupPositioner)
+        -> WirePopupResolvedRect?
+    {
         let positioner = PopupPositioner(wireValue: cPositioner)
         var rect = positioner.resolve()
         guard let constraint = popupConstraintRect(parentID: parentID) else {
@@ -127,19 +129,29 @@ extension WindowManager {
         }
         var offsets = constraintOffsets(constraint: constraint, rect: rect)
         if offsets.isUnconstrained { return rect.wireValue }
-        if constrainByFlip(positioner: positioner, constraint: constraint, rect: &rect, offsets: &offsets) { return rect.wireValue }
-        if constrainBySlide(positioner: positioner, constraint: constraint, rect: &rect, offsets: &offsets) { return rect.wireValue }
-        _ = constrainByResize(positioner: positioner, constraint: constraint, rect: &rect, offsets: &offsets)
+        if constrainByFlip(
+            positioner: positioner, constraint: constraint, rect: &rect, offsets: &offsets)
+        {
+            return rect.wireValue
+        }
+        if constrainBySlide(
+            positioner: positioner, constraint: constraint, rect: &rect, offsets: &offsets)
+        {
+            return rect.wireValue
+        }
+        _ = constrainByResize(
+            positioner: positioner, constraint: constraint, rect: &rect, offsets: &offsets)
         return rect.wireValue
     }
 
     private func popupConstraintRect(parentID: UInt64) -> PopupRect? {
         guard let parent = server.window(id: parentID) else { return nil }
-        guard let outputID = parent.currentOutputID
+        guard
+            let outputID = parent.currentOutputID
                 ?? server.spaces.policyOutputID(
                     for: parent,
                     layout: server.layout),
-              let output = server.layout.display(id: outputID)
+            let output = server.layout.display(id: outputID)
         else { return nil }
         let parentRect = parent.currentRect()
         return PopupRect(
@@ -186,10 +198,17 @@ private func anchorInvertY(_ anchor: UInt32) -> UInt32 {
 
 private func gravityInvertX(_ gravity: UInt32) -> UInt32 { anchorInvertX(gravity) }
 private func gravityInvertY(_ gravity: UInt32) -> UInt32 { anchorInvertY(gravity) }
-private func gravityTowardLeft(_ gravity: UInt32) -> Bool { gravity == 3 || gravity == 5 || gravity == 6 }
-private func gravityTowardTop(_ gravity: UInt32) -> Bool { gravity == 1 || gravity == 5 || gravity == 7 }
+private func gravityTowardLeft(_ gravity: UInt32) -> Bool {
+    gravity == 3 || gravity == 5 || gravity == 6
+}
+private func gravityTowardTop(_ gravity: UInt32) -> Bool {
+    gravity == 1 || gravity == 5 || gravity == 7
+}
 
-private func constrainByFlip(positioner: PopupPositioner, constraint: PopupRect, rect: inout PopupRect, offsets: inout ConstraintOffsets) -> Bool {
+private func constrainByFlip(
+    positioner: PopupPositioner, constraint: PopupRect, rect: inout PopupRect,
+    offsets: inout ConstraintOffsets
+) -> Bool {
     let shouldFlipX = ((offsets.left > 0) != (offsets.right > 0)) && positioner.flipX
     let shouldFlipY = ((offsets.top > 0) != (offsets.bottom > 0)) && positioner.flipY
     if !shouldFlipX && !shouldFlipY { return false }
@@ -219,7 +238,10 @@ private func constrainByFlip(positioner: PopupPositioner, constraint: PopupRect,
     return offsets.isUnconstrained
 }
 
-private func constrainBySlide(positioner: PopupPositioner, constraint: PopupRect, rect: inout PopupRect, offsets: inout ConstraintOffsets) -> Bool {
+private func constrainBySlide(
+    positioner: PopupPositioner, constraint: PopupRect, rect: inout PopupRect,
+    offsets: inout ConstraintOffsets
+) -> Bool {
     let shouldSlideX = (offsets.left > 0 || offsets.right > 0) && positioner.slideX
     let shouldSlideY = (offsets.top > 0 || offsets.bottom > 0) && positioner.slideY
     if !shouldSlideX && !shouldSlideY { return false }
@@ -243,7 +265,10 @@ private func constrainBySlide(positioner: PopupPositioner, constraint: PopupRect
     return offsets.isUnconstrained
 }
 
-private func constrainByResize(positioner: PopupPositioner, constraint: PopupRect, rect: inout PopupRect, offsets: inout ConstraintOffsets) -> Bool {
+private func constrainByResize(
+    positioner: PopupPositioner, constraint: PopupRect, rect: inout PopupRect,
+    offsets: inout ConstraintOffsets
+) -> Bool {
     let shouldResizeX = (offsets.left > 0 || offsets.right > 0) && positioner.resizeX
     let shouldResizeY = (offsets.top > 0 || offsets.bottom > 0) && positioner.resizeY
     if !shouldResizeX && !shouldResizeY { return false }
@@ -267,8 +292,8 @@ private func constrainByResize(positioner: PopupPositioner, constraint: PopupRec
     return offsets.isUnconstrained
 }
 
-private extension PopupRect {
-    var wireValue: WirePopupResolvedRect {
+extension PopupRect {
+    fileprivate var wireValue: WirePopupResolvedRect {
         var c = WirePopupResolvedRect()
         c.x = x
         c.y = y

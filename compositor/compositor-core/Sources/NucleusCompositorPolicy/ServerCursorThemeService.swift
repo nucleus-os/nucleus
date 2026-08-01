@@ -1,8 +1,8 @@
+package import NucleusCompositorServer
 import NucleusThemeAssetIO
-public import NucleusCompositorServer
 
 @MainActor
-public final class ServerCursorThemeService {
+package final class ServerCursorThemeService {
     private struct Key: Hashable, Sendable {
         var name: String
         var size: UInt32
@@ -13,7 +13,7 @@ public final class ServerCursorThemeService {
     private let io: BoundedThemeAssetIO<Key, XCursorImage>
     private var requestGeneration: UInt64 = 0
 
-    public init(
+    package init(
         server: NucleusCompositorServer,
         loader: CursorImageLoader = CursorImageLoader()
     ) {
@@ -47,11 +47,11 @@ public final class ServerCursorThemeService {
             processor: resolver)
     }
 
-    public func applyDefault() {
+    package func applyDefault() {
         applyNamed("default")
     }
 
-    public func applyNamed(_ name: String) {
+    package func applyNamed(_ name: String) {
         let resolved = name.isEmpty ? "default" : name
         guard resolved != server.cursor.themeName else { return }
         requestGeneration &+= 1
@@ -59,9 +59,9 @@ public final class ServerCursorThemeService {
         apply(fallback, name: resolved)
         Task { [weak self] in
             guard let self,
-                  let image = await io.resolve(
+                let image = await io.resolve(
                     Key(name: resolved, size: 24)),
-                  requestGeneration == generation
+                requestGeneration == generation
             else { return }
             apply(image, name: resolved)
         }

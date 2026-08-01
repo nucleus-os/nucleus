@@ -8,19 +8,19 @@ import NucleusLinuxEnvironment
 import NucleusLinuxReactor
 import NucleusRenderModel
 import NucleusRenderer
-public import NucleusSessionProtocol
+package import NucleusSessionProtocol
 import NucleusShellAuth
 import NucleusShellProduct
-public import NucleusShellServices
+package import NucleusShellServices
 import NucleusShellSignalC
-public import NucleusUI
+package import NucleusUI
 import NucleusUIEmbedder
-@_spi(NucleusWindowClientImplementation) import NucleusWindowClientHost
-public import NucleusWindowClientInput
+package import NucleusWindowClientHost
+package import NucleusWindowClientInput
 import NucleusWindowClientPasteboard
 import NucleusWindowClientRender
 import NucleusWindowClientRuntime
-@_spi(NucleusWindowClientImplementation) import NucleusWindowClientWayland
+package import NucleusWindowClientWayland
 import Tracy
 
 #if canImport(FoundationInternationalization)
@@ -44,7 +44,7 @@ import Glibc
 //                                                           ▼
 //                                                     compositor
 @MainActor
-public final class ShellHost {
+package final class ShellHost {
     enum ReactorKind: UInt64 {
         case display = 1
         case exitSignal
@@ -103,8 +103,8 @@ public final class ShellHost {
     var seat: NucleusDesktopSeat?
     var pasteboardAdapter: NucleusDesktopPasteboardAdapter?
     var dragDropAdapter: NucleusDesktopDragDropAdapter?
-    public internal(set) var inputScene: WindowScene?
-    public internal(set) var inputRouter: NucleusDesktopInputRouter?
+    package internal(set) var inputScene: WindowScene?
+    package internal(set) var inputRouter: NucleusDesktopInputRouter?
     var accessibilityAdapter: AtSPIService?
     var accessibilityBridge: AtSPIBridge?
     var environmentAdapter: PortalEnvironmentAdapter?
@@ -113,13 +113,13 @@ public final class ShellHost {
     /// switch — and `lock()` refuses without an authenticator, because the
     /// compositor is deliberately fail-closed and a lock the shell cannot
     /// release would strand the session.
-    public internal(set) var lockController: ShellLockController?
+    package internal(set) var lockController: ShellLockController?
     var authenticator: PamAuthenticator?
 
     /// The system bus and the services on it. Opened lazily: a session with no
     /// bus is unusual but not fatal, and the shell renders either way.
     var systemBus: DBusConnection?
-    public internal(set) var upower: UPowerService?
+    package internal(set) var upower: UPowerService?
     var toplevels: NucleusDesktopForeignToplevelManager?
     var idleNotification: NucleusDesktopIdleNotification?
     var running = false
@@ -141,9 +141,9 @@ public final class ShellHost {
     let clockFormatStyle: Date.FormatStyle
 
     /// Bar height in logical px (reserved as work area via the layer-shell exclusive zone).
-    public var barHeight: UInt32 = 28
+    package var barHeight: UInt32 = 28
 
-    public init?(
+    package init?(
         socketName: String? = nil,
         waylandDescriptor: Int32? = nil,
         configuration: SessionConfiguration = .defaults,

@@ -1,5 +1,5 @@
 import NucleusCompositorDrmC
-@_spi(NucleusPlatform) import NucleusRenderer
+package import NucleusRenderer
 
 @MainActor
 extension DRMScanoutPresenter {
@@ -35,7 +35,8 @@ extension DRMScanoutPresenter {
             binding.pendingPresentationSubmissionID
         binding.pendingSubmissionSerial = 0
         binding.pendingPresentationSubmissionID = 0
-        var telemetry = submissionSerial != 0
+        var telemetry =
+            submissionSerial != 0
             ? binding.pendingRenderSync?.takeFenceTelemetry()
                 ?? CompositeFenceTelemetry()
             : CompositeFenceTelemetry()
@@ -57,8 +58,8 @@ extension DRMScanoutPresenter {
 
         guard let normalizedEvent else {
             logRendererDrm(
-                "output \(outputID) generation \(generation): rejected page flip " +
-                "timestamp=\(event.timestampNs) sequence=\(event.sequence)")
+                "output \(outputID) generation \(generation): rejected page flip "
+                    + "timestamp=\(event.timestampNs) sequence=\(event.sequence)")
             onOutputPresentationDiscarded?(
                 outputID,
                 binding.generation,
@@ -76,7 +77,7 @@ extension DRMScanoutPresenter {
             telemetry)
     }
 
-    public func handleDrmEvents() {
+    package func handleDrmEvents() {
         _ = DrmEventPump.dispatchIfReady(fd: drmDeviceFd)
         retireCompletedRenderSyncs()
     }

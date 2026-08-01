@@ -1,7 +1,7 @@
 import Foundation
 import Glibc
 import NucleusAndroidGfxstreamWorkerProtocolC
-import NucleusAndroidGraphicsPlatform
+internal import NucleusAndroidGraphicsPlatform
 import NucleusAndroidGpuBrokerCore
 import NucleusIPCTransportC
 

@@ -19,8 +19,8 @@ let drmFormatXBGR2101010 = scanoutFourcc(0x58, 0x42, 0x33, 0x30)  // 'X','B','3'
 /// Opaque scanout formats (alpha-free), eligible for direct scanout. Mirrors
 /// `isOpaqueScanoutFormat`.
 func isOpaqueScanoutFormat(_ format: UInt32) -> Bool {
-    format == drmFormatXRGB8888 || format == drmFormatXBGR8888 ||
-        format == drmFormatXRGB2101010 || format == drmFormatXBGR2101010
+    format == drmFormatXRGB8888 || format == drmFormatXBGR8888 || format == drmFormatXRGB2101010
+        || format == drmFormatXBGR2101010
 }
 
 // MARK: - Compositor block-reason gate
@@ -52,18 +52,18 @@ enum ScanoutBlockReason: Sendable, Equatable {
 /// The compositor-state inputs the block-reason gate classifies. Value-typed;
 /// the composition root feeds these from the live shell/session/runtime state
 /// each frame (public: constructed across the module boundary).
-public struct ScanoutInputs: Sendable, Equatable {
-    public var sessionLocked = false
-    public var screenshotCaptureActive = false
-    public var notificationCount = 0
-    public var hotkeyHasContent = false
-    public var layerShellActiveOnOutput = false
-    public var toplevelAnimationActiveOnOutput = false
+package struct ScanoutInputs: Sendable, Equatable {
+    package var sessionLocked = false
+    package var screenshotCaptureActive = false
+    package var notificationCount = 0
+    package var hotkeyHasContent = false
+    package var layerShellActiveOnOutput = false
+    package var toplevelAnimationActiveOnOutput = false
     /// Whether the output being classified is the shell output (notifications /
     /// hotkey overlays render only there).
-    public var isShellOutput = false
+    package var isShellOutput = false
 
-    public init(
+    package init(
         sessionLocked: Bool = false,
         screenshotCaptureActive: Bool = false,
         notificationCount: Int = 0,
@@ -115,13 +115,13 @@ enum DirectScanoutBlock: Sendable, Equatable {
     case modifierUnsupported
 }
 
-public struct ScanoutDmabufInfo: Sendable, Equatable {
-    public var format: UInt32
-    public var modifier: UInt64
-    public var width: UInt32
-    public var height: UInt32
+package struct ScanoutDmabufInfo: Sendable, Equatable {
+    package var format: UInt32
+    package var modifier: UInt64
+    package var width: UInt32
+    package var height: UInt32
 
-    public init(format: UInt32, modifier: UInt64, width: UInt32, height: UInt32) {
+    package init(format: UInt32, modifier: UInt64, width: UInt32, height: UInt32) {
         self.format = format
         self.modifier = modifier
         self.width = width
@@ -131,14 +131,14 @@ public struct ScanoutDmabufInfo: Sendable, Equatable {
 
 /// The root surface's scanout-relevant attributes (the live Wayland surface state
 /// feeds these each frame).
-public struct ScanoutSurfaceInfo: Sendable, Equatable {
-    public var hasViewportTransform = false
-    public var hasAlphaModifier = false
-    public var currentWidth: UInt32 = 0
-    public var currentHeight: UInt32 = 0
-    public var dmabuf: ScanoutDmabufInfo?
+package struct ScanoutSurfaceInfo: Sendable, Equatable {
+    package var hasViewportTransform = false
+    package var hasAlphaModifier = false
+    package var currentWidth: UInt32 = 0
+    package var currentHeight: UInt32 = 0
+    package var dmabuf: ScanoutDmabufInfo?
 
-    public init(
+    package init(
         hasViewportTransform: Bool = false,
         hasAlphaModifier: Bool = false,
         currentWidth: UInt32 = 0,
@@ -156,21 +156,21 @@ public struct ScanoutSurfaceInfo: Sendable, Equatable {
 /// The fullscreen candidate's output + layout geometry. Mirrors
 /// `FullscreenCandidate` (minus the scene-tree handles the promotion builder
 /// needs).
-public struct FullscreenCandidate: Sendable, Equatable {
-    public var outputLogicalX: Double
-    public var outputLogicalY: Double
-    public var outputLogicalWidth: Double
-    public var outputLogicalHeight: Double
-    public var outputWidth: UInt32
-    public var outputHeight: UInt32
-    public var layoutX: Double
-    public var layoutY: Double
-    public var layoutWidth: UInt32
-    public var layoutHeight: UInt32
-    public var animatedX: Double
-    public var animatedY: Double
+package struct FullscreenCandidate: Sendable, Equatable {
+    package var outputLogicalX: Double
+    package var outputLogicalY: Double
+    package var outputLogicalWidth: Double
+    package var outputLogicalHeight: Double
+    package var outputWidth: UInt32
+    package var outputHeight: UInt32
+    package var layoutX: Double
+    package var layoutY: Double
+    package var layoutWidth: UInt32
+    package var layoutHeight: UInt32
+    package var animatedX: Double
+    package var animatedY: Double
 
-    public init(
+    package init(
         outputLogicalX: Double, outputLogicalY: Double,
         outputLogicalWidth: Double, outputLogicalHeight: Double,
         outputWidth: UInt32, outputHeight: UInt32,
@@ -218,20 +218,23 @@ func evaluateDirectScanout(
     if surface.hasViewportTransform { return .blocked(.viewportTransform) }
     if surface.hasAlphaModifier { return .blocked(.alphaModifier) }
 
-    if !approxEqual(candidate.layoutX, candidate.outputLogicalX) ||
-        !approxEqual(candidate.layoutY, candidate.outputLogicalY) ||
-        !approxEqual(Double(candidate.layoutWidth), candidate.outputLogicalWidth) ||
-        !approxEqual(Double(candidate.layoutHeight), candidate.outputLogicalHeight) {
+    if !approxEqual(candidate.layoutX, candidate.outputLogicalX)
+        || !approxEqual(candidate.layoutY, candidate.outputLogicalY)
+        || !approxEqual(Double(candidate.layoutWidth), candidate.outputLogicalWidth)
+        || !approxEqual(Double(candidate.layoutHeight), candidate.outputLogicalHeight)
+    {
         return .blocked(.layoutRectMismatch)
     }
 
-    if !approxEqual(candidate.animatedX, candidate.outputLogicalX) ||
-        !approxEqual(candidate.animatedY, candidate.outputLogicalY) {
+    if !approxEqual(candidate.animatedX, candidate.outputLogicalX)
+        || !approxEqual(candidate.animatedY, candidate.outputLogicalY)
+    {
         return .blocked(.surfaceOriginMismatch)
     }
 
-    if !approxEqual(Double(surface.currentWidth), candidate.outputLogicalWidth) ||
-        !approxEqual(Double(surface.currentHeight), candidate.outputLogicalHeight) {
+    if !approxEqual(Double(surface.currentWidth), candidate.outputLogicalWidth)
+        || !approxEqual(Double(surface.currentHeight), candidate.outputLogicalHeight)
+    {
         return .blocked(.surfaceSizeMismatch)
     }
 
@@ -260,13 +263,13 @@ func evaluateDirectScanout(
 /// through `DRMScanoutPresenter.setScanoutCandidates`, mirroring the lock-composition
 /// push. The backend runs `evaluate` against the output's cached primary-plane
 /// formats.
-public struct ScanoutCandidate: Sendable, Equatable {
-    public var inputs: ScanoutInputs
-    public var candidate: FullscreenCandidate
-    public var surface: ScanoutSurfaceInfo?
-    public var rootIOSurfaceID: UInt64
+package struct ScanoutCandidate: Sendable, Equatable {
+    package var inputs: ScanoutInputs
+    package var candidate: FullscreenCandidate
+    package var surface: ScanoutSurfaceInfo?
+    package var rootIOSurfaceID: UInt64
 
-    public init(
+    package init(
         inputs: ScanoutInputs,
         candidate: FullscreenCandidate,
         surface: ScanoutSurfaceInfo?,
@@ -291,7 +294,10 @@ enum ScanoutEligibility: Sendable, Equatable {
     /// format, modifier, …).
     case blockedSurface(DirectScanoutBlock)
 
-    var isEligible: Bool { if case .eligible = self { return true }; return false }
+    var isEligible: Bool {
+        if case .eligible = self { return true }
+        return false
+    }
 
     /// A short reason string for the per-frame throttled log.
     var reason: String {
@@ -309,7 +315,8 @@ extension ScanoutCandidate {
     func evaluate(primaryPlaneFormats: FormatSet) -> ScanoutEligibility {
         if let blocked = scanoutBlockReason(inputs) { return .blockedOutput(blocked) }
         switch evaluateDirectScanout(
-            candidate: candidate, surface: surface, primaryPlaneFormats: primaryPlaneFormats) {
+            candidate: candidate, surface: surface, primaryPlaneFormats: primaryPlaneFormats)
+        {
         case .eligible: return .eligible(rootIOSurfaceID: rootIOSurfaceID)
         case .blocked(let block): return .blockedSurface(block)
         }

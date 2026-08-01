@@ -1,8 +1,9 @@
-import NucleusSkiaGraphiteBridge
-import VulkanC
-import Vulkan
-import Tracy
 internal import NucleusRenderModel
+import NucleusSkiaGraphiteBridge
+import Tracy
+import Vulkan
+import VulkanC
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Android)
@@ -12,12 +13,12 @@ import Android
 extension RenderCore {
     // MARK: - Snapshots
 
-    public struct CapturedSnapshot: Sendable, Equatable {
-        public let handle: UInt64
-        public let width: UInt32
-        public let height: UInt32
+    package struct CapturedSnapshot: Sendable, Equatable {
+        package let handle: UInt64
+        package let width: UInt32
+        package let height: UInt32
 
-        public init(handle: UInt64, width: UInt32, height: UInt32) {
+        package init(handle: UInt64, width: UInt32, height: UInt32) {
             self.handle = handle
             self.width = width
             self.height = height
@@ -29,7 +30,7 @@ extension RenderCore {
     /// renderer's graphics queue under its own submission serial. Callers may
     /// retire the client's surface reference immediately: normal serial-based GPU
     /// retirement keeps the source backing alive until the copy completes.
-    public func captureSurfaceSnapshot(iosurfaceID: UInt64) -> CapturedSnapshot? {
+    package func captureSurfaceSnapshot(iosurfaceID: UInt64) -> CapturedSnapshot? {
         Trace.zone("renderer.snapshot_capture", color: Trace.Color.blue) {
             snapshotTelemetry.captureAttempts &+= 1
             Trace.plot(
@@ -53,16 +54,16 @@ extension RenderCore {
             // transition boundary.
             drainPendingShmUpload(iosurfaceID: iosurfaceID)
             guard iosurfaceID != 0,
-                  let driver = frameDriver,
-                  let source = unsafe stagedShmUploads[iosurfaceID]?.image
+                let driver = frameDriver,
+                let source = unsafe stagedShmUploads[iosurfaceID]?.image
                     ?? driver.registry.resolve(.clientSurface(iosurfaceID)),
-                  unsafe source.isValid()
+                unsafe source.isValid()
             else { return nil }
             let width = unsafe source.width()
             let height = unsafe source.height()
             guard width > 0, height > 0,
-                  let registeredWidth = UInt32(exactly: width),
-                  let registeredHeight = UInt32(exactly: height)
+                let registeredWidth = UInt32(exactly: width),
+                let registeredHeight = UInt32(exactly: height)
             else { return nil }
 
             let revision = nextSnapshotContentRevision
@@ -70,15 +71,16 @@ extension RenderCore {
             if nextSnapshotContentRevision == 0 {
                 nextSnapshotContentRevision = 1
             }
-            guard let textureHandle = unsafe SnapshotCapture.captureDeviceRect(
-                recorder: driver.recorder,
-                source: source,
-                srcX: 0,
-                srcY: 0,
-                width: width,
-                height: height,
-                into: driver.registry,
-                contentRevision: revision)
+            guard
+                let textureHandle = unsafe SnapshotCapture.captureDeviceRect(
+                    recorder: driver.recorder,
+                    source: source,
+                    srcX: 0,
+                    srcY: 0,
+                    width: width,
+                    height: height,
+                    into: driver.registry,
+                    contentRevision: revision)
             else { return nil }
 
             // Submit as standalone ordered GPU work. A closing client can destroy
@@ -94,9 +96,9 @@ extension RenderCore {
                 return nil
             }
             let submission = unsafe driver.submitImmediate(
-                    recording,
-                    waitSemaphores: acquire.map { unsafe [$0.semaphore] } ?? [],
-                    submissionSerial: captureSerial)
+                recording,
+                waitSemaphores: acquire.map { unsafe [$0.semaphore] } ?? [],
+                submissionSerial: captureSerial)
             guard acceptGraphiteSubmission(submission) else {
                 _ = driver.registry.release(.renderer(textureHandle))
                 return nil
@@ -106,15 +108,18 @@ extension RenderCore {
             if let acquire = pendingClientAcquireSemaphores.removeValue(
                 forKey: iosurfaceID)
             {
-                retiredClientAcquireSemaphores.append((
-                    captureSerial,
-                    acquire))
+                retiredClientAcquireSemaphores.append(
+                    (
+                        captureSerial,
+                        acquire
+                    ))
             }
 
             let snapshotHandle = snapshots.registerTextureHandle(
                 NucleusRenderModel.TextureHandle(raw: textureHandle),
                 size: Bounds(w: Float(width), h: Float(height)),
-                provenance: .renderTexture).raw
+                provenance: .renderTexture
+            ).raw
             Trace.plot(
                 "swift.nucleus.renderer.live_snapshots",
                 UInt64(snapshots.liveCount))
@@ -132,15 +137,16 @@ extension RenderCore {
 
     /// Current retained snapshot count for lifecycle telemetry and structural
     /// tests.
-    public var liveSnapshotCount: Int { snapshots.liveCount }
+    package var liveSnapshotCount: Int { snapshots.liveCount }
 
     /// Register a captured/imported registry texture as a refcounted snapshot,
     /// returning the snapshot handle a layer's `.snapshot` content references.
     @discardableResult
-    public func registerSnapshot(textureHandle: UInt64, width: Float, height: Float) -> UInt64 {
+    package func registerSnapshot(textureHandle: UInt64, width: Float, height: Float) -> UInt64 {
         let handle = snapshots.registerTextureHandle(
             NucleusRenderModel.TextureHandle(raw: textureHandle),
-            size: Bounds(w: width, h: height)).raw
+            size: Bounds(w: width, h: height)
+        ).raw
         Trace.plot(
             "swift.nucleus.renderer.live_snapshots",
             UInt64(snapshots.liveCount))
@@ -149,7 +155,7 @@ extension RenderCore {
 
     /// Drop one ref on a snapshot; on the final ref, evict its backing registry
     /// texture too.
-    public func releaseSnapshot(_ snapshotHandle: UInt64) {
+    package func releaseSnapshot(_ snapshotHandle: UInt64) {
         if let texture = snapshots.release(SnapshotHandle(raw: snapshotHandle)) {
             _ = frameDriver?.registry.release(.renderer(texture.raw))
             snapshotTelemetry.retirements &+= 1

@@ -5,24 +5,22 @@ import NucleusAndroidRuntimeCore
 import NucleusAndroidRuntimePlatformC
 import Synchronization
 
-public struct LinuxAndroidRuntimeHostFailure:
+package struct LinuxAndroidRuntimeHostFailure:
     Error, CustomStringConvertible, Sendable
 {
-    public let description: String
+    package let description: String
 
     init(_ description: String) {
         self.description = description
     }
 }
 
-public final class LinuxAndroidRuntimeRunningProcess:
+package final class LinuxAndroidRuntimeRunningProcess:
     AndroidRuntimeRunningProcess, @unchecked Sendable
 {
     private struct State: Sendable {
         var status: Int32?
-        var waiters: [
-            CheckedContinuation<AndroidRuntimeProcessResult, Never>
-        ] = []
+        var waiters: [CheckedContinuation<AndroidRuntimeProcessResult, Never>] = []
     }
 
     private let process: Process
@@ -87,7 +85,7 @@ public final class LinuxAndroidRuntimeRunningProcess:
         }
     }
 
-    public var processIdentifier: Int32? {
+    package var processIdentifier: Int32? {
         get async {
             process.processIdentifier > 0
                 ? process.processIdentifier
@@ -95,20 +93,20 @@ public final class LinuxAndroidRuntimeRunningProcess:
         }
     }
 
-    public var isRunning: Bool {
+    package var isRunning: Bool {
         get async {
             state.withLock { $0.status == nil }
         }
     }
 
-    public func waitUntilReady() async throws {
+    package func waitUntilReady() async throws {
         if let status = state.withLock({ $0.status }) {
             throw LinuxAndroidRuntimeHostFailure(
                 "process exited during startup with status \(status)")
         }
     }
 
-    public func waitForExit() async throws -> AndroidRuntimeProcessResult {
+    package func waitForExit() async throws -> AndroidRuntimeProcessResult {
         await withCheckedContinuation { continuation in
             state.withLock { state in
                 if let status = state.status {
@@ -130,9 +128,8 @@ public final class LinuxAndroidRuntimeRunningProcess:
     }
 
     private func didTerminate(status: Int32) {
-        let waiters = state.withLock { state -> [
-            CheckedContinuation<AndroidRuntimeProcessResult, Never>
-        ] in
+        let waiters = state.withLock {
+            state -> [CheckedContinuation<AndroidRuntimeProcessResult, Never>] in
             guard state.status == nil else {
                 return []
             }
@@ -173,7 +170,7 @@ func launchAndroidRuntimeProcess(_ process: Process) throws {
     try process.run()
 }
 
-public final class LinuxAndroidRuntimeKernelLog:
+package final class LinuxAndroidRuntimeKernelLog:
     AndroidRuntimeKernelLog, @unchecked Sendable
 {
     private struct State: Sendable {
@@ -181,7 +178,7 @@ public final class LinuxAndroidRuntimeKernelLog:
         var failure: LinuxAndroidRuntimeHostFailure?
     }
 
-    public let slavePath: String
+    package let slavePath: String
 
     private let state = Mutex(State())
     private let completion = DispatchGroup()
@@ -191,9 +188,9 @@ public final class LinuxAndroidRuntimeKernelLog:
     init(output path: URL) throws {
         var slavePathBytes = [CChar](repeating: 0, count: 4_096)
         let master = unsafe nucleus_android_runtime_open_raw_pseudo_terminal(
-                &slavePathBytes,
-                slavePathBytes.count
-            )
+            &slavePathBytes,
+            slavePathBytes.count
+        )
         guard master >= 0 else {
             throw LinuxAndroidRuntimeHostFailure(
                 "create Android kernel-log pseudo-terminal failed "
@@ -228,13 +225,13 @@ public final class LinuxAndroidRuntimeKernelLog:
         stop()
     }
 
-    public func checkHealth() throws {
+    package func checkHealth() throws {
         if let failure = state.withLock({ $0.failure }) {
             throw failure
         }
     }
 
-    public func stop() {
+    package func stop() {
         state.withLock { $0.stopped = true }
         completion.wait()
     }
@@ -301,11 +298,11 @@ public final class LinuxAndroidRuntimeKernelLog:
     }
 }
 
-public struct LinuxAndroidRuntimeHost: AndroidRuntimeHost, Sendable {
+package struct LinuxAndroidRuntimeHost: AndroidRuntimeHost, Sendable {
     private let environment: [String: String]
     private let workingDirectory: URL
 
-    public init(
+    package init(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         workingDirectory: URL = URL(
             fileURLWithPath: FileManager.default.currentDirectoryPath,
@@ -315,7 +312,7 @@ public struct LinuxAndroidRuntimeHost: AndroidRuntimeHost, Sendable {
         self.workingDirectory = workingDirectory
     }
 
-    public func execute(
+    package func execute(
         _ command: AndroidRuntimeCommand
     ) async throws -> String {
         let capturePipe = command.capture ? Pipe() : nil
@@ -352,12 +349,14 @@ public struct LinuxAndroidRuntimeHost: AndroidRuntimeHost, Sendable {
         } else {
             result = try await process.waitForExit()
         }
-        let output = capturePipe.map {
-            String(
-                decoding: $0.fileHandleForReading.readDataToEndOfFile(),
-                as: UTF8.self)
+        let output =
+            capturePipe.map {
+                String(
+                    decoding: $0.fileHandleForReading.readDataToEndOfFile(),
+                    as: UTF8.self
+                )
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-        } ?? ""
+            } ?? ""
         guard result.status == 0 else {
             throw LinuxAndroidRuntimeHostFailure(
                 "\(command.executable) exited with status \(result.status)")
@@ -365,11 +364,12 @@ public struct LinuxAndroidRuntimeHost: AndroidRuntimeHost, Sendable {
         return output
     }
 
-    public func withRunningProcess<Value: Sendable>(
+    package func withRunningProcess<Value: Sendable>(
         _ command: AndroidRuntimeCommand,
-        _ body: @escaping @Sendable (
-            LinuxAndroidRuntimeRunningProcess
-        ) async throws -> Value
+        _ body:
+            @escaping @Sendable (
+                LinuxAndroidRuntimeRunningProcess
+            ) async throws -> Value
     ) async throws -> Value {
         let process = try makeProcess(
             AndroidRuntimeCommand(
@@ -391,13 +391,13 @@ public struct LinuxAndroidRuntimeHost: AndroidRuntimeHost, Sendable {
         }
     }
 
-    public func makeKernelLog(
+    package func makeKernelLog(
         output: URL
     ) throws -> LinuxAndroidRuntimeKernelLog {
         try LinuxAndroidRuntimeKernelLog(output: output)
     }
 
-    public func addBinderDevice(
+    package func addBinderDevice(
         control: URL,
         name: String
     ) throws -> AndroidRuntimeBinderDeviceNumber {

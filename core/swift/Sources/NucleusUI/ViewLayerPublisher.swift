@@ -1,6 +1,7 @@
-@_spi(NucleusRenderServer) package import NucleusLayers
-internal import enum NucleusTypes.LayerKind
+package import NucleusLayers
 import Tracy
+
+internal import enum NucleusTypes.LayerKind
 
 package struct ViewLayerRootPlacement: Sendable, Equatable {
     package var id: WindowID
@@ -118,28 +119,30 @@ package final class ViewLayerPublisher: ~Sendable {
         var placementSnapshots: [PlacementSnapshot] = []
         var traversalWork: [TraversalWorkItem] = []
         for (index, publication) in roots.enumerated().reversed() {
-            traversalWork.append(TraversalWorkItem(
-                view: publication.view,
-                parentViewID: nil,
-                rootPlacementID: publication.placement?.id,
-                siblingIndex: publication.placement == nil
-                    ? UInt32(clamping: index)
-                    : 0,
-                forceSnapshot: false))
+            traversalWork.append(
+                TraversalWorkItem(
+                    view: publication.view,
+                    parentViewID: nil,
+                    rootPlacementID: publication.placement?.id,
+                    siblingIndex: publication.placement == nil
+                        ? UInt32(clamping: index)
+                        : 0,
+                    forceSnapshot: false))
         }
         placementSnapshots.reserveCapacity(roots.count)
         for (index, publication) in roots.enumerated() {
             guard let placement = publication.placement else { continue }
-            placementSnapshots.append(PlacementSnapshot(
-                id: placement.id,
-                frame: SnapshotRect(
-                    x: placement.frame.origin.x,
-                    y: placement.frame.origin.y,
-                    width: placement.frame.size.width,
-                    height: placement.frame.size.height
-                ).geometryRect,
-                siblingIndex: UInt32(clamping: index)
-            ))
+            placementSnapshots.append(
+                PlacementSnapshot(
+                    id: placement.id,
+                    frame: SnapshotRect(
+                        x: placement.frame.origin.x,
+                        y: placement.frame.origin.y,
+                        width: placement.frame.size.width,
+                        height: placement.frame.size.height
+                    ).geometryRect,
+                    siblingIndex: UInt32(clamping: index)
+                ))
         }
         appendDirtyViewTrees(
             work: &traversalWork,
@@ -180,12 +183,12 @@ package final class ViewLayerPublisher: ~Sendable {
     ) -> [PublishedVisualContent] {
         roots.enumerated().compactMap { index, publication in
             guard let state = visualLayers[publication.view.id] else { return nil }
-            let rootLayerID = publication.placement.flatMap {
-                placementLayers[$0.id]?.layer.id.rawValue
-            } ?? state.layer.id.rawValue
+            let rootLayerID =
+                publication.placement.flatMap {
+                    placementLayers[$0.id]?.layer.id.rawValue
+                } ?? state.layer.id.rawValue
             return PublishedVisualContent(
-                id: publication.placement?.id.rawValue ??
-                    publication.view.id.rawValue,
+                id: publication.placement?.id.rawValue ?? publication.view.id.rawValue,
                 rootLayerID: rootLayerID,
                 orderIndex: UInt32(clamping: index),
                 visible: !publication.view.isHidden
@@ -199,11 +202,11 @@ package final class ViewLayerPublisher: ~Sendable {
         rootSiblingIndex: UInt32
     ) -> Bool {
         guard rootCreated,
-              rootAttached,
-              rootParentID == rootParent?.id,
-              self.rootSiblingIndex == rootSiblingIndex,
-              publishedRootViewIDs == roots.map(\.view.id),
-              placementLayers.count
+            rootAttached,
+            rootParentID == rootParent?.id,
+            self.rootSiblingIndex == rootSiblingIndex,
+            publishedRootViewIDs == roots.map(\.view.id),
+            placementLayers.count
                 == roots.lazy.filter({ $0.placement != nil }).count
         else {
             return false
@@ -211,28 +214,29 @@ package final class ViewLayerPublisher: ~Sendable {
         for (index, publication) in roots.enumerated() {
             let view = publication.view
             guard let state = visualLayers[view.id],
-                  state.parentViewID == nil,
-                  state.rootPlacementID == publication.placement?.id,
-                  state.siblingIndex == (
-                    publication.placement == nil
+                state.parentViewID == nil,
+                state.rootPlacementID == publication.placement?.id,
+                state.siblingIndex
+                    == (publication.placement == nil
                         ? UInt32(clamping: index)
                         : 0),
-                  state.dirtyGenerations == view.dirtyGenerations,
-                  state.subtreeDirtyGenerations
+                state.dirtyGenerations == view.dirtyGenerations,
+                state.subtreeDirtyGenerations
                     == view.subtreeDirtyGenerations
             else {
                 return false
             }
             if let placement = publication.placement {
                 guard let placementState = placementLayers[placement.id],
-                      placementState.siblingIndex
+                    placementState.siblingIndex
                         == UInt32(clamping: index),
-                      placementState.frame == SnapshotRect(
-                        x: placement.frame.origin.x,
-                        y: placement.frame.origin.y,
-                        width: placement.frame.size.width,
-                        height: placement.frame.size.height
-                      ).geometryRect
+                    placementState.frame
+                        == SnapshotRect(
+                            x: placement.frame.origin.x,
+                            y: placement.frame.origin.y,
+                            width: placement.frame.size.width,
+                            height: placement.frame.size.height
+                        ).geometryRect
                 else {
                     return false
                 }
@@ -329,9 +333,8 @@ package final class ViewLayerPublisher: ~Sendable {
             transaction.mutations.append(.created(root.id, root.descriptor))
             didMutate = true
         }
-        if !rootAttached ||
-            rootParentID != rootParent?.id ||
-            self.rootSiblingIndex != rootSiblingIndex
+        if !rootAttached || rootParentID != rootParent?.id
+            || self.rootSiblingIndex != rootSiblingIndex
         {
             transaction.mutations.append(
                 .inserted(
@@ -342,7 +345,7 @@ package final class ViewLayerPublisher: ~Sendable {
             didMutate = true
         }
 
-        // Pass 1: create every missing placement and view layer. The encoded transaction has a
+        // Pass 1: create every missing placement and view layer. The transaction batch has a
         // complete create set before any hierarchy or property record.
         for placement in placements
         where cacheDelta.placement(placement.id, base: placementLayers) == nil {
@@ -354,11 +357,12 @@ package final class ViewLayerPublisher: ~Sendable {
             let layer = context.makeLayer(descriptor)
             newLayerIDs.append(layer.id)
             transaction.mutations.append(.created(layer.id, descriptor))
-            cacheDelta.upsertPlacement(PlacementLayerCache(
-                layer: layer,
-                frame: placement.frame,
-                siblingIndex: UInt32.max
-            ), for: placement.id)
+            cacheDelta.upsertPlacement(
+                PlacementLayerCache(
+                    layer: layer,
+                    frame: placement.frame,
+                    siblingIndex: UInt32.max
+                ), for: placement.id)
             didMutate = true
         }
 
@@ -366,12 +370,13 @@ package final class ViewLayerPublisher: ~Sendable {
         where cacheDelta.visual(snapshot.viewID, base: visualLayers) == nil {
             let initialFrame = snapshot.creationFrame?.geometryRect ?? snapshot.frame.geometryRect
             let initialOpacity = snapshot.creationOpacity ?? snapshot.opacity
-            let initialBackdrop = snapshot.layerKind == .backdrop
+            let initialBackdrop =
+                snapshot.layerKind == .backdrop
                 ? snapshot.backdropMaterial
                 : .none
             let descriptor = LayerDescriptor(
                 kind: snapshot.layerKind,
-                role: snapshot.role.layersRole,
+                role: snapshot.role,
                 frame: initialFrame,
                 opacity: initialOpacity,
                 isHidden: snapshot.isHidden,
@@ -381,30 +386,31 @@ package final class ViewLayerPublisher: ~Sendable {
             let layer = context.makeLayer(descriptor)
             newLayerIDs.append(layer.id)
             transaction.mutations.append(.created(layer.id, descriptor))
-            cacheDelta.upsertVisual(VisualLayerCache(
-                layer: layer,
-                parentViewID: nil,
-                rootPlacementID: nil,
-                siblingIndex: UInt32.max,
-                frame: initialFrame,
-                opacity: initialOpacity,
-                isHidden: snapshot.isHidden,
-                boundsOrigin: .zero,
-                clipsToBounds: false,
-                transform: .identity,
-                cornerRadius: 0,
-                shadow: nil,
-                backdropGroup: .none,
-                backdropMaterial: snapshot.layerKind == .backdrop ? initialBackdrop : nil,
-                paintWidth: nil,
-                paintHeight: nil,
-                paintRecording: PaintRecording(),
-                paintCacheKey: nil,
-                animationGeneration: 0,
-                dirtyGenerations: ViewDirtyGenerations(),
-                subtreeDirtyGenerations: ViewDirtyGenerations(),
-                childViewIDs: []
-            ), for: snapshot.viewID)
+            cacheDelta.upsertVisual(
+                VisualLayerCache(
+                    layer: layer,
+                    parentViewID: nil,
+                    rootPlacementID: nil,
+                    siblingIndex: UInt32.max,
+                    frame: initialFrame,
+                    opacity: initialOpacity,
+                    isHidden: snapshot.isHidden,
+                    boundsOrigin: .zero,
+                    clipsToBounds: false,
+                    transform: .identity,
+                    cornerRadius: 0,
+                    shadow: nil,
+                    backdropGroup: .none,
+                    backdropMaterial: snapshot.layerKind == .backdrop ? initialBackdrop : nil,
+                    paintWidth: nil,
+                    paintHeight: nil,
+                    paintRecording: PaintRecording(),
+                    paintCacheKey: nil,
+                    animationGeneration: 0,
+                    dirtyGenerations: ViewDirtyGenerations(),
+                    subtreeDirtyGenerations: ViewDirtyGenerations(),
+                    childViewIDs: []
+                ), for: snapshot.viewID)
             if snapshot.isHidden {
                 cacheDelta.hiddenLayerCountDelta += 1
             }
@@ -415,94 +421,109 @@ package final class ViewLayerPublisher: ~Sendable {
         // Pass 2: establish or change hierarchy after every referenced layer
         // has a create record.
         for placement in placements {
-            guard var state = cacheDelta.placement(
-                placement.id,
-                base: placementLayers
-            ) else { continue }
+            guard
+                var state = cacheDelta.placement(
+                    placement.id,
+                    base: placementLayers
+                )
+            else { continue }
             if state.siblingIndex != placement.siblingIndex {
-                transaction.mutations.append(.inserted(
-                    layer: state.layer.id,
-                    parent: root.id,
-                    index: placement.siblingIndex
-                ))
+                transaction.mutations.append(
+                    .inserted(
+                        layer: state.layer.id,
+                        parent: root.id,
+                        index: placement.siblingIndex
+                    ))
                 state.siblingIndex = placement.siblingIndex
                 cacheDelta.upsertPlacement(state, for: placement.id)
                 didMutate = true
             }
         }
 
-        var siblingReorders: [(
-            parentLayer: Layer,
-            desired: [ViewID],
-            moves: [(viewID: ViewID, index: UInt32)]
-        )] = []
+        var siblingReorders:
+            [(
+                parentLayer: Layer,
+                desired: [ViewID],
+                moves: [(viewID: ViewID, index: UInt32)]
+            )] = []
         for snapshot in snapshots {
             guard let acceptedParent = visualLayers[snapshot.viewID] else {
                 continue
             }
             let desired = snapshot.view.childViews.map(\.id)
             guard desired != acceptedParent.childViewIDs,
-                  let moves = retainedSiblingReorderMoves(
+                let moves = retainedSiblingReorderMoves(
                     from: acceptedParent.childViewIDs,
                     to: desired),
-                  desired.allSatisfy({ childID in
-                      guard let child = visualLayers[childID] else {
-                          return false
-                      }
-                      return child.parentViewID == snapshot.viewID
-                          && child.rootPlacementID == nil
-                  })
+                desired.allSatisfy({ childID in
+                    guard let child = visualLayers[childID] else {
+                        return false
+                    }
+                    return child.parentViewID == snapshot.viewID
+                        && child.rootPlacementID == nil
+                })
             else {
                 continue
             }
-            siblingReorders.append((
-                parentLayer: acceptedParent.layer,
-                desired: desired,
-                moves: moves))
+            siblingReorders.append(
+                (
+                    parentLayer: acceptedParent.layer,
+                    desired: desired,
+                    moves: moves
+                ))
         }
         for reorder in siblingReorders {
             for (index, viewID) in reorder.desired.enumerated() {
-                guard var state = cacheDelta.visual(
-                    viewID,
-                    base: visualLayers
-                ) else { continue }
+                guard
+                    var state = cacheDelta.visual(
+                        viewID,
+                        base: visualLayers
+                    )
+                else { continue }
                 state.siblingIndex = UInt32(clamping: index)
                 cacheDelta.upsertVisual(state, for: viewID)
             }
             for move in reorder.moves {
-                guard let state = cacheDelta.visual(
-                    move.viewID,
-                    base: visualLayers
-                ) else { continue }
-                transaction.mutations.append(.inserted(
-                    layer: state.layer.id,
-                    parent: reorder.parentLayer.id,
-                    index: move.index
-                ))
+                guard
+                    let state = cacheDelta.visual(
+                        move.viewID,
+                        base: visualLayers
+                    )
+                else { continue }
+                transaction.mutations.append(
+                    .inserted(
+                        layer: state.layer.id,
+                        parent: reorder.parentLayer.id,
+                        index: move.index
+                    ))
                 didMutate = true
                 metrics.layersReparented &+= 1
             }
         }
 
         for snapshot in snapshots {
-            guard var state = cacheDelta.visual(
-                snapshot.viewID,
-                base: visualLayers
-            ) else { continue }
-            if state.parentViewID != snapshot.parentViewID ||
-                state.rootPlacementID != snapshot.rootPlacementID ||
-                state.siblingIndex != snapshot.siblingIndex
+            guard
+                var state = cacheDelta.visual(
+                    snapshot.viewID,
+                    base: visualLayers
+                )
+            else { continue }
+            if state.parentViewID != snapshot.parentViewID
+                || state.rootPlacementID != snapshot.rootPlacementID
+                || state.siblingIndex != snapshot.siblingIndex
             {
-                let parent = snapshot.parentViewID.flatMap {
-                    cacheDelta.visual($0, base: visualLayers)?.layer
-                } ?? snapshot.rootPlacementID.flatMap {
-                    cacheDelta.placement($0, base: placementLayers)?.layer
-                } ?? root
-                transaction.mutations.append(.inserted(
-                    layer: state.layer.id,
-                    parent: parent.id,
-                    index: snapshot.siblingIndex
-                ))
+                let parent =
+                    snapshot.parentViewID.flatMap {
+                        cacheDelta.visual($0, base: visualLayers)?.layer
+                    } ?? snapshot.rootPlacementID.flatMap {
+                        cacheDelta.placement($0, base: placementLayers)?.layer
+                    } ?? root
+                transaction.mutations.append(
+                    .inserted(
+                        layer: state.layer.id,
+                        parent: parent.id,
+                        index: snapshot.siblingIndex
+                    ))
                 state.parentViewID = snapshot.parentViewID
                 state.rootPlacementID = snapshot.rootPlacementID
                 state.siblingIndex = snapshot.siblingIndex
@@ -516,15 +537,18 @@ package final class ViewLayerPublisher: ~Sendable {
             // Pass 3: sparse property/content changes and semantic animation
             // requests target a now-created, now-inserted visual layer.
             for placement in placements {
-                guard var state = cacheDelta.placement(
-                    placement.id,
-                    base: placementLayers
-                ) else { continue }
+                guard
+                    var state = cacheDelta.placement(
+                        placement.id,
+                        base: placementLayers
+                    )
+                else { continue }
                 if state.frame != placement.frame {
-                    transaction.mutations.append(.properties(
-                        layer: state.layer.id,
-                        LayerPropertyUpdate.decomposedFrame(placement.frame)
-                    ))
+                    transaction.mutations.append(
+                        .properties(
+                            layer: state.layer.id,
+                            LayerPropertyUpdate.decomposedFrame(placement.frame)
+                        ))
                     state.frame = placement.frame
                     cacheDelta.upsertPlacement(state, for: placement.id)
                     didMutate = true
@@ -532,16 +556,19 @@ package final class ViewLayerPublisher: ~Sendable {
             }
 
             for snapshot in snapshots {
-                guard var state = cacheDelta.visual(
-                    snapshot.viewID,
-                    base: visualLayers
-                ) else { continue }
+                guard
+                    var state = cacheDelta.visual(
+                        snapshot.viewID,
+                        base: visualLayers
+                    )
+                else { continue }
                 let wasHidden = state.isHidden
                 for update in propertyUpdates(for: snapshot, state: &state) {
-                    transaction.mutations.append(.properties(
-                        layer: state.layer.id,
-                        update
-                    ))
+                    transaction.mutations.append(
+                        .properties(
+                            layer: state.layer.id,
+                            update
+                        ))
                     didMutate = true
                     metrics.propertyUpdates &+= 1
                 }
@@ -571,10 +598,12 @@ package final class ViewLayerPublisher: ~Sendable {
             // parent removal implicitly erasing a child before its one explicit
             // removal record is applied.
             for viewID in removedViewIDs {
-                guard let state = cacheDelta.removeVisual(
-                    viewID,
-                    base: visualLayers
-                ) else { continue }
+                guard
+                    let state = cacheDelta.removeVisual(
+                        viewID,
+                        base: visualLayers
+                    )
+                else { continue }
                 if state.isHidden {
                     cacheDelta.hiddenLayerCountDelta -= 1
                 }
@@ -589,10 +618,12 @@ package final class ViewLayerPublisher: ~Sendable {
             let seenPlacements = Set(placements.map(\.id))
             for placementID in placementLayers.keys
             where !seenPlacements.contains(placementID) {
-                guard let state = cacheDelta.removePlacement(
-                    placementID,
-                    base: placementLayers
-                ) else { continue }
+                guard
+                    let state = cacheDelta.removePlacement(
+                        placementID,
+                        base: placementLayers
+                    )
+                else { continue }
                 transaction.mutations.append(.removed(state.layer.id))
                 didMutate = true
             }
@@ -608,7 +639,8 @@ package final class ViewLayerPublisher: ~Sendable {
             metrics.paintCacheKeysReconciled = UInt64(
                 Set(cacheDelta.paintInsertions.keys)
                     .union(
-                        cacheDelta.paintReferenceChanges.map(\.key))
+                        cacheDelta.paintReferenceChanges.map(\.key)
+                    )
                     .count)
 
             guard didMutate else {

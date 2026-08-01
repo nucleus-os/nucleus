@@ -1,8 +1,11 @@
 import NucleusAppHostProtocols
-@testable import NucleusAppHostBundle
+import NucleusLayers
+import NucleusRenderHost
 import NucleusRenderModel
 import NucleusTypes
 import Testing
+
+@testable import NucleusAppHostBundle
 
 @MainActor
 @Suite struct PaintContentRegistrationBoundaryTests {
@@ -53,6 +56,36 @@ import Testing
         #expect(populated?.payload == payload)
     }
 
+    @Test func layerContentOwnsItsRegisteredResourceThroughCommitAndTeardown() throws {
+        let host = SwiftResourceHost()
+        do {
+            let bundle = NucleusAppHostBundle(resourceHost: host)
+            let sink = RenderCommitSink(
+                store: RetainedTreeStore(resourceHost: host),
+                resourceHost: host,
+                runtimeHost: bundle.layersHost)
+            let context = try NucleusLayers.Context(
+                id: NucleusLayers.ContextID(rawValue: 812),
+                commitSink: sink)
+
+            var creation = NucleusLayers.LayerTransaction(context: context)
+            let layer = creation.createLayer()
+            try creation.setPaintCommands(
+                [PaintCommand(kind: .rect)],
+                width: 16,
+                height: 16,
+                for: layer)
+            try creation.insert(layer)
+            try creation.commit()
+            #expect(host.paintContents.count == 1)
+
+            var removal = NucleusLayers.LayerTransaction(context: context)
+            try removal.remove(layer)
+            try removal.commit()
+        }
+        #expect(host.paintContents.count == 0)
+    }
+
     @Test func bulkCopyInitializesAContiguousSpanOnce() {
         let maximumFixture = Array(repeating: UInt8(0xa5), count: 1 << 20)
         var operations: [Int] = []
@@ -64,9 +97,10 @@ import Testing
 
         operations.removeAll()
         let empty: [UInt8] = []
-        #expect(copyContiguousSpan(empty.span) {
-            operations.append($0)
-        }.isEmpty)
+        #expect(
+            copyContiguousSpan(empty.span) {
+                operations.append($0)
+            }.isEmpty)
         #expect(operations.isEmpty, "an empty span forms no source pointer")
     }
 
@@ -98,7 +132,7 @@ import Testing
         }
     }
 
-    @Test func everyPaintWireEnumAndFlagAccessorSurvivesRegistration() throws {
+    @Test func everyPaintEnumAndFlagAccessorSurvivesRegistration() throws {
         let blends: [PaintBlendMode] = [
             .srcOver, .src, .multiply, .screen,
             .plus, .overlay, .dstIn, .dstOut,
@@ -114,19 +148,20 @@ import Testing
             for cap in caps {
                 for join in joins {
                     for shading in shadings {
-                        commands.append(PaintCommand(
-                            kind: .rect,
-                            shading: shading,
-                            blend: blend,
-                            stroke: true,
-                            antialias: false,
-                            evenOddFill: true,
-                            tintsImage: true,
-                            strokeCap: cap,
-                            strokeJoin: join,
-                            transform: PaintTransform(
-                                a: 1, b: 2, c: 3,
-                                d: 4, tx: 5, ty: 6)))
+                        commands.append(
+                            PaintCommand(
+                                kind: .rect,
+                                shading: shading,
+                                blend: blend,
+                                stroke: true,
+                                antialias: false,
+                                evenOddFill: true,
+                                tintsImage: true,
+                                strokeCap: cap,
+                                strokeJoin: join,
+                                transform: PaintTransform(
+                                    a: 1, b: 2, c: 3,
+                                    d: 4, tx: 5, ty: 6)))
                     }
                 }
             }

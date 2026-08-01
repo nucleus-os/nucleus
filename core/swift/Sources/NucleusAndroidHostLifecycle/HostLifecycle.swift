@@ -13,12 +13,12 @@ private struct WeakHostRegistryState<Host: AnyObject>: @unchecked Sendable {
     var hosts: [UInt64: WeakHost<Host>] = [:]
 }
 
-public final class WeakHostRegistry<Host: AnyObject>: Sendable {
+package final class WeakHostRegistry<Host: AnyObject>: Sendable {
     private let state = Mutex(WeakHostRegistryState<Host>())
 
-    public init() {}
+    package init() {}
 
-    public func register(_ host: Host) -> UInt64 {
+    package func register(_ host: Host) -> UInt64 {
         state.withLock {
             precondition($0.nextID != 0, "host ID space exhausted")
             let id = $0.nextID
@@ -28,7 +28,7 @@ public final class WeakHostRegistry<Host: AnyObject>: Sendable {
         }
     }
 
-    public func lookup(_ id: UInt64) -> Host? {
+    package func lookup(_ id: UInt64) -> Host? {
         guard id != 0 else { return nil }
         return state.withLock {
             guard let entry = $0.hosts[id] else { return nil }
@@ -40,7 +40,7 @@ public final class WeakHostRegistry<Host: AnyObject>: Sendable {
         }
     }
 
-    public func unregister(_ id: UInt64, host: Host) {
+    package func unregister(_ id: UInt64, host: Host) {
         guard id != 0 else { return }
         state.withLock {
             guard $0.hosts[id]?.value === host else { return }
@@ -49,12 +49,12 @@ public final class WeakHostRegistry<Host: AnyObject>: Sendable {
     }
 }
 
-public struct OwnerThreadGuard: Sendable {
+package struct OwnerThreadGuard: Sendable {
     private let ownerID: Int64
     private let currentID: @Sendable () -> Int64
     private let reportViolation: @Sendable (StaticString) -> Void
 
-    public init(
+    package init(
         currentID: @escaping @Sendable () -> Int64,
         reportViolation: @escaping @Sendable (StaticString) -> Void
     ) {
@@ -63,7 +63,7 @@ public struct OwnerThreadGuard: Sendable {
         self.reportViolation = reportViolation
     }
 
-    public func accepts(_ operation: StaticString) -> Bool {
+    package func accepts(_ operation: StaticString) -> Bool {
         guard currentID() == ownerID else {
             reportViolation(operation)
             return false
@@ -72,20 +72,20 @@ public struct OwnerThreadGuard: Sendable {
     }
 }
 
-public struct NativeSurfaceSlot<Handle> {
-    public private(set) var handle: Handle?
+package struct NativeSurfaceSlot<Handle> {
+    package private(set) var handle: Handle?
 
-    public init() {
+    package init() {
         handle = nil
     }
 
-    public mutating func adopt(_ handle: Handle) -> Handle? {
+    package mutating func adopt(_ handle: Handle) -> Handle? {
         let previous = self.handle
         self.handle = handle
         return previous
     }
 
-    public mutating func detach() -> Handle? {
+    package mutating func detach() -> Handle? {
         defer { handle = nil }
         return handle
     }

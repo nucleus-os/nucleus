@@ -8,26 +8,26 @@
 // the compositor's main actor (the loop drives them on that thread) and crosses only Sendable values.
 
 import Glibc
+package import NucleusCompositorServer
+package import NucleusCompositorWindowManager
+package import NucleusCompositorWindowScene
 import NucleusLinuxPrimitives
 import WaylandServer
 import WaylandServerC
-public import NucleusCompositorServer
-public import NucleusCompositorWindowScene
-public import NucleusCompositorWindowManager
 
-public struct WaylandRuntimeDiagnostics: Sendable, Equatable {
-    public var traceProtocolEffects: Bool
+package struct WaylandRuntimeDiagnostics: Sendable, Equatable {
+    package var traceProtocolEffects: Bool
 
-    public init(traceProtocolEffects: Bool = false) {
+    package init(traceProtocolEffects: Bool = false) {
         self.traceProtocolEffects = traceProtocolEffects
     }
 }
 
 @MainActor
-public final class WaylandRuntime {
+package final class WaylandRuntime {
     let host: RouterHost
 
-    public init(
+    package init(
         server: NucleusCompositorServer,
         windowManager: WindowManager,
         diagnostics: WaylandRuntimeDiagnostics = WaylandRuntimeDiagnostics()
@@ -41,9 +41,9 @@ public final class WaylandRuntime {
     // MARK: - Router lifecycle
 
     /// Construct the router graph. Idempotent.
-    public func activateRouter(author: WindowSceneAuthor) {
+    package func activateRouter(author: WindowSceneAuthor) {
         guard host.runtime == nil,
-              let runtime = WaylandRouterRuntime(author: author, host: host)
+            let runtime = WaylandRouterRuntime(author: author, host: host)
         else { return }
         host.install(runtime)
         runtime.idle.noteUserInput(atMs: monotonicNowNs() / 1_000_000)
@@ -51,13 +51,13 @@ public final class WaylandRuntime {
 
     /// Retire scene-owned transition resources before the render service tears
     /// down. Idempotent and safe when router bring-up never completed.
-    public func prepareShutdown() {
+    package func prepareShutdown() {
         host.feeder?.shutdown()
     }
 
     /// Add a live wl_output global from a DRM output snapshot. `name`/`description` are NUL-terminated
     /// UTF-8 (or null for the defaults).
-    public func addOutput(
+    package func addOutput(
         _ outputId: UInt64, _ x: Int32, _ y: Int32,
         _ physicalWidthMm: Int32, _ physicalHeightMm: Int32,
         _ pixelWidth: Int32, _ pixelHeight: Int32, _ refreshMhz: Int32, _ scale: Int32,
@@ -66,30 +66,33 @@ public final class WaylandRuntime {
         adaptiveSyncEnabled: Bool = false
     ) {
         let nm = unsafe name.map { unsafe String(cString: $0) } ?? "Nucleus"
-        let desc = unsafe description.map {
-            unsafe String(cString: $0)
-        } ?? nm
+        let desc =
+            unsafe description.map {
+                unsafe String(cString: $0)
+            } ?? nm
         guard let runtime = host.runtime else { return }
-        runtime.applyOutput(OutputInfo(
-            outputId: outputId, x: x, y: y,
-            physicalWidthMm: physicalWidthMm, physicalHeightMm: physicalHeightMm,
-            pixelWidth: pixelWidth, pixelHeight: pixelHeight, refreshMhz: refreshMhz, scale: scale,
-            name: nm, description: desc,
-            logicalWidth: logicalWidth, logicalHeight: logicalHeight,
-            fractionalScale: fractionalScale,
-            adaptiveSyncEnabled: adaptiveSyncEnabled))
+        runtime.applyOutput(
+            OutputInfo(
+                outputId: outputId, x: x, y: y,
+                physicalWidthMm: physicalWidthMm, physicalHeightMm: physicalHeightMm,
+                pixelWidth: pixelWidth, pixelHeight: pixelHeight, refreshMhz: refreshMhz,
+                scale: scale,
+                name: nm, description: desc,
+                logicalWidth: logicalWidth, logicalHeight: logicalHeight,
+                fractionalScale: fractionalScale,
+                adaptiveSyncEnabled: adaptiveSyncEnabled))
     }
 
     /// Withdraw an output global after emitting surface leaves and cleaning up
     /// output-bound protocol state.
-    public func removeOutput(_ outputID: UInt64) {
+    package func removeOutput(_ outputID: UInt64) {
         host.runtime?.removeOutput(outputID)
     }
 
     /// Emit output-bound teardown while the output remains available to window
     /// migration policy.
     @discardableResult
-    public func prepareOutputRemoval(
+    package func prepareOutputRemoval(
         _ outputID: UInt64
     ) -> Bool {
         host.runtime?.prepareOutputRemoval(
@@ -97,7 +100,7 @@ public final class WaylandRuntime {
     }
 
     /// Withdraw the prepared output global after window/focus migration.
-    public func finishOutputRemoval(
+    package func finishOutputRemoval(
         _ outputID: UInt64
     ) {
         host.runtime?.finishOutputRemoval(
@@ -106,11 +109,12 @@ public final class WaylandRuntime {
 
     /// Add the listen socket and export WAYLAND_DISPLAY/XDG_SESSION_TYPE. Returns true on success.
     /// (Xwayland's parent socket fd is adopted directly through `router.display.createClient(fd:)`.)
-    public func addSocket() -> Bool {
+    package func addSocket() -> Bool {
         guard let runtime = host.runtime else { return false }
         let name: String
         if let configured = unsafe getenv("WAYLAND_DISPLAY"),
-           unsafe configured.pointee != 0 {
+            unsafe configured.pointee != 0
+        {
             name = unsafe String(cString: configured)
             guard runtime.router.display.addSocket(named: name) else {
                 return false
@@ -130,21 +134,21 @@ public final class WaylandRuntime {
 
     /// The router's aggregate event-loop epoll fd, for the reactor's one multishot poll registration
     /// (the `wayland_loop` token). -1 before the router exists.
-    public func eventLoopFd() -> Int32 {
+    package func eventLoopFd() -> Int32 {
         host.router?.eventLoopFd ?? -1
     }
 
     /// The router's aggregate `wl_event_loop` epoll fd became readable: dispatch queued client requests
     /// into the Swift protocol impls, project window-model changes to the external-shell observers, and
     /// flush the resulting events back.
-    public func dispatch() {
+    package func dispatch() {
         guard let router = host.router else { return }
         router.dispatch()
         host.server.drainChanges()
         router.flushClients()
     }
 
-    public func flushClients() {
+    package func flushClients() {
         host.router?.flushClients()
     }
 
@@ -171,18 +175,18 @@ public final class WaylandRuntime {
     /// Listening sockets committed by sandbox managers. Each is registered as
     /// its own reactor interest so a confined application's first connection is
     /// accepted on arrival rather than on the next unrelated wake.
-    public var securityContextListenerFileDescriptors: [Int32] {
+    package var securityContextListenerFileDescriptors: [Int32] {
         host.runtime?.securityContext.listeners.map(\.listenFD) ?? []
     }
 
     /// Accept every queued connection on every committed listener, tagging each
     /// new client with the identity of the socket it arrived on.
     @discardableResult
-    public func acceptSecurityContextClients() -> Bool {
+    package func acceptSecurityContextClients() -> Bool {
         host.runtime?.securityContext.acceptPendingClients() ?? false
     }
 
-    public func executeDeferredAction(
+    package func executeDeferredAction(
         kind: UInt8,
         configurationIndex: UInt32 = .max,
         value: UInt32
@@ -195,18 +199,18 @@ public final class WaylandRuntime {
 
     /// The next protocol idle deadline in the monotonic clock domain. A nil
     /// deadline contributes no wakeup to the compositor loop.
-    public func nextIdleDeadlineNs() -> UInt64? {
+    package func nextIdleDeadlineNs() -> UInt64? {
         guard let milliseconds = host.runtime?.idle.nextDeadlineMs
         else { return nil }
         let result = milliseconds.multipliedReportingOverflow(by: 1_000_000)
         return result.overflow ? UInt64.max : result.partialValue
     }
 
-    public func idleTick(nowNs: UInt64) {
+    package func idleTick(nowNs: UInt64) {
         host.runtime?.idle.idleTick(nowMs: nowNs / 1_000_000)
     }
 
-    public func noteUserInput(nowNs: UInt64) {
+    package func noteUserInput(nowNs: UInt64) {
         host.runtime?.idle.noteUserInput(
             atMs: nowNs / 1_000_000)
     }
@@ -222,14 +226,14 @@ public final class WaylandRuntime {
     /// session-lock blank into the retained tree, ahead of the render pass. Returns whether any tile
     /// animation is still in flight, so the loop keeps requesting frames. No-op (false) until the
     /// feeder is constructed at router activation.
-    public func authorSceneFrame(outputId: UInt64, predictedPresentNs: UInt64) -> Bool {
+    package func authorSceneFrame(outputId: UInt64, predictedPresentNs: UInt64) -> Bool {
         host.feeder?.authorFrame(
             outputID: outputId, predictedPresentNs: predictedPresentNs) ?? false
     }
 
     /// An atomic KMS commit was accepted. Freeze the exact surface commits sampled
     /// by this output frame before mutable scene state can advance.
-    public func noteSubmitted(
+    package func noteSubmitted(
         outputID: UInt64,
         outputGeneration: UInt64,
         submissionID: UInt64,
@@ -248,7 +252,7 @@ public final class WaylandRuntime {
 
     /// Complete the immutable record matching this binding generation and
     /// submission. A stale flip has no record and therefore completes nothing.
-    public func notePresented(
+    package func notePresented(
         _ outputId: UInt64,
         _ outputGeneration: UInt64,
         _ submissionID: UInt64,
@@ -267,7 +271,7 @@ public final class WaylandRuntime {
             flags: 0)
     }
 
-    public func discardSubmitted(
+    package func discardSubmitted(
         outputID: UInt64,
         outputGeneration: UInt64,
         submissionID: UInt64
@@ -280,7 +284,7 @@ public final class WaylandRuntime {
 
     /// A renderer-imported client generation is no longer referenced by Vulkan or
     /// KMS. Complete the corresponding wl_buffer and wl_surface.get_release events.
-    public func noteSurfaceBufferRetired(_ iosurfaceID: UInt32) {
+    package func noteSurfaceBufferRetired(_ iosurfaceID: UInt32) {
         host.runtime?.compositor.retireBuffer(iosurfaceID: iosurfaceID)
     }
 
@@ -290,7 +294,7 @@ public final class WaylandRuntime {
     /// output has presented a frame authored *after* the lock began (the begin-time present-id
     /// threshold), the gate emits `locked` — the security invariant confirmed by a real present, not
     /// asserted at author time. No-op unless a lock is active. Called after the DisplayLink ack.
-    public func noteSessionLockPresented(_ outputId: UInt64) {
+    package func noteSessionLockPresented(_ outputId: UInt64) {
         host.sessionLockGate.noteOutputPresented(outputID: outputId)
     }
 
@@ -298,7 +302,7 @@ public final class WaylandRuntime {
     /// ids of the mapped ext-session-lock surfaces to composite over the opaque ground. `nil` when no
     /// lock is active (the render core composes normally); a locked output with no lock surface yet
     /// maps to an empty set (fully blank). Recomputed each frame from the authoritative window model.
-    public func sessionLockComposition() -> [UInt64: Set<UInt32>]? {
+    package func sessionLockComposition() -> [UInt64: Set<UInt32>]? {
         guard host.sessionLockGate.isActive(), let feeder = host.feeder else { return nil }
         var perOutput: [UInt64: Set<UInt32>] = [:]
         for display in host.server.layout.displays {

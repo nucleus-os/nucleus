@@ -1,6 +1,6 @@
-@_spi(NucleusRenderServer) public import NucleusLayers
-public import NucleusTypes
-public import NucleusUI
+package import NucleusLayers
+internal import NucleusTypes
+package import NucleusUI
 
 // The embedder-facing surface of NucleusUI.
 //
@@ -20,11 +20,11 @@ public import NucleusUI
 /// the update has been applied or appended; it keeps the content and any
 /// transient text handles alive.
 @MainActor
-public struct RegisteredPaintContent {
+package struct RegisteredPaintContent {
     package let inner: RegisteredPaint
 
     /// The property update binding the registered content.
-    public var update: NucleusLayers.LayerPropertyUpdate { inner.update }
+    package var update: NucleusLayers.LayerPropertyUpdate { inner.update }
 
     /// Bind this content to `layer`: apply the update locally and append it to
     /// the ambient transaction so the compositor sees it.
@@ -33,7 +33,7 @@ public struct RegisteredPaintContent {
     /// transient text handles alive across both steps — releasing between them
     /// would drop the content's last reference before it was published.
     @MainActor
-    public func bind(to layer: Layer) {
+    package func bind(to layer: Layer) {
         layer.apply(update)
         LayerTransaction.appendAmbient(
             .properties(layer: layer.id, update), in: layer.context)
@@ -44,8 +44,8 @@ public struct RegisteredPaintContent {
 extension PaintRecording {
     /// The lowered command stream. Embedder-only: a product view authors
     /// through `GraphicsContext` and never inspects what it produced.
-    public var paintCommands: [PaintCommand] { commands }
-    public var payloadBytes: [UInt8] { payload }
+    package var paintCommands: [PaintCommand] { commands }
+    package var payloadBytes: [UInt8] { payload }
 }
 
 /// Lower and register one recorded drawing, independent of the view tree.
@@ -54,7 +54,7 @@ extension PaintRecording {
 /// uses it from its diff path; React Native's mount path calls it directly,
 /// because RN builds its own layer tree and has no publisher.
 @MainActor
-public func registerPaint(
+package func registerPaint(
     _ recording: PaintRecording,
     width: Float,
     height: Float,
@@ -78,7 +78,7 @@ extension Layer {
     /// through `WindowScene` does not, because the publisher batches its own
     /// transactions.
     @MainActor
-    public func applyProperties(
+    package func applyProperties(
         _ update: NucleusLayers.LayerPropertyUpdate, ambient: Bool = false
     ) {
         apply(update)
@@ -95,18 +95,18 @@ extension Layer {
 /// owner of its visual cache and lowers every mount batch through the same
 /// publisher used by native windows.
 @MainActor
-public final class EmbeddedViewTreePublisher: ~Sendable {
+package final class EmbeddedViewTreePublisher: ~Sendable {
     private let publisher: ViewLayerPublisher
 
-    public let visualContext: Context
+    package let visualContext: Context
 
-    public init(visualContext: Context) {
+    package init(visualContext: Context) {
         self.visualContext = visualContext
         self.publisher = ViewLayerPublisher(context: visualContext)
     }
 
     @discardableResult
-    public func publish(
+    package func publish(
         rootView: View,
         into parentLayer: Layer? = nil,
         at index: UInt32 = UInt32.max
@@ -123,15 +123,15 @@ public final class EmbeddedViewTreePublisher: ~Sendable {
     }
 
     /// The publisher-owned container placed into the embedder's layer tree.
-    public var rootLayer: Layer? {
+    package var rootLayer: Layer? {
         publisher.publishedRootLayer
     }
 
-    public func visualLayer(for view: View) -> Layer? {
+    package func visualLayer(for view: View) -> Layer? {
         publisher.visualLayer(for: view)
     }
 
-    public func invalidate() throws(UIError) {
+    package func invalidate() throws(UIError) {
         try publisher.invalidate()
     }
 }
@@ -140,14 +140,14 @@ public final class EmbeddedViewTreePublisher: ~Sendable {
 
 extension View {
     /// What this view last drew. `displayIfNeeded()` refreshes it.
-    public var recordedDrawing: PaintRecording { layerContent.recording }
+    package var recordedDrawing: PaintRecording { layerContent.recording }
 
     /// Opaque resource-host identity inherited from the semantic UI context.
-    public var embedderResourceHostHandle: UInt64 {
+    package var embedderResourceHostHandle: UInt64 {
         uiContext.resourceHostHandle
     }
 
-    public var embedderUIContext: UIContext {
+    package var embedderUIContext: UIContext {
         uiContext
     }
 }
@@ -157,14 +157,14 @@ extension View {
 extension GraphicsContext {
     /// Record a drawing outside the normal display pass. Product code receives
     /// a context in `View.draw(in:)` and never constructs one.
-    public static func makeEmbedderContext(
+    package static func makeEmbedderContext(
         in uiContext: UIContext
     ) -> GraphicsContext {
         GraphicsContext(textSystem: uiContext.services.textSystem)
     }
 
     /// The recorded drawing, with any unbalanced `saveGState` closed off.
-    public var recordedDrawing: PaintRecording { recording }
+    package var recordedDrawing: PaintRecording { recording }
 }
 
 // MARK: - Scenes
@@ -172,19 +172,19 @@ extension GraphicsContext {
 extension WindowScene {
     /// The scene's root layer, created and attached on first use. An embedder
     /// attaching its own content parents it here.
-    public func attachedRootLayer() throws(UIError) -> Layer {
+    package func attachedRootLayer() throws(UIError) -> Layer {
         try ensureRootAttached()
     }
 
     /// The sublayer index at which embedder-owned content at `level` should be
     /// inserted, so it lands above the scene's own windows at or below it.
-    public func sublayerIndex(forLevel level: WindowLevel) -> UInt32 {
+    package func sublayerIndex(forLevel level: WindowLevel) -> UInt32 {
         insertionIndex(forLevel: level)
     }
 
     /// Publish this scene's windows interleaved with embedder-owned content by
     /// window level.
-    public func publish(
+    package func publish(
         placing placements: [ScenePlacement] = [],
         includes windowIncluded: @MainActor (Window) -> Bool = { _ in true }
     ) throws(UIError) -> PublishedScene {
@@ -194,16 +194,16 @@ extension WindowScene {
 
 // MARK: - Application
 
-public enum EmbedderApplication {
+package enum EmbedderApplication {
     /// Pair a new semantic UI context with `context` for the duration of
     /// construction.
     @MainActor
-    public static func withContext<T>(_ context: Context, _ body: () throws -> T) rethrows -> T {
+    package static func withContext<T>(_ context: Context, _ body: () throws -> T) rethrows -> T {
         try Application.withContext(context, body)
     }
 
     @MainActor
-    public static func withContexts<T>(
+    package static func withContexts<T>(
         uiContext: UIContext,
         visualContext: Context,
         _ body: () throws -> T

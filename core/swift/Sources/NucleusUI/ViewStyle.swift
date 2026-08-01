@@ -1,3 +1,5 @@
+public import NucleusTypes
+
 public struct Border: Sendable, Equatable {
     public var width: Float
     public var color: Color

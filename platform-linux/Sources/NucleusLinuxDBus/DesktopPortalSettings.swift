@@ -1,13 +1,13 @@
 /// The desktop settings consumed by both Nucleus Linux hosts.
-public struct DesktopPortalSettings: Sendable, Equatable {
-    public var colorScheme: UInt32?
-    public var contrast: UInt32?
-    public var reducesMotion: Bool?
-    public var animationsEnabled: Bool?
-    public var reducesTransparency: Bool?
-    public var textScale: Double?
+package struct DesktopPortalSettings: Sendable, Equatable {
+    package var colorScheme: UInt32?
+    package var contrast: UInt32?
+    package var reducesMotion: Bool?
+    package var animationsEnabled: Bool?
+    package var reducesTransparency: Bool?
+    package var textScale: Double?
 
-    public init(
+    package init(
         colorScheme: UInt32? = nil,
         contrast: UInt32? = nil,
         reducesMotion: Bool? = nil,
@@ -24,11 +24,11 @@ public struct DesktopPortalSettings: Sendable, Equatable {
     }
 }
 
-public enum DesktopPortalSettingsEndpoint {
-    public static let service = "org.freedesktop.portal.Desktop"
-    public static let path = "/org/freedesktop/portal/desktop"
-    public static let interface = "org.freedesktop.portal.Settings"
-    public static let settingChanged = "SettingChanged"
+package enum DesktopPortalSettingsEndpoint {
+    package static let service = "org.freedesktop.portal.Desktop"
+    package static let path = "/org/freedesktop/portal/desktop"
+    package static let interface = "org.freedesktop.portal.Settings"
+    package static let settingChanged = "SettingChanged"
 }
 
 /// One cancellable, concurrent read of the desktop settings snapshot.
@@ -37,7 +37,7 @@ public enum DesktopPortalSettingsEndpoint {
 /// backend, or mismatched type therefore records `nil`; only the connection's
 /// event-loop owner decides whether a transport failure requires reconnecting.
 @MainActor
-public final class DesktopPortalSettingsRequest {
+package final class DesktopPortalSettingsRequest {
     fileprivate enum UInt32Field {
         case colorScheme
         case contrast
@@ -58,8 +58,7 @@ public final class DesktopPortalSettingsRequest {
     private var fallbackTextScale: Double?
     private var remaining = 7
     private var pendingCalls: [SDBusPendingCall] = []
-    private var completion:
-        (@MainActor (DesktopPortalSettings) -> Void)?
+    private var completion: (@MainActor (DesktopPortalSettings) -> Void)?
 
     fileprivate init(
         completion: @escaping @MainActor (DesktopPortalSettings) -> Void
@@ -67,9 +66,9 @@ public final class DesktopPortalSettingsRequest {
         self.completion = completion
     }
 
-    public var isFinished: Bool { completion == nil }
+    package var isFinished: Bool { completion == nil }
 
-    public func cancel() {
+    package func cancel() {
         completion = nil
         remaining = 0
         let calls = pendingCalls
@@ -145,7 +144,7 @@ public final class DesktopPortalSettingsRequest {
 extension DBusConnection {
     /// Queue all settings reads without blocking the caller. The returned token
     /// owns the batch and cancellation; `process()` drives its replies.
-    public func readDesktopPortalSettings(
+    package func readDesktopPortalSettings(
         service: String = DesktopPortalSettingsEndpoint.service,
         path: String = DesktopPortalSettingsEndpoint.path,
         interface: String = DesktopPortalSettingsEndpoint.interface,
@@ -156,45 +155,54 @@ extension DBusConnection {
         let appearance = "org.freedesktop.appearance"
         let gnome = "org.gnome.desktop.interface"
 
-        func uint32(_ namespace: String, _ key: String,
-                    _ field: DesktopPortalSettingsRequest.UInt32Field) {
+        func uint32(
+            _ namespace: String, _ key: String,
+            _ field: DesktopPortalSettingsRequest.UInt32Field
+        ) {
             do {
-                request.track(try portalSettingUInt32Async(
-                    service: service, path: path, interface: interface,
-                    namespace: namespace, key: key
-                ) { [weak request] result in
-                    request?.record(result, field: field)
-                })
+                request.track(
+                    try portalSettingUInt32Async(
+                        service: service, path: path, interface: interface,
+                        namespace: namespace, key: key
+                    ) { [weak request] result in
+                        request?.record(result, field: field)
+                    })
             } catch {
                 request.record(
                     Result<UInt32, DBusError>.failure(error), field: field)
             }
         }
 
-        func boolean(_ namespace: String, _ key: String,
-                     _ field: DesktopPortalSettingsRequest.BooleanField) {
+        func boolean(
+            _ namespace: String, _ key: String,
+            _ field: DesktopPortalSettingsRequest.BooleanField
+        ) {
             do {
-                request.track(try portalSettingBoolAsync(
-                    service: service, path: path, interface: interface,
-                    namespace: namespace, key: key
-                ) { [weak request] result in
-                    request?.record(result, field: field)
-                })
+                request.track(
+                    try portalSettingBoolAsync(
+                        service: service, path: path, interface: interface,
+                        namespace: namespace, key: key
+                    ) { [weak request] result in
+                        request?.record(result, field: field)
+                    })
             } catch {
                 request.record(
                     Result<Bool, DBusError>.failure(error), field: field)
             }
         }
 
-        func double(_ namespace: String, _ key: String,
-                    _ field: DesktopPortalSettingsRequest.DoubleField) {
+        func double(
+            _ namespace: String, _ key: String,
+            _ field: DesktopPortalSettingsRequest.DoubleField
+        ) {
             do {
-                request.track(try portalSettingDoubleAsync(
-                    service: service, path: path, interface: interface,
-                    namespace: namespace, key: key
-                ) { [weak request] result in
-                    request?.record(result, field: field)
-                })
+                request.track(
+                    try portalSettingDoubleAsync(
+                        service: service, path: path, interface: interface,
+                        namespace: namespace, key: key
+                    ) { [weak request] result in
+                        request?.record(result, field: field)
+                    })
             } catch {
                 request.record(
                     Result<Double, DBusError>.failure(error), field: field)

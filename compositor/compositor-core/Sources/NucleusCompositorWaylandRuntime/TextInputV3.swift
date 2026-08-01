@@ -1,7 +1,7 @@
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
 import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 struct TextInputServerRectangle: Sendable, Equatable {
     var x: Int32
@@ -25,19 +25,21 @@ struct TextInputServerSnapshot: Sendable, Equatable {
 }
 
 struct TextInputServerEventBatch: Sendable {
-    var preedit: (
-        text: String?,
-        cursorBegin: Int32,
-        cursorEnd: Int32
-    )?
+    var preedit:
+        (
+            text: String?,
+            cursorBegin: Int32,
+            cursorEnd: Int32
+        )?
     var commit: String?
     var deleteBefore: UInt32
     var deleteAfter: UInt32
-    var preeditHints: [(
-        start: UInt32,
-        end: UInt32,
-        hint: UInt32
-    )]
+    var preeditHints:
+        [(
+            start: UInt32,
+            end: UInt32,
+            hint: UInt32
+        )]
     var language: String?
     var action: UInt32?
     var doneSerial: UInt32?
@@ -130,8 +132,8 @@ struct TextInputServerEventBatch: Sendable {
     @discardableResult
     func send(_ batch: TextInputServerEventBatch) -> Bool {
         guard let input = enabledInput,
-              input.enabled,
-              input.focusedSurface === focusedSurface
+            input.enabled,
+            input.focusedSurface === focusedSurface
         else { return false }
         input.send(batch)
         return true
@@ -140,7 +142,7 @@ struct TextInputServerEventBatch: Sendable {
     fileprivate func register(_ input: TextInputV3) {
         inputs.append(input)
         guard let focusedSurface,
-              focusedSurface.protocolResource?.clientID == input.clientKey
+            focusedSurface.protocolResource?.clientID == input.clientKey
         else { return }
         input.focusEntered(focusedSurface)
     }
@@ -179,8 +181,8 @@ extension TextInputManagerV3: ZwpTextInputManagerV3Requests {
         seat seatResource: WaylandBorrowedObject<WlSeatServer>
     ) {
         guard let binding = seatResource.owner(as: SeatBinding.self),
-              binding.seat === seat,
-              seatResource.clientID == id.clientID
+            binding.seat === seat,
+            seatResource.clientID == id.clientID
         else { return }
         _ = id.create(
             owner: { handle in
@@ -198,8 +200,7 @@ extension TextInputManagerV3: ZwpTextInputManagerV3Requests {
 
 private struct PendingTextInputState {
     var enableCommand: Bool?
-    var surrounding:
-        (text: String, cursor: Int32, anchor: Int32)?
+    var surrounding: (text: String, cursor: Int32, anchor: Int32)?
     var changeCause: UInt32?
     var contentType: (hint: UInt32, purpose: UInt32)?
     var cursorRectangle: TextInputServerRectangle?
@@ -219,7 +220,8 @@ private struct PendingTextInputState {
 
 /// One resource-owned text input. No platform editor or surface retains it.
 @MainActor
-@safe private final class TextInputV3: ZwpTextInputV3Requests,
+@safe
+private final class TextInputV3: ZwpTextInputV3Requests,
     WlSurfaceCommitObserver
 {
     private weak var manager: TextInputManagerV3?
@@ -229,8 +231,7 @@ private struct PendingTextInputState {
     fileprivate weak var focusedSurface: WlSurface?
     fileprivate private(set) var enabled = false
     private var pending = PendingTextInputState()
-    private var surrounding:
-        (text: String, cursor: Int32, anchor: Int32)?
+    private var surrounding: (text: String, cursor: Int32, anchor: Int32)?
     private var changeCause: UInt32 = 0
     private var contentHint: UInt32 = 0
     private var contentPurpose: UInt32 = 0
@@ -322,8 +323,8 @@ private struct PendingTextInputState {
     ) {
         guard focusedSurface != nil else { return }
         guard text.utf8.count <= 4_000,
-              Self.isValidUTF8Boundary(cursor, in: text),
-              Self.isValidUTF8Boundary(anchor, in: text)
+            Self.isValidUTF8Boundary(cursor, in: text),
+            Self.isValidUTF8Boundary(anchor, in: text)
         else { return }
         pending.surrounding = (text, cursor, anchor)
     }
@@ -409,8 +410,8 @@ private struct PendingTextInputState {
         available_actions: WaylandArrayView
     ) {
         guard version >= 2,
-              let actions = available_actions.copiedElements(of: UInt32.self),
-              !actions.isEmpty
+            let actions = available_actions.copiedElements(of: UInt32.self),
+            !actions.isEmpty
         else { return }
         var seen: Set<UInt32> = []
         for action in actions {
@@ -440,8 +441,8 @@ private struct PendingTextInputState {
         effects: inout [() -> Void]
     ) -> Bool {
         guard version >= 2,
-              focusedSurface === surface,
-              enabled
+            focusedSurface === surface,
+            enabled
         else { return true }
         if appliedCursorRectangle != committedCursorRectangle {
             appliedCursorRectangle = committedCursorRectangle
@@ -452,7 +453,8 @@ private struct PendingTextInputState {
 
     fileprivate func send(_ batch: TextInputServerEventBatch) {
         guard enabled,
-              focusedSurface != nil else {
+            focusedSurface != nil
+        else {
             return
         }
         if resource.supportsPreeditHint {
@@ -490,18 +492,19 @@ private struct PendingTextInputState {
     }
 
     private func recordSnapshot() {
-        manager?.record(TextInputServerSnapshot(
-            resourceID: resource.objectID ?? 0,
-            focusedSurfaceID: focusedSurface?.objectId,
-            enabled: enabled,
-            surroundingText: surrounding?.text,
-            cursorByteOffset: surrounding?.cursor,
-            anchorByteOffset: surrounding?.anchor,
-            changeCause: changeCause,
-            contentHint: contentHint,
-            contentPurpose: contentPurpose,
-            cursorRectangle: appliedCursorRectangle,
-            commitCount: commitCount))
+        manager?.record(
+            TextInputServerSnapshot(
+                resourceID: resource.objectID ?? 0,
+                focusedSurfaceID: focusedSurface?.objectId,
+                enabled: enabled,
+                surroundingText: surrounding?.text,
+                cursorByteOffset: surrounding?.cursor,
+                anchorByteOffset: surrounding?.anchor,
+                changeCause: changeCause,
+                contentHint: contentHint,
+                contentPurpose: contentPurpose,
+                cursorRectangle: appliedCursorRectangle,
+                commitCount: commitCount))
     }
 
     private static func isValidUTF8Boundary(

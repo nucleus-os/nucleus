@@ -161,7 +161,8 @@ struct AtomTable {
     for id in AtomId.allCases {
         let name = id.wireName
         let cookie = name.withCString { ptr in
-            unsafe xcb_intern_atom(conn, 0 /* only_if_exists=0: create if absent */, UInt16(name.utf8.count), ptr)
+            unsafe xcb_intern_atom(
+                conn, 0 /* only_if_exists=0: create if absent */, UInt16(name.utf8.count), ptr)
         }
         cookies.append((id, cookie))
     }

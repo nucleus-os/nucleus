@@ -8,8 +8,8 @@
 // All entries resolve through the injected runtime graph and no-op before it is
 // constructed. Single-threaded on the compositor main actor.
 
-import WaylandServerC
 import WaylandServer
+import WaylandServerC
 
 @MainActor
 final class SeatDelivery {
@@ -53,14 +53,17 @@ final class SeatDelivery {
         surfaceID: UInt64, timeMsec: UInt32, surfaceX: Double, surfaceY: Double,
         dx: Double, dy: Double, dxUnaccel: Double, dyUnaccel: Double
     ) {
-        guard let s = pointerDeliverySurface(surfaceID), let key = clientKey(s), let seat else { return }
+        guard let s = pointerDeliverySurface(surfaceID), let key = clientKey(s), let seat else {
+            return
+        }
         seat.pointerMotionRaw(
             s, clientKey: key, timeMsec: timeMsec, surfaceX: surfaceX, surfaceY: surfaceY,
             dx: dx, dy: dy, dxUnaccel: dxUnaccel, dyUnaccel: dyUnaccel)
     }
 
     /// Returns the button event serial (0 if undelivered), for interactive-grab serials.
-    func pointerButton(surfaceID: UInt64, timeMsec: UInt32, button: UInt32, state: UInt32) -> UInt32 {
+    func pointerButton(surfaceID: UInt64, timeMsec: UInt32, button: UInt32, state: UInt32) -> UInt32
+    {
         guard let original = surface(surfaceID), let seat else { return 0 }
         if state != 0, seat.dismissPopupGrabIfOutside(original) { return 0 }
         let s = seat.popupGrabDeliverySurface(fallback: original)
@@ -71,15 +74,21 @@ final class SeatDelivery {
     }
 
     func pointerAxis(
-        surfaceID: UInt64, timeMsec: UInt32, axis: UInt32, delta: Double, value120: Int32, source: UInt32
+        surfaceID: UInt64, timeMsec: UInt32, axis: UInt32, delta: Double, value120: Int32,
+        source: UInt32
     ) {
-        guard let s = pointerDeliverySurface(surfaceID), let key = clientKey(s), let seat else { return }
-        seat.pointerAxis(clientKey: key, timeMsec: timeMsec, axis: axis, delta: delta,
-                         value120: value120, source: source)
+        guard let s = pointerDeliverySurface(surfaceID), let key = clientKey(s), let seat else {
+            return
+        }
+        seat.pointerAxis(
+            clientKey: key, timeMsec: timeMsec, axis: axis, delta: delta,
+            value120: value120, source: source)
     }
 
     func pointerFrame(surfaceID: UInt64) {
-        guard let s = pointerDeliverySurface(surfaceID), let key = clientKey(s), let seat else { return }
+        guard let s = pointerDeliverySurface(surfaceID), let key = clientKey(s), let seat else {
+            return
+        }
         seat.pointerFrame(clientKey: key)
     }
 
@@ -119,8 +128,9 @@ final class SeatDelivery {
         surfaceID: UInt64, depressed: UInt32, latched: UInt32, locked: UInt32, group: UInt32
     ) {
         guard let s = surface(surfaceID), let key = clientKey(s), let seat else { return }
-        seat.keyboardModifiers(clientKey: key, depressed: depressed, latched: latched,
-                               locked: locked, group: group)
+        seat.keyboardModifiers(
+            clientKey: key, depressed: depressed, latched: latched,
+            locked: locked, group: group)
     }
 
     /// Whether `surfaceID` currently owns an active keyboard-shortcuts inhibitor.

@@ -1,17 +1,17 @@
-import NucleusCompositorServer // private framework implementation
-import NucleusCompositorServerTypes
-import NucleusCompositorPolicy
+import Glibc
 import NucleusAppHostBundle
+import NucleusCompositorPolicy
 import NucleusCompositorRenderRuntime
 import NucleusCompositorRenderSession
-import NucleusConfig
-import NucleusRenderer
-import NucleusRenderHost
 import NucleusCompositorRendererLinux
+import NucleusCompositorServer  // private framework implementation
+import NucleusCompositorServerTypes
 import NucleusCompositorWaylandRuntime
 import NucleusCompositorWindowScene
+import NucleusConfig
+import NucleusRenderHost
+import NucleusRenderer
 import NucleusSessionProtocol
-import Glibc
 
 // Compositor bring-up + teardown, Swift-owned.
 // `runNucleusCompositor` calls `bringUp` on the main actor, awaits the reactor loop,
@@ -35,16 +35,18 @@ extension CompositorRuntime {
         let sessionConfiguration = liveConfiguration
 
         // ── DRM device discovery (Swift-owned, over libdrm) ───────────────
-        guard let drmDevice = discoverDrmDevice(
-            preferredRenderPath: configuration.drmDevicePath)
+        guard
+            let drmDevice = discoverDrmDevice(
+                preferredRenderPath: configuration.drmDevicePath)
         else {
             logRuntime("DRM device discovery failed")
             return false
         }
 
         // ── libseat session + DRM primary node (Swift-owned) ──────────────
-        guard waylandRuntime.openSeat(
-            configuration: sessionConfiguration.input)
+        guard
+            waylandRuntime.openSeat(
+                configuration: sessionConfiguration.input)
         else {
             logRuntime("session: failed to open Swift-owned seat")
             return false
@@ -54,7 +56,7 @@ extension CompositorRuntime {
         // only after successful GPU bring-up below.
         server.sessionControl = self
         unsafe drmSession.installDeviceSeat(
-            open: { [weak waylandRuntime] in
+            package: { [weak waylandRuntime] in
                 unsafe waylandRuntime?.openDevice($0) ?? -1
             },
             close: { [weak waylandRuntime] in waylandRuntime?.closeDevice($0) })
@@ -81,16 +83,17 @@ extension CompositorRuntime {
             logRuntime("render runtime: failed to stat selected render node")
             return false
         }
-        guard renderRuntime.bringUp(
-            drmDeviceFd: primaryFd,
-            dmabufMainDevice: renderMainDevice,
-            enableValidation: configuration.enableVulkanValidation,
-            presentPolicy: configuration.presentMode == .mailboxLatestWins
-                ? .mailboxLatestWins
-                : .vsync,
-            store: retainedStore,
-            resourceHost: resourceHost,
-            asyncRenderWakeSink: renderWake)
+        guard
+            renderRuntime.bringUp(
+                drmDeviceFd: primaryFd,
+                dmabufMainDevice: renderMainDevice,
+                enableValidation: configuration.enableVulkanValidation,
+                presentPolicy: configuration.presentMode == .mailboxLatestWins
+                    ? .mailboxLatestWins
+                    : .vsync,
+                store: retainedStore,
+                resourceHost: resourceHost,
+                asyncRenderWakeSink: renderWake)
         else {
             logRuntime("render runtime: Swift bring-up failed")
             return false
@@ -107,18 +110,19 @@ extension CompositorRuntime {
             return false
         }
         logRuntime(
-            "render runtime: Swift render path active for " +
-            "\(server.layout.displays.count) output(s)")
+            "render runtime: Swift render path active for "
+                + "\(server.layout.displays.count) output(s)")
 
         // Present-report seam: fold each output's scanout submit / page-flip into its
         // DisplayLink present-id ack, and ack the session-lock gate on flip completion.
         // The `locked` security invariant is confirmed by a real present here (the
         // author-time blank filter, applied in the scene author, is the other half).
         renderRuntime.installPresentReport(
-            submitted: { [weak self]
+            submitted: {
+                [weak self]
                 outputID, outputGeneration, submissionID, sampledIOSurfaceIDs in
                 guard let self,
-                      let display = self.server.layout.display(id: outputID)
+                    let display = self.server.layout.display(id: outputID)
                 else { return }
                 display.redrawSubmitted(submissionID: submissionID)
                 self.frameDemand.willSubmit(display)
@@ -132,7 +136,8 @@ extension CompositorRuntime {
                         display.displayLink.predictedPresentNs(0),
                     sampledIOSurfaceIDs: sampledIOSurfaceIDs)
             },
-            presented: { [weak self]
+            presented: {
+                [weak self]
                 outputID, outputGeneration, submissionID,
                 presentationNs, sequence in
                 guard let self else { return }
@@ -149,13 +154,15 @@ extension CompositorRuntime {
                         predictedPresentNs: predicted)
                 }
                 self.waylandRuntime.noteSessionLockPresented(outputID)
-                let refreshNs = UInt32(truncatingIfNeeded: display?.displayLink.refreshIntervalNs ?? 16_666_666)
+                let refreshNs = UInt32(
+                    truncatingIfNeeded: display?.displayLink.refreshIntervalNs ?? 16_666_666)
                 self.waylandRuntime.notePresented(
                     outputID, outputGeneration, submissionID,
                     presentationNs, refreshNs, sequence)
                 self.reportCompositorReadyAfterPresentation()
             },
-            discarded: { [weak self]
+            discarded: {
+                [weak self]
                 outputID, outputGeneration, submissionID in
                 guard let self else { return }
                 if let display =
@@ -214,7 +221,7 @@ extension CompositorRuntime {
 
         // ── XWayland (lazy spawn) ─────────────────────────────────────────
         if let xwaylandExecutablePath =
-                configuration.xwaylandExecutablePath
+            configuration.xwaylandExecutablePath
         {
             let traceEnabled: Bool
             if let traceValue = unsafe getenv("NUCLEUS_XWAYLAND_TRACE") {

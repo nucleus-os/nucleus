@@ -699,7 +699,7 @@ private func value(
 }
 
 @MainActor
-public func runControlService(
+package func runControlService(
     arguments: [String] = CommandLine.arguments
 ) async -> Int32 {
     do {

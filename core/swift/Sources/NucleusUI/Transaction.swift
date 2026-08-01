@@ -1,5 +1,5 @@
 package import NucleusLayers
-internal import struct NucleusTypes.Rect
+public import NucleusTypes
 
 /// Immutable mutation policy for one scoped semantic transaction.
 public struct TransactionConfiguration: Sendable, Equatable {
@@ -30,9 +30,7 @@ public enum TransactionOutcome: Sendable, Equatable {
 public final class TransactionCompletionHandle: ~Sendable {
     public private(set) var outcome: TransactionOutcome?
     public var isFinished: Bool { outcome != nil }
-    private var callbacks: [
-        @MainActor (TransactionOutcome) -> Void
-    ] = []
+    private var callbacks: [@MainActor (TransactionOutcome) -> Void] = []
 
     package init(
         completion: (@MainActor (TransactionOutcome) -> Void)?
@@ -205,9 +203,10 @@ extension ViewProperties {
                 height: $0.size.height
             )
         }
-        var update = geometry.map {
-            LayerPropertyUpdate.decomposedFrame($0)
-        } ?? LayerPropertyUpdate()
+        var update =
+            geometry.map {
+                LayerPropertyUpdate.decomposedFrame($0)
+            } ?? LayerPropertyUpdate()
         update.isHidden = isHidden
         update.backdropMaterial = backdropMaterial
         return update
@@ -233,8 +232,8 @@ extension UIError {
     }
 }
 
-package extension TransactionOutcome {
-    init(_ result: PresentationCompletionResult) {
+extension TransactionOutcome {
+    package init(_ result: PresentationCompletionResult) {
         switch result {
         case .completed:
             self = .completed

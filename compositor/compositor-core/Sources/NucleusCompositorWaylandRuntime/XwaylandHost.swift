@@ -104,13 +104,15 @@ final class XwaylandHost {
 
 // ── composition-root lifecycle ────────────────────────────────────────────────
 
-public extension WaylandRuntime {
-    func bringUpXwayland(
+extension WaylandRuntime {
+    package func bringUpXwayland(
         executablePath: String,
         traceEnabled: Bool
     ) -> Bool {
-        guard let runtimeDirectory = try? XwaylandRuntimeDirectory
-            .openFromEnvironment()
+        guard
+            let runtimeDirectory =
+                try? XwaylandRuntimeDirectory
+                .openFromEnvironment()
         else {
             return false
         }
@@ -124,47 +126,47 @@ public extension WaylandRuntime {
         return true
     }
 
-    var xwaylandAbstractFileDescriptor: Int32 {
+    package var xwaylandAbstractFileDescriptor: Int32 {
         host.xwaylandHost?.abstractFd ?? -1
     }
 
-    var xwaylandFilesystemFileDescriptor: Int32 {
+    package var xwaylandFilesystemFileDescriptor: Int32 {
         host.xwaylandHost?.fsFd ?? -1
     }
 
-    func xwaylandDisplayReadable(_ fileDescriptor: Int32) -> Bool {
+    package func xwaylandDisplayReadable(_ fileDescriptor: Int32) -> Bool {
         host.xwaylandHost?.handleDisplayReadable(fileDescriptor) ?? false
     }
 
-    var xwaylandReadyFileDescriptor: Int32 {
+    package var xwaylandReadyFileDescriptor: Int32 {
         host.xwaylandHost?.readyFd() ?? -1
     }
 
-    var xwaylandTraceFileDescriptor: Int32 {
+    package var xwaylandTraceFileDescriptor: Int32 {
         host.xwaylandHost?.traceFd() ?? -1
     }
 
-    func drainXwaylandTrace() -> Bool {
+    package func drainXwaylandTrace() -> Bool {
         host.xwaylandHost?.drainTrace() ?? false
     }
 
-    var xwaylandTraceDroppedBytes: UInt64 {
+    package var xwaylandTraceDroppedBytes: UInt64 {
         host.xwaylandHost?.traceDroppedBytes ?? 0
     }
 
-    func xwaylandReadyReadable() {
+    package func xwaylandReadyReadable() {
         host.xwaylandHost?.handleReadyReadable()
     }
 
-    var xwaylandWindowManagerFileDescriptor: Int32 {
+    package var xwaylandWindowManagerFileDescriptor: Int32 {
         host.xwaylandHost?.xwmFd() ?? -1
     }
 
-    func dispatchXwaylandWindowManager() -> Bool {
+    package func dispatchXwaylandWindowManager() -> Bool {
         host.xwaylandHost?.dispatch() ?? false
     }
 
-    func shutdownXwayland() {
+    package func shutdownXwayland() {
         host.xwaylandHost?.shutdown()
         host.xwaylandHost = nil
     }

@@ -1,8 +1,8 @@
-@_spi(NucleusWindowClientImplementation)
-public import NucleusWindowClientWayland
-public import NucleusAppHostProtocols
-public import NucleusUI
+package import NucleusAppHostProtocols
 import NucleusTypes
+package import NucleusUI
+package import NucleusWindowClientWayland
+
 import struct NucleusUI.Point
 
 /// Adapts role-neutral application input into NucleusUI events and dispatches
@@ -12,9 +12,8 @@ import struct NucleusUI.Point
 /// the UI framework. This desktop adapter is the only layer that knows the
 /// NucleusUI responder model.
 @MainActor
-public final class NucleusDesktopInputRouter: NucleusDesktopSeatDelegate, ApplicationEventSink {
-    public var onSurfaceWillUnregister:
-        (@MainActor (_ surfaceID: UInt) -> Void)?
+package final class NucleusDesktopInputRouter: NucleusDesktopSeatDelegate, ApplicationEventSink {
+    package var onSurfaceWillUnregister: (@MainActor (_ surfaceID: UInt) -> Void)?
     private let scene: WindowScene
     /// Optional so the router can exist before — or without — a live seat. A
     /// seat comes from a real Wayland connection; the translation and routing do
@@ -29,7 +28,7 @@ public final class NucleusDesktopInputRouter: NucleusDesktopSeatDelegate, Applic
     /// coordinates of its own in `wl_pointer` — lands where the pointer is.
     private var pointerLocation = Point(x: 0, y: 0)
 
-    public init(
+    package init(
         scene: WindowScene,
         seat: NucleusDesktopSeat?,
         client: NucleusDesktopConnection? = nil
@@ -49,7 +48,7 @@ public final class NucleusDesktopInputRouter: NucleusDesktopSeatDelegate, Applic
 
     /// Rebind seat-scoped input protocols after registry replacement while
     /// preserving the scene and every surface-to-window association.
-    public func replaceSeat(
+    package func replaceSeat(
         _ replacement: NucleusDesktopSeat?,
         client: NucleusDesktopConnection
     ) {
@@ -66,7 +65,7 @@ public final class NucleusDesktopInputRouter: NucleusDesktopSeatDelegate, Applic
     }
 
     /// Associate a `wl_surface` with the window that draws it.
-    public func register(window: Window, forSurface surfaceID: UInt) {
+    package func register(window: Window, forSurface surfaceID: UInt) {
         if let replaced = windowsBySurface[surfaceID], replaced !== window {
             replaced.installTextInputAdapter(nil)
             replaced.setSurfaceAssociation(nil)
@@ -74,13 +73,14 @@ public final class NucleusDesktopInputRouter: NucleusDesktopSeatDelegate, Applic
         windowsBySurface[surfaceID] = window
         window.installTextInputAdapter(textInput)
         if surfaceID != 0 {
-            window.setSurfaceAssociation(WindowSurfaceAssociation(
-                surfaceID: PresentationSurfaceID(rawValue: UInt64(surfaceID))
-            ))
+            window.setSurfaceAssociation(
+                WindowSurfaceAssociation(
+                    surfaceID: PresentationSurfaceID(rawValue: UInt64(surfaceID))
+                ))
         }
     }
 
-    public func unregister(surfaceID: UInt) {
+    package func unregister(surfaceID: UInt) {
         onSurfaceWillUnregister?(surfaceID)
         let window = windowsBySurface.removeValue(forKey: surfaceID)
         window?.installTextInputAdapter(nil)
@@ -91,7 +91,7 @@ public final class NucleusDesktopInputRouter: NucleusDesktopSeatDelegate, Applic
 
     /// Resolve one Wayland surface-local drag coordinate into the retained
     /// scene. Unknown or detached surfaces are rejected at this boundary.
-    public func dragDestination(
+    package func dragDestination(
         forSurface surfaceID: UInt,
         location: Point
     ) -> (scene: WindowScene, sceneLocation: Point)? {
@@ -100,33 +100,34 @@ public final class NucleusDesktopInputRouter: NucleusDesktopSeatDelegate, Applic
         }
         return (
             scene,
-            rebased(location, forSurface: surfaceID))
+            rebased(location, forSurface: surfaceID)
+        )
     }
 
     /// Emit any key repeats now due. Driven from the host's event loop, which
     /// folds `nanosecondsUntilNextRepeat` into its poll timeout so repeats are
     /// not quantized to the frame rate.
-    public func advanceKeyRepeat(nowNs: UInt64) {
+    package func advanceKeyRepeat(nowNs: UInt64) {
         seat?.advanceKeyRepeat(nowNs: nowNs)
     }
 
-    public func nanosecondsUntilNextRepeat(nowNs: UInt64) -> UInt64? {
+    package func nanosecondsUntilNextRepeat(nowNs: UInt64) -> UInt64? {
         seat?.nanosecondsUntilNextRepeat(nowNs: nowNs)
     }
 
     // MARK: - NucleusDesktopSeatDelegate
 
-    public func seat(_ seat: NucleusDesktopSeat, didProduce event: ApplicationInputEvent) {
+    package func seat(_ seat: NucleusDesktopSeat, didProduce event: ApplicationInputEvent) {
         receive(event)
     }
 
-    public func receive(_ event: ApplicationInputEvent) {
+    package func receive(_ event: ApplicationInputEvent) {
         deliver(event)
     }
 
     /// Route one input record. The delegate callback funnels here, and so does
     /// anything driving the router without a live seat.
-    public func deliver(_ event: ApplicationInputEvent) {
+    package func deliver(_ event: ApplicationInputEvent) {
         let surfaceID = UInt(event.surfaceID?.rawValue ?? 0)
         switch event.kind {
         case .keyboardEnter:
@@ -141,13 +142,16 @@ public final class NucleusDesktopInputRouter: NucleusDesktopSeatDelegate, Applic
             scene.cancelInputSequences()
             // Nothing is under the pointer any more, so any tracked view must be
             // told it was exited.
-            _ = scene.dispatchEvent(Event(
-                type: .pointerExited,
-                location: pointerLocation,
-                timestampNanoseconds: event.timestampNanoseconds))
+            _ = scene.dispatchEvent(
+                Event(
+                    type: .pointerExited,
+                    location: pointerLocation,
+                    timestampNanoseconds: event.timestampNanoseconds))
         default:
-            guard var nucleon = NucleusDesktopInputRouter.nucleonEvent(
-                event, lastLocation: pointerLocation) else { return }
+            guard
+                var nucleon = NucleusDesktopInputRouter.nucleonEvent(
+                    event, lastLocation: pointerLocation)
+            else { return }
             if nucleon.isPointerEvent {
                 // Wayland reports pointer positions surface-local, but the scene
                 // hit-tests in its own logical space, where a window may sit at
@@ -168,9 +172,10 @@ public final class NucleusDesktopInputRouter: NucleusDesktopSeatDelegate, Applic
         forSurface surfaceID: UInt
     ) -> Point {
         guard let window = windowsBySurface[surfaceID] else { return location }
-        let inWindow = window.surfaceAssociation?.transform.windowPoint(
-            fromSurface: location
-        ) ?? location
+        let inWindow =
+            window.surfaceAssociation?.transform.windowPoint(
+                fromSurface: location
+            ) ?? location
         return scene.scenePoint(inWindow, in: window)
     }
 
@@ -239,10 +244,10 @@ public final class NucleusDesktopInputRouter: NucleusDesktopSeatDelegate, Applic
                 characters: event.text,
                 isARepeat: event.isRepeat)
         case .pointerLeave, .keyboardEnter, .keyboardLeave,
-             .touchDown, .touchMotion, .touchUp, .touchCancel,
-             .tabletToolEnter, .tabletToolLeave, .tabletToolMotion,
-             .tabletToolButtonDown, .tabletToolButtonUp,
-             .focusGained, .focusLost, .textPreedit, .textCommit:
+            .touchDown, .touchMotion, .touchUp, .touchCancel,
+            .tabletToolEnter, .tabletToolLeave, .tabletToolMotion,
+            .tabletToolButtonDown, .tabletToolButtonUp,
+            .focusGained, .focusLost, .textPreedit, .textCommit:
             return nil
         }
     }

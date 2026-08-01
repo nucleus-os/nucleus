@@ -1,16 +1,4 @@
-import NucleusUI
-import NucleusUIEmbedder
 import Tracy
-
-public struct SurfacePublicationFailure: Error, Sendable, Equatable {
-    public let surfaceID: Int
-    public let detail: String
-
-    public init(surfaceID: Int, detail: String) {
-        self.surfaceID = surfaceID
-        self.detail = detail
-    }
-}
 
 @MainActor
 public final class Host {
@@ -19,18 +7,6 @@ public final class Host {
     }
 
     private var runtimeHost: RuntimeHost?
-    var attachedSurfaceIDs: Set<Int> = []
-    var surfaceRegistries: [Int: ViewComponentViewRegistry] = [:]
-    var surfacePublishers: [Int: EmbeddedViewTreePublisher] = [:]
-    private var surfacePublicationFailures:
-        [Int: SurfacePublicationFailure] = [:]
-
-    /// Receives publication failures from mount batches that arrive after the
-    /// synchronous `attachSurface` call has returned. The failure also remains
-    /// queryable through `publicationFailure(surfaceID:)`, so omitting this
-    /// callback never discards the diagnostic.
-    public var onSurfacePublicationFailure:
-        (@MainActor (SurfacePublicationFailure) -> Void)?
 
     public init() throws {
         runtimeHost = try RuntimeHost()
@@ -38,11 +14,8 @@ public final class Host {
 
     isolated deinit {
         precondition(
-            runtimeHost?.surfaceCount == 0
-                && surfacePublishers.isEmpty
-                && surfaceRegistries.isEmpty
-                && attachedSurfaceIDs.isEmpty,
-            "RN Host deinitialized with live registered or attached surfaces; "
+            runtimeHost?.surfaceCount == 0,
+            "RN Host deinitialized with live registered surfaces; "
                 + "stop every surface before releasing the host")
         runtimeHost = nil
     }
@@ -92,15 +65,8 @@ public final class Host {
     @MainActor
     public func stopSurface(id: Int) throws {
         let runtimeHost = try requireHost()
-        if let publisher = surfacePublishers[id] {
-            try publisher.invalidate()
-        }
         try runtimeHost.stopSurface(id: id)
         runtimeHost.mountConsumer.unregisterContext(surfaceID: id)
-        surfacePublishers.removeValue(forKey: id)
-        attachedSurfaceIDs.remove(id)
-        surfaceRegistries.removeValue(forKey: id)
-        surfacePublicationFailures.removeValue(forKey: id)
     }
 
     public func runApplication(surfaceID: Int, appKey: String) throws {
@@ -141,10 +107,11 @@ public final class Host {
     /// `handler(command, argsJson)` asynchronously on `MainActor`. An embedding
     /// host routes these to its native services.
     public func setCommandHandler(
-        _ handler: @escaping @MainActor @Sendable (
-            String,
-            String
-        ) -> Void
+        _ handler:
+            @escaping @MainActor @Sendable (
+                String,
+                String
+            ) -> Void
     ) throws {
         let runtimeHost = try requireHost()
         try runtimeHost.setCommandHandler(handler)
@@ -165,31 +132,13 @@ public final class Host {
         )
     }
 
-    public var mountConsumer: MountConsumer? {
+    package var mountConsumer: MountConsumer? {
         runtimeHost?.mountConsumer
     }
 
     @MainActor
     public func pendingMutationCount(surfaceID: Int) -> UInt32 {
         runtimeHost?.pendingMountEventCount(surfaceID: surfaceID) ?? 0
-    }
-
-    public func publicationFailure(
-        surfaceID: Int
-    ) -> SurfacePublicationFailure? {
-        surfacePublicationFailures[surfaceID]
-    }
-
-    func clearPublicationFailure(surfaceID: Int) {
-        surfacePublicationFailures.removeValue(forKey: surfaceID)
-    }
-
-    func recordPublicationFailure(surfaceID: Int, error: any Error) {
-        let failure = SurfacePublicationFailure(
-            surfaceID: surfaceID,
-            detail: String(describing: error))
-        surfacePublicationFailures[surfaceID] = failure
-        onSurfacePublicationFailure?(failure)
     }
 
     private func requireHost() throws -> RuntimeHost {

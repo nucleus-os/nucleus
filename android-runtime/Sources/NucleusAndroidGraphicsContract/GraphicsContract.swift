@@ -1,12 +1,12 @@
 import Foundation
 
-public struct AndroidGraphicBufferFormat: Equatable, Sendable {
-  public struct Plane: Equatable, Sendable {
-    public let horizontalSubsampling: UInt8
-    public let verticalSubsampling: UInt8
-    public let bytesPerElement: UInt8
+package struct AndroidGraphicBufferFormat: Equatable, Sendable {
+  package struct Plane: Equatable, Sendable {
+    package let horizontalSubsampling: UInt8
+    package let verticalSubsampling: UInt8
+    package let bytesPerElement: UInt8
 
-    public init(
+    package init(
       horizontalSubsampling: UInt8 = 1,
       verticalSubsampling: UInt8 = 1,
       bytesPerElement: UInt8
@@ -17,15 +17,15 @@ public struct AndroidGraphicBufferFormat: Equatable, Sendable {
     }
   }
 
-  public let name: String
-  public let androidFormat: UInt32
-  public let bytesPerPixel: UInt8
-  public let componentBits: [UInt8]
-  public let drmFormat: UInt32
-  public let vulkanFormat: UInt32
-  public let planes: [Plane]
+  package let name: String
+  package let androidFormat: UInt32
+  package let bytesPerPixel: UInt8
+  package let componentBits: [UInt8]
+  package let drmFormat: UInt32
+  package let vulkanFormat: UInt32
+  package let planes: [Plane]
 
-  public init(
+  package init(
     name: String,
     androidFormat: UInt32,
     bytesPerPixel: UInt8,
@@ -43,7 +43,7 @@ public struct AndroidGraphicBufferFormat: Equatable, Sendable {
     self.planes = planes
   }
 
-  public static let requiredRenderingFormats: [Self] = [
+  package static let requiredRenderingFormats: [Self] = [
     Self(
       name: "RGBX_8888",
       androidFormat: 2,
@@ -85,32 +85,32 @@ private func drmFourCC(
   a | b << 8 | c << 16 | d << 24
 }
 
-public enum AndroidGraphicsProtocol {
-  public static let maximumPacketBytes = 1 << 20
-  public static let maximumFileDescriptors = 64
-  public static let maximumDimension: UInt32 = 16_384
-  public static let requiredBufferCount: UInt8 = 3
+package enum AndroidGraphicsProtocol {
+  package static let maximumPacketBytes = 1 << 20
+  package static let maximumFileDescriptors = 64
+  package static let maximumDimension: UInt32 = 16_384
+  package static let requiredBufferCount: UInt8 = 3
 }
 
-public struct GraphicsDeviceID: Codable, Hashable, Sendable {
-  public var major: UInt32
-  public var minor: UInt32
+package struct GraphicsDeviceID: Codable, Hashable, Sendable {
+  package var major: UInt32
+  package var minor: UInt32
 
-  public init(major: UInt32, minor: UInt32) {
+  package init(major: UInt32, minor: UInt32) {
     self.major = major
     self.minor = minor
   }
 }
 
-public struct PciDeviceID: Codable, Hashable, Sendable {
-  public var domain: UInt16
-  public var bus: UInt8
-  public var device: UInt8
-  public var function: UInt8
-  public var vendor: UInt16
-  public var product: UInt16
+package struct PciDeviceID: Codable, Hashable, Sendable {
+  package var domain: UInt16
+  package var bus: UInt8
+  package var device: UInt8
+  package var function: UInt8
+  package var vendor: UInt16
+  package var product: UInt16
 
-  public init(
+  package init(
     domain: UInt16,
     bus: UInt8,
     device: UInt8,
@@ -126,27 +126,27 @@ public struct PciDeviceID: Codable, Hashable, Sendable {
     self.product = product
   }
 
-  public var address: String {
+  package var address: String {
     String(format: "%04x:%02x:%02x.%x", domain, bus, device, function)
   }
 }
 
-public struct DrmFormatModifier: Codable, Hashable, Sendable {
-  public var format: UInt32
-  public var modifier: UInt64
+package struct DrmFormatModifier: Codable, Hashable, Sendable {
+  package var format: UInt32
+  package var modifier: UInt64
 
-  public init(format: UInt32, modifier: UInt64) {
+  package init(format: UInt32, modifier: UInt64) {
     self.format = format
     self.modifier = modifier
   }
 }
 
-public struct WaylandDmabufTranche: Codable, Equatable, Sendable {
-  public var targetDevice: GraphicsDeviceID
-  public var scanout: Bool
-  public var formats: [DrmFormatModifier]
+package struct WaylandDmabufTranche: Codable, Equatable, Sendable {
+  package var targetDevice: GraphicsDeviceID
+  package var scanout: Bool
+  package var formats: [DrmFormatModifier]
 
-  public init(
+  package init(
     targetDevice: GraphicsDeviceID,
     scanout: Bool,
     formats: [DrmFormatModifier]
@@ -157,28 +157,28 @@ public struct WaylandDmabufTranche: Codable, Equatable, Sendable {
   }
 }
 
-public struct WaylandDmabufFeedback: Codable, Equatable, Sendable {
-  public var mainDevice: GraphicsDeviceID
-  public var tranches: [WaylandDmabufTranche]
+package struct WaylandDmabufFeedback: Codable, Equatable, Sendable {
+  package var mainDevice: GraphicsDeviceID
+  package var tranches: [WaylandDmabufTranche]
 
-  public init(mainDevice: GraphicsDeviceID, tranches: [WaylandDmabufTranche]) {
+  package init(mainDevice: GraphicsDeviceID, tranches: [WaylandDmabufTranche]) {
     self.mainDevice = mainDevice
     self.tranches = tranches
   }
 
-  public var orderedFormats: [DrmFormatModifier] {
+  package var orderedFormats: [DrmFormatModifier] {
     var seen = Set<DrmFormatModifier>()
     return tranches.flatMap(\.formats).filter { seen.insert($0).inserted }
   }
 }
 
-public struct BufferAllocationRequest: Codable, Equatable, Sendable {
-  public var width: UInt32
-  public var height: UInt32
-  public var bufferCount: UInt8
-  public var feedback: WaylandDmabufFeedback
+package struct BufferAllocationRequest: Codable, Equatable, Sendable {
+  package var width: UInt32
+  package var height: UInt32
+  package var bufferCount: UInt8
+  package var feedback: WaylandDmabufFeedback
 
-  public init(
+  package init(
     width: UInt32,
     height: UInt32,
     bufferCount: UInt8 = AndroidGraphicsProtocol.requiredBufferCount,
@@ -191,19 +191,19 @@ public struct BufferAllocationRequest: Codable, Equatable, Sendable {
   }
 }
 
-public enum GraphicsFileDescriptorRole: String, Codable, Equatable, Sendable {
+package enum GraphicsFileDescriptorRole: String, Codable, Equatable, Sendable {
   case dmaBufPlane
   case acquireTimeline
   case releaseTimeline
 }
 
-public struct GraphicsFileDescriptorSlot: Codable, Equatable, Sendable {
-  public var index: UInt8
-  public var role: GraphicsFileDescriptorRole
-  public var bufferID: UInt64?
-  public var planeIndex: UInt8?
+package struct GraphicsFileDescriptorSlot: Codable, Equatable, Sendable {
+  package var index: UInt8
+  package var role: GraphicsFileDescriptorRole
+  package var bufferID: UInt64?
+  package var planeIndex: UInt8?
 
-  public init(
+  package init(
     index: UInt8,
     role: GraphicsFileDescriptorRole,
     bufferID: UInt64? = nil,
@@ -216,28 +216,28 @@ public struct GraphicsFileDescriptorSlot: Codable, Equatable, Sendable {
   }
 }
 
-public struct DmabufPlane: Codable, Equatable, Sendable {
-  public var fdIndex: UInt8
-  public var offset: UInt32
-  public var stride: UInt32
+package struct DmabufPlane: Codable, Equatable, Sendable {
+  package var fdIndex: UInt8
+  package var offset: UInt32
+  package var stride: UInt32
 
-  public init(fdIndex: UInt8, offset: UInt32, stride: UInt32) {
+  package init(fdIndex: UInt8, offset: UInt32, stride: UInt32) {
     self.fdIndex = fdIndex
     self.offset = offset
     self.stride = stride
   }
 }
 
-public struct BrokerBuffer: Codable, Equatable, Sendable {
-  public var id: UInt64
-  public var width: UInt32
-  public var height: UInt32
-  public var format: UInt32
-  public var modifier: UInt64
-  public var planes: [DmabufPlane]
-  public var releaseTimelineFDIndex: UInt8
+package struct BrokerBuffer: Codable, Equatable, Sendable {
+  package var id: UInt64
+  package var width: UInt32
+  package var height: UInt32
+  package var format: UInt32
+  package var modifier: UInt64
+  package var planes: [DmabufPlane]
+  package var releaseTimelineFDIndex: UInt8
 
-  public init(
+  package init(
     id: UInt64,
     width: UInt32,
     height: UInt32,
@@ -256,22 +256,22 @@ public struct BrokerBuffer: Codable, Equatable, Sendable {
   }
 }
 
-public struct TimelinePoint: Codable, Equatable, Sendable {
-  public var timelineFDIndex: UInt8
-  public var point: UInt64
+package struct TimelinePoint: Codable, Equatable, Sendable {
+  package var timelineFDIndex: UInt8
+  package var point: UInt64
 
-  public init(timelineFDIndex: UInt8, point: UInt64) {
+  package init(timelineFDIndex: UInt8, point: UInt64) {
     self.timelineFDIndex = timelineFDIndex
     self.point = point
   }
 }
 
-public struct BufferAllocationReply: Codable, Equatable, Sendable {
-  public var device: BrokerDeviceDiagnostic
-  public var buffers: [BrokerBuffer]
-  public var acquireTimelineFDIndex: UInt8
+package struct BufferAllocationReply: Codable, Equatable, Sendable {
+  package var device: BrokerDeviceDiagnostic
+  package var buffers: [BrokerBuffer]
+  package var acquireTimelineFDIndex: UInt8
 
-  public init(
+  package init(
     device: BrokerDeviceDiagnostic,
     buffers: [BrokerBuffer],
     acquireTimelineFDIndex: UInt8
@@ -282,25 +282,25 @@ public struct BufferAllocationReply: Codable, Equatable, Sendable {
   }
 }
 
-public struct RenderRequest: Codable, Equatable, Sendable {
-  public var bufferID: UInt64
-  public var frameNumber: UInt64
-  public var releasePoint: UInt64?
+package struct RenderRequest: Codable, Equatable, Sendable {
+  package var bufferID: UInt64
+  package var frameNumber: UInt64
+  package var releasePoint: UInt64?
 
-  public init(bufferID: UInt64, frameNumber: UInt64, releasePoint: UInt64? = nil) {
+  package init(bufferID: UInt64, frameNumber: UInt64, releasePoint: UInt64? = nil) {
     self.bufferID = bufferID
     self.frameNumber = frameNumber
     self.releasePoint = releasePoint
   }
 }
 
-public struct RenderReply: Codable, Equatable, Sendable {
-  public var bufferID: UInt64
-  public var frameNumber: UInt64
-  public var acquirePoint: UInt64
-  public var releasePoint: UInt64
+package struct RenderReply: Codable, Equatable, Sendable {
+  package var bufferID: UInt64
+  package var frameNumber: UInt64
+  package var acquirePoint: UInt64
+  package var releasePoint: UInt64
 
-  public init(
+  package init(
     bufferID: UInt64,
     frameNumber: UInt64,
     acquirePoint: UInt64,
@@ -313,21 +313,21 @@ public struct RenderReply: Codable, Equatable, Sendable {
   }
 }
 
-public struct BrokerDeviceDiagnostic: Codable, Equatable, Sendable {
-  public var renderNode: String
-  public var primaryNode: String?
-  public var renderDevice: GraphicsDeviceID
-  public var primaryDevice: GraphicsDeviceID?
-  public var pci: PciDeviceID
-  public var vulkanDeviceName: String
-  public var vulkanDriverName: String
-  public var vulkanDriverInfo: String
-  public var vulkanDeviceUUID: String
-  public var vulkanAPIVersion: UInt32
-  public var hardwareDriver: Bool
-  public var gbmBackend: String
+package struct BrokerDeviceDiagnostic: Codable, Equatable, Sendable {
+  package var renderNode: String
+  package var primaryNode: String?
+  package var renderDevice: GraphicsDeviceID
+  package var primaryDevice: GraphicsDeviceID?
+  package var pci: PciDeviceID
+  package var vulkanDeviceName: String
+  package var vulkanDriverName: String
+  package var vulkanDriverInfo: String
+  package var vulkanDeviceUUID: String
+  package var vulkanAPIVersion: UInt32
+  package var hardwareDriver: Bool
+  package var gbmBackend: String
 
-  public init(
+  package init(
     renderNode: String,
     primaryNode: String?,
     renderDevice: GraphicsDeviceID,
@@ -356,17 +356,17 @@ public struct BrokerDeviceDiagnostic: Codable, Equatable, Sendable {
   }
 }
 
-public struct GraphicsFailure: Codable, Error, Equatable, Sendable {
-  public var code: String
-  public var message: String
+package struct GraphicsFailure: Codable, Error, Equatable, Sendable {
+  package var code: String
+  package var message: String
 
-  public init(code: String, message: String) {
+  package init(code: String, message: String) {
     self.code = code
     self.message = message
   }
 }
 
-public enum BrokerMessageKind: String, Codable, Sendable {
+package enum BrokerMessageKind: String, Codable, Sendable {
   case hello
   case helloReply
   case diagnose
@@ -378,18 +378,18 @@ public enum BrokerMessageKind: String, Codable, Sendable {
   case failure
 }
 
-public struct BrokerEnvelope: Codable, Equatable, Sendable {
-  public var messageID: UInt64
-  public var kind: BrokerMessageKind
-  public var allocationRequest: BufferAllocationRequest?
-  public var allocationReply: BufferAllocationReply?
-  public var renderRequest: RenderRequest?
-  public var renderReply: RenderReply?
-  public var diagnostic: BrokerDeviceDiagnostic?
-  public var failure: GraphicsFailure?
-  public var descriptorSlots: [GraphicsFileDescriptorSlot]
+package struct BrokerEnvelope: Codable, Equatable, Sendable {
+  package var messageID: UInt64
+  package var kind: BrokerMessageKind
+  package var allocationRequest: BufferAllocationRequest?
+  package var allocationReply: BufferAllocationReply?
+  package var renderRequest: RenderRequest?
+  package var renderReply: RenderReply?
+  package var diagnostic: BrokerDeviceDiagnostic?
+  package var failure: GraphicsFailure?
+  package var descriptorSlots: [GraphicsFileDescriptorSlot]
 
-  public init(
+  package init(
     messageID: UInt64,
     kind: BrokerMessageKind,
     allocationRequest: BufferAllocationRequest? = nil,
@@ -412,7 +412,7 @@ public struct BrokerEnvelope: Codable, Equatable, Sendable {
   }
 }
 
-public enum GraphicsContractValidationError: Error, Equatable, Sendable {
+package enum GraphicsContractValidationError: Error, Equatable, Sendable {
   case invalidPayload(BrokerMessageKind)
   case invalidDimensions
   case invalidBufferCount(UInt8)
@@ -424,7 +424,7 @@ public enum GraphicsContractValidationError: Error, Equatable, Sendable {
 }
 
 extension BrokerEnvelope {
-  public func validate(receivedFileDescriptorCount: Int) throws {
+  package func validate(receivedFileDescriptorCount: Int) throws {
     let payloadCount = [
       allocationRequest != nil,
       allocationReply != nil,

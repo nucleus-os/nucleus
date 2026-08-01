@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for zwp_relative_pointer_manager_v1.
 
 import WaylandClientC
-public enum ZwpRelativePointerManagerV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum ZwpRelativePointerManagerV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_relative_pointer_manager_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == ZwpRelativePointerManagerV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpRelativePointerManagerV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zwp_relative_pointer_manager_v1_destroy(_proxy)
@@ -17,10 +18,16 @@ public extension WaylandProxy where Interface == ZwpRelativePointerManagerV1Clie
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func getRelativePointer(pointer: WaylandProxy<WlPointerClient>) throws(WaylandProxyError) -> WaylandProxy<ZwpRelativePointerV1Client> {
+    package func getRelativePointer(pointer: WaylandProxy<WlPointerClient>)
+        throws(WaylandProxyError) -> WaylandProxy<ZwpRelativePointerV1Client>
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _pointerProxy = try unsafe pointer.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_zwp_relative_pointer_manager_v1_get_relative_pointer(_proxy, _pointerProxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_zwp_relative_pointer_manager_v1_get_relative_pointer(
+                    _proxy, _pointerProxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

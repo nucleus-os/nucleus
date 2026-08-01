@@ -1,3 +1,5 @@
+public import NucleusTypes
+
 /// A region of a view that reports the pointer entering and leaving it, and
 /// that can carry a cursor and a tooltip.
 ///

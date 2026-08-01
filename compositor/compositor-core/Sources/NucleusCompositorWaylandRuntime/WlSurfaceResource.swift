@@ -1,8 +1,8 @@
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
-import WaylandProtocolTypes
 import NucleusRenderModel
+import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 /// Wire request decoding for `wl_surface`. Validation that depends only on the
 /// request and negotiated protocol version stays here; accepted mutations are
@@ -15,7 +15,8 @@ extension WlSurface: WlSurfaceRequests {
         y: Int32
     ) {
         if version >= 5, x != 0 || y != 0 {
-            request.postError(.invalidOffset, message: "non-zero attach offset is invalid at wl_surface v5+")
+            request.postError(
+                .invalidOffset, message: "non-zero attach offset is invalid at wl_surface v5+")
             return
         }
         attach(buffer: buffer, x: x, y: y)
@@ -28,8 +29,9 @@ extension WlSurface: WlSurfaceRequests {
         width: Int32,
         height: Int32
     ) {
-        addSurfaceDamage(WlRect(
-            x: x, y: y, width: width, height: height))
+        addSurfaceDamage(
+            WlRect(
+                x: x, y: y, width: width, height: height))
     }
 
     func damageBuffer(
@@ -39,8 +41,9 @@ extension WlSurface: WlSurfaceRequests {
         width: Int32,
         height: Int32
     ) {
-        addBufferDamage(WlRect(
-            x: x, y: y, width: width, height: height))
+        addBufferDamage(
+            WlRect(
+                x: x, y: y, width: width, height: height))
     }
 
     func frame(

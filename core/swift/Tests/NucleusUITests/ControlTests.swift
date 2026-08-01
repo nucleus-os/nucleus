@@ -1,7 +1,8 @@
-import NucleusUITestSupport
 import NucleusTypes
-@_spi(NucleusRenderServer) @testable import NucleusUI
+import NucleusUITestSupport
 import Testing
+
+@testable import NucleusUI
 
 @MainActor
 @Suite(.uiContext) struct ControlTests {

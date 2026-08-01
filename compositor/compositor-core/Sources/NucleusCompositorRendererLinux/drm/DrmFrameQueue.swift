@@ -57,7 +57,7 @@ struct PresentationTiming: Sendable, Equatable {
 
 // MARK: - Present policy
 
-public enum RendererPresentPolicy: Sendable, Equatable {
+package enum RendererPresentPolicy: Sendable, Equatable {
     case vsync
     case mailboxLatestWins
 
@@ -191,7 +191,8 @@ struct MailboxQueue: Sendable {
         removeReady(where: { $0 != generation })
     }
 
-    private mutating func removeReady(where shouldRemove: (UInt64) -> Bool) -> [PendingMailboxFrame] {
+    private mutating func removeReady(where shouldRemove: (UInt64) -> Bool) -> [PendingMailboxFrame]
+    {
         var removed: [PendingMailboxFrame] = []
         var index = 0
         while index < pending.count {
@@ -257,7 +258,9 @@ struct RenderedFrameQueue: Sendable {
     /// earlier frames that were superseded (dropped). A no-op (nil committed,
     /// empty dropped) when the generation isn't queued. Mirrors
     /// `commitPendingRenderedFrame`.
-    mutating func commit(generation: UInt64) -> (committed: PendingRenderedFrame?, dropped: [PendingRenderedFrame]) {
+    mutating func commit(generation: UInt64) -> (
+        committed: PendingRenderedFrame?, dropped: [PendingRenderedFrame]
+    ) {
         guard let endIndex = pending.firstIndex(where: { $0.generation == generation }) else {
             return (nil, [])
         }

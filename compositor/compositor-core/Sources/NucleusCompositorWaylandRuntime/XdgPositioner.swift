@@ -1,8 +1,8 @@
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
-import WaylandProtocolTypes
 import NucleusRenderModel
+import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 /// Protocol state for one xdg_positioner. Request validation is performed at
 /// this resource boundary; policy receives only a complete immutable snapshot.
@@ -151,12 +151,12 @@ struct XdgPositionerSnapshot: Equatable {
 
     func isValid(parentWidth: Int32, parentHeight: Int32) -> Bool {
         guard parentWidth > 0, parentHeight > 0,
-              anchorRect.x >= 0, anchorRect.y >= 0
+            anchorRect.x >= 0, anchorRect.y >= 0
         else { return false }
         let anchorMaxX = Int64(anchorRect.x) + Int64(anchorRect.width)
         let anchorMaxY = Int64(anchorRect.y) + Int64(anchorRect.height)
         guard anchorMaxX <= Int64(parentWidth),
-              anchorMaxY <= Int64(parentHeight)
+            anchorMaxY <= Int64(parentHeight)
         else { return false }
 
         let child = resolve()
@@ -191,7 +191,8 @@ extension XdgPositioner: XdgPositionerRequests {
         height: Int32
     ) {
         guard width >= 0, height >= 0 else {
-            request.postError(.invalidInput, message: "anchor rectangle dimensions must not be negative")
+            request.postError(
+                .invalidInput, message: "anchor rectangle dimensions must not be negative")
             return
         }
         anchorRect = WlRect(x: x, y: y, width: width, height: height)

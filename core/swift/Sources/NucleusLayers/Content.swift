@@ -1,86 +1,58 @@
 import NucleusAppHostProtocols
 public import NucleusTypes
 
-public enum ContentKind: Sendable, Equatable {
+public enum LayerContent: Sendable, Equatable {
     case none
-    case paint
-    case external
-    case snapshot
-}
-
-public struct LayerContent: Sendable, Equatable {
-    public var kind: ContentKind
-    public var handle: UInt64
-    package var resourceHostHandle: UInt64 = 0
-    package var resourceLifetime: LayerResourceLifetime?
-
-    public static let none = LayerContent(kind: .none, handle: 0)
-
-    public init(kind: ContentKind, handle: UInt64, resourceHostHandle: UInt64 = 0) {
-        self.kind = kind
-        self.handle = handle
-        self.resourceHostHandle = resourceHostHandle
-        self.resourceLifetime = nil
-    }
-
-    public init(_ paint: PaintContent) {
-        self.init(kind: .paint, handle: paint.handle, resourceHostHandle: paint.resourceHostHandle)
-        resourceLifetime = paint.resourceLifetime
-    }
-
-    public init(_ snapshot: SnapshotContent) {
-        self.init(
-            kind: .snapshot, handle: snapshot.handle,
-            resourceHostHandle: snapshot.resourceHostHandle)
-        resourceLifetime = snapshot.resourceLifetime
-    }
-
-    public init(_ ioSurface: IOSurfaceContent) {
-        self.init(kind: .external, handle: ioSurface.handle)
-        resourceLifetime = ioSurface.resourceLifetime
-    }
+    case paint(PaintContent)
+    case external(IOSurfaceContent)
+    case snapshot(SnapshotContent)
 
     public static func == (lhs: LayerContent, rhs: LayerContent) -> Bool {
-        lhs.kind == rhs.kind
-            && lhs.handle == rhs.handle
-            && lhs.resourceHostHandle == rhs.resourceHostHandle
+        switch (lhs, rhs) {
+        case (.none, .none):
+            true
+        case (.paint(let lhs), .paint(let rhs)):
+            lhs.handle == rhs.handle && lhs.resourceHostHandle == rhs.resourceHostHandle
+        case (.external(let lhs), .external(let rhs)):
+            lhs.handle == rhs.handle
+        case (.snapshot(let lhs), .snapshot(let rhs)):
+            lhs.handle == rhs.handle && lhs.resourceHostHandle == rhs.resourceHostHandle
+        default:
+            false
+        }
     }
 
     package func retainHandle() {
-        guard handle != 0 else {
-            return
-        }
-        switch kind {
-        case .paint:
-            guard resourceHostHandle != 0 else { return }
-            resourceLifetime?.lifecycle.paintContentLifecycle.retain(
-                resourceHostHandle: resourceHostHandle, handle: handle)
-        case .external:
-            resourceLifetime?.lifecycle.iosurfaceLifecycle.retain(handle: handle)
-        case .snapshot:
-            guard resourceHostHandle != 0 else { return }
-            resourceLifetime?.lifecycle.snapshotLifecycle.retain(
-                resourceHostHandle: resourceHostHandle, handle: handle)
+        switch self {
+        case .paint(let content):
+            guard content.handle != 0, content.resourceHostHandle != 0 else { return }
+            content.resourceLifetime?.lifecycle.paintContentLifecycle.retain(
+                resourceHostHandle: content.resourceHostHandle, handle: content.handle)
+        case .external(let content):
+            guard content.handle != 0 else { return }
+            content.resourceLifetime?.lifecycle.iosurfaceLifecycle.retain(handle: content.handle)
+        case .snapshot(let content):
+            guard content.handle != 0, content.resourceHostHandle != 0 else { return }
+            content.resourceLifetime?.lifecycle.snapshotLifecycle.retain(
+                resourceHostHandle: content.resourceHostHandle, handle: content.handle)
         case .none:
             break
         }
     }
 
     package func releaseHandle() {
-        guard handle != 0 else {
-            return
-        }
-        switch kind {
-        case .paint:
-            guard resourceHostHandle != 0 else { return }
-            resourceLifetime?.lifecycle.paintContentLifecycle.release(
-                resourceHostHandle: resourceHostHandle, handle: handle)
-        case .external:
-            resourceLifetime?.lifecycle.iosurfaceLifecycle.release(handle: handle)
-        case .snapshot:
-            guard resourceHostHandle != 0 else { return }
-            resourceLifetime?.lifecycle.snapshotLifecycle.release(
-                resourceHostHandle: resourceHostHandle, handle: handle)
+        switch self {
+        case .paint(let content):
+            guard content.handle != 0, content.resourceHostHandle != 0 else { return }
+            content.resourceLifetime?.lifecycle.paintContentLifecycle.release(
+                resourceHostHandle: content.resourceHostHandle, handle: content.handle)
+        case .external(let content):
+            guard content.handle != 0 else { return }
+            content.resourceLifetime?.lifecycle.iosurfaceLifecycle.release(handle: content.handle)
+        case .snapshot(let content):
+            guard content.handle != 0, content.resourceHostHandle != 0 else { return }
+            content.resourceLifetime?.lifecycle.snapshotLifecycle.release(
+                resourceHostHandle: content.resourceHostHandle, handle: content.handle)
         case .none:
             break
         }
@@ -134,7 +106,7 @@ public final class PaintContent: Sendable {
         let registrar = runtimeHost.operations.paintContentRegistrar
         var handle: UInt64 = 0
         var error: LayerError?
-        withWireRecording(commands, payload) { commandSpan, payloadSpan in
+        withPaintRecording(commands, payload) { commandSpan, payloadSpan in
             do {
                 handle = try registrar.register(
                     resourceHostHandle: resourceHostHandle,
@@ -245,7 +217,7 @@ public final class IOSurfaceContent: Sendable {
 /// Borrow a recording's command and payload arrays for the duration of the
 /// synchronous `body` call; the host registrar reads both in place. No element
 /// mapping: `PaintCommand` *is* `NucleusTypes.PaintCommand`.
-package func withWireRecording<T>(
+package func withPaintRecording<T>(
     _ commands: [PaintCommand],
     _ payload: [UInt8],
     _ body: (Span<NucleusTypes.PaintCommand>, Span<UInt8>) -> T

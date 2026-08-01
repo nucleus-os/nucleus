@@ -10,21 +10,23 @@
 
 // MARK: - Well-known context ids
 
-/// The compositor's own producer slot. Mirrors `compositor_context_id`.
-public let compositorContextId = ContextID(raw: 63)
-/// The shell-overlay producer slot.
-public let shellOverlayContextId = ContextID(raw: 62)
+package import NucleusTypes
 
-// MARK: - Wire deltas
+/// The compositor's own producer slot. Mirrors `compositor_context_id`.
+package let compositorContextId = ContextID(raw: 63)
+/// The shell-overlay producer slot.
+package let shellOverlayContextId = ContextID(raw: 62)
+
+// MARK: - Transaction deltas
 
 /// Compound position+bounds write applied atomically. Mirrors `animation.Frame`.
-public struct Frame: Equatable, Sendable {
-    public var left: Float
-    public var top: Float
-    public var right: Float
-    public var bottom: Float
+package struct Frame: Equatable, Sendable {
+    package var left: Float
+    package var top: Float
+    package var right: Float
+    package var bottom: Float
 
-    public init(left: Float, top: Float, right: Float, bottom: Float) {
+    package init(left: Float, top: Float, right: Float, bottom: Float) {
         self.left = left
         self.top = top
         self.right = right
@@ -34,21 +36,21 @@ public struct Frame: Equatable, Sendable {
 
 /// Declare a new `Layer` with its initial property values. Mirrors
 /// `LayerCreated`.
-public struct LayerCreated: Sendable {
-    public var nodeId: UInt64
-    public var kind: LayerKind
-    public var role: LayerRole = .generic
-    public var backdropAttachment: BackdropAttachment?
-    public var position = Point2D()
-    public var anchorPoint = Point2D(x: 0.5, y: 0.5)
-    public var transform = M44.identity
-    public var opacity: Float = 1.0
-    public var clip: ClipOp?
-    public var bounds = Bounds()
-    public var visualStyle: VisualStyle?
-    public var initialContent: InitialContent = .none
+package struct LayerCreated: Sendable {
+    package var nodeId: UInt64
+    package var kind: LayerKind
+    package var role: LayerRole = .generic
+    package var backdropAttachment: BackdropAttachment?
+    package var position = Point2D()
+    package var anchorPoint = Point2D(x: 0.5, y: 0.5)
+    package var transform = M44.identity
+    package var opacity: Float = 1.0
+    package var clip: RenderClip?
+    package var bounds = Bounds()
+    package var visualStyle: VisualStyle?
+    package var initialContent: InitialContent = .none
 
-    public init(
+    package init(
         nodeId: UInt64,
         kind: LayerKind,
         role: LayerRole = .generic,
@@ -57,7 +59,7 @@ public struct LayerCreated: Sendable {
         anchorPoint: Point2D = Point2D(x: 0.5, y: 0.5),
         transform: M44 = M44.identity,
         opacity: Float = 1.0,
-        clip: ClipOp? = nil,
+        clip: RenderClip? = nil,
         bounds: Bounds = Bounds(),
         visualStyle: VisualStyle? = nil,
         initialContent: InitialContent = .none
@@ -78,12 +80,12 @@ public struct LayerCreated: Sendable {
 }
 
 /// Attach `nodeId` under `parentId` at `index`. Mirrors `LayerInserted`.
-public struct LayerInserted: Sendable {
-    public var nodeId: UInt64
-    public var parentId: UInt64
-    public var index: UInt32
+package struct LayerInserted: Sendable {
+    package var nodeId: UInt64
+    package var parentId: UInt64
+    package var index: UInt32
 
-    public init(nodeId: UInt64, parentId: UInt64, index: UInt32) {
+    package init(nodeId: UInt64, parentId: UInt64, index: UInt32) {
         self.nodeId = nodeId
         self.parentId = parentId
         self.index = index
@@ -91,20 +93,20 @@ public struct LayerInserted: Sendable {
 }
 
 /// Full removal — the layer ceases to exist. Mirrors `LayerRemoved`.
-public struct LayerRemoved: Sendable {
-    public var nodeId: UInt64
+package struct LayerRemoved: Sendable {
+    package var nodeId: UInt64
 
-    public init(nodeId: UInt64) {
+    package init(nodeId: UInt64) {
         self.nodeId = nodeId
     }
 }
 
 /// Parent detachment — the layer keeps identity, loses its tree place. Mirrors
 /// `LayerDetached`.
-public struct LayerDetached: Sendable {
-    public var nodeId: UInt64
+package struct LayerDetached: Sendable {
+    package var nodeId: UInt64
 
-    public init(nodeId: UInt64) {
+    package init(nodeId: UInt64) {
         self.nodeId = nodeId
     }
 }
@@ -113,60 +115,67 @@ public struct LayerDetached: Sendable {
 /// deltas) is applied to `nodeId`'s model state. The `clip`/`backdropAttachment`
 /// double-optionals: `nil` = no change, `.some(nil)` =
 /// clear, `.some(value)` = replace.
-public struct LayerPropertyUpdate: Sendable {
-    public var nodeId: UInt64
-    public var position: Point2D?
-    public var anchorPoint: Point2D?
-    public var transform: M44?
-    public var opacity: Float?
-    public var bounds: Bounds?
-    public var clip: ClipOp??
-    public var scrollOffset: Point2D?
-    public var visualStyle: VisualStyleDelta = .unchanged
-    public var shadow: ShadowDelta = .unchanged
-    public var content: ContentDelta = .unchanged
+package struct LayerPropertyUpdate: Sendable {
+    package var nodeId: UInt64
+    package var position: Point2D?
+    package var anchorPoint: Point2D?
+    package var transform: M44?
+    package var opacity: Float?
+    package var bounds: Bounds?
+    package var clip: RenderClip??
+    package var scrollOffset: Point2D?
+    package var foregroundVibrancy: ForegroundVibrancyMode?
+    package var visualStyle: VisualStyleDelta = .unchanged
+    package var backgroundColor: NucleusTypes.Color?
+    package var cornerRadii: Float4?
+    package var borderTop: BorderEdge?
+    package var borderRight: BorderEdge?
+    package var borderBottom: BorderEdge?
+    package var borderLeft: BorderEdge?
+    package var shadow: ShadowDelta = .unchanged
+    package var content: ContentDelta = .unchanged
     /// Layer-local logical damage for a paint replacement. `nil` means the
     /// replacement affects the complete layer bounds.
-    public var contentDamage: Rect?
-    public var backdropAttachment: BackdropAttachment??
-    public var contentSample: ContentSample?
-    public var backgroundEffect: Bool?
-    public var backgroundEffectRegions: BackgroundEffectRegions?
-    public var frame: Frame?
-    public var usesDefaultFrameAction = false
-    public var usesDefaultOpacityAction = false
+    package var contentDamage: RenderRect?
+    package var backdropAttachment: BackdropAttachment??
+    package var backdropGroupID: UInt64?
+    package var contentSample: ContentSample?
+    package var backgroundEffect: Bool?
+    package var backgroundEffectRegions: BackgroundEffectRegions?
+    package var frame: Frame?
+    package var usesDefaultFrameAction = false
+    package var usesDefaultOpacityAction = false
 
-    public init(nodeId: UInt64) { self.nodeId = nodeId }
+    package init(nodeId: UInt64) { self.nodeId = nodeId }
 }
 
 /// One producer commit: structural, property, and animation deltas for one
 /// context.
-public struct Transaction: Sendable {
-    public var contextId: ContextID
-    public var revision: UInt64 = 0
-    public var groupId: UInt64 = 0
-    public var groupSeq: UInt32 = 0
-    public var created: [LayerCreated] = []
-    public var inserted: [LayerInserted] = []
-    public var removed: [LayerRemoved] = []
-    public var detached: [LayerDetached] = []
-    public var propertyUpdates: [LayerPropertyUpdate] = []
-    public var animationsAdded: [AnimationRecord] = []
-    public var animationsRemoved: [AnimationRemoval] = []
-    public var animationBeginTimeSeconds: Double = 0
-    public var animationBeginTimePending = false
+package struct Transaction: Sendable {
+    package var contextId: ContextID
+    package var revision: UInt64 = 0
+    package var groupId: UInt64 = 0
+    package var groupSeq: UInt32 = 0
+    package var created: [LayerCreated] = []
+    package var inserted: [LayerInserted] = []
+    package var removed: [LayerRemoved] = []
+    package var detached: [LayerDetached] = []
+    package var propertyUpdates: [LayerPropertyUpdate] = []
+    package var animationsAdded: [AnimationRecord] = []
+    package var animationsRemoved: [AnimationRemoval] = []
+    package var animationBeginTimeSeconds: Double = 0
+    package var animationBeginTimePending = false
     /// Completion token fired once every animation created by this transaction
     /// finishes. `0` = none.
-    public var completionToken: UInt64 = 0
+    package var completionToken: UInt64 = 0
 
-    public init(contextId: ContextID) { self.contextId = contextId }
+    package init(contextId: ContextID) { self.contextId = contextId }
 
     /// True when the transaction carries no deltas.
-    public var isEmpty: Bool {
-        created.isEmpty && inserted.isEmpty && removed.isEmpty &&
-            detached.isEmpty && propertyUpdates.isEmpty &&
-            animationsAdded.isEmpty && animationsRemoved.isEmpty &&
-            completionToken == 0
+    package var isEmpty: Bool {
+        created.isEmpty && inserted.isEmpty && removed.isEmpty && detached.isEmpty
+            && propertyUpdates.isEmpty && animationsAdded.isEmpty && animationsRemoved.isEmpty
+            && completionToken == 0
     }
 }
 
@@ -174,20 +183,20 @@ public struct Transaction: Sendable {
 
 /// Folds a committed `Transaction` into a `LayerTree`. Mirrors the retained-model
 /// core of `applyTransaction`.
-public enum TransactionApplier: Sendable {
-    public enum ApplyError: Error, Equatable, Sendable {
+package enum TransactionApplier: Sendable {
+    package enum ApplyError: Error, Equatable, Sendable {
         case insertion(nodeID: UInt64, parentID: UInt64, reason: LayerTreeError)
         case propertyUpdateMissingLayer(nodeID: UInt64)
         case invalidTopology(nodeID: UInt64)
     }
 
     /// Per-commit work counters used by retained-tree benchmarks.
-    public struct ApplyDiagnostics: Equatable, Sendable {
-        public fileprivate(set) var validationNodesVisited: UInt64 = 0
-        public fileprivate(set) var validationAncestorSteps: UInt64 = 0
-        public fileprivate(set) var applyDictionaryProbes: UInt64 = 0
+    package struct ApplyDiagnostics: Equatable, Sendable {
+        package fileprivate(set) var validationNodesVisited: UInt64 = 0
+        package fileprivate(set) var validationAncestorSteps: UInt64 = 0
+        package fileprivate(set) var applyDictionaryProbes: UInt64 = 0
 
-        public init() {}
+        package init() {}
     }
 
     private enum ParentOverride {
@@ -244,7 +253,9 @@ public enum TransactionApplier: Sendable {
 
     /// Applies atomically. Invalid producer structure leaves the authoritative tree unchanged.
     @discardableResult
-    public static func apply(_ txn: Transaction, to tree: inout LayerTree) -> Result<Void, ApplyError> {
+    package static func apply(_ txn: Transaction, to tree: inout LayerTree) -> Result<
+        Void, ApplyError
+    > {
         var diagnostics = ApplyDiagnostics()
         return apply(txn, to: &tree, diagnostics: &diagnostics)
     }
@@ -252,7 +263,7 @@ public enum TransactionApplier: Sendable {
     /// Applies atomically and reports the amount of retained topology inspected
     /// and the dictionary work performed while applying the commit.
     @discardableResult
-    public static func apply(
+    package static func apply(
         _ txn: Transaction,
         to tree: inout LayerTree,
         diagnostics: inout ApplyDiagnostics
@@ -290,9 +301,10 @@ public enum TransactionApplier: Sendable {
 
         // Insertions are ordered writes to the final parent relation.
         for insertion in txn.inserted {
-            guard topology.contains(
-                insertion.nodeId,
-                diagnostics: &diagnostics)
+            guard
+                topology.contains(
+                    insertion.nodeId,
+                    diagnostics: &diagnostics)
             else {
                 throw ApplyError.insertion(
                     nodeID: insertion.nodeId,
@@ -387,7 +399,7 @@ public enum TransactionApplier: Sendable {
                 d.nodeId,
                 dictionaryProbes: &diagnostics.applyDictionaryProbes)
         }
-        // Pass 3: wire parent/child relationships. Only parent zero denotes a root;
+        // Pass 3: connect parent/child relationships. Only parent zero denotes a root;
         // missing parents and cycles reject the whole transaction.
         for ins in txn.inserted {
             let idx = Int(ins.index)
@@ -430,7 +442,10 @@ public enum TransactionApplier: Sendable {
         dictionaryProbes: inout UInt64
     ) {
         let initialContent = created.initialContent.resolved()
-        let hasPaint: Bool = { if case .paint = initialContent { return true }; return false }()
+        let hasPaint: Bool = {
+            if case .paint = initialContent { return true }
+            return false
+        }()
         let id = created.nodeId
 
         dictionaryProbes &+= 1
@@ -438,8 +453,8 @@ public enum TransactionApplier: Sendable {
             // Existing node — update properties.
             var node = MutableRef(&tree.layers.values[index])
             let boundsChanged =
-                node.value.model.properties.bounds.w != created.bounds.w ||
-                node.value.model.properties.bounds.h != created.bounds.h
+                node.value.model.properties.bounds.w != created.bounds.w
+                || node.value.model.properties.bounds.h != created.bounds.h
             node.value.kind = created.kind
             node.value.role = created.role
             node.value.backdropAttachment = created.backdropAttachment
@@ -497,6 +512,7 @@ public enum TransactionApplier: Sendable {
         let priorProperties = node.model.properties
         let priorVisualStyle = node.model.visualStyle
         let priorBackdropAttachment = node.backdropAttachment
+        let priorForegroundVibrancy = node.foregroundVibrancy
         let priorContentSample = node.presentation.contentSample
         let priorBackgroundEffect = node.presentation.backgroundEffect
         let priorBackgroundEffectRegions =
@@ -505,9 +521,24 @@ public enum TransactionApplier: Sendable {
         if let a = pu.anchorPoint { node.model.properties.anchorPoint = a }
         if let t = pu.transform { node.model.properties.transform = t }
         if let o = pu.opacity { node.model.properties.opacity = o }
-        if let attachmentOpt = pu.backdropAttachment { node.backdropAttachment = attachmentOpt }
+        if let attachmentOpt = pu.backdropAttachment {
+            if var attachment = attachmentOpt {
+                if pu.backdropGroupID == nil, let previous = node.backdropAttachment {
+                    attachment.groupId = previous.groupId
+                }
+                node.backdropAttachment = attachment
+            } else {
+                node.backdropAttachment = nil
+            }
+        }
+        if let groupID = pu.backdropGroupID, node.backdropAttachment != nil {
+            node.backdropAttachment!.groupId = groupID
+        }
+        if let vibrancy = pu.foregroundVibrancy { node.foregroundVibrancy = vibrancy }
         if let bg = pu.backgroundEffect { node.presentation.backgroundEffect = bg }
-        if let regions = pu.backgroundEffectRegions { node.presentation.backgroundEffectRegions = regions }
+        if let regions = pu.backgroundEffectRegions {
+            node.presentation.backgroundEffectRegions = regions
+        }
         if let clipOpt = pu.clip { node.model.properties.clip = clipOpt }
 
         if let b = pu.bounds {
@@ -526,6 +557,7 @@ public enum TransactionApplier: Sendable {
         if let so = pu.scrollOffset { node.model.properties.scrollOffset = so }
 
         applyVisualStyleDelta(pu.visualStyle, to: &node)
+        applyVisualStyleProperties(pu, to: &node)
         applyShadowDelta(pu.shadow, to: &node)
         applyContentDelta(
             pu.content,
@@ -545,13 +577,14 @@ public enum TransactionApplier: Sendable {
 
         let compositeChanged =
             node.model.properties != priorProperties
-                || node.model.visualStyle != priorVisualStyle
-                || node.backdropAttachment != priorBackdropAttachment
-                || node.presentation.contentSample != priorContentSample
-                || node.presentation.backgroundEffect
-                    != priorBackgroundEffect
-                || node.presentation.backgroundEffectRegions
-                    != priorBackgroundEffectRegions
+            || node.model.visualStyle != priorVisualStyle
+            || node.backdropAttachment != priorBackdropAttachment
+            || node.foregroundVibrancy != priorForegroundVibrancy
+            || node.presentation.contentSample != priorContentSample
+            || node.presentation.backgroundEffect
+                != priorBackgroundEffect
+            || node.presentation.backgroundEffectRegions
+                != priorBackgroundEffectRegions
         if compositeChanged {
             node.model.visualRevision &+= 1
             node.model.compositeRevision &+= 1
@@ -578,6 +611,31 @@ public enum TransactionApplier: Sendable {
         case .unchanged:
             break
         }
+    }
+
+    /// Applies independently authored style properties after a whole-style
+    /// replacement. Missing fields preserve retained state.
+    private static func applyVisualStyleProperties(
+        _ update: LayerPropertyUpdate,
+        to node: inout Layer
+    ) {
+        guard
+            update.backgroundColor != nil
+                || update.cornerRadii != nil
+                || update.borderTop != nil
+                || update.borderRight != nil
+                || update.borderBottom != nil
+                || update.borderLeft != nil
+        else { return }
+
+        var style = node.model.visualStyle ?? VisualStyle()
+        if let backgroundColor = update.backgroundColor { style.backgroundColor = backgroundColor }
+        if let cornerRadii = update.cornerRadii { style.cornerRadii = cornerRadii }
+        if let borderTop = update.borderTop { style.borderTop = borderTop }
+        if let borderRight = update.borderRight { style.borderRight = borderRight }
+        if let borderBottom = update.borderBottom { style.borderBottom = borderBottom }
+        if let borderLeft = update.borderLeft { style.borderLeft = borderLeft }
+        node.model.visualStyle = style
     }
 
     /// Independent shadow delta — applied AFTER the visual-style replace, so a
@@ -612,7 +670,7 @@ public enum TransactionApplier: Sendable {
     /// the refcount retain/release, which is renderer-owned).
     private static func applyContentDelta(
         _ delta: ContentDelta,
-        localDamage: Rect?,
+        localDamage: RenderRect?,
         to node: inout Layer
     ) {
         switch delta {
@@ -624,7 +682,10 @@ public enum TransactionApplier: Sendable {
                 node.damage.markContent(localDamage)
             }
         case .external(let newId):
-            let same: Bool = { if case .external(let cur) = node.model.content { return cur == newId }; return false }()
+            let same: Bool = {
+                if case .external(let cur) = node.model.content { return cur == newId }
+                return false
+            }()
             if !same {
                 node.model.content = .external(newId)
                 node.presentation.content = .external(newId)
@@ -632,7 +693,10 @@ public enum TransactionApplier: Sendable {
                 node.damage.markContent(nil)
             }
         case .snapshot(let handle):
-            let same: Bool = { if case .snapshot(let cur) = node.model.content { return cur == handle }; return false }()
+            let same: Bool = {
+                if case .snapshot(let cur) = node.model.content { return cur == handle }
+                return false
+            }()
             if !same {
                 node.model.content = .snapshot(handle)
                 node.presentation.content = .snapshot(handle)
@@ -658,8 +722,9 @@ public enum TransactionApplier: Sendable {
     private static func applyFrame(_ f: Frame, to node: inout Layer) {
         let newPosition = Point2D(x: f.left, y: f.top)
         let newBounds = Bounds(w: f.right - f.left, h: f.bottom - f.top)
-        let boundsChanged = node.model.properties.bounds.w != newBounds.w ||
-            node.model.properties.bounds.h != newBounds.h
+        let boundsChanged =
+            node.model.properties.bounds.w != newBounds.w
+            || node.model.properties.bounds.h != newBounds.h
         node.model.properties.position = newPosition
         node.model.properties.bounds = newBounds
         if boundsChanged {

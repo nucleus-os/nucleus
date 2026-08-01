@@ -15,10 +15,10 @@
 // NucleusWaylandRouter/ExtDataControl.swift onto the router's selection model.
 
 import Glibc
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
 import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 @MainActor
 @safe final class ExtDataControlManager: SelectionObserver {
@@ -31,7 +31,9 @@ import WaylandProtocolTypes
         self.dataDevice = dataDevice
     }
 
-    fileprivate func setClipboard(_ source: (any SelectionSource)?) { dataDevice.setSelection(source) }
+    fileprivate func setClipboard(_ source: (any SelectionSource)?) {
+        dataDevice.setSelection(source)
+    }
     fileprivate var currentClipboard: (any SelectionSource)? { dataDevice.currentSelection }
     fileprivate func sourceDestroyed(_ source: ExtDataControlSource) {
         dataDevice.selectionSourceDestroyed(source)
@@ -67,7 +69,8 @@ extension ExtDataControlManager: ExtDataControlManagerV1Requests {
     func getDataDevice(
         _ request: WaylandRequest<ExtDataControlManagerV1Server>,
         id: WlNewId<ExtDataControlDeviceV1Server>,
-                       seat: WaylandBorrowedObject<WlSeatServer>) {
+        seat: WaylandBorrowedObject<WlSeatServer>
+    ) {
         _ = id.create(
             owner: { handle in
                 ExtDataControlDevice(resource: handle, manager: self)
@@ -83,8 +86,7 @@ extension ExtDataControlManager: ExtDataControlManagerV1Requests {
 @safe final class ExtDataControlSource: SelectionSource, ExtDataControlSourceV1Requests {
     private weak var manager: ExtDataControlManager?
     private(set) var mimes: [String] = []
-    private let resource:
-        WaylandResourceHandle<ExtDataControlSourceV1Server>
+    private let resource: WaylandResourceHandle<ExtDataControlSourceV1Server>
     private var wasUsed = false
 
     init(
@@ -134,8 +136,7 @@ extension ExtDataControlManager: ExtDataControlManagerV1Requests {
 @MainActor
 @safe final class ExtDataControlDevice {
     private weak var manager: ExtDataControlManager?
-    private let resource:
-        WaylandResourceHandle<ExtDataControlDeviceV1Server>
+    private let resource: WaylandResourceHandle<ExtDataControlDeviceV1Server>
 
     init(
         resource: WaylandResourceHandle<ExtDataControlDeviceV1Server>,
@@ -170,8 +171,10 @@ extension ExtDataControlManager: ExtDataControlManagerV1Requests {
 extension ExtDataControlDevice: ExtDataControlDeviceV1Requests {
     // set_selection(source): the shell sets the clipboard. A data-control source
     // becomes the shared selection; wl_data_device clients then offer it too.
-    func setSelection(_ request: WaylandRequest<ExtDataControlDeviceV1Server>,
-                      source sourceRes: WaylandBorrowedObject<ExtDataControlSourceV1Server>?) {
+    func setSelection(
+        _ request: WaylandRequest<ExtDataControlDeviceV1Server>,
+        source sourceRes: WaylandBorrowedObject<ExtDataControlSourceV1Server>?
+    ) {
         let source = sourceRes?.owner(as: ExtDataControlSource.self)
         if let source, !source.claimForSelection() {
             request.postError(.usedSource, message: "data-control source was already used")
@@ -181,8 +184,10 @@ extension ExtDataControlDevice: ExtDataControlDeviceV1Requests {
     }
 
     // set_primary_selection(source): primary selection unsupported; ignored.
-    func setPrimarySelection(_ request: WaylandRequest<ExtDataControlDeviceV1Server>,
-                             source: WaylandBorrowedObject<ExtDataControlSourceV1Server>?) {}
+    func setPrimarySelection(
+        _ request: WaylandRequest<ExtDataControlDeviceV1Server>,
+        source: WaylandBorrowedObject<ExtDataControlSourceV1Server>?
+    ) {}
 }
 
 /// ext_data_control_offer_v1 owner (Rule 9): pipes a receive fd to the selection
@@ -190,8 +195,7 @@ extension ExtDataControlDevice: ExtDataControlDeviceV1Requests {
 @MainActor
 final class ExtDataControlOffer {
     private weak var source: (any SelectionSource)?
-    fileprivate let resource:
-        WaylandResourceHandle<ExtDataControlOfferV1Server>
+    fileprivate let resource: WaylandResourceHandle<ExtDataControlOfferV1Server>
 
     init(
         resource: WaylandResourceHandle<ExtDataControlOfferV1Server>,
@@ -204,7 +208,10 @@ final class ExtDataControlOffer {
 
 extension ExtDataControlOffer: ExtDataControlOfferV1Requests {
     // receive(mime, fd): relay to the owning source's send event (the data transfer).
-    func receive(_ request: WaylandRequest<ExtDataControlOfferV1Server>, mime_type: String, fd: consuming WaylandOwnedFileDescriptor) {
+    func receive(
+        _ request: WaylandRequest<ExtDataControlOfferV1Server>, mime_type: String,
+        fd: consuming WaylandOwnedFileDescriptor
+    ) {
         guard let source else { return }
         source.sendSelection(mime: mime_type, fd: fd.take())
     }

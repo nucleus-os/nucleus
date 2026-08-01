@@ -1,77 +1,77 @@
-public struct DataSourceHandle: RawRepresentable, Hashable, Sendable {
-    public var rawValue: UInt64
+package struct DataSourceHandle: RawRepresentable, Hashable, Sendable {
+    package var rawValue: UInt64
 
-    public init(rawValue: UInt64) {
+    package init(rawValue: UInt64) {
         self.rawValue = rawValue
     }
 }
 
-public struct DataOfferHandle: RawRepresentable, Hashable, Sendable {
-    public var rawValue: UInt64
+package struct DataOfferHandle: RawRepresentable, Hashable, Sendable {
+    package var rawValue: UInt64
 
-    public init(rawValue: UInt64) {
+    package init(rawValue: UInt64) {
         self.rawValue = rawValue
     }
 }
 
-public struct DataSeatHandle: RawRepresentable, Hashable, Sendable {
-    public var rawValue: UInt64
+package struct DataSeatHandle: RawRepresentable, Hashable, Sendable {
+    package var rawValue: UInt64
 
-    public init(rawValue: UInt64) {
+    package init(rawValue: UInt64) {
         self.rawValue = rawValue
     }
 }
 
-public struct DataClientHandle: RawRepresentable, Hashable, Sendable {
-    public var rawValue: UInt64
+package struct DataClientHandle: RawRepresentable, Hashable, Sendable {
+    package var rawValue: UInt64
 
-    public init(rawValue: UInt64) {
+    package init(rawValue: UInt64) {
         self.rawValue = rawValue
     }
 }
 
-public enum SelectionKind: UInt32, CaseIterable, Sendable {
+package enum SelectionKind: UInt32, CaseIterable, Sendable {
     case clipboard = 1
     case primary = 2
     case dataControl = 3
 }
 
-public enum SelectionOwnerKind: UInt32, Sendable {
+package enum SelectionOwnerKind: UInt32, Sendable {
     case wayland = 1
     case xwayland = 2
     case portal = 3
 }
 
-public struct MimeTypeSet: Equatable, Sendable {
+package struct MimeTypeSet: Equatable, Sendable {
     private var ordered: [String] = []
     private var members: Set<String> = []
 
-    public init() {}
+    package init() {}
 
-    public var values: [String] {
+    package var values: [String] {
         ordered
     }
 
-    public mutating func insert(_ mimeType: String) {
+    package mutating func insert(_ mimeType: String) {
         guard !mimeType.isEmpty, members.insert(mimeType).inserted else { return }
         ordered.append(mimeType)
     }
 
-    public func contains(_ mimeType: String) -> Bool {
+    package func contains(_ mimeType: String) -> Bool {
         members.contains(mimeType)
     }
 }
 
-public struct SelectionOwner: Equatable, Sendable {
-    public var handle: DataSourceHandle
-    public var kind: SelectionOwnerKind
-    public var client: DataClientHandle
-    public var mimeTypes: MimeTypeSet
-    public var sensitiveContent: Bool
-    public var privateSource: Bool
-    public var portalOrigin: UInt64
+package struct SelectionOwner: Equatable, Sendable {
+    package var handle: DataSourceHandle
+    package var kind: SelectionOwnerKind
+    package var client: DataClientHandle
+    package var mimeTypes: MimeTypeSet
+    package var sensitiveContent: Bool
+    package var privateSource: Bool
+    package var portalOrigin: UInt64
 
-    public init(
+    package init(
         handle: DataSourceHandle,
         kind: SelectionOwnerKind,
         client: DataClientHandle,
@@ -90,22 +90,22 @@ public struct SelectionOwner: Equatable, Sendable {
     }
 }
 
-public struct SelectionDestination: Equatable, Sendable {
-    public var handle: DataClientHandle
+package struct SelectionDestination: Equatable, Sendable {
+    package var handle: DataClientHandle
 
-    public init(handle: DataClientHandle) {
+    package init(handle: DataClientHandle) {
         self.handle = handle
     }
 }
 
-public struct SelectionOffer: Equatable, Sendable {
-    public var handle: DataOfferHandle
-    public var kind: SelectionKind
-    public var source: DataSourceHandle
-    public var destination: SelectionDestination
-    public var acceptedMimeType: String?
+package struct SelectionOffer: Equatable, Sendable {
+    package var handle: DataOfferHandle
+    package var kind: SelectionKind
+    package var source: DataSourceHandle
+    package var destination: SelectionDestination
+    package var acceptedMimeType: String?
 
-    public init(
+    package init(
         handle: DataOfferHandle,
         kind: SelectionKind,
         source: DataSourceHandle,
@@ -120,23 +120,23 @@ public struct SelectionOffer: Equatable, Sendable {
     }
 }
 
-public struct DragSession: Equatable, Sendable {
-    public enum State: UInt32, Sendable {
+package struct DragSession: Equatable, Sendable {
+    package enum State: UInt32, Sendable {
         case active = 1
         case cancelled = 2
         case dropped = 3
     }
 
-    public var source: DataSourceHandle
-    public var origin: UInt64
-    public var icon: UInt64
-    public var target: DataClientHandle
-    public var serial: UInt32
-    public var offeredMimeTypes: MimeTypeSet
-    public var acceptedMimeType: String?
-    public var state: State
+    package var source: DataSourceHandle
+    package var origin: UInt64
+    package var icon: UInt64
+    package var target: DataClientHandle
+    package var serial: UInt32
+    package var offeredMimeTypes: MimeTypeSet
+    package var acceptedMimeType: String?
+    package var state: State
 
-    public init(
+    package init(
         source: DataSourceHandle,
         origin: UInt64,
         icon: UInt64,
@@ -157,16 +157,16 @@ public struct DragSession: Equatable, Sendable {
     }
 }
 
-public struct DataSelectionPlan: Equatable, Sendable {
-    public var kind: SelectionKind
-    public var seat: DataSeatHandle
-    public var source: DataSourceHandle?
-    public var destination: DataClientHandle?
-    public var cancelSource: DataSourceHandle?
-    public var sendOffer: Bool
-    public var clearSelection: Bool
+package struct DataSelectionPlan: Equatable, Sendable {
+    package var kind: SelectionKind
+    package var seat: DataSeatHandle
+    package var source: DataSourceHandle?
+    package var destination: DataClientHandle?
+    package var cancelSource: DataSourceHandle?
+    package var sendOffer: Bool
+    package var clearSelection: Bool
 
-    public static func none(kind: SelectionKind, seat: DataSeatHandle) -> DataSelectionPlan {
+    package static func none(kind: SelectionKind, seat: DataSeatHandle) -> DataSelectionPlan {
         DataSelectionPlan(
             kind: kind,
             seat: seat,
@@ -179,14 +179,14 @@ public struct DataSelectionPlan: Equatable, Sendable {
     }
 }
 
-public struct DataTransferPlan: Equatable, Sendable {
-    public var allowed: Bool
-    public var source: DataSourceHandle?
+package struct DataTransferPlan: Equatable, Sendable {
+    package var allowed: Bool
+    package var source: DataSourceHandle?
 }
 
-public struct DataDragResult: Equatable, Sendable {
-    public var allowed: Bool
-    public var action: UInt32
+package struct DataDragResult: Equatable, Sendable {
+    package var allowed: Bool
+    package var action: UInt32
 }
 
 /// Notified whenever a seat's selection of a given kind changes (set, replaced,
@@ -195,20 +195,20 @@ public struct DataDragResult: Equatable, Sendable {
 /// view current; the focus-gated `wl_data_device` path does not need it (it pushes
 /// on its own set + on focus-enter).
 @MainActor
-public protocol DataSelectionObserver: AnyObject {
+package protocol DataSelectionObserver: AnyObject {
     func selectionDidChange(kind: SelectionKind, seat: DataSeatHandle)
 }
 
 @MainActor
-public final class DataExchangeService {
-    public struct Snapshot: Equatable, Sendable {
-        public var sourceCount: Int
-        public var offerCount: Int
-        public var clipboardOwner: DataSourceHandle?
-        public var primaryOwner: DataSourceHandle?
-        public var dataControlOwner: DataSourceHandle?
-        public var activeDrag: DragSession?
-        public var historyCount: Int
+package final class DataExchangeService {
+    package struct Snapshot: Equatable, Sendable {
+        package var sourceCount: Int
+        package var offerCount: Int
+        package var clipboardOwner: DataSourceHandle?
+        package var primaryOwner: DataSourceHandle?
+        package var dataControlOwner: DataSourceHandle?
+        package var activeDrag: DragSession?
+        package var historyCount: Int
     }
 
     private struct SelectionKey: Hashable {
@@ -229,14 +229,17 @@ public final class DataExchangeService {
     // cancel reaches the owning client's source wire object regardless of which
     // router created it, and one selection-change broadcast.
     private var nextHandle: UInt64 = 1
-    private struct SourceEvents { let onSend: (String, Int32) -> Void; let onCancel: () -> Void }
+    private struct SourceEvents {
+        let onSend: (String, Int32) -> Void
+        let onCancel: () -> Void
+    }
     private var sourceEvents: [DataSourceHandle: SourceEvents] = [:]
     private struct WeakSelectionObserver { weak var value: (any DataSelectionObserver)? }
     private var selectionObservers: [WeakSelectionObserver] = []
 
-    public init() {}
+    package init() {}
 
-    public func reset() {
+    package func reset() {
         sources.removeAll(keepingCapacity: true)
         offers.removeAll(keepingCapacity: true)
         selections.removeAll(keepingCapacity: true)
@@ -251,7 +254,7 @@ public final class DataExchangeService {
     /// Allocate a process-unique handle for a source or offer, shared by every
     /// selection-protocol router so their handles index the same maps without
     /// collision.
-    public func allocateHandle() -> UInt64 {
+    package func allocateHandle() -> UInt64 {
         let h = nextHandle
         nextHandle &+= 1
         if nextHandle == 0 { nextHandle = 1 }
@@ -262,46 +265,58 @@ public final class DataExchangeService {
     /// pipe fd (the registrant dups before writing the `send` event), `onCancel`
     /// tells the source it was superseded. Lets a transfer or cancel cross from the
     /// router that owns the *offer* to the router that owns the *source*.
-    public func registerSourceEvents(_ handle: DataSourceHandle, onSend: @escaping (_ mimeType: String, _ fd: Int32) -> Void, onCancel: @escaping () -> Void) {
+    package func registerSourceEvents(
+        _ handle: DataSourceHandle, onSend: @escaping (_ mimeType: String, _ fd: Int32) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
         guard handle.rawValue != 0 else { return }
         sourceEvents[handle] = SourceEvents(onSend: onSend, onCancel: onCancel)
     }
 
-    public func emitSourceSend(_ handle: DataSourceHandle, mimeType: String, fd: Int32) {
+    package func emitSourceSend(_ handle: DataSourceHandle, mimeType: String, fd: Int32) {
         sourceEvents[handle]?.onSend(mimeType, fd)
     }
 
-    public func emitSourceCancelled(_ handle: DataSourceHandle) {
+    package func emitSourceCancelled(_ handle: DataSourceHandle) {
         sourceEvents[handle]?.onCancel()
     }
 
-    public func addSelectionObserver(_ observer: any DataSelectionObserver) {
+    package func addSelectionObserver(_ observer: any DataSelectionObserver) {
         selectionObservers.removeAll { $0.value == nil || $0.value === observer }
         selectionObservers.append(WeakSelectionObserver(value: observer))
     }
 
-    public func removeSelectionObserver(_ observer: any DataSelectionObserver) {
+    package func removeSelectionObserver(_ observer: any DataSelectionObserver) {
         selectionObservers.removeAll { $0.value == nil || $0.value === observer }
     }
 
     private func notifySelectionObservers(kind: SelectionKind, seat: DataSeatHandle) {
         selectionObservers.removeAll { $0.value == nil }
-        for observer in selectionObservers { observer.value?.selectionDidChange(kind: kind, seat: seat) }
+        for observer in selectionObservers {
+            observer.value?.selectionDidChange(kind: kind, seat: seat)
+        }
     }
 
-    public func sourceCreated(_ handle: DataSourceHandle, ownerKind: SelectionOwnerKind, client: DataClientHandle) {
+    package func sourceCreated(
+        _ handle: DataSourceHandle, ownerKind: SelectionOwnerKind, client: DataClientHandle
+    ) {
         guard handle.rawValue != 0 else { return }
         sources[handle] = SelectionOwner(handle: handle, kind: ownerKind, client: client)
     }
 
-    public func xwaylandSourceCreated(_ handle: DataSourceHandle, atom: UInt32, client: DataClientHandle) {
+    package func xwaylandSourceCreated(
+        _ handle: DataSourceHandle, atom: UInt32, client: DataClientHandle
+    ) {
         sourceCreated(handle, ownerKind: .xwayland, client: client)
         if atom != 0 {
             addMimeType("application/x-nucleus-xselection-\(atom)", to: handle)
         }
     }
 
-    public func updateSourceMetadata(_ handle: DataSourceHandle, sensitiveContent: Bool, privateSource: Bool, portalOrigin: UInt64) {
+    package func updateSourceMetadata(
+        _ handle: DataSourceHandle, sensitiveContent: Bool, privateSource: Bool,
+        portalOrigin: UInt64
+    ) {
         guard var source = sources[handle] else { return }
         source.sensitiveContent = sensitiveContent
         source.privateSource = privateSource
@@ -309,7 +324,7 @@ public final class DataExchangeService {
         sources[handle] = source
     }
 
-    public func addMimeType(_ mimeType: String, to handle: DataSourceHandle) {
+    package func addMimeType(_ mimeType: String, to handle: DataSourceHandle) {
         guard var source = sources[handle] else { return }
         source.mimeTypes.insert(mimeType)
         sources[handle] = source
@@ -318,12 +333,12 @@ public final class DataExchangeService {
     /// The MIME types a source advertises, in offer order. Used by a projection
     /// (ext_data_control) that does not own the source's wire object to enumerate
     /// its offers when re-advertising the selection.
-    public func mimeTypes(for handle: DataSourceHandle) -> [String] {
+    package func mimeTypes(for handle: DataSourceHandle) -> [String] {
         sources[handle]?.mimeTypes.values ?? []
     }
 
     @discardableResult
-    public func sourceDestroyed(_ handle: DataSourceHandle) -> [DataSelectionPlan] {
+    package func sourceDestroyed(_ handle: DataSourceHandle) -> [DataSelectionPlan] {
         sources.removeValue(forKey: handle)
         sourceEvents.removeValue(forKey: handle)
         offers = offers.filter { $0.value.source != handle }
@@ -336,15 +351,16 @@ public final class DataExchangeService {
         for (key, selected) in selections where selected == handle {
             selections.removeValue(forKey: key)
             cleared.append(key)
-            plans.append(DataSelectionPlan(
-                kind: key.kind,
-                seat: key.seat,
-                source: nil,
-                destination: focusedDestinations[key.seat]?.handle,
-                cancelSource: nil,
-                sendOffer: false,
-                clearSelection: true
-            ))
+            plans.append(
+                DataSelectionPlan(
+                    kind: key.kind,
+                    seat: key.seat,
+                    source: nil,
+                    destination: focusedDestinations[key.seat]?.handle,
+                    cancelSource: nil,
+                    sendOffer: false,
+                    clearSelection: true
+                ))
         }
         // Broadcast after the model settles so always-on observers re-read cleared state.
         for key in cleared { notifySelectionObservers(kind: key.kind, seat: key.seat) }
@@ -352,7 +368,9 @@ public final class DataExchangeService {
     }
 
     @discardableResult
-    public func setSelection(kind: SelectionKind, seat: DataSeatHandle, source: DataSourceHandle?, serial: UInt32) -> DataSelectionPlan {
+    package func setSelection(
+        kind: SelectionKind, seat: DataSeatHandle, source: DataSourceHandle?, serial: UInt32
+    ) -> DataSelectionPlan {
         _ = serial
         let key = SelectionKey(kind: kind, seat: seat)
         let previous = selections[key]
@@ -392,7 +410,7 @@ public final class DataExchangeService {
         )
     }
 
-    public func focusDestinationChanged(seat: DataSeatHandle, destination: DataClientHandle?) {
+    package func focusDestinationChanged(seat: DataSeatHandle, destination: DataClientHandle?) {
         if let destination, destination.rawValue != 0 {
             focusedDestinations[seat] = SelectionDestination(handle: destination)
         } else {
@@ -400,7 +418,9 @@ public final class DataExchangeService {
         }
     }
 
-    public func currentSelectionOffer(kind: SelectionKind, seat: DataSeatHandle, destination: DataClientHandle) -> DataSelectionPlan {
+    package func currentSelectionOffer(
+        kind: SelectionKind, seat: DataSeatHandle, destination: DataClientHandle
+    ) -> DataSelectionPlan {
         let key = SelectionKey(kind: kind, seat: seat)
         guard let source = selections[key], sources[source] != nil else {
             return DataSelectionPlan(
@@ -424,7 +444,10 @@ public final class DataExchangeService {
         )
     }
 
-    public func offerCreated(_ handle: DataOfferHandle, kind: SelectionKind, source: DataSourceHandle, destination: DataClientHandle) {
+    package func offerCreated(
+        _ handle: DataOfferHandle, kind: SelectionKind, source: DataSourceHandle,
+        destination: DataClientHandle
+    ) {
         guard handle.rawValue != 0, sources[source] != nil else { return }
         offers[handle] = SelectionOffer(
             handle: handle,
@@ -434,11 +457,11 @@ public final class DataExchangeService {
         )
     }
 
-    public func offerDestroyed(_ handle: DataOfferHandle) {
+    package func offerDestroyed(_ handle: DataOfferHandle) {
         offers.removeValue(forKey: handle)
     }
 
-    public func acceptOffer(_ handle: DataOfferHandle, mimeType: String?) {
+    package func acceptOffer(_ handle: DataOfferHandle, mimeType: String?) {
         guard var offer = offers[handle] else { return }
         guard let mimeType, sources[offer.source]?.mimeTypes.contains(mimeType) == true else {
             offer.acceptedMimeType = nil
@@ -449,7 +472,7 @@ public final class DataExchangeService {
         offers[handle] = offer
     }
 
-    public func requestTransfer(_ handle: DataOfferHandle, mimeType: String) -> DataTransferPlan {
+    package func requestTransfer(_ handle: DataOfferHandle, mimeType: String) -> DataTransferPlan {
         guard let offer = offers[handle], let source = sources[offer.source] else {
             return DataTransferPlan(allowed: false, source: nil)
         }
@@ -460,12 +483,17 @@ public final class DataExchangeService {
             return DataTransferPlan(allowed: false, source: nil)
         }
         if source.privateSource || source.sensitiveContent {
-            return DataTransferPlan(allowed: source.portalOrigin == 0, source: source.portalOrigin == 0 ? source.handle : nil)
+            return DataTransferPlan(
+                allowed: source.portalOrigin == 0,
+                source: source.portalOrigin == 0 ? source.handle : nil)
         }
         return DataTransferPlan(allowed: true, source: source.handle)
     }
 
-    public func startDrag(source: DataSourceHandle, origin: UInt64, icon: UInt64, target: DataClientHandle, serial: UInt32) -> DataDragResult {
+    package func startDrag(
+        source: DataSourceHandle, origin: UInt64, icon: UInt64, target: DataClientHandle,
+        serial: UInt32
+    ) -> DataDragResult {
         guard let owner = sources[source] else {
             activeDrag = nil
             return DataDragResult(allowed: false, action: 0)
@@ -481,12 +509,12 @@ public final class DataExchangeService {
         return DataDragResult(allowed: true, action: 1)
     }
 
-    public func cancelDrag(source: DataSourceHandle) {
+    package func cancelDrag(source: DataSourceHandle) {
         guard activeDrag?.source == source else { return }
         activeDrag?.state = .cancelled
     }
 
-    public func dropDrag(source: DataSourceHandle, acceptedMimeType: String?) -> DataDragResult {
+    package func dropDrag(source: DataSourceHandle, acceptedMimeType: String?) -> DataDragResult {
         guard var drag = activeDrag, drag.source == source else {
             return DataDragResult(allowed: false, action: 0)
         }
@@ -501,7 +529,7 @@ public final class DataExchangeService {
         return DataDragResult(allowed: true, action: 1)
     }
 
-    public func snapshot(seat: DataSeatHandle = DataSeatHandle(rawValue: 1)) -> Snapshot {
+    package func snapshot(seat: DataSeatHandle = DataSeatHandle(rawValue: 1)) -> Snapshot {
         Snapshot(
             sourceCount: sources.count,
             offerCount: offers.count,
@@ -515,7 +543,9 @@ public final class DataExchangeService {
 
     private func recordHistoryIfNeeded(kind: SelectionKind, source: DataSourceHandle) {
         guard kind == .clipboard else { return }
-        guard let owner = sources[source], !owner.privateSource, !owner.sensitiveContent else { return }
+        guard let owner = sources[source], !owner.privateSource, !owner.sensitiveContent else {
+            return
+        }
         clipboardHistory.removeAll { $0 == source }
         clipboardHistory.append(source)
     }

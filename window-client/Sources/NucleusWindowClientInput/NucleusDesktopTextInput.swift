@@ -1,8 +1,7 @@
+package import NucleusUI
+package import NucleusWindowClientWayland
 import WaylandClientDispatch
 import WaylandProtocolTypes
-@_spi(NucleusWindowClientImplementation)
-public import NucleusWindowClientWayland
-public import NucleusUI
 
 /// The desktop client's `zwp_text_input_v3` client, wired to NucleusUI's input-method seam.
 ///
@@ -17,7 +16,7 @@ public import NucleusUI
 /// echoes back in `done`. Incoming edits are always applied; only outbound
 /// client state is deferred when the serial does not match the commit count.
 @MainActor
-@safe public final class NucleusDesktopTextInput: TextInputAdapter {
+@safe package final class NucleusDesktopTextInput: TextInputAdapter {
     // The Wayland proxy is owned by this object from successful construction
     // through `close()`. All access stays on the main actor, the generated
     // listener borrows `listener`, and the proxy is destroyed before that
@@ -37,9 +36,7 @@ public import NucleusUI
     private var pendingCommitString: String?
     private var pendingDeleteBefore: UInt32 = 0
     private var pendingDeleteAfter: UInt32 = 0
-    private var pendingPreeditHints: [
-        (start: UInt32, end: UInt32, hint: UInt32)
-    ] = []
+    private var pendingPreeditHints: [(start: UInt32, end: UInt32, hint: UInt32)] = []
     private var pendingAction: UInt32?
     private var pendingLanguage: String?
     private var pendingLanguageWasSet = false
@@ -51,7 +48,7 @@ public import NucleusUI
     /// Bind the manager and create a text input for `seat`. Returns nil when the
     /// compositor offers no text-input manager, which is a normal configuration —
     /// direct key events still reach fields, only composition is unavailable.
-    public init?(
+    package init?(
         client: NucleusDesktopConnection,
         seat: WaylandProxy<WlSeatClient>
     ) {
@@ -77,7 +74,7 @@ public import NucleusUI
 
     /// Destroy the protocol object. Idempotent so host teardown and actor
     /// destruction may both call it.
-    public func close() {
+    package func close() {
         guard let textInput else { return }
         if activeClient != nil, focusedSurface != 0 {
             try? textInput.disable()
@@ -95,7 +92,7 @@ public import NucleusUI
 
     // MARK: - TextInputAdapter
 
-    public func textInputDidActivate(_ client: any TextInputClient) {
+    package func textInputDidActivate(_ client: any TextInputClient) {
         if let activeClient, activeClient !== client {
             textInputDidDeactivate(activeClient)
         }
@@ -107,7 +104,7 @@ public import NucleusUI
         commitState()
     }
 
-    public func textInputDidDeactivate(_ client: any TextInputClient) {
+    package func textInputDidDeactivate(_ client: any TextInputClient) {
         guard activeClient === client else { return }
         if let textInput, focusedSurface != 0 {
             try? textInput.disable()
@@ -117,7 +114,7 @@ public import NucleusUI
         beginSessionEpoch()
     }
 
-    public func textInputDidChangeState(
+    package func textInputDidChangeState(
         _ client: any TextInputClient,
         cause: TextInputChangeCause
     ) {
@@ -141,8 +138,8 @@ public import NucleusUI
         // caret moved, which is more than a password field should reveal.
         if let context = surroundingContext
             ?? client.textInputSurroundingContext(),
-           let wireContext = NucleusDesktopTextInput.boundedSurroundingContext(
-            context)
+            let wireContext = NucleusDesktopTextInput.boundedSurroundingContext(
+                context)
         {
             try? textInput.setSurroundingText(
                 text: wireContext.text,
@@ -164,8 +161,8 @@ public import NucleusUI
                     client.textInputContentType)))
 
         guard let candidate = client.textInputCandidateGeometry,
-              candidate.surfaceID.rawValue == UInt64(focusedSurface),
-              let rectangle = NucleusDesktopTextInput.wireRectangle(
+            candidate.surfaceID.rawValue == UInt64(focusedSurface),
+            let rectangle = NucleusDesktopTextInput.wireRectangle(
                 candidate.rect)
         else {
             return
@@ -247,8 +244,8 @@ public import NucleusUI
     fileprivate func handleDone(serial: UInt32) {
         defer { clearPending() }
         guard focusedSurface != 0,
-              validDoneSerials.contains(serial),
-              let client = activeClient
+            validDoneSerials.contains(serial),
+            let client = activeClient
         else { return }
 
         isApplyingDone = true
@@ -343,10 +340,10 @@ public import NucleusUI
         case ZwpTextInputV3PreeditHint.prediction.rawValue:
             .highlighted
         case ZwpTextInputV3PreeditHint.prefix.rawValue,
-             ZwpTextInputV3PreeditHint.suffix.rawValue:
+            ZwpTextInputV3PreeditHint.suffix.rawValue:
             .inactive
         case ZwpTextInputV3PreeditHint.spellingError.rawValue,
-             ZwpTextInputV3PreeditHint.composeError.rawValue:
+            ZwpTextInputV3PreeditHint.composeError.rawValue:
             .incorrect
         case ZwpTextInputV3PreeditHint.whole.rawValue:
             .active
@@ -371,12 +368,13 @@ public import NucleusUI
             text.utf8.startIndex,
             offsetBy: clamped)
         while index != text.utf8.startIndex,
-              index.samePosition(in: text.unicodeScalars) == nil
+            index.samePosition(in: text.unicodeScalars) == nil
         {
             text.utf8.formIndex(before: &index)
         }
-        guard let scalarAligned = index.samePosition(
-            in: text.unicodeScalars)
+        guard
+            let scalarAligned = index.samePosition(
+                in: text.unicodeScalars)
         else { return 0 }
         return text.utf16.distance(from: text.utf16.startIndex, to: scalarAligned)
     }
@@ -386,10 +384,10 @@ public import NucleusUI
         maximumBytes: Int = 4_000
     ) -> (text: String, cursor: Int32, anchor: Int32)? {
         guard maximumBytes > 0,
-              let cursor = utf8Index(
+            let cursor = utf8Index(
                 offset: context.cursorByteOffset,
                 in: context.text),
-              let anchor = utf8Index(
+            let anchor = utf8Index(
                 offset: context.anchorByteOffset,
                 in: context.text)
         else { return nil }
@@ -398,7 +396,8 @@ public import NucleusUI
             return (
                 context.text,
                 Int32(context.cursorByteOffset),
-                Int32(context.anchorByteOffset))
+                Int32(context.anchorByteOffset)
+            )
         }
 
         let lower = min(
@@ -418,45 +417,47 @@ public import NucleusUI
             startOffset = max(0, endOffset - maximumBytes)
         }
         while startOffset < lower,
-              utf8Index(offset: startOffset, in: context.text) == nil
+            utf8Index(offset: startOffset, in: context.text) == nil
         {
             startOffset += 1
         }
         while endOffset > upper,
-              utf8Index(offset: endOffset, in: context.text) == nil
+            utf8Index(offset: endOffset, in: context.text) == nil
         {
             endOffset -= 1
         }
-        guard let start = utf8Index(
-            offset: startOffset,
-            in: context.text),
-              let end = utf8Index(
+        guard
+            let start = utf8Index(
+                offset: startOffset,
+                in: context.text),
+            let end = utf8Index(
                 offset: endOffset,
                 in: context.text),
-              start <= cursor,
-              cursor <= end,
-              start <= anchor,
-              anchor <= end
+            start <= cursor,
+            cursor <= end,
+            start <= anchor,
+            anchor <= end
         else { return nil }
         return (
             String(context.text[start..<end]),
             Int32(context.cursorByteOffset - startOffset),
-            Int32(context.anchorByteOffset - startOffset))
+            Int32(context.anchorByteOffset - startOffset)
+        )
     }
 
     static func wireRectangle(
         _ rect: Rect
     ) -> (x: Int32, y: Int32, width: Int32, height: Int32)? {
         guard rect.origin.x.isFinite,
-              rect.origin.y.isFinite,
-              rect.size.width.isFinite,
-              rect.size.height.isFinite
+            rect.origin.y.isFinite,
+            rect.size.width.isFinite,
+            rect.size.height.isFinite
         else { return nil }
         guard let x = wireCoordinate(rect.origin.x),
-              let y = wireCoordinate(rect.origin.y),
-              let width = wireCoordinate(
+            let y = wireCoordinate(rect.origin.y),
+            let width = wireCoordinate(
                 max(1, rect.size.width)),
-              let height = wireCoordinate(
+            let height = wireCoordinate(
                 max(1, rect.size.height))
         else { return nil }
         return (x, y, max(1, width), max(1, height))
@@ -479,7 +480,7 @@ public import NucleusUI
         guard value.isFinite else { return nil }
         let rounded = value.rounded(.toNearestOrAwayFromZero)
         guard rounded >= Double(Int32.min),
-              rounded <= Double(Int32.max)
+            rounded <= Double(Int32.max)
         else { return nil }
         return Int32(rounded)
     }
@@ -563,7 +564,8 @@ final class NucleusDesktopTextInputListener: ZwpTextInputV3Events {
     }
 
     func deleteSurroundingText(
-        _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, before_length: UInt32, after_length: UInt32
+        _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, before_length: UInt32,
+        after_length: UInt32
     ) {
         owner.handleDeleteSurrounding(
             before: before_length,

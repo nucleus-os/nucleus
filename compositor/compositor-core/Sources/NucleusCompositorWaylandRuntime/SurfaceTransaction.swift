@@ -1,5 +1,5 @@
-import WaylandServerC
 import WaylandServer
+import WaylandServerC
 import WaylandServerDispatch
 
 /// One field's double-buffered mutation. `set(nil)` is an explicit clear.
@@ -25,8 +25,7 @@ struct SurfaceTransaction {
     let surfaceDamage: [WlRect]
     let bufferDamage: [WlRect]
     var frameCallbacks: [WaylandResourceReference<WlCallbackServer>]
-    var presentationFeedbacks:
-        [WaylandResourceReference<WpPresentationFeedbackServer>]
+    var presentationFeedbacks: [WaylandResourceReference<WpPresentationFeedbackServer>]
     let isInitial: Bool
     let auxViewportSource: WlFRect?
     let auxViewportSourceSet: Bool
@@ -109,8 +108,8 @@ struct SurfaceTransaction {
     }
 }
 
-private extension SurfacePendingField {
-    var isUnchanged: Bool {
+extension SurfacePendingField {
+    fileprivate var isUnchanged: Bool {
         if case .unchanged = self { return true }
         return false
     }

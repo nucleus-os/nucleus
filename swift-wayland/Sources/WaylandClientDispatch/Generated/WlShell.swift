@@ -2,16 +2,22 @@
 // Typed client descriptor and event dispatch for wl_shell.
 
 import WaylandClientC
-public enum WlShellClient: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum WlShellClient: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_shell())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == WlShellClient {
-    func getShellSurface(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<WlShellSurfaceClient> {
+package extension WaylandProxy where Interface == WlShellClient {
+    package func getShellSurface(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError)
+        -> WaylandProxy<WlShellSurfaceClient>
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_wl_shell_get_shell_surface(_proxy, _surfaceProxy) else {
+        guard
+            let _created = unsafe swift_wayland_client_request_wl_shell_get_shell_surface(
+                _proxy, _surfaceProxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

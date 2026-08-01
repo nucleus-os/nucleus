@@ -2,20 +2,23 @@
 // Typed client descriptor and event dispatch for ext_data_control_source_v1.
 
 import WaylandClientC
-public enum ExtDataControlSourceV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum ExtDataControlSourceV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_ext_data_control_source_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == ExtDataControlSourceV1Client {
-    func offer(mime_type: String) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ExtDataControlSourceV1Client {
+    package func offer(mime_type: String) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        return try mime_type.withCString { (_mime_typeCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
-            unsafe swift_wayland_client_request_ext_data_control_source_v1_offer(_proxy, _mime_typeCString)
+        return try mime_type.withCString {
+            (_mime_typeCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_ext_data_control_source_v1_offer(
+                _proxy, _mime_typeCString)
             return
         }
     }
-    func destroy() throws(WaylandProxyError) {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_ext_data_control_source_v1_destroy(_proxy)
@@ -26,57 +29,72 @@ public extension WaylandProxy where Interface == ExtDataControlSourceV1Client {
     }
 }
 @MainActor
-public protocol ExtDataControlSourceV1Events: AnyObject {
-    func send(_ proxy: WaylandBorrowedProxy<ExtDataControlSourceV1Client>, mime_type: String, fd: consuming WaylandClientOwnedFileDescriptor)
+package protocol ExtDataControlSourceV1Events: AnyObject {
+    func send(
+        _ proxy: WaylandBorrowedProxy<ExtDataControlSourceV1Client>, mime_type: String,
+        fd: consuming WaylandClientOwnedFileDescriptor)
     func cancelled(_ proxy: WaylandBorrowedProxy<ExtDataControlSourceV1Client>)
 }
-public extension ExtDataControlSourceV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<ext_data_control_source_v1_listener> = {
-        let p = UnsafeMutablePointer<ext_data_control_source_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: ext_data_control_source_v1_listener())
-        unsafe p.pointee.send = send_impl
-        unsafe p.pointee.cancelled = cancelled_impl
-        return unsafe p
-    }()
-    private static func handler(_ context: WaylandClientListenerContext) -> any ExtDataControlSourceV1Events? {
+package extension ExtDataControlSourceV1Client {
+    package nonisolated(unsafe) static let listener:
+        UnsafeMutablePointer<ext_data_control_source_v1_listener> = {
+            let p = UnsafeMutablePointer<ext_data_control_source_v1_listener>.allocate(capacity: 1)
+            unsafe p.initialize(to: ext_data_control_source_v1_listener())
+            unsafe p.pointee.send = send_impl
+            unsafe p.pointee.cancelled = cancelled_impl
+            return unsafe p
+        }()
+    private static func handler(_ context: WaylandClientListenerContext)
+        -> any ExtDataControlSourceV1Events?
+    {
         context.owner as? any ExtDataControlSourceV1Events
     }
-    private static let send_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?, Int32) -> Void = { data, proxy, mime_type, fd in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let send_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?, Int32) ->
+            Void = { data, proxy, mime_type, fd in
+                guard let data = unsafe data, let proxy = unsafe proxy else {
+                    return
+                }
+                let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+                guard let h = handler(listenerContext) else {
+                    return
+                }
+                nonisolated(unsafe) let eventHandler = h
+                nonisolated(unsafe) let eventProxy = unsafe proxy
+                nonisolated(unsafe) let eventContext = listenerContext
+                nonisolated(unsafe) let _event_mime_type = unsafe mime_type
+                MainActor.assumeIsolated {
+                    unsafe eventHandler.send(
+                        WaylandBorrowedProxy<ExtDataControlSourceV1Client>(eventProxy),
+                        mime_type: unsafe String(cString: _event_mime_type!),
+                        fd: WaylandClientOwnedFileDescriptor(fd))
+                }
+            }
+    private static let cancelled_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.cancelled(
+                    WaylandBorrowedProxy<ExtDataControlSourceV1Client>(eventProxy))
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        nonisolated(unsafe) let _event_mime_type = unsafe mime_type
-        MainActor.assumeIsolated {
-            unsafe eventHandler.send(WaylandBorrowedProxy<ExtDataControlSourceV1Client>(eventProxy), mime_type: unsafe String(cString: _event_mime_type!), fd: WaylandClientOwnedFileDescriptor(fd))
-        }
-    }
-    private static let cancelled_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
-        }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.cancelled(WaylandBorrowedProxy<ExtDataControlSourceV1Client>(eventProxy))
-        }
-    }
 }
-public extension WaylandProxy where Interface == ExtDataControlSourceV1Client {
-    func installListener(_ owner: any ExtDataControlSourceV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ExtDataControlSourceV1Client {
+    package func installListener(_ owner: any ExtDataControlSourceV1Events)
+        throws(WaylandProxyError)
+    {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe ext_data_control_source_v1_add_listener(proxy, ExtDataControlSourceV1Client.listener, data)
+            unsafe ext_data_control_source_v1_add_listener(
+                proxy, ExtDataControlSourceV1Client.listener, data)
         }
     }
 }

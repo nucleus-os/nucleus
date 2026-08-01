@@ -1,8 +1,8 @@
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
 import NucleusCompositorServerTypes
 import NucleusTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 /// A rectangle in fractional buffer coordinates (wp_viewport source is fixed-point).
 typealias WlFRect = BufferPixelRect
@@ -28,7 +28,8 @@ func resolveSurfaceLogicalSize(
     if let viewportDestination {
         return viewportDestination.surfaceLogicalSize
     }
-    let swapsAxes = bufferTransform == 1 || bufferTransform == 3
+    let swapsAxes =
+        bufferTransform == 1 || bufferTransform == 3
         || bufferTransform == 5 || bufferTransform == 7
     let width = swapsAxes ? pixels.height : pixels.width
     let height = swapsAxes ? pixels.width : pixels.height
@@ -110,8 +111,7 @@ struct SurfacePendingState {
     var surfaceDamage: [WlRect] = []
     var bufferDamage: [WlRect] = []
     var frameCallbacks: [WaylandResourceReference<WlCallbackServer>] = []
-    var presentationFeedbacks:
-        [WaylandResourceReference<WpPresentationFeedbackServer>] = []
+    var presentationFeedbacks: [WaylandResourceReference<WpPresentationFeedbackServer>] = []
     var bufferScale: Int32 = 1
     var bufferTransform: Int32 = 0
     var opaque: SurfacePendingField<RegionSnapshot> = .unchanged

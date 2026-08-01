@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for wp_linux_drm_syncobj_manager_v1.
 
 import WaylandClientC
-public enum WpLinuxDrmSyncobjManagerV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum WpLinuxDrmSyncobjManagerV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_linux_drm_syncobj_manager_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == WpLinuxDrmSyncobjManagerV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpLinuxDrmSyncobjManagerV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_linux_drm_syncobj_manager_v1_destroy(_proxy)
@@ -17,23 +18,35 @@ public extension WaylandProxy where Interface == WpLinuxDrmSyncobjManagerV1Clien
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func getSurface(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<WpLinuxDrmSyncobjSurfaceV1Client> {
+    package func getSurface(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError)
+        -> WaylandProxy<WpLinuxDrmSyncobjSurfaceV1Client>
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_wp_linux_drm_syncobj_manager_v1_get_surface(_proxy, _surfaceProxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_wp_linux_drm_syncobj_manager_v1_get_surface(
+                    _proxy, _surfaceProxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, WpLinuxDrmSyncobjSurfaceV1Client.self)
     }
-    func importTimeline(fd: consuming WaylandClientOwnedFileDescriptor) throws(WaylandProxyError) -> WaylandProxy<WpLinuxDrmSyncobjTimelineV1Client> {
+    package func importTimeline(fd: consuming WaylandClientOwnedFileDescriptor)
+        throws(WaylandProxyError) -> WaylandProxy<WpLinuxDrmSyncobjTimelineV1Client>
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _fdDescriptor = fd.take()
         defer {
             WaylandClientOwnedFileDescriptor.closeTransferred(
                 _fdDescriptor)
         }
-        guard let _created = unsafe swift_wayland_client_request_wp_linux_drm_syncobj_manager_v1_import_timeline(_proxy, _fdDescriptor) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_wp_linux_drm_syncobj_manager_v1_import_timeline(
+                    _proxy, _fdDescriptor)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

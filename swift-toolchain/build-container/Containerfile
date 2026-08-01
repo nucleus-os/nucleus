@@ -2,7 +2,8 @@ FROM docker.io/library/ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a135
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update \
+RUN test "$(dpkg --print-architecture)" = arm64 \
+    && apt-get update \
     && apt-get install --yes --no-install-recommends \
         build-essential \
         ca-certificates \
@@ -46,8 +47,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl --fail --location --output /tmp/cmake.tar.gz \
-        https://github.com/Kitware/CMake/releases/download/v3.30.2/cmake-3.30.2-linux-x86_64.tar.gz \
-    && echo 'cdd7fb352605cee3ae53b0e18b5929b642900e33d6b0173e19f6d4f2067ebf16  /tmp/cmake.tar.gz' \
+        https://github.com/Kitware/CMake/releases/download/v3.30.2/cmake-3.30.2-linux-aarch64.tar.gz \
+    && echo 'd18f50f01b001303d21f53c6c16ff12ee3aa45df5da1899c2fe95be7426aa026  /tmp/cmake.tar.gz' \
         | sha256sum --check --strict \
     && mkdir -p /opt/cmake \
     && bsdtar --extract --gzip \
@@ -59,15 +60,17 @@ RUN curl --fail --location --output /tmp/cmake.tar.gz \
         | grep --fixed-strings 'cmake version 3.30.2'
 
 RUN curl --fail --location --output /tmp/swift-bootstrap.tar.gz \
-        https://download.swift.org/swift-6.4.x-branch/ubuntu2404/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a-ubuntu24.04.tar.gz \
-    && echo '05670a1487e907e732ca701bfda153e5f02aeac801dd3b07686f2aae4e0c6ad5  /tmp/swift-bootstrap.tar.gz' \
+        https://download.swift.org/swift-6.4.x-branch/ubuntu2404-aarch64/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a-ubuntu24.04-aarch64.tar.gz \
+    && echo '0171839645e5569ab3c0c9b53bba104660a8f76740ad9eb5126b526b60f6dd34  /tmp/swift-bootstrap.tar.gz' \
         | sha256sum --check --strict \
     && mkdir -p /opt/swift-bootstrap \
     && bsdtar --extract --gzip \
         --file /tmp/swift-bootstrap.tar.gz \
         --directory /opt/swift-bootstrap \
         --strip-components=1 \
-    && rm -f /tmp/swift-bootstrap.tar.gz
+    && rm -f /tmp/swift-bootstrap.tar.gz \
+    && /opt/swift-bootstrap/usr/bin/swiftc -print-target-info \
+        | grep --fixed-strings 'aarch64-unknown-linux-gnu'
 
 RUN usermod \
         --login nucleus-build \
@@ -82,6 +85,8 @@ RUN usermod \
         nucleus-build
 
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/nucleus-swift-build
+COPY --chmod=0755 android-clang /usr/local/bin/nucleus-android-clang
+COPY --chmod=0755 android-clang++ /usr/local/bin/nucleus-android-clang++
 
 USER nucleus-build
 WORKDIR /src

@@ -3,7 +3,7 @@ import NucleusConfig
 import NucleusConfigSyntax
 
 /// The result of reading one configuration source.
-public enum ConfigLoadOutcome: Sendable {
+package enum ConfigLoadOutcome: Sendable {
     /// Usable configuration. Warnings do not block it — an ignored unknown key
     /// should not cost a user their whole desktop configuration.
     case loaded(NucleusConfiguration, warnings: [ConfigDiagnostic])
@@ -18,8 +18,8 @@ public enum ConfigLoadOutcome: Sendable {
 /// undifferentiated "not valid JSON" with no offset. `JSONDecoder` owns semantic
 /// defects, because its coding path (`input.touchpad.accel_speed`) is a better
 /// diagnostic than any byte offset would be.
-public enum ConfigLoader {
-    public static func load(text: String) -> ConfigLoadOutcome {
+package enum ConfigLoader {
+    package static func load(text: String) -> ConfigLoadOutcome {
         let source = ConfigSource(text: text)
 
         let prepared: [UInt8]

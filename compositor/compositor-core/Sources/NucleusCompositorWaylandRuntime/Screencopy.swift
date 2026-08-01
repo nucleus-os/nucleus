@@ -8,19 +8,19 @@
 // the client allocates a matching wl_buffer and calls copy/copy_with_damage, and
 // the compositor fills it and reports ready (or failed).
 
-import WaylandServerC
-import WaylandServer
-import WaylandServerDispatch
-import WaylandProtocolTypes
 import NucleusRenderModel
+import WaylandProtocolTypes
+import WaylandServer
+import WaylandServerC
+import WaylandServerDispatch
 
 /// Buffer the client must allocate to receive a capture.
 struct ScreencopyParams {
-    var shmFormat: UInt32   // wl_shm.format
+    var shmFormat: UInt32  // wl_shm.format
     var width: UInt32
     var height: UInt32
     var stride: UInt32
-    var drmFourcc: UInt32   // for the linux_dmabuf advertisement (v3+)
+    var drmFourcc: UInt32  // for the linux_dmabuf advertisement (v3+)
 }
 
 /// Immutable geometry advertised for one frame and reused for its eventual
@@ -60,8 +60,7 @@ protocol ScreencopyDelegate: AnyObject {
 @MainActor
 final class ScreencopyManager {
     weak var delegate: (any ScreencopyDelegate)?
-    private var pendingFrames:
-        [UInt64: WeakObjectList<ScreencopyFrame>] = [:]
+    private var pendingFrames: [UInt64: WeakObjectList<ScreencopyFrame>] = [:]
     private var admittedByClient: [WaylandClientID: Int] = [:]
     private var admittedByOutput: [UInt64: Int] = [:]
     private var admittedTotal = 0
@@ -128,7 +127,8 @@ final class ScreencopyManager {
     /// frame requested by `copy`, rather than an older frame that happened to be
     /// resident while the Wayland request was dispatched.
     func outputSubmitted(_ outputID: UInt64) {
-        var frames = pendingFrames.removeValue(forKey: outputID)
+        var frames =
+            pendingFrames.removeValue(forKey: outputID)
             ?? WeakObjectList()
         let liveFrames = frames.liveValues()
         let preferRegionReadback = liveFrames.count == 1
@@ -142,7 +142,8 @@ final class ScreencopyManager {
     /// captures. Existing frame resources remain valid and receive one terminal
     /// `failed` event.
     func outputRemoved(_ outputID: UInt64) {
-        var frames = pendingFrames.removeValue(forKey: outputID)
+        var frames =
+            pendingFrames.removeValue(forKey: outputID)
             ?? WeakObjectList()
         for frame in frames.liveValues() {
             frame.failQueuedCopy()
@@ -151,9 +152,9 @@ final class ScreencopyManager {
 
     private func admit(clientKey: WaylandClientID, outputID: UInt64) -> Bool {
         guard admittedTotal < Self.maximumCapturesGlobal,
-              admittedByClient[clientKey, default: 0]
+            admittedByClient[clientKey, default: 0]
                 < Self.maximumCapturesPerClient,
-              admittedByOutput[outputID, default: 0]
+            admittedByOutput[outputID, default: 0]
                 < Self.maximumCapturesPerOutput
         else { return false }
         admittedTotal += 1
@@ -194,8 +195,9 @@ final class ScreencopyManager {
             },
             installed: { frame in
                 frame.installed()
-                guard let configuration = self.configuration(
-                    output: outputObj, region: region)
+                guard
+                    let configuration = self.configuration(
+                        output: outputObj, region: region)
                 else {
                     frame.resource.sendFailed()
                     return
@@ -263,12 +265,10 @@ extension ScreencopyManager: ZwlrScreencopyManagerV1Requests {
     fileprivate let clientKey: WaylandClientID
     private let overlayCursor: Bool
     private let version: Int32
-    fileprivate let resource:
-        WaylandResourceHandle<ZwlrScreencopyFrameV1Server>
+    fileprivate let resource: WaylandResourceHandle<ZwlrScreencopyFrameV1Server>
     fileprivate var configuration: ScreencopyConfiguration?
     private var used = false
-    private var pendingBuffer:
-        WaylandResourceReference<WlBufferServer>?
+    private var pendingBuffer: WaylandResourceReference<WlBufferServer>?
     private var pendingWithDamage = false
     private var pendingCaptureID: UInt64?
     private var captureGeneration: UInt64 = 0
@@ -346,8 +346,9 @@ extension ScreencopyManager: ZwlrScreencopyManagerV1Requests {
             return
         }
         let semanticOwner = buffer.owner(as: DmabufBuffer.self)
-        guard let bufferReference = buffer.retainedReference(
-            retaining: semanticOwner)
+        guard
+            let bufferReference = buffer.retainedReference(
+                retaining: semanticOwner)
         else {
             resource.sendFailed()
             return

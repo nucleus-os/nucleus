@@ -63,7 +63,7 @@ The module is the namespace; names follow from taking that seriously.
    echo the module or brand in the type name. Inside `NucleusLayers`,
    `LayerTransaction` → `Transaction`, `NucleonDynamicsHost` → `Host`,
    `DynamicsGeometry` → `Geometry`, `DynamicsSettings` → `Settings`,
-   `NucleonDirectBridge` → `DirectBridge`. Call sites read `Layers.Transaction`,
+   `NucleonLayerHost` → `LayerHost`. Call sites read `Layers.Transaction`,
    not `NucleonDynamicsLayerTransaction`.
 3. **Stdlib-collision exception.** Keep a light qualifier only where a bare name
    collides with the standard library or a common type: `DynamicsError` →
@@ -98,7 +98,7 @@ The module is the namespace; names follow from taking that seriously.
 
 | Current | New | Notes |
 |---|---|---|
-| `NucleonDynamics` | `NucleusLayers` | + strip type prefixes (rule 2): `LayerTransaction`→`Transaction`, `DynamicsGeometry`→`Geometry`, `DynamicsSettings`→`Settings`, `NucleonDynamicsHost`→`Host`, `DynamicsError`→`LayerError`; `NUCLEON_DYNAMICS_PUBLIC_NAMES`→`NUCLEUS_LAYERS_PUBLIC_NAMES` |
+| `NucleonDynamics` | `NucleusLayers` | + strip type prefixes (rule 2): `LayerTransaction`→`Transaction`, `DynamicsGeometry`→`Geometry`, `DynamicsSettings`→`Settings`, `NucleonDynamicsHost`→`Host`, `DynamicsError`→`LayerError` |
 | `NucleonTypes` | `NucleusTypes` | **keep as its own module** (grounded) — it is the cycle-breaker between `NucleonHostProtocols` and `NucleonDynamics`, and the shared value-type vocabulary for ~20 modules across core/app/compositor; folding it into Layers would cycle |
 | `NucleonTextCxxBridge` | `NucleusTextCxxBridge` | |
 | `NucleonRenderModel` | `NucleusRenderModel` | |
@@ -307,8 +307,8 @@ Applied disposition **A** module renames: the `Nucleon*` core targets → `Nucle
 including `NucleonDynamics` → `NucleusLayers` and `NucleusSubstrateTextRegistry` →
 `NucleusTextRegistry` (+ `SubstrateTextRegistry.*` → `TextRegistry.*`,
 `registerParagraphForSubstrate` → `registerParagraph`). `NucleonTypes` →
-`NucleusTypes` stays standalone (cycle-breaker). Build define
-`NUCLEON_DYNAMICS_PUBLIC_NAMES` → `NUCLEUS_LAYERS_PUBLIC_NAMES`. The **`NucleusLayers`
+`NucleusTypes` stays standalone (cycle-breaker). The temporary public-name build define has
+been removed; aliases are ordinary declarations. The **`NucleusLayers`
 type-strip is now done**: `DynamicsHost`→`Host`, `DynamicsSettings`→`Settings`,
 `DynamicsGeometry`→`Geometry`, `DynamicsError`→`LayerError` (rule-3 qualifier),
 `DynamicsLayerTests`→`LayerTests`; call sites read `Layers.Host`/`Layers.Settings`.

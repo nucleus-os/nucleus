@@ -67,23 +67,32 @@ final class DrmCursorPlane {
         }
 
         for _ in 0..<2 {
-            guard let bo = unsafe gbm_bo_create(
-                gbmDevice, width, height, drmFormatARGB8888,
-                GBM_BO_USE_CURSOR.rawValue | GBM_BO_USE_WRITE.rawValue
-            ) else { rollback(); return nil }
+            guard
+                let bo = unsafe gbm_bo_create(
+                    gbmDevice, width, height, drmFormatARGB8888,
+                    GBM_BO_USE_CURSOR.rawValue | GBM_BO_USE_WRITE.rawValue
+                )
+            else {
+                rollback()
+                return nil
+            }
 
             let handle = unsafe gbm_bo_get_handle_for_plane(bo, 0).u32
             let stride = unsafe gbm_bo_get_stride(bo)
-            guard let fb = DrmFramebuffer(
-                deviceFd: device.fileDescriptor, width: width, height: height, pixelFormat: drmFormatARGB8888,
-                handles: [handle], pitches: [stride], offsets: [0]
-            ) else {
+            guard
+                let fb = DrmFramebuffer(
+                    deviceFd: device.fileDescriptor, width: width, height: height,
+                    pixelFormat: drmFormatARGB8888,
+                    handles: [handle], pitches: [stride], offsets: [0]
+                )
+            else {
                 unsafe gbm_bo_destroy(bo)
                 rollback()
                 return nil
             }
-            buffers.append(unsafe Buffer(
-                bo: bo, fbId: fb.release(), stride: stride))
+            buffers.append(
+                unsafe Buffer(
+                    bo: bo, fbId: fb.release(), stride: stride))
         }
 
         return DrmCursorPlane(

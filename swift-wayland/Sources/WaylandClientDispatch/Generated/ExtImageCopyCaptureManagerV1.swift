@@ -2,33 +2,47 @@
 // Typed client descriptor and event dispatch for ext_image_copy_capture_manager_v1.
 
 import WaylandClientC
-public enum ExtImageCopyCaptureManagerV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+package import WaylandProtocolTypes
+
+package enum ExtImageCopyCaptureManagerV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_ext_image_copy_capture_manager_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public import WaylandProtocolTypes
-public extension WaylandProxy where Interface == ExtImageCopyCaptureManagerV1Client {
-    func createSession(source: WaylandProxy<ExtImageCaptureSourceV1Client>, options: ExtImageCopyCaptureManagerV1Options) throws(WaylandProxyError) -> WaylandProxy<ExtImageCopyCaptureSessionV1Client> {
+package extension WaylandProxy where Interface == ExtImageCopyCaptureManagerV1Client {
+    package func createSession(
+        source: WaylandProxy<ExtImageCaptureSourceV1Client>,
+        options: ExtImageCopyCaptureManagerV1Options
+    ) throws(WaylandProxyError) -> WaylandProxy<ExtImageCopyCaptureSessionV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _sourceProxy = try unsafe source.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_ext_image_copy_capture_manager_v1_create_session(_proxy, _sourceProxy, options.rawValue) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_ext_image_copy_capture_manager_v1_create_session(
+                    _proxy, _sourceProxy, options.rawValue)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, ExtImageCopyCaptureSessionV1Client.self)
     }
-    func createPointerCursorSession(source: WaylandProxy<ExtImageCaptureSourceV1Client>, pointer: WaylandProxy<WlPointerClient>) throws(WaylandProxyError) -> WaylandProxy<ExtImageCopyCaptureCursorSessionV1Client> {
+    package func createPointerCursorSession(
+        source: WaylandProxy<ExtImageCaptureSourceV1Client>, pointer: WaylandProxy<WlPointerClient>
+    ) throws(WaylandProxyError) -> WaylandProxy<ExtImageCopyCaptureCursorSessionV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _sourceProxy = try unsafe source.requireNativeProxy()
         let _pointerProxy = try unsafe pointer.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_ext_image_copy_capture_manager_v1_create_pointer_cursor_session(_proxy, _sourceProxy, _pointerProxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_ext_image_copy_capture_manager_v1_create_pointer_cursor_session(
+                    _proxy, _sourceProxy, _pointerProxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, ExtImageCopyCaptureCursorSessionV1Client.self)
     }
-    func destroy() throws(WaylandProxyError) {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_ext_image_copy_capture_manager_v1_destroy(_proxy)

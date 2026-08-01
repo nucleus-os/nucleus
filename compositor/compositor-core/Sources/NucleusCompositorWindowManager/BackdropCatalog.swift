@@ -1,27 +1,29 @@
-@_spi(NucleusRenderServer) public import NucleusLayers
-public import enum NucleusTypes.BackdropMaterialKind
+package import NucleusLayers
+
+package import enum NucleusTypes.BackdropMaterialKind
 
 /// Fully resolved render contract for one backdrop layer. Values in this type
 /// cross to the renderer once per frame and are executed without further policy lookup.
-public struct ResolvedBackdropMaterial: Sendable, Equatable {
-    public var enabled: Bool
-    public var passes: UInt8
-    public var offset: Float
-    public var saturation: Float
-    public var tint: SIMD4<Float>
-    public var tintBlend: Float
-    public var noise: Float
-    public var alpha: Float
-    public var solidFallback: SIMD4<Float>
-    public var foregroundVariant: BackdropPolicy.ResolvedAppearance
-    public var resolvedState: BackdropState
-    public var resolvedAppearance: BackdropPolicy.ResolvedAppearance
+package struct ResolvedBackdropMaterial: Sendable, Equatable {
+    package var enabled: Bool
+    package var passes: UInt8
+    package var offset: Float
+    package var saturation: Float
+    package var tint: SIMD4<Float>
+    package var tintBlend: Float
+    package var noise: Float
+    package var alpha: Float
+    package var solidFallback: SIMD4<Float>
+    package var foregroundVariant: BackdropPolicy.ResolvedAppearance
+    package var resolvedState: BackdropState
+    package var resolvedAppearance: BackdropPolicy.ResolvedAppearance
 
-    public static func inactive(
+    package static func inactive(
         appearance: BackdropPolicy.ResolvedAppearance,
         state: BackdropState
     ) -> Self {
-        let color: SIMD4<Float> = appearance == .light
+        let color: SIMD4<Float> =
+            appearance == .light
             ? SIMD4(0.95, 0.95, 0.95, 1)
             : SIMD4(0.18, 0.18, 0.18, 1)
         return .init(
@@ -34,23 +36,23 @@ public struct ResolvedBackdropMaterial: Sendable, Equatable {
 }
 
 /// Swift's single role/state/appearance/accessibility material catalog.
-public enum BackdropCatalog {
-    public struct Key: Sendable, Equatable {
-        public var role: BackdropMaterialKind
-        public var appearance: BackdropPolicy.ResolvedAppearance
-        public var reduceTransparency: Bool
-        public var increaseContrast: Bool
-        public var state: BackdropState
-        public var emphasized: Bool
+package enum BackdropCatalog {
+    package struct Key: Sendable, Equatable {
+        package var role: BackdropMaterialKind
+        package var appearance: BackdropPolicy.ResolvedAppearance
+        package var reduceTransparency: Bool
+        package var increaseContrast: Bool
+        package var state: BackdropState
+        package var emphasized: Bool
     }
 
-    public struct Producers: Sendable, Equatable {
-        public var defaultMaterial: BackdropDynamics.Material
-        public var waylandMaterial: BackdropDynamics.Material
-        public var shellOverlayMaterial: BackdropDynamics.Material
+    package struct Producers: Sendable, Equatable {
+        package var defaultMaterial: BackdropDynamics.Material
+        package var waylandMaterial: BackdropDynamics.Material
+        package var shellOverlayMaterial: BackdropDynamics.Material
     }
 
-    public static func resolve(key: Key, producers: Producers) -> ResolvedBackdropMaterial {
+    package static func resolve(key: Key, producers: Producers) -> ResolvedBackdropMaterial {
         if key.state == .inactive || key.reduceTransparency {
             return .inactive(appearance: key.appearance, state: key.state)
         }
@@ -60,7 +62,7 @@ public enum BackdropCatalog {
         case .contentBackground:
             material = producers.waylandMaterial
         case .shellOverlay, .sidebar, .hudWindow, .menu, .popover, .titlebar,
-             .sheet, .headerView, .selection, .toolTip:
+            .sheet, .headerView, .selection, .toolTip:
             material = producers.shellOverlayMaterial
         default:
             material = producers.defaultMaterial
@@ -69,7 +71,8 @@ public enum BackdropCatalog {
             material.saturation = min(material.saturation * 1.25, 2.5)
             material.tint.w = min(material.tint.w * 1.5, 1)
         }
-        let fallback: SIMD4<Float> = key.appearance == .light
+        let fallback: SIMD4<Float> =
+            key.appearance == .light
             ? SIMD4(0.95, 0.95, 0.95, 1)
             : SIMD4(0.18, 0.18, 0.18, 1)
         return .init(

@@ -89,7 +89,7 @@ package enum PaintRegistration {
             height: height,
             in: context)
         return RegisteredPaint(
-            update: NucleusLayers.LayerPropertyUpdate(content: LayerContent(content)),
+            update: NucleusLayers.LayerPropertyUpdate(content: .paint(content)),
             content: content,
             textLayoutLeases: leases)
     }

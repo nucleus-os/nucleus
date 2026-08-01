@@ -35,8 +35,8 @@ final class GemHandleTable {
     func importHandle(fd: Int32) -> UInt32 {
         var handle: UInt32 = 0
         guard let deviceFd = device.availableFileDescriptor,
-              unsafe drmPrimeFDToHandle(deviceFd, fd, &handle) == 0,
-              handle != 0
+            unsafe drmPrimeFDToHandle(deviceFd, fd, &handle) == 0,
+            handle != 0
         else { return 0 }
         refcount[handle, default: 0] += 1
         return handle
@@ -104,7 +104,8 @@ final class ClientScanoutBuffer {
     /// planes sharing a source fd share a single dup. Returns nil (closing any dup made)
     /// if a `dup` fails or there are no planes.
     static func retain(
-        device: DrmDeviceLifetime, gemTable: GemHandleTable, fd: Int32, width: UInt32, height: UInt32,
+        device: DrmDeviceLifetime, gemTable: GemHandleTable, fd: Int32, width: UInt32,
+        height: UInt32,
         format: UInt32, modifier: UInt64, planes sourcePlanes: [DmaBufPlane],
         acquireFenceFd: Int32 = -1
     ) -> ClientScanoutBuffer? {
@@ -127,9 +128,12 @@ final class ClientScanoutBuffer {
                 duped.append(d)
                 dupFd = d
             }
-            layout.append((fd: dupFd,
-                           offset: UInt32(truncatingIfNeeded: plane.offset),
-                           stride: UInt32(truncatingIfNeeded: plane.rowPitch)))
+            layout.append(
+                (
+                    fd: dupFd,
+                    offset: UInt32(truncatingIfNeeded: plane.offset),
+                    stride: UInt32(truncatingIfNeeded: plane.rowPitch)
+                ))
         }
         return ClientScanoutBuffer(
             device: device, gemTable: gemTable,
@@ -185,7 +189,10 @@ final class ClientScanoutBuffer {
                 handles: handles, pitches: pitches, offsets: offsets,
                 modifiers: planes.map { _ in modifier })
         }
-        guard let fb else { releaseHandles(); return 0 }
+        guard let fb else {
+            releaseHandles()
+            return 0
+        }
         fbId = fb.release()
         return fbId
     }
@@ -211,7 +218,10 @@ final class ClientScanoutBuffer {
         }
         releaseHandles()
         for fd in dupedFds where fd >= 0 { close(fd) }
-        if acquireFenceFd >= 0 { close(acquireFenceFd); acquireFenceFd = -1 }
+        if acquireFenceFd >= 0 {
+            close(acquireFenceFd)
+            acquireFenceFd = -1
+        }
         let notify = onDestroy
         onDestroy = nil
         notify?()

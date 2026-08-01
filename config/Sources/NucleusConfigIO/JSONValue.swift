@@ -9,7 +9,7 @@ import Foundation
 ///
 /// Deliberately not `Any`: a value tree that crosses actor boundaries has to be
 /// `Sendable`, and `JSONSerialization`'s output is not.
-public enum JSONValue: Decodable, Equatable, Sendable {
+package enum JSONValue: Decodable, Equatable, Sendable {
     case null
     case bool(Bool)
     case number(Double)
@@ -17,7 +17,7 @@ public enum JSONValue: Decodable, Equatable, Sendable {
     case array([JSONValue])
     case object([String: JSONValue])
 
-    public init(from decoder: any Decoder) throws {
+    package init(from decoder: any Decoder) throws {
         if let container = try? decoder.container(keyedBy: AnyCodingKey.self) {
             var object: [String: JSONValue] = [:]
             for key in container.allKeys {

@@ -8,29 +8,26 @@
 // holding a blank fail-closed session, so getting this wrong is not a cosmetic
 // bug.
 
-public import WaylandClientDispatch
+package import WaylandClientDispatch
 
 @MainActor
 @safe public final class NucleusDesktopSessionLockSurface {
-    @_spi(NucleusWindowClientImplementation)
-    public let wlSurface: WaylandProxy<WlSurfaceClient>
-    @_spi(NucleusWindowClientImplementation)
-    public let lockSurface:
-        WaylandProxy<ExtSessionLockSurfaceV1Client>
-    public let output: NucleusDesktopOutput
+    package let wlSurface: WaylandProxy<WlSurfaceClient>
+    package let lockSurface: WaylandProxy<ExtSessionLockSurfaceV1Client>
+    package let output: NucleusDesktopOutput
 
     /// The size the compositor requires this surface to be. Authoritative: a
     /// lock surface does not get to pick its own size.
-    public private(set) var configuredWidth: UInt32 = 0
-    public private(set) var configuredHeight: UInt32 = 0
-    public private(set) var hasConfigure = false
+    package private(set) var configuredWidth: UInt32 = 0
+    package private(set) var configuredHeight: UInt32 = 0
+    package private(set) var hasConfigure = false
 
     /// Fired on each configure with the required size. The render backend sizes
     /// its swapchain to exactly this and presents.
-    public var onConfigure: ((UInt32, UInt32) -> Void)?
+    package var onConfigure: ((UInt32, UInt32) -> Void)?
     private var isDestroyed = false
 
-    public init?(
+    package init?(
         lock: WaylandProxy<ExtSessionLockV1Client>,
         client: NucleusDesktopConnection,
         output: NucleusDesktopOutput
@@ -38,9 +35,10 @@ public import WaylandClientDispatch
         guard let surface = try? client.createSurface() else {
             return nil
         }
-        guard let lockSurface = try? lock.getLockSurface(
-            surface: surface,
-            output: output.proxy)
+        guard
+            let lockSurface = try? lock.getLockSurface(
+                surface: surface,
+                output: output.proxy)
         else {
             try? surface.destroy()
             return nil
@@ -60,7 +58,7 @@ public import WaylandClientDispatch
         // not part of this protocol's handshake.
     }
 
-    public func destroy() {
+    package func destroy() {
         guard !isDestroyed else { return }
         isDestroyed = true
         try? lockSurface.destroy()
@@ -73,8 +71,9 @@ public import WaylandClientDispatch
 }
 
 extension NucleusDesktopSessionLockSurface: ExtSessionLockSurfaceV1Events {
-    public func configure(
-        _ proxy: WaylandBorrowedProxy<ExtSessionLockSurfaceV1Client>, serial: UInt32, width: UInt32, height: UInt32
+    package func configure(
+        _ proxy: WaylandBorrowedProxy<ExtSessionLockSurfaceV1Client>, serial: UInt32, width: UInt32,
+        height: UInt32
     ) {
         try? lockSurface.ackConfigure(serial: serial)
         hasConfigure = true

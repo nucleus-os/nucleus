@@ -4,13 +4,13 @@ import WaylandProtocolTypes
 
 /// One format/modifier pair advertised by the compositor's v4+ DMA-BUF
 /// feedback table.
-public struct NucleusDesktopDmaBufFormat:
+package struct NucleusDesktopDmaBufFormat:
     Sendable, Equatable, Hashable
 {
-    public let format: UInt32
-    public let modifier: UInt64
+    package let format: UInt32
+    package let modifier: UInt64
 
-    public init(format: UInt32, modifier: UInt64) {
+    package init(format: UInt32, modifier: UInt64) {
         self.format = format
         self.modifier = modifier
     }

@@ -5,7 +5,9 @@
 @unsafe import NucleusCompositorXcbC
 
 /// Write the Xrdb-format RESOURCE_MANAGER string on the root window for `scale`.
-func setResourceManager(_ conn: OpaquePointer, _ root: xcb_window_t, _ atoms: AtomTable, scale: Double) {
+func setResourceManager(
+    _ conn: OpaquePointer, _ root: xcb_window_t, _ atoms: AtomTable, scale: Double
+) {
     let bytes = Array(resourceManagerString(scale: scale).utf8)
     bytes.withUnsafeBytes { raw in
         _ = unsafe xcb_change_property(

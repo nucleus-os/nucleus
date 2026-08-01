@@ -67,7 +67,9 @@ shells.
 produce it through their React reconciler; the native shell publishes it from an authoritative
 `WindowScene`. There is no cross-process scene protocol and no serialized layer tree: a shell
 is a normal client that renders its own buffers, not a description the compositor renders on
-its behalf.
+its behalf. `NucleusLayers.LayerTransaction` materializes a Swift
+`LayerTransactionBatch`, calls its Swift `CommitSink` directly, and
+`RenderCommitSink` semantically lowers that batch into renderer-retained state.
 
 **The compositor/shell seam is standard Wayland protocols.** The compositor implements the
 server side of layer-shell (panels, docks, backgrounds, overlays, exclusive zones),

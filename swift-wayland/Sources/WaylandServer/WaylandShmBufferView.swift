@@ -1,13 +1,13 @@
 import WaylandServerC
 
-public struct WaylandShmMetadata: Equatable, Sendable {
-    public let format: UInt32
-    public let width: Int
-    public let height: Int
-    public let stride: Int
-    public let byteCount: Int
+package struct WaylandShmMetadata: Equatable, Sendable {
+    package let format: UInt32
+    package let width: Int
+    package let height: Int
+    package let stride: Int
+    package let byteCount: Int
 
-    public init(
+    package init(
         format: UInt32,
         width: Int,
         height: Int,
@@ -42,7 +42,7 @@ public struct WaylandShmMetadata: Equatable, Sendable {
     }
 }
 
-public enum WaylandShmAccessError: Error, Equatable, Sendable {
+package enum WaylandShmAccessError: Error, Equatable, Sendable {
     case notShmBuffer
     case invalidMetadata
     case dataUnavailable
@@ -53,7 +53,7 @@ public enum WaylandShmAccessError: Error, Equatable, Sendable {
 /// Checked operations keep libwayland's mapped pointer inside this module.
 /// Native consumers can opt into `withUnsafeBytes` at their own explicit
 /// boundary without extending the mapping lifetime.
-@safe public struct WaylandShmBytes: ~Escapable {
+@safe package struct WaylandShmBytes: ~Escapable {
     @unsafe private let bytes: UnsafeRawBufferPointer
 
     @_lifetime(borrow bytes)
@@ -61,29 +61,29 @@ public enum WaylandShmAccessError: Error, Equatable, Sendable {
         unsafe self.bytes = copy bytes
     }
 
-    public var count: Int {
+    package var count: Int {
         unsafe bytes.count
     }
 
-    public var isEmpty: Bool {
+    package var isEmpty: Bool {
         count == 0
     }
 
-    public subscript(index: Int) -> UInt8 {
+    package subscript(index: Int) -> UInt8 {
         precondition(indices.contains(index), "SHM byte index is out of bounds")
         return unsafe bytes[index]
     }
 
-    public var indices: Range<Int> {
+    package var indices: Range<Int> {
         0..<count
     }
 
-    public func copiedBytes() -> [UInt8] {
+    package func copiedBytes() -> [UInt8] {
         unsafe Array(bytes)
     }
 
     /// Copy strided source rows into a tightly packed Swift array.
-    public func copiedRows(
+    package func copiedRows(
         rowBytes: Int,
         rowCount: Int,
         sourceStride: Int
@@ -120,7 +120,7 @@ public enum WaylandShmAccessError: Error, Equatable, Sendable {
     }
 
     @unsafe
-    public func withUnsafeBytes<Result: ~Copyable, Failure: Error>(
+    package func withUnsafeBytes<Result: ~Copyable, Failure: Error>(
         _ body: (UnsafeRawBufferPointer) throws(Failure) -> Result
     ) throws(Failure) -> Result {
         try unsafe body(bytes)
@@ -128,7 +128,7 @@ public enum WaylandShmAccessError: Error, Equatable, Sendable {
 }
 
 /// A mutable byte view scoped to one `wl_shm_buffer_begin_access` interval.
-@safe public struct MutableWaylandShmBytes: ~Escapable {
+@safe package struct MutableWaylandShmBytes: ~Escapable {
     @unsafe private var bytes: UnsafeMutableRawBufferPointer
 
     @_lifetime(borrow bytes)
@@ -138,15 +138,15 @@ public enum WaylandShmAccessError: Error, Equatable, Sendable {
         unsafe self.bytes = copy bytes
     }
 
-    public var count: Int {
+    package var count: Int {
         unsafe bytes.count
     }
 
-    public var isEmpty: Bool {
+    package var isEmpty: Bool {
         count == 0
     }
 
-    public subscript(index: Int) -> UInt8 {
+    package subscript(index: Int) -> UInt8 {
         get {
             precondition(indices.contains(index), "SHM byte index is out of bounds")
             return unsafe bytes[index]
@@ -157,12 +157,12 @@ public enum WaylandShmAccessError: Error, Equatable, Sendable {
         }
     }
 
-    public var indices: Range<Int> {
+    package var indices: Range<Int> {
         0..<count
     }
 
     /// Copy rows from an owned Swift byte array into this strided SHM mapping.
-    public func copyRows(
+    package func copyRows(
         from source: [UInt8],
         sourceOffset: Int,
         sourceStride: Int,
@@ -217,7 +217,7 @@ public enum WaylandShmAccessError: Error, Equatable, Sendable {
     }
 
     @unsafe
-    public func withUnsafeMutableBytes<Result: ~Copyable, Failure: Error>(
+    package func withUnsafeMutableBytes<Result: ~Copyable, Failure: Error>(
         _ body: (UnsafeMutableRawBufferPointer) throws(Failure) -> Result
     ) throws(Failure) -> Result {
         try unsafe body(bytes)
@@ -255,9 +255,10 @@ extension WaylandResourceReference {
         }
         return unsafe body(
             metadata,
-            WaylandShmBytes(UnsafeRawBufferPointer(
-                start: data,
-                count: metadata.byteCount)))
+            WaylandShmBytes(
+                UnsafeRawBufferPointer(
+                    start: data,
+                    count: metadata.byteCount)))
     }
 
     package func _withMutableShmBytes<Result: ~Copyable>(
@@ -279,8 +280,9 @@ extension WaylandResourceReference {
         }
         return unsafe body(
             metadata,
-            MutableWaylandShmBytes(UnsafeMutableRawBufferPointer(
-                start: data,
-                count: metadata.byteCount)))
+            MutableWaylandShmBytes(
+                UnsafeMutableRawBufferPointer(
+                    start: data,
+                    count: metadata.byteCount)))
     }
 }

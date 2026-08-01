@@ -1,4 +1,4 @@
-public import NucleusUI
+package import NucleusUI
 
 /// A rounded status pill with an accent-tinted fill, a hairline outline, and a
 /// leading indicator dot — the shell bar's most repeated element.
@@ -8,8 +8,8 @@ public import NucleusUI
 /// package `Nucleus` can express real shell chrome with no access to layers,
 /// recordings, registrars, or the renderer.
 @MainActor
-public final class StatusPillView: View {
-    public enum Indicator: Sendable, Equatable {
+package final class StatusPillView: View {
+    package enum Indicator: Sendable, Equatable {
         case none
         /// A filled dot, for a discrete state (connected, muted, charging).
         case dot(Color)
@@ -18,30 +18,30 @@ public final class StatusPillView: View {
         case ring(Color, progress: Double)
     }
 
-    public var accent: Color = Color(0.36, 0.60, 0.96, 1) {
+    package var accent: Color = Color(0.36, 0.60, 0.96, 1) {
         didSet { if accent != oldValue { setNeedsDisplay() } }
     }
 
-    public var indicator: Indicator = .none {
+    package var indicator: Indicator = .none {
         didSet { if indicator != oldValue { setNeedsDisplay() } }
     }
 
     /// Draws a subtle vertical sheen over the fill. Off for dense bars where
     /// the gradient reads as noise.
-    public var isEmphasized: Bool = false {
+    package var isEmphasized: Bool = false {
         didSet { if isEmphasized != oldValue { setNeedsDisplay() } }
     }
 
-    public override init() {
+    package override init() {
         super.init()
         style = ViewStyle(cornerRadius: 9)
     }
 
-    public override var intrinsicContentSize: Size {
+    package override var intrinsicContentSize: Size {
         Size(width: 72, height: 18)
     }
 
-    public override func draw(in context: GraphicsContext) {
+    package override func draw(in context: GraphicsContext) {
         let bounds = Rect(
             x: 0, y: 0, width: self.bounds.size.width, height: self.bounds.size.height)
         guard bounds.size.width > 0, bounds.size.height > 0 else { return }
@@ -51,13 +51,15 @@ public final class StatusPillView: View {
         pill.addRoundedRect(bounds, radius: radius)
 
         if isEmphasized {
-            context.fill(pill, with: .linearGradient(
-                from: Point(x: 0, y: 0),
-                to: Point(x: 0, y: bounds.size.height),
-                stops: [
-                    GradientStop(location: 0, color: accent.opacity(0.34)),
-                    GradientStop(location: 1, color: accent.opacity(0.16)),
-                ]))
+            context.fill(
+                pill,
+                with: .linearGradient(
+                    from: Point(x: 0, y: 0),
+                    to: Point(x: 0, y: bounds.size.height),
+                    stops: [
+                        GradientStop(location: 0, color: accent.opacity(0.34)),
+                        GradientStop(location: 1, color: accent.opacity(0.16)),
+                    ]))
         } else {
             context.fillColor = accent.opacity(0.22)
             context.fill(pill)

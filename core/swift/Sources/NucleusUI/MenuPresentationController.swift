@@ -26,11 +26,12 @@ private final class MenuSeparatorView: View {
     override func draw(in context: GraphicsContext) {
         context.fillColor = SemanticColor.separator.resolve(
             in: effectiveAppearance)
-        context.fill(Rect(
-            x: MenuMetrics.leadingInset,
-            y: max(0, (bounds.size.height - 1) * 0.5),
-            width: max(0, bounds.size.width - MenuMetrics.leadingInset * 2),
-            height: 1))
+        context.fill(
+            Rect(
+                x: MenuMetrics.leadingInset,
+                y: max(0, (bounds.size.height - 1) * 0.5),
+                width: max(0, bounds.size.width - MenuMetrics.leadingInset * 2),
+                height: 1))
     }
 }
 
@@ -97,23 +98,25 @@ private final class MenuItemView: Control {
         arrowLabel.text = item.submenu == nil ? "" : "\u{203A}"
         isEnabled = item.isEnabled
         accessibilityLabel = item.accessibilityLabel ?? item.title
-        accessibilityValue = switch item.state {
-        case .off: nil
-        case .on: "Checked"
-        case .mixed: "Mixed"
-        }
+        accessibilityValue =
+            switch item.state {
+            case .off: nil
+            case .on: "Checked"
+            case .mixed: "Mixed"
+            }
         var traits = accessibilityTraits
         traits.remove([.checked, .expanded, .disabled])
         if item.state != .off { traits.insert(.checked) }
         if submenuExpanded { traits.insert(.expanded) }
         if !item.isEnabled { traits.insert(.disabled) }
         accessibilityTraits = traits
-        markerLabel.text = switch item.state {
-        case .off: ""
-        case .on:
-            if case .radio = item.activationBehavior { "\u{2022}" } else { "\u{2713}" }
-        case .mixed: "\u{2014}"
-        }
+        markerLabel.text =
+            switch item.state {
+            case .off: ""
+            case .on:
+                if case .radio = item.activationBehavior { "\u{2022}" } else { "\u{2713}" }
+            case .mixed: "\u{2014}"
+            }
         setNeedsLayout()
         setNeedsDisplay()
     }
@@ -128,7 +131,8 @@ private final class MenuItemView: Control {
         super.controlStateDidChange()
         let appearance = effectiveAppearance
         let active = isSelected && isEnabled
-        backgroundColor = active
+        backgroundColor =
+            active
             ? SemanticColor.accent.resolve(in: appearance)
             : nil
         let textColor: Color =
@@ -172,9 +176,11 @@ private final class MenuItemView: Control {
             y: 0,
             width: arrowWidth,
             height: height)
-        let titleX = markerX + MenuMetrics.markerWidth
+        let titleX =
+            markerX + MenuMetrics.markerWidth
             + (hasGlyph ? MenuMetrics.glyphWidth : 0)
-        let titleEnd = shortcutWidth > 0
+        let titleEnd =
+            shortcutWidth > 0
             ? shortcutLabel.frame.origin.x - MenuMetrics.shortcutGap
             : bounds.size.width - trailing
         titleLabel.frame = Rect(
@@ -248,7 +254,8 @@ private final class MenuPanelView: View {
         let widestShortcut = rows.map(\.measuredShortcutWidth).max() ?? 0
         let hasGlyph = orderedItems.contains { $0.glyph != nil }
         let hasSubmenu = orderedItems.contains { $0.submenu != nil }
-        let width = MenuMetrics.leadingInset
+        let width =
+            MenuMetrics.leadingInset
             + MenuMetrics.markerWidth
             + (hasGlyph ? MenuMetrics.glyphWidth : 0)
             + widestTitle
@@ -260,9 +267,10 @@ private final class MenuPanelView: View {
         let height = orderedItems.reduce(
             MenuMetrics.verticalPadding * 2
         ) {
-            $0 + ($1.isSeparator
-                ? MenuMetrics.separatorHeight
-                : MenuMetrics.rowHeight)
+            $0
+                + ($1.isSeparator
+                    ? MenuMetrics.separatorHeight
+                    : MenuMetrics.rowHeight)
         }
         return Size(
             width: min(MenuMetrics.maximumWidth, max(MenuMetrics.minimumWidth, width)),
@@ -321,12 +329,13 @@ private final class MenuPanelView: View {
             return
         }
         guard let selectedID,
-              let index = candidates.firstIndex(where: { $0.id == selectedID })
+            let index = candidates.firstIndex(where: { $0.id == selectedID })
         else {
             setSelected(delta < 0 ? candidates.last : candidates.first)
             return
         }
-        let next = ((index + delta) % candidates.count + candidates.count)
+        let next =
+            ((index + delta) % candidates.count + candidates.count)
             % candidates.count
         setSelected(candidates[next])
     }
@@ -341,9 +350,10 @@ private final class MenuPanelView: View {
     ) -> Bool {
         let candidates = selectableItems
         guard !candidates.isEmpty else { return false }
-        let start = current.flatMap { selected in
-            candidates.firstIndex { $0.id == selected.id }
-        } ?? -1
+        let start =
+            current.flatMap { selected in
+                candidates.firstIndex { $0.id == selected.id }
+            } ?? -1
         for offset in 1...candidates.count {
             let candidate = candidates[(start + offset) % candidates.count]
             if candidate.title.lowercased().hasPrefix(prefix.lowercased()) {
@@ -392,28 +402,33 @@ private final class MenuPanelView: View {
         desiredViews.reserveCapacity(orderedItems.count)
         for item in orderedItems {
             if item.isSeparator {
-                let view = separatorViews[item.id] ?? {
-                    let view = MenuSeparatorView()
-                    separatorViews[item.id] = view
-                    return view
-                }()
+                let view =
+                    separatorViews[item.id]
+                    ?? {
+                        let view = MenuSeparatorView()
+                        separatorViews[item.id] = view
+                        return view
+                    }()
                 desiredViews.append(view)
             } else {
-                let row = itemViews[item.id] ?? {
-                    let row = MenuItemView(item: item)
-                    row.onActivate = { [weak self] item in
-                        self?.onActivate?(item)
-                    }
-                    itemViews[item.id] = row
-                    return row
-                }()
+                let row =
+                    itemViews[item.id]
+                    ?? {
+                        let row = MenuItemView(item: item)
+                        row.onActivate = { [weak self] item in
+                            self?.onActivate?(item)
+                        }
+                        itemViews[item.id] = row
+                        return row
+                    }()
                 row.synchronize()
                 desiredViews.append(row)
             }
         }
 
         let desiredIDs = Set(desiredViews.map(ObjectIdentifier.init))
-        for child in childViews where child !== effectView
+        for child in childViews
+        where child !== effectView
             && !desiredIDs.contains(ObjectIdentifier(child))
         {
             child.removeFromSuperview()
@@ -422,9 +437,9 @@ private final class MenuPanelView: View {
             insertSubview(view, at: index + 1)
         }
         if let selectedID,
-           !orderedItems.contains(where: {
-               $0.id == selectedID && !$0.isSeparator && $0.isEnabled
-           })
+            !orderedItems.contains(where: {
+                $0.id == selectedID && !$0.isSeparator && $0.isEnabled
+            })
         {
             self.selectedID = nil
         }
@@ -466,8 +481,7 @@ public final class MenuPresentationController: ~Sendable {
     private let preferredEdge: PopupEdge
     private let level: WindowLevel
     private var levels: [Level] = []
-    private var finishHandler:
-        (@MainActor (MenuPresentationResult) -> Void)?
+    private var finishHandler: (@MainActor (MenuPresentationResult) -> Void)?
     private var stickyOpeningGesture: Bool
     private var openingDragEntered = false
     private var pressedItemID: MenuItemID?
@@ -510,11 +524,12 @@ public final class MenuPresentationController: ~Sendable {
     package func begin() {
         precondition(levels.isEmpty, "a menu presentation begins once")
         menu.validateRecursively()
-        guard appendLevel(
-            menu: menu,
-            anchor: anchor,
-            preferring: preferredEdge,
-            parentItemID: nil)
+        guard
+            appendLevel(
+                menu: menu,
+                anchor: anchor,
+                preferring: preferredEdge,
+                parentItemID: nil)
         else {
             finish(.cancelled)
             return
@@ -547,8 +562,8 @@ public final class MenuPresentationController: ~Sendable {
         case .pointerMoved, .pointerDragged, .touchMoved:
             updatePointer(at: event.location)
             if stickyOpeningGesture,
-               event.type == .pointerDragged,
-               hitItem(at: event.location) != nil
+                event.type == .pointerDragged,
+                hitItem(at: event.location) != nil
             {
                 openingDragEntered = true
             }
@@ -575,9 +590,9 @@ public final class MenuPresentationController: ~Sendable {
                 return .handled
             }
             if let hit,
-               (openingDragEntered
+                openingDragEntered
                     || (pressedLevel == hit.level
-                        && pressedItemID == hit.item.id))
+                        && pressedItemID == hit.item.id)
             {
                 activate(hit.item, atLevel: hit.level)
                 return .handled
@@ -615,13 +630,13 @@ public final class MenuPresentationController: ~Sendable {
         level: Int = 0
     ) -> Rect? {
         guard levels.indices.contains(level),
-              let item = levels[level].menu.items.first(where: {
-                  $0.id == itemID
-              })
+            let item = levels[level].menu.items.first(where: {
+                $0.id == itemID
+            })
         else { return nil }
         levels[level].panel.layoutIfNeeded()
         guard
-              let frame = levels[level].panel.frame(of: item)
+            let frame = levels[level].panel.frame(of: item)
         else { return nil }
         let windowFrame = levels[level].popover.window.frame
         return Rect(
@@ -682,8 +697,8 @@ public final class MenuPresentationController: ~Sendable {
         level: Int
     ) {
         guard let characters = event.characters,
-              let character = characters.first,
-              !character.isWhitespace
+            let character = characters.first,
+            !character.isWhitespace
         else { return }
         if let mnemonic = panel.item(matchingMnemonic: character) {
             panel.setSelected(mnemonic)
@@ -717,8 +732,8 @@ public final class MenuPresentationController: ~Sendable {
             let oldSize = levels[index].panel.preferredSize
             levels[index].panel.modifierFlags = modifiers
             if levels.indices.contains(index + 1),
-               levels[index].panel.selectedItem?.id
-                != levels[index + 1].parentItemID
+                levels[index].panel.selectedItem?.id
+                    != levels[index + 1].parentItemID
             {
                 invalidSubmenuParent = min(
                     invalidSubmenuParent ?? index,
@@ -739,9 +754,11 @@ public final class MenuPresentationController: ~Sendable {
 
     private func updatePointer(at location: Point) {
         defer { lastPointerLocation = location }
-        guard let hitLevel = levels.lastIndex(where: {
-            $0.popover.window.frame.contains(location)
-        }) else {
+        guard
+            let hitLevel = levels.lastIndex(where: {
+                $0.popover.window.frame.contains(location)
+            })
+        else {
             return
         }
         let level = levels[hitLevel]
@@ -777,7 +794,8 @@ public final class MenuPresentationController: ~Sendable {
     ) {
         cancelSubmenuTasks(fromLevel: index)
         let selected = levels[index].panel.selectedItem
-        let preservesOpenChild = pointerDriven
+        let preservesOpenChild =
+            pointerDriven
             && shouldPreserveOpenSubmenu(
                 atLevel: index,
                 currentPointerLocation: pointerLocation)
@@ -788,9 +806,9 @@ public final class MenuPresentationController: ~Sendable {
                 submenuTasks[index] = Task { @MainActor [weak self] in
                     try? await clock.sleep(for: .milliseconds(300))
                     guard !Task.isCancelled,
-                          let self,
-                          levels.indices.contains(index),
-                          levels[index].panel.selectedItem?.id == selectedID
+                        let self,
+                        levels.indices.contains(index),
+                        levels[index].panel.selectedItem?.id == selectedID
                     else { return }
                     popLevels(toCount: index + 1)
                     submenuTasks[index] = nil
@@ -810,9 +828,9 @@ public final class MenuPresentationController: ~Sendable {
         submenuTasks[index] = Task { @MainActor [weak self] in
             try? await clock.sleep(for: .milliseconds(delay))
             guard !Task.isCancelled,
-                  let self,
-                  levels.indices.contains(index),
-                  levels[index].panel.selectedItem?.id == selectedID
+                let self,
+                levels.indices.contains(index),
+                levels[index].panel.selectedItem?.id == selectedID
             else { return }
             openSelectedSubmenu(atLevel: index, selectFirst: false)
             submenuTasks[index] = nil
@@ -824,12 +842,13 @@ public final class MenuPresentationController: ~Sendable {
         currentPointerLocation: Point?
     ) -> Bool {
         guard levels.indices.contains(index + 1),
-              let previous = lastPointerLocation,
-              let current = currentPointerLocation
+            let previous = lastPointerLocation,
+            let current = currentPointerLocation
         else { return false }
         let child = levels[index + 1].popover.window.frame
         let parent = levels[index].popover.window.frame
-        let edgeX = child.origin.x >= parent.origin.x
+        let edgeX =
+            child.origin.x >= parent.origin.x
             ? child.origin.x
             : child.origin.x + child.size.width
         let upper = Point(x: edgeX, y: child.origin.y - 10)
@@ -862,12 +881,12 @@ public final class MenuPresentationController: ~Sendable {
         selectFirst: Bool
     ) {
         guard levels.indices.contains(index),
-              let item = levels[index].panel.selectedItem,
-              let submenu = item.submenu
+            let item = levels[index].panel.selectedItem,
+            let submenu = item.submenu
         else { return }
         submenu.validateRecursively()
         if levels.indices.contains(index + 1),
-           levels[index + 1].parentItemID == item.id
+            levels[index + 1].parentItemID == item.id
         {
             levels[index].panel.setExpandedItem(item)
             if selectFirst {
@@ -880,23 +899,26 @@ public final class MenuPresentationController: ~Sendable {
         let childHeight = submenu.visibleItems(
             modifiers: levels[index].panel.modifierFlags
         ).reduce(MenuMetrics.verticalPadding * 2) {
-            $0 + ($1.isSeparator
-                ? MenuMetrics.separatorHeight
-                : MenuMetrics.rowHeight)
+            $0
+                + ($1.isSeparator
+                    ? MenuMetrics.separatorHeight
+                    : MenuMetrics.rowHeight)
         }
         let parentFrame = levels[index].popover.window.frame
-        let desiredTop = parentFrame.origin.y + row.origin.y
+        let desiredTop =
+            parentFrame.origin.y + row.origin.y
             - MenuMetrics.verticalPadding
         let anchor = Rect(
             x: parentFrame.origin.x + parentFrame.size.width - 10,
             y: desiredTop + childHeight * 0.5 - row.size.height * 0.5,
             width: 1,
             height: row.size.height)
-        guard appendLevel(
-            menu: submenu,
-            anchor: anchor,
-            preferring: .trailing,
-            parentItemID: item.id)
+        guard
+            appendLevel(
+                menu: submenu,
+                anchor: anchor,
+                preferring: .trailing,
+                parentItemID: item.id)
         else { return }
         levels[index].panel.setExpandedItem(item)
         if selectFirst {
@@ -918,13 +940,13 @@ public final class MenuPresentationController: ~Sendable {
         panel.frame = Rect(origin: .zero, size: panel.preferredSize)
         panel.onActivate = { [weak self, weak panel] item in
             guard let self, let panel,
-                  let index = levels.firstIndex(where: { $0.panel === panel })
+                let index = levels.firstIndex(where: { $0.panel === panel })
             else { return }
             activate(item, atLevel: index)
         }
         panel.onContentsChange = { [weak self, weak panel] in
             guard let self, let panel,
-                  let index = levels.firstIndex(where: { $0.panel === panel })
+                let index = levels.firstIndex(where: { $0.panel === panel })
             else { return }
             resizeLevel(index)
             repositionSubmenus(startingAt: index + 1)
@@ -940,9 +962,9 @@ public final class MenuPresentationController: ~Sendable {
         }
         popover.onDismiss = { [weak self, weak popover] in
             guard let self, !isDismissing, let popover,
-                  let index = levels.firstIndex(where: {
-                      $0.popover === popover
-                  })
+                let index = levels.firstIndex(where: {
+                    $0.popover === popover
+                })
             else { return }
             if index == 0 {
                 finish(.cancelled)
@@ -950,11 +972,12 @@ public final class MenuPresentationController: ~Sendable {
                 levels.removeSubrange(index...)
             }
         }
-        levels.append(Level(
-            menu: menu,
-            panel: panel,
-            popover: popover,
-            parentItemID: parentItemID))
+        levels.append(
+            Level(
+                menu: menu,
+                panel: panel,
+                popover: popover,
+                parentItemID: parentItemID))
         scene.present(popover)
         panel.layoutIfNeeded()
         _ = popover.window.makeFirstResponder(panel)
@@ -973,14 +996,15 @@ public final class MenuPresentationController: ~Sendable {
         guard start < levels.count else { return }
         for index in max(1, start)..<levels.count {
             guard let parentItemID = levels[index].parentItemID,
-                  let item = levels[index - 1].menu.items.first(where: {
-                      $0.id == parentItemID
-                  }),
-                  let row = levels[index - 1].panel.frame(of: item)
+                let item = levels[index - 1].menu.items.first(where: {
+                    $0.id == parentItemID
+                }),
+                let row = levels[index - 1].panel.frame(of: item)
             else { continue }
             let parentFrame = levels[index - 1].popover.window.frame
             let childSize = levels[index].panel.preferredSize
-            let desiredTop = parentFrame.origin.y + row.origin.y
+            let desiredTop =
+                parentFrame.origin.y + row.origin.y
                 - MenuMetrics.verticalPadding
             levels[index].popover.anchor = Rect(
                 x: parentFrame.origin.x + parentFrame.size.width - 10,
@@ -1021,7 +1045,7 @@ public final class MenuPresentationController: ~Sendable {
         item.validate()
         guard !item.isSeparator, !item.isHidden, item.isEnabled else { return }
         if item.submenu != nil,
-           let index = levels.firstIndex(where: { $0.menu === ownerMenu })
+            let index = levels.firstIndex(where: { $0.menu === ownerMenu })
         {
             levels[index].panel.setSelected(item)
             openSelectedSubmenu(atLevel: index, selectFirst: true)
@@ -1032,10 +1056,10 @@ public final class MenuPresentationController: ~Sendable {
             break
         case .toggle:
             item.state = item.state == .on ? .off : .on
-        case let .radio(group):
+        case .radio(let group):
             for sibling in ownerMenu.items {
-                if case let .radio(siblingGroup) = sibling.activationBehavior,
-                   siblingGroup == group
+                if case .radio(let siblingGroup) = sibling.activationBehavior,
+                    siblingGroup == group
                 {
                     sibling.state = sibling === item ? .on : .off
                 }
@@ -1058,8 +1082,8 @@ public final class MenuPresentationController: ~Sendable {
                 }
             }
             if item.isEnabled,
-               let submenu = item.submenu,
-               let match = keyEquivalent(in: submenu, matching: event)
+                let submenu = item.submenu,
+                let match = keyEquivalent(in: submenu, matching: event)
             {
                 return match
             }
@@ -1070,9 +1094,11 @@ public final class MenuPresentationController: ~Sendable {
     private func hitItem(
         at scenePoint: Point
     ) -> (level: Int, item: MenuItem)? {
-        guard let index = levels.lastIndex(where: {
-            $0.popover.window.frame.contains(scenePoint)
-        }) else { return nil }
+        guard
+            let index = levels.lastIndex(where: {
+                $0.popover.window.frame.contains(scenePoint)
+            })
+        else { return nil }
         let local = levels[index].popover.window.windowPoint(
             fromScene: scenePoint)
         guard let item = levels[index].panel.item(at: local) else {

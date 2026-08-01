@@ -1,9 +1,8 @@
 import NucleusShellProduct
 import NucleusShellServices
-@_spi(NucleusWindowClientImplementation)
-import NucleusWindowClientWayland
 import NucleusUI
 import NucleusUIEmbedder
+package import NucleusWindowClientWayland
 
 @MainActor
 struct NativeNotificationSurface {
@@ -20,27 +19,30 @@ extension ShellHost {
     ) {
         destroyNotificationSurface()
         guard !notifications.isEmpty,
-              let output = client.outputs.values.sorted(by: {
-                  $0.registryName < $1.registryName
-              }).first,
-              let nativePublicationContext,
-              let surfaceRegistry
+            let output = client.outputs.values.sorted(by: {
+                $0.registryName < $1.registryName
+            }).first,
+            let nativePublicationContext,
+            let surfaceRegistry
         else { return }
         let width: UInt32 = 380
-        let height = UInt32(min(
-            720,
-            max(112, notifications.count * 120)))
-        let (view, window) = nativePublicationContext
+        let height = UInt32(
+            min(
+                720,
+                max(112, notifications.count * 120)))
+        let (view, window) =
+            nativePublicationContext
             .withSemanticContext {
                 let view = ShellNotificationListView()
-                view.update(notifications.map {
-                    ShellNoticeContent(
-                        id: $0.id,
-                        title: $0.applicationName.isEmpty
-                            ? $0.summary
-                            : "\($0.applicationName): \($0.summary)",
-                        body: $0.body)
-                })
+                view.update(
+                    notifications.map {
+                        ShellNoticeContent(
+                            id: $0.id,
+                            title: $0.applicationName.isEmpty
+                                ? $0.summary
+                                : "\($0.applicationName): \($0.summary)",
+                            body: $0.body)
+                    })
                 view.onDismiss = { [weak self] id in
                     self?.notifications.dismiss(id: id)
                 }
@@ -52,13 +54,14 @@ extension ShellHost {
                 return (view, window)
             }
         _ = view
-        guard let layerSurface = NucleusDesktopLayerSurface(
-            client: client,
-            config: .shellNotifications(
-                width: width,
-                height: height,
-                namespace: "nucleus-shell.notifications"),
-            output: output)
+        guard
+            let layerSurface = NucleusDesktopLayerSurface(
+                client: client,
+                config: .shellNotifications(
+                    width: width,
+                    height: height,
+                    namespace: "nucleus-shell.notifications"),
+                output: output)
         else { return }
         let surfaceID = surfaceRegistry.register(
             window: window,
@@ -74,11 +77,13 @@ extension ShellHost {
             surfaceID: surfaceID,
             outputID: output.registryName,
             logicalOrigin: origin)
-        layerSurface.onConfigure = { [weak self] configuredWidth,
+        layerSurface.onConfigure = {
+            [weak self]
+            configuredWidth,
             configuredHeight in
             guard let self,
-                  let record = notificationSurface,
-                  let output = client.outputs[record.outputID]
+                let record = notificationSurface,
+                let output = client.outputs[record.outputID]
             else { return }
             _ = surfaceRegistry.configure(
                 surfaceID: record.surfaceID,

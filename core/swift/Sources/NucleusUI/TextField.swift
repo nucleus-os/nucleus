@@ -1,3 +1,5 @@
+public import NucleusTypes
+
 /// A single-line editable text control.
 ///
 /// Owns a `TextEditorModel` and renders it. Every editing operation goes through
@@ -273,10 +275,12 @@ open class TextField:
         if let cachedLayout { return cachedLayout }
         let string = model.displayText
         let layout = TextLayout(
-            runs: [TextRun(
-                text: string,
-                font: font.scaled(by: uiContext.environment.textScale),
-                color: textColor)],
+            runs: [
+                TextRun(
+                    text: string,
+                    font: font.scaled(by: uiContext.environment.textScale),
+                    color: textColor)
+            ],
             containerWidth: allowsMultilineText && textRect.size.width > 0
                 ? textRect.size.width : nil,
             alignment: .leading,
@@ -343,10 +347,12 @@ open class TextField:
             y: min(max(0, point.y - textRect.origin.y), max(0, layout.intrinsicSize.height - 1)))
         if local.x <= 0 { return 0 }
         if local.x >= layout.intrinsicSize.width { return model.utf16Count }
-        guard let position = layout.glyphPosition(
-            at: local,
-            in: uiContext.services.textSystem
-        ) else { return model.utf16Count }
+        guard
+            let position = layout.glyphPosition(
+                at: local,
+                in: uiContext.services.textSystem
+            )
+        else { return model.utf16Count }
         return model.alignedOffset(position.utf16Offset)
     }
 
@@ -366,7 +372,8 @@ open class TextField:
                 height: max(1, caret.rect.size.height)
             )
         }
-        let height = layout.intrinsicSize.height > 0
+        let height =
+            layout.intrinsicSize.height > 0
             ? layout.intrinsicSize.height : Double(font.pointSize)
         return Rect(
             x: textRect.origin.x + xPosition(forUTF16: model.selection.head) - scrollOffset,
@@ -394,29 +401,34 @@ open class TextField:
                 in: uiContext.services.textSystem
             ) {
                 var path = Path()
-                path.addRect(Rect(
-                    x: origin.x + selectionRect.rect.origin.x,
-                    y: origin.y + selectionRect.rect.origin.y,
-                    width: selectionRect.rect.size.width,
-                    height: selectionRect.rect.size.height))
+                path.addRect(
+                    Rect(
+                        x: origin.x + selectionRect.rect.origin.x,
+                        y: origin.y + selectionRect.rect.origin.y,
+                        width: selectionRect.rect.size.width,
+                        height: selectionRect.rect.size.height))
                 context.fill(path)
             }
         }
 
         if model.isEmpty, !placeholderString.isEmpty, !isFocused {
             let placeholder = TextLayout(
-                runs: [TextRun(
-                    text: placeholderString,
-                    font: font.scaled(
-                        by: uiContext.environment.textScale),
-                    color: placeholderColor)],
+                runs: [
+                    TextRun(
+                        text: placeholderString,
+                        font: font.scaled(
+                            by: uiContext.environment.textScale),
+                        color: placeholderColor)
+                ],
                 containerWidth: nil, alignment: .leading,
                 lineBreakMode: .byTruncatingTail, numberOfLines: 1,
                 textSystem: uiContext.services.textSystem)
             context.fillColor = placeholderColor
-            context.draw(placeholder, in: Rect(
-                origin: Point(x: textRect.origin.x, y: origin.y),
-                size: placeholder.usedRect.size))
+            context.draw(
+                placeholder,
+                in: Rect(
+                    origin: Point(x: textRect.origin.x, y: origin.y),
+                    size: placeholder.usedRect.size))
         } else if !layout.isEmpty {
             context.fillColor = textColor
             context.draw(layout, in: Rect(origin: origin, size: layout.usedRect.size))
@@ -425,35 +437,43 @@ open class TextField:
         // A composition is underlined so provisional text is visibly distinct
         // from committed text.
         if let markedRange = model.markedRange {
-            let spans = preeditStyles.isEmpty
-                ? [TextInputPreeditSpan(
-                    range: 0..<markedRange.count,
-                    style: .active
-                )]
+            let spans =
+                preeditStyles.isEmpty
+                ? [
+                    TextInputPreeditSpan(
+                        range: 0..<markedRange.count,
+                        style: .active
+                    )
+                ]
                 : preeditStyles
             for span in spans {
-                let lower = markedRange.lowerBound
+                let lower =
+                    markedRange.lowerBound
                     + min(max(0, span.range.lowerBound), markedRange.count)
-                let upper = markedRange.lowerBound
+                let upper =
+                    markedRange.lowerBound
                     + min(max(0, span.range.upperBound), markedRange.count)
                 guard lower < upper else { continue }
-                context.fillColor = span.style == .incorrect
+                context.fillColor =
+                    span.style == .incorrect
                     ? Color(0.95, 0.25, 0.25, 0.9)
                     : textColor.opacity(span.style == .inactive ? 0.45 : 0.7)
-                let thickness: Double = span.style == .selected
-                    || span.style == .highlighted ? 2 : 1
+                let thickness: Double =
+                    span.style == .selected
+                        || span.style == .highlighted ? 2 : 1
                 for rect in layout.selectionRects(
                     forUTF16Range: lower..<upper,
                     in: uiContext.services.textSystem
                 ) {
                     var underline = Path()
-                    underline.addRect(Rect(
-                        x: origin.x + rect.rect.origin.x,
-                        y: origin.y + rect.rect.origin.y
-                            + rect.rect.size.height - thickness,
-                        width: rect.rect.size.width,
-                        height: thickness
-                    ))
+                    underline.addRect(
+                        Rect(
+                            x: origin.x + rect.rect.origin.x,
+                            y: origin.y + rect.rect.origin.y
+                                + rect.rect.size.height - thickness,
+                            width: rect.rect.size.width,
+                            height: thickness
+                        ))
                     context.fill(underline)
                 }
             }
@@ -528,20 +548,25 @@ open class TextField:
     private func handleKeyDown(_ event: Event) -> EventHandling {
         // A word-granularity modifier: Option on Apple keyboards, Control
         // elsewhere. Both are accepted rather than picking a side.
-        let byWord = event.modifierFlags.contains(.option)
+        let byWord =
+            event.modifierFlags.contains(.option)
             || event.modifierFlags.contains(.control)
         let extending = event.modifierFlags.contains(.shift)
         let toLineBoundary = event.modifierFlags.contains(.command)
 
         switch event.keyCode {
         case .leftArrow:
-            let movement: TextMovement = toLineBoundary ? .beginningOfLine
+            let movement: TextMovement =
+                toLineBoundary
+                ? .beginningOfLine
                 : (byWord ? .wordBackward : .backward)
             model.moveCaret(movement, extendingSelection: extending)
             afterSelectionChange()
             return .handled
         case .rightArrow:
-            let movement: TextMovement = toLineBoundary ? .endOfLine
+            let movement: TextMovement =
+                toLineBoundary
+                ? .endOfLine
                 : (byWord ? .wordForward : .forward)
             model.moveCaret(movement, extendingSelection: extending)
             afterSelectionChange()
@@ -582,14 +607,15 @@ open class TextField:
         }
 
         if toLineBoundary, let characters = event.characters?.lowercased() {
-            let action: ActionID? = switch characters {
-            case "a": .selectAll
-            case "c": .copy
-            case "x": .cut
-            case "v": .paste
-            case "z": event.modifierFlags.contains(.shift) ? .redo : .undo
-            default: nil
-            }
+            let action: ActionID? =
+                switch characters {
+                case "a": .selectAll
+                case "c": .copy
+                case "x": .cut
+                case "v": .paste
+                case "z": event.modifierFlags.contains(.shift) ? .redo : .undo
+                default: nil
+                }
             guard let action else { return .notHandled }
             return performAction(action, event: event)
                 ? .handled

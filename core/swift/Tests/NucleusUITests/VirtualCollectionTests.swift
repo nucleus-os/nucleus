@@ -1,14 +1,17 @@
+package import NucleusLayers
 import NucleusUITestSupport
 import Testing
+
 @testable import NucleusUI
-@_spi(NucleusRenderServer) import NucleusLayers
 
 @MainActor
 @Suite(.uiContext) struct CollectionSnapshotTests {
     @Test func duplicateIdentityIsRejected() {
-        #expect(throws: CollectionSnapshotError.duplicateItemID(
-            CollectionItemID("same")
-        )) {
+        #expect(
+            throws: CollectionSnapshotError.duplicateItemID(
+                CollectionItemID("same")
+            )
+        ) {
             try CollectionSnapshot(items: [
                 CollectionItem(id: "same"),
                 CollectionItem(id: "same"),
@@ -40,11 +43,15 @@ import Testing
         var activated: CollectionItemID?
         list.onActivateItem = { item, _ in activated = item.id }
 
-        #expect(list.handleEvent(Event(
-            type: .keyDown, keyCode: .downArrow)) == .handled)
+        #expect(
+            list.handleEvent(
+                Event(
+                    type: .keyDown, keyCode: .downArrow)) == .handled)
         #expect(list.focusedItemID == CollectionItemID("b"))
-        #expect(list.handleEvent(Event(
-            type: .keyDown, keyCode: .return)) == .handled)
+        #expect(
+            list.handleEvent(
+                Event(
+                    type: .keyDown, keyCode: .return)) == .handled)
         #expect(activated == CollectionItemID("b"))
     }
 
@@ -56,11 +63,13 @@ import Testing
         list.applySnapshot(try! CollectionSnapshot(ids: Array(0..<5)))
         list.selectItem(id: CollectionItemID(1))
         list.selectItem(id: CollectionItemID(3), extendingSelection: true)
-        #expect(list.selectedItemIDs == Set([
-            CollectionItemID(1),
-            CollectionItemID(2),
-            CollectionItemID(3),
-        ]))
+        #expect(
+            list.selectedItemIDs
+                == Set([
+                    CollectionItemID(1),
+                    CollectionItemID(2),
+                    CollectionItemID(3),
+                ]))
     }
 }
 
@@ -88,8 +97,10 @@ import Testing
         let grid = makeGrid()
         #expect(grid.resolvedColumnCount == 2)
         #expect(grid.resolvedCellSize == Size(width: 100, height: 100))
-        #expect(grid.frameForItem(at: 3) == Rect(
-            x: 110, y: 105, width: 100, height: 100))
+        #expect(
+            grid.frameForItem(at: 3)
+                == Rect(
+                    x: 110, y: 105, width: 100, height: 100))
     }
 
     @Test func adaptiveColumnsRespectMinimumWidth() {
@@ -135,12 +146,13 @@ import Testing
         let retained = grid.cellView(forItemID: 1)
         configured.removeAll()
 
-        grid.applySnapshot(try! CollectionSnapshot(items: [
-            CollectionItem(id: 3),
-            CollectionItem(id: 1, revision: 1),
-            CollectionItem(id: 0),
-            CollectionItem(id: 2),
-        ]))
+        grid.applySnapshot(
+            try! CollectionSnapshot(items: [
+                CollectionItem(id: 3),
+                CollectionItem(id: 1, revision: 1),
+                CollectionItem(id: 0),
+                CollectionItem(id: 2),
+            ]))
         #expect(grid.cellView(forItemID: 1) === retained)
         #expect(configured == [CollectionItemID(1)])
     }
@@ -148,8 +160,10 @@ import Testing
     @Test func keyboardNavigationUsesResolvedColumnsAndScrolls() {
         let grid = makeGrid(count: 20, height: 100)
         grid.setSelectedItemIDs([CollectionItemID(0)])
-        #expect(grid.handleEvent(Event(
-            type: .keyDown, keyCode: .downArrow)) == .handled)
+        #expect(
+            grid.handleEvent(
+                Event(
+                    type: .keyDown, keyCode: .downArrow)) == .handled)
         #expect(grid.focusedItemID == CollectionItemID(2))
         #expect(grid.contentOffset.y > 0)
     }

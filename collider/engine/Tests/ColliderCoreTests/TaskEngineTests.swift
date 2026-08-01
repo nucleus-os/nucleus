@@ -787,7 +787,8 @@ import Testing
             HostToolchainBuildPreparation(
                 workspace: FilePath(workspace.path),
                 stagingRoot: FilePath(staging.path),
-                platform: .linux)))
+                platform: .linux,
+                contracts: [])))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([preparation]),
         selected: [preparation.id],
@@ -883,6 +884,96 @@ import Testing
     #expect(staticArguments.contains("-lswift_StringProcessing"))
     #expect(staticArguments.contains("-l_CFXMLInterface"))
     #expect(staticArguments.contains("-lxml2"))
+}
+
+@Test func SwiftBuildWorkspaceContractsReuseAndSelectivelyResetIntermediates() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-swift-build-contract-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let workspace = FilePath(directory.appendingPathComponent("workspace").path)
+    let hostRoot = workspace.appending("build/host")
+    let androidRoot = workspace.appending("build/android-aarch64")
+    let staging = FilePath(directory.appendingPathComponent("candidate/staging").path)
+    let image = FilePath(directory.appendingPathComponent("image-reference").path)
+    let ndk = FilePath(directory.appendingPathComponent("source.properties").path)
+    let state = FilePath(directory.appendingPathComponent("state").path)
+
+    func write(_ contents: String, to path: FilePath) throws {
+        try FileManager.default.createDirectory(
+            atPath: path.removingLastComponent().string,
+            withIntermediateDirectories: true)
+        try Data(contents.utf8).write(to: URL(fileURLWithPath: path.string))
+    }
+
+    func markIntermediates() throws {
+        try write("host", to: hostRoot.appending("sentinel"))
+        try write("android", to: androidRoot.appending("sentinel"))
+    }
+
+    func executePreparation() async throws {
+        let contracts = workspace.appending(".nucleus-build-contracts")
+        let task = TaskDeclaration(
+            id: TaskID(rawValue: "fixture.prepare-swift-build"),
+            component: ComponentID(rawValue: "fixture"),
+            outputs: [
+                OutputDeclaration(
+                    path: staging.appending(".nucleus-owned"),
+                    validation: .regularFile)
+            ],
+            cachePolicy: .always,
+            operation: .prepareHostToolchainBuild(
+                HostToolchainBuildPreparation(
+                    workspace: workspace,
+                    stagingRoot: staging,
+                    platform: .macOS,
+                    contracts: [
+                        BuildWorkspaceContract(
+                            name: "host",
+                            stamp: contracts.appending("host.json"),
+                            roots: [hostRoot, androidRoot],
+                            values: ["preset": "release"],
+                            files: [
+                                BuildWorkspaceContractFile(
+                                    name: "builder-image", path: image)
+                            ]),
+                        BuildWorkspaceContract(
+                            name: "Android",
+                            stamp: contracts.appending("android.json"),
+                            roots: [androidRoot],
+                            values: ["api-level": "37"],
+                            files: [
+                                BuildWorkspaceContractFile(
+                                    name: "android-ndk", path: ndk)
+                            ]),
+                    ])))
+        _ = try await ColliderRuntime().execute(
+            graph: TaskGraph([task]),
+            selected: [task.id],
+            stateRoot: state)
+    }
+
+    try write("image-a", to: image)
+    try write("ndk-a", to: ndk)
+    try markIntermediates()
+    try await executePreparation()
+    #expect(!hostRoot.appending("sentinel").isRegularFile)
+    #expect(!androidRoot.appending("sentinel").isRegularFile)
+
+    try markIntermediates()
+    try await executePreparation()
+    #expect(hostRoot.appending("sentinel").isRegularFile)
+    #expect(androidRoot.appending("sentinel").isRegularFile)
+
+    try write("image-b", to: image)
+    try await executePreparation()
+    #expect(!hostRoot.appending("sentinel").isRegularFile)
+    #expect(!androidRoot.appending("sentinel").isRegularFile)
+
+    try markIntermediates()
+    try write("ndk-b", to: ndk)
+    try await executePreparation()
+    #expect(hostRoot.appending("sentinel").isRegularFile)
+    #expect(!androidRoot.appending("sentinel").isRegularFile)
 }
 
 @Test func androidRuntimeLinkageValidationRequiresLibcxxWithoutLibstdcxxABI() async throws {

@@ -2,13 +2,14 @@
 // Typed client descriptor and event dispatch for ext_background_effect_surface_v1.
 
 import WaylandClientC
-public enum ExtBackgroundEffectSurfaceV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum ExtBackgroundEffectSurfaceV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_ext_background_effect_surface_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == ExtBackgroundEffectSurfaceV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ExtBackgroundEffectSurfaceV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_ext_background_effect_surface_v1_destroy(_proxy)
@@ -17,10 +18,11 @@ public extension WaylandProxy where Interface == ExtBackgroundEffectSurfaceV1Cli
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func setBlurRegion(region: WaylandProxy<WlRegionClient>?) throws(WaylandProxyError) {
+    package func setBlurRegion(region: WaylandProxy<WlRegionClient>?) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _regionProxy = try unsafe region?.requireNativeProxy()
-        unsafe swift_wayland_client_request_ext_background_effect_surface_v1_set_blur_region(_proxy, _regionProxy)
+        unsafe swift_wayland_client_request_ext_background_effect_surface_v1_set_blur_region(
+            _proxy, _regionProxy)
         return
     }
 }

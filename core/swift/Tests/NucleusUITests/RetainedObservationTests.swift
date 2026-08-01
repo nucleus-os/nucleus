@@ -1,8 +1,9 @@
 import NucleusUITestSupport
 import Observation
-@_spi(NucleusRenderServer) @testable import NucleusLayers
-@_spi(NucleusRenderServer) @testable import NucleusUI
 import Testing
+
+@testable import NucleusLayers
+@testable import NucleusUI
 
 @MainActor
 @Observable
@@ -46,9 +47,9 @@ private final class ObservationUpdateLatch {
 
     private func resumeIfExpected() {
         guard let expectedUpdates,
-              firstUpdates == expectedUpdates.first,
-              secondUpdates == expectedUpdates.second,
-              let continuation
+            firstUpdates == expectedUpdates.first,
+            secondUpdates == expectedUpdates.second,
+            let continuation
         else { return }
         self.expectedUpdates = nil
         self.continuation = nil
@@ -111,9 +112,10 @@ struct NucleusFoundationLifecycleStressTests {
 
         _ = view.observe(model) { view, model in
             updates += 1
-            view.alphaValue = Double(
-                model.usesPrimary ? model.primary : model.secondary
-            ) / 100
+            view.alphaValue =
+                Double(
+                    model.usesPrimary ? model.primary : model.secondary
+                ) / 100
         }
         #expect(updates == 1)
 
@@ -230,10 +232,11 @@ struct NucleusFoundationLifecycleStressTests {
 
         _ = try publisher.publish(roots: [view])
         #expect(outcomes == [.completed, .completed])
-        #expect(sink.transactions.last?.propertyUpdates.contains {
-            $0.properties.opacity == 0.25
-                && $0.properties.actionPolicy == .default
-        } == true)
+        #expect(
+            sink.transactions.last?.propertyUpdates.contains {
+                $0.properties.opacity == 0.25
+                    && $0.properties.actionPolicy == .default
+            } == true)
 
         model.alpha = 0.5
         await settleObservationBoundary()

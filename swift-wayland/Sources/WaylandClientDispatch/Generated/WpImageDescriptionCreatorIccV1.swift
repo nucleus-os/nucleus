@@ -2,16 +2,22 @@
 // Typed client descriptor and event dispatch for wp_image_description_creator_icc_v1.
 
 import WaylandClientC
-public enum WpImageDescriptionCreatorIccV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum WpImageDescriptionCreatorIccV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_image_description_creator_icc_v1())
-    public nonisolated static let maximumVersion: UInt32 = 2
+    package nonisolated static let maximumVersion: UInt32 = 2
 }
-public extension WaylandProxy where Interface == WpImageDescriptionCreatorIccV1Client {
-    func create() throws(WaylandProxyError) -> WaylandProxy<WpImageDescriptionV1Client> {
+package extension WaylandProxy where Interface == WpImageDescriptionCreatorIccV1Client {
+    package func create() throws(WaylandProxyError) -> WaylandProxy<WpImageDescriptionV1Client> {
         let _proxy = try unsafe requireNativeProxy()
-        let _result = try { () throws(WaylandProxyError) -> WaylandProxy<WpImageDescriptionV1Client> in
-            guard let _created = unsafe swift_wayland_client_request_wp_image_description_creator_icc_v1_create(_proxy) else {
+        let _result = try {
+            () throws(WaylandProxyError) -> WaylandProxy<WpImageDescriptionV1Client> in
+            guard
+                let _created =
+                    unsafe swift_wayland_client_request_wp_image_description_creator_icc_v1_create(
+                        _proxy)
+            else {
                 throw WaylandProxyError.proxyCreationFailed
             }
             return unsafe makeOwnedProxy(
@@ -20,14 +26,17 @@ public extension WaylandProxy where Interface == WpImageDescriptionCreatorIccV1C
         try unsafe invalidateAfterProtocolDestructor()
         return _result
     }
-    func setIccFile(icc_profile: consuming WaylandClientOwnedFileDescriptor, offset: UInt32, length: UInt32) throws(WaylandProxyError) {
+    package func setIccFile(
+        icc_profile: consuming WaylandClientOwnedFileDescriptor, offset: UInt32, length: UInt32
+    ) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _icc_profileDescriptor = icc_profile.take()
         defer {
             WaylandClientOwnedFileDescriptor.closeTransferred(
                 _icc_profileDescriptor)
         }
-        unsafe swift_wayland_client_request_wp_image_description_creator_icc_v1_set_icc_file(_proxy, _icc_profileDescriptor, offset, length)
+        unsafe swift_wayland_client_request_wp_image_description_creator_icc_v1_set_icc_file(
+            _proxy, _icc_profileDescriptor, offset, length)
         return
     }
 }

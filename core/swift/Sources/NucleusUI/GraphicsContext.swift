@@ -1,5 +1,5 @@
 package import NucleusLayers
-internal import NucleusTypes
+public import NucleusTypes
 
 /// What fills a shape. `.color` uses the context's `fillColor`; the gradients
 /// and the SkSL escape hatch are peers, so reaching for a runtime effect is not
@@ -223,7 +223,7 @@ public final class GraphicsContext {
         let shading = canonicalShading(shading, fallback: state.fillColor)
         applyStyle(&command, color: fillColorFor(shading))
         guard applyCurrentTransform(to: &command),
-              encode(path: path, shading: shading, into: &command)
+            encode(path: path, shading: shading, into: &command)
         else { return }
         append(command)
     }
@@ -241,7 +241,7 @@ public final class GraphicsContext {
         command.strokeWidth = strokeWidth
         applyStrokeStyle(&command)
         guard applyCurrentTransform(to: &command),
-              encode(path: path, shading: shading, into: &command)
+            encode(path: path, shading: shading, into: &command)
         else { return }
         append(command)
     }
@@ -261,7 +261,7 @@ public final class GraphicsContext {
         var command = PaintCommand(kind: .clipPath, flags: pathFlags(path, stroke: false))
         applyStyle(&command, color: state.fillColor)
         guard applyCurrentTransform(to: &command),
-              let points = narrow(path.points)
+            let points = narrow(path.points)
         else { return }
         let slice = PaintPayload.append(
             to: &storedRecording.payload,
@@ -346,7 +346,7 @@ public final class GraphicsContext {
         applyStyle(&command, color: color)
         command.flags.insert(.stroke)
         guard setGeometry(&command, rect),
-              let strokeWidth = finiteNonnegativeFloat(width)
+            let strokeWidth = finiteNonnegativeFloat(width)
         else { return }
         command.radius = finiteNonnegativeFloat(cornerRadius) ?? 0
         command.strokeWidth = strokeWidth
@@ -367,11 +367,14 @@ public final class GraphicsContext {
     }
 
     private func applyStyle(_ command: inout PaintCommand, color: Color) {
-        command.color = canonicalColor(color).layersColor
+        command.color = canonicalColor(color)
         command.alpha = Float(state.alpha)
-        command.blend = wireBlend(state.blendMode)
-        if state.antialias { command.flags.insert(.antialias) }
-        else { command.flags.remove(.antialias) }
+        command.blend = paintBlend(state.blendMode)
+        if state.antialias {
+            command.flags.insert(.antialias)
+        } else {
+            command.flags.remove(.antialias)
+        }
     }
 
     /// Carry the cap and join into the command. Only meaningful on a stroke, so
@@ -392,10 +395,10 @@ public final class GraphicsContext {
 
     private func setGeometry(_ command: inout PaintCommand, _ rect: Rect) -> Bool {
         guard rect.isFinite, !rect.isEmpty,
-              let x = finiteFloat(rect.origin.x),
-              let y = finiteFloat(rect.origin.y),
-              let width = finiteFloat(rect.size.width),
-              let height = finiteFloat(rect.size.height)
+            let x = finiteFloat(rect.origin.x),
+            let y = finiteFloat(rect.origin.y),
+            let width = finiteFloat(rect.size.width),
+            let height = finiteFloat(rect.size.height)
         else { return false }
         command.x = x
         command.y = y
@@ -409,12 +412,12 @@ public final class GraphicsContext {
     /// clips, gradients, images, text, and rectangle primitives alike.
     private func applyCurrentTransform(to command: inout PaintCommand) -> Bool {
         guard state.transform.isFinite,
-              let a = finiteFloat(state.transform.a),
-              let b = finiteFloat(state.transform.b),
-              let c = finiteFloat(state.transform.c),
-              let d = finiteFloat(state.transform.d),
-              let tx = finiteFloat(state.transform.tx),
-              let ty = finiteFloat(state.transform.ty)
+            let a = finiteFloat(state.transform.a),
+            let b = finiteFloat(state.transform.b),
+            let c = finiteFloat(state.transform.c),
+            let d = finiteFloat(state.transform.d),
+            let tx = finiteFloat(state.transform.tx),
+            let ty = finiteFloat(state.transform.ty)
         else { return false }
         command.flags.insert(.hasTransform)
         command.transformA = a
@@ -467,7 +470,7 @@ public final class GraphicsContext {
             verbs: path.verbs,
             points: points,
             scalars: scalars,
-            colors: colors.map(\.layersColor))
+            colors: colors)
         command.payloadOffset = slice.offset
         command.payloadLength = slice.length
         return true
@@ -482,7 +485,7 @@ public final class GraphicsContext {
         }
     }
 
-    /// Normalize all caller-provided gradient data before it reaches the wire.
+    /// Normalize all caller-provided gradient data before it enters PaintPayload.
     /// Stops are clamped and sorted by location; equal locations preserve input
     /// order, defining a deterministic hard transition.
     private func canonicalShading(_ shading: Shading, fallback: Color) -> Shading {
@@ -492,11 +495,13 @@ public final class GraphicsContext {
             result.reserveCapacity(input.count)
             for (index, stop) in input.enumerated() {
                 guard stop.location.isFinite else { return nil }
-                result.append((
-                    index,
-                    GradientStop(
-                        location: min(max(0, stop.location), 1),
-                        color: canonicalColor(stop.color))))
+                result.append(
+                    (
+                        index,
+                        GradientStop(
+                            location: min(max(0, stop.location), 1),
+                            color: canonicalColor(stop.color))
+                    ))
             }
             result.sort {
                 if $0.stop.location == $1.stop.location {
@@ -517,12 +522,12 @@ public final class GraphicsContext {
             return .linearGradient(from: from, to: to, stops: stops)
         case .radialGradient(let center, let radius, let input):
             guard center.isFinite, radius.isFinite, radius > 0,
-                  let stops = stops(input)
+                let stops = stops(input)
             else { return .color(canonicalColor(fallback)) }
             return .radialGradient(center: center, radius: radius, stops: stops)
         case .sweepGradient(let center, let start, let end, let input):
             guard center.isFinite, start.isFinite, end.isFinite,
-                  let stops = stops(input)
+                let stops = stops(input)
             else { return .color(canonicalColor(fallback)) }
             return .sweepGradient(center: center, start: start, end: end, stops: stops)
         case .effect(let effect, let uniforms):
@@ -563,7 +568,7 @@ public final class GraphicsContext {
         return result
     }
 
-    private func wireBlend(_ mode: BlendMode) -> PaintBlendMode {
+    private func paintBlend(_ mode: BlendMode) -> PaintBlendMode {
         switch mode {
         case .srcOver: .srcOver
         case .src: .src

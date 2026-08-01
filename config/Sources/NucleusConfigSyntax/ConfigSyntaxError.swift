@@ -6,8 +6,8 @@
 /// as one undifferentiated "not valid JSON". Anything subtler than the cases
 /// here is left to the decoder, where a semantic coding path is the better
 /// diagnostic anyway.
-public struct ConfigSyntaxError: Error, Equatable, Sendable {
-    public enum Kind: Equatable, Sendable {
+package struct ConfigSyntaxError: Error, Equatable, Sendable {
+    package enum Kind: Equatable, Sendable {
         /// A string literal ran to end of input.
         case unterminatedString
         /// A `/*` block comment ran to end of input.
@@ -21,20 +21,20 @@ public struct ConfigSyntaxError: Error, Equatable, Sendable {
         case unclosedDelimiter(opener: UInt8, openedAt: SourceLocation)
     }
 
-    public let kind: Kind
+    package let kind: Kind
     /// Where the defect was detected. For an unclosed delimiter this is end of
     /// input; `kind` carries the opening location, which is the more useful of
     /// the two to point a user at.
-    public let location: SourceLocation
+    package let location: SourceLocation
 
-    public init(kind: Kind, location: SourceLocation) {
+    package init(kind: Kind, location: SourceLocation) {
         self.kind = kind
         self.location = location
     }
 
     /// The location a user should be sent to, which is not always where the
     /// defect was detected.
-    public var primaryLocation: SourceLocation {
+    package var primaryLocation: SourceLocation {
         switch kind {
         case .unclosedDelimiter(_, let openedAt): openedAt
         case .unterminatedString, .unterminatedBlockComment,
@@ -43,7 +43,7 @@ public struct ConfigSyntaxError: Error, Equatable, Sendable {
         }
     }
 
-    public var message: String {
+    package var message: String {
         switch kind {
         case .unterminatedString:
             "unterminated string"

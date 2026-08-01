@@ -5,8 +5,9 @@
 // and emits it on creation and every topology update. Read-only from the client;
 // the compositor owns all output geometry.
 
-import WaylandServerC
+import NucleusRenderModel
 import WaylandServer
+import WaylandServerC
 import WaylandServerDispatch
 
 @MainActor
@@ -17,7 +18,8 @@ extension XdgOutputManager: ZxdgOutputManagerV1Requests {
     func getXdgOutput(
         _ request: WaylandRequest<ZxdgOutputManagerV1Server>,
         id: WlNewId<ZxdgOutputV1Server>,
-                      output outputRes: WaylandBorrowedObject<WlOutputServer>) {
+        output outputRes: WaylandBorrowedObject<WlOutputServer>
+    ) {
         guard let output = outputRes.output else { return }
         _ = id.create(
             owner: { handle in
@@ -58,4 +60,3 @@ extension XdgOutputManager: ZxdgOutputManagerV1Requests {
         }
     }
 }
-import NucleusRenderModel

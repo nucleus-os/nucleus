@@ -1,7 +1,8 @@
 import NucleusUITestSupport
 import Testing
-@_spi(NucleusRenderServer) @testable import NucleusUI
-@_spi(NucleusRenderServer) @testable import NucleusLayers
+
+@testable import NucleusLayers
+@testable import NucleusUI
 
 @MainActor
 @Suite(.uiContext) struct ViewAnimationTests {
@@ -78,7 +79,11 @@ import Testing
             let added = try animations(for: view, in: context, sink: sink)
             #expect(view.frame.origin.y == 100)
             #expect(added.count == 1)
-            #expect(added[0].animation.curve.kind == .spring)
+            if case .spring = added[0].animation.curve {
+                #expect(Bool(true))
+            } else {
+                #expect(Bool(false), "spring curve reaches the layer")
+            }
         }
     }
 
@@ -184,8 +189,12 @@ import Testing
             #expect(view.transform == target)
             #expect(added.count == 1)
             #expect(added[0].animation.keyPath == .transform)
-            #expect(added[0].animation.toEndpoint.transform.m30 == 30)
-            #expect(added[0].animation.toEndpoint.transform.m31 == 40)
+            if case .transform(let endpoint) = added[0].animation.toEndpoint {
+                #expect(endpoint.m30 == 30)
+                #expect(endpoint.m31 == 40)
+            } else {
+                #expect(Bool(false), "transform endpoint reaches the layer")
+            }
         }
     }
 

@@ -10,14 +10,14 @@
 // scan out / queue-present it. The backend owns output discovery, the per-output
 // ring/slot or swapchain, page-flip / present pacing, and session lifecycle.
 
-public import VulkanC
-public import Vulkan
+package import Vulkan
+package import VulkanC
 
 /// What kind of GPU image the core is recording into — selects the Vulkan image
 /// usage flags the Graphite render-target wrap needs. The image itself is owned by
 /// the backend (a GBM scanout BO on Linux, a swapchain image on Android); the core
 /// only borrows it for the duration of one recorded frame.
-public enum FrameTargetKind {
+package enum FrameTargetKind {
     /// A DRM/KMS scanout buffer object imported as a Vulkan image (Linux).
     case drmScanout
     /// A client-owned DMA-BUF backing store committed to a Wayland surface.
@@ -35,34 +35,34 @@ public enum FrameTargetKind {
 /// keeps ownership of the underlying image; this is a borrow for one frame.
 /// The value only transports opaque identities; it never dereferences them.
 /// The backend keeps each handle alive through the matching frame completion.
-@safe public struct AcquiredFrameTarget {
+@safe package struct AcquiredFrameTarget {
     /// The borrowed color-attachment `VkImage` the frame is composited into.
-    public var image: VkImage?
-    public var width: Int32
-    public var height: Int32
-    public var format: VkFormat
-    public var tiling: VkImageTiling
+    package var image: VkImage?
+    package var width: Int32
+    package var height: Int32
+    package var format: VkFormat
+    package var tiling: VkImageTiling
     /// The image's current layout when acquired (`VK_IMAGE_LAYOUT_UNDEFINED` for a
     /// fresh scanout BO or a just-acquired swapchain image).
-    public var initialLayout: VkImageLayout
+    package var initialLayout: VkImageLayout
     /// The exact usage flags the backend used when the image was created. The
     /// render core forwards these unchanged to Graphite; it must not reconstruct
     /// them from the target kind because Vulkan validates the real image contract.
-    public var usageFlags: VK.ImageUsageFlags
-    public var queueFamily: UInt32
+    package var usageFlags: VK.ImageUsageFlags
+    package var queueFamily: UInt32
     /// Premultiplied alpha vs opaque (false for an XRGB-style scanout BO).
-    public var hasAlpha: Bool
-    public var kind: FrameTargetKind
+    package var hasAlpha: Bool
+    package var kind: FrameTargetKind
     /// WSI swapchain only (`kind == .swapchainColor`): the acquire semaphore the
     /// GPU work waits on before rendering, and the semaphore signaled when it
     /// completes (the one `vkQueuePresentKHR` waits on). DRM scanout requires
     /// `signalSemaphore` as the exportable render-complete semaphore KMS consumes;
     /// only `waitSemaphore` is nil on that path. Client backing stores publish
     /// their completion in `didSubmitTarget`, so both fields are nil.
-    public var waitSemaphore: VkSemaphore?
-    public var signalSemaphore: VkSemaphore?
+    package var waitSemaphore: VkSemaphore?
+    package var signalSemaphore: VkSemaphore?
 
-    public init(
+    package init(
         image: VkImage?,
         width: Int32,
         height: Int32,
@@ -97,7 +97,7 @@ public enum FrameTargetKind {
 /// scanout ring, or the swapchain). `@MainActor` because the render path runs on
 /// the compositor's single main-loop thread, alongside the retained store.
 @MainActor
-public protocol PresentationBackend: AnyObject {
+package protocol PresentationBackend: AnyObject {
     /// True when the backend's submit is asynchronous and it will explicitly tell
     /// RenderCore when GPU-referenced retired resources are safe to reclaim.
     var defersGpuResourceRetirement: Bool { get }
@@ -155,18 +155,18 @@ public protocol PresentationBackend: AnyObject {
     func resumeSession()
 }
 
-public extension PresentationBackend {
-    var defersGpuResourceRetirement: Bool { false }
-    func didSubmitTarget(_ outputID: UInt64) -> Bool { true }
+extension PresentationBackend {
+    package var defersGpuResourceRetirement: Bool { false }
+    package func didSubmitTarget(_ outputID: UInt64) -> Bool { true }
     /// Default: nothing to undo. Correct for the DRM ring, whose `acquireTarget`
     /// only picks a slot (no semaphore and no checked-out WSI image).
-    func discardAcquiredTarget(_ outputID: UInt64) {}
+    package func discardAcquiredTarget(_ outputID: UInt64) {}
 
     /// Default: no extra present demand. The DRM backend overrides this to force a
     /// present when the hardware cursor moved with no tree damage.
-    func wantsPresent(_ outputID: UInt64) -> Bool { false }
+    package func wantsPresent(_ outputID: UInt64) -> Bool { false }
 
     /// Default: never direct-scanout. The DRM backend overrides this; the WSI/Android
     /// backend always composites.
-    func tryDirectScanout(_ outputID: UInt64) -> Bool { false }
+    package func tryDirectScanout(_ outputID: UInt64) -> Bool { false }
 }

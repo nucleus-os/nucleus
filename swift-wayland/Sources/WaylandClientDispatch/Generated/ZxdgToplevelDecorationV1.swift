@@ -2,14 +2,15 @@
 // Typed client descriptor and event dispatch for zxdg_toplevel_decoration_v1.
 
 import WaylandClientC
-public enum ZxdgToplevelDecorationV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+package import WaylandProtocolTypes
+
+package enum ZxdgToplevelDecorationV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zxdg_toplevel_decoration_v1())
-    public nonisolated static let maximumVersion: UInt32 = 2
+    package nonisolated static let maximumVersion: UInt32 = 2
 }
-public import WaylandProtocolTypes
-public extension WaylandProxy where Interface == ZxdgToplevelDecorationV1Client {
-    func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZxdgToplevelDecorationV1Client {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zxdg_toplevel_decoration_v1_destroy(_proxy)
@@ -18,51 +19,64 @@ public extension WaylandProxy where Interface == ZxdgToplevelDecorationV1Client 
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    func setMode(mode: ZxdgToplevelDecorationV1Mode) throws(WaylandProxyError) {
+    package func setMode(mode: ZxdgToplevelDecorationV1Mode) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_zxdg_toplevel_decoration_v1_set_mode(_proxy, mode.rawValue)
+        unsafe swift_wayland_client_request_zxdg_toplevel_decoration_v1_set_mode(
+            _proxy, mode.rawValue)
         return
     }
-    func unsetMode() throws(WaylandProxyError) {
+    package func unsetMode() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_zxdg_toplevel_decoration_v1_unset_mode(_proxy)
         return
     }
 }
 @MainActor
-public protocol ZxdgToplevelDecorationV1Events: AnyObject {
-    func configure(_ proxy: WaylandBorrowedProxy<ZxdgToplevelDecorationV1Client>, mode: ZxdgToplevelDecorationV1Mode)
+package protocol ZxdgToplevelDecorationV1Events: AnyObject {
+    func configure(
+        _ proxy: WaylandBorrowedProxy<ZxdgToplevelDecorationV1Client>,
+        mode: ZxdgToplevelDecorationV1Mode)
 }
-public extension ZxdgToplevelDecorationV1Client {
-    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zxdg_toplevel_decoration_v1_listener> = {
-        let p = UnsafeMutablePointer<zxdg_toplevel_decoration_v1_listener>.allocate(capacity: 1)
-        unsafe p.initialize(to: zxdg_toplevel_decoration_v1_listener())
-        unsafe p.pointee.configure = configure_impl
-        return unsafe p
-    }()
-    private static func handler(_ context: WaylandClientListenerContext) -> any ZxdgToplevelDecorationV1Events? {
+package extension ZxdgToplevelDecorationV1Client {
+    package nonisolated(unsafe) static let listener:
+        UnsafeMutablePointer<zxdg_toplevel_decoration_v1_listener> = {
+            let p = UnsafeMutablePointer<zxdg_toplevel_decoration_v1_listener>.allocate(capacity: 1)
+            unsafe p.initialize(to: zxdg_toplevel_decoration_v1_listener())
+            unsafe p.pointee.configure = configure_impl
+            return unsafe p
+        }()
+    private static func handler(_ context: WaylandClientListenerContext)
+        -> any ZxdgToplevelDecorationV1Events?
+    {
         context.owner as? any ZxdgToplevelDecorationV1Events
     }
-    private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, mode in
-        guard let data = unsafe data, let proxy = unsafe proxy else {
-            return
+    private static let configure_impl:
+        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = {
+            data, proxy, mode in
+            guard let data = unsafe data, let proxy = unsafe proxy else {
+                return
+            }
+            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+            guard let h = handler(listenerContext) else {
+                return
+            }
+            nonisolated(unsafe) let eventHandler = h
+            nonisolated(unsafe) let eventProxy = unsafe proxy
+            nonisolated(unsafe) let eventContext = listenerContext
+            MainActor.assumeIsolated {
+                unsafe eventHandler.configure(
+                    WaylandBorrowedProxy<ZxdgToplevelDecorationV1Client>(eventProxy),
+                    mode: ZxdgToplevelDecorationV1Mode(rawValue: mode))
+            }
         }
-        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-        guard let h = handler(listenerContext) else {
-            return
-        }
-        nonisolated(unsafe) let eventHandler = h
-        nonisolated(unsafe) let eventProxy = unsafe proxy
-        nonisolated(unsafe) let eventContext = listenerContext
-        MainActor.assumeIsolated {
-            unsafe eventHandler.configure(WaylandBorrowedProxy<ZxdgToplevelDecorationV1Client>(eventProxy), mode: ZxdgToplevelDecorationV1Mode(rawValue: mode))
-        }
-    }
 }
-public extension WaylandProxy where Interface == ZxdgToplevelDecorationV1Client {
-    func installListener(_ owner: any ZxdgToplevelDecorationV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZxdgToplevelDecorationV1Client {
+    package func installListener(_ owner: any ZxdgToplevelDecorationV1Events)
+        throws(WaylandProxyError)
+    {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zxdg_toplevel_decoration_v1_add_listener(proxy, ZxdgToplevelDecorationV1Client.listener, data)
+            unsafe zxdg_toplevel_decoration_v1_add_listener(
+                proxy, ZxdgToplevelDecorationV1Client.listener, data)
         }
     }
 }

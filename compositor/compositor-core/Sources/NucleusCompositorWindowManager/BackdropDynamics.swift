@@ -1,56 +1,58 @@
 /// Swift-owned user settings and presentation animation for backdrop materials.
-public struct BackdropDynamics: Sendable {
-    public struct Material: Sendable, Equatable {
-        public var enabled = true
-        public var passes: UInt8 = 3
-        public var offset: Float = 3
-        public var noise: Float = 0.02
-        public var saturation: Float = 1.5
-        public var tint = SIMD4<Float>.zero
-        public var alpha: Float = 1
+package struct BackdropDynamics: Sendable {
+    package struct Material: Sendable, Equatable {
+        package var enabled = true
+        package var passes: UInt8 = 3
+        package var offset: Float = 3
+        package var noise: Float = 0.02
+        package var saturation: Float = 1.5
+        package var tint = SIMD4<Float>.zero
+        package var alpha: Float = 1
 
         var isActive: Bool { enabled && offset > 0.0001 && alpha > 0.0001 }
     }
 
-    public enum ControlMode: Sendable { case simple, advanced }
-    public enum PresentationPolicy: Sendable { case immediate, animate, animateIfSignificant }
+    package enum ControlMode: Sendable { case simple, advanced }
+    package enum PresentationPolicy: Sendable { case immediate, animate, animateIfSignificant }
 
-    public struct AdvancedControls: Sendable, Equatable {
-        public var passes: UInt8?
-        public var offset: Float?
-        public var noise: Float?
-        public var saturation: Float?
-        public var tint: SIMD4<Float>?
-        public var alpha: Float?
-        public init() {}
+    package struct AdvancedControls: Sendable, Equatable {
+        package var passes: UInt8?
+        package var offset: Float?
+        package var noise: Float?
+        package var saturation: Float?
+        package var tint: SIMD4<Float>?
+        package var alpha: Float?
+        package init() {}
     }
 
-    public struct Settings: Sendable, Equatable {
-        public var enabled = true
-        public var intensity: Float = 0.8
-        public var mode: ControlMode = .simple
-        public var advanced = AdvancedControls()
-        public var presentationOpacity: Float = 1
-        public init() {}
+    package struct Settings: Sendable, Equatable {
+        package var enabled = true
+        package var intensity: Float = 0.8
+        package var mode: ControlMode = .simple
+        package var advanced = AdvancedControls()
+        package var presentationOpacity: Float = 1
+        package init() {}
 
-        public var resolvedIntensity: Float { enabled ? min(max(intensity, 0), 1) : 0 }
+        package var resolvedIntensity: Float { enabled ? min(max(intensity, 0), 1) : 0 }
     }
 
     private static let curve: [(Float, Float)] = [
         (0, 0), (0.2, 0.784), (0.4, 0.85), (0.6, 0.925), (0.8, 1), (1, 1.25),
     ]
-    public static let shellOverlayTint = SIMD4<Float>(0.035, 0.085, 0.15, 0.42)
+    package static let shellOverlayTint = SIMD4<Float>(0.035, 0.085, 0.15, 0.42)
 
-    public private(set) var target = Settings()
-    public private(set) var presented = Settings()
+    package private(set) var target = Settings()
+    package private(set) var presented = Settings()
     private var animationFrom = Settings()
     private var animationStartTime: Double?
     private var animationDuration: Float = 0
 
-    public init() {}
+    package init() {}
 
     @discardableResult
-    public mutating func setIntensity(_ intensity: Float, policy: PresentationPolicy = .animateIfSignificant) -> Bool {
+    package mutating func setIntensity(
+        _ intensity: Float, policy: PresentationPolicy = .animateIfSignificant
+    ) -> Bool {
         var settings = target
         settings.intensity = min(max(intensity, 0), 1)
         settings.enabled = settings.intensity > 0.0001
@@ -58,9 +60,10 @@ public struct BackdropDynamics: Sendable {
     }
 
     @discardableResult
-    public mutating func apply(_ settings: Settings, policy: PresentationPolicy) -> Bool {
+    package mutating func apply(_ settings: Settings, policy: PresentationPolicy) -> Bool {
         let targetChanged = target != settings
-        let presentationChanged = !Self.materialsApproximatelyEqual(Self.resolveDefault(presented), Self.resolveDefault(settings))
+        let presentationChanged = !Self.materialsApproximatelyEqual(
+            Self.resolveDefault(presented), Self.resolveDefault(settings))
         guard targetChanged || presentationChanged else { return false }
         target = settings
         let animate: Bool
@@ -70,7 +73,8 @@ public struct BackdropDynamics: Sendable {
         case .animateIfSignificant:
             let current = Self.resolveDefault(presented)
             let next = Self.resolveDefault(settings)
-            animate = current.isActive != next.isActive
+            animate =
+                current.isActive != next.isActive
                 || abs(current.offset - next.offset) >= 0.1
                 || abs(current.alpha - next.alpha) >= 0.05
                 || abs(current.tint.w - next.tint.w) >= 0.02
@@ -88,7 +92,7 @@ public struct BackdropDynamics: Sendable {
         return true
     }
 
-    public mutating func resolve(frameTime: Double) -> BackdropCatalog.Producers {
+    package mutating func resolve(frameTime: Double) -> BackdropCatalog.Producers {
         tick(frameTime: frameTime)
         return .init(
             defaultMaterial: Self.resolveDefault(presented),
@@ -97,8 +101,9 @@ public struct BackdropDynamics: Sendable {
         )
     }
 
-    public var hasActiveAnimation: Bool {
-        !Self.materialsApproximatelyEqual(Self.resolveDefault(presented), Self.resolveDefault(target))
+    package var hasActiveAnimation: Bool {
+        !Self.materialsApproximatelyEqual(
+            Self.resolveDefault(presented), Self.resolveDefault(target))
     }
 
     private mutating func tick(frameTime: Double) {
@@ -112,7 +117,10 @@ public struct BackdropDynamics: Sendable {
             animationStartTime = frameTime
             if animationDuration <= 0 { animationDuration = 0.22 }
         }
-        let linear = Float(min(max((frameTime - animationStartTime!) / Double(max(animationDuration, 0.001)), 0), 1))
+        let linear = Float(
+            min(
+                max((frameTime - animationStartTime!) / Double(max(animationDuration, 0.001)), 0), 1
+            ))
         let progress = linear * linear * (3 - 2 * linear)
         presented = Self.interpolate(animationFrom, target, progress)
         if linear >= 1 || !hasActiveAnimation {
@@ -122,7 +130,7 @@ public struct BackdropDynamics: Sendable {
         }
     }
 
-    public static func resolveDefault(_ settings: Settings) -> Material {
+    package static func resolveDefault(_ settings: Settings) -> Material {
         let strength = strength(for: settings.resolvedIntensity)
         let finish = smoothstep((strength - 0.65) / 0.35)
         var material = Material(
@@ -143,14 +151,20 @@ public struct BackdropDynamics: Sendable {
             if let value = settings.advanced.alpha { material.alpha = min(max(value, 0), 1) }
         }
         material.enabled = settings.enabled && material.offset > 0.0001 && material.alpha > 0.0001
-        if !material.enabled { material.offset = 0; material.alpha = 0 }
+        if !material.enabled {
+            material.offset = 0
+            material.alpha = 0
+        }
         return material
     }
 
-    public static func resolveShellOverlay(opacity: Float = 1, tint: SIMD4<Float> = shellOverlayTint) -> Material {
+    package static func resolveShellOverlay(
+        opacity: Float = 1, tint: SIMD4<Float> = shellOverlayTint
+    ) -> Material {
         let alpha = min(max(opacity, 0), 1)
-        return Material(enabled: alpha > 0.0001, passes: 3, offset: alpha > 0.0001 ? 3 : 0,
-                        noise: 0.02, saturation: 1.5, tint: tint, alpha: alpha)
+        return Material(
+            enabled: alpha > 0.0001, passes: 3, offset: alpha > 0.0001 ? 3 : 0,
+            noise: 0.02, saturation: 1.5, tint: tint, alpha: alpha)
     }
 
     private static func strength(for intensity: Float) -> Float {
@@ -169,11 +183,14 @@ public struct BackdropDynamics: Sendable {
         return t * t * (3 - 2 * t)
     }
 
-    private static func interpolate(_ current: Settings, _ target: Settings, _ progress: Float) -> Settings {
+    private static func interpolate(_ current: Settings, _ target: Settings, _ progress: Float)
+        -> Settings
+    {
         let t = min(max(progress, 0), 1)
         if t >= 0.9995 { return target }
         var next = target
-        next.intensity = current.resolvedIntensity + (target.resolvedIntensity - current.resolvedIntensity) * t
+        next.intensity =
+            current.resolvedIntensity + (target.resolvedIntensity - current.resolvedIntensity) * t
         next.enabled = target.enabled || next.intensity > 0.0001
         let currentActive = resolveDefault(current).isActive
         let targetActive = resolveDefault(target).isActive
@@ -181,14 +198,18 @@ public struct BackdropDynamics: Sendable {
         let targetOpacity: Float = targetActive ? 1 : 0
         next.presentationOpacity = currentOpacity + (targetOpacity - currentOpacity) * t
         let currentMaterial = resolveDefault(current)
-        next.advanced.offset = interpolate(current.advanced.offset, target.advanced.offset,
-                                           fallback: currentMaterial.offset, progress: t)
-        next.advanced.noise = interpolate(current.advanced.noise, target.advanced.noise,
-                                          fallback: currentMaterial.noise, progress: t)
-        next.advanced.saturation = interpolate(current.advanced.saturation, target.advanced.saturation,
-                                               fallback: currentMaterial.saturation, progress: t)
-        next.advanced.alpha = interpolate(current.advanced.alpha, target.advanced.alpha,
-                                          fallback: currentMaterial.alpha, progress: t)
+        next.advanced.offset = interpolate(
+            current.advanced.offset, target.advanced.offset,
+            fallback: currentMaterial.offset, progress: t)
+        next.advanced.noise = interpolate(
+            current.advanced.noise, target.advanced.noise,
+            fallback: currentMaterial.noise, progress: t)
+        next.advanced.saturation = interpolate(
+            current.advanced.saturation, target.advanced.saturation,
+            fallback: currentMaterial.saturation, progress: t)
+        next.advanced.alpha = interpolate(
+            current.advanced.alpha, target.advanced.alpha,
+            fallback: currentMaterial.alpha, progress: t)
         if let targetTint = target.advanced.tint {
             let currentTint = current.advanced.tint ?? currentMaterial.tint
             next.advanced.tint = currentTint + (targetTint - currentTint) * t

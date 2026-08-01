@@ -10,27 +10,27 @@ import Glibc
 // cxx-free model module must not import the C++ Tracy bridge. Submit/present
 // crossings also open and close one discontinuous frame range per output.
 
-public enum PresentSource: Sendable, Equatable {
+package enum PresentSource: Sendable, Equatable {
     case drmPageFlip
     case vkPresentTiming
     case synthetic
 }
 
-public struct RedrawReasons: OptionSet, Sendable, Equatable {
-    public let rawValue: UInt16
-    public init(rawValue: UInt16) { self.rawValue = rawValue }
+package struct RedrawReasons: OptionSet, Sendable, Equatable {
+    package let rawValue: UInt16
+    package init(rawValue: UInt16) { self.rawValue = rawValue }
 
-    public static let surfaceDamage = Self(rawValue: 1 << 0)
-    public static let animation = Self(rawValue: 1 << 1)
-    public static let cursor = Self(rawValue: 1 << 2)
-    public static let shellOverlay = Self(rawValue: 1 << 3)
-    public static let outputChange = Self(rawValue: 1 << 4)
-    public static let screencopy = Self(rawValue: 1 << 5)
-    public static let lockTransition = Self(rawValue: 1 << 6)
-    public static let recovery = Self(rawValue: 1 << 7)
+    package static let surfaceDamage = Self(rawValue: 1 << 0)
+    package static let animation = Self(rawValue: 1 << 1)
+    package static let cursor = Self(rawValue: 1 << 2)
+    package static let shellOverlay = Self(rawValue: 1 << 3)
+    package static let outputChange = Self(rawValue: 1 << 4)
+    package static let screencopy = Self(rawValue: 1 << 5)
+    package static let lockTransition = Self(rawValue: 1 << 6)
+    package static let recovery = Self(rawValue: 1 << 7)
 }
 
-public enum OutputRedrawState: Sendable, Equatable {
+package enum OutputRedrawState: Sendable, Equatable {
     case idle
     case queued(RedrawReasons)
     case rendering(frameBuildID: UInt64, pending: RedrawReasons)
@@ -39,15 +39,15 @@ public enum OutputRedrawState: Sendable, Equatable {
     case suspended(RedrawReasons)
 }
 
-public struct PresentReport: Sendable, Equatable {
-    public var source: PresentSource
-    public var presentationNs: UInt64
-    public var presentID: UInt64?
-    public var targetPresentNs: UInt64?
-    public var predictedPresentNs: UInt64?
-    public var refreshIntervalNs: UInt64?
+package struct PresentReport: Sendable, Equatable {
+    package var source: PresentSource
+    package var presentationNs: UInt64
+    package var presentID: UInt64?
+    package var targetPresentNs: UInt64?
+    package var predictedPresentNs: UInt64?
+    package var refreshIntervalNs: UInt64?
 
-    public init(
+    package init(
         source: PresentSource,
         presentationNs: UInt64,
         presentID: UInt64? = nil,
@@ -80,16 +80,16 @@ private func satMul(_ a: UInt64, _ b: UInt64) -> UInt64 {
     return overflow ? .max : product
 }
 
-public struct DisplayLink: Sendable {
+package struct DisplayLink: Sendable {
     /// One-bit-per-source tracking for continuous demand. Each source toggles
     /// its own slot so turning one off doesn't cancel another's demand.
-    public struct ContinuousDemand: Sendable, Equatable {
-        public var animation: Bool = false
-        public var notification: Bool = false
-        public var screenshot: Bool = false
-        public var background: Bool = false
+    package struct ContinuousDemand: Sendable, Equatable {
+        package var animation: Bool = false
+        package var notification: Bool = false
+        package var screenshot: Bool = false
+        package var background: Bool = false
 
-        public init(
+        package init(
             animation: Bool = false,
             notification: Bool = false,
             screenshot: Bool = false,
@@ -101,58 +101,58 @@ public struct DisplayLink: Sendable {
             self.background = background
         }
 
-        public func any() -> Bool {
+        package func any() -> Bool {
             animation || notification || screenshot || background
         }
     }
 
-    public struct OutputTimelineSample: Sendable, Equatable {
-        public var deadlineNs: UInt64
-        public var predictedPresentNs: UInt64
-        public var targetPresentNs: UInt64?
-        public var lastPresentID: UInt64
-        public var nextPresentID: UInt64
-        public var source: PresentSource
-        public var presentationTimeSeconds: Double
-        public var refreshIntervalNs: UInt64
+    package struct OutputTimelineSample: Sendable, Equatable {
+        package var deadlineNs: UInt64
+        package var predictedPresentNs: UInt64
+        package var targetPresentNs: UInt64?
+        package var lastPresentID: UInt64
+        package var nextPresentID: UInt64
+        package var source: PresentSource
+        package var presentationTimeSeconds: Double
+        package var refreshIntervalNs: UInt64
     }
 
-    public var refreshIntervalNs: UInt64
-    public var lastPresentationNs: Int64
-    public var outputTag: String
-    public var attachedSource: PresentSource = .drmPageFlip
-    public var lastPresentID: UInt64 = 0
-    public var lastAckedPresentID: UInt64 = 0
-    public var submittedFrameOpen: Bool = false
-    public var requested: Bool = false
-    public var frameDue: Bool = false
+    package var refreshIntervalNs: UInt64
+    package var lastPresentationNs: Int64
+    package var outputTag: String
+    package var attachedSource: PresentSource = .drmPageFlip
+    package var lastPresentID: UInt64 = 0
+    package var lastAckedPresentID: UInt64 = 0
+    package var submittedFrameOpen: Bool = false
+    package var requested: Bool = false
+    package var frameDue: Bool = false
     /// The vblank selected when transient frame demand first becomes pending.
     /// This must remain fixed until the demand is consumed: recomputing the next
     /// predicted vblank during the reactor's due check moves the target forward
     /// after every deadline wake and makes a queued frame impossible to render.
     private var frameTargetPresentNs: UInt64? = nil
-    public var frameDeadlineNs: UInt64? = nil
-    public var continuous: ContinuousDemand = .init()
+    package var frameDeadlineNs: UInt64? = nil
+    package var continuous: ContinuousDemand = .init()
 
-    public init(refreshIntervalNs: UInt64, outputTag: String = "bootstrap") {
+    package init(refreshIntervalNs: UInt64, outputTag: String = "bootstrap") {
         self.refreshIntervalNs = refreshIntervalNs
         self.lastPresentationNs = Int64(bitPattern: nsNow())
         self.outputTag = outputTag
     }
 
-    public mutating func attachSource(_ source: PresentSource) {
+    package mutating func attachSource(_ source: PresentSource) {
         attachedSource = source
     }
 
-    public mutating func request() {
+    package mutating func request() {
         requested = true
     }
 
-    public mutating func cancelRequest() {
+    package mutating func cancelRequest() {
         requested = false
     }
 
-    public mutating func suspend() {
+    package mutating func suspend() {
         requested = false
         frameDue = false
         frameTargetPresentNs = nil
@@ -162,19 +162,19 @@ public struct DisplayLink: Sendable {
 
     /// Drop the old vblank phase. The first page flip after recovery replaces
     /// this bootstrap sample with the new kernel clock observation.
-    public mutating func resetPresentationPhase() {
+    package mutating func resetPresentationPhase() {
         lastPresentationNs = Int64(bitPattern: nsNow())
         lastAckedPresentID = lastPresentID
         frameTargetPresentNs = nil
         cancelSubmittedFrame()
     }
 
-    public mutating func updateRefreshInterval(_ refreshIntervalNs: UInt64) {
+    package mutating func updateRefreshInterval(_ refreshIntervalNs: UInt64) {
         self.refreshIntervalNs = refreshIntervalNs
     }
 
     /// Mark a one-shot frame need. Idempotent within a frame.
-    public mutating func requestFrame() {
+    package mutating func requestFrame() {
         if frameTargetPresentNs == nil {
             frameTargetPresentNs = predictedPresentNs(0)
         }
@@ -182,7 +182,7 @@ public struct DisplayLink: Sendable {
     }
 
     /// Schedule a one-shot frame for the earliest requested monotonic deadline.
-    public mutating func requestFrameDeadline(_ deadlineNs: UInt64) {
+    package mutating func requestFrameDeadline(_ deadlineNs: UInt64) {
         if let current = frameDeadlineNs {
             frameDeadlineNs = min(current, deadlineNs)
         } else {
@@ -193,7 +193,7 @@ public struct DisplayLink: Sendable {
     /// Consume scheduler demand for a frame accepted by the present primitive.
     /// Returns whether transient, continuous, or due scheduled demand was
     /// present and clears transient state.
-    public mutating func consumeFrameDemand() -> Bool {
+    package mutating func consumeFrameDemand() -> Bool {
         let nowNs = Int64(bitPattern: nsNow())
         let scheduledFrameDue = frameDeadlineDue(nowNs)
         let had = frameDue || continuous.any() || scheduledFrameDue
@@ -203,18 +203,18 @@ public struct DisplayLink: Sendable {
         return had
     }
 
-    public func hasFrameRequest() -> Bool {
+    package func hasFrameRequest() -> Bool {
         frameDue || continuous.any()
             || frameDeadlineDue(Int64(bitPattern: nsNow()))
     }
 
-    public mutating func nextPresentID() -> UInt64 {
+    package mutating func nextPresentID() -> UInt64 {
         lastPresentID = lastPresentID &+ 1
         if lastPresentID == 0 { lastPresentID = 1 }
         return lastPresentID
     }
 
-    public func peekNextPresentID() -> UInt64 {
+    package func peekNextPresentID() -> UInt64 {
         let next = lastPresentID &+ 1
         return next == 0 ? 1 : next
     }
@@ -222,12 +222,12 @@ public struct DisplayLink: Sendable {
     /// Open the per-output submitted-frame range for a frame accepted by the
     /// present primitive. The range closes when `presented` observes
     /// presentation completion.
-    public mutating func beginSubmittedFrame() {
+    package mutating func beginSubmittedFrame() {
         if submittedFrameOpen { cancelSubmittedFrame() }
         submittedFrameOpen = true
     }
 
-    public mutating func presented(_ report: PresentReport) {
+    package mutating func presented(_ report: PresentReport) {
         attachedSource = report.source
         lastPresentationNs = Int64(bitPattern: report.presentationNs)
         if let presentID = report.presentID {
@@ -240,12 +240,12 @@ public struct DisplayLink: Sendable {
         closeSubmittedFrame()
     }
 
-    public mutating func cancelSubmittedFrame() {
+    package mutating func cancelSubmittedFrame() {
         guard submittedFrameOpen else { return }
         closeSubmittedFrame()
     }
 
-    public func predictedPresentNs(_ frameOffset: UInt32) -> UInt64 {
+    package func predictedPresentNs(_ frameOffset: UInt32) -> UInt64 {
         let intervalNs = max(refreshIntervalNs, 1)
         var predicted = UInt64(max(lastPresentationNs &+ Int64(bitPattern: intervalNs), 0))
         let now = nsNow()
@@ -258,17 +258,18 @@ public struct DisplayLink: Sendable {
         return predicted
     }
 
-    public func targetPresentNs() -> UInt64? {
+    package func targetPresentNs() -> UInt64? {
         if !requested && !hasFrameRequest() { return nil }
         return currentDeadlineNs()
     }
 
-    public func nextDeadlineNs() -> Int64 {
+    package func nextDeadlineNs() -> Int64 {
         Int64(bitPattern: currentDeadlineNs())
     }
 
     private func currentDeadlineNs() -> UInt64 {
-        let vsyncDeadline = frameTargetPresentNs
+        let vsyncDeadline =
+            frameTargetPresentNs
             ?? predictedPresentNs(0)
         if let deadline = frameDeadlineNs {
             return min(vsyncDeadline, deadline)
@@ -281,17 +282,17 @@ public struct DisplayLink: Sendable {
         submittedFrameOpen = false
     }
 
-    public func msUntilDeadline() -> Int32 {
+    package func msUntilDeadline() -> Int32 {
         let remainingNs = nextDeadlineNs() - Int64(bitPattern: nsNow())
         if remainingNs <= 0 { return 0 }
         return Int32(clamping: remainingNs / 1_000_000)
     }
 
-    public func presentationTimeSeconds() -> Double {
+    package func presentationTimeSeconds() -> Double {
         Double(currentDeadlineNs()) / 1_000_000_000
     }
 
-    public func sampleTimeline() -> OutputTimelineSample {
+    package func sampleTimeline() -> OutputTimelineSample {
         let deadline = currentDeadlineNs()
         return OutputTimelineSample(
             deadlineNs: deadline,

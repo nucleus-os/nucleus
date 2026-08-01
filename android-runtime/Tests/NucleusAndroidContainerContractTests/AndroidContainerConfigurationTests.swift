@@ -1,4 +1,4 @@
-import NucleusAndroidContainerContract
+internal import NucleusAndroidContainerContract
 import Testing
 
 @Test

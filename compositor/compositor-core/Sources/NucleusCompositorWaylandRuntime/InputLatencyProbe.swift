@@ -10,6 +10,7 @@
 // end-to-end before the next, so the one ingress slot needs no synchronization.
 
 import Glibc
+import NucleusDiagnostics
 import NucleusLinuxPrimitives
 
 /// log2(ns) buckets: bucket b holds [2^b, 2^(b+1)) ns. 32 buckets reach ~4.3 s,
@@ -98,7 +99,8 @@ enum InputLatencyProbe {
         for (i, s) in stats.enumerated() {
             if s.count == 0 { continue }
             let kind = Kind(rawValue: i)!
-            let line = "\(kind.label) n=\(s.count)"
+            let line =
+                "\(kind.label) n=\(s.count)"
                 + " min=\(us(s.minNs))us mean=\(us(s.sumNs / s.count))us"
                 + " p50=\(us(s.quantileNs(0.50)))us p99=\(us(s.quantileNs(0.99)))us"
                 + " max=\(us(s.maxNs))us"
@@ -114,4 +116,3 @@ enum InputLatencyProbe {
         return "\(whole).\(tenths)"
     }
 }
-import NucleusDiagnostics

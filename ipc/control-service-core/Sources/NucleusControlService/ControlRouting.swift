@@ -1,7 +1,7 @@
 import NucleusControlProtocol
 import NucleusSessionProtocol
 
-public enum ControlRoute: Equatable, Sendable {
+package enum ControlRoute: Equatable, Sendable {
     case local(ControlResponse)
     case configuration(ConfigurationSubscriptionRequest)
     case renderServer(RenderServerControlRequest)
@@ -10,8 +10,8 @@ public enum ControlRoute: Equatable, Sendable {
 
 /// Pure request classification. The broker owns no session state; it only
 /// maps the public vocabulary onto capability-scoped owner channels.
-public enum ControlRouting {
-    public static func route(
+package enum ControlRouting {
+    package static func route(
         _ request: ControlRequest,
         configurationAvailability: ControlOwnerAvailability,
         renderServerAvailability: ControlOwnerAvailability,
@@ -19,9 +19,11 @@ public enum ControlRouting {
     ) -> ControlRoute {
         switch request {
         case .version:
-            return .local(.version(ControlVersionInfo(
-                configurationService: configurationAvailability,
-                renderServer: renderServerAvailability)))
+            return .local(
+                .version(
+                    ControlVersionInfo(
+                        configurationService: configurationAvailability,
+                        renderServer: renderServerAvailability)))
         case .configuration, .exportConfiguration:
             return configurationAvailability.available
                 ? .configuration(.export)
@@ -55,12 +57,14 @@ public enum ControlRouting {
     }
 
     private static var unavailable: ControlRoute {
-        .local(.error(ControlFailure(
-            code: .ownerUnavailable,
-            message: "request owner is unavailable")))
+        .local(
+            .error(
+                ControlFailure(
+                    code: .ownerUnavailable,
+                    message: "request owner is unavailable")))
     }
 
-    public static func failure(
+    package static func failure(
         code: OwnerControlFailureCode?,
         message: String?
     ) -> ControlFailure {

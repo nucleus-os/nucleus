@@ -2,16 +2,23 @@
 // Typed client descriptor and event dispatch for zwp_input_panel_v1.
 
 import WaylandClientC
-public enum ZwpInputPanelV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum ZwpInputPanelV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_input_panel_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == ZwpInputPanelV1Client {
-    func getInputPanelSurface(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<ZwpInputPanelSurfaceV1Client> {
+package extension WaylandProxy where Interface == ZwpInputPanelV1Client {
+    package func getInputPanelSurface(surface: WaylandProxy<WlSurfaceClient>)
+        throws(WaylandProxyError) -> WaylandProxy<ZwpInputPanelSurfaceV1Client>
+    {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_zwp_input_panel_v1_get_input_panel_surface(_proxy, _surfaceProxy) else {
+        guard
+            let _created =
+                unsafe swift_wayland_client_request_zwp_input_panel_v1_get_input_panel_surface(
+                    _proxy, _surfaceProxy)
+        else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

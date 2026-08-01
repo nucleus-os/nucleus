@@ -1,23 +1,23 @@
 // The desktop Wayland client policy over swift-wayland's typed client layer.
 
-public import WaylandClientDispatch
-import WaylandProtocolTypes
-public import WaylandClient
-import WaylandProtocolsC
 import NucleusWindowClientContracts
+package import WaylandClient
+package import WaylandClientDispatch
+import WaylandProtocolTypes
+import WaylandProtocolsC
 
 /// A live `wl_output` the desktop client can anchor surfaces to.
 @MainActor
 @safe public final class NucleusDesktopOutput {
     let proxy: WaylandProxy<WlOutputClient>
-    public let registryName: UInt32
-    public var logicalWidth: Int32 = 0
-    public var logicalHeight: Int32 = 0
-    public var logicalX: Int32 = 0
-    public var logicalY: Int32 = 0
-    public var scale: Int32 = 1
-    public var name: String = ""
-    public var refreshMillihertz: Int32 = 0
+    package let registryName: UInt32
+    package var logicalWidth: Int32 = 0
+    package var logicalHeight: Int32 = 0
+    package var logicalX: Int32 = 0
+    package var logicalY: Int32 = 0
+    package var scale: Int32 = 1
+    package var name: String = ""
+    package var refreshMillihertz: Int32 = 0
     var onChanged: (() -> Void)?
 
     init(
@@ -30,100 +30,56 @@ import NucleusWindowClientContracts
 }
 
 @MainActor
-public final class NucleusDesktopConnection {
+package final class NucleusDesktopConnection {
     private let connection: WaylandConnection
     private var registry: WaylandRegistry?
     private var seatEventBroker: NucleusDesktopSeatEventBroker?
 
-    @_spi(NucleusWindowClientImplementation)
     @unsafe
-    public func withUnsafeNativeDisplay<Result>(
+    package func withUnsafeNativeDisplay<Result>(
         _ body: (OpaquePointer) throws -> Result
     ) rethrows -> Result {
         try unsafe body(connection.display)
     }
 
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var compositor:
-        WaylandProxy<WlCompositorClient>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var subcompositor:
-        WaylandProxy<WlSubcompositorClient>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var shm: WaylandProxy<WlShmClient>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var seat: WaylandProxy<WlSeatClient>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var layerShell:
-        WaylandProxy<ZwlrLayerShellV1Client>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var foreignToplevel:
-        WaylandProxy<ZwlrForeignToplevelManagerV1Client>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var sessionLock:
-        WaylandProxy<ExtSessionLockManagerV1Client>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var screencopy:
-        WaylandProxy<ZwlrScreencopyManagerV1Client>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var viewporter:
-        WaylandProxy<WpViewporterClient>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var fractionalScale:
-        WaylandProxy<WpFractionalScaleManagerV1Client>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var xdgOutput:
-        WaylandProxy<ZxdgOutputManagerV1Client>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var textInputManager:
-        WaylandProxy<ZwpTextInputManagerV3Client>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var cursorShape:
-        WaylandProxy<WpCursorShapeManagerV1Client>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var dataControl:
-        WaylandProxy<ExtDataControlManagerV1Client>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var dataDeviceManager:
-        WaylandProxy<WlDataDeviceManagerClient>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var windowManagement:
-        WaylandProxy<XdgWmBaseClient>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var dmaBuf:
-        WaylandProxy<ZwpLinuxDmabufV1Client>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var drmSyncobj:
-        WaylandProxy<WpLinuxDrmSyncobjManagerV1Client>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var presentation:
-        WaylandProxy<WpPresentationClient>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var idleNotifier:
-        WaylandProxy<ExtIdleNotifierV1Client>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var alphaModifier:
-        WaylandProxy<WpAlphaModifierV1Client>?
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var dmaBufFormats:
-        [NucleusDesktopDmaBufFormat] = []
-    @_spi(NucleusWindowClientImplementation)
-    public private(set) var dmaBufMainDevice: UInt64?
+    package private(set) var compositor: WaylandProxy<WlCompositorClient>?
+    package private(set) var subcompositor: WaylandProxy<WlSubcompositorClient>?
+    package private(set) var shm: WaylandProxy<WlShmClient>?
+    package private(set) var seat: WaylandProxy<WlSeatClient>?
+    package private(set) var layerShell: WaylandProxy<ZwlrLayerShellV1Client>?
+    package private(set) var foreignToplevel: WaylandProxy<ZwlrForeignToplevelManagerV1Client>?
+    package private(set) var sessionLock: WaylandProxy<ExtSessionLockManagerV1Client>?
+    package private(set) var screencopy: WaylandProxy<ZwlrScreencopyManagerV1Client>?
+    package private(set) var viewporter: WaylandProxy<WpViewporterClient>?
+    package private(set) var fractionalScale: WaylandProxy<WpFractionalScaleManagerV1Client>?
+    package private(set) var xdgOutput: WaylandProxy<ZxdgOutputManagerV1Client>?
+    package private(set) var textInputManager: WaylandProxy<ZwpTextInputManagerV3Client>?
+    package private(set) var cursorShape: WaylandProxy<WpCursorShapeManagerV1Client>?
+    package private(set) var dataControl: WaylandProxy<ExtDataControlManagerV1Client>?
+    package private(set) var dataDeviceManager: WaylandProxy<WlDataDeviceManagerClient>?
+    package private(set) var windowManagement: WaylandProxy<XdgWmBaseClient>?
+    package private(set) var dmaBuf: WaylandProxy<ZwpLinuxDmabufV1Client>?
+    package private(set) var drmSyncobj: WaylandProxy<WpLinuxDrmSyncobjManagerV1Client>?
+    package private(set) var presentation: WaylandProxy<WpPresentationClient>?
+    package private(set) var idleNotifier: WaylandProxy<ExtIdleNotifierV1Client>?
+    package private(set) var alphaModifier: WaylandProxy<WpAlphaModifierV1Client>?
+    package private(set) var dmaBufFormats: [NucleusDesktopDmaBufFormat] = []
+    package private(set) var dmaBufMainDevice: UInt64?
     private var dmaBufFeedback: NucleusDesktopDmaBufFeedback?
 
-    public private(set) var outputs: [UInt32: NucleusDesktopOutput] = [:]
-    public private(set) var capabilities:
-        [NucleusDesktopCapabilityKind: NucleusDesktopCapability] = [:]
+    package private(set) var outputs: [UInt32: NucleusDesktopOutput] = [:]
+    package private(set) var capabilities: [NucleusDesktopCapabilityKind: NucleusDesktopCapability] =
+        [:]
 
-    public var onReady: (() -> Void)?
-    public var onOutputsChanged: (() -> Void)?
-    public var onGlobalChanged: ((NucleusDesktopCapabilityKind) -> Void)?
-    public var onLifecycleEvent: ((NucleusDesktopLifecycleEvent) -> Void)?
+    package var onReady: (() -> Void)?
+    package var onOutputsChanged: (() -> Void)?
+    package var onGlobalChanged: ((NucleusDesktopCapabilityKind) -> Void)?
+    package var onLifecycleEvent: ((NucleusDesktopLifecycleEvent) -> Void)?
 
     private var nextCapabilityGeneration: UInt64 = 1
     private var disconnected = false
 
-    public convenience init?(socketName: String? = nil) {
+    package convenience init?(socketName: String? = nil) {
         guard let connection = WaylandConnection(socket: socketName) else {
             return nil
         }
@@ -132,12 +88,13 @@ public final class NucleusDesktopConnection {
             performInitialRoundtrips: true)
     }
 
-    public convenience init?(
+    package convenience init?(
         connectedFileDescriptor: Int32,
         performInitialRoundtrips: Bool = false
     ) {
-        guard let connection = WaylandConnection(
-            fd: connectedFileDescriptor)
+        guard
+            let connection = WaylandConnection(
+                fd: connectedFileDescriptor)
         else {
             return nil
         }
@@ -260,9 +217,10 @@ public final class NucleusDesktopConnection {
                 kind: .alphaModifier,
                 at: \.alphaModifier),
         ]
-        guard let registry = WaylandRegistry(
-            connection,
-            wanting: wanted)
+        guard
+            let registry = WaylandRegistry(
+                connection,
+                wanting: wanted)
         else {
             return nil
         }
@@ -277,26 +235,26 @@ public final class NucleusDesktopConnection {
 
     isolated deinit {}
 
-    public var fd: Int32 {
+    package var fd: Int32 {
         connection.fd
     }
 
     @discardableResult
-    public func flush() -> Int32 {
+    package func flush() -> Int32 {
         connection.flush()
     }
 
-    public func prepareRead() -> WaylandReadPreparation? {
+    package func prepareRead() -> WaylandReadPreparation? {
         connection.prepareRead()
     }
 
-    public func capability(
+    package func capability(
         for kind: NucleusDesktopCapabilityKind
     ) -> NucleusDesktopCapability? {
         capabilities[kind]
     }
 
-    public func markCompositorDisconnected() {
+    package func markCompositorDisconnected() {
         guard !disconnected else { return }
         disconnected = true
         for capability in capabilities.values {
@@ -306,7 +264,7 @@ public final class NucleusDesktopConnection {
         onLifecycleEvent?(.compositorDisconnected)
     }
 
-    public func createSurface()
+    package func createSurface()
         throws(WaylandProxyError) -> WaylandProxy<WlSurfaceClient>
     {
         guard let compositor else {
@@ -328,7 +286,7 @@ public final class NucleusDesktopConnection {
             maximumVersion: maximumVersion,
             onBind: { [weak self] bound in
                 guard let self,
-                      self[keyPath: keyPath] == nil
+                    self[keyPath: keyPath] == nil
                 else {
                     return
                 }
@@ -338,7 +296,7 @@ public final class NucleusDesktopConnection {
                         try? NucleusDesktopSeatEventBroker(proxy: seat)
                 }
                 if kind == .windowManagement,
-                   let windowManagement = self.windowManagement
+                    let windowManagement = self.windowManagement
                 {
                     try? windowManagement.installListener(self)
                 }
@@ -350,7 +308,7 @@ public final class NucleusDesktopConnection {
             },
             onRemove: { [weak self] bound in
                 guard let self,
-                      self[keyPath: keyPath] === bound.proxy
+                    self[keyPath: keyPath] === bound.proxy
                 else {
                     return
                 }
@@ -409,7 +367,7 @@ public final class NucleusDesktopConnection {
             },
             onRemove: { [weak self] global in
                 guard let self,
-                      outputs[global.name]?.proxy === global.proxy
+                    outputs[global.name]?.proxy === global.proxy
                 else {
                     return
                 }
@@ -436,9 +394,10 @@ public final class NucleusDesktopConnection {
             return
         }
         capability.invalidate()
-        onLifecycleEvent?(.capabilityUnavailable(
-            kind: kind,
-            generation: capability.generation))
+        onLifecycleEvent?(
+            .capabilityUnavailable(
+                kind: kind,
+                generation: capability.generation))
     }
 
     func attachSeatConsumer(_ seat: NucleusDesktopSeat) -> Bool {
@@ -453,7 +412,7 @@ public final class NucleusDesktopConnection {
 }
 
 extension NucleusDesktopConnection: XdgWmBaseEvents {
-    public func ping(
+    package func ping(
         _ proxy: WaylandBorrowedProxy<XdgWmBaseClient>,
         serial: UInt32
     ) {
@@ -501,7 +460,7 @@ private final class NucleusDesktopSeatEventBroker: WlSeatEvents {
 }
 
 extension NucleusDesktopOutput: WlOutputEvents {
-    public func geometry(
+    package func geometry(
         _ proxy: WaylandBorrowedProxy<WlOutputClient>,
         x: Int32,
         y: Int32,
@@ -516,7 +475,7 @@ extension NucleusDesktopOutput: WlOutputEvents {
         logicalY = y
     }
 
-    public func mode(
+    package func mode(
         _ proxy: WaylandBorrowedProxy<WlOutputClient>,
         flags: WlOutputMode,
         width: Int32,
@@ -529,27 +488,27 @@ extension NucleusDesktopOutput: WlOutputEvents {
         refreshMillihertz = max(0, refresh)
     }
 
-    public func done(
+    package func done(
         _ proxy: WaylandBorrowedProxy<WlOutputClient>
     ) {
         onChanged?()
     }
 
-    public func scale(
+    package func scale(
         _ proxy: WaylandBorrowedProxy<WlOutputClient>,
         factor: Int32
     ) {
         self.scale = factor
     }
 
-    public func name(
+    package func name(
         _ proxy: WaylandBorrowedProxy<WlOutputClient>,
         name: String
     ) {
         self.name = name
     }
 
-    public func description(
+    package func description(
         _ proxy: WaylandBorrowedProxy<WlOutputClient>,
         description: String
     ) {}

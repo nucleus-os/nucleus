@@ -1,3 +1,5 @@
+public import NucleusTypes
+
 /// A named icon catalog: glyph names mapped onto codepoints in an icon font.
 ///
 /// Icons are font glyphs rather than bitmaps, which is the reference's approach
@@ -186,12 +188,14 @@ public final class GlyphView: View {
     private func glyphLayout() -> TextLayout? {
         if let layoutCache { return layoutCache }
         guard let character = resolvedCharacter,
-              let family = resolvedCatalog?.fontFamily
+            let family = resolvedCatalog?.fontFamily
         else { return nil }
 
-        let font = Font(descriptor: FontDescriptor(
-            familyName: family, pointSize: pointSize))
-            .scaled(by: uiContext.environment.textScale)
+        let font = Font(
+            descriptor: FontDescriptor(
+                familyName: family, pointSize: pointSize)
+        )
+        .scaled(by: uiContext.environment.textScale)
         let layout = TextLayout(
             runs: [TextRun(text: String(character), font: font, color: nil)],
             containerWidth: nil,

@@ -2,23 +2,24 @@
 // Typed client descriptor and event dispatch for wp_fifo_v1.
 
 import WaylandClientC
-public enum WpFifoV1Client: WaylandClientInterface {
-    public nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
+
+package enum WpFifoV1Client: WaylandClientInterface {
+    package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_fifo_v1())
-    public nonisolated static let maximumVersion: UInt32 = 1
+    package nonisolated static let maximumVersion: UInt32 = 1
 }
-public extension WaylandProxy where Interface == WpFifoV1Client {
-    func setBarrier() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpFifoV1Client {
+    package func setBarrier() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_wp_fifo_v1_set_barrier(_proxy)
         return
     }
-    func waitBarrier() throws(WaylandProxyError) {
+    package func waitBarrier() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_wp_fifo_v1_wait_barrier(_proxy)
         return
     }
-    func destroy() throws(WaylandProxyError) {
+    package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_fifo_v1_destroy(_proxy)
