@@ -4,7 +4,7 @@
 
 **Invariant: Nucleus does not build a Swift compiler, Swift driver, LLVM, Clang, or Linux host tools. macOS uses Xcode, the native Apple-container Linux/arm64 builder uses the official Swift.org compiler as a bootstrap compiler, and Collider builds only Linux target runtimes and Swift SDK artifacts. First-party Swift and Skia changes live as commits in `nucleus-os` forks.**
 
-The target-SDK workspace mechanics are authoritative in [swift-toolchain-incremental-workspace-plan.md](swift-toolchain-incremental-workspace-plan.md). This plan owns only source provenance and final qualification that crosses Swift SDK and Skia boundaries.
+The target-SDK workspace mechanics are authoritative in [swift-sdk-incremental-workspace-plan.md](swift-sdk-incremental-workspace-plan.md). This plan owns only source provenance and final qualification that crosses Swift SDK and Skia boundaries.
 
 ## Phase 1 — Lock source provenance
 

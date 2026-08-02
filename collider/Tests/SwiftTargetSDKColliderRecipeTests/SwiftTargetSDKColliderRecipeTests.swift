@@ -11,7 +11,7 @@ import Testing
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent().path)
-    let inputsFile = root.appending("swift-toolchain/target-sdk-inputs.json")
+    let inputsFile = root.appending("swift-sdk/target-sdk-inputs.json")
     let inputs = try SwiftTargetSDKInputs.load(from: inputsFile)
     let temporary = FilePath(
         FileManager.default.temporaryDirectory
@@ -33,15 +33,15 @@ import Testing
         inputsFile: inputsFile,
         androidAPILevel: 24,
         downloadRoot: temporary.appending("downloads"),
-        generatorSource: root.appending("swift-toolchain/source/swift-sdk-generator"),
+        generatorSource: root.appending("swift-sdk/source/swift-sdk-generator"),
         generatorScratch: temporary.appending("generator"),
-        sourceWorkspace: root.appending("swift-toolchain/source"),
+        sourceWorkspace: root.appending("swift-sdk/source"),
         sourceID: "fixture-source-id",
         runtimeBuilderContext: root.appending(
-            "swift-toolchain/runtime-build-container"),
+            "swift-sdk/runtime-build-container"),
         runtimeBuilderImageID: temporary.appending("runtime-builder-image-id"),
         linuxTargets: linuxTargets,
-        sysrootPreparer: root.appending("swift-toolchain/prepare-linux-sysroot.sh"),
+        sysrootPreparer: root.appending("swift-sdk/prepare-linux-sysroot.sh"),
         candidate: temporary.appending("candidate"),
         generation: temporary.appending("generation"),
         active: temporary.appending("current"),
@@ -50,7 +50,7 @@ import Testing
             "collider/engine/Sources/ColliderRuntime/Resources/ToolchainValidationFixtures/AndroidSDKConsumer"
         ),
         validator: root.appending(
-            "swift-toolchain/validate-target-sdk-artifacts.sh"),
+            "swift-sdk/validate-target-sdk-artifacts.sh"),
         swiftExecutable: FilePath("/usr/bin/swift"),
         sdkDiscoveryRoot: temporary.appending("swift-sdks"),
         displacedRoot: temporary.appending("displaced"),
@@ -144,7 +144,7 @@ import Testing
     let inputs = try SwiftTargetSDKInputs.load(
         from: FilePath(
             root.appendingPathComponent(
-                "swift-toolchain/target-sdk-inputs.json"
+                "swift-sdk/target-sdk-inputs.json"
             ).path))
 
     #expect(inputs.androidBundleID.hasSuffix("_android"))

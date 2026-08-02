@@ -11,7 +11,7 @@ import Testing
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
-    let recipe = root.appendingPathComponent("swift-toolchain", isDirectory: true)
+    let recipe = root.appendingPathComponent("swift-sdk", isDirectory: true)
     let inputs = try SwiftTargetSDKInputs.load(
         from: FilePath(recipe.appendingPathComponent("target-sdk-inputs.json").path))
     let builder = FilePath(

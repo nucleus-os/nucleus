@@ -9,7 +9,7 @@
 **/.rn-build/
 **/.skia-build/
 **/.cxx-build/
-/swift-toolchain/source/build/
+/swift-sdk/source/build/
 **/.runtime-data/
 **/__pycache__/
 *.py[cod]

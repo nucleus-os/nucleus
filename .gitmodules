@@ -65,39 +65,39 @@
 [submodule "third-party/swift-syntax"]
 	path = third-party/swift-syntax
 	url = https://github.com/swiftlang/swift-syntax.git
-[submodule "swift-toolchain/source/libxml2"]
-	path = swift-toolchain/source/libxml2
+[submodule "swift-sdk/source/libxml2"]
+	path = swift-sdk/source/libxml2
 	url = https://github.com/gnome/libxml2.git
-[submodule "swift-toolchain/source/llvm-project"]
-	path = swift-toolchain/source/llvm-project
+[submodule "swift-sdk/source/llvm-project"]
+	path = swift-sdk/source/llvm-project
 	url = https://github.com/swiftlang/llvm-project.git
-[submodule "swift-toolchain/source/swift"]
-	path = swift-toolchain/source/swift
+[submodule "swift-sdk/source/swift"]
+	path = swift-sdk/source/swift
 	url = git@github.com:nucleus-os/swift.git
-[submodule "swift-toolchain/source/swift-collections"]
-	path = swift-toolchain/source/swift-collections
+[submodule "swift-sdk/source/swift-collections"]
+	path = swift-sdk/source/swift-collections
 	url = https://github.com/apple/swift-collections.git
-[submodule "swift-toolchain/source/swift-corelibs-foundation"]
-	path = swift-toolchain/source/swift-corelibs-foundation
+[submodule "swift-sdk/source/swift-corelibs-foundation"]
+	path = swift-sdk/source/swift-corelibs-foundation
 	url = https://github.com/swiftlang/swift-corelibs-foundation.git
-[submodule "swift-toolchain/source/swift-corelibs-libdispatch"]
-	path = swift-toolchain/source/swift-corelibs-libdispatch
+[submodule "swift-sdk/source/swift-corelibs-libdispatch"]
+	path = swift-sdk/source/swift-corelibs-libdispatch
 	url = https://github.com/swiftlang/swift-corelibs-libdispatch.git
-[submodule "swift-toolchain/source/swift-corelibs-xctest"]
-	path = swift-toolchain/source/swift-corelibs-xctest
+[submodule "swift-sdk/source/swift-corelibs-xctest"]
+	path = swift-sdk/source/swift-corelibs-xctest
 	url = https://github.com/swiftlang/swift-corelibs-xctest.git
-[submodule "swift-toolchain/source/swift-experimental-string-processing"]
-	path = swift-toolchain/source/swift-experimental-string-processing
+[submodule "swift-sdk/source/swift-experimental-string-processing"]
+	path = swift-sdk/source/swift-experimental-string-processing
 	url = https://github.com/swiftlang/swift-experimental-string-processing.git
-[submodule "swift-toolchain/source/swift-foundation"]
-	path = swift-toolchain/source/swift-foundation
+[submodule "swift-sdk/source/swift-foundation"]
+	path = swift-sdk/source/swift-foundation
 	url = https://github.com/swiftlang/swift-foundation.git
-[submodule "swift-toolchain/source/swift-foundation-icu"]
-	path = swift-toolchain/source/swift-foundation-icu
+[submodule "swift-sdk/source/swift-foundation-icu"]
+	path = swift-sdk/source/swift-foundation-icu
 	url = https://github.com/swiftlang/swift-foundation-icu.git
-[submodule "swift-toolchain/source/swift-sdk-generator"]
-	path = swift-toolchain/source/swift-sdk-generator
+[submodule "swift-sdk/source/swift-sdk-generator"]
+	path = swift-sdk/source/swift-sdk-generator
 	url = git@github.com:nucleus-os/swift-sdk-generator.git
-[submodule "swift-toolchain/source/swift-testing"]
-	path = swift-toolchain/source/swift-testing
+[submodule "swift-sdk/source/swift-testing"]
+	path = swift-sdk/source/swift-testing
 	url = https://github.com/swiftlang/swift-testing.git

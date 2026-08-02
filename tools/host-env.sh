@@ -29,8 +29,11 @@ if [[ -n "${NUCLEUS_SWIFT_SOURCE_ID:-}" ]]; then
   nucleus_source_id="$NUCLEUS_SWIFT_SOURCE_ID"
 else
   nucleus_source_index="$(
-    git -C "$nucleus_workspace_root" ls-files --stage -- swift-toolchain/source \
-      | awk '$1 == "160000" { print }'
+    git -C "$nucleus_workspace_root" ls-files --stage -- swift-sdk/source \
+      | awk '$1 == "160000" {
+          sub(/^swift-sdk\/source\//, "", $4)
+          print $1, $2, $4
+        }'
   )"
   if [[ -z "$nucleus_source_index" ]]; then
     echo "error: the Swift source gitlink graph is missing" >&2

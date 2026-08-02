@@ -200,7 +200,7 @@ struct SwiftSDKCommand {
         throw WorkspaceFailure.message(
             "Swift target SDK generation requires native macOS arm64")
         #endif
-        let recipeRoot = context.layout.swiftToolchain
+        let recipeRoot = context.layout.swiftSDK
         let inputsFile = recipeRoot.appendingPathComponent("target-sdk-inputs.json")
         let inputs = try SwiftTargetSDKInputs.load(from: FilePath(inputsFile.path))
         let sourceID = try swiftTargetRuntimeSourceIdentity(
@@ -420,7 +420,7 @@ private func swiftTargetRuntimeSourceIdentity(
     root: URL,
     environment: [String: String]
 ) throws -> String {
-    let prefix = "swift-toolchain/source/"
+    let prefix = "swift-sdk/source/"
     let declarations = try commandOutput(
         executable: URL(fileURLWithPath: "/usr/bin/git"),
         arguments: [
@@ -478,7 +478,7 @@ private func swiftTargetRuntimeSourceIdentity(
             throw WorkspaceFailure.message(
                 "Swift source repository has uncommitted changes: \(path)")
         }
-        encoder.append(tag: 1, string: path)
+        encoder.append(tag: 1, string: String(path.dropFirst(prefix.count)))
         encoder.append(tag: 2, string: expectedCommit)
     }
     let digest = ArtifactHasher.digest(bytes: encoder.bytes).description

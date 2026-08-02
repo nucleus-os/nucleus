@@ -20,8 +20,8 @@ Architecture and contract documents describe the current system. An implementati
 
 Execute prerequisite work before dependent product work:
 
-1. [Swift target-SDK workspace](swift-toolchain-incremental-workspace-plan.md)
-2. [Swift target SDK and Skia fork qualification](swift-toolchain-and-skia-fork-commit-migration-plan.md)
+1. [Swift target-SDK workspace](swift-sdk-incremental-workspace-plan.md)
+2. [Swift target SDK and Skia fork qualification](swift-sdk-and-skia-fork-commit-migration-plan.md)
 3. [Manifest portability and Swift SDK](manifest-portability-and-swift-sdk-plan.md)
 4. [Visibility and seam native verification](visibility-and-seam-contract-plan.md)
 5. [Wayland dispatch isolation](wayland-dispatch-isolation-and-handler-binding-plan.md)

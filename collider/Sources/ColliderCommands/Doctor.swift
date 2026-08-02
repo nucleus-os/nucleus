@@ -188,12 +188,12 @@ struct WorkspaceDoctor {
                 scope: "swift-sdk")
             + paths(
                 [
-                    "swift-toolchain/source",
-                    "swift-toolchain/target-sdk-inputs.json",
-                    "swift-toolchain/validate-target-sdk-artifacts.sh",
-                    "swift-toolchain/prepare-linux-sysroot.sh",
-                    "swift-toolchain/nucleus-target-runtime-presets.ini",
-                    "swift-toolchain/runtime-build-container/Containerfile",
+                    "swift-sdk/source",
+                    "swift-sdk/target-sdk-inputs.json",
+                    "swift-sdk/validate-target-sdk-artifacts.sh",
+                    "swift-sdk/prepare-linux-sysroot.sh",
+                    "swift-sdk/nucleus-target-runtime-presets.ini",
+                    "swift-sdk/runtime-build-container/Containerfile",
                 ],
                 under: context.root,
                 scope: "swift-sdk")
@@ -205,8 +205,7 @@ struct WorkspaceDoctor {
                 ["swift", "swiftc", "java", "ccache"], scope: "android")
             + paths(
                 [
-                    "core/android/gradlew", "core/platform-android/Package.swift",
-                    "swift-toolchain/Package.swift",
+                    "Package.swift", "core/android/gradlew",
                 ],
                 under: context.root,
                 scope: "android")

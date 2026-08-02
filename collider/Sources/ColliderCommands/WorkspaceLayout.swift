@@ -33,11 +33,13 @@ struct WorkspaceLayout: Sendable {
         let identity = ArtifactHasher.digest(bytes: context.identityBytes)
             .description
             .replacingOccurrences(of: ":", with: "-")
-        return state
+        return
+            state
             .appendingPathComponent("swiftpm", isDirectory: true)
             .appendingPathComponent(
                 context.sanitizer ?? "unsanitized",
-                isDirectory: true)
+                isDirectory: true
+            )
             .appendingPathComponent(identity, isDirectory: true)
     }
     var benchmarkBuilds: URL {
@@ -54,8 +56,8 @@ struct WorkspaceLayout: Sendable {
         root.appendingPathComponent(".install", isDirectory: true)
     }
 
-    var swiftToolchain: URL {
-        root.appendingPathComponent("swift-toolchain", isDirectory: true)
+    var swiftSDK: URL {
+        root.appendingPathComponent("swift-sdk", isDirectory: true)
     }
     var swiftTracy: URL {
         root.appendingPathComponent("swift-tracy", isDirectory: true)
