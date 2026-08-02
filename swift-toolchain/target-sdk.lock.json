@@ -38,24 +38,8 @@
       "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/libgcc-s1_14-20240412-0ubuntu1_amd64.deb"
     },
     {
-      "sha256": "18dc7c1730ad8006167f0e25289adc824b11b4cfce1baef0a1c1fb8dc044d945",
-      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/i/icu/libicu-dev_74.2-1ubuntu3_amd64.deb"
-    },
-    {
-      "sha256": "d29c97a21a3e3254731cfac186e4d4e611e5e67d2c9a0430f6acfbd9acaefa2e",
-      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/i/icu/libicu74_74.2-1ubuntu3_amd64.deb"
-    },
-    {
       "sha256": "d2eabd41ca77d2c2dd9d5d4ef478cccb64ffde6279c47cf4699a857d46785a52",
       "url": "https://security.ubuntu.com/ubuntu/pool/main/x/xz-utils/liblzma5_5.6.1+really5.4.5-1ubuntu0.3_amd64.deb"
-    },
-    {
-      "sha256": "d8585797242a0171db244ca24527125233a02fd606c1e64e4e73ae0cffc58b2b",
-      "url": "https://security.ubuntu.com/ubuntu/pool/main/libx/libxml2/libxml2-dev_2.9.14+dfsg-1.3ubuntu3.8_amd64.deb"
-    },
-    {
-      "sha256": "bfd07c01d6e5ab3e327f3ca5819409b1914bbfb3f1a016d53e4dabd5f96143bb",
-      "url": "https://security.ubuntu.com/ubuntu/pool/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3ubuntu3.8_amd64.deb"
     },
     {
       "sha256": "b10b157443866c64193cbf4b97f8313205e8585acc4660776cfd82b695b2e62f",

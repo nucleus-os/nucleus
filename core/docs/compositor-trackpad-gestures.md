@@ -1,6 +1,12 @@
 # Compositor Trackpad Gestures
 
+Status: active.
+
 Native multi-finger gesture support in the Nucleus compositor, driven by libinput and exposed both internally (as `WireEventRecord` events on the compositor's normalized input stream, for window-management policy) and to Wayland clients (via `zwp_pointer_gestures_v1`).
+
+This document owns gesture normalization, pointer-gestures-v1, and compositor
+gesture policy. The protocol-coverage plan references this sequence and does
+not define a second gesture implementation.
 
 ## Why
 

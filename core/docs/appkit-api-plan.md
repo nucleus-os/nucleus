@@ -1,25 +1,41 @@
 # AppKit API completion plan
 
-**Status: active.**
+Status: active.
 
-**Invariant: NucleusUI follows AppKit's semantic contracts where they fit retained desktop UI, while rendering and publication remain platform-neutral Nucleus abstractions.**
+## Invariant
 
-The render vocabulary, `GraphicsContext`, publication seam, event/responder model, focus, pointer capture, measure/arrange, flex layout, and native shell hosting are implemented. Scroll and multiline authoring belong to `ui-authoring-model.md`; this plan has one remaining scope.
+NucleusUI follows AppKit's semantic contracts where they fit retained desktop
+UI, while rendering and publication remain platform-neutral Nucleus
+abstractions.
 
-## Phase 1 — Complete the text editor model
+## Current disposition
 
-Finish secure single-line editing, grapheme and word navigation, selection, deletion, clipboard commands, undo grouping, UTF-8/UTF-16 conversion, and preedit state in one platform-neutral editor model. Secure storage uses the repository secure-memory boundary and never exposes the password through diagnostics or accessibility values.
+The platform-neutral text editor, secure single-line storage, Unicode and
+UTF-8/UTF-16 conversion, selection, preedit, undo, `TextField`, and `TextView`
+are implemented and behavior-tested. The desktop Wayland client and compositor
+implement text-input-v3. The native lock screen and isolated PAM helper are
+implemented with credential clearing and headless behavior coverage.
 
-Gate: behavioral tests cover Unicode, bidi selection, word boundaries, replacement ranges, undo/redo, secure clearing, and teardown.
+The remaining scope is the compositor's input-method-v2 side and end-to-end IME
+qualification. Do not rebuild the editor, text-input-v3 client/server paths, or
+lock-screen architecture as part of this plan.
 
-## Phase 2 — Complete Wayland text input
+## Phase 1 — Implement input-method-v2 mediation
 
-Bind `text-input-v3` and `input-method-v2` through typed Wayland handlers. Translate surrounding-text, content-type, preedit, commit, delete-surrounding, enter/leave, and done batches into the editor model. Keep protocol state in the Wayland runtime and UI state in NucleusUI.
+Vendor and generate the current input-method-v2 protocol, register its manager,
+and mediate it against the existing text-input-v3 state. Keep serial tracking,
+focus, surrounding text, content type, preedit, commit, delete-surrounding, and
+done batches in the Wayland runtime. Keep editor state in NucleusUI.
 
-Gate: wire tests cover valid and hostile sequencing, focus changes, client destruction, byte/code-unit conversion, and cancellation.
+Gate: wire tests cover valid and hostile sequencing, focus changes, client and
+IME destruction, stale serials, byte/code-unit conversion, and cancellation.
 
-## Phase 3 — Close the native lock-screen proof
+## Phase 2 — Qualify the complete text-input path
 
-Use the completed editor and input-method path for the shell lock screen and PAM helper. The shell owns presentation; the isolated helper owns PAM; neither compositor nor logs receive credentials.
+Exercise a real IME against native editor surfaces and the shell lock screen.
+Verify key repeat, preedit replacement, commit, focus transfer, failed
+authentication reset, cancellation, credential zeroization, and runtime
+teardown.
 
-Gate: headless behavior tests prove focus, key repeat, IME commit, failed authentication reset, cancellation, and credential zeroization. Interactive lock-screen validation remains a user-run handoff.
+Gate: all agent-runnable behavior and wire tests pass. Interactive IME and
+lock-screen validation is a user-run handoff.

@@ -1,5 +1,7 @@
 # Bar-first port order
 
+Status: superseded by [`../../shell/docs/noctalia-migration-plan.md`](../../shell/docs/noctalia-migration-plan.md).
+
 **Invariant: the next thing to build is the first thing a user sees. Every phase below
 either puts a working bar on screen or is required by one that does — and the toolkit
 stops widening until it does.**
@@ -7,6 +9,11 @@ stops widening until it does.**
 Earlier work was ordered to close gaps against AppKit and against the reference's *whole*
 widget library. Both audits have since been redone, and both say the same thing: we are
 building breadth we do not yet have a consumer for.
+
+Phases 1 through 5 below are completed history. The Noctalia migration plan is
+the sole execution authority for the minimal bar, native services, IPC-backed
+product surfaces, panels, accessibility, and final retirement work. Do not
+execute Phases 6 through 9 from this document.
 
 ## What the re-audit changed
 

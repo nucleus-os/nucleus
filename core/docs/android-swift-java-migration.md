@@ -1,5 +1,7 @@
 # Android JNI via swift-java
 
+Status: active.
+
 ## Invariant
 
 The Android JNI boundary is generated, not hand-written. Every native method
@@ -118,7 +120,7 @@ stops parsing `Nucleus.kt` for `external fun`s and instead asserts the generated
 are exported, that the static Swift runtime is present, and that no dynamic
 `libswiftCore.so` dependency remains.
 
-## Status
+## Current disposition
 
 The Swift side is implemented and verified: `swift build --swift-sdk
 swift-release-6.4.x_android --static-swift-stdlib -c release` produces `libnucleus-android.so` (with
@@ -133,6 +135,18 @@ swift-java pulls build-time transitive dependencies (swift-syntax,
 swift-argument-parser, swift-system, swift-collections, swift-subprocess);
 these are currently network-resolved. Vendoring them as submodules for a fully
 hermetic build is a follow-up.
+
+## Phase 6 — Qualify the Android package end to end
+
+Build the Gradle module and smoke application with the selected Android
+toolchain, install the resulting package, and exercise host construction,
+surface lifecycle, input, runtime, rendering, diagnostics, and teardown on a
+supported device. Confirm the packaged `jniLibs`, generated Java sources,
+static Swift runtime, `libSwiftJava.so`, and `libc++_shared.so` match the
+verified native artifact.
+
+Gate: the Gradle build, package inspection, Collider Android verification, and
+device smoke path all pass from the same selected SDK generation.
 
 ## Deployment note
 

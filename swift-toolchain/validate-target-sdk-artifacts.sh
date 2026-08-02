@@ -68,22 +68,21 @@ validate_linux_sdk_runtime() {
         echo "Linux SDK exposes a forbidden libstdc++ artifact" >&2
         exit 1
     fi
-    found_libcxx=0
     while IFS= read -r path; do
         description=$(/usr/bin/file "$path")
         case "$description" in
             *ELF*) reject_libstdcxx "$path" ;;
         esac
-        case "$path" in
-            */libc++.so.1) found_libcxx=1 ;;
-        esac
     done <<EOF
 $(find "$linux_sdk_root" -type f \( -name '*.so' -o -name '*.so.*' -o -perm -111 \) -print)
 EOF
-    if [ "$found_libcxx" -ne 1 ]; then
+    libcxx_soname=$(find "$linux_sdk_root" -type l -name 'libc++.so.1' -print -quit)
+    if [ -z "$libcxx_soname" ] || [ ! -f "$libcxx_soname" ]; then
         echo "Linux SDK does not ship libc++.so.1" >&2
         exit 1
     fi
+    require_file_description "$libcxx_soname" "ELF 64-bit LSB shared object, x86-64"
+    reject_libstdcxx "$libcxx_soname"
 }
 
 require_android_page_alignment() {

@@ -1,6 +1,11 @@
 # Visibility and Seam Contract Plan
 
-Status: source implementation complete; full native verification remains pending.
+Status: active.
+
+## Current disposition
+
+The source implementation is complete. Full native verification remains
+pending and is the only remaining scope.
 
 ## Invariant
 

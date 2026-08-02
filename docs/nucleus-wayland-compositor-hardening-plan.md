@@ -29,6 +29,11 @@ renumber the remaining phases. Preserve the truthful-advertisement, global KMS
 allocation, pause/resume, demand-driven redraw, protocol-validation, DMA-BUF,
 and hostile-client exit gates that still fail current behavioral tests.
 
+The findings and phases below are an audit record, not an executable backlog.
+Do not implement an item solely because it appears below. First reproduce the
+claimed gap against current code and tests, remove every satisfied item, and
+replace the remaining sequence with strict phases derived from that audit.
+
 ## Audit basis
 
 The findings came from comparing the Nucleus compositor at `4b4fe13f1aeeb081a012d2dbdc6ec29df2fdaa91` with the local niri and Smithay checkouts, then tracing the relevant Nucleus paths from Wayland request dispatch through scene authoring, renderer submission, DRM completion, and session lifecycle.

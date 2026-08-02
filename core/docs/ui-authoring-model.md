@@ -110,10 +110,10 @@ express the easier problem.
 
 ## Phases
 
-The sequence below is superseded by `noctalia-port-priorities.md`, which reprioritizes from the
-reference's actual file distribution: about a fifth of it is UI, and the bar's widgets are gated on
-system services that do not exist here yet. Phases 1 and 2 landed and stand. The control kit moves
-behind the service work, tracking and tooltips, and the popup layer.
+Phases 1 and 2 are complete. Phases 3 through 6 are superseded by
+[`../../shell/docs/noctalia-migration-plan.md`](../../shell/docs/noctalia-migration-plan.md),
+which orders any remaining controls and product surfaces around the native
+shell services that consume them.
 
 
 **Phase 1 — The view builder — complete.** A `@resultBuilder` producing subviews, plus `setBody { }` on
@@ -127,24 +127,27 @@ properties a builder expression sets inline: sizing, spacing, colour, corner rad
 visibility. Each one sets the same stored property a caller could set directly; a modifier is
 sugar over the property and never the only way to reach it.
 
-**Phases 3 to 6 below are superseded**; see `noctalia-port-priorities.md` for where each landed in
-the reprioritized sequence.
+**Phases 3 through 6 are historical scope, not an execution plan.** Much of the
+control, collection, and popup vocabulary has landed, including toggles,
+sliders, checkboxes, radio groups, select and segmented controls, progress
+indicators, scrolling, lists, grids, virtual grids, popovers, and menus. Add a
+missing primitive only when the Noctalia migration has a current consumer.
 
-**Phase 3 — The control kit.** `Toggle`, `Slider`, `Checkbox`, `RadioButton`, `Select`,
+**Phase 3 — The control kit — superseded.** `Toggle`, `Slider`, `Checkbox`, `RadioButton`, `Select`,
 `Segmented`, `Stepper`, `ProgressBar`, `Spinner`, `Separator`, `Spacer`, built on `Control` and
 the responder chain. Each exposes its value as a settable property and its changes through a
 target-action callback, matching `Button`.
 
-**Phase 4 — Collection views.** `ScrollView`, `ScrollBar`, and a virtualized list and grid that
+**Phase 4 — Collection views — superseded.** `ScrollView`, `ScrollBar`, and a virtualized list and grid that
 realize only visible rows. The reference ships `virtual_list_view` and `virtual_grid_view`
 alongside the plain scroller, which is the evidence that a clipboard history or an application
 launcher does not get a fixed handful of rows.
 
-**Phase 5 — The popup layer.** Popover chrome, anchoring, dismissal, and the window level a menu
+**Phase 5 — The popup layer — superseded.** Popover chrome, anchoring, dismissal, and the window level a menu
 or dropdown occupies. `Select` and any context menu need it, so it lands before the surfaces that
 use them.
 
-**Phase 6 — The bar, natively.** The first production surface migrated off React Native, and the
+**Phase 6 — The bar, natively — superseded.** The first production surface migrated off React Native, and the
 proof of the thesis. It exercises the builder, the control kit, popups, live data, and hit testing
 together, on a surface whose behaviour is already known.
 

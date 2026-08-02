@@ -1,12 +1,21 @@
 # RN networking, WebSocket, and Blob native modules
 
-**Status: active; blocked on the shared asynchronous JS-dispatch seam.**
+Status: active.
 
 **Invariant: networking is a portable Swift service owned by the RN platform. JavaScript callbacks enter Hermes only through the runtime executor, all transfers are cancellable and bounded, and desktop and Android share one behavioral implementation.**
 
-## Phase 1 — Establish asynchronous JS dispatch
+## Current disposition
 
-Add the runtime-owned executor capability required to schedule TurboModule callbacks, promise resolution, and event delivery. Cancellation must make queued work inert after runtime teardown.
+`RuntimeJSCallInvoker` already provides thread-safe asynchronous dispatch, is
+owned by `ReactRuntimeHost`, is shared with C++ TurboModules, and clears queued
+work during shutdown. Networking is not blocked on creating a second executor.
+
+## Phase 1 — Qualify and expose the existing asynchronous JS dispatch seam
+
+Use the existing runtime-owned call invoker for TurboModule callbacks, promise
+resolution, and event delivery. Add only the ownership or interface exposure
+needed by the networking modules. Cancellation makes queued work inert after
+runtime teardown.
 
 Gate: behavioral tests prove ordering, cancellation, executor affinity, and teardown under concurrent completion.
 
