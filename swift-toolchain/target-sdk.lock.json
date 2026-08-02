@@ -14,7 +14,7 @@
     }
   },
   "snapshot": "swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a",
-  "swiftSDKGeneratorCommit": "14a7ef463abcc9134faa3bc53130bf309c60ac45",
+  "swiftSDKGeneratorCommit": "7c8fd9bbed6556caf9f4d7963f63f5daaa525170",
   "linuxBundleID": "nucleus-swift-6.4-linux",
   "linuxTargets": [
     {

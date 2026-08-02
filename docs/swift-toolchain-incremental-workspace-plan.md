@@ -93,10 +93,11 @@ lookup, migration reader, dual pipeline, or cache fallback.
 
 ## Phase 1 — Establish the libc++ Target Boundary
 
-The Nucleus Swift fork removes Linux from the libstdc++ platform set, passes
-`-stdlib=libc++` to the Linux C++ overlay, and deletes the libstdc++ module-map
-target and installed facade. Runtime, Dispatch, and Foundation C++ compilation
-receive explicit libc++ flags.
+The Nucleus Swift fork removes Linux from the libstdc++ platform set and passes
+`-stdlib=libc++` to the Linux C++ overlay. The upstream libstdc++ module-map
+implementation remains available for its non-Linux platforms but is inactive
+in the Nucleus target graph, so no libstdc++ facade is installed. Runtime,
+Dispatch, and Foundation C++ compilation receive explicit libc++ flags.
 
 The SDK generator writes libc++ flags into the Linux Swift and C++ tool
 properties. Its Swift tool properties include `-lc++`, so ordinary SwiftPM
