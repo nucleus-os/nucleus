@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+case "${NUCLEUS_TARGET_ARCHITECTURE:-}" in
+  aarch64 | x86_64) ;;
+  *)
+    echo 'error: NUCLEUS_TARGET_ARCHITECTURE must be aarch64 or x86_64' >&2
+    exit 64
+    ;;
+esac
+
 arguments=()
 resource_dir=
 is_link=false
@@ -35,9 +43,9 @@ if test "$is_link" = true && test -n "$resource_dir"; then
                 ;;
         esac
     done
-    runtime_object=$runtime_root/linux/x86_64/swiftrt.o
+    runtime_object=$runtime_root/linux/$NUCLEUS_TARGET_ARCHITECTURE/swiftrt.o
     if ! test -f "$runtime_object"; then
-        echo "error: missing x86_64 Swift runtime object: $runtime_object" >&2
+        echo "error: missing $NUCLEUS_TARGET_ARCHITECTURE Swift runtime object: $runtime_object" >&2
         exit 1
     fi
     # The official bootstrap driver always prefers an SDK-relative swiftrt.o.

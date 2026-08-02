@@ -4,7 +4,7 @@ import SwiftTargetSDKColliderRecipe
 import SystemPackage
 import Testing
 
-@Test func targetSDKGenerationUsesOnlyNativeARM64LinuxRuntimeExecution() throws {
+@Test func targetSDKGenerationBuildsBothLinuxArchitecturesOnARM64() throws {
     let root = FilePath(
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -16,6 +16,18 @@ import Testing
     let temporary = FilePath(
         FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString).path)
+    let linuxTargets = lock.linuxTargets.map { target in
+        SwiftLinuxTargetBuildConfiguration(
+            target: target,
+            runtimeBuildWorkspace: temporary.appending(
+                "runtime-\(target.architecture.rawValue)/build"),
+            runtimeCompilerCache: temporary.appending(
+                "runtime-\(target.architecture.rawValue)/ccache"),
+            runtimeInstall: temporary.appending(
+                "runtime-\(target.architecture.rawValue)/install"),
+            sysroot: temporary.appending(
+                "runtime-\(target.architecture.rawValue)/sysroot"))
+    }
     let configuration = SwiftTargetSDKGenerationConfiguration(
         lock: lock,
         lockFile: lockFile,
@@ -27,11 +39,8 @@ import Testing
         runtimeBuilderContext: root.appending(
             "swift-toolchain/runtime-build-container"),
         runtimeBuilderImageID: temporary.appending("runtime-builder-image-id"),
-        runtimeBuildWorkspace: temporary.appending("runtime-build"),
-        runtimeCompilerCache: temporary.appending("runtime-ccache"),
-        runtimeInstall: temporary.appending("runtime-install"),
+        linuxTargets: linuxTargets,
         sysrootPreparer: root.appending("swift-toolchain/prepare-linux-sysroot.sh"),
-        linuxSysroot: temporary.appending("linux-sysroot"),
         candidate: temporary.appending("candidate"),
         generation: temporary.appending("generation"),
         active: temporary.appending("current"),
@@ -50,48 +59,57 @@ import Testing
 
     #expect(result.selected.count == 2)
     #expect(
-        result.tasks.filter { $0.id.rawValue.hasPrefix("toolchain.download-") }.count
-            == 2 + lock.ubuntuPackages.count)
+        result.tasks.filter { $0.id.rawValue.hasPrefix("swift-sdk.download-") }.count
+            == 2 + lock.linuxTargets.flatMap(\.ubuntuPackages).count)
     #expect(
-        !result.tasks.contains { $0.id.rawValue == "toolchain.download-linux-target" })
+        !result.tasks.contains { $0.id.rawValue == "swift-sdk.download-linux-target" })
     let ubuntuDownloads = result.tasks.compactMap { task -> DownloadSpec? in
-        guard task.id.rawValue.hasPrefix("toolchain.download-ubuntu-"),
+        guard task.id.rawValue.hasPrefix("swift-sdk.download-ubuntu-"),
             case .download(let specification, _) = task.operation
         else { return nil }
         return specification
     }
-    #expect(ubuntuDownloads.count == lock.ubuntuPackages.count)
+    #expect(ubuntuDownloads.count == lock.linuxTargets.flatMap(\.ubuntuPackages).count)
     #expect(
         ubuntuDownloads.allSatisfy {
             $0.acceptedMediaTypes.contains("application/vnd.debian.binary-package")
         })
-    #expect(result.tasks.contains { $0.id.rawValue == "toolchain.build-sdk-generator" })
+    #expect(result.tasks.contains { $0.id.rawValue == "swift-sdk.build-sdk-generator" })
     #expect(
-        result.tasks.contains { $0.id.rawValue == "toolchain.build-linux-amd64-runtime" })
-    #expect(result.tasks.contains { $0.id.rawValue == "toolchain.assemble-target-sdks" })
-    #expect(result.tasks.contains { $0.id.rawValue == "toolchain.validate-target-sdks" })
+        result.tasks.contains { $0.id.rawValue == "swift-sdk.build-linux-arm64-runtime" })
+    #expect(
+        result.tasks.contains { $0.id.rawValue == "swift-sdk.build-linux-x86_64-runtime" })
+    #expect(result.tasks.contains { $0.id.rawValue == "swift-sdk.assemble-target-sdks" })
+    #expect(result.tasks.contains { $0.id.rawValue == "swift-sdk.validate-target-sdks" })
     let executions = result.tasks.flatMap { ociExecutions($0.operation) }
-    #expect(executions.count == 1)
-    #expect(executions[0].executionPlatform == .linuxARM64OCI)
-    #expect(executions[0].artifactTarget == .linuxX86_64)
+    #expect(executions.count == 2)
+    #expect(executions.allSatisfy { $0.executionPlatform == .linuxARM64OCI })
+    #expect(Set(executions.map(\.artifactTarget)) == [.linuxARM64, .linuxX86_64])
 
-    let sysroot = try #require(
-        result.tasks.first { $0.id.rawValue == "toolchain.prepare-linux-libcxx-sysroot" })
-    #expect(sysroot.dependencies.count == lock.ubuntuPackages.count)
-    #expect(
-        sysroot.dependencies.allSatisfy {
-            $0.rawValue.hasPrefix("toolchain.download-ubuntu-")
-        })
-    guard case .sequence(let sysrootOperations) = sysroot.operation else {
-        Issue.record("sysroot preparation must establish its working directory")
-        return
+    for target in linuxTargets {
+        let architecture = target.target.architecture
+        let sysroot = try #require(
+            result.tasks.first {
+                $0.id.rawValue
+                    == "swift-sdk.prepare-linux-\(architecture.rawValue)-libcxx-sysroot"
+            })
+        #expect(sysroot.dependencies.count == target.target.ubuntuPackages.count)
+        #expect(
+            sysroot.dependencies.allSatisfy {
+                $0.rawValue.hasPrefix(
+                    "swift-sdk.download-ubuntu-\(architecture.rawValue)-")
+            })
+        guard case .sequence(let sysrootOperations) = sysroot.operation else {
+            Issue.record("sysroot preparation must establish its working directory")
+            return
+        }
+        #expect(
+            sysrootOperations.first
+                == .createDirectory(target.sysroot.removingLastComponent()))
     }
-    #expect(
-        sysrootOperations.first
-            == .createDirectory(configuration.linuxSysroot.removingLastComponent()))
 
     let generator = try #require(
-        result.tasks.first { $0.id.rawValue == "toolchain.build-sdk-generator" })
+        result.tasks.first { $0.id.rawValue == "swift-sdk.build-sdk-generator" })
     #expect(
         commands(generator.operation).contains {
             $0.arguments.contains("--disable-automatic-resolution")
@@ -101,18 +119,19 @@ import Testing
     #expect(generator.locks == [generatorLock])
 
     let assembly = try #require(
-        result.tasks.first { $0.id.rawValue == "toolchain.assemble-target-sdks" })
+        result.tasks.first { $0.id.rawValue == "swift-sdk.assemble-target-sdks" })
     let assemblyCommands = commands(assembly.operation)
     #expect(assembly.locks == [generatorLock])
-    #expect(
-        assemblyCommands.contains {
-            guard let option = $0.arguments.firstIndex(of: "--target-swift-package-path") else {
-                return false
-            }
-            return $0.arguments.index(after: option) < $0.arguments.endIndex
-                && $0.arguments[$0.arguments.index(after: option)]
-                    == configuration.runtimeInstall.string
-        })
+    for target in linuxTargets {
+        #expect(
+            assemblyCommands.contains {
+                guard let option = $0.arguments.firstIndex(of: "--target-swift-package-path")
+                else { return false }
+                return $0.arguments.index(after: option) < $0.arguments.endIndex
+                    && $0.arguments[$0.arguments.index(after: option)]
+                        == target.runtimeInstall.string
+            })
+    }
 }
 
 @Test func checkedInTargetSDKLockHasExactDestinations() throws {
@@ -129,13 +148,20 @@ import Testing
 
     #expect(lock.androidAPILevel == 24)
     #expect(lock.androidBundleID.hasSuffix("_android"))
-    #expect(lock.linuxBundleID == "nucleus-swift-6.4-linux-amd64")
-    #expect(lock.ubuntuPackages.count == 15)
-    #expect(lock.ubuntuPackages.allSatisfy { !$0.url.contains("libstdc++") })
-    #expect(lock.ubuntuPackages.allSatisfy { !$0.url.contains("libicu") })
-    #expect(lock.ubuntuPackages.allSatisfy { !$0.url.contains("libxml2") })
-    #expect(lock.ubuntuPackages.contains { $0.url.contains("libc++-18-dev") })
-    #expect(lock.ubuntuPackages.contains { $0.url.contains("liblzma5_") })
+    #expect(lock.linuxBundleID == "nucleus-swift-6.4-linux")
+    #expect(lock.linuxTargets.map(\.architecture) == [.arm64, .x86_64])
+    for target in lock.linuxTargets {
+        #expect(target.ubuntuPackages.count == 16)
+        #expect(target.ubuntuPackages.allSatisfy { !$0.url.contains("libstdc++") })
+        #expect(target.ubuntuPackages.allSatisfy { !$0.url.contains("libicu") })
+        #expect(target.ubuntuPackages.allSatisfy { !$0.url.contains("libxml2") })
+        #expect(target.ubuntuPackages.contains { $0.url.contains("libc++-18-dev") })
+        #expect(target.ubuntuPackages.contains { $0.url.contains("liblzma5_") })
+        #expect(
+            target.ubuntuPackages.allSatisfy {
+                $0.url.hasSuffix("_\(target.architecture.debianArchitecture).deb")
+            })
+    }
     #expect(lock.inputs.macOSHostPackage.sha256.count == 64)
     #expect(lock.inputs.androidSDK.sha256.count == 64)
 }

@@ -21,9 +21,19 @@ Every Swift target enables C++ interoperability. Swift/C++ seams carry opaque ha
 
 ## Toolchains and native SDKs
 
-macOS development uses the selected Xcode toolchain. Linux/arm64 work in Apple containers uses the official Swift Linux/arm64 toolchain. The workspace does not build Swift, LLVM, or Linux host compilers.
+macOS development, Collider, and macOS-side Swift SDK assembly use the selected
+Xcode 27 compiler and developer tools. A native Linux/arm64 Apple container
+uses the matching official Swift.org Linux compiler as a bootstrap compiler.
+Nucleus does not build the Swift compiler, Swift driver, LLVM, Clang, SwiftPM,
+SourceKit-LSP, DocC, or another host toolchain.
 
-Collider cross-builds only the Nucleus Linux/amd64 runtime and its Swift SDK overlays, and builds the Android Swift SDK artifact required by the Android host. Native C++ artifacts are provisioned under `~/.cache/nucleus/nucleus-native-sdk`, split into `render` and `rn` ownership.
+`collider swift-sdk rebuild` builds only the Linux target-side Swift standard
+library and overlays, Dispatch, Foundation, XCTest, and Swift Testing. It builds
+those products natively for Linux/arm64 and cross-builds them for Linux/amd64 in
+the same arm64 container, then publishes both architectures in one Swift SDK.
+Collider also installs the matching official Android Swift SDK artifact. Native
+C++ artifacts are provisioned under
+`~/.cache/nucleus/nucleus-native-sdk`, split into `render` and `rn` ownership.
 
 ## Setup and verification
 

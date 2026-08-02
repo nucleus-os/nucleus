@@ -5,7 +5,7 @@ import Foundation
 enum DoctorScope: String, CaseIterable, ExpressibleByArgument {
     case all
     case runtime
-    case toolchain
+    case swiftSDK = "swift-sdk"
     case android
     case browser
     case ciMacOSBuilder = "ci-macos-builder"
@@ -126,7 +126,7 @@ struct WorkspaceDoctor {
         scope: DoctorScope
     ) -> [HostPrerequisite] {
         var all =
-            runtimePrerequisites + toolchainPrerequisites
+            runtimePrerequisites + swiftSDKPrerequisites
             + androidPrerequisites + browserPrerequisites
         if RunnerPlatform.current
             == RunnerPlatform(
@@ -179,25 +179,24 @@ struct WorkspaceDoctor {
                 scope: "runtime")
     }
 
-    private var toolchainPrerequisites: [HostPrerequisite] {
-        [swiftVersion(scope: "toolchain"), ociExecutor(scope: "toolchain")]
+    private var swiftSDKPrerequisites: [HostPrerequisite] {
+        [swiftVersion(scope: "swift-sdk"), ociExecutor(scope: "swift-sdk")]
             + executables(
                 [
                     "swift", "git", "pkgutil", "tar", "xcrun",
                 ],
-                scope: "toolchain")
+                scope: "swift-sdk")
             + paths(
-                [
-                    "swift-toolchain/target-sdk.lock.json",
-                    "swift-toolchain/validate-target-sdk-artifacts.sh",
-                    "swift-toolchain/prepare-linux-sysroot.sh",
-                    "swift-toolchain/nucleus-target-runtime-presets.ini",
-                    "swift-toolchain/runtime-build-container/Containerfile",
-                    "swift-toolchain/source/swift/utils/build-script",
-                    "swift-toolchain/source/swift-sdk-generator/Package.swift",
-                ],
+                swiftTargetRuntimeSourcePaths
+                    + [
+                        "swift-toolchain/target-sdk.lock.json",
+                        "swift-toolchain/validate-target-sdk-artifacts.sh",
+                        "swift-toolchain/prepare-linux-sysroot.sh",
+                        "swift-toolchain/nucleus-target-runtime-presets.ini",
+                        "swift-toolchain/runtime-build-container/Containerfile",
+                    ],
                 under: context.root,
-                scope: "toolchain")
+                scope: "swift-sdk")
     }
 
     private var androidPrerequisites: [HostPrerequisite] {

@@ -2,13 +2,17 @@
 
 **Status: active.**
 
-**Invariant: Nucleus does not build Swift, LLVM, or Linux host tools. macOS uses Xcode, Apple-container Linux/arm64 uses the official Swift toolchain, and Collider cross-builds only Nucleus Linux/amd64 SDK overlays and Android Swift SDK artifacts. First-party Skia changes live as commits in the `nucleus-os` fork.**
+**Invariant: Nucleus does not build a Swift compiler, Swift driver, LLVM, Clang, or Linux host tools. macOS uses Xcode, the native Apple-container Linux/arm64 builder uses the official Swift.org compiler as a bootstrap compiler, and Collider builds only Linux target runtimes and Swift SDK artifacts. First-party Swift and Skia changes live as commits in `nucleus-os` forks.**
 
 The target-SDK workspace mechanics are authoritative in [swift-toolchain-incremental-workspace-plan.md](swift-toolchain-incremental-workspace-plan.md). This plan owns only source provenance and final qualification that crosses Swift SDK and Skia boundaries.
 
 ## Phase 1 — Lock source provenance
 
-Ensure every modified Swift sibling and Skia checkout points to a genuine `nucleus-os` fork commit. Unmodified sources retain canonical upstream remotes. Collider validates exact gitlinks but never fetches, resets, patches, or materializes source.
+Retain only the target-runtime source closure declared in the authoritative
+workspace plan. Ensure every modified Swift source and Skia checkout points to
+a genuine `nucleus-os` fork commit. Unmodified sources retain canonical
+upstream remotes. Collider validates exact gitlinks but never fetches, resets,
+patches, or materializes source.
 
 Gate: a fresh recursive clone contains the exact source graph with no patch-application workflow.
 
@@ -20,7 +24,11 @@ Gate: host-side package planning and the supported host build lanes succeed with
 
 ## Phase 3 — Qualify target SDK artifacts
 
-Build the Linux/amd64 Nucleus runtime SDK overlay and Android Swift SDK artifact through Collider. Verify target triples, sysroots, runtime libraries, module interfaces, C++ standard library selection, and relocation from the user cache.
+Build the Linux/arm64 runtime natively, cross-build the Linux/amd64 runtime, and
+assemble both into one Linux Swift SDK through Collider. Install the official
+Android Swift SDK artifact. Verify target triples, sysroots, runtime libraries,
+module interfaces, C++ standard library selection, and relocation from the
+user cache.
 
 Gate: clean cross-builds consume only declared SDK artifacts and reproduce after derived-state removal.
 
@@ -38,4 +46,6 @@ Gate: repository searches find no supported path that builds a compiler or selec
 
 ## Phase 6 — End-to-end qualification
 
-Run root build/test lanes, Android packaging verification, Linux/amd64 runtime cross-build, and native SDK provenance checks from a fresh checkout and from an incrementally rebuilt checkout.
+Run root build/test lanes, Android packaging verification, both Linux runtime
+builds, and native SDK provenance checks from a fresh checkout and from an
+incrementally rebuilt checkout.

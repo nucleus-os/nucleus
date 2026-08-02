@@ -69,11 +69,12 @@ APFS volumes are provisioned. Collider's macOS graph compiles through the
 public Apple Swift surface and the focused builder-doctor suite passes under
 the selected Xcode. Native macOS builds now use that Xcode toolchain directly.
 Swift compilers and LLVM are no longer built from source. Collider uses an
-official Linux/arm64 Swift compiler in a native Apple container to cross-build
-only the Nucleus Linux/amd64 runtime and SDK overlays against a pinned,
-libc++-only Ubuntu package sysroot. SDK assembly then runs natively on macOS
-with the signed Swift.org macOS compiler and official Android SDK. Xcode
-supplies the macOS SDK and developer tools. Native Linux dependencies and
+official Linux/arm64 Swift bootstrap compiler in a native Apple container to
+build the Linux/arm64 target runtime natively and cross-build the Linux/amd64
+target runtime against architecture-matched, libc++-only Ubuntu package
+sysroots. SDK assembly then runs natively on macOS with Xcode and installs the
+official Android Swift SDK artifact. Xcode supplies the macOS compiler, SDK,
+and developer tools. Native Linux dependencies and
 Linux-only integration work continue to use pinned Linux/arm64 OCI images and
 declare their Linux/amd64 artifact target independently. Full Xcode is required
 because Command Line Tools does not provide the complete macOS SDK and test

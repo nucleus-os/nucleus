@@ -20,7 +20,7 @@ import WaylandColliderRecipe
 enum ComponentSelection: String, CaseIterable, ExpressibleByArgument {
     case all
     case runtime
-    case toolchain
+    case swiftSDK = "swift-sdk"
     case android
     case browser
     case tracy
@@ -239,7 +239,7 @@ struct ComponentRegistry {
         let selection = selection ?? .all
         guard
             ![
-                .toolchain, .android, .browser, .loader, .gpuHeadless, .gpuDRM,
+                .swiftSDK, .android, .browser, .loader, .gpuHeadless, .gpuDRM,
             ].contains(selection)
         else {
             throw WorkspaceFailure.message(
@@ -557,7 +557,7 @@ struct ComponentRegistry {
         }
         guard
             ![
-                .toolchain, .android, .browser, .loader, .gpuHeadless, .gpuDRM,
+                .swiftSDK, .android, .browser, .loader, .gpuHeadless, .gpuDRM,
             ].contains(selection)
         else {
             throw WorkspaceFailure.message(

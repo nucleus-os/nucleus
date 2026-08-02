@@ -9,6 +9,21 @@ import SystemPackage
 import Darwin
 #endif
 
+let swiftTargetRuntimeSourcePaths = [
+    "swift-toolchain/source/libxml2",
+    "swift-toolchain/source/llvm-project",
+    "swift-toolchain/source/swift",
+    "swift-toolchain/source/swift-collections",
+    "swift-toolchain/source/swift-corelibs-foundation",
+    "swift-toolchain/source/swift-corelibs-libdispatch",
+    "swift-toolchain/source/swift-corelibs-xctest",
+    "swift-toolchain/source/swift-experimental-string-processing",
+    "swift-toolchain/source/swift-foundation",
+    "swift-toolchain/source/swift-foundation-icu",
+    "swift-toolchain/source/swift-sdk-generator",
+    "swift-toolchain/source/swift-testing",
+]
+
 struct RebuildOptions {
     var controls: TaskControls
 
@@ -86,6 +101,7 @@ func swiftTargetSDKArtifactID(
 
 func swiftTargetRuntimeBuildID(
     lock: SwiftTargetSDKLock,
+    target: SwiftTargetSDKLock.LinuxTarget,
     sourceID: String,
     runtimeBuilderContext: FilePath,
     runtimePreset: FilePath,
@@ -93,16 +109,17 @@ func swiftTargetRuntimeBuildID(
 ) throws -> String {
     var encoder = CanonicalDigestEncoder()
     encoder.append(tag: 1, string: lock.snapshot)
-    for package in lock.ubuntuPackages {
-        encoder.append(tag: 2, string: package.url)
-        encoder.append(tag: 3, string: package.sha256)
+    encoder.append(tag: 2, string: target.architecture.rawValue)
+    for package in target.ubuntuPackages {
+        encoder.append(tag: 3, string: package.url)
+        encoder.append(tag: 4, string: package.sha256)
     }
-    encoder.append(tag: 4, string: sourceID)
+    encoder.append(tag: 5, string: sourceID)
     encoder.append(
-        tag: 5,
+        tag: 6,
         bytes: try ArtifactHasher.digest(tree: runtimeBuilderContext).bytes)
-    encoder.append(tag: 6, bytes: try ArtifactHasher.digest(file: runtimePreset).bytes)
-    encoder.append(tag: 7, bytes: try ArtifactHasher.digest(file: sysrootPreparer).bytes)
+    encoder.append(tag: 7, bytes: try ArtifactHasher.digest(file: runtimePreset).bytes)
+    encoder.append(tag: 8, bytes: try ArtifactHasher.digest(file: sysrootPreparer).bytes)
     let digest = ArtifactHasher.digest(bytes: encoder.bytes).description
     let hexadecimal =
         digest.hasPrefix("sha256:")
@@ -111,7 +128,7 @@ func swiftTargetRuntimeBuildID(
     return String(hexadecimal.prefix(24))
 }
 
-private struct ToolchainStatusRecord: Codable {
+private struct SwiftSDKStatusRecord: Codable {
     let cacheRoot: String
     let artifactRoot: String
     let xcodeIdentity: String
@@ -123,7 +140,7 @@ private struct ToolchainStatusRecord: Codable {
     let generations: [String]
 }
 
-struct ToolchainStatus {
+struct SwiftSDKStatus {
     let context: WorkspaceContext
 
     func run(json: Bool) throws {
@@ -153,7 +170,7 @@ struct ToolchainStatus {
             hostSwift.flatMap {
                 FileManager.default.isExecutableFile(atPath: $0.path) ? $0 : nil
             }
-        let record = ToolchainStatusRecord(
+        let record = SwiftSDKStatusRecord(
             cacheRoot: paths.cacheRoot.path,
             artifactRoot: paths.artifactRoot.path,
             xcodeIdentity: try selectedXcodeIdentity(environment: context.environment),
@@ -190,7 +207,7 @@ struct ToolchainStatus {
     }
 }
 
-struct ToolchainCommand {
+struct SwiftSDKCommand {
     let context: WorkspaceContext
 
     func rebuild(_ options: RebuildOptions) async throws {
@@ -205,7 +222,7 @@ struct ToolchainCommand {
         let recipeRoot = context.layout.swiftToolchain
         let lockFile = recipeRoot.appendingPathComponent("target-sdk.lock.json")
         let lock = try SwiftTargetSDKLock.load(from: FilePath(lockFile.path))
-        let sourceID = try swiftSourceGraphIdentity(
+        let sourceID = try swiftTargetRuntimeSourceIdentity(
             root: context.root,
             environment: context.environment)
         let generatorSource = recipeRoot.appendingPathComponent(
@@ -248,7 +265,7 @@ struct ToolchainCommand {
                 ).path)
         else {
             throw WorkspaceFailure.message(
-                "the complete Swift source graph is not initialized")
+                "the Swift target-runtime source closure is not initialized")
         }
         let artifactID = try swiftTargetSDKArtifactID(
             lockFile: FilePath(lockFile.path),
@@ -262,20 +279,36 @@ struct ToolchainCommand {
             runtimeBuilderContext: FilePath(runtimeBuilderContext.path),
             runtimePreset: FilePath(runtimePreset.path),
             sysrootPreparer: FilePath(sysrootPreparer.path))
-        let runtimeBuildID = try swiftTargetRuntimeBuildID(
-            lock: lock,
-            sourceID: sourceID,
-            runtimeBuilderContext: FilePath(runtimeBuilderContext.path),
-            runtimePreset: FilePath(runtimePreset.path),
-            sysrootPreparer: FilePath(sysrootPreparer.path))
+        let linuxTargets = try lock.linuxTargets.map { target in
+            let buildID = try swiftTargetRuntimeBuildID(
+                lock: lock,
+                target: target,
+                sourceID: sourceID,
+                runtimeBuilderContext: FilePath(runtimeBuilderContext.path),
+                runtimePreset: FilePath(runtimePreset.path),
+                sysrootPreparer: FilePath(sysrootPreparer.path))
+            let root = paths.runtimeBuildRoot.appendingPathComponent(
+                "\(target.architecture.rawValue)/\(buildID)",
+                isDirectory: true)
+            return SwiftLinuxTargetBuildConfiguration(
+                target: target,
+                runtimeBuildWorkspace: FilePath(
+                    root.appendingPathComponent("build", isDirectory: true).path),
+                runtimeCompilerCache: FilePath(
+                    paths.runtimeCompilerCache.appendingPathComponent(
+                        target.architecture.rawValue,
+                        isDirectory: true
+                    ).path),
+                runtimeInstall: FilePath(
+                    root.appendingPathComponent("install", isDirectory: true).path),
+                sysroot: FilePath(
+                    root.appendingPathComponent("sysroot", isDirectory: true).path))
+        }
         let generation = paths.artifactRoot.appendingPathComponent(
             "generations/\(artifactID)", isDirectory: true)
         let active = paths.artifactRoot.appendingPathComponent("current")
         let discoveryRoot = homeDirectory.appendingPathComponent(
             ".swiftpm/swift-sdks", isDirectory: true)
-        let runtimeRoot = paths.runtimeBuildRoot.appendingPathComponent(
-            runtimeBuildID, isDirectory: true)
-
         if reusableGeneration(
             generation: generation,
             active: active,
@@ -295,7 +328,7 @@ struct ToolchainCommand {
                         as: UTF8.self))
             } else if options.controls.dryRun || options.controls.explain {
                 print(
-                    "clean  toolchain.target-sdks  immutable generation "
+                    "clean  swift-sdk.target-sdks  immutable generation "
                         + "\(artifactID) is active and validated")
             } else if !options.controls.quiet {
                 print("==> Swift target SDK generation is clean: \(generation.path)")
@@ -317,14 +350,8 @@ struct ToolchainCommand {
             sourceID: sourceID,
             runtimeBuilderContext: FilePath(runtimeBuilderContext.path),
             runtimeBuilderImageID: FilePath(paths.runtimeBuilderImageID.path),
-            runtimeBuildWorkspace: FilePath(
-                runtimeRoot.appendingPathComponent("build", isDirectory: true).path),
-            runtimeCompilerCache: FilePath(paths.runtimeCompilerCache.path),
-            runtimeInstall: FilePath(
-                runtimeRoot.appendingPathComponent("install", isDirectory: true).path),
+            linuxTargets: linuxTargets,
             sysrootPreparer: FilePath(sysrootPreparer.path),
-            linuxSysroot: FilePath(
-                runtimeRoot.appendingPathComponent("sysroot", isDirectory: true).path),
             candidate: FilePath(candidate.path),
             generation: FilePath(generation.path),
             active: FilePath(active.path),
@@ -341,9 +368,13 @@ struct ToolchainCommand {
         let taskSet = try SwiftTargetSDKColliderRecipe.generation(configuration)
         if !options.controls.json {
             print("==> Swift target SDK root: \(paths.artifactRoot.path)")
-            print("==> Swift target runtime build root: \(runtimeRoot.path)")
+            for target in linuxTargets {
+                print(
+                    "==> \(target.target.architecture.rawValue) Linux runtime: "
+                        + target.runtimeInstall.removingLastComponent().string)
+            }
             print("==> host compiler input: \(lock.snapshot)-osx.pkg")
-            print("==> Linux target: x86_64-unknown-linux-gnu")
+            print("==> Linux targets: aarch64 and x86_64")
             print(
                 "==> Android targets: aarch64 and x86_64, API "
                     + "\(lock.androidAPILevel)")
@@ -428,7 +459,7 @@ private func validateGeneratorSource(
     }
 }
 
-private func swiftSourceGraphIdentity(
+private func swiftTargetRuntimeSourceIdentity(
     root: URL,
     environment: [String: String]
 ) throws -> String {
@@ -448,8 +479,21 @@ private func swiftSourceGraphIdentity(
             .trimmingCharacters(in: .whitespaces)
         return path.hasPrefix(prefix) ? path : nil
     }.sorted()
-    guard !paths.isEmpty else {
-        throw WorkspaceFailure.message("Swift source submodules are not declared")
+    guard paths == swiftTargetRuntimeSourcePaths else {
+        let expected = Set(swiftTargetRuntimeSourcePaths)
+        let actual = Set(paths)
+        let missing = expected.subtracting(actual).sorted()
+        let unexpected = actual.subtracting(expected).sorted()
+        var details = [String]()
+        if !missing.isEmpty {
+            details.append("missing: \(missing.joined(separator: ", "))")
+        }
+        if !unexpected.isEmpty {
+            details.append("unexpected: \(unexpected.joined(separator: ", "))")
+        }
+        throw WorkspaceFailure.message(
+            "Swift target-runtime source closure does not match the required repositories ("
+                + details.joined(separator: "; ") + ")")
     }
 
     var encoder = CanonicalDigestEncoder()
@@ -499,7 +543,7 @@ private func swiftSourceGraphIdentity(
         : digest
     guard hexadecimal.count == 64 else {
         throw WorkspaceFailure.message(
-            "invalid Swift source graph digest: \(digest)")
+            "invalid Swift target-runtime source digest: \(digest)")
     }
     return String(hexadecimal.prefix(24))
 }

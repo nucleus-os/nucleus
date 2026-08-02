@@ -1,13 +1,22 @@
 #!/bin/sh
 set -eu
 
-if [ "$#" -lt 2 ]; then
-    echo "usage: $0 <destination> <package.deb>..." >&2
+if [ "$#" -lt 3 ]; then
+    echo "usage: $0 <destination> <gnu-architecture> <package.deb>..." >&2
     exit 64
 fi
 
 destination=$1
 shift
+gnu_architecture=$1
+shift
+case "$gnu_architecture" in
+    aarch64-linux-gnu | x86_64-linux-gnu) ;;
+    *)
+        echo "unsupported GNU architecture: $gnu_architecture" >&2
+        exit 64
+        ;;
+esac
 parent=$(dirname "$destination")
 mkdir -p "$parent"
 temporary=$(mktemp -d "$parent/.sysroot.XXXXXX")
@@ -41,7 +50,7 @@ if find "$temporary/root" \
     exit 1
 fi
 test -d "$temporary/root/usr/include/c++/v1"
-test -e "$temporary/root/usr/lib/x86_64-linux-gnu/libc++.so.1"
+test -e "$temporary/root/usr/lib/$gnu_architecture/libc++.so.1"
 rm -rf "$destination"
 mv "$temporary/root" "$destination"
 trap - EXIT HUP INT TERM

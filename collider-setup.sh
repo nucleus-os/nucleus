@@ -51,13 +51,13 @@ initialize_missing_submodules() {
 initialize_missing_submodules
 
 # True when the native host compiler resolves. macOS uses the selected Xcode;
-# Linux uses the active generated Linux amd64 toolchain.
+# Linux host execution uses the active generated toolchain for that host.
 toolchain_present() { ( source "$host_env" ) >/dev/null 2>&1; }
 
 # 1. Provision the generated Linux toolchain when setup itself runs on Linux.
 #    macOS builds Collider and native products with the selected Xcode toolchain;
-#    `collider toolchain rebuild` separately creates Linux/Android artifacts in
-#    the pinned linux/amd64 builder image.
+#    `collider swift-sdk rebuild` separately creates Linux/Android artifacts in
+#    the pinned native Linux/arm64 builder image.
 if ! toolchain_present; then
   if [[ "$(uname -s)" == Darwin ]]; then
     echo "error: full Xcode 27 with Swift 6.4 must be selected" >&2
@@ -69,7 +69,7 @@ if ! toolchain_present; then
   fi
   echo "collider-setup: building collider with the bootstrap compiler..." >&2
   swift build --package-path "$pkg" -c release >&2
-  "$bin" toolchain rebuild
+  "$bin" swift-sdk rebuild
 fi
 
 # 2. Build the optimized collider binary with the native host compiler.

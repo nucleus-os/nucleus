@@ -53,7 +53,13 @@ The configuration service is the only reader/writer of the user desktop JSON doc
 
 ## Toolchains and artifacts
 
-macOS uses Xcode. Linux/arm64 in Apple containers uses the official Swift toolchain. Nucleus never builds Swift, LLVM, or Linux host tools. Collider builds the Linux/amd64 Nucleus target SDK overlay and Android Swift SDK artifact, and provisions the render/RN native SDKs under the user cache.
+macOS uses Xcode. A native Linux/arm64 Apple container uses the matching
+official Swift.org compiler as a bootstrap compiler. Nucleus never builds a
+Swift compiler, Swift driver, LLVM, Clang, or Linux host tools. Collider builds
+the Linux target standard library and overlays natively for arm64 and by
+cross-compilation for amd64, assembles them into one Linux Swift SDK, installs
+the Android Swift SDK artifact, and provisions the render/RN native SDKs under
+the user cache.
 
 Collider owns declared task graphs, planning, execution, artifact identity, locks, and records. Underlying build systems retain their own incremental state. Source submodules are validated pinned inputs and are never mutated by Collider.
 

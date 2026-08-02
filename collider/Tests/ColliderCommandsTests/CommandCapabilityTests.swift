@@ -15,7 +15,7 @@ private let taskControlledLeaves: [[String]] = [
     ["generate", "rn-spec"],
     ["generate", "vulkan"],
     ["generate", "wayland"],
-    ["toolchain", "rebuild"],
+    ["swift-sdk", "rebuild"],
     ["android", "build"],
     ["android", "native"],
     ["android", "verify"],
@@ -32,7 +32,7 @@ private let reportLeaves: [[String]] = [
     ["status"],
     ["logs", "list"],
     ["cache", "status"],
-    ["toolchain", "status"],
+    ["swift-sdk", "status"],
 ]
 
 private let diagnosticLeaves: [[String]] = [

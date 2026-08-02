@@ -25,6 +25,7 @@ RUN test "$(dpkg --print-architecture)" = arm64 \
         libxml2-dev \
         libzstd-dev \
         lld \
+        llvm-18-dev \
         ninja-build \
         patch \
         pkg-config \
@@ -71,7 +72,7 @@ RUN usermod \
     && usermod --groups '' nucleus-build
 
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/nucleus-runtime-build
-COPY --chmod=0755 nucleus-x86_64-swiftc /usr/local/bin/
+COPY --chmod=0755 nucleus-target-swiftc /usr/local/bin/
 
 USER nucleus-build
 WORKDIR /src

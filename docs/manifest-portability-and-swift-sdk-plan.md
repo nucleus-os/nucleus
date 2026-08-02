@@ -11,7 +11,7 @@ paths. The manifest describes repository topology and target-specific build
 semantics only.
 
 Every Nucleus runtime product compiles through an explicitly selected Swift SDK
-and target triple. The supported runtime destinations are Linux amd64, Android
+and target triple. The supported runtime destinations are Linux arm64, Linux amd64, Android
 arm64, and Android amd64. Collider itself remains a native host tool: Xcode 27
 builds and runs it on macOS. The pure-Swift contract tier may compile natively
 when Collider consumes it. There is no generated Linux host toolchain and no
@@ -94,7 +94,8 @@ fails during SwiftPM destination planning before compilation.
 
 The runtime destination inventory becomes explicit:
 
-- Linux: `x86_64-unknown-linux-gnu`.
+- Linux arm64: `aarch64-unknown-linux-gnu`.
+- Linux amd64: `x86_64-unknown-linux-gnu`.
 - Android arm64: `aarch64-unknown-linux-android<api>`.
 - Android amd64: `x86_64-unknown-linux-android<api>`.
 
@@ -122,12 +123,16 @@ results remain to be captured from the immutable target SDK generation.
 
 The compiler-build experiment was removed. The qualified architecture uses
 Xcode's Swift compiler for macOS execution and an official Swift.org
-Linux/arm64 compiler inside a native Apple container to cross-build only the
-Nucleus Linux/amd64 runtime and SDK overlays. The runtime, Dispatch, Foundation,
-Swift Testing, and XCTest now complete against the package-only libc++ sysroot;
-an audit of all 59 installed ELF artifacts finds no `libstdc++` dependency or
-`GLIBCXX` requirement. Production generation begins after the modified Swift
-and `swift-sdk-generator` submodules are recorded as pinned source revisions.
+Linux/arm64 bootstrap compiler inside a native Apple container to build the
+Linux target standard library and overlays, Dispatch, Foundation, and XCTest
+natively for arm64 and by cross-compilation for amd64. Both architectures land
+in one Linux Swift SDK artifact. The current qualification run built, assembled,
+validated, and activated both Linux architectures, but its logs also proved
+that upstream build-script treats Swift Testing as a zero-second no-op in this
+Linux cross-product configuration. The existing validator did not detect the
+missing Testing module and library. Production qualification remains blocked
+until Swift Testing is built explicitly and SDK validation rejects either
+missing artifact.
 
 ## Phase 2 — Centralize the Compilation Contract
 
@@ -177,15 +182,15 @@ different SDK triples.
 Collider assembles immutable SDK generations instead of exposing a loose
 `nucleus-native-sdk` directory to the manifest.
 
-The Linux amd64 SDK contains:
+The Linux SDK contains one entry for arm64 and one for amd64. Each entry contains:
 
-- The exact Ubuntu amd64 package sysroot, including libc++ and excluding every
+- The exact Ubuntu package sysroot for its architecture, including libc++ and excluding every
   libstdc++ file, module map, dependency, and symbol requirement.
-- Dynamic and static Nucleus Swift runtime resources cross-built from the
-  pinned source graph by an official Linux/arm64 Swift compiler. No compiler or
-  LLVM product is built.
-- The render and React Native headers and Linux/amd64 libraries cross-built by
-  pinned native Linux/arm64 OCI builders.
+- Dynamic and static Nucleus Swift runtime resources built from the pinned
+  target-runtime source closure by an official Linux/arm64 Swift bootstrap compiler, natively for arm64
+  and by cross-compilation for amd64. No compiler or LLVM product is built.
+- The render and React Native headers and architecture-matched Linux libraries
+  built by pinned native Linux/arm64 OCI builders.
 - SDK-local module maps and `pkg-config` metadata for stable native artifacts.
 - Compiler, C compiler, C++ compiler, and linker toolset configuration.
 
@@ -303,14 +308,14 @@ Bootstrap becomes a strict dependency chain:
 
 ```sh
 swift build --package-path collider -c release
-collider toolchain rebuild
+collider swift-sdk rebuild
 collider bootstrap
 collider build
 ```
 
 The first command builds Collider with the native compiler and can evaluate the
-root dependency graph without provisioned SDKs. `toolchain rebuild` publishes
-the Linux/amd64 Nucleus target SDK overlay and Android Swift SDK artifact; it
+root dependency graph without provisioned SDKs. `swift-sdk rebuild` publishes
+one Linux Nucleus target SDK containing arm64 and amd64 plus the Android Swift SDK artifact; it
 does not build a compiler. `bootstrap` builds the native
 render/RN artifacts and assembles the complete runtime SDKs. `build` consumes
 only those published SDK generations.
@@ -348,10 +353,11 @@ The migration is complete only when all of these gates pass in order:
 1. Root manifest dump and Collider dependency resolution pass with an isolated
    home and no Nucleus environment on macOS and Linux.
 2. Xcode 27 builds and tests Collider natively on macOS.
-3. The official Linux/arm64 Swift 6.4 toolchain builds and tests Collider
-   natively in the Apple container.
-4. The Linux amd64 SDK builds and tests every selected Nucleus product from a
-   clean scratch directory.
+3. The official Linux/arm64 Swift 6.4 bootstrap compiler builds the target
+   standard library, overlays, Dispatch, Foundation, XCTest, and Swift Testing
+   for both Linux architectures without producing a host compiler.
+4. The Linux arm64 and amd64 SDK entries each build and test every selected
+   Nucleus product from clean scratch directories.
 5. The Android arm64 and amd64 SDK entries compile and link their complete
    product closures from clean scratch directories.
 6. Generated Swift-to-C++ header bridge tests pass without a prior editor or

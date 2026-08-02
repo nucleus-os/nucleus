@@ -35,13 +35,20 @@ func androidLeavesConstructTypedOperationsAndPreserveGradlePassthrough() throws 
 }
 
 @Test
-func toolchainRebuildAlwaysBuildsTheCompleteTargetSet() throws {
-    _ = try Toolchain.Rebuild.parse([])
+func swiftSDKRebuildAlwaysBuildsTheCompleteTargetSet() throws {
+    _ = try SwiftSDK.Rebuild.parse([])
     #expect(throws: (any Error).self) {
-        try Toolchain.Rebuild.parse(["--arch", "aarch64"])
+        try SwiftSDK.Rebuild.parse(["--arch", "aarch64"])
     }
     #expect(throws: (any Error).self) {
-        try Toolchain.Rebuild.parse(["--reconfigure"])
+        try SwiftSDK.Rebuild.parse(["--reconfigure"])
+    }
+}
+
+@Test
+func retiredToolchainCommandIsRejected() {
+    #expect(throws: (any Error).self) {
+        try ColliderCommand.parseAsRoot(["toolchain", "status"])
     }
 }
 

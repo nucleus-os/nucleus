@@ -152,7 +152,7 @@ struct RepositoryState {
     private func domain(of run: RepositoryRun) -> String {
         guard run.command.count > 1 else { return "status" }
         return switch run.command[1] {
-        case "toolchain": "toolchain"
+        case "swift-sdk": "swift-sdk"
         case "android": "android"
         case "browser": "browser"
         default: "runtime"

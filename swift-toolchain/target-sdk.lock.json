@@ -13,10 +13,82 @@
       "url": "https://download.swift.org/swift-6.4.x-branch/xcode/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a-osx.pkg"
     }
   },
-  "linuxBundleID": "nucleus-swift-6.4-linux-amd64",
   "snapshot": "swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a",
   "swiftSDKGeneratorCommit": "14a7ef463abcc9134faa3bc53130bf309c60ac45",
-  "ubuntuPackages": [
+  "linuxBundleID": "nucleus-swift-6.4-linux",
+  "linuxTargets": [
+    {
+      "architecture": "arm64",
+      "ubuntuPackages": [
+        {
+          "sha256": "cf8d2af040044ea5f9205a7a7a3eceabe9bc182fd780a1dac8e849f8eccee1f1",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/g/glibc/libc6-dev_2.39-0ubuntu8_arm64.deb"
+        },
+        {
+          "sha256": "04d7cb73e608b41713b63ef915577f7f5d75e95b1b33174e82e05687fdb6cfaf",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/g/glibc/libc6_2.39-0ubuntu8_arm64.deb"
+        },
+        {
+          "sha256": "29e86fd0611d6ebaccb07e1d6fdc226939b9f11ff4a53a8515cc39021acdeeab",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/c/curl/libcurl4-openssl-dev_8.5.0-2ubuntu10_arm64.deb"
+        },
+        {
+          "sha256": "6411e90b37dc7cc96dde9efcc08c7a50615a8e10a783d892698d0171cbff8a0d",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/c/curl/libcurl4t64_8.5.0-2ubuntu10_arm64.deb"
+        },
+        {
+          "sha256": "f8faa5fee7174ec5fdd3eecbc27f38d530f7b500ad6763e2b57a9ac88622dc37",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-13/libgcc-13-dev_13.2.0-23ubuntu4_arm64.deb"
+        },
+        {
+          "sha256": "bb1c262f2ac9aeb357d3344a06f22f1057306694f6200896775a03ecced08b13",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libgcc-s1_14-20240412-0ubuntu1_arm64.deb"
+        },
+        {
+          "sha256": "2f58fd7de725efd0dbebe9d4442049fdacd7c2e8242f4288a13a688d50507245",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/x/xz-utils/liblzma5_5.6.1+really5.4.5-1ubuntu0.3_arm64.deb"
+        },
+        {
+          "sha256": "244593fc2fd11cb9c4c58e156b39ac09038b523f3af5911182045fef4b7d9dae",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/universe/l/llvm-toolchain-18/libc++-18-dev_18.1.3-1_arm64.deb"
+        },
+        {
+          "sha256": "1e0b66184032a68105bba3d9be58dcbc80f8ff3593e0af412fb65993f9c829af",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/universe/l/llvm-toolchain-18/libc++1-18_18.1.3-1_arm64.deb"
+        },
+        {
+          "sha256": "52225f806445892b8d7bac362e1b4478599c2bd5c378356e3b800084aaca66cd",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/universe/l/llvm-toolchain-18/libc++abi-18-dev_18.1.3-1_arm64.deb"
+        },
+        {
+          "sha256": "a84f87991ee0f9e5ac868c7e5c09dd7ded9ee12640bb3ddce8818ab89434f1c7",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/universe/l/llvm-toolchain-18/libc++abi1-18_18.1.3-1_arm64.deb"
+        },
+        {
+          "sha256": "9e9f27ff4382cad529ab98aad059e0a863862d65e9c3804ec0c1fb65e4e101b2",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/universe/l/llvm-toolchain-18/libunwind-18-dev_18.1.3-1_arm64.deb"
+        },
+        {
+          "sha256": "91035c38ee0e5f81ad46b71dd72842bd5ae349dba4436ef9706d35f54ab8e06d",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/universe/l/llvm-toolchain-18/libunwind-18_18.1.3-1_arm64.deb"
+        },
+        {
+          "sha256": "7fd438efa44a794b438e7dde7ac280166fb8d4b1cf7846393ce019714d8bb3e3",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/l/linux/linux-libc-dev_6.8.0-31.31_arm64.deb"
+        },
+        {
+          "sha256": "3ca97d064a8f3dbe3fed05b6132ba0890237d26fae16060c1fb8ea22c2a846e9",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/z/zlib/zlib1g-dev_1.3.dfsg-3.1ubuntu2_arm64.deb"
+        },
+        {
+          "sha256": "66aaebb68401a88b4f70a5f48e1a516b611fdcaae15208d8aee677c556d2cf01",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/z/zlib/zlib1g_1.3.dfsg-3.1ubuntu2_arm64.deb"
+        }
+      ]
+    },
+    {
+      "architecture": "x86_64",
+      "ubuntuPackages": [
     {
       "sha256": "1f03b79223d9cf1a6ed3a648f6942619dcb97b2884dba8fd12e262b6771e247a",
       "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/g/glibc/libc6-dev_2.39-0ubuntu8_amd64.deb"
@@ -28,6 +100,10 @@
     {
       "sha256": "a2bc9006026c19109de69dfac37d4393ed75abfcdcf7aeb4436dd4168ce4ab8e",
       "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/c/curl/libcurl4-openssl-dev_8.5.0-2ubuntu10_amd64.deb"
+    },
+    {
+      "sha256": "1c597ce8778ced5ff37fcb767968ffc9fb75944d96b9e6c06e63cc611846878e",
+      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/c/curl/libcurl4t64_8.5.0-2ubuntu10_amd64.deb"
     },
     {
       "sha256": "d36c9acb969dd37fdc0496120715d8bba67a5cc43a0c2569717314e6ad80020c",
@@ -76,6 +152,8 @@
     {
       "sha256": "0b93d16d7498f092fa3070fbbad28cdbc6b3d640f1a7681b96fc37f20d1219f1",
       "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/z/zlib/zlib1g_1.3.dfsg-3.1ubuntu2_amd64.deb"
+    }
+      ]
     }
   ]
 }

@@ -7,7 +7,7 @@ import SystemPackage
 private func colliderCommandSubcommands() -> [ParsableCommand.Type] {
     var commands: [ParsableCommand.Type] = [
         Doctor.self, Bootstrap.self, Build.self, Test.self,
-        Install.self, Toolchain.self, Android.self, AndroidRuntime.self,
+        Install.self, SwiftSDK.self, Android.self, AndroidRuntime.self,
         Browser.self,
         Generate.self, Sanitize.self, Benchmark.self,
         Validate.self, Cache.self, Logs.self, Status.self,
@@ -179,7 +179,7 @@ struct Doctor: AsyncParsableCommand {
     var json = false
     @Argument(
         help:
-            "Prerequisite group: all, runtime, toolchain, android, browser, or ci-macos-builder.")
+            "Prerequisite group: all, runtime, swift-sdk, android, browser, or ci-macos-builder.")
     var scope: DoctorScope = .all
 
     mutating func run() async throws {
@@ -210,14 +210,14 @@ struct Bootstrap: TaskControlledCommand {
 
 struct Build: TaskControlledCommand {
     @OptionGroup var taskOptions: TaskControlOptions
-    @Argument(help: "all, runtime, toolchain, android, browser, or a component name.")
+    @Argument(help: "all, runtime, swift-sdk, android, browser, or a component name.")
     var component: ComponentSelection?
 
     mutating func run() async throws {
         let workspace = try context()
         switch component {
-        case .toolchain:
-            try await ToolchainCommand(context: workspace).rebuild(
+        case .swiftSDK:
+            try await SwiftSDKCommand(context: workspace).rebuild(
                 RebuildOptions(controls: taskOptions.controls))
         case .android:
             try await AndroidCommand(context: workspace).run(
@@ -387,8 +387,10 @@ struct Install: AsyncParsableCommand {
     }
 }
 
-struct Toolchain: AsyncParsableCommand {
+struct SwiftSDK: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
+        commandName: "swift-sdk",
+        abstract: "Build and inspect Nucleus Swift SDK artifacts.",
         subcommands: [Rebuild.self, Status.self])
 
     struct Rebuild: TaskControlledCommand {
@@ -399,7 +401,7 @@ struct Toolchain: AsyncParsableCommand {
         }
 
         mutating func run() async throws {
-            try await ToolchainCommand(context: context()).rebuild(
+            try await SwiftSDKCommand(context: context()).rebuild(
                 rebuildOptions)
         }
     }
@@ -407,7 +409,7 @@ struct Toolchain: AsyncParsableCommand {
     struct Status: AsyncParsableCommand {
         @OptionGroup var reportOptions: ReportOptions
         mutating func run() async throws {
-            try ToolchainStatus(context: context()).run(
+            try SwiftSDKStatus(context: context()).run(
                 json: reportOptions.json)
         }
     }

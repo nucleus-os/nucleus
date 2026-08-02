@@ -136,7 +136,7 @@ The following old trees and aliases are removed:
 
 - `browser doctor|bootstrap|build|test`
 - `android build|native|verify`
-- `toolchain rebuild|status|install|uninstall`
+- `swift-sdk rebuild|status`
 - `validate vulkan`
 - `android-runtime source-lock|source|image`
 - The top-level single-child `validate` namespace
@@ -378,7 +378,7 @@ Split the current monolithic `ColliderCommands` target into dependency-directed 
 - `ColliderCommandSupport`
 - `ColliderPresentation`
 - `ColliderWorkspaceCommands`
-- `ColliderToolchainCommands`
+- `ColliderSwiftSDKCommands`
 - `ColliderBrowserCommands`
 - `ColliderAndroidCommands`
 - `ColliderSessionCommands`

@@ -267,8 +267,8 @@ x86_64 Apple-guest runtime assembly. The AOSP product remains rooted under
 `device/nucleus/nucleus_x86_64`. The existing
 [`SwiftTargetSDKColliderRecipe.swift`](../collider/Sources/SwiftTargetSDKColliderRecipe/SwiftTargetSDKColliderRecipe.swift)
 already establishes the correct target-SDK ownership: it uses signed Swift.org
-host compilers, cross-builds only the Nucleus target runtime and SDK overlays
-in a native Linux/arm64 OCI executor, and assembles immutable SDKs natively on
+bootstrap inputs, builds only the Linux target runtime and SDK overlays in a
+native Linux/arm64 OCI executor, and assembles immutable SDKs with Xcode on
 macOS. It never builds a Swift compiler or LLVM. The new architecture extends
 that model rather than introducing a second compiler pipeline.
 
@@ -454,15 +454,16 @@ and
 [`VulkanTestLanes.swift`](../collider/Sources/ColliderCommands/VulkanTestLanes.swift)
 switch on the declared coordinate and reject every unlisted combination.
 
-`SwiftTargetSDKColliderRecipe` gains an independent immutable Linux/arm64 SDK
-generation and installation name. It continues to:
+`SwiftTargetSDKColliderRecipe` publishes one immutable Linux Swift SDK with
+arm64 and amd64 entries. It:
 
 - download the signed Swift.org macOS host package and exact target-system
   package closure;
-- use an official Linux/arm64 bootstrap compiler to cross-build only the
-  Nucleus Linux target runtime and overlays against libc++;
+- use an official Linux/arm64 bootstrap compiler to build the arm64 target
+  runtime natively and cross-build the amd64 target runtime against libc++;
 - assemble the target SDK natively on macOS from that runtime install;
-- use the Swift.org macOS compiler to cross-compile Swift products;
+- use Xcode's compiler to cross-compile Nucleus Swift products against the
+  published SDK;
 - avoid building a Swift compiler or LLVM.
 
 Xcode 27 builds the macOS/arm64 host artifact natively. This is a runtime
@@ -608,7 +609,7 @@ A pinned Linux/arm64 OCI builder image joins the Linux/amd64 image for
 Linux-native C and C++ dependency builds. The render SDK, React Native SDK,
 Mesa, gfxstream guest components, and other native artifacts build for
 `aarch64-unknown-linux-gnu` through Apple `container`. Swift product compilation
-uses the Phase 2 Swift target SDK from the native macOS Swift.org host compiler.
+uses the Phase 2 Swift target SDK from the native Xcode host compiler.
 
 The complete first-party Linux closure gains Linux/arm64 artifacts:
 

@@ -20,22 +20,36 @@ import Testing
         recipe.appendingPathComponent("nucleus-target-runtime-presets.ini").path)
     let sysroot = FilePath(
         recipe.appendingPathComponent("prepare-linux-sysroot.sh").path)
+    let arm64 = try #require(
+        lock.linuxTargets.first { $0.architecture == .arm64 })
+    let x86_64 = try #require(
+        lock.linuxTargets.first { $0.architecture == .x86_64 })
 
     let first = try swiftTargetRuntimeBuildID(
         lock: lock,
+        target: arm64,
         sourceID: "source-a",
         runtimeBuilderContext: builder,
         runtimePreset: preset,
         sysrootPreparer: sysroot)
     let repeated = try swiftTargetRuntimeBuildID(
         lock: lock,
+        target: arm64,
         sourceID: "source-a",
         runtimeBuilderContext: builder,
         runtimePreset: preset,
         sysrootPreparer: sysroot)
     let changedSource = try swiftTargetRuntimeBuildID(
         lock: lock,
+        target: arm64,
         sourceID: "source-b",
+        runtimeBuilderContext: builder,
+        runtimePreset: preset,
+        sysrootPreparer: sysroot)
+    let otherArchitecture = try swiftTargetRuntimeBuildID(
+        lock: lock,
+        target: x86_64,
+        sourceID: "source-a",
         runtimeBuilderContext: builder,
         runtimePreset: preset,
         sysrootPreparer: sysroot)
@@ -43,4 +57,5 @@ import Testing
     #expect(first.count == 24)
     #expect(repeated == first)
     #expect(changedSource != first)
+    #expect(otherArchitecture != first)
 }
