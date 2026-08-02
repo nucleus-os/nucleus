@@ -4,8 +4,7 @@
 either puts a working bar on screen or is required by one that does — and the toolkit
 stops widening until it does.**
 
-This supersedes the phase order in `noctalia-ui-realignment.md` from phase 10 onward.
-That order was written to close gaps against AppKit and against the reference's *whole*
+Earlier work was ordered to close gaps against AppKit and against the reference's *whole*
 widget library. Both audits have since been redone, and both say the same thing: we are
 building breadth we do not yet have a consumer for.
 
@@ -203,17 +202,16 @@ draws in the layer where it cannot clip.
 `Rect` gained `union` and `insetBy`, both standard `CGRect` operations that the chrome
 needed and core lacked.
 
-## Phase 5 — configuration
+## Phase 5 — configuration — **complete at the service boundary**
 
-TOML, a typed schema with validation diagnostics, atomic writes, and inotify hot-reload
-with a changed-sections diff so subscribers reload only what moved. Per-monitor and per-bar
-overrides are part of the model, not a later addition — the reference resolves them in 2,374
-lines and multiple named bars are a first-class concept.
+The JSON configuration service owns loading, validation, generations, diagnostics, and
+typed render-server and shell projections. The shell consumes `ShellConfiguration`; it
+does not read a second TOML file. New bar settings extend that projection through the
+ordering in `compositor-configuration-system.md`.
 
-The schema is the product's surface area, and it is the one part of the reference that does
-not shrink: ~443 fields is what a configurable bar costs. Config lands before the services
-because every widget reads its own configuration, and retrofitting that is worse than
-starting with it.
+Per-output and per-bar product settings land in the typed model before the widgets that
+consume them. Atomic mutation APIs and filesystem hot reload remain configuration-service
+work, not shell-local infrastructure.
 
 ## Phase 6 — the bar, with a minimal widget set
 

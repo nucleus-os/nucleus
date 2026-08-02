@@ -75,7 +75,7 @@ Run all agent-owned tests directly on the host:
 
 ```sh
 source tools/host-env.sh
-swift test --package-path android-runtime
+swift test
 ```
 
 Build and verify the signed Android image:
@@ -97,7 +97,7 @@ unprivileged network namespace. `vulkan.nucleus` fails closed rather than enteri
 ranchu render-node path. The Nucleus Composer3 HAL and production Swift display host
 own Android presentation during the session. The
 complete signed image, package/APEX signature, APEX-payload, and AVB verification
-pipeline passed in `.nucleus/runs/2026-07-25T05-33-29Z-655228`.
+pipeline is enforced by the current Collider image verification workflow.
 
 Run the installed desktop and Android runtime together from a free virtual terminal:
 

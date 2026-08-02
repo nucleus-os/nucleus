@@ -1,47 +1,36 @@
-# Nucleus docs — reading guide
+# Core and compositor documentation
 
-> **Read this first.** Many documents here predate two large migrations and
-> describe designs in the terms of the architecture at the time of writing.
-> The design intent in a given doc usually still stands; the *mechanics* it
-> cites (file paths, build commands, module and brand names) may be historical.
+## Current contracts
 
-## The migrations that reshaped everything
+- [Application runtime](app-runtime-roadmap.md)
+- [UI authoring model](ui-authoring-model.md)
+- [Bounds-origin model](bounds-origin-model.md)
+- [Image loading](image-file-loading.md)
+- [Configuration system](compositor-configuration-system.md)
+- [Session contract](nucleus-session-contract.md)
+- [Shell-agnostic compositor boundary](shell-architecture.md)
+- [DRM color debugging](drm-color-debugging.md)
 
-1. **Zig → Swift / SwiftPM (+ C++ interop).** The compositor, render server, and
-   client runtime were originally Zig; they are now Swift built with SwiftPM,
-   with C++ libraries (Skia Graphite, ReactCommon/Hermes/folly) reached through
-   C++ interop. Treat `.zig` file paths, `build.zig`, `zig build`, `@cImport`,
-   and a `src/{compositor,render_server,nucleon,valence}/` layout as
-   **the pre-migration substrate**, not the present one.
-2. **Brand collapse + package decomposition.** The `Nucleon` and `Valence` brands were
-   retired and the tree split into independently buildable core, React Native, compositor,
-   and shell packages.
-   Name mappings when a doc uses the old vocabulary as if current:
-   - `Nucleon` (project/module) → `Nucleus` / `NucleusUI`; `Valence*` → `NucleusCompositor*`.
-   - The layer system **Dynamics → Layers**: module `NucleusDynamics` → `NucleusLayers`;
-     `DynamicsHost` → `Host`, `DynamicsSettings` → `Settings`, and
-     `NucleusTypes` now owns values shared unchanged by UI, layers, and rendering.
-     (`LayerTransaction` is a deliberate exception — it keeps its qualifier.)
-   - The `nucleon/` source directory is gone: its contents folded into
-     `swift/Sources/*` and `render-cxx/`.
-3. **Monorepo consolidation.** The package boundaries remain, but `core/`, `react-native/`,
-   `compositor/`, and `shell/` now share one Git repository and use relative SwiftPM paths.
-   First-party nested submodules and sibling-repository overrides are historical.
+## Active plans, in dependency order
 
-## Where the current state actually lives
+1. [AppKit API completion](appkit-api-plan.md)
+2. [Bar-first shell work](bar-first-port-order.md)
+3. [Noctalia shell migration](../../shell/docs/noctalia-migration-plan.md)
+4. [RN animation backend](rn-animation-backend-plan.md)
+5. [RN networking, WebSocket, and Blob modules](rn-networking-and-websocket-plan.md)
+6. [Android Swift/Java migration](android-swift-java-migration.md)
+7. [Android render stack](android-render-stack-plan.md)
+8. [Trackpad gestures](compositor-trackpad-gestures.md)
+9. [Accessibility](compositor-accessibility-direction.md)
+10. [Wayland protocol coverage](wayland_protocol_coverage_plan.md)
+11. [Screen capture and recording](screen_recording_plan.md)
+12. [View pixel alignment](view-pixel-alignment-plan.md)
+13. [Glyph dilation](text-glyph-dilation-plan.md)
 
-For how the tree is sliced and where code lives **today**, the authoritative
-references are:
+## Research inventories
 
-- the **Build System** section of the monorepo-root `AGENTS.md`, and
-- the monorepo root `README.md`.
+- [Linux kernel leverage](linux-kernel-leverage.md)
+- [RN TurboModule inventory](rn-turbomodule-inventory.md)
+- [Nvidia DRM observations](drm-scanout-nvidia.md)
 
-`docs/naming-and-core-split-migration.md` records the brand-collapse migration
-itself — there the old names are the intended "from" side, by design.
-
-## So when you read a plan here
-
-Take the **invariants and reasoning** as live unless a
-newer doc supersedes them. Take specific paths, build incantations, and old brand
-names as needing the mapping above. When a doc has been reconciled to current
-names, it simply reads correctly; when it hasn't, this guide is the decoder.
+Historical Zig, standalone-package, brand-migration, and completed refactor documents have been removed. The root [AGENTS.md](../../AGENTS.md) and [README.md](../../README.md) are authoritative for the current repository and build graph.

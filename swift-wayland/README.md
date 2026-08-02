@@ -1,8 +1,8 @@
 # swift-wayland
 
-Self-contained, Swift-importable **Wayland protocol bindings**, generated from the vendored
-protocol XML by the `SwiftWaylandGen` tool + `wayland-scanner`. A consumer adds the package and
-imports the module for its role — no protocol XML, no wayland-scanner, no codegen of its own.
+Root-package **Wayland protocol bindings**, generated from the vendored protocol XML by
+`SwiftWaylandGen` and `wayland-scanner`. Runtime targets import the module for their role;
+they do not run protocol generation themselves.
 
 Unlike [`swift-vulkan`](../swift-vulkan) (a fixed API generated
 once and shipped), Wayland is a *menu* of protocols consumed in one of two modes. This package
@@ -36,8 +36,7 @@ The generated modules are committed. Regenerate after a protocol bump:
 collider generate wayland
 ```
 
-`SwiftWaylandGen` is also vended as an executable product so an external consumer can generate a
-bespoke protocol set of its own.
+`SwiftWaylandGen` is a repository generator target.
 
 ## Consumers
 

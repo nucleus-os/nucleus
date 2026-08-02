@@ -99,13 +99,21 @@ The compositor owns:
 The compositor does not own launcher/session-manager policy. The installed
 launcher and native supervisor are the production session entrypoint.
 
-Runtime policy is a versioned `SessionConfiguration` created by
+Runtime policy is a fixed same-build `SessionConfiguration` created by
 `collider run`, forwarded through `nucleus-session`, and inherited by both
 native children from a supervisor-owned descriptor. Scale, present policy, DRM
 selection, Vulkan validation, diagnostics, and wallpaper selection are members
 of that one record. The environment remains responsible only for standard
 process/session coordinates such as XDG paths, D-Bus, Wayland, PipeWire, and
 sanitizer runtime variables.
+
+The descriptor is private, authenticated by process inheritance, and framed by
+the transport. Producer and consumers always ship from the same monorepo build.
+The wire representation therefore has one exact shape and size contract; it
+does not need a protocol version, format magic, or compatibility decoder. A
+shape change updates every caller in the same change. The current encoder still
+carries legacy magic and version fields; removing those fields and updating its
+behavioral tests is required cleanup, not a supported compatibility decision.
 
 The native supervisor publishes typed readiness. Compositor readiness follows
 the first physical KMS presentation; shell readiness follows a GPU-resident

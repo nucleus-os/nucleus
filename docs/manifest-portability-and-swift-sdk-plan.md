@@ -13,9 +13,9 @@ semantics only.
 Every Nucleus runtime product compiles through an explicitly selected Swift SDK
 and target triple. The supported runtime destinations are Linux amd64, Android
 arm64, and Android amd64. Collider itself remains a native host tool: Xcode 27
-builds it on macOS, and the generated Swift 6.4 toolchain builds it on Linux.
-The pure-Swift contract tier may compile natively when Collider consumes it.
-There is no implicit host destination for a Nucleus runtime build.
+builds and runs it on macOS. The pure-Swift contract tier may compile natively
+when Collider consumes it. There is no generated Linux host toolchain and no
+implicit host destination for a Nucleus runtime build.
 
 Configuration has exactly three owners:
 
@@ -70,21 +70,13 @@ stores `.swiftSDK(name:targetTriple:)`, but `SwiftPMInvocation` emits only
 amd64, so selection by artifact ID is ambiguous unless the invocation also
 passes `--triple`.
 
-## The Contract Tier
+## The Compilation Contract
 
-The manifest applies the strict Swift compilation contract to 212 targets. Of
-those, 196 enable C++ interoperability and these 16 deliberately do not:
-
-`NucleusConfig`, `NucleusIPCTransport`, `NucleusSessionProtocol`,
-`NucleusAndroidContainerContract`, `NucleusAndroidRuntimeCore`,
-`NucleusAndroidRuntimeBridgeProtocol`, `NucleusAndroidRuntimeBrokerCore`,
-`NucleusAndroidRuntimeHostLinux`, the `NucleusAndroidRuntime` and
-`NucleusAndroidRuntimePrivileged` executables, and their six test targets.
-
-This set is the pure-Swift contract tier shared by orchestration and the Android
-runtime without importing Skia or enabling C++ interop. The manifest declares
-the set once and excludes it from the repository-wide C++ interop default.
-Membership is an explicit architectural decision.
+The manifest applies one strict compilation contract to every Swift target:
+Swift 6.4 language mode, strict memory safety, warnings as errors, and
+`.interoperabilityMode(.Cxx)`. C++ interoperability is a uniform compiler mode,
+not a dependency tier. Review and target dependencies keep C++ implementation
+types out of Swift domain models.
 
 ## Phase 1 — Make Swift SDK Selection Exact
 
@@ -126,23 +118,23 @@ The environment-selected Android graph contains 78 products and 230 targets and
 hashes to
 `37715ac42e8900a208a5d13aae8210b2c6c5814faa2a442f0f405e0b6537bea1`.
 Normalized compiler and linker commands, exported symbols, and runtime smoke
-results remain to be captured from the generated Linux toolchain.
+results remain to be captured from the immutable target SDK generation.
 
-The first Linux amd64 toolchain build reached the final auxiliary-tool phase
-and exposed an upstream DocC adapter that unconditionally ran
-`swift package update` against the read-only pinned source graph. The
-`nucleus-os/swift` fork now builds DocC directly from the pinned local sibling
-dependencies without mutating `Package.resolved`. A read-only container probe
-and the 141-test `swift_build_support` suite verify the correction. The cached
-toolchain rebuild must complete before the remaining baselines are recorded.
+The compiler-build experiment was removed. The qualified architecture uses
+Xcode's Swift compiler for macOS execution and an official Swift.org
+Linux/arm64 compiler inside a native Apple container to cross-build only the
+Nucleus Linux/amd64 runtime and SDK overlays. The runtime, Dispatch, Foundation,
+Swift Testing, and XCTest now complete against the package-only libc++ sysroot;
+an audit of all 59 installed ELF artifacts finds no `libstdc++` dependency or
+`GLIBCXX` requirement. Production generation begins after the modified Swift
+and `swift-sdk-generator` submodules are recorded as pinned source revisions.
 
 ## Phase 2 — Centralize the Compilation Contract
 
 The root manifest gains a post-construction settings loop over regular,
 executable, and test targets. It applies `.strictMemorySafety()`,
-`-warnings-as-errors`, and `-Werror StrictLanguageFeatures` once. It enables
-`.interoperabilityMode(.Cxx)` unless the target name belongs to the declared
-contract tier.
+`-warnings-as-errors`, `-Werror StrictLanguageFeatures`, and
+`.interoperabilityMode(.Cxx)` once for every Swift target.
 
 The same loop applies `-Werror` to C and C++ compilation. This deliberately
 normalizes the five existing targets that declare C++ settings without C++
@@ -187,11 +179,13 @@ Collider assembles immutable SDK generations instead of exposing a loose
 
 The Linux amd64 SDK contains:
 
-- The pinned Linux amd64 sysroot.
-- Dynamic and static Swift runtime resources from the generated Swift 6.4
-  platform generation.
-- The render and React Native headers and libraries produced by the pinned
-  linux/amd64 OCI builders.
+- The exact Ubuntu amd64 package sysroot, including libc++ and excluding every
+  libstdc++ file, module map, dependency, and symbol requirement.
+- Dynamic and static Nucleus Swift runtime resources cross-built from the
+  pinned source graph by an official Linux/arm64 Swift compiler. No compiler or
+  LLVM product is built.
+- The render and React Native headers and Linux/amd64 libraries cross-built by
+  pinned native Linux/arm64 OCI builders.
 - SDK-local module maps and `pkg-config` metadata for stable native artifacts.
 - Compiler, C compiler, C++ compiler, and linker toolset configuration.
 
@@ -204,7 +198,7 @@ contains:
 - SDK-local module maps and toolset configuration.
 - The 16 KiB maximum-page-size linker contract.
 
-SDK generations live under Collider's immutable platform-generation cache.
+SDK generations live under Collider's immutable target-SDK cache.
 Collider passes their containing directory with `--swift-sdks-path`; it does not
 depend on a mutable user-global discovery symlink. Publication validates every
 declared path, target triple, runtime directory, header root, library root, and
@@ -284,7 +278,7 @@ Target source paths are repository-relative. Manifest evaluation requires only
 `PackageDescription` and the checked-out source tree.
 
 The behavioral gate runs with an isolated home and no Nucleus variables on both
-Xcode 27 and the generated Linux Swift 6.4 toolchain:
+Xcode 27 and the official Linux/arm64 Swift 6.4 toolchain:
 
 ```sh
 env -i HOME="$isolated_home" PATH="$swift_bin_dir:/usr/bin:/bin" \
@@ -316,7 +310,8 @@ collider build
 
 The first command builds Collider with the native compiler and can evaluate the
 root dependency graph without provisioned SDKs. `toolchain rebuild` publishes
-the Linux and Android Swift runtime generations. `bootstrap` builds the native
+the Linux/amd64 Nucleus target SDK overlay and Android Swift SDK artifact; it
+does not build a compiler. `bootstrap` builds the native
 render/RN artifacts and assembles the complete runtime SDKs. `build` consumes
 only those published SDK generations.
 
@@ -342,7 +337,7 @@ resolution error. The target boundary inside Collider preserves the engine's
 independent library architecture without retaining a third package manifest.
 
 `AGENTS.md`, `README.md`, the toolchain documentation, and the macOS builder
-plan are updated to state the two-package graph, the contract tier, the runtime
+plan are updated to state the root-runtime plus Collider package graph, the uniform compilation contract, the runtime
 Swift SDK contract, the native Collider bootstrap exception, and `collider
 build` as the complete product verification entry point.
 
@@ -353,8 +348,8 @@ The migration is complete only when all of these gates pass in order:
 1. Root manifest dump and Collider dependency resolution pass with an isolated
    home and no Nucleus environment on macOS and Linux.
 2. Xcode 27 builds and tests Collider natively on macOS.
-3. The generated Linux Swift 6.4 toolchain builds and tests Collider natively in
-   the pinned linux/amd64 environment.
+3. The official Linux/arm64 Swift 6.4 toolchain builds and tests Collider
+   natively in the Apple container.
 4. The Linux amd64 SDK builds and tests every selected Nucleus product from a
    clean scratch directory.
 5. The Android arm64 and amd64 SDK entries compile and link their complete

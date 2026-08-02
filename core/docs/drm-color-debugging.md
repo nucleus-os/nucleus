@@ -20,7 +20,8 @@ The 2026-04-13/14 "washed out colors in DRM mode" investigation traced what look
 
 ## Server-side gamma control
 
-`wlr-gamma-control-unstable-v1` is implemented server-side in
-`src/compositor/wayland/gamma_control.zig`. The debugging guidance above still
+`wlr-gamma-control-unstable-v1` is implemented in
+`compositor/compositor-core/Sources/NucleusCompositorWaylandRuntime/Gamma.swift`,
+with KMS state in `NucleusCompositorRendererLinux/drm/DrmColorCursor.swift`. The debugging guidance above still
 applies when an external gamma client is running against a different
 compositor at the same time on the same outputs (rare in practice).

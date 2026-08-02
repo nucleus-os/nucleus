@@ -1,158 +1,27 @@
-# NucleusCompositor
+# Nucleus compositor
 
-The Nucleus **Wayland/DRM render server** — the Linux OS substrate, DRM
-presenter, window/seat policy, and the launch-only `NucleusCompositor`
-executable.
+The compositor directories own the Linux Wayland/DRM render server inside the root SwiftPM package.
 
-It consumes the monorepo's [`core/`](../core) and
-[`platform-linux/`](../platform-linux) packages plus the provisioned render
-native SDK (Skia Graphite). It links **zero React**: the shell is an
-out-of-process layer-shell client, so the compositor has no build-time
-dependency on React Native.
+`compositor-core/` contains Wayland protocol dispatch, input and window policy, DRM/KMS presentation, and the renderer integration. `compositor/` contains the thin `NucleusCompositor` executable entry point. The compositor links no React Native or shell product code.
 
-## Component layout
+The shell is an ordinary out-of-process Wayland client. Desktop-global policy remains in the compositor; bars, lock UI, notifications, application discovery, and service presentation remain in the shell.
 
-This component contains two SwiftPM packages:
-
-### `compositor-core/` — The library package
-
-The Linux OS substrate and compositor policy modules. Tested via `swift test` (no `swift-system` dependency, so it tolerates the global C++-interop flag SwiftPM's test runner needs).
-
-| Target | Description |
-|---|---|
-| `NucleusCompositorServerTypes` | Shared value types for the compositor server. |
-| `NucleusCompositorServer` | Wayland server logic — connection handling, resource lifecycle. |
-| `NucleusCompositorWindowManager` | Window/seat policy — surface ordering, focus, stacking. |
-| `NucleusCompositorWindowScene` | Per-window render scene — ties Wayland surfaces to the Nucleus render tree. |
-| `NucleusCompositorPolicy` | Server-only input arbitration, binding resolution, cursor mechanism, and the typed publication seam to the shell. |
-| `NucleusCompositorWaylandRuntime` | Wayland substrate runtime — server dispatch, xcb property handling, input (libinput/udev/seat). |
-| `NucleusCompositorRendererLinux` | DRM/KMS renderer backend — GBM buffers, page-flip, CRTC/connector/encoder setup. |
-| `NucleusCompositorRenderRuntime` | Render runtime facade — ties the DRM backend to the Nucleus renderer. |
-| `NucleusCompositorDrmC` | libdrm/GBM C façade (systemLibrary). |
-| `NucleusCompositorXcbC` | xcb C façade (systemLibrary). |
-| `NucleusCompositorInputC` | libinput/udev C façade (systemLibrary). |
-
-Linux D-Bus, AT-SPI, application discovery, notifications, bars, menus,
-hotkey feedback, and lock-screen UI belong to the out-of-process shell. The
-render server does not link those shell services.
-
-### `compositor/` — The executable package
-
-The `NucleusCompositor` launch stub. All server implementation and tests live
-in `compositor-core`.
-
-| Target | Description |
-|---|---|
-| `NucleusCompositor` | Parses inherited session capabilities and calls the `NucleusRenderServer` framework entry point. |
-
-## Build
-
-The primary development path uses the host toolchain and system libraries:
+Build and test through Collider from the repository root:
 
 ```sh
 collider doctor runtime
-collider bootstrap
-collider build
-```
-
-Collider does not mutate the host package database. When a required system
-dependency is absent, it reports the missing dependency so the user can install
-it explicitly.
-
-First-party dependencies use monorepo-relative paths. Independently released bindings such
-as `swift-wayland` remain pinned package dependencies.
-
-`bootstrap` delegates render-SDK provisioning to `../core`; the compositor does not
-encode Skia build steps.
-
-The lower-level commands remain available:
-
-```sh
-# From the monorepo root
 collider bootstrap compositor
-
-# Rebuild
-swift build --package-path compositor-core
-swift build --package-path compositor
-
-# Install the complete compositor + native shell session into one prefix
+collider build compositor
+collider test compositor
 collider install session
 ```
 
-The root workspace CLI provisions the render SDK through `core/`, then builds
-both compositor packages directly through SwiftPM. Their underlying build
-systems own incremental rebuild state.
-
-## Tests
+Hardware-facing execution uses the complete session from a free virtual terminal or display-manager session:
 
 ```sh
-bash -c 'swift test --package-path compositor-core \
-  -Xswiftc -cxx-interoperability-mode=default \
-  $(pkg-config --cflags-only-I xcb-ewmh | sed "s/-I/-Xcc -I/g")'
-```
-
-`compositor-core` holds the tests. The trailing `pkg-config`/`-Xcc` expansion is required because SwiftPM's synthesized test runner inherits neither the test target's `-Xcc` include flags nor the `XcbC` systemLibrary's `pkgConfig` cflags.
-
-Notable test targets:
-- `NucleusCompositorRendererLinuxTests` — Links the full renderer closure end to end.
-- `NucleusCompositorWaylandRuntimeTests` — Wire-level protocol conformance over the in-process WaylandTestClient harness.
-- `NucleusCompositorPolicyTests` — server input, binding, cursor-loader, and policy behavior.
-- `NucleusCompositorWindowSceneTests` — Compositor-root self-hosting topology.
-
-## Run
-
-```sh
-# From a free virtual terminal or display-manager session
 collider run
-collider run --seconds 20
-collider run --scale 1.25
-```
-
-The command incrementally builds and stages the compositor, native shell, PAM
-helper, and session launcher before starting the complete private-bus session.
-`--seconds N` cleanly stops any ordinary, profiled, sanitized, validation, or
-Valgrind run after the requested duration.
-`--scale N` sets the positive fractional output scale for every connected
-display and applies to every run mode.
-The compositor serves standard Wayland compositor protocols. The supervisor
-selects the session `WAYLAND_DISPLAY` before launch, and the shell connects
-through that normal listener. The compositor does not identify or retain a
-shell `wl_client`. Standard desktop globals use the ordinary registry; only
-component-specific protocols whose specifications require exact identity,
-such as `xwayland_shell_v1`, are filtered to their component connection.
-
-On multi-GPU hosts, startup selects the unique GPU driving a connected display,
-then uses the PCI boot-VGA hint as a tie-breaker. Use
-`collider run --drm-device /dev/dri/renderD…` only when multiple display
-GPUs remain genuinely ambiguous or an explicit device is required.
-
-## Profile
-
-```sh
 collider run --tracy --seconds 20
-```
-
-Run from a free virtual terminal or a display-manager session.
-Nucleus uses DRM directly and cannot launch inside an existing Wayland/X11
-desktop session that already owns the seat.
-
-The first Tracy run builds the capture and CSV tools from the exact revision
-recorded by the resolved `swift-tracy` package. Captures and summaries are
-written under `profiles/` by default.
-Captures wait for the native compositor-and-shell readiness protocol and fail
-when bring-up stalls, either required process exits, or a Tracy-enabled
-run contains no events or plots. The retained profile directory contains the
-receiver log and a `nucleus_drm.log` symlink to the unified run log for
-diagnosis. Every invocation writes the build and complete compositor/shell
-session stream to a timestamped file under the workspace `logs/` directory;
-`logs/latest` points to the newest run.
-
-The same runtime entry point owns the other launch-time diagnostics:
-
-```sh
-collider run --sanitize address
-collider run --sanitize undefined
-collider run --sanitize thread
 collider run --vk-validation
-collider run --valgrind
 ```
+
+Do not start the compositor inside an existing graphical session: it owns the DRM seat.

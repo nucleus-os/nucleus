@@ -190,13 +190,13 @@ and fingerprints the SDK; the owning Swift package exposes it to every consumer.
    identity, and source revisions.
 
 3. Add `NucleusRenderNativeSDK` as a system-library target and product in
-   `core/Package.swift`. Its checked-in module map and umbrella header expose the
+   root `Package.swift`. Its checked-in module map and umbrella header expose the
    render SDK, and its `pkgConfig` entry names `nucleus-render-native-sdk`. Every core,
    compositor, shell, and React Native target consuming Skia or render-native headers
    depends on this product.
 
 4. Add `NucleusRNNativeSDK` as the equivalent carrier in
-   `react-native/Package.swift`. RN C++ targets depend on it directly, and the RN
+   root `Package.swift`. RN C++ targets depend on it directly, and the RN
    carrier depends on the render carrier when it needs the shared render SDK without
    restating render flags.
 
@@ -211,7 +211,7 @@ and fingerprints the SDK; the owning Swift package exposes it to every consumer.
    - per-package SDK symlink handling;
    - copied render archive lists and parallel Android copies;
    - duplicated SDK include and library search paths;
-   - the unused `pkgConfig` helper in `core/Package.swift`.
+   - the unused `pkgConfig` helper in the root `Package.swift`.
 
    SwiftPM compiles only `Package.swift`; do not attempt manifest-adjacent Swift source
    inclusion. SDK paths leave consumer manifest evaluation entirely.

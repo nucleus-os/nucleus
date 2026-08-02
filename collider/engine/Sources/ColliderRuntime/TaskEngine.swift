@@ -883,79 +883,6 @@ extension ColliderRuntime {
         case .writeFile(let path, let bytes):
             encoder.append(tag: 44, string: path.string)
             encoder.append(tag: 45, bytes: bytes)
-        case .validateSwiftSourceWorkspace(let validation):
-            let tool = try resolvedToolIdentity(
-                .named("git"),
-                environment: validation.environment)
-            encoder.append(tag: 118, string: validation.workspaceRoot.string)
-            for repository in validation.repositories {
-                encoder.append(tag: 119, string: repository.string)
-            }
-            encoder.append(tag: 122, string: tool.path.string)
-            encoder.append(tag: 123, bytes: tool.digest.bytes)
-            for (name, value) in artifactEnvironment(
-                validation.environment)
-            {
-                encoder.append(tag: 124, string: name)
-                encoder.append(tag: 125, string: value)
-            }
-        case .prepareHostToolchainBuild(let preparation):
-            encoder.append(tag: 126, string: preparation.workspace.string)
-            encoder.append(tag: 127, string: preparation.stagingRoot.string)
-            encoder.append(tag: 128, string: preparation.platform.rawValue)
-            for contract in preparation.contracts {
-                encoder.append(tag: 187, string: contract.name)
-                encoder.append(tag: 188, string: contract.stamp.string)
-                for root in contract.roots {
-                    encoder.append(tag: 189, string: root.string)
-                }
-                for (name, value) in contract.values.sorted(by: {
-                    $0.key < $1.key
-                }) {
-                    encoder.append(tag: 190, string: name)
-                    encoder.append(tag: 191, string: value)
-                }
-                for file in contract.files.sorted(by: { $0.name < $1.name }) {
-                    encoder.append(tag: 192, string: file.name)
-                    encoder.append(tag: 193, string: file.path.string)
-                }
-            }
-        case .assembleHostToolchain(let assembly):
-            encoder.append(tag: 129, string: assembly.workspace.string)
-            encoder.append(tag: 130, string: assembly.archive.string)
-            encoder.append(tag: 131, string: assembly.toolchain.string)
-            encoder.append(tag: 132, string: assembly.platform.rawValue)
-            for (name, value) in artifactEnvironment(assembly.environment) {
-                encoder.append(tag: 185, string: name)
-                encoder.append(tag: 186, string: value)
-            }
-        case .validateHostToolchain(let validation):
-            encoder.append(tag: 133, string: validation.toolchain.string)
-            encoder.append(tag: 134, string: validation.platform.rawValue)
-            encoder.append(tag: 135, string: validation.workDirectory.string)
-            for (name, value) in artifactEnvironment(validation.environment) {
-                encoder.append(tag: 136, string: name)
-                encoder.append(tag: 137, string: value)
-            }
-        case .assembleAndroidSDK(let assembly):
-            encoder.append(tag: 107, string: assembly.toolchain.string)
-            encoder.append(tag: 108, string: assembly.installRoot.string)
-            encoder.append(tag: 109, string: assembly.bundle.string)
-            encoder.append(tag: 110, string: assembly.sourceID)
-            for architecture in assembly.architectures {
-                encoder.append(tag: 111, string: architecture)
-            }
-            encoder.append(tag: 112, integer: UInt64(assembly.apiLevel))
-        case .validateAndroidRuntimeLinkage(let validation):
-            encoder.append(tag: 113, string: validation.installRoot.string)
-            encoder.append(tag: 114, string: validation.ndk.string)
-            for architecture in validation.architectures {
-                encoder.append(tag: 115, string: architecture)
-            }
-            for (name, value) in artifactEnvironment(validation.environment) {
-                encoder.append(tag: 116, string: name)
-                encoder.append(tag: 117, string: value)
-            }
         case .validateAndroidHost(let validation):
             encoder.append(tag: 138, string: validation.library.string)
             encoder.append(tag: 139, string: validation.kotlinContract.string)
@@ -966,24 +893,6 @@ extension ColliderRuntime {
             for (name, value) in artifactEnvironment(validation.environment) {
                 encoder.append(tag: 142, string: name)
                 encoder.append(tag: 143, string: value)
-            }
-        case .wireAndroidSDK(let wiring):
-            encoder.append(tag: 90, string: wiring.bundle.string)
-            encoder.append(tag: 91, string: wiring.ndk.string)
-            encoder.append(
-                tag: 92,
-                integer: UInt64(wiring.minimumNDKMajorVersion))
-        case .validateAndroidSDK(let validation):
-            encoder.append(tag: 93, string: validation.toolchain.string)
-            encoder.append(tag: 94, string: validation.sdkSearchRoot.string)
-            encoder.append(tag: 95, string: validation.bundleName)
-            encoder.append(tag: 96, string: validation.ndk.string)
-            encoder.append(tag: 97, string: validation.architecture)
-            encoder.append(tag: 98, integer: UInt64(validation.apiLevel))
-            encoder.append(tag: 99, string: validation.workDirectory.string)
-            for (name, value) in artifactEnvironment(validation.environment) {
-                encoder.append(tag: 100, string: name)
-                encoder.append(tag: 101, string: value)
             }
         case .sanitizeLinkMetadata(let sanitization):
             encoder.append(tag: 102, string: sanitization.root.string)
@@ -1645,24 +1554,8 @@ extension ColliderRuntime {
                 withDestinationPath: target)
         case .writeFile(let path, let bytes):
             try DurableFile.write(Data(bytes), to: path)
-        case .validateSwiftSourceWorkspace(let validation):
-            try await validateSwiftSourceWorkspace(validation, stage: stage)
-        case .prepareHostToolchainBuild(let preparation):
-            try prepareHostToolchainBuild(preparation)
-        case .assembleHostToolchain(let assembly):
-            try await assembleHostToolchain(assembly, stage: stage)
-        case .validateHostToolchain(let validation):
-            try await validateHostToolchain(validation, stage: stage)
-        case .assembleAndroidSDK(let assembly):
-            try assembleAndroidSDK(assembly)
-        case .validateAndroidRuntimeLinkage(let validation):
-            try await validateAndroidRuntimeLinkage(validation, stage: stage)
         case .validateAndroidHost(let validation):
             try await validateAndroidHost(validation, stage: stage)
-        case .wireAndroidSDK(let wiring):
-            try wireAndroidSDK(wiring)
-        case .validateAndroidSDK(let validation):
-            try await validateAndroidSDK(validation, stage: stage)
         case .sanitizeLinkMetadata(let sanitization):
             try sanitizeLinkMetadata(sanitization)
         case .publishSymlink(let publication):
@@ -2010,23 +1903,7 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
         setup.environment
     case .mergeStaticArchives(let merge):
         merge.environment
-    case .validateSwiftSourceWorkspace(let validation):
-        validation.environment
-    case .prepareHostToolchainBuild:
-        [:]
-    case .assembleHostToolchain(let assembly):
-        assembly.environment
-    case .validateHostToolchain(let validation):
-        validation.environment
-    case .assembleAndroidSDK:
-        [:]
-    case .validateAndroidRuntimeLinkage(let validation):
-        validation.environment
     case .validateAndroidHost(let validation):
-        validation.environment
-    case .wireAndroidSDK:
-        [:]
-    case .validateAndroidSDK(let validation):
         validation.environment
     case .sanitizeLinkMetadata:
         [:]

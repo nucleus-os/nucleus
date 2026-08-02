@@ -259,6 +259,7 @@ import Testing
         try executor.imageIdentifier(
             candidate: root.appending("candidate"),
             inspectionOutput: inspection) == "\(name)\n\(digest)")
+    #expect(executor.removeImageCommand(digest, preparation: preparation) == nil)
 
     let execution = OCIExecution(
         executionPlatform: .linuxAMD64OCI,
@@ -292,7 +293,7 @@ import Testing
         output: .logged)
     let command = try executor.runCommand(
         execution,
-        imageID: digest,
+        imageID: "\(name)\n\(digest)",
         temporaryDirectory: nil)
     #expect(command.executable == .named("container"))
     #expect(command.arguments.contains("--rosetta"))
@@ -306,7 +307,7 @@ import Testing
             && executionName != "fixture-build")
     let secondCommand = try executor.runCommand(
         execution,
-        imageID: digest,
+        imageID: "\(name)\n\(digest)",
         temporaryDirectory: nil)
     let secondNameIndex = try #require(
         secondCommand.arguments.firstIndex(of: "--name"))
@@ -316,6 +317,8 @@ import Testing
     #expect(command.arguments.contains("--tmpfs"))
     #expect(command.arguments.contains("16"))
     #expect(command.arguments.contains(String(88 * 1_024 * 1_024 * 1_024)))
+    #expect(command.arguments.contains(name))
+    #expect(!command.arguments.contains(digest))
     #expect(
         command.arguments.contains(
             "type=bind,source=/var/nucleus/source,target=/source,readonly"))
@@ -344,7 +347,7 @@ import Testing
         output: .logged)
     let armCommand = try executor.runCommand(
         armExecution,
-        imageID: digest,
+        imageID: "\(name)\n\(digest)",
         temporaryDirectory: nil)
     #expect(armCommand.arguments.contains("linux/arm64"))
     #expect(!armCommand.arguments.contains("--rosetta"))

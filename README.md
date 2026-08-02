@@ -1,151 +1,63 @@
 # Nucleus
 
-A platform for building native desktop applications and operating system UI — composed in Swift, rendered with Skia Graphite over Vulkan, running on Linux.
-
-Nucleus is one monorepo containing independently buildable Swift packages:
-
-| Component | Role |
-|---|---|
-| [`core`](core) | The shared **render/UI core** — React-agnostic and platform-agnostic. |
-| [`react-native`](react-native) | The **React Native platform** — Fabric, Hermes, JSI, and the RN native stack. |
-| [`compositor`](compositor) | The **Wayland/DRM compositor** — server, renderer backend, and policy; zero React. |
-| [`shell`](shell) | The first-party **desktop shell** — an out-of-process native Swift layer-shell client built with NucleusUI. |
+Nucleus is a Swift 6.4 platform for native applications and operating-system UI rendered with Skia Graphite over Vulkan.
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                   Wayland Protocols                     │
-│  wlr-layer-shell · foreign-toplevel · session-lock      │
-│  screencopy · xdg-shell · …                            │
-└────┬────────────────────────────────────┬────────────────┘
-     │                                    │
-     │  (socket)                          │
-┌────▼───────────────┐        ┌───────────▼──────────────┐
-│  NucleusCompositor  │        │       NucleusShell        │
-│                     │        │                           │
-│  Wayland server     │        │  Wayland client           │
-│  DRM/KMS scanout    │        │  DMA-BUF wl_surface       │
-│  Window policy      │        │  Native Swift product    │
-│  Desktop-global     │        │  NucleusUI bar + lock    │
-│  window policy      │        │                           │
-└────┬────────────────┘        └────────────┬──────────────┘
-     │                                      │
-     │             (relative SwiftPM paths) │
-┌────▼──────────────────────────────────────▼──────────────┐
-│                         nucleus                           │
-│                                                           │
-│  NucleusTypes · NucleusLayers · NucleusRenderModel        │
-│  NucleusRenderer (Skia Graphite + native Vulkan)          │
-│  NucleusTextBackend · NucleusUI · NucleusApp              │
-│  NucleusRenderHost · NucleusAppHostProtocols              │
-│  NucleusSkiaGraphiteBridge · native SDK tooling           │
-└───────────────────────────────────────────────────────────┘
-```
+All first-party runtime code belongs to the single SwiftPM package rooted at `Package.swift`:
 
-### Key design principles
+- `core/` owns the portable render and UI core plus the Android application host.
+- `react-native/` owns the React Native platform, Hermes, Fabric, and native RN stack.
+- `compositor/compositor-core/` and `compositor/compositor/` own the Linux Wayland/DRM render server and executable.
+- `shell/` owns the out-of-process native Swift desktop shell.
+- `config/`, `session/`, and `platform-linux/` own shared runtime services and platform contracts.
+- `swift-vulkan/`, `swift-wayland/`, and `swift-tracy/` are root-package targets, not separately selected build tiers.
 
-- **`core/` is the single source of truth** for rendering, layout, and the UI framework. Other packages consume it through relative SwiftPM paths.
-- **The compositor links zero React.** It provides the Wayland server, DRM/KMS scanout, and desktop-global window policy. Application and shell UI remain in client processes.
-- **The shell is out-of-process.** `NucleusShell` is a normal Wayland client connected over `WAYLAND_DISPLAY`. The compositor does not track a privileged shell client identity.
-- **The React Native platform is independent of the shell.** `react-native/` owns Fabric, Hermes, folly, and its Swift runtime bridge for RN applications; `shell/` does not depend on that package or SDK.
-- **Native SDK ownership is explicit.** Render consumers use the `render` SDK (Skia Graphite + native Vulkan), while only `react-native/` consumes the `rn` SDK (Hermes + ReactCommon + folly). The root bootstrap provisions both under `~/.cache/nucleus/nucleus-native-sdk/`.
+The compositor links no React runtime. The shell is an ordinary Wayland client and communicates with compositor policy through typed session channels. Android is an optional session capability hosted in an LXC container; its surfaces enter the same compositor path through the Android graphics broker.
 
-## Supporting components
+The separate `collider/` package provides the checkout build, test, install, and run tool. Its `collider/engine/` package owns the reusable execution kernel. Collider consumes the runtime package only through `NucleusSessionProtocol` and `NucleusAndroidRuntimeCore`.
 
-- [`swift-vulkan`](swift-vulkan) — Swift Vulkan bindings (VulkanGen generator + generated typed API + vendored Khronos headers).
-- [`swift-wayland`](swift-wayland) — Swift Wayland protocol bindings (server + client C façades + Swift dispatch).
-- [`swift-tracy`](swift-tracy) — Swift bindings for the Tracy profiler.
-- [`swift-toolchain`](swift-toolchain) — the Collider recipe that publishes the
-  generated Linux amd64 compiler and Android Swift SDK as one user-level
-  platform generation.
+Every Swift target enables C++ interoperability. Swift/C++ seams carry opaque handles and scalars, and throwing C++ entry points are contained behind `noexcept` bridges.
 
-The bindings are first-party SwiftPM path dependencies and participate in
-`collider build all` and `collider test all`. Swift platform rebuilds remain
-explicit and publish the Linux toolchain and Android SDK together. Native macOS
-workspace builds use the selected Xcode 27 toolchain; Linux workspace builds
-consume the active generated generation.
+## Toolchains and native SDKs
 
-## Building
+macOS development uses the selected Xcode toolchain. Linux/arm64 work in Apple containers uses the official Swift Linux/arm64 toolchain. The workspace does not build Swift, LLVM, or Linux host compilers.
 
-Clone the canonical monorepo, then use the workspace CLI as the entry point for the complete checkout:
+Collider cross-builds only the Nucleus Linux/amd64 runtime and its Swift SDK overlays, and builds the Android Swift SDK artifact required by the Android host. Native C++ artifacts are provisioned under `~/.cache/nucleus/nucleus-native-sdk`, split into `render` and `rn` ownership.
+
+## Setup and verification
+
+Clone with submodules, then provision the checkout once:
 
 ```sh
 git clone --recurse-submodules git@github.com:nucleus-os/nucleus.git
 cd nucleus
-```
-
-Run the setup script once on a fresh clone. On macOS it uses the selected full
-Xcode 27 toolchain; on Linux it provisions the generated Nucleus toolchain if
-needed. It builds the optimized `collider` binary, installs the
-`collider` command on your PATH, and provisions the workspace (initializing the
-required third-party submodules if the clone omitted `--recurse-submodules`).
-Re-run it any time to verify and repair the installation.
-
-```sh
 ./collider-setup.sh
 ```
 
-Thereafter, `collider` runs from any directory inside the clone (and refuses
-outside one):
+Thereafter run Collider from any directory inside the clone:
 
 ```sh
-collider build all
-collider test all
+collider doctor
+collider bootstrap
+collider build
+collider test
 ```
 
-It selects the native host compiler and runs the component bootstrap sequence.
-SwiftPM, CMake, Ninja, Yarn, and the package generators own
-their normal incremental state; the workspace does not maintain a second
-fingerprint/cache layer around them.
-
-The same Swift CLI owns the cross-component workflows that previously lived in
-component shell scripts:
+Focused workflows include:
 
 ```sh
+collider bootstrap core
+collider bootstrap rn
 collider android build
-collider toolchain rebuild
+collider android-runtime image
 collider install session
-collider run
 ```
 
-`collider run` is the complete development runtime entry point. It
-incrementally builds the compositor, native Swift shell, PAM helper, and session
-launcher into `.install/`, then starts that installed session. Launch it from a
-free virtual terminal or a display-manager session because Nucleus owns the DRM
-seat rather than nesting inside an existing Wayland/X11 desktop.
+`collider run` builds, installs, and starts the complete DRM-owning session. Run it only from a free virtual terminal or display-manager session; it is not a nested desktop application.
 
-Runtime diagnostics use the same entry point, so the instrumented binaries and
-the session being measured cannot drift apart:
-
-```sh
-collider run --seconds 20
-collider run --tracy --seconds 20
-collider run --sanitize address
-collider run --vk-validation
-collider run --valgrind
-```
-
-Use `collider run --help` for capture location, presentation mode, render
-benchmark, sanitizer, optimization, and compositor-argument options.
-Every run streams the complete build and session output to a UTC-timestamped
-file under `logs/`; `logs/latest` is a symlink to the most recent run, including
-runs that fail during build or startup.
-
-Long-running Swift toolchain and Android SDK compiler recipes remain shell-based
-internals because they directly adapt upstream build systems. The top-level Swift
-workflow stages, verifies, and atomically activates them under the user cache; it
-does not install into `/opt` or require `sudo`.
-
-All first-party SwiftPM dependencies use monorepo-relative paths. No sibling-repository
-detection or local dependency override step is required.
-
-The top-level CLI is the sole orchestration entry point; individual SwiftPM packages remain
-directly buildable with `swift build --package-path …`.
-
-See each component's README for focused build, rebuild, and test instructions.
+Architecture and active execution plans are indexed in [docs/README.md](docs/README.md).
 
 ## License
 
-Copyright (C) 2026 Noesis Reality LLC. Licensed under the GNU General Public
-License, version 3. See [`LICENSE`](LICENSE).
+Copyright (C) 2026 Noesis Reality LLC. Licensed under GPL-3.0; see [LICENSE](LICENSE).

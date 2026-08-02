@@ -4,7 +4,6 @@ import SystemPackage
 
 enum ToolchainValidationFixtures {
     enum Fixture: String, CaseIterable {
-        case hostSmoke = "HostSmoke"
         case cxxInterop = "CxxInteropTestRunner"
         case sourceKitLSP = "NucleusLSPPackage"
         case androidSDKConsumer = "AndroidSDKConsumer"
@@ -33,10 +32,11 @@ enum ToolchainValidationFixtures {
     }
 
     static func resourceURL(for fixture: Fixture) throws -> URL {
-        guard let root = Bundle.module.resourceURL?
-            .appendingPathComponent(
-                "ToolchainValidationFixtures",
-                isDirectory: true),
+        guard
+            let root = Bundle.module.resourceURL?
+                .appendingPathComponent(
+                    "ToolchainValidationFixtures",
+                    isDirectory: true),
             FileManager.default.fileExists(atPath: root.path)
         else {
             throw RuntimeFailure.invalidOutput(
@@ -75,9 +75,10 @@ enum ToolchainValidationFixtures {
         var offset = data.startIndex
         var messages: [[String: Any]] = []
         while offset < data.endIndex {
-            guard let headerRange = data.range(
-                of: separator,
-                in: offset..<data.endIndex),
+            guard
+                let headerRange = data.range(
+                    of: separator,
+                    in: offset..<data.endIndex),
                 let header = String(
                     data: data[offset..<headerRange.lowerBound],
                     encoding: .utf8),
@@ -111,10 +112,11 @@ enum ToolchainValidationFixtures {
         _ substitutions: [String: String],
         under directory: URL
     ) throws {
-        guard let enumerator = FileManager.default.enumerator(
-            at: directory,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles])
+        guard
+            let enumerator = FileManager.default.enumerator(
+                at: directory,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles])
         else {
             throw RuntimeFailure.invalidOutput(
                 "cannot enumerate validation fixture \(directory.path)")

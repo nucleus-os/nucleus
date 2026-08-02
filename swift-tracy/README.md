@@ -21,16 +21,11 @@ nothing and the Swift API is a set of safe no-ops, so release builds pay nothing
 build:
 
 ```sh
-swift build -Xcc -DTRACY_ENABLE
-```
-
-The `-Xcc` flag reaches this package's C++ target through the build graph, so a consumer enables
-profiling the same way whether the bindings are in-tree or consumed as a dependency.
-The complete Nucleus runtime build, launch, capture, and export workflow is:
-
-```sh
 collider run --tracy --seconds 20
 ```
+
+Collider enables the root-package Tracy targets consistently for the complete
+runtime build, launch, capture, and export workflow.
 
 ## Layout
 

@@ -389,16 +389,13 @@ struct Install: AsyncParsableCommand {
 
 struct Toolchain: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        subcommands: [Rebuild.self, Status.self, Install.self, Uninstall.self])
+        subcommands: [Rebuild.self, Status.self])
 
     struct Rebuild: TaskControlledCommand {
         @OptionGroup var taskOptions: TaskControlOptions
-        @Option var arch: [ToolchainArchitecture] = []
 
         var rebuildOptions: RebuildOptions {
-            RebuildOptions(
-                controls: taskOptions.controls,
-                architectures: arch)
+            RebuildOptions(controls: taskOptions.controls)
         }
 
         mutating func run() async throws {
@@ -412,36 +409,6 @@ struct Toolchain: AsyncParsableCommand {
         mutating func run() async throws {
             try ToolchainStatus(context: context()).run(
                 json: reportOptions.json)
-        }
-    }
-    struct Install: AsyncParsableCommand {
-        @Flag(help: "Print the installation actions without executing them.")
-        var dryRun = false
-        @Option var version: String?
-        @Option var prefix: String?
-        @Option var tarball: String?
-
-        mutating func run() async throws {
-            let workspace = try context()
-            try await ToolchainInstallation(context: workspace).install(
-                version: version,
-                prefix: prefix,
-                tarball: tarball,
-                dryRun: dryRun)
-        }
-    }
-    struct Uninstall: AsyncParsableCommand {
-        @Flag(help: "Print the removal actions without executing them.")
-        var dryRun = false
-        @Option var version: String?
-        @Option var prefix: String?
-
-        mutating func run() async throws {
-            let workspace = try context()
-            try await ToolchainInstallation(context: workspace).uninstall(
-                version: version,
-                prefix: prefix,
-                dryRun: dryRun)
         }
     }
 }

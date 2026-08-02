@@ -395,7 +395,6 @@ Every protocol added so far follows the same shape (see `Fifo.swift` or `Idle.sw
 
 New protocols slot into these patterns. The work per protocol is mostly mechanical request dispatch + small policy decisions in the per-protocol router file; the framework is already in place.
 
-(Historical note: this plan was originally drafted against the retired Zig compositor — Zig `.zig` modules under `src/compositor/wayland/`, a `build.zig` scanner list, and a `WaylandServer` object. That compositor has been replaced by the Swift runtime described above; the protocol-coverage intent is unchanged.)
 
 ## Verification
 

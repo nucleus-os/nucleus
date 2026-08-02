@@ -15,7 +15,7 @@ directory, one build database, incremental compilation, and test compilation.
 
 The root [`Package.swift`](../Package.swift) owns every first-party runtime,
 library, executable, benchmark, generator, sanitizer harness, and test target.
-It declares 221 host targets and activates the three Android JNI targets only
+It declares the complete host graph and activates the Android JNI targets only
 for the Android compiler context. Third-party packages remain path
 dependencies.
 
@@ -91,8 +91,9 @@ are removed. Unrelated toolchain fixes remain.
 ## Verified State
 
 - The repository root is the only first-party Swift package root.
-- The host manifest resolves 221 targets and 76 products.
-- The Android context resolves 224 targets and 77 products.
+- The host and Android manifests resolve deterministic product and target
+  inventories for their selected destination. Verification compares the
+  normalized inventories instead of embedding volatile counts in this document.
 - `collider build` issues one ordinary root SwiftPM build invocation per
   compatible compiler context.
 - `collider test` builds and executes the root test graph once.

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import ColliderCommands
 
 @Test func vulkanValidationFindsAndPrependsADeclaredManifest() throws {
@@ -10,14 +11,18 @@ import Testing
         at: layers, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let manifest = layers.appendingPathComponent("validation.json")
-    try Data("""
-    {"file_format_version":"1.2.0","layer":{"name":"VK_LAYER_KHRONOS_validation"}}
-    """.utf8).write(to: manifest)
+    try Data(
+        """
+        {"file_format_version":"1.2.0","layer":{"name":"VK_LAYER_KHRONOS_validation"}}
+        """.utf8
+    ).write(to: manifest)
 
     let layer = try VulkanValidationLayer.resolve(
         environment: ["VK_LAYER_PATH": layers.path],
         homeDirectory: root)
-    #expect(layer.manifest == manifest.path)
+    #expect(
+        URL(fileURLWithPath: layer.manifest).resolvingSymlinksInPath()
+            == manifest.resolvingSymlinksInPath())
     var environment = ["VK_LAYER_PATH": "/restricted"]
     layer.applying(to: &environment)
     #expect(environment["VK_LAYER_PATH"] == "\(layers.path):/restricted")

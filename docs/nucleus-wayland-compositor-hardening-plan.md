@@ -46,7 +46,7 @@ The audit found several foundations that are stronger than replacing them with a
 - `@MainActor` is the correct owner for compositor state, protocol state, rendering orchestration, and Linux session state.
 - The `~Copyable` DRM owners in `NucleusCompositorRendererLinux/drm` correctly express local C-resource ownership.
 - The explicit-sync path correctly treats acquire fences, release points, GPU completion, KMS ownership, and direct-scanout retirement as one lifetime problem.
-- The renderer/core boundary and the closure/protocol seams between C++-interop and non-C++ modules match the monorepo architecture.
+- The renderer/core boundary keeps C++ types out of Swift domain models through the established closure and protocol seams; every Swift target still enables C++ interoperability.
 - The session-lock composition gate is placed at the final presentation choke point and is confirmed by a real page flip.
 - Stable surface content identities plus changing content generations fit the retained renderer.
 - Pure value-typed policy cores, including KMS format selection and window policy, are the right testing boundary.
@@ -798,7 +798,7 @@ Split `RendererRuntime.swift` into:
 7. Mark closure isolation explicitly, including `@MainActor @Sendable` for callbacks retained by backend owners.
 8. Avoid `nonisolated` protocol implementations that capture non-Sendable resource objects into actor closures. Extract scalar identity before the crossing.
 9. Replace parallel Boolean flags with enums whose cases encode valid states.
-10. Keep C++ imports out of non-C++ targets through the existing closure/protocol seams.
+10. Keep C++ types out of Swift domain models through the existing closure/protocol seams.
 
 ### Completion gate
 

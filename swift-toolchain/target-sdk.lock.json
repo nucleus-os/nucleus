@@ -7,11 +7,6 @@
       "sha256": "c5bb1c4399375c1a59c6aa672f3f81014e111de0d464ada8ae8cc5814ce29681",
       "url": "https://download.swift.org/swift-6.4.x-branch/android-sdk/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_android.artifactbundle.tar.gz"
     },
-    "linuxTargetPackage": {
-      "maximumResponseSize": 1610612736,
-      "sha256": "05670a1487e907e732ca701bfda153e5f02aeac801dd3b07686f2aae4e0c6ad5",
-      "url": "https://download.swift.org/swift-6.4.x-branch/ubuntu2404/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a-ubuntu24.04.tar.gz"
-    },
     "macOSHostPackage": {
       "maximumResponseSize": 2147483648,
       "sha256": "04c0f47146235a913fc88bcfba71b406788a148fc8d9c84274971d8610b59f4d",
@@ -20,7 +15,7 @@
   },
   "linuxBundleID": "nucleus-swift-6.4-linux-amd64",
   "snapshot": "swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a",
-  "swiftSDKGeneratorCommit": "57190988c478930fbcee768f6119384e3ad5a0a8",
+  "swiftSDKGeneratorCommit": "14a7ef463abcc9134faa3bc53130bf309c60ac45",
   "ubuntuPackages": [
     {
       "sha256": "1f03b79223d9cf1a6ed3a648f6942619dcb97b2884dba8fd12e262b6771e247a",
@@ -51,12 +46,40 @@
       "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/i/icu/libicu74_74.2-1ubuntu3_amd64.deb"
     },
     {
-      "sha256": "0e34b7a6ad0d9db6c718301a0c30a077590decbb31099d0fd6ac957222d77a94",
-      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/g/gcc-13/libstdc++-13-dev_13.2.0-23ubuntu4_amd64.deb"
+      "sha256": "d2eabd41ca77d2c2dd9d5d4ef478cccb64ffde6279c47cf4699a857d46785a52",
+      "url": "https://security.ubuntu.com/ubuntu/pool/main/x/xz-utils/liblzma5_5.6.1+really5.4.5-1ubuntu0.3_amd64.deb"
     },
     {
-      "sha256": "4863e880d6ee538e4734c430c5579c1ac933b88a42c25bc9980d0f148c54b21e",
-      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/libstdc++6_14-20240412-0ubuntu1_amd64.deb"
+      "sha256": "d8585797242a0171db244ca24527125233a02fd606c1e64e4e73ae0cffc58b2b",
+      "url": "https://security.ubuntu.com/ubuntu/pool/main/libx/libxml2/libxml2-dev_2.9.14+dfsg-1.3ubuntu3.8_amd64.deb"
+    },
+    {
+      "sha256": "bfd07c01d6e5ab3e327f3ca5819409b1914bbfb3f1a016d53e4dabd5f96143bb",
+      "url": "https://security.ubuntu.com/ubuntu/pool/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3ubuntu3.8_amd64.deb"
+    },
+    {
+      "sha256": "b10b157443866c64193cbf4b97f8313205e8585acc4660776cfd82b695b2e62f",
+      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/universe/l/llvm-toolchain-18/libc++-18-dev_18.1.3-1_amd64.deb"
+    },
+    {
+      "sha256": "b7b2577ba8395eb81af6fed22c318265ac27327d840e912fe6a375f20f27fc3d",
+      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/universe/l/llvm-toolchain-18/libc++1-18_18.1.3-1_amd64.deb"
+    },
+    {
+      "sha256": "213f114032cf72ade10d787b54c30066ec55374903527458f6c9d66fa89344e3",
+      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/universe/l/llvm-toolchain-18/libc++abi-18-dev_18.1.3-1_amd64.deb"
+    },
+    {
+      "sha256": "f2c72b1013a3feeea1f8c4861c595008baa74f83a1450b3c9fb48b3d0b4e6b5c",
+      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/universe/l/llvm-toolchain-18/libc++abi1-18_18.1.3-1_amd64.deb"
+    },
+    {
+      "sha256": "823664151b44b94b9d25a75bee261306dca473cab148cff6c1ac169596dd9021",
+      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/universe/l/llvm-toolchain-18/libunwind-18-dev_18.1.3-1_amd64.deb"
+    },
+    {
+      "sha256": "4019c3dabf8a6079b0edf4a0cb74b9da25f665e0a677267959a134ab4e4ea889",
+      "url": "https://gb.archive.ubuntu.com/ubuntu/pool/universe/l/llvm-toolchain-18/libunwind-18_18.1.3-1_amd64.deb"
     },
     {
       "sha256": "21c631ba4da3d38d92a133e28a8a14278e1e00174ed135a20661d1e532e05ca5",

@@ -57,11 +57,18 @@ function App() {
     <>
       <View><Text>Main Window</Text></View>
 
-      <Window width={600} height={400} title="Second Window">
-        <View><Text>This renders in a separate window!</Text></View>
-      </Window>
+      <Window
+        width={600}
+        height={400}
+        title="Second Window"
+        component={SecondWindow}
+      />
     </>
   );
+}
+
+function SecondWindow() {
+  return <View><Text>This renders in a separate window!</Text></View>;
 }
 ```
 

@@ -1,6 +1,6 @@
 # swift-vulkan
 
-Self-contained Swift bindings for the [Vulkan](https://www.vulkan.org/) API,
+Root-package Swift bindings for the [Vulkan](https://www.vulkan.org/) API,
 generated from the Khronos registry (`vk.xml`).
 
 - **`Vulkan`** — the generated typed Swift API: scoped enums, option sets,
@@ -15,11 +15,7 @@ generated from the Khronos registry (`vk.xml`).
   the package builds with no system Vulkan SDK. Only the loader (`libvulkan`) is
   linked. Android / Wayland surface extensions are behind platform guards.
 
-```swift
-.package(name: "swift-vulkan", path: "../swift-vulkan")
-// target dep: .product(name: "Vulkan", package: "swift-vulkan")
-import Vulkan
-```
+Root-manifest targets depend directly on `Vulkan` and import it normally.
 
 ## Regenerating the bindings
 

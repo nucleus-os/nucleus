@@ -36,59 +36,6 @@ func commandFailuresPreserveRunFinalizationSemantics() {
             wasInterrupted: false) == .interrupted)
 }
 
-@Test func toolchainPrivilegeBoundaryRejectsEscapingTargets() async {
-    let installation = ToolchainInstallation(
-        context: WorkspaceContext(
-            root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
-            environment: [:]))
-
-    await #expect(throws: WorkspaceFailure.self) {
-        try await installation.uninstall(
-            version: "..", prefix: "/opt/nucleus-swift", dryRun: true)
-    }
-    await #expect(throws: WorkspaceFailure.self) {
-        try await installation.uninstall(
-            version: "0123456789abcdef01234567", prefix: "/opt/..", dryRun: true)
-    }
-}
-
-@Test func privilegedToolchainRequestHasOneStrictInternalShape() throws {
-    let unrelated = try ToolchainSystemRequest.parse(["toolchain", "install"])
-    #expect(unrelated?.version == nil)
-
-    let artifactID = "sha256:" + String(repeating: "a", count: 64)
-    let parsed = try ToolchainSystemRequest.parse([
-        "__toolchain-system-install",
-        "0123456789abcdef01234567",
-        "/opt/nucleus-swift",
-        "/dev/null",
-        artifactID,
-    ])
-    let request = try #require(parsed)
-    #expect(request.operation == .install)
-    #expect(request.version == "0123456789abcdef01234567")
-    #expect(request.prefix.path == "/opt/nucleus-swift")
-    #expect(request.tarball?.path == "/dev/null")
-    #expect(request.artifactID == artifactID)
-
-    #expect(throws: WorkspaceFailure.self) {
-        try ToolchainSystemRequest.parse([
-            "__toolchain-system-install",
-            "0123456789abcdef01234567",
-            "/opt/nucleus-swift",
-            "/dev/null",
-            "not-a-digest",
-        ])
-    }
-    #expect(throws: WorkspaceFailure.self) {
-        try ToolchainSystemRequest.parse([
-            "__toolchain-system-uninstall",
-            "..",
-            "/opt/nucleus-swift",
-        ])
-    }
-}
-
 @Test
 func capturedCommandsKeepDiagnosticsOutOfMachineReadableOutput() async throws {
     let context = WorkspaceContext(

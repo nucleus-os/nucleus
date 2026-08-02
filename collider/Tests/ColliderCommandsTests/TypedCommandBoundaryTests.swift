@@ -35,23 +35,10 @@ func androidLeavesConstructTypedOperationsAndPreserveGradlePassthrough() throws 
 }
 
 @Test
-func toolchainRebuildParsesTypedArchitecturesAndNormalizesDuplicates() throws {
-    let command = try Toolchain.Rebuild.parse([
-        "--arch", "x86_64",
-        "--arch", "aarch64",
-        "--arch", "x86_64",
-    ])
-    #expect(
-        command.rebuildOptions.architectures == [
-            .x86_64,
-            .aarch64,
-        ])
-    #expect(
-        (try Toolchain.Rebuild.parse([])).rebuildOptions.architectures
-            == [.aarch64])
-
+func toolchainRebuildAlwaysBuildsTheCompleteTargetSet() throws {
+    _ = try Toolchain.Rebuild.parse([])
     #expect(throws: (any Error).self) {
-        try Toolchain.Rebuild.parse(["--arch", "armv7"])
+        try Toolchain.Rebuild.parse(["--arch", "aarch64"])
     }
     #expect(throws: (any Error).self) {
         try Toolchain.Rebuild.parse(["--reconfigure"])

@@ -8,7 +8,7 @@ collider browser doctor
 collider browser bootstrap
 collider browser build
 collider browser test
-collider browser install
+collider install browser
 ```
 
 `bootstrap` reports missing host-side source and packaging tools from

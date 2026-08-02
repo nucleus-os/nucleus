@@ -91,22 +91,6 @@ public struct MatchingFileCopy: Hashable, Sendable {
     }
 }
 
-public struct SwiftSourceWorkspaceValidation: Hashable, Sendable {
-    public let workspaceRoot: FilePath
-    public let repositories: [FilePath]
-    public let environment: [String: String]
-
-    public init(
-        workspaceRoot: FilePath,
-        repositories: [FilePath],
-        environment: [String: String]
-    ) {
-        self.workspaceRoot = workspaceRoot
-        self.repositories = repositories
-        self.environment = environment
-    }
-}
-
 public struct MesonSetup: Hashable, Sendable {
     public let source: FilePath
     public let build: FilePath
@@ -122,97 +106,6 @@ public struct MesonSetup: Hashable, Sendable {
         self.source = source
         self.build = build
         self.arguments = arguments
-        self.environment = environment
-    }
-}
-
-public struct AndroidSDKWiring: Hashable, Sendable {
-    public let bundle: FilePath
-    public let ndk: FilePath
-    public let minimumNDKMajorVersion: UInt32
-
-    public init(
-        bundle: FilePath,
-        ndk: FilePath,
-        minimumNDKMajorVersion: UInt32 = 27
-    ) {
-        self.bundle = bundle
-        self.ndk = ndk
-        self.minimumNDKMajorVersion = minimumNDKMajorVersion
-    }
-}
-
-public struct AndroidSDKValidation: Hashable, Sendable {
-    public let toolchain: FilePath
-    public let sdkSearchRoot: FilePath
-    public let bundleName: String
-    public let ndk: FilePath
-    public let architecture: String
-    public let apiLevel: UInt32
-    public let workDirectory: FilePath
-    public let environment: [String: String]
-
-    public init(
-        toolchain: FilePath,
-        sdkSearchRoot: FilePath,
-        bundleName: String,
-        ndk: FilePath,
-        architecture: String,
-        apiLevel: UInt32,
-        workDirectory: FilePath,
-        environment: [String: String]
-    ) {
-        self.toolchain = toolchain
-        self.sdkSearchRoot = sdkSearchRoot
-        self.bundleName = bundleName
-        self.ndk = ndk
-        self.architecture = architecture
-        self.apiLevel = apiLevel
-        self.workDirectory = workDirectory
-        self.environment = environment
-    }
-}
-
-public struct AndroidSDKAssembly: Hashable, Sendable {
-    public let toolchain: FilePath
-    public let installRoot: FilePath
-    public let bundle: FilePath
-    public let sourceID: String
-    public let architectures: [String]
-    public let apiLevel: UInt32
-
-    public init(
-        toolchain: FilePath,
-        installRoot: FilePath,
-        bundle: FilePath,
-        sourceID: String,
-        architectures: [String],
-        apiLevel: UInt32
-    ) {
-        self.toolchain = toolchain
-        self.installRoot = installRoot
-        self.bundle = bundle
-        self.sourceID = sourceID
-        self.architectures = architectures
-        self.apiLevel = apiLevel
-    }
-}
-
-public struct AndroidRuntimeLinkageValidation: Hashable, Sendable {
-    public let installRoot: FilePath
-    public let ndk: FilePath
-    public let architectures: [String]
-    public let environment: [String: String]
-
-    public init(
-        installRoot: FilePath,
-        ndk: FilePath,
-        architectures: [String],
-        environment: [String: String]
-    ) {
-        self.installRoot = installRoot
-        self.ndk = ndk
-        self.architectures = architectures
         self.environment = environment
     }
 }
@@ -235,103 +128,6 @@ public struct AndroidHostValidation: Hashable, Sendable {
         self.kotlinContract = kotlinContract
         self.ndk = ndk
         self.minimumSwiftJavaThunkCount = minimumSwiftJavaThunkCount
-        self.environment = environment
-    }
-}
-
-public enum HostToolchainPlatform: String, Hashable, Sendable {
-    case linux
-    case macOS
-}
-
-public struct BuildWorkspaceContractFile: Hashable, Sendable {
-    public let name: String
-    public let path: FilePath
-
-    public init(name: String, path: FilePath) {
-        self.name = name
-        self.path = path
-    }
-}
-
-public struct BuildWorkspaceContract: Hashable, Sendable {
-    public let name: String
-    public let stamp: FilePath
-    public let roots: [FilePath]
-    public let values: [String: String]
-    public let files: [BuildWorkspaceContractFile]
-
-    public init(
-        name: String,
-        stamp: FilePath,
-        roots: [FilePath],
-        values: [String: String],
-        files: [BuildWorkspaceContractFile]
-    ) {
-        self.name = name
-        self.stamp = stamp
-        self.roots = roots
-        self.values = values
-        self.files = files
-    }
-}
-
-public struct HostToolchainBuildPreparation: Hashable, Sendable {
-    public let workspace: FilePath
-    public let stagingRoot: FilePath
-    public let platform: HostToolchainPlatform
-    public let contracts: [BuildWorkspaceContract]
-
-    public init(
-        workspace: FilePath,
-        stagingRoot: FilePath,
-        platform: HostToolchainPlatform,
-        contracts: [BuildWorkspaceContract]
-    ) {
-        self.workspace = workspace
-        self.stagingRoot = stagingRoot
-        self.platform = platform
-        self.contracts = contracts
-    }
-}
-
-public struct HostToolchainAssembly: Hashable, Sendable {
-    public let workspace: FilePath
-    public let archive: FilePath
-    public let toolchain: FilePath
-    public let platform: HostToolchainPlatform
-    public let environment: [String: String]
-
-    public init(
-        workspace: FilePath,
-        archive: FilePath,
-        toolchain: FilePath,
-        platform: HostToolchainPlatform,
-        environment: [String: String]
-    ) {
-        self.workspace = workspace
-        self.archive = archive
-        self.toolchain = toolchain
-        self.platform = platform
-        self.environment = environment
-    }
-}
-
-public struct HostToolchainValidation: Hashable, Sendable {
-    public let toolchain: FilePath
-    public let platform: HostToolchainPlatform
-    public let workDirectory: FilePath
-    public let environment: [String: String]
-
-    public init(
-        toolchain: FilePath,
-        platform: HostToolchainPlatform,
-        workDirectory: FilePath,
-        environment: [String: String]
-    ) {
-        self.toolchain = toolchain
-        self.platform = platform
-        self.workDirectory = workDirectory
         self.environment = environment
     }
 }
@@ -1077,15 +873,7 @@ public enum TaskOperation: Hashable, Sendable {
     case removePath(FilePath)
     case replaceSymlink(path: FilePath, target: String)
     case writeFile(FilePath, bytes: [UInt8])
-    case validateSwiftSourceWorkspace(SwiftSourceWorkspaceValidation)
-    case prepareHostToolchainBuild(HostToolchainBuildPreparation)
-    case assembleHostToolchain(HostToolchainAssembly)
-    case validateHostToolchain(HostToolchainValidation)
-    case assembleAndroidSDK(AndroidSDKAssembly)
-    case validateAndroidRuntimeLinkage(AndroidRuntimeLinkageValidation)
     case validateAndroidHost(AndroidHostValidation)
-    case wireAndroidSDK(AndroidSDKWiring)
-    case validateAndroidSDK(AndroidSDKValidation)
     case sanitizeLinkMetadata(LinkMetadataSanitization)
     case publishSymlink(SymlinkPublication)
     case publishDirectory(DirectoryPublication)

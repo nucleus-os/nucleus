@@ -127,24 +127,14 @@ design system.
 
 ---
 
-## Deferred — toolchain & release DX
+## Toolchain and release foundation
 
-Not critical while Nucleus is a single developer with the toolchain already built,
-and while the build intentionally tracks the still-in-flux Swift 6.4 development
-branch (rebuilds exist to pull the latest, not to reproduce a pinned state).
-Revisit each item when its trigger fires.
-
-- **Prebuilt toolchain + Android SDK artifacts** (published, SHA-verified;
-  the host bootstrap downloads instead of building). *Trigger: a second contributor, or
-  a CI runner that needs the toolchain.*
-- **CI for the toolchain repos** — build → smoke-test (including the libc++ `nm`
-  guard) → publish. The libc++ guard has standalone value as a rebuild sanity
-  check even solo, but isn't urgent. *Trigger: toolchain regressions start costing
-  real time, or a second contributor.*
-- **Exact-commit pinning + reproducible builds.** Actively counterproductive
-  today — pinning fights the deliberate "track latest 6.4 dev" workflow. *Trigger:
-  Swift 6.4 stabilizes / releases, at which point a pinned, reproducible baseline
-  becomes worthwhile.*
+macOS builds use Xcode and Apple-container Linux/arm64 builds use the official
+Swift toolchain. Nucleus does not build a compiler. Collider publishes the
+Linux/amd64 Nucleus target SDK overlay and Android Swift SDK artifact from the
+pinned source graph, verifies provenance and libc++ closure, and consumes those
+immutable artifacts in cross-build lanes. Release automation extends that
+existing model; it does not introduce a second toolchain path.
 
 ---
 

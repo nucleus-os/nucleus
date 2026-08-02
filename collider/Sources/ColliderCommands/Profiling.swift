@@ -39,7 +39,8 @@ struct TracyTools {
                 [
                     "-S", source.appendingPathComponent(subdirectory).path, "-B", toolBuild.path,
                     "-DCMAKE_BUILD_TYPE=Release", "-DDOWNLOAD_CAPSTONE=ON",
-                    "-DCMAKE_EXE_LINKER_FLAGS=-static-libstdc++ -static-libgcc",
+                    "-DCMAKE_CXX_FLAGS=-stdlib=libc++",
+                    "-DCMAKE_EXE_LINKER_FLAGS=-stdlib=libc++ -static-libgcc",
                 ])
             try await environmentContext.run(
                 "cmake", ["--build", toolBuild.path, "--parallel", "--target", name])

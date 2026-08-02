@@ -39,7 +39,7 @@ The two are irreconcilable in one module. So the host is split:
 
 The facade does **not** `import NucleusAndroidCore`: importing a cxx-interop
 Swift module makes the compiler load that module's recorded clang module graph
-(including a C++ module a non-cxx target cannot build). Instead the facade calls
+(including a C++ implementation type that must not cross the domain-model seam). Instead the facade calls
 `AndroidHostCore` through a C ABI — `@_cdecl nucleus_core_*` functions in
 `AndroidHostCoreABI.swift`, declared `@_silgen_name` in the facade and resolved
 at link time. The opaque core handle is an `Unmanaged<AndroidHostCore>`; only

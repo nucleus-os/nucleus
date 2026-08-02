@@ -60,13 +60,12 @@ extension ColliderRuntime {
         try DurableFile.write(Data("\(imageID)\n".utf8), to: preparation.imageID)
         if let previousImageID,
             previousImageID != imageID,
-            validOCIImageDigest(in: previousImageID) != nil
+            validOCIImageDigest(in: previousImageID) != nil,
+            let remove = executor.removeImageCommand(
+                previousImageID,
+                preparation: preparation)
         {
-            _ = try? await execute(
-                executor.removeImageCommand(
-                    previousImageID,
-                    preparation: preparation),
-                stage: stage)
+            _ = try? await execute(remove, stage: stage)
         }
     }
 

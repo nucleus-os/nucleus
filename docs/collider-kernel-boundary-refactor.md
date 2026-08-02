@@ -1,5 +1,9 @@
 # Collider Kernel, Planning, and Execution Architecture
 
+**Status: active.** This is the sole authority for Collider graph declaration,
+planning, execution, persistence, caching, output ownership, input auditing, and
+resource-aware scheduling.
+
 ## Invariants
 
 **Collider remains a Nucleus build tool.** Collider is not a second package

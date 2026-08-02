@@ -1,20 +1,18 @@
-FROM docker.io/library/ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
+FROM docker.io/library/ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
 
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN test "$(dpkg --print-architecture)" = arm64 \
     && apt-get update \
     && apt-get install --yes --no-install-recommends \
+        binutils \
         build-essential \
         ca-certificates \
         ccache \
         clang \
-        clang-tools \
-        coreutils \
         curl \
         git \
         libblocksruntime-dev \
-        libarchive-tools \
         libbsd-dev \
         libcurl4-openssl-dev \
         libedit-dev \
@@ -29,48 +27,39 @@ RUN test "$(dpkg --print-architecture)" = arm64 \
         lld \
         ninja-build \
         patch \
-        patchelf \
         pkg-config \
         python3 \
         rsync \
-        unzip \
         util-linux \
         uuid-dev \
         zlib1g-dev \
-    && pkg-config --exists libcurl \
-    && curl --fail --location --output /tmp/android-ndk.zip \
-        https://dl.google.com/android/repository/android-ndk-r30-beta2-linux.zip \
-    && echo '069427047d18cc6e44369cd7b8e711bfc2c7a3b5  /tmp/android-ndk.zip' \
-        | sha1sum --check --strict \
-    && unzip -q /tmp/android-ndk.zip -d /opt \
-    && rm -f /tmp/android-ndk.zip \
     && rm -rf /var/lib/apt/lists/*
-
-RUN curl --fail --location --output /tmp/cmake.tar.gz \
-        https://github.com/Kitware/CMake/releases/download/v3.30.2/cmake-3.30.2-linux-aarch64.tar.gz \
-    && echo 'd18f50f01b001303d21f53c6c16ff12ee3aa45df5da1899c2fe95be7426aa026  /tmp/cmake.tar.gz' \
-        | sha256sum --check --strict \
-    && mkdir -p /opt/cmake \
-    && bsdtar --extract --gzip \
-        --file /tmp/cmake.tar.gz \
-        --directory /opt/cmake \
-        --strip-components=1 \
-    && rm -f /tmp/cmake.tar.gz \
-    && /opt/cmake/bin/cmake --version \
-        | grep --fixed-strings 'cmake version 3.30.2'
 
 RUN curl --fail --location --output /tmp/swift-bootstrap.tar.gz \
         https://download.swift.org/swift-6.4.x-branch/ubuntu2404-aarch64/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a-ubuntu24.04-aarch64.tar.gz \
     && echo '0171839645e5569ab3c0c9b53bba104660a8f76740ad9eb5126b526b60f6dd34  /tmp/swift-bootstrap.tar.gz' \
         | sha256sum --check --strict \
     && mkdir -p /opt/swift-bootstrap \
-    && bsdtar --extract --gzip \
+    && tar --extract --gzip \
         --file /tmp/swift-bootstrap.tar.gz \
         --directory /opt/swift-bootstrap \
         --strip-components=1 \
     && rm -f /tmp/swift-bootstrap.tar.gz \
     && /opt/swift-bootstrap/usr/bin/swiftc -print-target-info \
         | grep --fixed-strings 'aarch64-unknown-linux-gnu'
+
+RUN curl --fail --location --output /tmp/cmake.tar.gz \
+        https://github.com/Kitware/CMake/releases/download/v3.30.2/cmake-3.30.2-linux-aarch64.tar.gz \
+    && echo 'd18f50f01b001303d21f53c6c16ff12ee3aa45df5da1899c2fe95be7426aa026  /tmp/cmake.tar.gz' \
+        | sha256sum --check --strict \
+    && mkdir -p /opt/cmake \
+    && tar --extract --gzip \
+        --file /tmp/cmake.tar.gz \
+        --directory /opt/cmake \
+        --strip-components=1 \
+    && rm -f /tmp/cmake.tar.gz \
+    && /opt/cmake/bin/cmake --version \
+        | grep --fixed-strings 'cmake version 3.30.2'
 
 RUN usermod \
         --login nucleus-build \
@@ -79,25 +68,20 @@ RUN usermod \
         --shell /bin/bash \
         ubuntu \
     && groupmod --new-name nucleus-build ubuntu \
-    && usermod \
-        --groups '' \
-        --comment 'Nucleus Swift Build' \
-        nucleus-build
+    && usermod --groups '' nucleus-build
 
-COPY --chmod=0755 entrypoint.sh /usr/local/bin/nucleus-swift-build
-COPY --chmod=0755 android-clang /usr/local/bin/nucleus-android-clang
-COPY --chmod=0755 android-clang++ /usr/local/bin/nucleus-android-clang++
+COPY --chmod=0755 entrypoint.sh /usr/local/bin/nucleus-runtime-build
+COPY --chmod=0755 nucleus-x86_64-swiftc /usr/local/bin/
 
 USER nucleus-build
 WORKDIR /src
 
-ENV ANDROID_NDK_HOME=/opt/android-ndk-r30-beta2 \
-    CCACHE_COMPILERCHECK=content \
+ENV CCACHE_COMPILERCHECK=content \
     HOME=/home/nucleus-build \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    PATH=/opt/cmake/bin:/opt/swift-bootstrap/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PATH=/opt/cmake/bin:/opt/swift-bootstrap/usr/bin:/usr/lib/ccache:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     SWIFTC=/opt/swift-bootstrap/usr/bin/swiftc \
     TZ=UTC
 
-ENTRYPOINT ["/usr/local/bin/nucleus-swift-build"]
+ENTRYPOINT ["/usr/local/bin/nucleus-runtime-build"]

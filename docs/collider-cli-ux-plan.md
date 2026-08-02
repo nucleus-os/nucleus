@@ -508,7 +508,7 @@ Do not split ordinary commands into separate binaries in this plan. Record per-t
 ```text
 FAILED  core.build
 status: 1
-command: swift build --package-path core
+command: swift build --package-path .
 working directory: /workspace/core
 
 … bounded stage-log tail …

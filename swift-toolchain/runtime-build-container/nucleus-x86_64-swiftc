@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+arguments=()
+resource_dir=
+is_link=false
+previous=
+for argument in "$@"; do
+    if test "$previous" = -resource-dir; then
+        resource_dir=$argument
+    fi
+    case "$argument" in
+        -fuse-ld=lld) ;;
+        -emit-library | -emit-executable)
+            is_link=true
+            arguments+=("$argument")
+            ;;
+        *.o)
+            if test "$previous" != -o && test -f "$argument"; then
+                is_link=true
+            fi
+            arguments+=("$argument")
+            ;;
+        *) arguments+=("$argument") ;;
+    esac
+    previous=$argument
+done
+
+if test "$is_link" = true && test -n "$resource_dir"; then
+    runtime_root=$resource_dir
+    for argument in "${arguments[@]}"; do
+        case "$argument" in
+            -static-stdlib | -static-executable)
+                runtime_root=${resource_dir%/swift}/swift_static
+                ;;
+        esac
+    done
+    runtime_object=$runtime_root/linux/x86_64/swiftrt.o
+    if ! test -f "$runtime_object"; then
+        echo "error: missing x86_64 Swift runtime object: $runtime_object" >&2
+        exit 1
+    fi
+    # The official bootstrap driver always prefers an SDK-relative swiftrt.o.
+    # The package-only sysroot deliberately has no Swift overlay, so suppress
+    # that implicit input and supply the just-built target runtime object.
+    arguments+=("-nostartfiles" "$runtime_object")
+fi
+
+exec /opt/swift-bootstrap/usr/bin/swiftc -use-ld=lld "${arguments[@]}"

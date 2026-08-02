@@ -42,11 +42,6 @@ private let diagnosticLeaves: [[String]] = [
     ["cache", "prune"],
 ]
 
-private let dryRunLeaves: [[String]] = [
-    ["toolchain", "install"],
-    ["toolchain", "uninstall"],
-]
-
 private let controlFreeLeaves: [[String]] = {
     var leaves = [
         ["sanitize"],
@@ -128,19 +123,6 @@ func nonTaskLeavesExposeOnlyTheirDeclaredControls() throws {
                 "--explain",
                 "--verbose",
                 "--quiet",
-                "--run-id", "not-supported",
-            ])
-    }
-
-    for path in dryRunLeaves {
-        _ = try ColliderCommand.parseAsRoot(path + ["--dry-run"])
-        awaitRejects(
-            path,
-            options: [
-                "--explain",
-                "--verbose",
-                "--quiet",
-                "--json",
                 "--run-id", "not-supported",
             ])
     }

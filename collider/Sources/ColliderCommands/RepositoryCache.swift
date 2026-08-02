@@ -56,7 +56,10 @@ struct RepositoryCache {
             ("checkout-state", context.layout.state),
             ("downloads", cache.appendingPathComponent("downloads")),
             ("native-sdk", cache.appendingPathComponent("nucleus-native-sdk")),
-            ("swift-platforms", cache.appendingPathComponent("swift-platforms")),
+            (
+                "swift-target-sdks",
+                cache.appendingPathComponent("swift-target-sdks")
+            ),
             ("chromium", cache.appendingPathComponent("chromium")),
         ]
     }

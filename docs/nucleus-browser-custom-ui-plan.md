@@ -187,7 +187,7 @@ The ABI does not use:
   lifecycle callback.
 
 Swift product modules do not import a C++ module. `NucleusBrowserRuntime` consumes a C target that
-declares the ABI, following the workspace's existing non-C++ module boundary rules.
+declares the ABI, following the workspace's existing opaque-handle boundary rules.
 
 ## Hosted page composition
 

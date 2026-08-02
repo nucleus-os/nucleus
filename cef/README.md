@@ -62,5 +62,6 @@ Published layout:
   artifacts-current -> current-release/artifacts
 ```
 
-The shell consumes `dist/current/Release/libcef.so`, its matching
-headers/wrapper, and resources from the same immutable generation.
+The future shell browser-service integration will consume
+`dist/current/Release/libcef.so`, its matching headers/wrapper, and resources
+from the same immutable generation. No current shell target links CEF.

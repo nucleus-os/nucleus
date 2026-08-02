@@ -108,7 +108,7 @@ Architecture sketch (rough — concrete plan when the project actually starts):
 - **TTS engine.** Integrates with `speech-dispatcher` (the right Linux TTS abstraction). Don't reinvent TTS; speech-dispatcher routes to whichever TTS engine the user prefers (eSpeak NG, Mimic 3, system TTS).
 - **Focus and gesture layer.** Compositor integration via the focus-architecture work (`is_key` and `front_process` observables) and the trackpad gestures work (`docs/compositor-trackpad-gestures.md`'s gesture pipeline). The screen reader knows which control has focus, can highlight it via a native overlay surface (or via the AppKit-alike once shell widgets are real), and can be navigated with custom gestures.
 - **Command surface.** Keyboard shortcuts (read next item, skip headings, list links, etc.) — VoiceOver-style command set as the parity reference. Possibly voice control later.
-- **Configuration.** Voice, pace, verbosity, hint level, language — KDL config per `docs/compositor-configuration-system.md`.
+- **Configuration.** Voice, pace, verbosity, hint level, and language extend the typed shell configuration projection.
 - **Implementation language.** Probably a Swift app on the AppKit-alike (eats own dogfood — the screen reader's own UI is accessible via the same machinery it uses to read other apps). Alternative: native Zig service. The Swift app path is more consistent with the documented direction once shell widgets and AppKit-alike both exist.
 
 **Scope:** comparable to one of the shell widgets, possibly larger. Multi-quarter effort. Real engineering investment, not a side project.
@@ -130,7 +130,7 @@ Components:
 - **Audio capture.** Reuses the screen-recording plan's `AudioAdapter` infrastructure (`docs/screen_recording_plan.md` Phase 11). Same PipeWire monitor-source / microphone-source paths; same `SCAudioFrame` shape. Live captions subscribes to those frames instead of feeding them to an encoder.
 - **Speech-to-text.** whisper.cpp (or a Distil-Whisper variant for lower latency). Local, fast, real-time on modern hardware, multilingual. Output is timestamped text segments.
 - **Captions overlay.** A compositor-rendered surface — native Zig + Skia first, eventually a Swift app on the AppKit-alike. Configurable position (bottom of screen vs top), font size, opacity, language hint.
-- **Configuration.** Source selection (system audio, mic, specific app), language, latency-vs-accuracy tradeoff (smaller whisper model = faster + less accurate), model loading at startup vs on-demand. KDL config.
+- **Configuration.** Source selection, language, latency/accuracy policy, and model-loading policy extend the typed shell configuration projection.
 
 **Scope:** smaller than Layer 3 because the heavy lifting (whisper.cpp, audio capture) exists upstream. The Nucleus-side work is the captions overlay, the audio routing config, and the integration glue.
 
@@ -178,7 +178,7 @@ The catalyst dynamic: shipping accessibility-first means real-world users with r
 
 - `docs/screen_recording_plan.md` — Phase 11's `AudioAdapter` infrastructure is shared with Layer 4 (live captions).
 - `docs/compositor-trackpad-gestures.md` — gesture pipeline is consumed by Layer 3 for VoiceOver-style gesture navigation.
-- `docs/compositor-configuration-system.md` — KDL config is the substrate for Layer 3 + Layer 4 user settings.
+- `compositor-configuration-system.md` — the configuration service is the substrate for Layer 3 and Layer 4 user settings.
 
 ## Out of scope for this direction doc
 

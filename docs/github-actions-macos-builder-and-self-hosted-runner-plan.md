@@ -4,13 +4,13 @@
 
 The M2 Ultra is the primary Nucleus development and build host. The
 authoritative development workspace lives on M2-owned storage in a persistent,
-digest-selected `linux/amd64` development machine. Developer computers are
+digest-selected `linux/arm64` development machine. Developer computers are
 replaceable editor and terminal clients; their packages, paths, caches, and
 operating systems never enter a Nucleus build identity.
 
-Linux products compile in separate digest-selected `linux/amd64` OCI images
-through Apple `container` and Rosetta. macOS products compile natively as
-`macOS/arm64`. The persistent development machine never produces a candidate or
+Linux host tools execute in separate digest-selected `linux/arm64` OCI images
+through Apple `container`; those tools cross-compile Linux/amd64 artifacts.
+macOS products compile natively as `macOS/arm64`. The persistent development machine never produces a candidate or
 release artifact directly. Build artifacts are qualified on the operating
 system, architecture, kernel, graphics stack, and hardware they claim to
 support.
@@ -63,16 +63,21 @@ that contract. Behavioral tests cover both translations and planning evidence.
 
 The Apple backend is implemented but not hardware-qualified. The M2 Ultra now
 runs macOS 27.0 build `26A5388g`, Xcode 27 beta 4 build `27A5228h`, Apple
-`container` 1.2.0, and Rosetta. Explicit `linux/amd64` execution passes on the
+`container` 1.2.0. Native `linux/arm64` execution passes on the
 host-only `nucleus-build-internal` network, and the declared case-sensitive
 APFS volumes are provisioned. Collider's macOS graph compiles through the
 public Apple Swift surface and the focused builder-doctor suite passes under
 the selected Xcode. Native macOS builds now use that Xcode toolchain directly.
-The generated Linux amd64 Swift toolchain, Foundation, SwiftAndroid runtimes,
-native dependencies, and builder smoke tests use only the pinned Linux amd64
-OCI image on both Apple `container` and Podman. Full Xcode is required because
-Command Line Tools does not ship the Swift Testing macro plugin used by the
-repository tests.
+Swift compilers and LLVM are no longer built from source. Collider uses an
+official Linux/arm64 Swift compiler in a native Apple container to cross-build
+only the Nucleus Linux/amd64 runtime and SDK overlays against a pinned,
+libc++-only Ubuntu package sysroot. SDK assembly then runs natively on macOS
+with the signed Swift.org macOS compiler and official Android SDK. Xcode
+supplies the macOS SDK and developer tools. Native Linux dependencies and
+Linux-only integration work continue to use pinned Linux/arm64 OCI images and
+declare their Linux/amd64 artifact target independently. Full Xcode is required
+because Command Line Tools does not provide the complete macOS SDK and test
+tooling contract.
 
 Apple `container` does not restore its dynamically bootstrapped launchd
 registration after reboot. Its API server and helpers are launch agents that
@@ -92,9 +97,9 @@ The final topology contains these distinct roles:
 | --- | --- | --- |
 | Hosted verification | Disposable GitHub-hosted worker | Untrusted pull-request formatting, policy, source-lock, and focused unit validation |
 | Development gateway | Native service on the M2 Ultra | Authenticated remote access, editor tunneling, and development-machine lifecycle |
-| Development machine | Persistent `linux/amd64` Apple container machine | Source checkout, uncommitted work, shell, editor server, language services, and Collider client |
+| Development machine | Persistent `linux/arm64` Apple container machine | Source checkout, uncommitted work, shell, editor server, language services, and Collider client |
 | macOS builder | Native `macOS/arm64` environment on the M2 Ultra | macOS Swift toolchain, Apple-platform products, and native macOS validation |
-| Linux builder | Apple `container` on the M2 Ultra | All Linux compilation in pinned `linux/amd64` OCI images through Rosetta |
+| Linux builder | Apple `container` on the M2 Ultra | Linux-native C/C++ dependency builds and Linux-only build tools in pinned OCI images |
 | Linux qualifier | Real `Linux/x86_64` worker | Loader, libc, sandbox, io_uring, process, integration, and performance qualification |
 | GPU/DRM qualifier | Real `Linux/x86_64` Nucleus target hardware | Vulkan, DRM, GBM, DMA-BUF, synchronization, scanout, input, display, and session qualification |
 | Publisher | Protected isolated environment | Signing, provenance attestation, release publication, and channel advancement |
@@ -122,7 +127,7 @@ runner:
 executor:
   kind: oci
   backend: apple-container
-  platform: linux/amd64
+  platform: linux/arm64
 
 artifact:
   operatingSystem: linux
@@ -130,15 +135,17 @@ artifact:
   abi: glibc
 ```
 
-The initial production policy uses `linux/amd64` builders for every Linux
-product. AOSP, Chromium/CEF, the Linux Swift host toolchain, SwiftAndroid,
-Skia, React Native native dependencies, and Linux native support libraries all
-retain one amd64 build graph. Nucleus does not add parallel ARM builder paths.
+The production policy uses `linux/arm64` OCI builders for Linux-native host
+tools. AOSP, Chromium/CEF, Skia, React Native native dependencies, and Linux
+native support libraries retain one Linux/amd64 artifact graph through their
+supported target/cross-compilation controls.
+Swift product compilation uses the signed macOS host compiler with the pinned
+Linux amd64 target SDK; it does not require an amd64 host Swift toolchain or an
+OCI executor. Nucleus does not add a second source-built Swift pipeline.
 
-Native ARM execution is reserved for macOS products. A Linux build may move to
-native ARM execution only after its complete host-tool closure and target
-cross-compilation contract have separate qualification. That is a future
-architecture migration, not part of this plan.
+Linux host execution is native arm64. Linux/amd64 binaries are never executed
+on the Mac; real x86_64 workers perform loader, kernel, graphics, integration,
+and performance qualification. There is no Rosetta or QEMU build lane.
 
 ## Phase 1: Close the Public-Repository Trust Boundary
 
@@ -218,8 +225,7 @@ Both executors enforce the same contract and produce the same structured
 execution evidence. Recipes never construct backend CLI arguments.
 
 The Apple backend uses the supported `container` command on macOS 26 or newer.
-It requests `linux/amd64` explicitly and requires Rosetta availability before
-building. Collider does not implement a custom Virtualization.framework or
+It requests `linux/arm64` explicitly. Collider does not implement a custom Virtualization.framework or
 Containerization.framework VM manager.
 
 Pin the exact Apple `container` release used by provisioning and CI. Keep every
@@ -252,7 +258,7 @@ Define a read-only macOS builder doctor lane. It requires:
   supplies the Swift Testing macro plugin required by the repository test
   targets, so Command Line Tools alone does not satisfy the lane;
 - Apple `container` and its persistent builder-login launch agent;
-- Rosetta availability for Linux VMs;
+- native Linux/arm64 container execution;
 - sufficient CPU, memory, and disk allocation;
 - a case-sensitive build volume;
 - the selected Xcode Swift compiler for native macOS work and the pinned Linux
@@ -262,7 +268,7 @@ Define a read-only macOS builder doctor lane. It requires:
 
 Move all machine mutation into the runner image or host provisioning process.
 Collider setup and CI jobs never install packages, select Xcode with `sudo`,
-install Rosetta interactively, or modify system services.
+or modify system services.
 
 Do not use the ordinary macOS home directory for large Linux build trees.
 Apple-container VM filesystems and Collider-owned cache volumes hold Chromium,
@@ -276,8 +282,8 @@ Provision the first M2 Ultra executor in this order:
    27.0 build `26A5388g`;
 2. register its builder-login launch agent and prove it restores the complete
    service set after restart and builder login without an authorization prompt;
-3. install Rosetta through host provisioning and prove an explicit
-   `linux/amd64` container executes an amd64 binary;
+3. prove an explicit `linux/arm64` container executes an arm64 binary and an
+   amd64 target build emits x86_64 ELF without executing it;
 4. create the internal host-only network named
    `nucleus-build-internal`, with no external routing or DNS;
 5. allocate the case-sensitive Collider storage roots and apply their quotas;
@@ -311,7 +317,7 @@ snapshots are protected data. Build trees and caches are reconstructible data.
 ## Phase 5: Provision the Persistent Remote Development Environment
 
 Add a source-controlled development-machine image under `development/`. It is
-a digest-selected `linux/amd64` OCI image. It contains the interactive shell,
+a digest-selected `linux/arm64` OCI image. It contains the interactive shell,
 Git and SSH clients, Collider
 client, Swift and C/C++ language services, TypeScript and React Native editor
 tooling, Android inspection tools, debuggers, and editor-server prerequisites.
@@ -327,7 +333,7 @@ developer computer's filesystem.
 
 Add an `AppleContainerMachine` adapter to Collider for create, inspect, start,
 stop, update, and recovery operations. The adapter requires the selected
-`linux/amd64` image and rejects host-architecture fallback. Updating the image
+`linux/arm64` image and rejects host-architecture fallback. Updating the image
 recreates the environment from its declaration while restoring workspace
 content from a content-addressed source snapshot.
 
@@ -596,7 +602,7 @@ worker service, storage, and remote access. The coordinator owns the remaining
 a floor of four CPU cores and 24 GiB; a heavy build receives at most 16 CPU
 cores and 88 GiB. Idle capacity above those floors may be borrowed by interactive
 work but is reclaimed before admitting a heavy task. The M2 Ultra admits only
-one heavy build at a time. Chromium, AOSP, and the Swift toolchain never overlap
+one heavy build at a time. Chromium, AOSP, and the Swift target runtime never overlap
 on the 128 GB host.
 
 One persistent coordinator owns development-machine allocation, a weighted CPU
@@ -657,8 +663,8 @@ explicit content-addressed caches and immutable artifacts. Forward runner
 service logs and Collider durable run records to external storage before the
 environment is destroyed.
 
-The macOS runner image owns Xcode, Apple `container`, Rosetta, and host tools.
-The pinned Linux amd64 Swift builder image owns its bootstrap compiler. The
+The macOS runner image owns Xcode, Apple `container`, and host tools. The
+pinned Linux/arm64 Swift runtime-builder image owns its official bootstrap compiler. The
 Linux qualifier image owns the selected
 distribution, kernel contract, loader, system libraries, and test tools. The
 GPU worker additionally owns its pinned kernel, firmware, and driver stack.
@@ -678,8 +684,8 @@ configuration service. Registration credentials never enter job environments.
 
 ## Phase 13: Establish Native x86_64 and Hardware Qualification
 
-Provision a real Linux x86_64 qualifier for every Linux product built through
-Rosetta. Define it through a `QualifierCapabilityManifest` containing the
+Provision a real Linux x86_64 qualifier for every cross-built Linux/amd64
+product. Define it through a `QualifierCapabilityManifest` containing the
 distribution image, architecture, kernel, loader, system libraries, CPU
 features, sandbox capabilities, test tools, and permitted devices. Provision
 the operating-system state from that declaration; never encode the current
@@ -698,8 +704,9 @@ workers add pinned hardware, firmware, kernel, and driver identities to the same
 capability model. They run the existing loader, headless, DRM, GBM, DMA-BUF,
 explicit-sync, scanout, display, input, suspend, and session gates.
 
-Rosetta results are build evidence only. They never satisfy a native x86_64,
-kernel, GPU, DRM, sandbox-performance, or hardware qualification requirement.
+Cross-build inspection is build evidence only. It never satisfies a native
+x86_64, kernel, GPU, DRM, sandbox-performance, or hardware qualification
+requirement.
 
 ### Exit Gate
 
@@ -748,9 +755,10 @@ and reclaimable storage.
 Run acceptance in this order:
 
 1. provision a clean macOS ARM64 runner image on the M2 Ultra;
-2. validate the pinned Apple `container`, Rosetta, case-sensitive storage, and
+2. validate the pinned Apple `container`, native Linux/arm64 execution,
+   case-sensitive storage, and
    complete noninteractive host contract;
-3. provision the digest-selected `linux/amd64` development machine with no
+3. provision the digest-selected `linux/arm64` development machine with no
    macOS home mount or privileged host socket;
 4. connect from a clean remote client, open the editor workspace, and prove the
    shell, language servers, Git, and Collider client execute in Linux on the
@@ -770,8 +778,10 @@ Run acceptance in this order:
 10. queue an Actions build concurrently and prove it cannot bypass the shared
     coordinator or overcommit CPU, memory, temporary storage, or persistent
     storage;
-11. build every Linux builder image for the explicit `linux/amd64` platform;
-12. build the Linux Swift host toolchain and both supported SwiftAndroid SDKs;
+11. build every Linux builder image for the explicit `linux/arm64` platform;
+12. cross-build the Nucleus Linux/amd64 Swift runtime and SDK overlays with the
+    official Linux/arm64 bootstrap compiler, assemble the SDK with the official
+    macOS compiler, and provision both supported SwiftAndroid SDKs;
 13. build host and Android Skia;
 14. build React Native native dependencies and host archives;
 15. build Chromium and CEF;
@@ -788,9 +798,9 @@ Run acceptance in this order:
 22. pass physical GPU/DRM qualification on each claimed hardware class;
 23. verify all selected source repositories and submodules remain clean;
 24. verify every build output exists only in a declared writable root;
-25. verify no build task used an ARM Linux image, undeclared host compiler,
-    host package, mutable tag, network fallback, writable source mount, or
-    developer-specific path;
+25. verify no build task executed an amd64 binary on the Mac, used an undeclared
+    host compiler, host package, mutable tag, network fallback, writable source
+    mount, or developer-specific path;
 26. verify the current Ubuntu development computer can be unavailable for the
     complete development, build, candidate, and publication sequence;
 27. execute the protected publication lane against qualified candidate
@@ -800,15 +810,15 @@ Run acceptance in this order:
 
 The M2 Ultra owns the authoritative Nucleus development workspace and supplies
 the primary CPU, memory, and storage capacity for builds. A persistent,
-digest-selected `linux/amd64` development machine holds source, uncommitted
+digest-selected `linux/arm64` development machine holds source, uncommitted
 work, editor services, and interactive tools. Developer computers are thin
 clients and may be replaced or disconnected without affecting source or work.
 
-Apple `container` presents the existing Linux build systems with separate
-ordinary `linux/amd64` OCI environments through Rosetta, preserving one x86_64
-product architecture and one build graph. The persistent development machine
-never supplies ambient dependencies to those executors. macOS artifacts remain
-native ARM64 products.
+Apple `container` presents the Linux build systems with separate native
+`linux/arm64` OCI environments. They use explicit cross-compilation contracts
+to preserve one Linux/amd64 product architecture and one build graph. The
+persistent development machine never supplies ambient dependencies to those
+executors. macOS artifacts remain native ARM64 products.
 
 Collider owns platform selection, container policy, task ordering, artifact
 identity, storage lifecycle, qualification requirements, and publication
@@ -826,7 +836,7 @@ work.
 
 Public pull requests never execute on Nucleus infrastructure. Build workers
 hold no release authority. Native x86_64 and physical hardware runners provide
-the evidence that translated builds cannot provide. Those qualifiers are
+the evidence that cross-build inspection cannot provide. Those qualifiers are
 replaceable implementations of declared capability manifests rather than
 dependencies on one Ubuntu installation. Every published product is traceable
 from exact source and builder identities through native qualification to its

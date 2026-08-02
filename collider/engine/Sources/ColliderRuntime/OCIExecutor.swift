@@ -23,7 +23,7 @@ protocol OCIExecutor: Sendable {
     func removeImageCommand(
         _ imageID: String,
         preparation: OCIImagePreparation
-    ) -> CommandSpec
+    ) -> CommandSpec?
 
     func runCommand(
         _ execution: OCIExecution,
@@ -97,7 +97,7 @@ struct PodmanExecutor: OCIExecutor {
     func removeImageCommand(
         _ imageID: String,
         preparation: OCIImagePreparation
-    ) -> CommandSpec {
+    ) -> CommandSpec? {
         CommandSpec(
             executable: executable,
             arguments: ["image", "rm", imageID],
@@ -221,15 +221,8 @@ struct AppleContainerExecutor: OCIExecutor {
     func removeImageCommand(
         _ imageID: String,
         preparation: OCIImagePreparation
-    ) -> CommandSpec {
-        CommandSpec(
-            executable: executable,
-            arguments: [
-                "image", "delete", "--force", appleImageReference(imageID),
-            ],
-            workingDirectory: preparation.context,
-            environment: preparation.environment,
-            output: .logged)
+    ) -> CommandSpec? {
+        nil
     }
 
     func runCommand(

@@ -41,7 +41,7 @@ let package = Package(
                 "NativeBuilderColliderRecipe",
                 "ReactNativeColliderRecipe",
                 "ShellColliderRecipe",
-                "SwiftPlatformColliderRecipe",
+                "SwiftTargetSDKColliderRecipe",
                 "TracyColliderRecipe",
                 "VulkanColliderRecipe",
                 "WaylandColliderRecipe",
@@ -80,7 +80,7 @@ let package = Package(
             name: "ShellColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
         .target(
-            name: "SwiftPlatformColliderRecipe",
+            name: "SwiftTargetSDKColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
         .target(
             name: "TracyColliderRecipe",
@@ -109,15 +109,16 @@ let package = Package(
                     package: "Nucleus",
                     condition: .when(platforms: [.linux])),
                 "ReactNativeColliderRecipe",
+                "SwiftTargetSDKColliderRecipe",
                 "TracyColliderRecipe",
                 "VulkanColliderRecipe",
                 "WaylandColliderRecipe",
             ]),
         .testTarget(
-            name: "SwiftPlatformColliderRecipeTests",
+            name: "SwiftTargetSDKColliderRecipeTests",
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
-                "SwiftPlatformColliderRecipe",
+                "SwiftTargetSDKColliderRecipe",
             ]),
         .testTarget(
             name: "ShellColliderRecipeTests",

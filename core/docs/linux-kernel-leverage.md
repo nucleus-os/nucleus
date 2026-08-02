@@ -22,7 +22,7 @@ Everything else is tier-2 or sandboxing groundwork.
 
 **What landed:** mainline in 6.12. Lets a userspace process load a BPF program that implements a CPU scheduler. The kernel hands control to BPF for picking the next task. A scheduler can be hot-loaded, swapped, or unloaded without a reboot; the kernel falls back to CFS/EEVDF if the BPF scheduler crashes.
 
-Production schedulers in `~/Developer/scx` (unmodified upstream clone): scx_lavd, scx_rusty, scx_layered, scx_bpfland, scx_flash, and ~10 more. Each is a Rust + BPF crate.
+Upstream sched-ext provides production schedulers including scx_lavd, scx_rusty, scx_layered, scx_bpfland, and scx_flash. Each is a Rust and BPF crate.
 
 **Why it matters for nucleus:**
 - Frame-deadline-aware scheduling. The compositor knows from `DisplayLink.predictedPresentNs(0)` exactly when the next vblank is. A Nucleus-aware scheduler can boost the render thread on the run-up to that deadline and demote afterward, rather than relying on CFS heuristics that don't know what a frame is.

@@ -183,14 +183,18 @@ struct WorkspaceDoctor {
         [swiftVersion(scope: "toolchain"), ociExecutor(scope: "toolchain")]
             + executables(
                 [
-                    "swift", "swiftc", "git", "cmake", "ninja", "python3",
-                    "tar", "ccache",
+                    "swift", "git", "pkgutil", "tar", "xcrun",
                 ],
                 scope: "toolchain")
             + paths(
                 [
-                    "swift-toolchain/Package.swift",
-                    "swift-toolchain/nucleus-build-presets.ini",
+                    "swift-toolchain/target-sdk.lock.json",
+                    "swift-toolchain/validate-target-sdk-artifacts.sh",
+                    "swift-toolchain/prepare-linux-sysroot.sh",
+                    "swift-toolchain/nucleus-target-runtime-presets.ini",
+                    "swift-toolchain/runtime-build-container/Containerfile",
+                    "swift-toolchain/source/swift/utils/build-script",
+                    "swift-toolchain/source/swift-sdk-generator/Package.swift",
                 ],
                 under: context.root,
                 scope: "toolchain")
