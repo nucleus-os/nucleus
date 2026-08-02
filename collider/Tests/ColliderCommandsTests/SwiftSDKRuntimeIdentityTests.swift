@@ -12,8 +12,8 @@ import Testing
         .deletingLastPathComponent()
         .deletingLastPathComponent()
     let recipe = root.appendingPathComponent("swift-toolchain", isDirectory: true)
-    let lock = try SwiftTargetSDKLock.load(
-        from: FilePath(recipe.appendingPathComponent("target-sdk.lock.json").path))
+    let inputs = try SwiftTargetSDKInputs.load(
+        from: FilePath(recipe.appendingPathComponent("target-sdk-inputs.json").path))
     let builder = FilePath(
         recipe.appendingPathComponent("runtime-build-container", isDirectory: true).path)
     let preset = FilePath(
@@ -21,34 +21,34 @@ import Testing
     let sysroot = FilePath(
         recipe.appendingPathComponent("prepare-linux-sysroot.sh").path)
     let arm64 = try #require(
-        lock.linuxTargets.first { $0.architecture == .arm64 })
-    let x86_64 = try #require(
-        lock.linuxTargets.first { $0.architecture == .x86_64 })
+        inputs.linuxTargets.first { $0.architecture == .arm64 })
+    let amd64 = try #require(
+        inputs.linuxTargets.first { $0.architecture == .amd64 })
 
     let first = try swiftTargetRuntimeBuildID(
-        lock: lock,
+        inputs: inputs,
         target: arm64,
         sourceID: "source-a",
         runtimeBuilderContext: builder,
         runtimePreset: preset,
         sysrootPreparer: sysroot)
     let repeated = try swiftTargetRuntimeBuildID(
-        lock: lock,
+        inputs: inputs,
         target: arm64,
         sourceID: "source-a",
         runtimeBuilderContext: builder,
         runtimePreset: preset,
         sysrootPreparer: sysroot)
     let changedSource = try swiftTargetRuntimeBuildID(
-        lock: lock,
+        inputs: inputs,
         target: arm64,
         sourceID: "source-b",
         runtimeBuilderContext: builder,
         runtimePreset: preset,
         sysrootPreparer: sysroot)
     let otherArchitecture = try swiftTargetRuntimeBuildID(
-        lock: lock,
-        target: x86_64,
+        inputs: inputs,
+        target: amd64,
         sourceID: "source-a",
         runtimeBuilderContext: builder,
         runtimePreset: preset,

@@ -187,14 +187,14 @@ struct WorkspaceDoctor {
                 ],
                 scope: "swift-sdk")
             + paths(
-                swiftTargetRuntimeSourcePaths
-                    + [
-                        "swift-toolchain/target-sdk.lock.json",
-                        "swift-toolchain/validate-target-sdk-artifacts.sh",
-                        "swift-toolchain/prepare-linux-sysroot.sh",
-                        "swift-toolchain/nucleus-target-runtime-presets.ini",
-                        "swift-toolchain/runtime-build-container/Containerfile",
-                    ],
+                [
+                    "swift-toolchain/source",
+                    "swift-toolchain/target-sdk-inputs.json",
+                    "swift-toolchain/validate-target-sdk-artifacts.sh",
+                    "swift-toolchain/prepare-linux-sysroot.sh",
+                    "swift-toolchain/nucleus-target-runtime-presets.ini",
+                    "swift-toolchain/runtime-build-container/Containerfile",
+                ],
                 under: context.root,
                 scope: "swift-sdk")
     }

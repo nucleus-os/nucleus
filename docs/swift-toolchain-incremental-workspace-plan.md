@@ -28,17 +28,19 @@ Android arm64, and Android amd64 on macOS. No target executable runs on the Mac.
 
 ## Architecture
 
-The checked-in lock pins:
+The checked-in external-input manifest pins only artifacts outside git:
 
 - the signed Swift.org macOS host package;
 - the official Android artifact bundle;
 - exact Ubuntu arm64 and amd64 package closures for glibc, libc++, Foundation
-  native dependencies, headers, and the ELF interpreters;
-- the `swift-sdk-generator` source revision.
+  native dependencies, headers, and the ELF interpreters.
+
+Root gitlinks are the sole authority for every Swift source revision, including
+`swift-sdk-generator`.
 
 The Linux target pipeline is strictly ordered:
 
-1. Collider downloads and verifies the locked inputs.
+1. Collider downloads and verifies the pinned external inputs.
 2. `prepare-linux-sysroot.sh` extracts only Ubuntu packages into a fresh
    package-only sysroot and rejects every libstdc++-shaped path.
 3. Collider prepares the digest-addressed native Linux/arm64 runtime-builder
@@ -68,10 +70,13 @@ The pinned source closure is `libxml2`, `llvm-project`, `swift`, `swift-collecti
 `swift-corelibs-xctest`, `swift-experimental-string-processing`,
 `swift-foundation`, `swift-foundation-icu`, `swift-testing`, and
 `swift-sdk-generator`. Collider refuses dirty or mismatched source before task
-construction. Those exact gitlinks, the runtime preset, builder context,
-package lock, sysroot preparer, Xcode identity, NDK identity, validation
-fixture, and validator select the immutable generation. Unrelated Swift
-compiler-tooling and platform repositories are not source-identity inputs.
+construction. This check enforces the root gitlinks; it does not compare them
+with a second revision manifest. Those exact gitlinks, the runtime preset,
+builder context, external-input manifest, sysroot preparer, Xcode identity,
+NDK identity,
+validation fixture, and validator select the immutable generation. Unrelated
+Swift compiler-tooling and platform repositories are not source-identity
+inputs.
 
 `llvm-project` supplies the CMake source tree that upstream `build-script`
 requires while configuring a cross-compilation host. The runtime pipeline sets
@@ -133,10 +138,10 @@ Phase gate:
 
 ## Phase 3 — Assemble Without a Prebuilt Linux Runtime
 
-Remove the Linux target package from the lock and download graph. Pass the
-qualified runtime install root directly to
+Remove the Linux target package from the external-input manifest and download
+graph. Pass the qualified runtime install root directly to
 `swift-sdk-generator --target-swift-package-path`. The sysroot task depends
-only on locked Ubuntu packages.
+only on pinned Ubuntu packages.
 
 Phase gate:
 

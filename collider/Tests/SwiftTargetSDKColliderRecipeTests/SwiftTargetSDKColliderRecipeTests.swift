@@ -11,12 +11,12 @@ import Testing
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent().path)
-    let lockFile = root.appending("swift-toolchain/target-sdk.lock.json")
-    let lock = try SwiftTargetSDKLock.load(from: lockFile)
+    let inputsFile = root.appending("swift-toolchain/target-sdk-inputs.json")
+    let inputs = try SwiftTargetSDKInputs.load(from: inputsFile)
     let temporary = FilePath(
         FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString).path)
-    let linuxTargets = lock.linuxTargets.map { target in
+    let linuxTargets = inputs.linuxTargets.map { target in
         SwiftLinuxTargetBuildConfiguration(
             target: target,
             runtimeBuildWorkspace: temporary.appending(
@@ -29,8 +29,9 @@ import Testing
                 "runtime-\(target.architecture.rawValue)/sysroot"))
     }
     let configuration = SwiftTargetSDKGenerationConfiguration(
-        lock: lock,
-        lockFile: lockFile,
+        inputs: inputs,
+        inputsFile: inputsFile,
+        androidAPILevel: 24,
         downloadRoot: temporary.appending("downloads"),
         generatorSource: root.appending("swift-toolchain/source/swift-sdk-generator"),
         generatorScratch: temporary.appending("generator"),
@@ -60,7 +61,7 @@ import Testing
     #expect(result.selected.count == 2)
     #expect(
         result.tasks.filter { $0.id.rawValue.hasPrefix("swift-sdk.download-") }.count
-            == 2 + lock.linuxTargets.flatMap(\.ubuntuPackages).count)
+            == 2 + inputs.linuxTargets.flatMap(\.ubuntuPackages).count)
     #expect(
         !result.tasks.contains { $0.id.rawValue == "swift-sdk.download-linux-target" })
     let ubuntuDownloads = result.tasks.compactMap { task -> DownloadSpec? in
@@ -69,7 +70,7 @@ import Testing
         else { return nil }
         return specification
     }
-    #expect(ubuntuDownloads.count == lock.linuxTargets.flatMap(\.ubuntuPackages).count)
+    #expect(ubuntuDownloads.count == inputs.linuxTargets.flatMap(\.ubuntuPackages).count)
     #expect(
         ubuntuDownloads.allSatisfy {
             $0.acceptedMediaTypes.contains("application/vnd.debian.binary-package")
@@ -134,23 +135,22 @@ import Testing
     }
 }
 
-@Test func checkedInTargetSDKLockHasExactDestinations() throws {
+@Test func checkedInTargetSDKInputsAreComplete() throws {
     let root = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
-    let lock = try SwiftTargetSDKLock.load(
+    let inputs = try SwiftTargetSDKInputs.load(
         from: FilePath(
             root.appendingPathComponent(
-                "swift-toolchain/target-sdk.lock.json"
+                "swift-toolchain/target-sdk-inputs.json"
             ).path))
 
-    #expect(lock.androidAPILevel == 24)
-    #expect(lock.androidBundleID.hasSuffix("_android"))
-    #expect(lock.linuxBundleID == "nucleus-swift-6.4-linux")
-    #expect(lock.linuxTargets.map(\.architecture) == [.arm64, .x86_64])
-    for target in lock.linuxTargets {
+    #expect(inputs.androidBundleID.hasSuffix("_android"))
+    #expect(inputs.linuxBundleID == "nucleus-swift-6.4-linux")
+    #expect(inputs.linuxTargets.map(\.architecture) == [.arm64, .amd64])
+    for target in inputs.linuxTargets {
         #expect(target.ubuntuPackages.count == 16)
         #expect(target.ubuntuPackages.allSatisfy { !$0.url.contains("libstdc++") })
         #expect(target.ubuntuPackages.allSatisfy { !$0.url.contains("libicu") })
@@ -162,8 +162,8 @@ import Testing
                 $0.url.hasSuffix("_\(target.architecture.debianArchitecture).deb")
             })
     }
-    #expect(lock.inputs.macOSHostPackage.sha256.count == 64)
-    #expect(lock.inputs.androidSDK.sha256.count == 64)
+    #expect(inputs.artifacts.macOSHostPackage.sha256.count == 64)
+    #expect(inputs.artifacts.androidSDK.sha256.count == 64)
 }
 
 private func ociExecutions(_ operation: TaskOperation) -> [OCIExecution] {

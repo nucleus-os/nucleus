@@ -13,7 +13,8 @@ libraries are built natively for arm64 and cross-built for amd64 because every
 Nucleus target must use libc++ uniformly. This is a target-runtime build, not a
 Swift toolchain build.
 
-`target-sdk.lock.json` pins one matching Swift 6.4 snapshot set:
+`target-sdk-inputs.json` is the external-artifact manifest for one matching
+Swift 6.4 snapshot set. It pins only inputs that gitlinks cannot represent:
 
 - the signed Swift.org macOS package providing native arm64 host tools;
 - the official Android artifact bundle;
@@ -30,13 +31,16 @@ compiler cache. Both sysroots contain libc++, never a bootstrap Swift overlay or
 libstdc++. The runtime installs are the generator's sole target-Swift inputs; an
 official Linux runtime tarball is not mixed into the SDK.
 
-The runtime source closure is `libxml2`, `llvm-project`, `swift`, `swift-collections`,
+The root gitlinks are the sole source-revision authority. The runtime source
+closure is `libxml2`, `llvm-project`, `swift`, `swift-collections`,
 `swift-corelibs-foundation`, `swift-corelibs-libdispatch`,
 `swift-corelibs-xctest`, `swift-experimental-string-processing`,
 `swift-foundation`, `swift-foundation-icu`, `swift-testing`, and
 `swift-sdk-generator`. Repositories for compiler tooling, IDE services,
 documentation tools, package management, and unrelated platforms are not SDK
-build inputs.
+build inputs. Collider reads the gitlinks from the root index, requires each
+checked-out submodule to be clean and at that commit, and fingerprints those
+gitlinks directly. It stores no expected Swift source commit in another file.
 
 Upstream `build-script` requires `llvm-project` while configuring the amd64
 cross host, but the pipeline gives that product an empty build target list and
@@ -61,9 +65,9 @@ collider swift-sdk status
 
 The active generation lives under
 `$XDG_CACHE_HOME/nucleus/swift-target-sdks/current`. Collider publishes the
-two artifact-bundle links through `~/.swiftpm/swift-sdks`. An unchanged lock,
-Xcode identity, source graph, runtime-builder image, generator source, NDK,
-validation fixture, and validator reuse the active immutable generation without
-rebuilding, downloading, assembling, validating, or publishing it again.
+two artifact-bundle links through `~/.swiftpm/swift-sdks`. Unchanged external
+inputs, Xcode identity, source graph, runtime-builder image, NDK, validation
+fixture, and validator reuse the active immutable generation without rebuilding,
+downloading, assembling, validating, or publishing it again.
 Runtime build products and ccache live outside the source submodules and remain
 reusable when a later source-addressed generation needs work.

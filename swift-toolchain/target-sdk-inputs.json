@@ -1,7 +1,5 @@
 {
-  "androidAPILevel": 24,
-  "androidBundleID": "swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_android",
-  "inputs": {
+  "artifacts": {
     "androidSDK": {
       "maximumResponseSize": 419430400,
       "sha256": "c5bb1c4399375c1a59c6aa672f3f81014e111de0d464ada8ae8cc5814ce29681",
@@ -14,8 +12,6 @@
     }
   },
   "snapshot": "swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a",
-  "swiftSDKGeneratorCommit": "7c8fd9bbed6556caf9f4d7963f63f5daaa525170",
-  "linuxBundleID": "nucleus-swift-6.4-linux",
   "linuxTargets": [
     {
       "architecture": "arm64",

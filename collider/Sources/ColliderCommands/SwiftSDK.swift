@@ -9,21 +9,6 @@ import SystemPackage
 import Darwin
 #endif
 
-let swiftTargetRuntimeSourcePaths = [
-    "swift-toolchain/source/libxml2",
-    "swift-toolchain/source/llvm-project",
-    "swift-toolchain/source/swift",
-    "swift-toolchain/source/swift-collections",
-    "swift-toolchain/source/swift-corelibs-foundation",
-    "swift-toolchain/source/swift-corelibs-libdispatch",
-    "swift-toolchain/source/swift-corelibs-xctest",
-    "swift-toolchain/source/swift-experimental-string-processing",
-    "swift-toolchain/source/swift-foundation",
-    "swift-toolchain/source/swift-foundation-icu",
-    "swift-toolchain/source/swift-sdk-generator",
-    "swift-toolchain/source/swift-testing",
-]
-
 struct RebuildOptions {
     var controls: TaskControls
 
@@ -61,8 +46,7 @@ struct SwiftTargetSDKStoragePaths: Equatable {
 }
 
 func swiftTargetSDKArtifactID(
-    lockFile: FilePath,
-    generatorSource: FilePath,
+    inputsFile: FilePath,
     validationFixture: FilePath,
     validator: FilePath,
     ndkProperties: FilePath,
@@ -73,24 +57,21 @@ func swiftTargetSDKArtifactID(
     sysrootPreparer: FilePath
 ) throws -> String {
     var encoder = CanonicalDigestEncoder()
-    encoder.append(tag: 1, bytes: try ArtifactHasher.digest(file: lockFile).bytes)
+    encoder.append(tag: 1, bytes: try ArtifactHasher.digest(file: inputsFile).bytes)
     encoder.append(
         tag: 2,
-        bytes: try ArtifactHasher.digest(tree: generatorSource).bytes)
-    encoder.append(
-        tag: 3,
         bytes: try ArtifactHasher.digest(tree: validationFixture).bytes)
-    encoder.append(tag: 4, bytes: try ArtifactHasher.digest(file: validator).bytes)
+    encoder.append(tag: 3, bytes: try ArtifactHasher.digest(file: validator).bytes)
     encoder.append(
-        tag: 5,
+        tag: 4,
         bytes: try ArtifactHasher.digest(file: ndkProperties).bytes)
-    encoder.append(tag: 6, string: xcodeIdentity)
-    encoder.append(tag: 7, string: sourceID)
+    encoder.append(tag: 5, string: xcodeIdentity)
+    encoder.append(tag: 6, string: sourceID)
     encoder.append(
-        tag: 8,
+        tag: 7,
         bytes: try ArtifactHasher.digest(tree: runtimeBuilderContext).bytes)
-    encoder.append(tag: 9, bytes: try ArtifactHasher.digest(file: runtimePreset).bytes)
-    encoder.append(tag: 10, bytes: try ArtifactHasher.digest(file: sysrootPreparer).bytes)
+    encoder.append(tag: 8, bytes: try ArtifactHasher.digest(file: runtimePreset).bytes)
+    encoder.append(tag: 9, bytes: try ArtifactHasher.digest(file: sysrootPreparer).bytes)
     let digest = ArtifactHasher.digest(bytes: encoder.bytes).description
     let hexadecimal =
         digest.hasPrefix("sha256:")
@@ -100,15 +81,15 @@ func swiftTargetSDKArtifactID(
 }
 
 func swiftTargetRuntimeBuildID(
-    lock: SwiftTargetSDKLock,
-    target: SwiftTargetSDKLock.LinuxTarget,
+    inputs: SwiftTargetSDKInputs,
+    target: SwiftTargetSDKInputs.LinuxTarget,
     sourceID: String,
     runtimeBuilderContext: FilePath,
     runtimePreset: FilePath,
     sysrootPreparer: FilePath
 ) throws -> String {
     var encoder = CanonicalDigestEncoder()
-    encoder.append(tag: 1, string: lock.snapshot)
+    encoder.append(tag: 1, string: inputs.snapshot)
     encoder.append(tag: 2, string: target.architecture.rawValue)
     for package in target.ubuntuPackages {
         encoder.append(tag: 3, string: package.url)
@@ -220,24 +201,15 @@ struct SwiftSDKCommand {
             "Swift target SDK generation requires native macOS arm64")
         #endif
         let recipeRoot = context.layout.swiftToolchain
-        let lockFile = recipeRoot.appendingPathComponent("target-sdk.lock.json")
-        let lock = try SwiftTargetSDKLock.load(from: FilePath(lockFile.path))
+        let inputsFile = recipeRoot.appendingPathComponent("target-sdk-inputs.json")
+        let inputs = try SwiftTargetSDKInputs.load(from: FilePath(inputsFile.path))
         let sourceID = try swiftTargetRuntimeSourceIdentity(
             root: context.root,
             environment: context.environment)
         let generatorSource = recipeRoot.appendingPathComponent(
             "source/swift-sdk-generator", isDirectory: true)
-        try validateGeneratorSource(
-            generatorSource,
-            expectedCommit: lock.swiftSDKGeneratorCommit,
-            environment: context.environment)
 
         let android = try AndroidToolchainVersions.load(workspaceRoot: context.root)
-        guard android.minimumSDK == lock.androidAPILevel else {
-            throw WorkspaceFailure.message(
-                "Android minSdk \(android.minimumSDK) does not match Swift SDK lock API "
-                    + "\(lock.androidAPILevel)")
-        }
         let ndkRoot = try android.ndkRoot(environment: context.environment)
         let paths = SwiftTargetSDKStoragePaths(cacheRoot: context.cacheRoot)
         let xcodeIdentity = try selectedXcodeIdentity(
@@ -268,8 +240,7 @@ struct SwiftSDKCommand {
                 "the Swift target-runtime source closure is not initialized")
         }
         let artifactID = try swiftTargetSDKArtifactID(
-            lockFile: FilePath(lockFile.path),
-            generatorSource: FilePath(generatorSource.path),
+            inputsFile: FilePath(inputsFile.path),
             validationFixture: FilePath(fixture.path),
             validator: FilePath(validator.path),
             ndkProperties: FilePath(
@@ -279,9 +250,9 @@ struct SwiftSDKCommand {
             runtimeBuilderContext: FilePath(runtimeBuilderContext.path),
             runtimePreset: FilePath(runtimePreset.path),
             sysrootPreparer: FilePath(sysrootPreparer.path))
-        let linuxTargets = try lock.linuxTargets.map { target in
+        let linuxTargets = try inputs.linuxTargets.map { target in
             let buildID = try swiftTargetRuntimeBuildID(
-                lock: lock,
+                inputs: inputs,
                 target: target,
                 sourceID: sourceID,
                 runtimeBuilderContext: FilePath(runtimeBuilderContext.path),
@@ -313,7 +284,7 @@ struct SwiftSDKCommand {
             generation: generation,
             active: active,
             discoveryRoot: discoveryRoot,
-            lock: lock,
+            inputs: inputs,
             artifactID: artifactID)
         {
             if options.controls.json {
@@ -341,8 +312,9 @@ struct SwiftSDKCommand {
             "generations/.candidate-\(artifactID)-\(runID)",
             isDirectory: true)
         let configuration = SwiftTargetSDKGenerationConfiguration(
-            lock: lock,
-            lockFile: FilePath(lockFile.path),
+            inputs: inputs,
+            inputsFile: FilePath(inputsFile.path),
+            androidAPILevel: android.minimumSDK,
             downloadRoot: FilePath(paths.downloadRoot.path),
             generatorSource: FilePath(generatorSource.path),
             generatorScratch: FilePath(paths.generatorScratch.path),
@@ -373,11 +345,11 @@ struct SwiftSDKCommand {
                     "==> \(target.target.architecture.rawValue) Linux runtime: "
                         + target.runtimeInstall.removingLastComponent().string)
             }
-            print("==> host compiler input: \(lock.snapshot)-osx.pkg")
+            print("==> host compiler input: \(inputs.snapshot)-osx.pkg")
             print("==> Linux targets: aarch64 and x86_64")
             print(
                 "==> Android targets: aarch64 and x86_64, API "
-                    + "\(lock.androidAPILevel)")
+                    + "\(android.minimumSDK)")
         }
         try await context.execute(
             tasks: taskSet.tasks,
@@ -413,14 +385,14 @@ private func reusableGeneration(
     generation: URL,
     active: URL,
     discoveryRoot: URL,
-    lock: SwiftTargetSDKLock,
+    inputs: SwiftTargetSDKInputs,
     artifactID: String
 ) -> Bool {
     let marker = generation.appendingPathComponent(
         ".nucleus-target-sdk-generation")
     guard
         (try? String(contentsOf: marker, encoding: .utf8))
-            == lock.snapshot,
+            == inputs.snapshot,
         FileManager.default.isExecutableFile(
             atPath: generation.appendingPathComponent(
                 "toolchain/usr/bin/swift"
@@ -430,7 +402,7 @@ private func reusableGeneration(
     else {
         return false
     }
-    for bundleID in [lock.linuxBundleID, lock.androidBundleID] {
+    for bundleID in [inputs.linuxBundleID, inputs.androidBundleID] {
         let name = "\(bundleID).artifactbundle"
         let bundle = generation.appendingPathComponent("swift-sdks/\(name)")
         let discovery = discoveryRoot.appendingPathComponent(name)
@@ -442,21 +414,6 @@ private func reusableGeneration(
         }
     }
     return generation.lastPathComponent == artifactID
-}
-
-private func validateGeneratorSource(
-    _ source: URL,
-    expectedCommit: String,
-    environment: [String: String]
-) throws {
-    let commit = try commandOutput(
-        executable: URL(fileURLWithPath: "/usr/bin/git"),
-        arguments: ["-C", source.path, "rev-parse", "HEAD"],
-        environment: environment)
-    guard commit == expectedCommit else {
-        throw WorkspaceFailure.message(
-            "swift-sdk-generator is \(commit); lock requires \(expectedCommit)")
-    }
 }
 
 private func swiftTargetRuntimeSourceIdentity(
@@ -479,21 +436,9 @@ private func swiftTargetRuntimeSourceIdentity(
             .trimmingCharacters(in: .whitespaces)
         return path.hasPrefix(prefix) ? path : nil
     }.sorted()
-    guard paths == swiftTargetRuntimeSourcePaths else {
-        let expected = Set(swiftTargetRuntimeSourcePaths)
-        let actual = Set(paths)
-        let missing = expected.subtracting(actual).sorted()
-        let unexpected = actual.subtracting(expected).sorted()
-        var details = [String]()
-        if !missing.isEmpty {
-            details.append("missing: \(missing.joined(separator: ", "))")
-        }
-        if !unexpected.isEmpty {
-            details.append("unexpected: \(unexpected.joined(separator: ", "))")
-        }
+    guard !paths.isEmpty else {
         throw WorkspaceFailure.message(
-            "Swift target-runtime source closure does not match the required repositories ("
-                + details.joined(separator: "; ") + ")")
+            "Swift target-runtime source graph has no pinned repositories")
     }
 
     var encoder = CanonicalDigestEncoder()
@@ -534,7 +479,7 @@ private func swiftTargetRuntimeSourceIdentity(
                 "Swift source repository has uncommitted changes: \(path)")
         }
         encoder.append(tag: 1, string: path)
-        encoder.append(tag: 2, string: actualCommit)
+        encoder.append(tag: 2, string: expectedCommit)
     }
     let digest = ArtifactHasher.digest(bytes: encoder.bytes).description
     let hexadecimal =
