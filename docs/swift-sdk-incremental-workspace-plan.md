@@ -8,7 +8,10 @@ The M2 Ultra owns the complete build graph. Host execution is native arm64.
 The selected Xcode 27 supplies the macOS host compiler, SDK, and developer
 tools. A native Linux/arm64 Apple container supplies the checksum-pinned
 official Linux bootstrap compiler.
-Rosetta, QEMU, an amd64 VM, and an amd64 build machine are absent.
+The Swift SDK build never uses Intel translation, QEMU, an amd64 VM, or an amd64
+build machine. Post-build x86_64 consumer tests may use macOS 27 Intel binary
+translation inside the Linux/arm64 container as a confidence lane; that
+execution is not part of SDK construction or native qualification.
 
 Nucleus never builds a Swift compiler, Swift driver, LLVM, Clang, LLDB,
 SourceKit-LSP, DocC, SwiftPM, or another host toolchain. The native Linux/arm64
@@ -24,7 +27,9 @@ contains a libstdc++ library, module map, header facade, dynamic dependency, or
 spurious C++ dependency; every artifact that links a C++ runtime links libc++.
 
 Collider assembles immutable SDK generations for Linux arm64, Linux amd64,
-Android arm64, and Android amd64 on macOS. No target executable runs on the Mac.
+Android arm64, and Android amd64 on macOS. Target executables never run as
+macOS processes. Linux x86_64 behavioral consumers may run inside the ARM64
+Linux container under explicitly required translation after SDK publication.
 
 ## Architecture
 
@@ -172,13 +177,16 @@ Run the acceptance sequence in order:
 ## Acceptance Criteria
 
 - The M2 Ultra performs every build.
-- Every host process is macOS/arm64 or Linux/arm64.
+- Every SDK build process is macOS/arm64 or Linux/arm64.
 - No Swift compiler, LLVM, or Linux host toolchain is built.
-- No Rosetta, QEMU, amd64 VM, or amd64 build machine is used.
+- No SDK build step uses Intel translation, QEMU, an amd64 VM, or an amd64 build
+  machine.
 - Linux/arm64 and Linux/amd64 runtime products come from the pinned Nucleus source graph.
 - The package sysroot and published SDK expose libc++ exclusively.
 - Linux arm64, Linux amd64, Android arm64, and Android amd64 are selected by exact triples.
-- Target executables never run on the Mac.
+- Target executables never run as native macOS processes; translated x86_64
+  consumer execution occurs only after SDK publication and produces confidence
+  evidence rather than native qualification evidence.
 - Published generations are immutable and failure-safe.
 - Unchanged identities skip the complete generation and retain valid
   component-level incremental caches for the next changed identity.

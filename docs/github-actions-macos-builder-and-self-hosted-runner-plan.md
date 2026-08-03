@@ -10,6 +10,10 @@ operating systems never enter a Nucleus build identity.
 
 Linux host tools execute in separate digest-selected `linux/arm64` OCI images
 through Apple `container`; those tools cross-compile Linux/amd64 artifacts.
+Tasks that must execute a declared x86_64 configure probe, test product, or
+pinned x86_64-only Android NDK host utility explicitly require macOS 27 Intel
+binary translation inside that ARM64 guest. Translation is an execution policy
+on the task, never a different builder image or artifact target.
 macOS products compile natively as `macOS/arm64`. The persistent development machine never produces a candidate or
 release artifact directly. Build artifacts are qualified on the operating
 system, architecture, kernel, graphics stack, and hardware they claim to
@@ -50,9 +54,9 @@ the isolated publisher remain provisioning work.
 
 `ColliderCore` now represents runner, execution, artifact, and backend
 coordinates independently. OCI and AOSP task identities, dry-run plans,
-manifests, and explanations carry those coordinates. Linux amd64 OCI execution
-rejects unsupported runner and execution combinations before launching a child
-process.
+manifests, and explanations carry those coordinates. Linux amd64 artifact tasks
+reject unsupported runner, execution, artifact, and translation combinations
+before launching a child process.
 
 Collider now owns one backend-neutral OCI operation model. Product recipes no
 longer construct Podman commands. The rootless Podman executor and Apple
@@ -80,6 +84,16 @@ declare their Linux/amd64 artifact target independently. Full Xcode is required
 because Command Line Tools does not provide the complete macOS SDK and test
 tooling contract.
 
+The Linux architecture lanes now build concurrently in separate resource and
+lock domains. Both boot the same `linux/arm64` builder image. The arm64 lane
+executes only arm64 Linux processes. The x86_64 lane cross-compiles its products
+and explicitly enables macOS 27 Intel binary translation only when a task must
+execute an x86_64 configure probe, test product, or pinned x86_64-only Android
+NDK host utility. Loader and headless Vulkan tests run for both artifact
+architectures. Translated results are development confidence evidence; they are
+never native Linux x86_64, kernel, performance, GPU, DRM, or release
+qualification evidence.
+
 Apple `container` does not restore its dynamically bootstrapped launchd
 registration after reboot. Its API server and helpers are launch agents that
 are intentionally scoped to a logged-in user and cannot serve clients from the
@@ -100,7 +114,7 @@ The final topology contains these distinct roles:
 | Development gateway | Native service on the M2 Ultra | Authenticated remote access, editor tunneling, and development-machine lifecycle |
 | Development machine | Persistent `linux/arm64` Apple container machine | Source checkout, uncommitted work, shell, editor server, language services, and Collider client |
 | macOS builder | Native `macOS/arm64` environment on the M2 Ultra | macOS Swift toolchain, Apple-platform products, and native macOS validation |
-| Linux builder | Apple `container` on the M2 Ultra | Linux-native C/C++ dependency builds and Linux-only build tools in pinned OCI images |
+| Linux builder | Apple `container` on the M2 Ultra | Linux-native C/C++ dependency builds and Linux-only build tools in pinned `linux/arm64` OCI images; declared x86_64 probes and pinned host utilities use macOS 27 Intel translation |
 | Linux qualifier | Real `Linux/x86_64` worker | Loader, libc, sandbox, io_uring, process, integration, and performance qualification |
 | GPU/DRM qualifier | Real `Linux/x86_64` Nucleus target hardware | Vulkan, DRM, GBM, DMA-BUF, synchronization, scanout, input, display, and session qualification |
 | Publisher | Protected isolated environment | Signing, provenance attestation, release publication, and channel advancement |
@@ -111,10 +125,11 @@ that service; none starts heavy build processes independently. The persistent
 development machine does not host nested build containers.
 
 The Linux qualifier may be an on-demand worker. The GPU/DRM qualifier is a
-dedicated hardware role. Neither role is replaced by Rosetta, QEMU, software
-Vulkan, or a Linux VM on the Mac. No particular Ubuntu installation is
-required: any worker satisfying the declared x86_64 or GPU/DRM capability
-contract can perform the corresponding qualification.
+dedicated hardware role. The translated x86_64 confidence lane on the M2 Ultra
+replaces neither role. QEMU, software Vulkan, and an amd64 Linux VM are absent.
+No particular Ubuntu installation is required: any worker satisfying the
+declared x86_64 or GPU/DRM capability contract can perform the corresponding
+qualification.
 
 ## Platform Contract
 
@@ -144,9 +159,20 @@ Swift product compilation uses the signed macOS host compiler with the pinned
 Linux amd64 target SDK; it does not require an amd64 host Swift toolchain or an
 OCI executor. Nucleus does not add a second source-built Swift pipeline.
 
-Linux host execution is native arm64. Linux/amd64 binaries are never executed
-on the Mac; real x86_64 workers perform loader, kernel, graphics, integration,
-and performance qualification. There is no Rosetta or QEMU build lane.
+Every Apple-container machine boots Linux/arm64. Compilation and ordinary Linux
+host tools execute natively as arm64. A task sets Intel binary translation to
+`required` only when its declared command must execute an x86_64 configure
+probe, test product, or pinned x86_64-only Android NDK host utility. The Apple
+backend then enables macOS 27's integrated translation facility for that task;
+there is no separately installed Rosetta runtime, QEMU executor, or amd64 VM.
+
+Translated x86_64 execution is a bounded confidence lane. It proves that an
+x86_64 ELF product loads, links against its architecture-matched libc++ and
+Vulkan userspace, and passes architecture-neutral behavior under translation.
+It does not prove native CPU behavior, kernel behavior, sandbox performance,
+io_uring performance, physical GPU behavior, DRM, GBM, DMA-BUF, explicit sync,
+scanout, or release fitness. Real x86_64 and physical GPU/DRM workers remain the
+only authorities for those qualification records.
 
 ## Phase 1: Close the Public-Repository Trust Boundary
 
@@ -260,10 +286,12 @@ Define a read-only macOS builder doctor lane. It requires:
   targets, so Command Line Tools alone does not satisfy the lane;
 - Apple `container` and its persistent builder-login launch agent;
 - native Linux/arm64 container execution;
+- macOS 27 Intel binary translation inside the Linux/arm64 container for
+  explicitly declared x86_64 execution tasks;
 - sufficient CPU, memory, and disk allocation;
 - a case-sensitive build volume;
 - the selected Xcode Swift compiler for native macOS work and the pinned Linux
-  amd64 bootstrap compiler inside the Swift builder image;
+  arm64 bootstrap compiler inside the Swift builder image;
 - content-addressed cache and artifact roots;
 - noninteractive execution with no pending license or authorization prompt.
 
@@ -283,8 +311,9 @@ Provision the first M2 Ultra executor in this order:
    27.0 build `26A5388g`;
 2. register its builder-login launch agent and prove it restores the complete
    service set after restart and builder login without an authorization prompt;
-3. prove an explicit `linux/arm64` container executes an arm64 binary and an
-   amd64 target build emits x86_64 ELF without executing it;
+3. prove an explicit `linux/arm64` container executes an arm64 binary, an amd64
+   target build emits x86_64 ELF, and a separately declared translated
+   confidence task executes that ELF without changing the guest platform;
 4. create the internal host-only network named
    `nucleus-build-internal`, with no external routing or DNS;
 5. allocate the case-sensitive Collider storage roots and apply their quotas;
@@ -329,6 +358,8 @@ generation, immutable artifacts, or reusable incremental build trees.
 - No build path refers to a developer-specific absolute path.
 - All storage status reports ownership, quota usage, retention, and explicit
   safe reclamation candidates.
+- ARM64-native and translated x86_64 confidence lanes pass, and their evidence
+  cannot satisfy a native x86_64 or physical GPU/DRM qualification gate.
 
 ## Phase 5: Provision the Persistent Remote Development Environment
 
@@ -730,8 +761,8 @@ requirement.
   digest.
 - Every claimed GPU class has physical qualification bound to its kernel,
   firmware, and driver identities.
-- Emulated or software-rendered execution is labeled explicitly and cannot
-  satisfy a native gate.
+- Translated, emulated, or software-rendered execution is labeled explicitly
+  and cannot satisfy a native gate.
 - Replacing the current Ubuntu qualifier with another conforming x86_64 worker
   does not change a build graph, artifact identity, or qualification procedure.
 
@@ -814,9 +845,11 @@ Run acceptance in this order:
 22. pass physical GPU/DRM qualification on each claimed hardware class;
 23. verify all selected source repositories and submodules remain clean;
 24. verify every build output exists only in a declared writable root;
-25. verify no build task executed an amd64 binary on the Mac, used an undeclared
-    host compiler, host package, mutable tag, network fallback, writable source
-    mount, or developer-specific path;
+25. verify every x86_64 process executed on the Mac was declared with required
+    Intel translation and was limited to an admitted configure probe, test
+    product, or pinned host utility; also verify no task used an undeclared host
+    compiler, host package, mutable tag, network fallback, writable source mount,
+    or developer-specific path;
 26. verify the current Ubuntu development computer can be unavailable for the
     complete development, build, candidate, and publication sequence;
 27. execute the protected publication lane against qualified candidate

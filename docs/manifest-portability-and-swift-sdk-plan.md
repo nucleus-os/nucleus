@@ -17,6 +17,12 @@ builds and runs it on macOS. The pure-Swift contract tier may compile natively
 when Collider consumes it. There is no generated Linux host toolchain and no
 implicit host destination for a Nucleus runtime build.
 
+Linux builders always boot a `linux/arm64` image. Linux amd64 remains an
+artifact destination, not a guest platform. Post-build x86_64 consumer tests
+may explicitly require macOS 27 Intel binary translation inside that ARM64
+guest. Their results are confidence evidence only and never replace native
+x86_64 or physical GPU/DRM qualification.
+
 Configuration has exactly three owners:
 
 - A Swift SDK owns a target sysroot, Swift runtime resources, stable native
@@ -129,10 +135,11 @@ natively for arm64 and by cross-compilation for amd64. Both architectures land
 in one Linux Swift SDK artifact. The current qualification run built, assembled,
 validated, and activated both Linux architectures, but its logs also proved
 that upstream build-script treats Swift Testing as a zero-second no-op in this
-Linux cross-product configuration. The existing validator did not detect the
-missing Testing module and library. Production qualification remains blocked
-until Swift Testing is built explicitly and SDK validation rejects either
-missing artifact.
+Linux cross-product configuration. The runtime pipeline now builds Swift
+Testing explicitly after Foundation, and SDK validation rejects a missing
+`Testing.swiftmodule` or `libTesting.so`. The prior silent-success path is
+removed; the complete acceptance sequence still proves the corrected runtime
+and consumer artifacts before production qualification.
 
 ## Phase 2 — Centralize the Compilation Contract
 
