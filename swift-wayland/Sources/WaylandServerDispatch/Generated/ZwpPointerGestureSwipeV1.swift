@@ -2,12 +2,12 @@
 // Typed server descriptor and dispatch for zwp_pointer_gesture_swipe_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpPointerGestureSwipeV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZwpPointerGestureSwipeV1Server>)
 }
-package extension ZwpPointerGestureSwipeV1Requests {
+extension ZwpPointerGestureSwipeV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpPointerGestureSwipeV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -71,7 +71,7 @@ package enum ZwpPointerGestureSwipeV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwpPointerGestureSwipeV1Server {
+extension WaylandResourceHandle where Interface == ZwpPointerGestureSwipeV1Server {
     @discardableResult
     package func sendBegin(
         serial: UInt32, time: UInt32, surface: WaylandResourceHandle<WlSurfaceServer>,
@@ -105,7 +105,7 @@ package extension WaylandResourceHandle where Interface == ZwpPointerGestureSwip
         return true
     }
 }
-package extension WlNewId where Interface == ZwpPointerGestureSwipeV1Server {
+extension WlNewId where Interface == ZwpPointerGestureSwipeV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -118,7 +118,7 @@ package extension WlNewId where Interface == ZwpPointerGestureSwipeV1Server {
             installed: installed)
     }
 }
-package extension ZwpPointerGestureSwipeV1Server {
+extension ZwpPointerGestureSwipeV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

@@ -1,5 +1,5 @@
 package import NucleusCompositorServer
-import NucleusTypes
+internal import NucleusTypes
 
 package typealias LayerSurfaceID = UInt64
 

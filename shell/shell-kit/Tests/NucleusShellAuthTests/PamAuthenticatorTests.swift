@@ -47,8 +47,9 @@ struct PamAuthenticatorTests {
             return
         }
         let capacity = request.storage.capacity
-        #expect(request.storage.count
-            == 8 + service.count + password.count)
+        #expect(
+            request.storage.count
+                == 8 + service.count + password.count)
         request.scrub()
         #expect(request.storage.capacity == capacity)
         #expect(request.storage.allSatisfy { $0 == 0 })
@@ -134,8 +135,7 @@ struct PamAuthenticatorTests {
                 5)
             let now = monotonicNow()
             for (index, descriptor) in descriptors.enumerated()
-                where pollDescriptors[index].revents != 0
-            {
+            where pollDescriptors[index].revents != 0 {
                 authenticator.process(
                     descriptor.source,
                     nowNanoseconds: now)
@@ -162,7 +162,7 @@ struct PamAuthenticatorTests {
     }
 
     private func monotonicNow() -> UInt64 {
-        var value = timespec()
+        var value = timespec(tv_sec: 0, tv_nsec: 0)
         unsafe clock_gettime(CLOCK_MONOTONIC, &value)
         return UInt64(value.tv_sec) * 1_000_000_000 + UInt64(value.tv_nsec)
     }

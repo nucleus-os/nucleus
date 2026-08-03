@@ -1,5 +1,5 @@
 import Foundation
-import NucleusConfig
+package import NucleusConfig
 
 /// Writes resolved configuration back out as JSON.
 ///

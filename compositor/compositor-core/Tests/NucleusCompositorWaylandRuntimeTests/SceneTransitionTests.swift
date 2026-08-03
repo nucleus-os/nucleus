@@ -127,9 +127,12 @@ struct NucleusCompositorTransitionStressTests {
 
         let snapshotCreates = sink.transactions
             .flatMap(\.created)
-            .filter { $0.1.initialContent.kind == .snapshot }
+            .compactMap {
+                if case .snapshot(let content) = $0.1.initialContent { return content }
+                return nil
+            }
         #expect(snapshotCreates.count == 1)
-        #expect(snapshotCreates.first?.1.initialContent.handle == 1_009)
+        #expect(snapshotCreates.first?.handle == 1_009)
         #expect(sink.transactions.flatMap(\.removed).count > 0)
     }
 
@@ -216,8 +219,10 @@ struct NucleusCompositorTransitionStressTests {
 
         let replacementTransactions = sink.transactions.filter {
             $0.created.contains {
-                $0.1.initialContent.kind == .snapshot
-                    && $0.1.initialContent.handle == 1_010
+                if case .snapshot(let content) = $0.1.initialContent {
+                    return content.handle == 1_010
+                }
+                return false
             }
         }
         #expect(replacementTransactions.count == 1)

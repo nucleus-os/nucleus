@@ -52,7 +52,7 @@ package enum ZwpTextInputManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ZwpTextInputManagerV1Server {
+extension WlNewId where Interface == ZwpTextInputManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpTextInputManagerV1Requests>(
@@ -65,7 +65,7 @@ package extension WlNewId where Interface == ZwpTextInputManagerV1Server {
             installed: installed)
     }
 }
-package extension ZwpTextInputManagerV1Server {
+extension ZwpTextInputManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpTextInputManagerV1Requests>(
         implementation: Implementation,

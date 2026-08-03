@@ -235,7 +235,7 @@ import Testing
 @Test func appleExecutorTranslatesTheHermeticOCIContract() throws {
     let root = FilePath("/var/nucleus")
     let preparation = OCIImagePreparation(
-        executionPlatform: .linuxAMD64OCI,
+        executionPlatform: .linuxARM64OCI,
         context: root.appending("context"),
         containerFile: root.appending("context/Containerfile"),
         imageID: root.appending("image-id"),
@@ -246,7 +246,7 @@ import Testing
         preparation,
         candidate: root.appending("candidate"))
     #expect(build.executable == .named("container"))
-    #expect(build.arguments.contains("linux/amd64"))
+    #expect(build.arguments.contains("linux/arm64"))
     #expect(build.arguments.contains("--pull"))
     #expect(!build.arguments.contains("--iidfile"))
 
@@ -262,7 +262,7 @@ import Testing
     #expect(executor.removeImageCommand(digest, preparation: preparation) == nil)
 
     let execution = OCIExecution(
-        executionPlatform: .linuxAMD64OCI,
+        executionPlatform: .linuxARM64OCI,
         artifactTarget: .linuxX86_64,
         imageID: root.appending("image-id"),
         hostname: "fixture-build",
@@ -283,6 +283,7 @@ import Testing
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
         processFilesystemPolicy: .standard,
+        intelBinaryTranslationPolicy: .required,
         resourceLimits: OCIResourceLimits(
             cpuCount: 16,
             memoryBytes: 88 * 1_024 * 1_024 * 1_024,
@@ -351,4 +352,28 @@ import Testing
         temporaryDirectory: nil)
     #expect(armCommand.arguments.contains("linux/arm64"))
     #expect(!armCommand.arguments.contains("--rosetta"))
+
+    let untranslatedIntelArtifact = OCIExecution(
+        executionPlatform: .linuxARM64OCI,
+        artifactTarget: .linuxX86_64,
+        imageID: root.appending("arm-image-id"),
+        hostname: "fixture-intel-build",
+        workingDirectory: "/source",
+        hostWorkingDirectory: root,
+        mounts: [],
+        networkPolicy: .externalDisabled,
+        userPolicy: .builder,
+        capabilityPolicy: .dropAll,
+        privilegePolicy: .prohibitAcquisition,
+        processFilesystemPolicy: .standard,
+        resourceLimits: .build,
+        containerEnvironment: [:],
+        command: ["true"],
+        environment: ["PATH": "/usr/bin"],
+        output: .logged)
+    let untranslatedCommand = try executor.runCommand(
+        untranslatedIntelArtifact,
+        imageID: "\(name)\n\(digest)",
+        temporaryDirectory: nil)
+    #expect(!untranslatedCommand.arguments.contains("--rosetta"))
 }

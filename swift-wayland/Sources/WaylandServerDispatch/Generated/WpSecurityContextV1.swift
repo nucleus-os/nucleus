@@ -12,7 +12,7 @@ import WaylandServerC
     func setInstanceId(_ request: WaylandRequest<WpSecurityContextV1Server>, instance_id: String)
     func commit(_ request: WaylandRequest<WpSecurityContextV1Server>)
 }
-package extension WpSecurityContextV1Requests {
+extension WpSecurityContextV1Requests {
     package func destroy(_ request: WaylandRequest<WpSecurityContextV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -120,18 +120,18 @@ package enum WpSecurityContextV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == WpSecurityContextV1Server {
+extension WaylandRequest where Interface == WpSecurityContextV1Server {
     package func postError(_ code: WpSecurityContextV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WpSecurityContextV1Server {
+extension WaylandResourceHandle where Interface == WpSecurityContextV1Server {
     @discardableResult
     package func postError(_ code: WpSecurityContextV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WpSecurityContextV1Server {
+extension WlNewId where Interface == WpSecurityContextV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpSecurityContextV1Requests>(
@@ -144,7 +144,7 @@ package extension WlNewId where Interface == WpSecurityContextV1Server {
             installed: installed)
     }
 }
-package extension WpSecurityContextV1Server {
+extension WpSecurityContextV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpSecurityContextV1Requests>(
         implementation: Implementation,

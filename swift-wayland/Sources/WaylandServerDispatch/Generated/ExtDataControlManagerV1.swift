@@ -13,7 +13,7 @@ import WaylandServerC
         id: WlNewId<ExtDataControlDeviceV1Server>, seat: WaylandBorrowedObject<WlSeatServer>)
     func destroy(_ request: WaylandRequest<ExtDataControlManagerV1Server>)
 }
-package extension ExtDataControlManagerV1Requests {
+extension ExtDataControlManagerV1Requests {
     package func destroy(_ request: WaylandRequest<ExtDataControlManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -102,7 +102,7 @@ package enum ExtDataControlManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ExtDataControlManagerV1Server {
+extension WlNewId where Interface == ExtDataControlManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ExtDataControlManagerV1Requests>(
@@ -115,7 +115,7 @@ package extension WlNewId where Interface == ExtDataControlManagerV1Server {
             installed: installed)
     }
 }
-package extension ExtDataControlManagerV1Server {
+extension ExtDataControlManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ExtDataControlManagerV1Requests>(
         implementation: Implementation,

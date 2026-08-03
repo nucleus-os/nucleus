@@ -243,7 +243,9 @@ import struct NucleusLayers.LayerTransaction
         #expect(createdLayerIDs.contains(labelLayer.id))
         #expect(
             transaction.propertyUpdates.contains {
-                $0.layer == labelLayer.id && $0.properties.content?.kind == .paint
+                guard $0.layer == labelLayer.id else { return false }
+                if case .some(.paint) = $0.properties.content { return true }
+                return false
             })
     }
 

@@ -10,7 +10,7 @@ import WaylandServerC
     func waitBarrier(_ request: WaylandRequest<WpFifoV1Server>)
     func destroy(_ request: WaylandRequest<WpFifoV1Server>)
 }
-package extension WpFifoV1Requests {
+extension WpFifoV1Requests {
     package func destroy(_ request: WaylandRequest<WpFifoV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -76,18 +76,18 @@ package enum WpFifoV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == WpFifoV1Server {
+extension WaylandRequest where Interface == WpFifoV1Server {
     package func postError(_ code: WpFifoV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WpFifoV1Server {
+extension WaylandResourceHandle where Interface == WpFifoV1Server {
     @discardableResult
     package func postError(_ code: WpFifoV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WpFifoV1Server {
+extension WlNewId where Interface == WpFifoV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpFifoV1Requests>(
@@ -100,7 +100,7 @@ package extension WlNewId where Interface == WpFifoV1Server {
             installed: installed)
     }
 }
-package extension WpFifoV1Server {
+extension WpFifoV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpFifoV1Requests>(
         implementation: Implementation,

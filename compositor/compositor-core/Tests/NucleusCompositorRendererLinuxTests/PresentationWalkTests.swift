@@ -211,7 +211,7 @@ import Testing
         #expect(
             visualStyle.map { float4Equal($0.cornerRadii, (32, 24, 16, 8)) } == true,
             "walk-style-radii-scaled")
-        #expect(visualStyle?.backgroundColor.a == 0.8, "walk-style-background")
+        #expect(visualStyle?.backgroundColor.3 == 0.8, "walk-style-background")
 
         // The shadow decoration of layer 4. At 2×, blurRadius 8 →
         // sigma 8 physical pixels, padded by 3σ=24 on every side.

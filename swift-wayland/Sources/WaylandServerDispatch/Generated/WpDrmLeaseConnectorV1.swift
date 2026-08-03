@@ -2,12 +2,12 @@
 // Typed server descriptor and dispatch for wp_drm_lease_connector_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol WpDrmLeaseConnectorV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<WpDrmLeaseConnectorV1Server>)
 }
-package extension WpDrmLeaseConnectorV1Requests {
+extension WpDrmLeaseConnectorV1Requests {
     package func destroy(_ request: WaylandRequest<WpDrmLeaseConnectorV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -75,7 +75,7 @@ package enum WpDrmLeaseConnectorV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == WpDrmLeaseConnectorV1Server {
+extension WaylandResourceHandle where Interface == WpDrmLeaseConnectorV1Server {
     @discardableResult
     package func sendName(name: String) -> Bool {
         guard let target = unsafe resource else {
@@ -121,7 +121,7 @@ package extension WaylandResourceHandle where Interface == WpDrmLeaseConnectorV1
         return true
     }
 }
-package extension WlNewId where Interface == WpDrmLeaseConnectorV1Server {
+extension WlNewId where Interface == WpDrmLeaseConnectorV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -134,7 +134,7 @@ package extension WlNewId where Interface == WpDrmLeaseConnectorV1Server {
             installed: installed)
     }
 }
-package extension WpDrmLeaseConnectorV1Server {
+extension WpDrmLeaseConnectorV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

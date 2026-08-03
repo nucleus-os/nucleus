@@ -16,7 +16,7 @@ import WaylandServerC
         _ request: WaylandRequest<ZwpInputTimestampsManagerV1Server>,
         id: WlNewId<ZwpInputTimestampsV1Server>, touch: WaylandBorrowedObject<WlTouchServer>)
 }
-package extension ZwpInputTimestampsManagerV1Requests {
+extension ZwpInputTimestampsManagerV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpInputTimestampsManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -133,7 +133,7 @@ package enum ZwpInputTimestampsManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ZwpInputTimestampsManagerV1Server {
+extension WlNewId where Interface == ZwpInputTimestampsManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpInputTimestampsManagerV1Requests>(
@@ -146,7 +146,7 @@ package extension WlNewId where Interface == ZwpInputTimestampsManagerV1Server {
             installed: installed)
     }
 }
-package extension ZwpInputTimestampsManagerV1Server {
+extension ZwpInputTimestampsManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpInputTimestampsManagerV1Requests>(
         implementation: Implementation,

@@ -21,7 +21,7 @@
 internal import NucleusCompositorServer
 internal import NucleusCompositorWindowManager
 import NucleusCompositorXcbC
-package import NucleusLayers
+internal import NucleusLayers
 import WaylandServerC
 
 @MainActor

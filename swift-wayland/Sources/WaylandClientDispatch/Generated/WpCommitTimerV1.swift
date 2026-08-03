@@ -8,7 +8,7 @@ package enum WpCommitTimerV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_wp_commit_timer_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == WpCommitTimerV1Client {
+extension WaylandProxy where Interface == WpCommitTimerV1Client {
     package func setTimestamp(tv_sec_hi: UInt32, tv_sec_lo: UInt32, tv_nsec: UInt32)
         throws(WaylandProxyError)
     {

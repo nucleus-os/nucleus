@@ -10,7 +10,7 @@ import WaylandServerC
         _ request: WaylandRequest<XwaylandSurfaceV1Server>, serial_lo: UInt32, serial_hi: UInt32)
     func destroy(_ request: WaylandRequest<XwaylandSurfaceV1Server>)
 }
-package extension XwaylandSurfaceV1Requests {
+extension XwaylandSurfaceV1Requests {
     package func destroy(_ request: WaylandRequest<XwaylandSurfaceV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -72,18 +72,18 @@ package enum XwaylandSurfaceV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == XwaylandSurfaceV1Server {
+extension WaylandRequest where Interface == XwaylandSurfaceV1Server {
     package func postError(_ code: XwaylandSurfaceV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == XwaylandSurfaceV1Server {
+extension WaylandResourceHandle where Interface == XwaylandSurfaceV1Server {
     @discardableResult
     package func postError(_ code: XwaylandSurfaceV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == XwaylandSurfaceV1Server {
+extension WlNewId where Interface == XwaylandSurfaceV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: XwaylandSurfaceV1Requests>(
@@ -96,7 +96,7 @@ package extension WlNewId where Interface == XwaylandSurfaceV1Server {
             installed: installed)
     }
 }
-package extension XwaylandSurfaceV1Server {
+extension XwaylandSurfaceV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & XwaylandSurfaceV1Requests>(
         implementation: Implementation,

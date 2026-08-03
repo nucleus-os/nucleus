@@ -19,7 +19,7 @@ import Glibc
 internal import NucleusCompositorServer
 internal import NucleusCompositorWindowManager
 import NucleusDiagnostics
-package import NucleusLayers
+internal import NucleusLayers
 import NucleusRenderModel
 import NucleusTypes
 import WaylandServer

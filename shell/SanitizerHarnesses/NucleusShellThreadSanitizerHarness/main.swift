@@ -1,4 +1,4 @@
-package import NucleusShellRuntime
+import NucleusShellRuntime
 
 @main
 struct NucleusShellThreadSanitizerHarness {

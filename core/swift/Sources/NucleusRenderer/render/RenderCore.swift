@@ -1,4 +1,9 @@
-package import NucleusAppHostProtocols
+import NucleusAppHostProtocols
+package import NucleusRenderModel
+import NucleusSkiaGraphiteBridge
+import Tracy
+package import Vulkan
+package import VulkanC
 
 // The platform-agnostic render core: the Vulkan instance/device, the Graphite
 // context + `FrameDriver`, the authoritative `RetainedTreeStore`, client
@@ -16,12 +21,6 @@ package import NucleusAppHostProtocols
 // registry and the imported client-surface images. `shutdownRenderResources()`
 // drops those before device teardown, and `teardownDevice()` explicitly releases
 // Graphite before dropping the borrowed Vulkan device/instance.
-
-package import NucleusRenderModel
-import NucleusSkiaGraphiteBridge
-import Tracy
-package import Vulkan
-package import VulkanC
 
 #if canImport(Glibc)
 import Glibc

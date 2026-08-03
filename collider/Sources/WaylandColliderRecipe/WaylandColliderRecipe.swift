@@ -3,6 +3,108 @@ import Foundation
 import SystemPackage
 
 public enum WaylandColliderRecipe {
+    public static func buildNativeSDK(
+        root: FilePath,
+        sdkRoot: FilePath,
+        environment: [String: String],
+        target: NativeLinuxTarget,
+        builder: NativeOCIConfiguration
+    ) -> TaskDeclaration {
+        let source = root.appending("third-party/wayland")
+        let build = root.appending(".wayland-build/\(target.identifier)")
+        let sdk = sdkRoot.appending(target.identifier).appending("wayland")
+        let nativeScannerSDK = sdkRoot.appending("linux-arm64/wayland")
+        let targetSDKMount = target.architecture == .arm64 ? "/native-wayland" : "/sdk"
+        var dependencies = [TaskID(rawValue: "native.builder")]
+        var inputs: [ArtifactInput] = [
+            .tree(source),
+            .dependencyOutput(builder.imageID),
+        ]
+        if target.architecture == .x86_64 {
+            dependencies.append(TaskID(rawValue: "wayland.native-sdk.linux-arm64"))
+            inputs += [
+                .file(root.appending("build-support/linux-x86_64.ini")),
+                .dependencyOutput(nativeScannerSDK),
+            ]
+        }
+
+        let configureArguments =
+            [
+                "meson", "setup", "/build", "/src",
+                "--prefix=\(targetSDKMount)", "--libdir=lib",
+                "--buildtype=release",
+                "-Dtests=false", "-Ddocumentation=false",
+                "-Ddtd_validation=false",
+                "-Dscanner=\(target.architecture == .arm64 ? "true" : "false")",
+            ]
+            + (target.architecture == .x86_64
+                ? ["--cross-file=/build-support/linux-x86_64.ini"] : [])
+
+        return TaskDeclaration(
+            id: TaskID(rawValue: "wayland.native-sdk.\(target.identifier)"),
+            component: ComponentID(rawValue: "wayland"),
+            dependencies: dependencies,
+            inputs: inputs,
+            outputs: [
+                OutputDeclaration(
+                    path: sdk.appending("include/wayland-server.h"),
+                    validation: .regularFile),
+                OutputDeclaration(
+                    path: sdk.appending("include/wayland-server-protocol.h"),
+                    validation: .regularFile),
+                OutputDeclaration(
+                    path: sdk.appending("lib/libwayland-server.so"),
+                    validation: .exists),
+                OutputDeclaration(
+                    path: sdk.appending("lib/libwayland-client.so"),
+                    validation: .exists),
+            ]
+                + (target.architecture == .arm64
+                    ? [
+                        OutputDeclaration(
+                            path: sdk.appending("bin/wayland-scanner"),
+                            validation: .executableFile)
+                    ] : []),
+            locks: [.checkout("wayland-native-\(target.identifier)")],
+            cachePolicy: .contentAddressed,
+            operation: .sequence([
+                .removePath(build),
+                .removePath(sdk),
+                .createDirectory(build),
+                .createDirectory(sdk),
+                nativeOperation(
+                    root: root,
+                    source: source,
+                    build: build,
+                    sdk: sdk,
+                    nativeScannerSDK: nativeScannerSDK,
+                    builder: builder,
+                    target: target,
+                    environment: environment,
+                    command: configureArguments),
+                nativeOperation(
+                    root: root,
+                    source: source,
+                    build: build,
+                    sdk: sdk,
+                    nativeScannerSDK: nativeScannerSDK,
+                    builder: builder,
+                    target: target,
+                    environment: environment,
+                    command: ["meson", "compile", "-C", "/build"]),
+                nativeOperation(
+                    root: root,
+                    source: source,
+                    build: build,
+                    sdk: sdk,
+                    nativeScannerSDK: nativeScannerSDK,
+                    builder: builder,
+                    target: target,
+                    environment: environment,
+                    command: ["meson", "install", "-C", "/build", "--no-rebuild"]),
+            ]))
+    }
+
     public static func build(
         root: FilePath,
         environment: [String: String],
@@ -59,7 +161,7 @@ public enum WaylandColliderRecipe {
         let generatedDirectories = [
             server, client, protocols, protocolTypes, serverDispatch, clientDispatch,
         ]
-        let waylandXML = protocolsRoot.appending("protocols/wayland.xml")
+        let waylandXML = root.appending("third-party/wayland/protocol/wayland.xml")
         let xmlPaths = records.map(\.path.string)
         let searchArguments = [
             "--search-dir", protocolsRoot.appending("protocols").string,
@@ -149,6 +251,7 @@ public enum WaylandColliderRecipe {
                 .tree(root.appending("Sources/SwiftWaylandGenerator")),
                 .tree(root.appending("Sources/WaylandProtocolModel")),
                 .tree(root.appending("Protocols")),
+                .file(waylandXML),
                 swiftPM.identityInput,
                 .tool(.named("swift")),
                 .tool(.named("wayland-scanner")),
@@ -164,6 +267,77 @@ public enum WaylandColliderRecipe {
             locks: [.checkout("wayland")],
             operation: .sequence(operations))
     }
+}
+
+private func nativeOperation(
+    root: FilePath,
+    source: FilePath,
+    build: FilePath,
+    sdk: FilePath,
+    nativeScannerSDK: FilePath,
+    builder: NativeOCIConfiguration,
+    target: NativeLinuxTarget,
+    environment: [String: String],
+    command: [String]
+) -> TaskOperation {
+    var mounts = [
+        OCIMount(source: source, target: "/src", access: .readOnly),
+        OCIMount(source: build, target: "/build", access: .readWrite),
+        OCIMount(
+            source: sdk,
+            target: target.architecture == .arm64 ? "/native-wayland" : "/sdk",
+            access: .readWrite),
+        OCIMount(
+            source: root.appending("build-support"),
+            target: "/build-support",
+            access: .readOnly),
+        OCIMount(
+            source: builder.swiftSDKRoot,
+            target: "/swift-sdk",
+            access: .readOnly),
+    ]
+    var containerEnvironment = [
+        "CC": "clang",
+        "LD_LIBRARY_PATH": target.containerRuntimeLibraryPath,
+        "NUCLEUS_WAYLAND_SDK": target.architecture == .arm64 ? "/native-wayland" : "/sdk",
+        "PKG_CONFIG_LIBDIR":
+            "/usr/lib/\(target.gnuArchitecture)/pkgconfig:/usr/share/pkgconfig",
+    ]
+    if target.architecture == .x86_64 {
+        mounts.append(
+            OCIMount(
+                source: nativeScannerSDK,
+                target: "/native-wayland",
+                access: .readOnly))
+        containerEnvironment["PATH"] =
+            "/native-wayland/bin:/opt/cmake/bin:/opt/swift/usr/bin:/usr/lib/ccache:"
+            + "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        containerEnvironment["PKG_CONFIG_PATH"] = "/native-wayland/lib/pkgconfig"
+        containerEnvironment["PKG_CONFIG_PATH_FOR_BUILD"] =
+            "/native-wayland/lib/pkgconfig"
+        containerEnvironment["PKG_CONFIG_LIBDIR_FOR_BUILD"] =
+            "/native-wayland/lib/pkgconfig"
+    }
+    return .runOCI(
+        OCIExecution(
+            executionPlatform: .linuxARM64OCI,
+            artifactTarget: target.artifactTarget,
+            imageID: builder.imageID,
+            hostname: "native-wayland-\(target.architecture.rawValue)",
+            workingDirectory: "/src",
+            hostWorkingDirectory: root,
+            mounts: mounts,
+            networkPolicy: .externalDisabled,
+            userPolicy: .builder,
+            capabilityPolicy: .dropAll,
+            privilegePolicy: .prohibitAcquisition,
+            processFilesystemPolicy: .standard,
+            intelBinaryTranslationPolicy: target.intelBinaryTranslationPolicy,
+            resourceLimits: .parallelBuild,
+            containerEnvironment: containerEnvironment,
+            command: ["wayland"] + command,
+            environment: environment,
+            output: .logged))
 }
 
 private struct WaylandProtocolRecord {

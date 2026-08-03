@@ -13,7 +13,7 @@ import WaylandServerC
         id: WlNewId<ZwpPrimarySelectionDeviceV1Server>, seat: WaylandBorrowedObject<WlSeatServer>)
     func destroy(_ request: WaylandRequest<ZwpPrimarySelectionDeviceManagerV1Server>)
 }
-package extension ZwpPrimarySelectionDeviceManagerV1Requests {
+extension ZwpPrimarySelectionDeviceManagerV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpPrimarySelectionDeviceManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -104,7 +104,7 @@ package enum ZwpPrimarySelectionDeviceManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ZwpPrimarySelectionDeviceManagerV1Server {
+extension WlNewId where Interface == ZwpPrimarySelectionDeviceManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpPrimarySelectionDeviceManagerV1Requests>(
@@ -117,7 +117,7 @@ package extension WlNewId where Interface == ZwpPrimarySelectionDeviceManagerV1S
             owner: owner, installed: installed)
     }
 }
-package extension ZwpPrimarySelectionDeviceManagerV1Server {
+extension ZwpPrimarySelectionDeviceManagerV1Server {
     @MainActor
     package static func global<
         Implementation: AnyObject & ZwpPrimarySelectionDeviceManagerV1Requests

@@ -66,7 +66,7 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         ]).standardizedFileURL.path == ndk.standardizedFileURL.path)
 }
 
-@Test func componentTestSelectionPreservesTheRepositoryOrder() throws {
+@Test func runtimeTestSelectionsUseBothLinuxArchitectureLanes() throws {
     let registry = ComponentRegistry(
         context: WorkspaceContext(
             root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
@@ -74,33 +74,27 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
 
     #expect(
         try registry.selectedTestTasks(nil).map(\.rawValue) == [
-            "tracy.test", "vulkan.test", "wayland.test", "core.test",
-            "config.test", "ipc.test",
-            "linux.test", "rn.test", "compositor-core.test",
-            "compositor-core.test-loader",
-            "compositor-core.test-gpu-headless",
-            "compositor.test", "shell.test", "android-runtime.test",
+            "linux.arm64.test", "linux.x86_64.test",
         ])
     #expect(
         try registry.selectedTestTasks(.config).map(\.rawValue) == [
-            "config.test"
+            "linux.arm64.test", "linux.x86_64.test",
         ])
     #expect(
         try registry.selectedTestTasks(.ipc).map(\.rawValue) == [
-            "ipc.test"
+            "linux.arm64.test", "linux.x86_64.test",
         ])
     #expect(
         try registry.selectedTestTasks(.compositor).map(\.rawValue) == [
-            "compositor-core.test", "compositor-core.test-loader",
-            "compositor-core.test-gpu-headless", "compositor.test",
+            "linux.arm64.test", "linux.x86_64.test",
         ])
     #expect(
         try registry.selectedTestTasks(.loader).map(\.rawValue) == [
-            "compositor-core.test-loader"
+            "linux.arm64.test-loader", "linux.x86_64.test-loader",
         ])
     #expect(
         try registry.selectedTestTasks(.gpuHeadless).map(\.rawValue) == [
-            "compositor-core.test-gpu-headless"
+            "linux.arm64.test-gpu-headless", "linux.x86_64.test-gpu-headless",
         ])
     #expect(
         try registry.selectedTestTasks(.gpuDRM).map(\.rawValue) == [
@@ -109,6 +103,40 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
     #expect(throws: (any Error).self) {
         try ColliderCommand.parseAsRoot(["test", "unknown"])
     }
+}
+
+@Test func gfxstreamArchitectureBuildsHaveIndependentLocks() {
+    let repositoryRoot = FilePath("/workspace")
+    let runtimeRoot = repositoryRoot.appending("android-runtime")
+    let environment = ["PATH": "/usr/bin"]
+    let builder = NativeOCIConfiguration(
+        context: repositoryRoot.appending("core/build-container"),
+        imageID: repositoryRoot.appending(".nucleus/native-builder/image-id"),
+        ccache: repositoryRoot.appending(".nucleus/ccache"),
+        swiftSDKRoot: repositoryRoot.appending(".nucleus/swift-sdks"),
+        environment: environment)
+    let arm64 = AndroidRuntimeColliderRecipe.buildGfxstream(
+        root: runtimeRoot,
+        repositoryRoot: repositoryRoot,
+        environment: environment,
+        target: NativeLinuxTarget(architecture: .arm64),
+        builder: builder)
+    let x86_64 = AndroidRuntimeColliderRecipe.buildGfxstream(
+        root: runtimeRoot,
+        repositoryRoot: repositoryRoot,
+        environment: environment,
+        target: NativeLinuxTarget(architecture: .x86_64),
+        builder: builder)
+
+    #expect(Set(arm64.locks).isDisjoint(with: Set(x86_64.locks)))
+    #expect(
+        arm64.locks == [
+            .checkout("android-runtime-gfxstream-linux-arm64")
+        ])
+    #expect(
+        x86_64.locks == [
+            .checkout("android-runtime-gfxstream-linux-x86_64")
+        ])
 }
 
 @Test func compatibleSwiftTasksShareOneDeclaredBuildContext() {
@@ -336,48 +364,6 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
                 validation: .regularFile)))
 }
 
-@Test func lavapipeArtifactStagesAnAbsoluteValidatedICDManifest() throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-lavapipe-\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(
-        at: directory, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: directory) }
-
-    let library = directory.appendingPathComponent("libvulkan_lvp.so")
-    try Data("fixture".utf8).write(to: library)
-    let manifest = directory.appendingPathComponent("lvp_icd.json")
-    try Data(
-        """
-        {
-          "file_format_version": "1.0.0",
-          "ICD": {
-            "api_version": "1.3.0",
-            "library_path": "\(library.path)"
-          }
-        }
-        """.utf8
-    ).write(to: manifest)
-
-    let artifact = try LavapipeTestArtifact.resolve(
-        context: WorkspaceContext(
-            root: directory,
-            environment: [
-                "NUCLEUS_LAVAPIPE_ICD": manifest.path,
-                "XDG_CACHE_HOME": directory.appendingPathComponent("cache").path,
-            ]))
-    #expect(artifact.sourceManifest == FilePath(manifest.path))
-    #expect(artifact.library == FilePath(library.path))
-    #expect(
-        artifact.stagedManifest
-            == FilePath(
-                directory.appendingPathComponent(
-                    "cache/nucleus/test-vulkan/lavapipe_icd.json"
-                ).path))
-    let staged = String(decoding: artifact.stagedBytes, as: UTF8.self)
-    #expect(staged.contains(#""library_path" : "\#(library.path)""#))
-    #expect(artifact.task.id == TaskID(rawValue: "workspace.lavapipe-icd"))
-}
-
 @Test func drmLaneRejectsAConfiguredNonRenderNode() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-not-a-render-node-\(UUID().uuidString)")
@@ -498,11 +484,14 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         context: root.appending("build-container"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
+        swiftSDKRoot: FilePath("/cache/swift-sdks"),
         environment: environment)
+    let linuxARM64 = NativeLinuxTarget(architecture: .arm64)
     for task in [
-        CoreColliderRecipe.buildSkia(
+        CoreColliderRecipe.buildSkiaLinux(
             root: root,
             environment: environment,
+            target: linuxARM64,
             builder: builder),
         CoreColliderRecipe.buildSkiaAndroid(
             root: root,
@@ -514,9 +503,6 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
             Issue.record("Skia provisioning must be an ordered task sequence")
             continue
         }
-        #if os(macOS)
-        #expect(operations.count == 2)
-        #else
         let executions = operations.compactMap {
             operation -> OCIExecution? in
             guard case .runOCI(let execution) = operation else {
@@ -541,7 +527,77 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
             })
         #expect(executions[0].command.contains("/src/bin/gn"))
         #expect(executions[1].command.contains("ninja"))
-        #endif
+    }
+}
+
+@Test func nativeArchitectureBuildsHaveIndependentLocks() {
+    let coreRoot = FilePath("/workspace/core")
+    let reactNativeRoot = FilePath("/workspace/react-native")
+    let environment = [
+        "PATH": "/usr/bin",
+        "NUCLEUS_ANDROID_NDK_HOME": "/opt/android-ndk",
+    ]
+    let builder = NativeOCIConfiguration(
+        context: coreRoot.appending("build-container"),
+        imageID: FilePath("/cache/native/image-id"),
+        ccache: FilePath("/cache/ccache/native"),
+        swiftSDKRoot: FilePath("/cache/swift-sdks"),
+        environment: environment)
+    let arm64 = NativeLinuxTarget(architecture: .arm64)
+    let x86_64 = NativeLinuxTarget(architecture: .x86_64)
+    let architecturePairs = [
+        (
+            CoreColliderRecipe.buildSkiaLinux(
+                root: coreRoot,
+                environment: environment,
+                target: arm64,
+                builder: builder),
+            CoreColliderRecipe.buildSkiaLinux(
+                root: coreRoot,
+                environment: environment,
+                target: x86_64,
+                builder: builder)
+        ),
+        (
+            ReactNativeColliderRecipe.buildHermes(
+                root: reactNativeRoot,
+                environment: environment,
+                target: arm64,
+                builder: builder),
+            ReactNativeColliderRecipe.buildHermes(
+                root: reactNativeRoot,
+                environment: environment,
+                target: x86_64,
+                builder: builder)
+        ),
+        (
+            ReactNativeColliderRecipe.buildSupportLibraries(
+                root: reactNativeRoot,
+                environment: environment,
+                target: arm64,
+                builder: builder),
+            ReactNativeColliderRecipe.buildSupportLibraries(
+                root: reactNativeRoot,
+                environment: environment,
+                target: x86_64,
+                builder: builder)
+        ),
+        (
+            ReactNativeColliderRecipe.buildCxxRuntime(
+                root: reactNativeRoot,
+                environment: environment,
+                target: arm64,
+                builder: builder),
+            ReactNativeColliderRecipe.buildCxxRuntime(
+                root: reactNativeRoot,
+                environment: environment,
+                target: x86_64,
+                builder: builder)
+        ),
+    ]
+
+    for (armTask, x86Task) in architecturePairs {
+        #expect(Set(armTask.locks).isDisjoint(with: Set(x86Task.locks)))
     }
 }
 
@@ -552,27 +608,18 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         context: FilePath("/workspace/core/build-container"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
+        swiftSDKRoot: FilePath("/cache/swift-sdks"),
         environment: environment)
+    let target = NativeLinuxTarget(architecture: .arm64)
     let support = ReactNativeColliderRecipe.buildSupportLibraries(
-        root: root, environment: environment, builder: builder)
+        root: root, environment: environment, target: target, builder: builder)
     let runtime = ReactNativeColliderRecipe.buildCxxRuntime(
-        root: root, environment: environment, builder: builder)
+        root: root, environment: environment, target: target, builder: builder)
     for task in [support, runtime] {
         guard case .sequence(let operations) = task.operation else {
             Issue.record("RN native provisioning must be an ordered task sequence")
             continue
         }
-        #if os(macOS)
-        let nativeOperations = operations.compactMap { operation -> CommandSpec? in
-            guard case .command(let command) = operation else { return nil }
-            return command
-        }
-        #expect(
-            nativeOperations.allSatisfy {
-                $0.executable == .named("cmake")
-                    || $0.executable == .named("ninja")
-            })
-        #else
         let nativeOperations = operations.compactMap {
             operation -> OCIExecution? in
             guard case .runOCI(let execution) = operation else {
@@ -595,155 +642,142 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
                             target: "/build",
                             access: .readWrite))
             })
-        #endif
     }
     #expect(
         runtime.dependencies == [
-            TaskID(rawValue: "rn.support"),
+            TaskID(rawValue: "rn.support.linux-arm64"),
             TaskID(rawValue: "rn.generate"),
             TaskID(rawValue: "rn.boost"),
-            TaskID(rawValue: "rn.hermes"),
+            TaskID(rawValue: "rn.hermes.linux-arm64"),
         ])
 }
 
-@Test func hermesRecipeUsesTypedCommandsAndArchiveMerge() {
+@Test func hermesRecipeBuildsAndMergesInsideTheARM64Guest() {
     let root = FilePath("/workspace/react-native")
     let environment = ["PATH": "/usr/bin"]
     let builder = NativeOCIConfiguration(
         context: FilePath("/workspace/core/build-container"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
+        swiftSDKRoot: FilePath("/cache/swift-sdks"),
         environment: environment)
-    #if os(macOS)
-    let host = HermesHostDependencies(
-        icuIncludeDirectory: FilePath("/usr/include"),
-        icuUCLibrary: FilePath("/usr/lib/libicuuc.so"),
-        icuI18NLibrary: FilePath("/usr/lib/libicui18n.so"),
-        icuDataLibrary: FilePath("/usr/lib/libicudata.so"),
-        cxxRuntimeLibrary: FilePath("/toolchain/lib/libc++.so.1"))
-    #else
-    let host: HermesHostDependencies? = nil
-    #endif
     let task = ReactNativeColliderRecipe.buildHermes(
         root: root,
         environment: environment,
-        builder: builder,
-        host: host)
+        target: NativeLinuxTarget(architecture: .x86_64),
+        builder: builder)
     guard case .sequence(let operations) = task.operation else {
         Issue.record("Hermes provisioning must be an ordered task sequence")
         return
     }
     #expect(operations.count == 3)
-    guard case .mergeStaticArchives(let merge) = operations[2] else {
-        Issue.record("Hermes must configure, build, then merge its archives")
-        return
-    }
-    #if os(macOS)
-    guard case .command(let configure) = operations[0],
-        case .command(let build) = operations[1]
-    else {
-        Issue.record("Hermes must use native host commands on macOS")
-        return
-    }
-    #expect(configure.executable == .named("cmake"))
-    #expect(build.executable == .named("ninja"))
-    #expect(build.environment["LD_LIBRARY_PATH"] == "/toolchain/lib")
-    #else
     guard case .runOCI(let configure) = operations[0],
-        case .runOCI(let build) = operations[1]
+        case .runOCI(let build) = operations[1],
+        case .runOCI(let merge) = operations[2]
     else {
-        Issue.record("Hermes must use the native builder on Linux")
+        Issue.record("every Hermes operation must use the native builder")
         return
     }
     #expect(configure.command.first == "react-native")
     #expect(configure.command.contains("cmake"))
     #expect(build.command.contains("ninja"))
-    #endif
-    #expect(merge.archiver == .named("ar"))
-    #expect(merge.indexer == .named("ranlib"))
-    #expect(merge.excludedFilePrefixes == ["libgtest"])
+    #expect(merge.command.contains("/tools/merge-static-archives.sh"))
+    let executions = [configure, build, merge]
+    #expect(executions.allSatisfy { $0.executionPlatform == .linuxARM64OCI })
+    #expect(executions.allSatisfy { $0.artifactTarget == .linuxX86_64 })
+    #expect(
+        executions.allSatisfy {
+            $0.intelBinaryTranslationPolicy == .required
+        })
 }
 
-@Test func reactNativeHostArchiveStagingIsATypedCopy() throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-rn-host-archive-\(UUID().uuidString)")
-    let scratch = directory.appendingPathComponent("scratch")
-    let product = scratch.appendingPathComponent(
-        "out/Products/Debug-linux-x86_64")
-    try FileManager.default.createDirectory(
-        at: product, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let archive = product.appendingPathComponent(
-        "libNucleusReactRuntimeHostCxx.a")
-    try Data("archive".utf8).write(to: archive)
-    let task = try ReactNativeColliderRecipe.stageHostArchive(
-        root: FilePath(directory.path),
-        swiftPM: SwiftPMInvocation(
-            context: SwiftBuildContext(
-                packageRoot: fixtureSwiftPackageRoot,
-                configuration: .debug,
-                target: .host(identity: "x86_64-linux"),
-                toolchainIdentity: "swiftc@fixture"),
-            scratchPath: FilePath(scratch.path)))
-    guard case .copyMatchingFile(let copy) = task.operation else {
-        Issue.record("RN host archive staging must be a typed matched copy")
-        return
-    }
-    #expect(
-        copy.searchDirectory
-            == FilePath(
-                directory.appendingPathComponent(
-                    "scratch/out/Products"
-                ).path))
-    #expect(copy.childDirectoryPrefix == "Debug-")
-    #expect(copy.fileName == "libNucleusReactRuntimeHostCxx.a")
-    #expect(
-        copy.destination
-            == FilePath(
-                directory.appendingPathComponent(
-                    ".cxx-build/debug/libNucleusReactRuntimeHostCxx.a"
-                ).path))
-}
-
-@Test func reactNativeSDKPublishesContainerArtifactsBeforeTheHostArchive() {
-    let root = FilePath("/workspace/react-native")
+@Test func waylandCrossBuildUsesTheNativeARM64ScannerSDK() {
+    let root = FilePath("/workspace/swift-wayland")
     let sdkRoot = FilePath("/cache/native-sdk")
-    let archive = TaskID(rawValue: "rn.host-archive.debug")
-    let native = ReactNativeColliderRecipe.publishNativeSDK(
-        root: root,
-        sdkRoot: sdkRoot)
-    let host = ReactNativeColliderRecipe.publishHostArchiveSDK(
+    let environment = ["PATH": "/usr/bin"]
+    let builder = NativeOCIConfiguration(
+        context: FilePath("/workspace/core/build-container"),
+        imageID: FilePath("/cache/native/image-id"),
+        ccache: FilePath("/cache/ccache/native"),
+        swiftSDKRoot: FilePath("/cache/swift-sdks"),
+        environment: environment)
+    let arm = WaylandColliderRecipe.buildNativeSDK(
         root: root,
         sdkRoot: sdkRoot,
-        hostArchive: archive)
+        environment: environment,
+        target: NativeLinuxTarget(architecture: .arm64),
+        builder: builder)
+    let x86 = WaylandColliderRecipe.buildNativeSDK(
+        root: root,
+        sdkRoot: sdkRoot,
+        environment: environment,
+        target: NativeLinuxTarget(architecture: .x86_64),
+        builder: builder)
+
+    #expect(arm.dependencies == [TaskID(rawValue: "native.builder")])
+    #expect(
+        x86.dependencies == [
+            TaskID(rawValue: "native.builder"),
+            TaskID(rawValue: "wayland.native-sdk.linux-arm64"),
+        ])
+    #expect(
+        arm.outputs.contains {
+            $0.path
+                == FilePath(
+                    "/cache/native-sdk/linux-arm64/wayland/bin/wayland-scanner")
+        })
+
+    guard case .sequence(let armOperations) = arm.operation,
+        case .runOCI(let armConfigure) = armOperations[4],
+        case .sequence(let x86Operations) = x86.operation,
+        case .runOCI(let x86Configure) = x86Operations[4]
+    else {
+        Issue.record("Wayland SDK builds must configure inside the ARM64 builder")
+        return
+    }
+
+    #expect(armConfigure.executionPlatform == .linuxARM64OCI)
+    #expect(armConfigure.artifactTarget == .linuxARM64)
+    #expect(armConfigure.intelBinaryTranslationPolicy == .disabled)
+    #expect(armConfigure.command.contains("--prefix=/native-wayland"))
+
+    #expect(x86Configure.executionPlatform == .linuxARM64OCI)
+    #expect(x86Configure.artifactTarget == .linuxX86_64)
+    #expect(x86Configure.intelBinaryTranslationPolicy == .required)
+    #expect(x86Configure.command.contains("--prefix=/sdk"))
+    #expect(x86Configure.command.contains("--cross-file=/build-support/linux-x86_64.ini"))
+    #expect(
+        x86Configure.mounts.contains {
+            $0.source == FilePath("/cache/native-sdk/linux-arm64/wayland")
+                && $0.target == "/native-wayland"
+                && $0.access == .readOnly
+        })
+    #expect(
+        x86Configure.containerEnvironment["PKG_CONFIG_PATH_FOR_BUILD"]
+            == "/native-wayland/lib/pkgconfig")
+    #expect(
+        x86Configure.containerEnvironment["PKG_CONFIG_LIBDIR_FOR_BUILD"]
+            == "/native-wayland/lib/pkgconfig")
+}
+
+@Test func reactNativeSDKPublishesArchitectureMatchedContainerArtifacts() {
+    let root = FilePath("/workspace/react-native")
+    let sdkRoot = FilePath("/cache/native-sdk")
+    let target = NativeLinuxTarget(architecture: .x86_64)
+    let native = ReactNativeColliderRecipe.publishNativeSDK(
+        root: root,
+        sdkRoot: sdkRoot,
+        target: target)
 
     #expect(
         native.dependencies == [
-            TaskID(rawValue: "core.native-sdk"),
-            TaskID(rawValue: "rn.cxx"),
+            TaskID(rawValue: "core.native-sdk.linux-x86_64"),
+            TaskID(rawValue: "rn.cxx.linux-x86_64"),
         ])
-    #expect(!native.dependencies.contains(archive))
     #expect(
         native.outputs.allSatisfy {
-            !$0.path.string.contains("nucleus-cxx-libs")
+            $0.path.string.hasPrefix("/cache/native-sdk/linux-x86_64/rn/")
         })
-    #expect(
-        host.dependencies == [
-            native.id,
-            archive,
-        ])
-    #expect(
-        host.outputs == [
-            OutputDeclaration(
-                path: sdkRoot.appending("rn/lib/nucleus-cxx-libs"),
-                validation: .exists)
-        ])
-    guard case .replaceSymlink(let path, let target) = host.operation else {
-        Issue.record("RN host archive publication must be a typed symlink")
-        return
-    }
-    #expect(path == sdkRoot.appending("rn/lib/nucleus-cxx-libs"))
-    #expect(target == root.appending(".cxx-build").string)
 }
 
 @Test func androidImageRecipeHasIndependentArtifactBoundaries() throws {

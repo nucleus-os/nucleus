@@ -19,7 +19,7 @@ import WaylandServerC
         _ request: WaylandRequest<ZxdgPositionerV6Server>, constraint_adjustment: UInt32)
     func setOffset(_ request: WaylandRequest<ZxdgPositionerV6Server>, x: Int32, y: Int32)
 }
-package extension ZxdgPositionerV6Requests {
+extension ZxdgPositionerV6Requests {
     package func destroy(_ request: WaylandRequest<ZxdgPositionerV6Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -156,18 +156,18 @@ package enum ZxdgPositionerV6Server: WaylandServerInterface {
                 }
             }
 }
-package extension WaylandRequest where Interface == ZxdgPositionerV6Server {
+extension WaylandRequest where Interface == ZxdgPositionerV6Server {
     package func postError(_ code: ZxdgPositionerV6Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ZxdgPositionerV6Server {
+extension WaylandResourceHandle where Interface == ZxdgPositionerV6Server {
     @discardableResult
     package func postError(_ code: ZxdgPositionerV6Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ZxdgPositionerV6Server {
+extension WlNewId where Interface == ZxdgPositionerV6Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZxdgPositionerV6Requests>(
@@ -180,7 +180,7 @@ package extension WlNewId where Interface == ZxdgPositionerV6Server {
             installed: installed)
     }
 }
-package extension ZxdgPositionerV6Server {
+extension ZxdgPositionerV6Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZxdgPositionerV6Requests>(
         implementation: Implementation,

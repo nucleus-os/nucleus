@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol XdgWmBaseRequests: AnyObject {
     func destroy(_ request: WaylandRequest<XdgWmBaseServer>)
@@ -14,7 +14,7 @@ import WaylandServerC
         surface: WaylandBorrowedObject<WlSurfaceServer>)
     func pong(_ request: WaylandRequest<XdgWmBaseServer>, serial: UInt32)
 }
-package extension XdgWmBaseRequests {
+extension XdgWmBaseRequests {
     package func destroy(_ request: WaylandRequest<XdgWmBaseServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -116,7 +116,7 @@ package enum XdgWmBaseServer: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == XdgWmBaseServer {
+extension WaylandResourceHandle where Interface == XdgWmBaseServer {
     @discardableResult
     package func sendPing(serial: UInt32) -> Bool {
         guard let target = unsafe resource else {
@@ -126,18 +126,18 @@ package extension WaylandResourceHandle where Interface == XdgWmBaseServer {
         return true
     }
 }
-package extension WaylandRequest where Interface == XdgWmBaseServer {
+extension WaylandRequest where Interface == XdgWmBaseServer {
     package func postError(_ code: XdgWmBaseError, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == XdgWmBaseServer {
+extension WaylandResourceHandle where Interface == XdgWmBaseServer {
     @discardableResult
     package func postError(_ code: XdgWmBaseError, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == XdgWmBaseServer {
+extension WlNewId where Interface == XdgWmBaseServer {
     @discardableResult
     @MainActor
     package func create<Owner: XdgWmBaseRequests>(
@@ -150,7 +150,7 @@ package extension WlNewId where Interface == XdgWmBaseServer {
             installed: installed)
     }
 }
-package extension XdgWmBaseServer {
+extension XdgWmBaseServer {
     @MainActor
     package static func global<Implementation: AnyObject & XdgWmBaseRequests>(
         implementation: Implementation,

@@ -1,4 +1,4 @@
-import WaylandServerC
+package import WaylandServerC
 
 /// A typed, lifetime-checked view of one server-side Wayland resource.
 ///

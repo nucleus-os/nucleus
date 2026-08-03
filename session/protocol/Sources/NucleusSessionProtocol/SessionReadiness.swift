@@ -16,11 +16,11 @@ public enum SessionProcessRole: UInt8, Sendable, Equatable {
     ) throws -> SessionProcessRole {
         let indices = arguments.indices.filter { arguments[$0] == argument }
         guard indices.count == 1,
-              let index = indices.first,
-              arguments.indices.contains(index + 1),
-              let rawValue = UInt8(arguments[index + 1]),
-              let role = SessionProcessRole(rawValue: rawValue),
-              role != .supervisor
+            let index = indices.first,
+            arguments.indices.contains(index + 1),
+            let rawValue = UInt8(arguments[index + 1]),
+            let role = SessionProcessRole(rawValue: rawValue),
+            role != .supervisor
         else {
             throw SessionReadinessFailure.invalidRole
         }
@@ -136,10 +136,10 @@ public struct SessionReadinessMessage: Sendable, Equatable {
 
     public init?(encoded bytes: [UInt8]) {
         guard bytes.count == Self.encodedSize,
-              Self.loadUInt32(bytes, at: 0) == Self.magic,
-              Self.loadUInt16(bytes, at: 4) == Self.version,
-              let role = SessionProcessRole(rawValue: bytes[6]),
-              let milestone = SessionMilestone(rawValue: bytes[7])
+            Self.loadUInt32(bytes, at: 0) == Self.magic,
+            Self.loadUInt16(bytes, at: 4) == Self.version,
+            let role = SessionProcessRole(rawValue: bytes[6]),
+            let milestone = SessionMilestone(rawValue: bytes[7])
         else { return nil }
         self.init(
             role: role,
@@ -187,7 +187,7 @@ public struct SessionReadinessMessage: Sendable, Equatable {
 public enum SessionReadinessFailure: Error, CustomStringConvertible {
     case invalidDescriptor(String)
     case invalidRole
-    case transportFailed(IPCTransportError)
+    case transportFailed(String)
     case alreadyReported
 
     public var description: String {
@@ -227,11 +227,12 @@ public final class SessionReadinessReporter {
             throw SessionReadinessFailure.invalidDescriptor("<duplicate>")
         }
         guard
-              arguments.indices.contains(index + 1),
-              let descriptor = Int32(arguments[index + 1]),
-              descriptor >= 3
+            arguments.indices.contains(index + 1),
+            let descriptor = Int32(arguments[index + 1]),
+            descriptor >= 3
         else {
-            let value = arguments.indices.contains(index + 1)
+            let value =
+                arguments.indices.contains(index + 1)
                 ? arguments[index + 1]
                 : "<missing>"
             throw SessionReadinessFailure.invalidDescriptor(value)
@@ -257,7 +258,8 @@ public final class SessionReadinessReporter {
         } catch let error as IPCTransportError {
             _ = close(descriptor)
             descriptor = -1
-            throw SessionReadinessFailure.transportFailed(error)
+            throw SessionReadinessFailure.transportFailed(
+                String(describing: error))
         }
         _ = close(descriptor)
         descriptor = -1

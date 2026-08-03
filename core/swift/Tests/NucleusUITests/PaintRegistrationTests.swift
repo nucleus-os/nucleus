@@ -1,5 +1,5 @@
 import NucleusAppHostProtocols
-package import NucleusLayers
+import NucleusLayers
 import NucleusTypes
 import NucleusUI
 import NucleusUITestSupport

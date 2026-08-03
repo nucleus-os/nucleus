@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 package enum WpImageDescriptionInfoV1Server: WaylandServerInterface {
     package nonisolated static let maximumVersion: Int32 = 2
@@ -67,7 +67,7 @@ package enum WpImageDescriptionInfoV1Server: WaylandServerInterface {
         unsafe wp_image_description_info_v1_send_target_max_fall(target, max_fall)
     }
 }
-package extension WaylandResourceHandle where Interface == WpImageDescriptionInfoV1Server {
+extension WaylandResourceHandle where Interface == WpImageDescriptionInfoV1Server {
     @discardableResult
     package func sendDone() -> Bool {
         guard let target = unsafe resource else {
@@ -165,7 +165,7 @@ package extension WaylandResourceHandle where Interface == WpImageDescriptionInf
         return true
     }
 }
-package extension WlNewId where Interface == WpImageDescriptionInfoV1Server {
+extension WlNewId where Interface == WpImageDescriptionInfoV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -178,7 +178,7 @@ package extension WlNewId where Interface == WpImageDescriptionInfoV1Server {
             installed: installed)
     }
 }
-package extension WpImageDescriptionInfoV1Server {
+extension WpImageDescriptionInfoV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

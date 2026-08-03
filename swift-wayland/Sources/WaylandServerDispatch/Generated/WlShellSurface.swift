@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol WlShellSurfaceRequests: AnyObject {
     func pong(_ request: WaylandRequest<WlShellSurfaceServer>, serial: UInt32)
@@ -242,7 +242,7 @@ package enum WlShellSurfaceServer: WaylandServerInterface {
                 }
             }
 }
-package extension WaylandResourceHandle where Interface == WlShellSurfaceServer {
+extension WaylandResourceHandle where Interface == WlShellSurfaceServer {
     @discardableResult
     package func sendPing(serial: UInt32) -> Bool {
         guard let target = unsafe resource else {
@@ -268,7 +268,7 @@ package extension WaylandResourceHandle where Interface == WlShellSurfaceServer 
         return true
     }
 }
-package extension WlNewId where Interface == WlShellSurfaceServer {
+extension WlNewId where Interface == WlShellSurfaceServer {
     @discardableResult
     @MainActor
     package func create<Owner: WlShellSurfaceRequests>(
@@ -281,7 +281,7 @@ package extension WlNewId where Interface == WlShellSurfaceServer {
             installed: installed)
     }
 }
-package extension WlShellSurfaceServer {
+extension WlShellSurfaceServer {
     @MainActor
     package static func global<Implementation: AnyObject & WlShellSurfaceRequests>(
         implementation: Implementation,

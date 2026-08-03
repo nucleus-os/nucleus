@@ -2,7 +2,7 @@
 // Typed server descriptor and dispatch for zwp_linux_dmabuf_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpLinuxDmabufV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZwpLinuxDmabufV1Server>)
@@ -17,7 +17,7 @@ import WaylandServerC
         id: WlNewId<ZwpLinuxDmabufFeedbackV1Server>, surface: WaylandBorrowedObject<WlSurfaceServer>
     )
 }
-package extension ZwpLinuxDmabufV1Requests {
+extension ZwpLinuxDmabufV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpLinuxDmabufV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -134,7 +134,7 @@ package enum ZwpLinuxDmabufV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwpLinuxDmabufV1Server {
+extension WaylandResourceHandle where Interface == ZwpLinuxDmabufV1Server {
     package var supportsModifier: Bool {
         guard let version else {
             return false
@@ -159,7 +159,7 @@ package extension WaylandResourceHandle where Interface == ZwpLinuxDmabufV1Serve
         return true
     }
 }
-package extension WlNewId where Interface == ZwpLinuxDmabufV1Server {
+extension WlNewId where Interface == ZwpLinuxDmabufV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpLinuxDmabufV1Requests>(
@@ -172,7 +172,7 @@ package extension WlNewId where Interface == ZwpLinuxDmabufV1Server {
             installed: installed)
     }
 }
-package extension ZwpLinuxDmabufV1Server {
+extension ZwpLinuxDmabufV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpLinuxDmabufV1Requests>(
         implementation: Implementation,

@@ -8,7 +8,7 @@ package enum WpImageDescriptionCreatorIccV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_wp_image_description_creator_icc_v1())
     package nonisolated static let maximumVersion: UInt32 = 2
 }
-package extension WaylandProxy where Interface == WpImageDescriptionCreatorIccV1Client {
+extension WaylandProxy where Interface == WpImageDescriptionCreatorIccV1Client {
     package func create() throws(WaylandProxyError) -> WaylandProxy<WpImageDescriptionV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _result = try {

@@ -11,7 +11,7 @@ import WaylandServerC
         id: WlNewId<ZxdgToplevelDecorationV1Server>,
         toplevel: WaylandBorrowedObject<XdgToplevelServer>)
 }
-package extension ZxdgDecorationManagerV1Requests {
+extension ZxdgDecorationManagerV1Requests {
     package func destroy(_ request: WaylandRequest<ZxdgDecorationManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -81,7 +81,7 @@ package enum ZxdgDecorationManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ZxdgDecorationManagerV1Server {
+extension WlNewId where Interface == ZxdgDecorationManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZxdgDecorationManagerV1Requests>(
@@ -94,7 +94,7 @@ package extension WlNewId where Interface == ZxdgDecorationManagerV1Server {
             installed: installed)
     }
 }
-package extension ZxdgDecorationManagerV1Server {
+extension ZxdgDecorationManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZxdgDecorationManagerV1Requests>(
         implementation: Implementation,

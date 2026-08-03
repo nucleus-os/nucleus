@@ -10,7 +10,7 @@ import WaylandServerC
         _ request: WaylandRequest<ZxdgExporterV1Server>, id: WlNewId<ZxdgExportedV1Server>,
         surface: WaylandBorrowedObject<WlSurfaceServer>)
 }
-package extension ZxdgExporterV1Requests {
+extension ZxdgExporterV1Requests {
     package func destroy(_ request: WaylandRequest<ZxdgExporterV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -80,7 +80,7 @@ package enum ZxdgExporterV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ZxdgExporterV1Server {
+extension WlNewId where Interface == ZxdgExporterV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZxdgExporterV1Requests>(
@@ -93,7 +93,7 @@ package extension WlNewId where Interface == ZxdgExporterV1Server {
             installed: installed)
     }
 }
-package extension ZxdgExporterV1Server {
+extension ZxdgExporterV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZxdgExporterV1Requests>(
         implementation: Implementation,

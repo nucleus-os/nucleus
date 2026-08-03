@@ -1,5 +1,5 @@
 import Foundation
-import NucleusConfig
+package import NucleusConfig
 import NucleusConfigSyntax
 
 /// The result of reading one configuration source.

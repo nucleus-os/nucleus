@@ -404,14 +404,25 @@ private final class DamagePaintView: View {
             normalizedParents(in: standaloneTransaction)
                 == normalizedParents(in: embedderTransaction)
         )
+        let standaloneContents = standaloneTransaction.propertyUpdates.map {
+            $0.properties.content
+        }
+        let embedderContents = embedderTransaction.propertyUpdates.map {
+            $0.properties.content
+        }
+        #expect(standaloneContents.count == embedderContents.count)
         #expect(
-            standaloneTransaction.propertyUpdates.map {
-                $0.properties.content?.kind
-            }
-                == embedderTransaction.propertyUpdates.map {
-                    $0.properties.content?.kind
+            zip(standaloneContents, embedderContents).allSatisfy { lhs, rhs in
+                switch (lhs, rhs) {
+                case (nil, nil), (.some(.none), .some(.none)),
+                    (.some(.paint), .some(.paint)),
+                    (.some(.external), .some(.external)),
+                    (.some(.snapshot), .some(.snapshot)):
+                    true
+                default:
+                    false
                 }
-        )
+            })
     }
 
     @Test func realApplierSceneLifecyclePreservesTopologyAndReleasesEverything()

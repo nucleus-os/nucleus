@@ -11,7 +11,7 @@ import WaylandServerC
         _ request: WaylandRequest<WpContentTypeManagerV1Server>, id: WlNewId<WpContentTypeV1Server>,
         surface: WaylandBorrowedObject<WlSurfaceServer>)
 }
-package extension WpContentTypeManagerV1Requests {
+extension WpContentTypeManagerV1Requests {
     package func destroy(_ request: WaylandRequest<WpContentTypeManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -81,18 +81,18 @@ package enum WpContentTypeManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == WpContentTypeManagerV1Server {
+extension WaylandRequest where Interface == WpContentTypeManagerV1Server {
     package func postError(_ code: WpContentTypeManagerV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WpContentTypeManagerV1Server {
+extension WaylandResourceHandle where Interface == WpContentTypeManagerV1Server {
     @discardableResult
     package func postError(_ code: WpContentTypeManagerV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WpContentTypeManagerV1Server {
+extension WlNewId where Interface == WpContentTypeManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpContentTypeManagerV1Requests>(
@@ -105,7 +105,7 @@ package extension WlNewId where Interface == WpContentTypeManagerV1Server {
             installed: installed)
     }
 }
-package extension WpContentTypeManagerV1Server {
+extension WpContentTypeManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpContentTypeManagerV1Requests>(
         implementation: Implementation,

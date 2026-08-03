@@ -13,7 +13,7 @@ import WaylandServerC
         namespace: String)
     func destroy(_ request: WaylandRequest<ZwlrLayerShellV1Server>)
 }
-package extension ZwlrLayerShellV1Requests {
+extension ZwlrLayerShellV1Requests {
     package func destroy(_ request: WaylandRequest<ZwlrLayerShellV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -90,18 +90,18 @@ package enum ZwlrLayerShellV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == ZwlrLayerShellV1Server {
+extension WaylandRequest where Interface == ZwlrLayerShellV1Server {
     package func postError(_ code: ZwlrLayerShellV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ZwlrLayerShellV1Server {
+extension WaylandResourceHandle where Interface == ZwlrLayerShellV1Server {
     @discardableResult
     package func postError(_ code: ZwlrLayerShellV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ZwlrLayerShellV1Server {
+extension WlNewId where Interface == ZwlrLayerShellV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwlrLayerShellV1Requests>(
@@ -114,7 +114,7 @@ package extension WlNewId where Interface == ZwlrLayerShellV1Server {
             installed: installed)
     }
 }
-package extension ZwlrLayerShellV1Server {
+extension ZwlrLayerShellV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwlrLayerShellV1Requests>(
         implementation: Implementation,

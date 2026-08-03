@@ -3,12 +3,12 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpLinuxDmabufFeedbackV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZwpLinuxDmabufFeedbackV1Server>)
 }
-package extension ZwpLinuxDmabufFeedbackV1Requests {
+extension ZwpLinuxDmabufFeedbackV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpLinuxDmabufFeedbackV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -86,7 +86,7 @@ package enum ZwpLinuxDmabufFeedbackV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwpLinuxDmabufFeedbackV1Server {
+extension WaylandResourceHandle where Interface == ZwpLinuxDmabufFeedbackV1Server {
     @discardableResult
     package func sendDone() -> Bool {
         guard let target = unsafe resource else {
@@ -151,7 +151,7 @@ package extension WaylandResourceHandle where Interface == ZwpLinuxDmabufFeedbac
         return true
     }
 }
-package extension WlNewId where Interface == ZwpLinuxDmabufFeedbackV1Server {
+extension WlNewId where Interface == ZwpLinuxDmabufFeedbackV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -164,7 +164,7 @@ package extension WlNewId where Interface == ZwpLinuxDmabufFeedbackV1Server {
             installed: installed)
     }
 }
-package extension ZwpLinuxDmabufFeedbackV1Server {
+extension ZwpLinuxDmabufFeedbackV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

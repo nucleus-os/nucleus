@@ -8,7 +8,7 @@ package enum WlSubsurfaceClient: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_wl_subsurface())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == WlSubsurfaceClient {
+extension WaylandProxy where Interface == WlSubsurfaceClient {
     package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in

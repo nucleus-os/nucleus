@@ -11,7 +11,7 @@ import WaylandServerC
         _ request: WaylandRequest<XdgSessionManagerV1Server>, id: WlNewId<XdgSessionV1Server>,
         reason: XdgSessionManagerV1Reason, session_id: String?)
 }
-package extension XdgSessionManagerV1Requests {
+extension XdgSessionManagerV1Requests {
     package func destroy(_ request: WaylandRequest<XdgSessionManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -84,18 +84,18 @@ package enum XdgSessionManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == XdgSessionManagerV1Server {
+extension WaylandRequest where Interface == XdgSessionManagerV1Server {
     package func postError(_ code: XdgSessionManagerV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == XdgSessionManagerV1Server {
+extension WaylandResourceHandle where Interface == XdgSessionManagerV1Server {
     @discardableResult
     package func postError(_ code: XdgSessionManagerV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == XdgSessionManagerV1Server {
+extension WlNewId where Interface == XdgSessionManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: XdgSessionManagerV1Requests>(
@@ -108,7 +108,7 @@ package extension WlNewId where Interface == XdgSessionManagerV1Server {
             installed: installed)
     }
 }
-package extension XdgSessionManagerV1Server {
+extension XdgSessionManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & XdgSessionManagerV1Requests>(
         implementation: Implementation,

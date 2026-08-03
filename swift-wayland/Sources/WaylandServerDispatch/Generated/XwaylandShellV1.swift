@@ -11,7 +11,7 @@ import WaylandServerC
         _ request: WaylandRequest<XwaylandShellV1Server>, id: WlNewId<XwaylandSurfaceV1Server>,
         surface: WaylandBorrowedObject<WlSurfaceServer>)
 }
-package extension XwaylandShellV1Requests {
+extension XwaylandShellV1Requests {
     package func destroy(_ request: WaylandRequest<XwaylandShellV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -81,18 +81,18 @@ package enum XwaylandShellV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == XwaylandShellV1Server {
+extension WaylandRequest where Interface == XwaylandShellV1Server {
     package func postError(_ code: XwaylandShellV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == XwaylandShellV1Server {
+extension WaylandResourceHandle where Interface == XwaylandShellV1Server {
     @discardableResult
     package func postError(_ code: XwaylandShellV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == XwaylandShellV1Server {
+extension WlNewId where Interface == XwaylandShellV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: XwaylandShellV1Requests>(
@@ -105,7 +105,7 @@ package extension WlNewId where Interface == XwaylandShellV1Server {
             installed: installed)
     }
 }
-package extension XwaylandShellV1Server {
+extension XwaylandShellV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & XwaylandShellV1Requests>(
         implementation: Implementation,

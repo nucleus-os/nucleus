@@ -11,7 +11,7 @@ import WaylandServerC
         _ request: WaylandRequest<WpViewporterServer>, id: WlNewId<WpViewportServer>,
         surface: WaylandBorrowedObject<WlSurfaceServer>)
 }
-package extension WpViewporterRequests {
+extension WpViewporterRequests {
     package func destroy(_ request: WaylandRequest<WpViewporterServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -80,18 +80,18 @@ package enum WpViewporterServer: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == WpViewporterServer {
+extension WaylandRequest where Interface == WpViewporterServer {
     package func postError(_ code: WpViewporterError, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WpViewporterServer {
+extension WaylandResourceHandle where Interface == WpViewporterServer {
     @discardableResult
     package func postError(_ code: WpViewporterError, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WpViewporterServer {
+extension WlNewId where Interface == WpViewporterServer {
     @discardableResult
     @MainActor
     package func create<Owner: WpViewporterRequests>(
@@ -104,7 +104,7 @@ package extension WlNewId where Interface == WpViewporterServer {
             installed: installed)
     }
 }
-package extension WpViewporterServer {
+extension WpViewporterServer {
     @MainActor
     package static func global<Implementation: AnyObject & WpViewporterRequests>(
         implementation: Implementation,

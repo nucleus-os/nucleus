@@ -11,7 +11,7 @@ import NucleusCompositorWindowScene
 import NucleusConfig
 import NucleusRenderHost
 import NucleusRenderer
-import NucleusSessionProtocol
+internal import NucleusSessionProtocol
 
 // Compositor bring-up + teardown, Swift-owned.
 // `runNucleusCompositor` calls `bringUp` on the main actor, awaits the reactor loop,
@@ -56,7 +56,7 @@ extension CompositorRuntime {
         // only after successful GPU bring-up below.
         server.sessionControl = self
         unsafe drmSession.installDeviceSeat(
-            package: { [weak waylandRuntime] in
+            open: { [weak waylandRuntime] in
                 unsafe waylandRuntime?.openDevice($0) ?? -1
             },
             close: { [weak waylandRuntime] in waylandRuntime?.closeDevice($0) })

@@ -11,7 +11,7 @@ import WaylandServerC
         _ request: WaylandRequest<XdgToplevelDragV1Server>,
         toplevel: WaylandBorrowedObject<XdgToplevelServer>, x_offset: Int32, y_offset: Int32)
 }
-package extension XdgToplevelDragV1Requests {
+extension XdgToplevelDragV1Requests {
     package func destroy(_ request: WaylandRequest<XdgToplevelDragV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -77,18 +77,18 @@ package enum XdgToplevelDragV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == XdgToplevelDragV1Server {
+extension WaylandRequest where Interface == XdgToplevelDragV1Server {
     package func postError(_ code: XdgToplevelDragV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == XdgToplevelDragV1Server {
+extension WaylandResourceHandle where Interface == XdgToplevelDragV1Server {
     @discardableResult
     package func postError(_ code: XdgToplevelDragV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == XdgToplevelDragV1Server {
+extension WlNewId where Interface == XdgToplevelDragV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: XdgToplevelDragV1Requests>(
@@ -101,7 +101,7 @@ package extension WlNewId where Interface == XdgToplevelDragV1Server {
             installed: installed)
     }
 }
-package extension XdgToplevelDragV1Server {
+extension XdgToplevelDragV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & XdgToplevelDragV1Requests>(
         implementation: Implementation,

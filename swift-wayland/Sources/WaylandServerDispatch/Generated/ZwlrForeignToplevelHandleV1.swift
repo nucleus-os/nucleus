@@ -2,7 +2,7 @@
 // Typed server descriptor and dispatch for zwlr_foreign_toplevel_handle_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwlrForeignToplevelHandleV1Requests: AnyObject {
     func setMaximized(_ request: WaylandRequest<ZwlrForeignToplevelHandleV1Server>)
@@ -23,7 +23,7 @@ import WaylandServerC
         output: WaylandBorrowedObject<WlOutputServer>?)
     func unsetFullscreen(_ request: WaylandRequest<ZwlrForeignToplevelHandleV1Server>)
 }
-package extension ZwlrForeignToplevelHandleV1Requests {
+extension ZwlrForeignToplevelHandleV1Requests {
     package func destroy(_ request: WaylandRequest<ZwlrForeignToplevelHandleV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -239,7 +239,7 @@ package enum ZwlrForeignToplevelHandleV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwlrForeignToplevelHandleV1Server {
+extension WaylandResourceHandle where Interface == ZwlrForeignToplevelHandleV1Server {
     package var supportsParent: Bool {
         guard let version else {
             return false
@@ -335,7 +335,7 @@ package extension WaylandResourceHandle where Interface == ZwlrForeignToplevelHa
         return true
     }
 }
-package extension WlNewId where Interface == ZwlrForeignToplevelHandleV1Server {
+extension WlNewId where Interface == ZwlrForeignToplevelHandleV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwlrForeignToplevelHandleV1Requests>(
@@ -348,7 +348,7 @@ package extension WlNewId where Interface == ZwlrForeignToplevelHandleV1Server {
             installed: installed)
     }
 }
-package extension ZwlrForeignToplevelHandleV1Server {
+extension ZwlrForeignToplevelHandleV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwlrForeignToplevelHandleV1Requests>(
         implementation: Implementation,

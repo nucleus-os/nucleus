@@ -18,7 +18,7 @@ Swift 6.4 snapshot set. It pins only inputs that gitlinks cannot represent:
 
 - the signed Swift.org macOS package providing native arm64 host tools;
 - the official Android artifact bundle;
-- exact Ubuntu arm64 and amd64 package closures used as isolated glibc sysroots.
+- exact Ubuntu arm64 and amd64 runtime-build and SDK-link package closures.
 
 The selected Xcode 27 provides the macOS compiler, SDK, and developer tools.
 Collider builds the pinned `swift-sdk-generator` with Xcode into an external
@@ -26,10 +26,13 @@ cache and runs SDK assembly directly on macOS. A native Linux/arm64 Apple
 container uses the official Swift.org Linux/arm64 bootstrap compiler to build
 the Linux target products natively for Linux/arm64 and by cross-compilation for
 Linux/amd64. Each architecture has an independently
-fingerprinted package-only Ubuntu sysroot, runtime build root, install root, and
-compiler cache. Both sysroots contain libc++, never a bootstrap Swift overlay or
-libstdc++. The runtime installs are the generator's sole target-Swift inputs; an
-official Linux runtime tarball is not mixed into the SDK.
+fingerprinted runtime-build Ubuntu sysroot, runtime build root, install root, and
+compiler cache. The runtime sysroots contain libc++, never a bootstrap Swift
+overlay or libstdc++. SDK-only link packages such as Vulkan, PAM, DRM, GBM,
+systemd, input, udev, seat, xkbcommon, XCB, fontconfig, and FreeType are added during assembly and do not
+invalidate either Swift runtime build. The runtime installs are the generator's
+sole target-Swift inputs; an official Linux runtime tarball is not mixed into
+the SDK.
 
 The root gitlinks are the sole source-revision authority. The runtime source
 closure is `libxml2`, `llvm-project`, `swift`, `swift-collections`,
@@ -41,6 +44,18 @@ documentation tools, package management, and unrelated platforms are not SDK
 build inputs. Collider reads the gitlinks from the root index, requires each
 checked-out submodule to be clean and at that commit, and fingerprints those
 gitlinks directly. It stores no expected Swift source commit in another file.
+Every upstream repository that publishes the snapshot tag is pinned to the
+commit named by `target-sdk-inputs.json`'s `snapshot`. A Nucleus fork starts at
+that same tagged commit and adds only the required target-runtime patches. Host
+tools, target libraries, Testing macros, and `libTesting` therefore share one
+Swift snapshot ABI; moving a runtime repository independently is invalid even
+when its branch remains named `release/6.4`.
+
+The target build passes `SwiftTesting_MODULE_ABI_NAME_SUFFIX=_toolchain` so its
+Testing module has the same `Testing_toolchain` ABI identity as the Testing
+module bundled with the host toolchain. This is required even at the same
+source revision: host-side macro expansion and Linux-side test execution must
+refer to the same protocol metadata identity.
 
 Upstream `build-script` requires `llvm-project` while configuring the amd64
 cross host, but the pipeline gives that product an empty build target list and
@@ -70,4 +85,6 @@ inputs, Xcode identity, source graph, runtime-builder image, NDK, validation
 fixture, and validator reuse the active immutable generation without rebuilding,
 downloading, assembling, validating, or publishing it again.
 Runtime build products and ccache live outside the source submodules and remain
-reusable when a later source-addressed generation needs work.
+reusable when a later source-addressed generation needs work. Runtime task identity
+depends only on the runtime package subset, so changing an SDK-only package rebuilds
+assembly and validation without rebuilding Swift.

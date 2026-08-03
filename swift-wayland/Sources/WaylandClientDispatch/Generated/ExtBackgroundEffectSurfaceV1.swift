@@ -8,7 +8,7 @@ package enum ExtBackgroundEffectSurfaceV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_ext_background_effect_surface_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == ExtBackgroundEffectSurfaceV1Client {
+extension WaylandProxy where Interface == ExtBackgroundEffectSurfaceV1Client {
     package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in

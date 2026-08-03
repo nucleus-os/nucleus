@@ -2,12 +2,12 @@
 // Typed server descriptor and dispatch for zwp_relative_pointer_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpRelativePointerV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZwpRelativePointerV1Server>)
 }
-package extension ZwpRelativePointerV1Requests {
+extension ZwpRelativePointerV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpRelativePointerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -63,7 +63,7 @@ package enum ZwpRelativePointerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwpRelativePointerV1Server {
+extension WaylandResourceHandle where Interface == ZwpRelativePointerV1Server {
     @discardableResult
     package func sendRelativeMotion(
         utime_hi: UInt32, utime_lo: UInt32, dx: Double, dy: Double, dx_unaccel: Double,
@@ -79,7 +79,7 @@ package extension WaylandResourceHandle where Interface == ZwpRelativePointerV1S
         return true
     }
 }
-package extension WlNewId where Interface == ZwpRelativePointerV1Server {
+extension WlNewId where Interface == ZwpRelativePointerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -92,7 +92,7 @@ package extension WlNewId where Interface == ZwpRelativePointerV1Server {
             installed: installed)
     }
 }
-package extension ZwpRelativePointerV1Server {
+extension ZwpRelativePointerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

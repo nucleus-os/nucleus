@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpLinuxBufferParamsV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZwpLinuxBufferParamsV1Server>)
@@ -18,7 +18,7 @@ import WaylandServerC
         _ request: WaylandRequest<ZwpLinuxBufferParamsV1Server>, buffer_id: WlNewId<WlBufferServer>,
         width: Int32, height: Int32, format: UInt32, flags: ZwpLinuxBufferParamsV1Flags)
 }
-package extension ZwpLinuxBufferParamsV1Requests {
+extension ZwpLinuxBufferParamsV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpLinuxBufferParamsV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -130,7 +130,7 @@ package enum ZwpLinuxBufferParamsV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwpLinuxBufferParamsV1Server {
+extension WaylandResourceHandle where Interface == ZwpLinuxBufferParamsV1Server {
     @discardableResult
     package func sendCreated(buffer: WaylandResourceHandle<WlBufferServer>) -> Bool {
         guard let target = unsafe resource else {
@@ -169,18 +169,18 @@ package extension WaylandResourceHandle where Interface == ZwpLinuxBufferParamsV
         return true
     }
 }
-package extension WaylandRequest where Interface == ZwpLinuxBufferParamsV1Server {
+extension WaylandRequest where Interface == ZwpLinuxBufferParamsV1Server {
     package func postError(_ code: ZwpLinuxBufferParamsV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ZwpLinuxBufferParamsV1Server {
+extension WaylandResourceHandle where Interface == ZwpLinuxBufferParamsV1Server {
     @discardableResult
     package func postError(_ code: ZwpLinuxBufferParamsV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ZwpLinuxBufferParamsV1Server {
+extension WlNewId where Interface == ZwpLinuxBufferParamsV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpLinuxBufferParamsV1Requests>(
@@ -193,7 +193,7 @@ package extension WlNewId where Interface == ZwpLinuxBufferParamsV1Server {
             installed: installed)
     }
 }
-package extension ZwpLinuxBufferParamsV1Server {
+extension ZwpLinuxBufferParamsV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpLinuxBufferParamsV1Requests>(
         implementation: Implementation,

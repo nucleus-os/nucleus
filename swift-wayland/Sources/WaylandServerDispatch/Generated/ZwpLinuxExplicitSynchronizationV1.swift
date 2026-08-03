@@ -12,7 +12,7 @@ import WaylandServerC
         id: WlNewId<ZwpLinuxSurfaceSynchronizationV1Server>,
         surface: WaylandBorrowedObject<WlSurfaceServer>)
 }
-package extension ZwpLinuxExplicitSynchronizationV1Requests {
+extension ZwpLinuxExplicitSynchronizationV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpLinuxExplicitSynchronizationV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -83,19 +83,19 @@ package enum ZwpLinuxExplicitSynchronizationV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == ZwpLinuxExplicitSynchronizationV1Server {
+extension WaylandRequest where Interface == ZwpLinuxExplicitSynchronizationV1Server {
     package func postError(_ code: ZwpLinuxExplicitSynchronizationV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ZwpLinuxExplicitSynchronizationV1Server {
+extension WaylandResourceHandle where Interface == ZwpLinuxExplicitSynchronizationV1Server {
     @discardableResult
     package func postError(_ code: ZwpLinuxExplicitSynchronizationV1Error, message: String) -> Bool
     {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ZwpLinuxExplicitSynchronizationV1Server {
+extension WlNewId where Interface == ZwpLinuxExplicitSynchronizationV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpLinuxExplicitSynchronizationV1Requests>(
@@ -108,7 +108,7 @@ package extension WlNewId where Interface == ZwpLinuxExplicitSynchronizationV1Se
             owner: owner, installed: installed)
     }
 }
-package extension ZwpLinuxExplicitSynchronizationV1Server {
+extension ZwpLinuxExplicitSynchronizationV1Server {
     @MainActor
     package static func global<
         Implementation: AnyObject & ZwpLinuxExplicitSynchronizationV1Requests

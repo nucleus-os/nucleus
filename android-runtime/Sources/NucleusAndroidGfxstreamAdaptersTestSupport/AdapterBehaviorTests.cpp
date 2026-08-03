@@ -364,7 +364,7 @@ extern "C" int nucleus_android_test_guest_ring_stream(void) {
     }
     std::vector<std::uint8_t> receivedCommand;
     bool commandRead = false;
-    std::jthread commandConsumer([&] {
+    std::thread commandConsumer([&] {
         commandRead = readBytes(
             commands.consumer,
             &receivedCommand,
@@ -380,7 +380,7 @@ extern "C" int nucleus_android_test_guest_ring_stream(void) {
         response[index] = static_cast<std::uint8_t>(255 - index);
     }
     bool responseWritten = false;
-    std::jthread responseProducer([&] {
+    std::thread responseProducer([&] {
         responseWritten = writeBytes(responses.producer, response);
     });
     std::vector<std::uint8_t> receivedResponse(response.size());

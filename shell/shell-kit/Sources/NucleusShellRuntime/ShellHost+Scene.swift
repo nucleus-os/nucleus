@@ -6,14 +6,14 @@ import NucleusLinuxEnvironment
 import NucleusLinuxReactor
 import NucleusRenderHost
 import NucleusShellAuth
-import NucleusShellServices
+internal import NucleusShellServices
 import NucleusTextBackend
-import NucleusUI
+internal import NucleusUI
 import NucleusUIEmbedder
 import NucleusWindowClientContracts
-import NucleusWindowClientInput
+internal import NucleusWindowClientInput
 import NucleusWindowClientPasteboard
-package import NucleusWindowClientWayland
+internal import NucleusWindowClientWayland
 
 @MainActor
 extension ShellHost {

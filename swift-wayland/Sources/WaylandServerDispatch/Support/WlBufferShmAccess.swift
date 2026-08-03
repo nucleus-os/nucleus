@@ -1,4 +1,4 @@
-import WaylandServer
+package import WaylandServer
 
 extension WaylandResourceReference where Interface == WlBufferServer {
     package var shmMetadata: WaylandShmMetadata? {

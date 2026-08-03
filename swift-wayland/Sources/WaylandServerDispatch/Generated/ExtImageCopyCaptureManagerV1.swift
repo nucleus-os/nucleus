@@ -18,7 +18,7 @@ import WaylandServerC
         pointer: WaylandBorrowedObject<WlPointerServer>)
     func destroy(_ request: WaylandRequest<ExtImageCopyCaptureManagerV1Server>)
 }
-package extension ExtImageCopyCaptureManagerV1Requests {
+extension ExtImageCopyCaptureManagerV1Requests {
     package func destroy(_ request: WaylandRequest<ExtImageCopyCaptureManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -115,18 +115,18 @@ package enum ExtImageCopyCaptureManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == ExtImageCopyCaptureManagerV1Server {
+extension WaylandRequest where Interface == ExtImageCopyCaptureManagerV1Server {
     package func postError(_ code: ExtImageCopyCaptureManagerV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ExtImageCopyCaptureManagerV1Server {
+extension WaylandResourceHandle where Interface == ExtImageCopyCaptureManagerV1Server {
     @discardableResult
     package func postError(_ code: ExtImageCopyCaptureManagerV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ExtImageCopyCaptureManagerV1Server {
+extension WlNewId where Interface == ExtImageCopyCaptureManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ExtImageCopyCaptureManagerV1Requests>(
@@ -139,7 +139,7 @@ package extension WlNewId where Interface == ExtImageCopyCaptureManagerV1Server 
             installed: installed)
     }
 }
-package extension ExtImageCopyCaptureManagerV1Server {
+extension ExtImageCopyCaptureManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ExtImageCopyCaptureManagerV1Requests>(
         implementation: Implementation,

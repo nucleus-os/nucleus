@@ -10,7 +10,7 @@ import WaylandServerC
         id: WlNewId<ZwlrGammaControlV1Server>, output: WaylandBorrowedObject<WlOutputServer>)
     func destroy(_ request: WaylandRequest<ZwlrGammaControlManagerV1Server>)
 }
-package extension ZwlrGammaControlManagerV1Requests {
+extension ZwlrGammaControlManagerV1Requests {
     package func destroy(_ request: WaylandRequest<ZwlrGammaControlManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -80,7 +80,7 @@ package enum ZwlrGammaControlManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ZwlrGammaControlManagerV1Server {
+extension WlNewId where Interface == ZwlrGammaControlManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwlrGammaControlManagerV1Requests>(
@@ -93,7 +93,7 @@ package extension WlNewId where Interface == ZwlrGammaControlManagerV1Server {
             installed: installed)
     }
 }
-package extension ZwlrGammaControlManagerV1Server {
+extension ZwlrGammaControlManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwlrGammaControlManagerV1Requests>(
         implementation: Implementation,

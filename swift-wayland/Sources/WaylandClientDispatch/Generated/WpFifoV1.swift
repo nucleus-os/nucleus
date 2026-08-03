@@ -8,7 +8,7 @@ package enum WpFifoV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_wp_fifo_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == WpFifoV1Client {
+extension WaylandProxy where Interface == WpFifoV1Client {
     package func setBarrier() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_wp_fifo_v1_set_barrier(_proxy)

@@ -8,7 +8,7 @@ package enum ZwlrGammaControlManagerV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_zwlr_gamma_control_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == ZwlrGammaControlManagerV1Client {
+extension WaylandProxy where Interface == ZwlrGammaControlManagerV1Client {
     package func getGammaControl(output: WaylandProxy<WlOutputClient>) throws(WaylandProxyError)
         -> WaylandProxy<ZwlrGammaControlV1Client>
     {

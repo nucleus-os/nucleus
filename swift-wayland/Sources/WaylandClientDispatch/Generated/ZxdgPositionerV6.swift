@@ -9,7 +9,7 @@ package enum ZxdgPositionerV6Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_zxdg_positioner_v6())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == ZxdgPositionerV6Client {
+extension WaylandProxy where Interface == ZxdgPositionerV6Client {
     package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in

@@ -10,7 +10,7 @@ import WaylandServerC
         tablet_seat: WlNewId<ZwpTabletSeatV1Server>, seat: WaylandBorrowedObject<WlSeatServer>)
     func destroy(_ request: WaylandRequest<ZwpTabletManagerV1Server>)
 }
-package extension ZwpTabletManagerV1Requests {
+extension ZwpTabletManagerV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpTabletManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -80,7 +80,7 @@ package enum ZwpTabletManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ZwpTabletManagerV1Server {
+extension WlNewId where Interface == ZwpTabletManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpTabletManagerV1Requests>(
@@ -93,7 +93,7 @@ package extension WlNewId where Interface == ZwpTabletManagerV1Server {
             installed: installed)
     }
 }
-package extension ZwpTabletManagerV1Server {
+extension ZwpTabletManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpTabletManagerV1Requests>(
         implementation: Implementation,

@@ -653,7 +653,7 @@ private final class ControlServiceProcess {
     }
 
     private static func now() -> UInt64 {
-        var value = timespec()
+        var value = timespec(tv_sec: 0, tv_nsec: 0)
         unsafe clock_gettime(CLOCK_MONOTONIC, &value)
         return UInt64(value.tv_sec) * 1_000_000_000
             + UInt64(value.tv_nsec)

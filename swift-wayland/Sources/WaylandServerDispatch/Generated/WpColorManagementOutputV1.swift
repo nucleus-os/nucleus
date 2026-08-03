@@ -2,7 +2,7 @@
 // Typed server descriptor and dispatch for wp_color_management_output_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol WpColorManagementOutputV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<WpColorManagementOutputV1Server>)
@@ -10,7 +10,7 @@ import WaylandServerC
         _ request: WaylandRequest<WpColorManagementOutputV1Server>,
         image_description: WlNewId<WpImageDescriptionV1Server>)
 }
-package extension WpColorManagementOutputV1Requests {
+extension WpColorManagementOutputV1Requests {
     package func destroy(_ request: WaylandRequest<WpColorManagementOutputV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -79,7 +79,7 @@ package enum WpColorManagementOutputV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == WpColorManagementOutputV1Server {
+extension WaylandResourceHandle where Interface == WpColorManagementOutputV1Server {
     @discardableResult
     package func sendImageDescriptionChanged() -> Bool {
         guard let target = unsafe resource else {
@@ -89,7 +89,7 @@ package extension WaylandResourceHandle where Interface == WpColorManagementOutp
         return true
     }
 }
-package extension WlNewId where Interface == WpColorManagementOutputV1Server {
+extension WlNewId where Interface == WpColorManagementOutputV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpColorManagementOutputV1Requests>(
@@ -102,7 +102,7 @@ package extension WlNewId where Interface == WpColorManagementOutputV1Server {
             installed: installed)
     }
 }
-package extension WpColorManagementOutputV1Server {
+extension WpColorManagementOutputV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpColorManagementOutputV1Requests>(
         implementation: Implementation,

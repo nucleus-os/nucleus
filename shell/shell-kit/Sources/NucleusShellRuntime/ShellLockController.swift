@@ -1,7 +1,7 @@
 package import NucleusShellProduct
-import NucleusUI
+internal import NucleusUI
 import NucleusUIEmbedder
-package import NucleusWindowClientWayland
+internal import NucleusWindowClientWayland
 
 /// Drives the session lock: request the lock, present a native lock screen on
 /// every output, route input to it, and unlock once authentication succeeds.

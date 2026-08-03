@@ -49,11 +49,6 @@ let package = Package(
             resources: [
                 .copy("Resources/ToolchainValidationFixtures")
             ]),
-        .testTarget(
-            name: "ColliderCoreTests",
-            dependencies: [
-                "ColliderCore", "ColliderDownloads", "ColliderRuntime",
-            ]),
     ]
 )
 

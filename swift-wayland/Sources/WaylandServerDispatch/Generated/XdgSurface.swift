@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol XdgSurfaceRequests: AnyObject {
     func destroy(_ request: WaylandRequest<XdgSurfaceServer>)
@@ -17,7 +17,7 @@ import WaylandServerC
     )
     func ackConfigure(_ request: WaylandRequest<XdgSurfaceServer>, serial: UInt32)
 }
-package extension XdgSurfaceRequests {
+extension XdgSurfaceRequests {
     package func destroy(_ request: WaylandRequest<XdgSurfaceServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -138,7 +138,7 @@ package enum XdgSurfaceServer: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == XdgSurfaceServer {
+extension WaylandResourceHandle where Interface == XdgSurfaceServer {
     @discardableResult
     package func sendConfigure(serial: UInt32) -> Bool {
         guard let target = unsafe resource else {
@@ -148,18 +148,18 @@ package extension WaylandResourceHandle where Interface == XdgSurfaceServer {
         return true
     }
 }
-package extension WaylandRequest where Interface == XdgSurfaceServer {
+extension WaylandRequest where Interface == XdgSurfaceServer {
     package func postError(_ code: XdgSurfaceError, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == XdgSurfaceServer {
+extension WaylandResourceHandle where Interface == XdgSurfaceServer {
     @discardableResult
     package func postError(_ code: XdgSurfaceError, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == XdgSurfaceServer {
+extension WlNewId where Interface == XdgSurfaceServer {
     @discardableResult
     @MainActor
     package func create<Owner: XdgSurfaceRequests>(
@@ -172,7 +172,7 @@ package extension WlNewId where Interface == XdgSurfaceServer {
             installed: installed)
     }
 }
-package extension XdgSurfaceServer {
+extension XdgSurfaceServer {
     @MainActor
     package static func global<Implementation: AnyObject & XdgSurfaceRequests>(
         implementation: Implementation,

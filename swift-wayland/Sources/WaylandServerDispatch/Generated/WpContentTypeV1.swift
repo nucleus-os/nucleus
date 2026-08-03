@@ -10,7 +10,7 @@ import WaylandServerC
     func setContentType(
         _ request: WaylandRequest<WpContentTypeV1Server>, content_type: WpContentTypeV1Type)
 }
-package extension WpContentTypeV1Requests {
+extension WpContentTypeV1Requests {
     package func destroy(_ request: WaylandRequest<WpContentTypeV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -72,7 +72,7 @@ package enum WpContentTypeV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == WpContentTypeV1Server {
+extension WlNewId where Interface == WpContentTypeV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpContentTypeV1Requests>(
@@ -85,7 +85,7 @@ package extension WlNewId where Interface == WpContentTypeV1Server {
             installed: installed)
     }
 }
-package extension WpContentTypeV1Server {
+extension WpContentTypeV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpContentTypeV1Requests>(
         implementation: Implementation,

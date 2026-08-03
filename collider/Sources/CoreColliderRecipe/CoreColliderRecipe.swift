@@ -1,4 +1,5 @@
 import ColliderCore
+import Foundation
 import SystemPackage
 
 public enum CoreColliderRecipe {
@@ -46,15 +47,40 @@ public enum CoreColliderRecipe {
     public static func prepareSkiaDependencies(
         root: FilePath,
         environment: [String: String]
-    ) -> TaskDeclaration {
+    ) throws -> TaskDeclaration {
         let skia = root.appending("third-party/skia")
+        let gnArchive = root.appending(".skia-build/downloads/gn-linux-arm64.zip")
+        guard
+            let gnURL = URL(
+                string:
+                    "https://chrome-infra-packages.appspot.com/dl/gn/gn/linux-arm64/+/git_revision:b2afae122eeb6ce09c52d63f67dc53fc517dbdc8"
+            ),
+            let gnDigest = ArtifactDigest(
+                sha256Hex:
+                    "376e1358ded109d955b8eb55ba2a7dec0e95ab1f8dfe0e18011e06eed78a011f")
+        else {
+            preconditionFailure("the pinned Linux arm64 GN artifact is invalid")
+        }
+        let gnDownload = try DownloadSpec(
+            url: gnURL,
+            permittedRedirectOrigins: [
+                "https://chrome-infra-packages.appspot.com",
+                "https://storage.googleapis.com",
+            ],
+            expectedDigest: gnDigest,
+            maximumResponseSize: 16 * 1_024 * 1_024,
+            acceptedMediaTypes: ["application/octet-stream"])
         return TaskDeclaration(
             id: TaskID(rawValue: "core.sources"),
             component: ComponentID(rawValue: "core"),
             inputs: [
-                .tree(skia),
+                .file(skia.appending("DEPS")),
+                .file(skia.appending("tools/git-sync-deps")),
+                .file(skia.appending("bin/fetch-gn")),
                 .tool(.named("git")),
                 .tool(.named("python3")),
+                .tool(.named("unzip")),
+                .tool(.named("chmod")),
             ],
             outputs: [
                 OutputDeclaration(
@@ -63,30 +89,55 @@ public enum CoreColliderRecipe {
                 OutputDeclaration(
                     path: skia.appending("third_party/externals"),
                     validation: .nonEmptyDirectory),
+                OutputDeclaration(
+                    path: skia.appending("bin/gn"),
+                    validation: .executableFile),
             ],
             locks: [.checkout("core-sources")],
-            operation: .command(
-                CommandSpec(
-                    executable: .named("python3"),
-                    arguments: [
-                        skia.appending("tools/git-sync-deps").string
-                    ],
-                    workingDirectory: root,
-                    environment: environment)))
+            operation: .sequence([
+                .command(
+                    CommandSpec(
+                        executable: .named("python3"),
+                        arguments: [
+                            skia.appending("tools/git-sync-deps").string
+                        ],
+                        workingDirectory: root,
+                        environment: environment)),
+                .download(gnDownload, candidate: gnArchive),
+                .command(
+                    CommandSpec(
+                        executable: .named("unzip"),
+                        arguments: [
+                            "-o", gnArchive.string, "gn", "-d",
+                            skia.appending("bin").string,
+                        ],
+                        workingDirectory: root,
+                        environment: environment)),
+                .command(
+                    CommandSpec(
+                        executable: .named("chmod"),
+                        arguments: ["0755", skia.appending("bin/gn").string],
+                        workingDirectory: root,
+                        environment: environment)),
+            ]))
     }
 
-    public static func buildSkia(
+    public static func buildSkiaLinux(
         root: FilePath,
         environment: [String: String],
+        target: NativeLinuxTarget,
         builder: NativeOCIConfiguration
     ) -> TaskDeclaration {
         skiaTask(
-            id: "core.skia.host",
+            id: "core.skia.\(target.identifier)",
             root: root,
             environment: environment,
-            buildDirectory: root.appending(".skia-build/graphite"),
-            gnArguments: hostGNArguments,
-            mode: "host",
+            buildDirectory: root.appending(".skia-build/\(target.identifier)"),
+            gnArguments: linuxGNArguments(target),
+            mode: "linux",
+            artifactTarget: target.artifactTarget,
+            intelBinaryTranslationPolicy: target.intelBinaryTranslationPolicy,
+            containerEnvironment: targetEnvironment(target),
             builder: builder)
     }
 
@@ -96,11 +147,7 @@ public enum CoreColliderRecipe {
         environment: [String: String],
         builder: NativeOCIConfiguration
     ) -> TaskDeclaration {
-        #if os(macOS)
-        let ndk = environment["NUCLEUS_ANDROID_NDK_HOME"] ?? ""
-        #else
         let ndk = "/opt/android-ndk-r30-beta2"
-        #endif
         return skiaTask(
             id: "core.skia.android-arm64",
             root: root,
@@ -114,6 +161,9 @@ public enum CoreColliderRecipe {
                 "skia_use_fontconfig=false",
             ] + commonGNArguments,
             mode: "android",
+            artifactTarget: .androidARM64(apiLevel: minimumAndroidAPI),
+            intelBinaryTranslationPolicy: .required,
+            containerEnvironment: [:],
             builder: builder)
     }
 
@@ -229,6 +279,43 @@ public enum CoreColliderRecipe {
                         target: $0.1.string)
                 }))
     }
+
+    public static func publishLinuxRenderSDK(
+        root: FilePath,
+        sdkRoot: FilePath,
+        target: NativeLinuxTarget
+    ) -> TaskDeclaration {
+        let sdk = sdkRoot.appending(target.identifier).appending("render")
+        let links: [(String, FilePath)] = [
+            ("include/skia", root.appending("third-party/skia")),
+            (
+                "lib/skia-graphite",
+                root.appending(".skia-build/\(target.identifier)")
+            ),
+            ("include/skia-text", root.appending("render-cxx/skia")),
+        ]
+        return TaskDeclaration(
+            id: TaskID(rawValue: "core.native-sdk.\(target.identifier)"),
+            component: ComponentID(rawValue: "core"),
+            dependencies: [
+                TaskID(rawValue: "core.skia.\(target.identifier)")
+            ],
+            inputs: links.map {
+                .value(name: $0.0, bytes: Array($0.1.string.utf8))
+            },
+            outputs: links.map {
+                OutputDeclaration(
+                    path: sdk.appending($0.0),
+                    validation: .exists)
+            },
+            locks: [.shared(sdkRoot.appending(".render.lock"))],
+            operation: .sequence(
+                links.map {
+                    .replaceSymlink(
+                        path: sdk.appending($0.0),
+                        target: $0.1.string)
+                }))
+    }
 }
 
 private let ninjaTargets = ["skia", "skshaper", "skparagraph", "skunicode", "svg"]
@@ -259,14 +346,30 @@ private let commonGNArguments = [
     "skia_use_system_libjpeg_turbo=false", "skia_use_system_libpng=false",
     "skia_use_system_libwebp=false", "skia_use_system_zlib=false",
 ]
-private let hostGNArguments =
-    [
+private func linuxGNArguments(_ target: NativeLinuxTarget) -> [String] {
+    let sysroot = target.containerSwiftSDKRoot
+    return [
+        #"target_os="linux""#,
+        #"target_cpu="\#(target.skiaCPU)""#,
         "skia_use_partition_alloc=false",
         "skia_use_fontconfig=true",
-        #"extra_cflags_cc=["-stdlib=libc++"]"#,
+        #"extra_cflags=["--target=\#(target.targetTriple)","--sysroot=\#(sysroot)","-idirafter/usr/include","-idirafter/usr/include/\#(target.gnuArchitecture)"]"#,
+        #"extra_cflags_cc=["--target=\#(target.targetTriple)","--sysroot=\#(sysroot)","-stdlib=libc++","-idirafter/usr/include","-idirafter/usr/include/\#(target.gnuArchitecture)"]"#,
+        #"extra_asmflags=["--target=\#(target.targetTriple)","--sysroot=\#(sysroot)"]"#,
+        #"extra_ldflags=["--target=\#(target.targetTriple)","--sysroot=\#(sysroot)","-stdlib=libc++","-fuse-ld=lld","-L/usr/lib/\#(target.gnuArchitecture)"]"#,
         #"cc="clang""#,
         #"cxx="clang++""#,
     ] + commonGNArguments
+}
+
+private func targetEnvironment(
+    _ target: NativeLinuxTarget
+) -> [String: String] {
+    [
+        "PKG_CONFIG_LIBDIR":
+            "/usr/lib/\(target.gnuArchitecture)/pkgconfig:/usr/share/pkgconfig"
+    ]
+}
 
 private func androidNDKReadELFPath(_ ndk: FilePath) -> FilePath {
     #if os(macOS)
@@ -285,30 +388,12 @@ private func skiaTask(
     buildDirectory: FilePath,
     gnArguments: [String],
     mode: String,
+    artifactTarget: ArtifactTarget,
+    intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy,
+    containerEnvironment: [String: String],
     builder: NativeOCIConfiguration
 ) -> TaskDeclaration {
     let skia = root.appending("third-party/skia")
-    #if os(macOS)
-    let dependencies = [TaskID(rawValue: "core.sources")]
-    let imageInputs: [ArtifactInput] = []
-    let operation = TaskOperation.sequence([
-        .command(
-            CommandSpec(
-                executable: .path(skia.appending("bin/gn")),
-                arguments: [
-                    "gen", buildDirectory.string,
-                    "--args=" + gnArguments.joined(separator: " "),
-                ],
-                workingDirectory: skia,
-                environment: environment)),
-        .command(
-            CommandSpec(
-                executable: .named("ninja"),
-                arguments: ["-C", buildDirectory.string] + ninjaTargets,
-                workingDirectory: skia,
-                environment: environment)),
-    ])
-    #else
     let dependencies = [
         TaskID(rawValue: "core.sources"),
         TaskID(rawValue: "native.builder"),
@@ -330,12 +415,16 @@ private func skiaTask(
             source: builder.ccache,
             target: "/ccache",
             access: .readWrite),
+        OCIMount(
+            source: builder.swiftSDKRoot,
+            target: "/swift-sdk",
+            access: .readOnly),
     ]
     func execution(_ command: [String]) -> TaskOperation {
         .runOCI(
             OCIExecution(
-                executionPlatform: .linuxAMD64OCI,
-                artifactTarget: .linuxX86_64,
+                executionPlatform: .linuxARM64OCI,
+                artifactTarget: artifactTarget,
                 imageID: builder.imageID,
                 hostname: "native-\(mode)-build",
                 workingDirectory: "/src",
@@ -346,8 +435,11 @@ private func skiaTask(
                 capabilityPolicy: .dropAll,
                 privilegePolicy: .prohibitAcquisition,
                 processFilesystemPolicy: .standard,
-                resourceLimits: .build,
-                containerEnvironment: [:],
+                intelBinaryTranslationPolicy: intelBinaryTranslationPolicy,
+                resourceLimits: .parallelBuild,
+                containerEnvironment: containerEnvironment.merging(
+                    ["CCACHE_LOGFILE": "/ccache/ccache.log"],
+                    uniquingKeysWith: { configured, _ in configured }),
                 command: ["skia-\(mode)"] + command,
                 environment: builder.environment,
                 output: .logged))
@@ -360,13 +452,13 @@ private func skiaTask(
         execution(
             ["ninja", "-C", containerBuildDirectory] + ninjaTargets),
     ])
-    #endif
     return TaskDeclaration(
         id: TaskID(rawValue: id),
         component: ComponentID(rawValue: "core"),
         dependencies: dependencies,
         inputs: [
             .dependencyOutput(skia),
+            .tree(builder.swiftSDKRoot),
             .value(
                 name: "gn-arguments",
                 bytes: Array(gnArguments.joined(separator: "\u{0}").utf8)),
@@ -376,7 +468,7 @@ private func skiaTask(
                 path: buildDirectory.appending($0),
                 validation: .regularFile)
         },
-        locks: [.checkout("core-skia")],
+        locks: [.checkout(id)],
         operation: operation)
 }
 

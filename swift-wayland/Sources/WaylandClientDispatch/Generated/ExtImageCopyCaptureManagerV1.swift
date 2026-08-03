@@ -9,7 +9,7 @@ package enum ExtImageCopyCaptureManagerV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_ext_image_copy_capture_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == ExtImageCopyCaptureManagerV1Client {
+extension WaylandProxy where Interface == ExtImageCopyCaptureManagerV1Client {
     package func createSession(
         source: WaylandProxy<ExtImageCaptureSourceV1Client>,
         options: ExtImageCopyCaptureManagerV1Options

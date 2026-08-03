@@ -5,12 +5,12 @@ import NucleusLinuxEnvironment
 import NucleusLinuxReactor
 package import NucleusSessionProtocol
 import NucleusShellAuth
-import NucleusShellServices
-import NucleusUI
+internal import NucleusShellServices
+internal import NucleusUI
 import NucleusUIEmbedder
 import NucleusWindowClientPasteboard
-import NucleusWindowClientRender
-package import NucleusWindowClientWayland
+internal import NucleusWindowClientRender
+internal import NucleusWindowClientWayland
 
 @MainActor
 extension ShellHost {

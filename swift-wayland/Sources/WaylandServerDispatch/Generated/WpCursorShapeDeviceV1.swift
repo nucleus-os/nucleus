@@ -11,7 +11,7 @@ import WaylandServerC
         _ request: WaylandRequest<WpCursorShapeDeviceV1Server>, serial: UInt32,
         shape: WpCursorShapeDeviceV1Shape)
 }
-package extension WpCursorShapeDeviceV1Requests {
+extension WpCursorShapeDeviceV1Requests {
     package func destroy(_ request: WaylandRequest<WpCursorShapeDeviceV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -73,18 +73,18 @@ package enum WpCursorShapeDeviceV1Server: WaylandServerInterface {
                 }
             }
 }
-package extension WaylandRequest where Interface == WpCursorShapeDeviceV1Server {
+extension WaylandRequest where Interface == WpCursorShapeDeviceV1Server {
     package func postError(_ code: WpCursorShapeDeviceV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WpCursorShapeDeviceV1Server {
+extension WaylandResourceHandle where Interface == WpCursorShapeDeviceV1Server {
     @discardableResult
     package func postError(_ code: WpCursorShapeDeviceV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WpCursorShapeDeviceV1Server {
+extension WlNewId where Interface == WpCursorShapeDeviceV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpCursorShapeDeviceV1Requests>(
@@ -97,7 +97,7 @@ package extension WlNewId where Interface == WpCursorShapeDeviceV1Server {
             installed: installed)
     }
 }
-package extension WpCursorShapeDeviceV1Server {
+extension WpCursorShapeDeviceV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpCursorShapeDeviceV1Requests>(
         implementation: Implementation,

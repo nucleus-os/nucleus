@@ -140,18 +140,18 @@ package enum ZwlrOutputConfigurationHeadV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == ZwlrOutputConfigurationHeadV1Server {
+extension WaylandRequest where Interface == ZwlrOutputConfigurationHeadV1Server {
     package func postError(_ code: ZwlrOutputConfigurationHeadV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ZwlrOutputConfigurationHeadV1Server {
+extension WaylandResourceHandle where Interface == ZwlrOutputConfigurationHeadV1Server {
     @discardableResult
     package func postError(_ code: ZwlrOutputConfigurationHeadV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ZwlrOutputConfigurationHeadV1Server {
+extension WlNewId where Interface == ZwlrOutputConfigurationHeadV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwlrOutputConfigurationHeadV1Requests>(
@@ -164,7 +164,7 @@ package extension WlNewId where Interface == ZwlrOutputConfigurationHeadV1Server
             owner: owner, installed: installed)
     }
 }
-package extension ZwlrOutputConfigurationHeadV1Server {
+extension ZwlrOutputConfigurationHeadV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwlrOutputConfigurationHeadV1Requests>(
         implementation: Implementation,

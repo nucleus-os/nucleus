@@ -7,7 +7,7 @@ import WaylandServerC
 @MainActor package protocol ZwpIdleInhibitorV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZwpIdleInhibitorV1Server>)
 }
-package extension ZwpIdleInhibitorV1Requests {
+extension ZwpIdleInhibitorV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpIdleInhibitorV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -54,7 +54,7 @@ package enum ZwpIdleInhibitorV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ZwpIdleInhibitorV1Server {
+extension WlNewId where Interface == ZwpIdleInhibitorV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -67,7 +67,7 @@ package extension WlNewId where Interface == ZwpIdleInhibitorV1Server {
             installed: installed)
     }
 }
-package extension ZwpIdleInhibitorV1Server {
+extension ZwpIdleInhibitorV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

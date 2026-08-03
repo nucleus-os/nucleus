@@ -2,12 +2,12 @@
 // Typed server descriptor and dispatch for zwp_pointer_gesture_hold_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpPointerGestureHoldV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZwpPointerGestureHoldV1Server>)
 }
-package extension ZwpPointerGestureHoldV1Requests {
+extension ZwpPointerGestureHoldV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpPointerGestureHoldV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -65,7 +65,7 @@ package enum ZwpPointerGestureHoldV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwpPointerGestureHoldV1Server {
+extension WaylandResourceHandle where Interface == ZwpPointerGestureHoldV1Server {
     package var supportsBegin: Bool {
         guard let version else {
             return false
@@ -104,7 +104,7 @@ package extension WaylandResourceHandle where Interface == ZwpPointerGestureHold
         return true
     }
 }
-package extension WlNewId where Interface == ZwpPointerGestureHoldV1Server {
+extension WlNewId where Interface == ZwpPointerGestureHoldV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -117,7 +117,7 @@ package extension WlNewId where Interface == ZwpPointerGestureHoldV1Server {
             installed: installed)
     }
 }
-package extension ZwpPointerGestureHoldV1Server {
+extension ZwpPointerGestureHoldV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

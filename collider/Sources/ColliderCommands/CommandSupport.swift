@@ -185,8 +185,11 @@ extension WorkspaceContext {
         cFlags: [String] = [],
         cxxFlags: [String] = [],
         linkerFlags: [String] = [],
+        toolsets: [FilePath] = [],
         staticSwiftStandardLibrary: Bool = false,
-        target: SwiftBuildTarget? = nil
+        target: SwiftBuildTarget? = nil,
+        execution: SwiftPMExecution = .host,
+        toolchainIdentity: String? = nil
     ) throws -> SwiftPMInvocation {
         let packageRoot = layout.rootPath
         let manifest = packageRoot.appending("Package.swift")
@@ -195,21 +198,29 @@ extension WorkspaceContext {
                 "canonical Swift package has no manifest: " + manifest.string)
         }
 
-        let compiler = try swiftCompilerPath()
-        let compilerIdentity = try ArtifactHasher.digest(file: compiler)
-            .description
+        let resolvedToolchainIdentity: String
+        if let toolchainIdentity {
+            resolvedToolchainIdentity = toolchainIdentity
+        } else {
+            let compiler = try swiftCompilerPath()
+            let compilerIdentity = try ArtifactHasher.digest(file: compiler)
+                .description
+            resolvedToolchainIdentity = "\(compiler.string)@\(compilerIdentity)"
+        }
         let context = SwiftBuildContext(
             packageRoot: packageRoot,
             configuration: configuration,
             target: target ?? .host(identity: hostSwiftTarget),
-            toolchainIdentity: "\(compiler.string)@\(compilerIdentity)",
+            toolchainIdentity: resolvedToolchainIdentity,
             sanitizer: sanitizer,
             traits: traits,
             swiftFlags: swiftFlags,
             cFlags: cFlags,
             cxxFlags: cxxFlags,
             linkerFlags: linkerFlags,
-            staticSwiftStandardLibrary: staticSwiftStandardLibrary)
+            toolsets: toolsets,
+            staticSwiftStandardLibrary: staticSwiftStandardLibrary,
+            execution: execution)
         let invocation = SwiftPMInvocation(
             context: context,
             scratchPath: FilePath(layout.swiftScratch(for: context).path))
@@ -222,7 +233,9 @@ extension WorkspaceContext {
             && cFlags.isEmpty
             && cxxFlags.isEmpty
             && linkerFlags.isEmpty
+            && toolsets.isEmpty
             && !staticSwiftStandardLibrary
+            && execution == .host
         if isDefaultContext {
             // Publishing the editor's view of the package build directory is
             // part of resolving it. A stale pointer would send the language

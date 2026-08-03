@@ -1,6 +1,6 @@
 package import NucleusCompositorServer
 package import NucleusCompositorServerTypes
-import NucleusTypes
+internal import NucleusTypes
 
 package enum WindowInteraction {
     case idle

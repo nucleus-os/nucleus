@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol WpColorManagerV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<WpColorManagerV1Server>)
@@ -32,7 +32,7 @@ import WaylandServerC
         image_description: WlNewId<WpImageDescriptionV1Server>,
         reference: WaylandBorrowedObject<WpImageDescriptionReferenceV1Server>)
 }
-package extension WpColorManagerV1Requests {
+extension WpColorManagerV1Requests {
     package func destroy(_ request: WaylandRequest<WpColorManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -252,7 +252,7 @@ package enum WpColorManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == WpColorManagerV1Server {
+extension WaylandResourceHandle where Interface == WpColorManagerV1Server {
     @discardableResult
     package func sendSupportedIntent(render_intent: WpColorManagerV1RenderIntent) -> Bool {
         guard let target = unsafe resource else {
@@ -294,18 +294,18 @@ package extension WaylandResourceHandle where Interface == WpColorManagerV1Serve
         return true
     }
 }
-package extension WaylandRequest where Interface == WpColorManagerV1Server {
+extension WaylandRequest where Interface == WpColorManagerV1Server {
     package func postError(_ code: WpColorManagerV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WpColorManagerV1Server {
+extension WaylandResourceHandle where Interface == WpColorManagerV1Server {
     @discardableResult
     package func postError(_ code: WpColorManagerV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WpColorManagerV1Server {
+extension WlNewId where Interface == WpColorManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpColorManagerV1Requests>(
@@ -318,7 +318,7 @@ package extension WlNewId where Interface == WpColorManagerV1Server {
             installed: installed)
     }
 }
-package extension WpColorManagerV1Server {
+extension WpColorManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpColorManagerV1Requests>(
         implementation: Implementation,

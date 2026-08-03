@@ -1,4 +1,4 @@
-package import NucleusCompositorServerTypes
+internal import NucleusCompositorServerTypes
 import NucleusTypes
 
 package struct XwaylandProtocols: OptionSet, Sendable, Equatable {

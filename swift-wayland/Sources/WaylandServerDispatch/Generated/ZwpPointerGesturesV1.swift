@@ -18,7 +18,7 @@ import WaylandServerC
         _ request: WaylandRequest<ZwpPointerGesturesV1Server>,
         id: WlNewId<ZwpPointerGestureHoldV1Server>, pointer: WaylandBorrowedObject<WlPointerServer>)
 }
-package extension ZwpPointerGesturesV1Requests {
+extension ZwpPointerGesturesV1Requests {
     package func release(_ request: WaylandRequest<ZwpPointerGesturesV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -134,7 +134,7 @@ package enum ZwpPointerGesturesV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ZwpPointerGesturesV1Server {
+extension WlNewId where Interface == ZwpPointerGesturesV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpPointerGesturesV1Requests>(
@@ -147,7 +147,7 @@ package extension WlNewId where Interface == ZwpPointerGesturesV1Server {
             installed: installed)
     }
 }
-package extension ZwpPointerGesturesV1Server {
+extension ZwpPointerGesturesV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpPointerGesturesV1Requests>(
         implementation: Implementation,

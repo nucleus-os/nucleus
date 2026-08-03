@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol WlDataOfferRequests: AnyObject {
     func accept(_ request: WaylandRequest<WlDataOfferServer>, serial: UInt32, mime_type: String?)
@@ -16,7 +16,7 @@ import WaylandServerC
         _ request: WaylandRequest<WlDataOfferServer>, dnd_actions: WlDataDeviceManagerDndAction,
         preferred_action: WlDataDeviceManagerDndAction)
 }
-package extension WlDataOfferRequests {
+extension WlDataOfferRequests {
     package func destroy(_ request: WaylandRequest<WlDataOfferServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -142,7 +142,7 @@ package enum WlDataOfferServer: WaylandServerInterface {
                 }
             }
 }
-package extension WaylandResourceHandle where Interface == WlDataOfferServer {
+extension WaylandResourceHandle where Interface == WlDataOfferServer {
     package var supportsSourceActions: Bool {
         guard let version else {
             return false
@@ -184,18 +184,18 @@ package extension WaylandResourceHandle where Interface == WlDataOfferServer {
         return true
     }
 }
-package extension WaylandRequest where Interface == WlDataOfferServer {
+extension WaylandRequest where Interface == WlDataOfferServer {
     package func postError(_ code: WlDataOfferError, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WlDataOfferServer {
+extension WaylandResourceHandle where Interface == WlDataOfferServer {
     @discardableResult
     package func postError(_ code: WlDataOfferError, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WlDataOfferServer {
+extension WlNewId where Interface == WlDataOfferServer {
     @discardableResult
     @MainActor
     package func create<Owner: WlDataOfferRequests>(
@@ -208,7 +208,7 @@ package extension WlNewId where Interface == WlDataOfferServer {
             installed: installed)
     }
 }
-package extension WlDataOfferServer {
+extension WlDataOfferServer {
     @MainActor
     package static func global<Implementation: AnyObject & WlDataOfferRequests>(
         implementation: Implementation,

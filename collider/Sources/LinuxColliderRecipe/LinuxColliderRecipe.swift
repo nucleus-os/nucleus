@@ -2,6 +2,139 @@ import ColliderCore
 import SystemPackage
 
 public enum LinuxColliderRecipe {
+    public static func architectureLane(
+        architecture: PlatformArchitecture,
+        root: FilePath,
+        environment: [String: String],
+        swiftPM: SwiftPMInvocation,
+        imageTask: TaskID,
+        nativeDependencies: [TaskID],
+        sdkRoot: FilePath,
+        nativeSDKRoot: FilePath
+    ) -> [TaskDeclaration] {
+        let name = architecture.rawValue
+        let buildID = TaskID(rawValue: "linux.\(name).build")
+        let buildRequirement = swiftPM.product(
+            package: "nucleus",
+            product: "NucleusSessionSupervisor",
+            packageRoot: root,
+            environment: environment)
+        let testRequirement = swiftPM.testProduct(
+            package: "nucleus",
+            testProduct: "NucleusLinuxPlatformPackageTests",
+            packageRoot: root,
+            environment: environment,
+            arguments: [
+                "--no-parallel", "--skip",
+                "gpu(DRM|Loader|Headless)_",
+            ])
+        let loaderRequirement = swiftPM.testProduct(
+            package: "nucleus",
+            testProduct: "NucleusLinuxPlatformPackageTests",
+            packageRoot: root,
+            environment: environment,
+            arguments: ["--filter", "gpuLoader_"])
+        let headlessRequirement = swiftPM.testProduct(
+            package: "nucleus",
+            testProduct: "NucleusLinuxPlatformPackageTests",
+            packageRoot: root,
+            environment: environment,
+            arguments: ["--filter", "gpuHeadless_"])
+        let sharedInputs: [ArtifactInput] = [
+            .tree(sdkRoot),
+            .optionalTree(
+                nativeSDKRoot,
+                fallback: Array("native-sdk-not-provisioned".utf8)),
+            swiftPM.identityInput,
+        ]
+        let build = TaskDeclaration(
+            id: buildID,
+            component: ComponentID(rawValue: "linux"),
+            dependencies: [imageTask] + nativeDependencies,
+            swiftProducts: [buildRequirement],
+            inputs: sharedInputs,
+            postconditions: [swiftPM.postcondition],
+            locks: [.checkout("linux-\(name)")],
+            cachePolicy: .contentAddressed,
+            operation: .sequence([]))
+        switch architecture {
+        case .arm64:
+            return [
+                build,
+                TaskDeclaration(
+                    id: TaskID(rawValue: "linux.\(name).test"),
+                    component: ComponentID(rawValue: "linux"),
+                    dependencies: [buildID],
+                    subsumedDependencies: [buildID],
+                    swiftTests: [testRequirement],
+                    inputs: sharedInputs,
+                    postconditions: [swiftPM.postcondition],
+                    locks: [.checkout("linux-\(name)")],
+                    cachePolicy: .always,
+                    operation: .runSwiftTest(
+                        SwiftTestExecution(requirement: testRequirement))),
+                laneTestTask(
+                    id: "linux.\(name).test-loader",
+                    buildID: buildID,
+                    requirement: loaderRequirement,
+                    sharedInputs: sharedInputs,
+                    lockName: "linux-\(name)"),
+                laneTestTask(
+                    id: "linux.\(name).test-gpu-headless",
+                    buildID: buildID,
+                    requirement: headlessRequirement,
+                    sharedInputs: sharedInputs,
+                    lockName: "linux-\(name)"),
+            ]
+        case .x86_64:
+            let probeRequirement = swiftPM.product(
+                package: "nucleus",
+                product: "NucleusVulkanLaneProbe",
+                packageRoot: root,
+                environment: environment,
+                expectedOutputs: [
+                    PathPostcondition(
+                        path: swiftPM.executable("NucleusVulkanLaneProbe"),
+                        validation: .executableFile)
+                ])
+            return [
+                build,
+                translatedExecutableTask(
+                    id: "linux.\(name).test",
+                    buildID: buildID,
+                    requirements: [buildRequirement, probeRequirement],
+                    inputs: sharedInputs,
+                    swiftPM: swiftPM,
+                    environment: environment,
+                    operations: [
+                        (swiftPM.executable("NucleusVulkanLaneProbe"), ["loader"]),
+                        (swiftPM.executable("NucleusVulkanLaneProbe"), ["gpu-headless"]),
+                        (swiftPM.executable("NucleusSessionSupervisor"), ["--help"]),
+                    ]),
+                translatedExecutableTask(
+                    id: "linux.\(name).test-loader",
+                    buildID: buildID,
+                    requirements: [probeRequirement],
+                    inputs: sharedInputs,
+                    swiftPM: swiftPM,
+                    environment: environment,
+                    operations: [
+                        (swiftPM.executable("NucleusVulkanLaneProbe"), ["loader"])
+                    ]),
+                translatedExecutableTask(
+                    id: "linux.\(name).test-gpu-headless",
+                    buildID: buildID,
+                    requirements: [probeRequirement],
+                    inputs: sharedInputs,
+                    swiftPM: swiftPM,
+                    environment: environment,
+                    operations: [
+                        (swiftPM.executable("NucleusVulkanLaneProbe"), ["gpu-headless"])
+                    ]),
+            ]
+        }
+    }
+
     public static func builds(
         root: FilePath,
         environment: [String: String],
@@ -96,6 +229,58 @@ public enum LinuxColliderRecipe {
                 swiftPM: swiftPM),
         ]
     }
+}
+
+private func laneTestTask(
+    id: String,
+    buildID: TaskID,
+    requirement: SwiftTestRequirement,
+    sharedInputs: [ArtifactInput],
+    lockName: String
+) -> TaskDeclaration {
+    TaskDeclaration(
+        id: TaskID(rawValue: id),
+        component: ComponentID(rawValue: "linux"),
+        dependencies: [buildID],
+        subsumedDependencies: [buildID],
+        swiftTests: [requirement],
+        inputs: sharedInputs,
+        postconditions: [requirement.invocation.postcondition],
+        locks: [.checkout(lockName)],
+        cachePolicy: .always,
+        operation: .runSwiftTest(
+            SwiftTestExecution(requirement: requirement)))
+}
+
+private func translatedExecutableTask(
+    id: String,
+    buildID: TaskID,
+    requirements: [SwiftProductRequirement],
+    inputs: [ArtifactInput],
+    swiftPM: SwiftPMInvocation,
+    environment: [String: String],
+    operations: [(FilePath, [String])]
+) -> TaskDeclaration {
+    TaskDeclaration(
+        id: TaskID(rawValue: id),
+        component: ComponentID(rawValue: "linux"),
+        dependencies: [buildID],
+        subsumedDependencies: requirements.contains(where: {
+            $0.product == "NucleusSessionSupervisor"
+        }) ? [buildID] : [],
+        swiftProducts: requirements,
+        inputs: inputs,
+        postconditions: [swiftPM.postcondition],
+        locks: [.checkout("linux-x86_64")],
+        cachePolicy: .always,
+        operation: .sequence(
+            operations.map { executable, arguments in
+                swiftPM.operation(
+                    executable: executable,
+                    arguments: arguments,
+                    workingDirectory: swiftPM.context.packageRoot,
+                    environment: environment)
+            }))
 }
 
 private func task(

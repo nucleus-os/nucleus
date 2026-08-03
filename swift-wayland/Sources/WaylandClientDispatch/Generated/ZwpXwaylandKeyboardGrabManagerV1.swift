@@ -8,7 +8,7 @@ package enum ZwpXwaylandKeyboardGrabManagerV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_zwp_xwayland_keyboard_grab_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == ZwpXwaylandKeyboardGrabManagerV1Client {
+extension WaylandProxy where Interface == ZwpXwaylandKeyboardGrabManagerV1Client {
     package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in

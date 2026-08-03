@@ -9,7 +9,7 @@ import WaylandServerC
     func destroyRegistry(
         _ request: WaylandRequest<WlFixesServer>, registry: WaylandBorrowedObject<WlRegistryServer>)
 }
-package extension WlFixesRequests {
+extension WlFixesRequests {
     package func destroy(_ request: WaylandRequest<WlFixesServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -68,7 +68,7 @@ package enum WlFixesServer: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == WlFixesServer {
+extension WlNewId where Interface == WlFixesServer {
     @discardableResult
     @MainActor
     package func create<Owner: WlFixesRequests>(
@@ -81,7 +81,7 @@ package extension WlNewId where Interface == WlFixesServer {
         )
     }
 }
-package extension WlFixesServer {
+extension WlFixesServer {
     @MainActor
     package static func global<Implementation: AnyObject & WlFixesRequests>(
         implementation: Implementation,

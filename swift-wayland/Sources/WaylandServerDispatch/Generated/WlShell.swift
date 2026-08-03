@@ -54,18 +54,18 @@ package enum WlShellServer: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == WlShellServer {
+extension WaylandRequest where Interface == WlShellServer {
     package func postError(_ code: WlShellError, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WlShellServer {
+extension WaylandResourceHandle where Interface == WlShellServer {
     @discardableResult
     package func postError(_ code: WlShellError, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WlShellServer {
+extension WlNewId where Interface == WlShellServer {
     @discardableResult
     @MainActor
     package func create<Owner: WlShellRequests>(
@@ -78,7 +78,7 @@ package extension WlNewId where Interface == WlShellServer {
         )
     }
 }
-package extension WlShellServer {
+extension WlShellServer {
     @MainActor
     package static func global<Implementation: AnyObject & WlShellRequests>(
         implementation: Implementation,

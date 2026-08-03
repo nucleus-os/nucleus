@@ -9,8 +9,11 @@ signing identities, and current published artifacts are never cleanup
 candidates. Expensive incremental build trees remain reusable until the user
 explicitly cleans them.
 
-Storage lifecycle behavior uses neither byte quotas, free-space minimums,
-automatic cache-size limits, nor Collider-owned schema versions.
+Collider never chooses deletion candidates from a byte threshold, free-space
+minimum, or automatic cache-size limit. The macOS host contract still applies
+hard APFS quotas and protected reserves as admission boundaries. Crossing a
+capacity boundary produces diagnostics and an explicit pruning action; it does
+not silently delete generated state.
 
 Status: active
 
@@ -38,6 +41,32 @@ Collider provides one coherent lifecycle for every generated path:
 - Cleanup always acquires the same workflow locks used by the producer.
 - Native SDKs have one Collider-owned root resolver, artifact fingerprint, publication
   path, and package-facing metadata boundary.
+
+## Current Implementation Boundary
+
+`StorageDeclaration` and `StorageCatalog` are the typed ownership model. The
+catalog rejects relative roots, `/` safety roots, directly removable workspace,
+home, or cache roots, unlocked cleanup declarations, and overlapping removable
+namespaces.
+
+The macOS builder contract owns the seven APFS volumes and the exact
+`XDG_CACHE_HOME`, native-SDK, and Android-SDK roots. `tools/host-env.sh`,
+`collider-setup.sh`, and `WorkspaceContext.load()` resolve those same paths;
+noninteractive builds no longer create a second cache under `$HOME/.cache`.
+
+`collider cache status` reports logical Collider roots and physical APFS roots
+with owner, storage class, cleanup policy, allocated bytes, quota, reserve,
+retention, and proven reclaimable bytes. It includes Apple Container image,
+container, and volume usage. `collider cache prune` acquires the Swift target
+SDK producer lock, removes only correctly named abandoned candidate directories,
+applies run-record retention under the cache-prune lock, and invokes
+dangling-image pruning without `--all`. Starting a Collider command records a
+run but never performs implicit storage reclamation. `--dry-run` performs no
+mutation and enumerates every candidate first.
+
+Component-specific `collider clean` remains part of the later declaration
+migration. Incremental roots are reported as `explicitClean` but are not removed
+by cache pruning.
 
 ## Phase 1 — Make Verification Mandatory and Representative
 
@@ -118,6 +147,11 @@ declared workers. No first-party Vulkan, Graphite, GBM, or DRM test remains disa
 | Run record | `.nucleus/runs/*` | Existing successful-run retention remains configurable |
 
 ## Phase 2 — Declare Storage Ownership
+
+Phase status: active. The ownership types, validation rules, macOS volume
+contract, cache/SDK/run declarations, and behavioral safety tests have landed.
+Recipe-owned incremental roots still move into the resolved task graph in this
+phase before component cleaning is enabled.
 
 Add first-class storage declarations to `ColliderCore` and make them part of
 the resolved task graph.

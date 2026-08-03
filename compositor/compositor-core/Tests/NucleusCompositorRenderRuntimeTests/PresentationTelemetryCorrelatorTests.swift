@@ -1,8 +1,8 @@
-package import NucleusCompositorRendererLinux
-package import NucleusRenderer
+import NucleusRenderer
 import Testing
 
 @testable import NucleusCompositorRenderRuntime
+@testable import NucleusCompositorRendererLinux
 
 private func frame(outputID: UInt64, serial: UInt64) -> RenderFrameTelemetry {
     var value = RenderFrameTelemetry()

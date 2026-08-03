@@ -2,7 +2,7 @@
 // Typed server descriptor and dispatch for xdg_toplevel_icon_manager_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol XdgToplevelIconManagerV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<XdgToplevelIconManagerV1Server>)
@@ -14,7 +14,7 @@ import WaylandServerC
         toplevel: WaylandBorrowedObject<XdgToplevelServer>,
         icon: WaylandBorrowedObject<XdgToplevelIconV1Server>?)
 }
-package extension XdgToplevelIconManagerV1Requests {
+extension XdgToplevelIconManagerV1Requests {
     package func destroy(_ request: WaylandRequest<XdgToplevelIconManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -108,7 +108,7 @@ package enum XdgToplevelIconManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == XdgToplevelIconManagerV1Server {
+extension WaylandResourceHandle where Interface == XdgToplevelIconManagerV1Server {
     @discardableResult
     package func sendIconSize(size: Int32) -> Bool {
         guard let target = unsafe resource else {
@@ -126,7 +126,7 @@ package extension WaylandResourceHandle where Interface == XdgToplevelIconManage
         return true
     }
 }
-package extension WlNewId where Interface == XdgToplevelIconManagerV1Server {
+extension WlNewId where Interface == XdgToplevelIconManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: XdgToplevelIconManagerV1Requests>(
@@ -139,7 +139,7 @@ package extension WlNewId where Interface == XdgToplevelIconManagerV1Server {
             installed: installed)
     }
 }
-package extension XdgToplevelIconManagerV1Server {
+extension XdgToplevelIconManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & XdgToplevelIconManagerV1Requests>(
         implementation: Implementation,

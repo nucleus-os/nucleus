@@ -2,7 +2,7 @@
 // Typed server descriptor and dispatch for zxdg_imported_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZxdgImportedV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZxdgImportedV1Server>)
@@ -10,7 +10,7 @@ import WaylandServerC
         _ request: WaylandRequest<ZxdgImportedV1Server>,
         surface: WaylandBorrowedObject<WlSurfaceServer>)
 }
-package extension ZxdgImportedV1Requests {
+extension ZxdgImportedV1Requests {
     package func destroy(_ request: WaylandRequest<ZxdgImportedV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -77,7 +77,7 @@ package enum ZxdgImportedV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZxdgImportedV1Server {
+extension WaylandResourceHandle where Interface == ZxdgImportedV1Server {
     @discardableResult
     package func sendDestroyed() -> Bool {
         guard let target = unsafe resource else {
@@ -87,7 +87,7 @@ package extension WaylandResourceHandle where Interface == ZxdgImportedV1Server 
         return true
     }
 }
-package extension WlNewId where Interface == ZxdgImportedV1Server {
+extension WlNewId where Interface == ZxdgImportedV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZxdgImportedV1Requests>(
@@ -100,7 +100,7 @@ package extension WlNewId where Interface == ZxdgImportedV1Server {
             installed: installed)
     }
 }
-package extension ZxdgImportedV1Server {
+extension ZxdgImportedV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZxdgImportedV1Requests>(
         implementation: Implementation,

@@ -2,6 +2,7 @@ import ColliderCore
 import ColliderPlatformC
 import Foundation
 import SystemPackage
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Darwin)
@@ -23,8 +24,8 @@ public enum DirectoryLifecycle {
             withDestinationPath: target)
         do {
             if manager.fileExists(atPath: link.string),
-               let metadata = try? link.stat(followTargetSymlink: false),
-               metadata.type != .symbolicLink
+                let metadata = try? link.stat(followTargetSymlink: false),
+                metadata.type != .symbolicLink
             {
                 throw RuntimeFailure.invalidOutput(
                     "activation path is not a symbolic link: \(link)")
@@ -43,7 +44,7 @@ public enum DirectoryLifecycle {
         let prepared = publication.prepared
         let destination = publication.destination
         guard prepared != destination,
-              prepared.removingLastComponent()
+            prepared.removingLastComponent()
                 == destination.removingLastComponent()
         else {
             throw RuntimeFailure.invalidOutput(
@@ -63,8 +64,9 @@ public enum DirectoryLifecycle {
                     "publication destination is not a real directory: "
                         + destination.string)
             }
-            guard unsafe collider_exchange(
-                prepared.string, destination.string) == 0
+            guard
+                unsafe collider_exchange(
+                    prepared.string, destination.string) == 0
             else {
                 throw Errno(rawValue: errno)
             }
@@ -72,8 +74,9 @@ public enum DirectoryLifecycle {
                 destination.removingLastComponent())
             try manager.removeItem(atPath: prepared.string)
         } else {
-            guard unsafe collider_replace(
-                prepared.string, destination.string) == 0
+            guard
+                unsafe collider_replace(
+                    prepared.string, destination.string) == 0
             else {
                 throw Errno(rawValue: errno)
             }
@@ -111,56 +114,61 @@ public enum DirectoryLifecycle {
         }
         let protectedName = try rule.current.flatMap { link -> String? in
             guard let metadata = try? link.stat(followTargetSymlink: false),
-                  metadata.type == .symbolicLink
+                metadata.type == .symbolicLink
             else { return nil }
             let target = try manager.destinationOfSymbolicLink(
                 atPath: link.string)
             return URL(
                 fileURLWithPath: target,
                 relativeTo: URL(
-                    fileURLWithPath: link.removingLastComponent().string))
-                .standardizedFileURL.lastPathComponent
+                    fileURLWithPath: link.removingLastComponent().string)
+            )
+            .standardizedFileURL.lastPathComponent
         }
-        let pattern = switch rule.naming {
-        case .contentIdentity: #"^[0-9a-f]{24}$"#
-        case .swiftBuildContext:
-            #"^sha256-[0-9a-f]{64}$"#
-        case .aospProduct:
-            #"^[0-9]+-[a-z0-9][a-z0-9._-]*$"#
-        }
+        let pattern =
+            switch rule.naming {
+            case .contentIdentity: #"^[0-9a-f]{24}$"#
+            case .swiftBuildContext:
+                #"^sha256-[0-9a-f]{64}$"#
+            case .swiftSDKCandidate:
+                #"^\.candidate-[0-9a-f]{24}-[0-9TZ-]+-[0-9]+$"#
+            case .aospProduct:
+                #"^[0-9]+-[a-z0-9][a-z0-9._-]*$"#
+            }
         let expression = try NSRegularExpression(pattern: pattern)
         let candidates = try manager.contentsOfDirectory(
             at: URL(fileURLWithPath: root.string),
             includingPropertiesForKeys: [
                 .isDirectoryKey, .isSymbolicLinkKey,
                 .contentModificationDateKey,
-            ])
-            .filter { url in
-                let name = url.lastPathComponent
-                let range = NSRange(name.startIndex..., in: name)
-                guard expression.firstMatch(
+            ]
+        )
+        .filter { url in
+            let name = url.lastPathComponent
+            let range = NSRange(name.startIndex..., in: name)
+            guard
+                expression.firstMatch(
                     in: name, range: range) != nil,
-                      let values = try? url.resourceValues(
-                        forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-                else { return false }
-                return values.isDirectory == true
-                    && values.isSymbolicLink != true
-            }
-            .sorted {
-                let left = try? $0.resourceValues(
-                    forKeys: [.contentModificationDateKey])
-                    .contentModificationDate
-                let right = try? $1.resourceValues(
-                    forKeys: [.contentModificationDateKey])
-                    .contentModificationDate
-                return (left ?? .distantPast) > (right ?? .distantPast)
-            }
+                let values = try? url.resourceValues(
+                    forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            else { return false }
+            return values.isDirectory == true
+                && values.isSymbolicLink != true
+        }
+        .sorted {
+            let left = try? $0.resourceValues(
+                forKeys: [.contentModificationDateKey])
+                .contentModificationDate
+            let right = try? $1.resourceValues(
+                forKeys: [.contentModificationDateKey])
+                .contentModificationDate
+            return (left ?? .distantPast) > (right ?? .distantPast)
+        }
         var retained = Set(
             candidates.prefix(Int(rule.retain)).map(\.lastPathComponent))
         if let protectedName { retained.insert(protectedName) }
         for candidate in candidates
-            where !retained.contains(candidate.lastPathComponent)
-        {
+        where !retained.contains(candidate.lastPathComponent) {
             try manager.removeItem(at: candidate)
         }
     }

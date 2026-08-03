@@ -7,7 +7,7 @@ import WaylandServerC
 @MainActor package protocol WpLinuxDrmSyncobjTimelineV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<WpLinuxDrmSyncobjTimelineV1Server>)
 }
-package extension WpLinuxDrmSyncobjTimelineV1Requests {
+extension WpLinuxDrmSyncobjTimelineV1Requests {
     package func destroy(_ request: WaylandRequest<WpLinuxDrmSyncobjTimelineV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -55,7 +55,7 @@ package enum WpLinuxDrmSyncobjTimelineV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == WpLinuxDrmSyncobjTimelineV1Server {
+extension WlNewId where Interface == WpLinuxDrmSyncobjTimelineV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -68,7 +68,7 @@ package extension WlNewId where Interface == WpLinuxDrmSyncobjTimelineV1Server {
             installed: installed)
     }
 }
-package extension WpLinuxDrmSyncobjTimelineV1Server {
+extension WpLinuxDrmSyncobjTimelineV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

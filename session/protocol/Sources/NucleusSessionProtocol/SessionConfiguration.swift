@@ -13,7 +13,7 @@ public enum SessionConfigurationFailure: Error, CustomStringConvertible {
     case encodingTooLarge
     case invalidEncoding
     case invalidDescriptor(String)
-    case transportFailed(IPCTransportError)
+    case transportFailed(String)
 
     public var description: String {
         switch self {
@@ -73,11 +73,12 @@ public struct SessionConfiguration: Sendable, Equatable {
             throw SessionConfigurationFailure.invalidDevicePath
         }
         if let xwaylandExecutablePath,
-           !xwaylandExecutablePath.hasPrefix("/")
+            !xwaylandExecutablePath.hasPrefix("/")
         {
             throw SessionConfigurationFailure.invalidExecutablePath
         }
-        let stringBytes = (drmDevicePath?.utf8.count ?? 0)
+        let stringBytes =
+            (drmDevicePath?.utf8.count ?? 0)
             + (wallpaperPath?.utf8.count ?? 0)
             + (xwaylandExecutablePath?.utf8.count ?? 0)
         guard Self.fixedSize + stringBytes <= Self.maximumEncodedSize else {
@@ -131,28 +132,29 @@ public struct SessionConfiguration: Sendable, Equatable {
 
     public init(encoded bytes: [UInt8]) throws {
         guard bytes.count >= Self.fixedSize,
-              bytes.count <= Self.maximumEncodedSize,
-              Self.loadUInt32(bytes, at: 0) == Self.magic,
-              Self.loadUInt16(bytes, at: 4) == Self.version,
-              let presentMode = SessionPresentMode(rawValue: bytes[16]),
-              bytes[17] == 0,
-              bytes[18] == 0,
-              bytes[19] == 0,
-              Self.loadUInt16(bytes, at: 6) & ~UInt16(0b111) == 0
+            bytes.count <= Self.maximumEncodedSize,
+            Self.loadUInt32(bytes, at: 0) == Self.magic,
+            Self.loadUInt16(bytes, at: 4) == Self.version,
+            let presentMode = SessionPresentMode(rawValue: bytes[16]),
+            bytes[17] == 0,
+            bytes[18] == 0,
+            bytes[19] == 0,
+            Self.loadUInt16(bytes, at: 6) & ~UInt16(0b111) == 0
         else { throw SessionConfigurationFailure.invalidEncoding }
         let drmCount = Int(Self.loadUInt32(bytes, at: 20))
         let wallpaperCount = Int(Self.loadUInt32(bytes, at: 24))
         let xwaylandCount = Int(Self.loadUInt32(bytes, at: 28))
-        guard Self.fixedSize + drmCount + wallpaperCount + xwaylandCount
+        guard
+            Self.fixedSize + drmCount + wallpaperCount + xwaylandCount
                 == bytes.count,
-              let drm = String(
+            let drm = String(
                 validating: bytes[32..<(32 + drmCount)],
                 as: UTF8.self),
-              let wallpaper = String(
+            let wallpaper = String(
                 validating: bytes[
                     (32 + drmCount)..<(32 + drmCount + wallpaperCount)],
                 as: UTF8.self),
-              let xwayland = String(
+            let xwayland = String(
                 validating: bytes[
                     (32 + drmCount + wallpaperCount)..<bytes.count],
                 as: UTF8.self)
@@ -178,7 +180,7 @@ public struct SessionConfiguration: Sendable, Equatable {
 
     public init(hexEncoded value: String) throws {
         guard value.utf8.count.isMultiple(of: 2),
-              value.utf8.count <= Self.maximumEncodedSize * 2
+            value.utf8.count <= Self.maximumEncodedSize * 2
         else {
             throw SessionConfigurationFailure.invalidEncoding
         }
@@ -209,11 +211,12 @@ public struct SessionConfiguration: Sendable, Equatable {
             throw SessionConfigurationFailure.invalidDescriptor("<duplicate>")
         }
         guard
-              arguments.indices.contains(index + 1),
-              let descriptor = Int32(arguments[index + 1]),
-              descriptor >= 3
+            arguments.indices.contains(index + 1),
+            let descriptor = Int32(arguments[index + 1]),
+            descriptor >= 3
         else {
-            let value = arguments.indices.contains(index + 1)
+            let value =
+                arguments.indices.contains(index + 1)
                 ? arguments[index + 1]
                 : "<missing>"
             throw SessionConfigurationFailure.invalidDescriptor(value)
@@ -225,7 +228,8 @@ public struct SessionConfiguration: Sendable, Equatable {
                 from: descriptor,
                 maximumBytes: maximumEncodedSize)
         } catch let error as IPCTransportError {
-            throw SessionConfigurationFailure.transportFailed(error)
+            throw SessionConfigurationFailure.transportFailed(
+                String(describing: error))
         }
         return try SessionConfiguration(encoded: encoded)
     }

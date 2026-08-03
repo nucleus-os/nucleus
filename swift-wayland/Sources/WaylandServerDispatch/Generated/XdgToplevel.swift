@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol XdgToplevelRequests: AnyObject {
     func destroy(_ request: WaylandRequest<XdgToplevelServer>)
@@ -31,7 +31,7 @@ import WaylandServerC
     func unsetFullscreen(_ request: WaylandRequest<XdgToplevelServer>)
     func setMinimized(_ request: WaylandRequest<XdgToplevelServer>)
 }
-package extension XdgToplevelRequests {
+extension XdgToplevelRequests {
     package func destroy(_ request: WaylandRequest<XdgToplevelServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -301,7 +301,7 @@ package enum XdgToplevelServer: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == XdgToplevelServer {
+extension WaylandResourceHandle where Interface == XdgToplevelServer {
     package var supportsConfigureBounds: Bool {
         guard let version else {
             return false
@@ -357,18 +357,18 @@ package extension WaylandResourceHandle where Interface == XdgToplevelServer {
         }
     }
 }
-package extension WaylandRequest where Interface == XdgToplevelServer {
+extension WaylandRequest where Interface == XdgToplevelServer {
     package func postError(_ code: XdgToplevelError, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == XdgToplevelServer {
+extension WaylandResourceHandle where Interface == XdgToplevelServer {
     @discardableResult
     package func postError(_ code: XdgToplevelError, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == XdgToplevelServer {
+extension WlNewId where Interface == XdgToplevelServer {
     @discardableResult
     @MainActor
     package func create<Owner: XdgToplevelRequests>(
@@ -381,7 +381,7 @@ package extension WlNewId where Interface == XdgToplevelServer {
             installed: installed)
     }
 }
-package extension XdgToplevelServer {
+extension XdgToplevelServer {
     @MainActor
     package static func global<Implementation: AnyObject & XdgToplevelRequests>(
         implementation: Implementation,

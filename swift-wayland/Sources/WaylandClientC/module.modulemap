@@ -1,4 +1,5 @@
 module WaylandClientC {
     header "WaylandClientC.h"
+    link "wayland-client"
     export *
 }

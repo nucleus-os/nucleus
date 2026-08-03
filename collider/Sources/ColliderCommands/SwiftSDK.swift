@@ -54,7 +54,8 @@ func swiftTargetSDKArtifactID(
     sourceID: String,
     runtimeBuilderContext: FilePath,
     runtimePreset: FilePath,
-    sysrootPreparer: FilePath
+    sysrootPreparer: FilePath,
+    generatorSourceID: String
 ) throws -> String {
     var encoder = CanonicalDigestEncoder()
     encoder.append(tag: 1, bytes: try ArtifactHasher.digest(file: inputsFile).bytes)
@@ -72,6 +73,7 @@ func swiftTargetSDKArtifactID(
         bytes: try ArtifactHasher.digest(tree: runtimeBuilderContext).bytes)
     encoder.append(tag: 8, bytes: try ArtifactHasher.digest(file: runtimePreset).bytes)
     encoder.append(tag: 9, bytes: try ArtifactHasher.digest(file: sysrootPreparer).bytes)
+    encoder.append(tag: 10, string: generatorSourceID)
     let digest = ArtifactHasher.digest(bytes: encoder.bytes).description
     let hexadecimal =
         digest.hasPrefix("sha256:")
@@ -91,7 +93,7 @@ func swiftTargetRuntimeBuildID(
     var encoder = CanonicalDigestEncoder()
     encoder.append(tag: 1, string: inputs.snapshot)
     encoder.append(tag: 2, string: target.architecture.rawValue)
-    for package in target.ubuntuPackages {
+    for package in target.runtimeUbuntuPackages {
         encoder.append(tag: 3, string: package.url)
         encoder.append(tag: 4, string: package.sha256)
     }
@@ -107,6 +109,15 @@ func swiftTargetRuntimeBuildID(
         ? String(digest.dropFirst("sha256:".count))
         : digest
     return String(hexadecimal.prefix(24))
+}
+
+func swiftTargetSDKTaskEnvironment(
+    _ environment: [String: String],
+    runtimeSourceID: String
+) -> [String: String] {
+    var environment = environment
+    environment["NUCLEUS_SWIFT_SOURCE_ID"] = runtimeSourceID
+    return environment
 }
 
 private struct SwiftSDKStatusRecord: Codable {
@@ -206,6 +217,10 @@ struct SwiftSDKCommand {
         let sourceID = try swiftTargetRuntimeSourceIdentity(
             root: context.root,
             environment: context.environment)
+        let generatorSourceID = try validatedSwiftGitlinkCommit(
+            root: context.root,
+            path: "swift-sdk/source/swift-sdk-generator",
+            environment: context.environment)
         let generatorSource = recipeRoot.appendingPathComponent(
             "source/swift-sdk-generator", isDirectory: true)
 
@@ -249,7 +264,8 @@ struct SwiftSDKCommand {
             sourceID: sourceID,
             runtimeBuilderContext: FilePath(runtimeBuilderContext.path),
             runtimePreset: FilePath(runtimePreset.path),
-            sysrootPreparer: FilePath(sysrootPreparer.path))
+            sysrootPreparer: FilePath(sysrootPreparer.path),
+            generatorSourceID: generatorSourceID)
         let linuxTargets = try inputs.linuxTargets.map { target in
             let buildID = try swiftTargetRuntimeBuildID(
                 inputs: inputs,
@@ -311,6 +327,9 @@ struct SwiftSDKCommand {
         let candidate = paths.artifactRoot.appendingPathComponent(
             "generations/.candidate-\(artifactID)-\(runID)",
             isDirectory: true)
+        let taskEnvironment = swiftTargetSDKTaskEnvironment(
+            context.taskEnvironment,
+            runtimeSourceID: sourceID)
         let configuration = SwiftTargetSDKGenerationConfiguration(
             inputs: inputs,
             inputsFile: FilePath(inputsFile.path),
@@ -336,7 +355,7 @@ struct SwiftSDKCommand {
                 paths.artifactRoot.appendingPathComponent(
                     "displaced/\(runID)", isDirectory: true
                 ).path),
-            environment: context.taskEnvironment)
+            environment: taskEnvironment)
         let taskSet = try SwiftTargetSDKColliderRecipe.generation(configuration)
         if !options.controls.json {
             print("==> Swift target SDK root: \(paths.artifactRoot.path)")
@@ -434,7 +453,9 @@ private func swiftTargetRuntimeSourceIdentity(
         else { return nil }
         let path = line[line.index(after: separator)...]
             .trimmingCharacters(in: .whitespaces)
-        return path.hasPrefix(prefix) ? path : nil
+        return path.hasPrefix(prefix)
+            && path != "swift-sdk/source/swift-sdk-generator"
+            ? path : nil
     }.sorted()
     guard !paths.isEmpty else {
         throw WorkspaceFailure.message(
@@ -443,41 +464,10 @@ private func swiftTargetRuntimeSourceIdentity(
 
     var encoder = CanonicalDigestEncoder()
     for path in paths {
-        let entry = try commandOutput(
-            executable: URL(fileURLWithPath: "/usr/bin/git"),
-            arguments: ["-C", root.path, "ls-files", "--stage", "--", path],
+        let expectedCommit = try validatedSwiftGitlinkCommit(
+            root: root,
+            path: path,
             environment: environment)
-        let fields = entry.split(
-            maxSplits: 3,
-            whereSeparator: {
-                $0 == " " || $0 == "\t"
-            })
-        guard fields.count == 4, fields[0] == "160000", fields[1].count == 40 else {
-            throw WorkspaceFailure.message(
-                "Swift source path is not a pinned gitlink: \(path)")
-        }
-        let expectedCommit = String(fields[1])
-        let repository = root.appendingPathComponent(path, isDirectory: true)
-        let actualCommit = try commandOutput(
-            executable: URL(fileURLWithPath: "/usr/bin/git"),
-            arguments: ["-C", repository.path, "rev-parse", "HEAD"],
-            environment: environment)
-        guard actualCommit == expectedCommit else {
-            throw WorkspaceFailure.message(
-                "Swift source gitlink mismatch at \(path): expected \(expectedCommit), found \(actualCommit)"
-            )
-        }
-        let status = try commandOutput(
-            executable: URL(fileURLWithPath: "/usr/bin/git"),
-            arguments: [
-                "-C", repository.path, "status", "--porcelain",
-                "--untracked-files=all",
-            ],
-            environment: environment)
-        guard status.isEmpty else {
-            throw WorkspaceFailure.message(
-                "Swift source repository has uncommitted changes: \(path)")
-        }
         encoder.append(tag: 1, string: String(path.dropFirst(prefix.count)))
         encoder.append(tag: 2, string: expectedCommit)
     }
@@ -491,6 +481,47 @@ private func swiftTargetRuntimeSourceIdentity(
             "invalid Swift target-runtime source digest: \(digest)")
     }
     return String(hexadecimal.prefix(24))
+}
+
+private func validatedSwiftGitlinkCommit(
+    root: URL,
+    path: String,
+    environment: [String: String]
+) throws -> String {
+    let entry = try commandOutput(
+        executable: URL(fileURLWithPath: "/usr/bin/git"),
+        arguments: ["-C", root.path, "ls-files", "--stage", "--", path],
+        environment: environment)
+    let fields = entry.split(
+        maxSplits: 3,
+        whereSeparator: { $0 == " " || $0 == "\t" })
+    guard fields.count == 4, fields[0] == "160000", fields[1].count == 40 else {
+        throw WorkspaceFailure.message(
+            "Swift source path is not a pinned gitlink: \(path)")
+    }
+    let expectedCommit = String(fields[1])
+    let repository = root.appendingPathComponent(path, isDirectory: true)
+    let actualCommit = try commandOutput(
+        executable: URL(fileURLWithPath: "/usr/bin/git"),
+        arguments: ["-C", repository.path, "rev-parse", "HEAD"],
+        environment: environment)
+    guard actualCommit == expectedCommit else {
+        throw WorkspaceFailure.message(
+            "Swift source gitlink mismatch at \(path): expected \(expectedCommit), found \(actualCommit)"
+        )
+    }
+    let status = try commandOutput(
+        executable: URL(fileURLWithPath: "/usr/bin/git"),
+        arguments: [
+            "-C", repository.path, "status", "--porcelain",
+            "--untracked-files=all",
+        ],
+        environment: environment)
+    guard status.isEmpty else {
+        throw WorkspaceFailure.message(
+            "Swift source repository has uncommitted changes: \(path)")
+    }
+    return expectedCommit
 }
 
 private func selectedXcodeIdentity(

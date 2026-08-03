@@ -3,12 +3,12 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpTabletV2Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZwpTabletV2Server>)
 }
-package extension ZwpTabletV2Requests {
+extension ZwpTabletV2Requests {
     package func destroy(_ request: WaylandRequest<ZwpTabletV2Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -80,7 +80,7 @@ package enum ZwpTabletV2Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwpTabletV2Server {
+extension WaylandResourceHandle where Interface == ZwpTabletV2Server {
     package var supportsBustype: Bool {
         guard let version else {
             return false
@@ -141,7 +141,7 @@ package extension WaylandResourceHandle where Interface == ZwpTabletV2Server {
         return true
     }
 }
-package extension WlNewId where Interface == ZwpTabletV2Server {
+extension WlNewId where Interface == ZwpTabletV2Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -154,7 +154,7 @@ package extension WlNewId where Interface == ZwpTabletV2Server {
             installed: installed)
     }
 }
-package extension ZwpTabletV2Server {
+extension ZwpTabletV2Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

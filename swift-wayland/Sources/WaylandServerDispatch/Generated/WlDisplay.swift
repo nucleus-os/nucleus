@@ -11,18 +11,18 @@ package enum WlDisplayServer: WaylandServerInterface {
         nativeInterface: swift_wayland_iface_wl_display(),
         nativeRequestVtable: nil)
 }
-package extension WaylandRequest where Interface == WlDisplayServer {
+extension WaylandRequest where Interface == WlDisplayServer {
     package func postError(_ code: WlDisplayError, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WlDisplayServer {
+extension WaylandResourceHandle where Interface == WlDisplayServer {
     @discardableResult
     package func postError(_ code: WlDisplayError, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WlDisplayServer {
+extension WlNewId where Interface == WlDisplayServer {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -35,7 +35,7 @@ package extension WlNewId where Interface == WlDisplayServer {
             installed: installed)
     }
 }
-package extension WlDisplayServer {
+extension WlDisplayServer {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

@@ -22,8 +22,27 @@ func macOSBuilderContractSelectsOneImmutableHost() throws {
         contract.appleContainer.commit
             == "6e65319fe476ffe8db8ddaf828a537ed36fe2859")
     #expect(contract.appleContainer.network == "nucleus-build-internal")
+    #expect(contract.environment.xdgCacheHome == "/Volumes/NucleusCache")
+    #expect(
+        contract.environment.nativeSDKRoot
+            == "/Volumes/NucleusCache/nucleus/nucleus-native-sdk")
+    #expect(
+        contract.environment.androidSDKRoot
+            == "/Volumes/NucleusCache/android-sdk")
     #expect(Set(contract.storage.map(\.name)).count == contract.storage.count)
     #expect(contract.storage.allSatisfy { $0.quotaBytes > 0 })
+    #expect(
+        contract.storage.filter { $0.storageClass == .source }
+            .allSatisfy { $0.cleanupPolicy == .protected })
+    #expect(
+        contract.storage.filter { $0.recoverability == .immutable }
+            .allSatisfy { $0.cleanupPolicy == .protected })
+    #expect(
+        contract.storage.first { $0.name == "NucleusDev" }?.owner
+            == "remote-development")
+    #expect(
+        contract.storage.first { $0.name == "NucleusOCI" }?.owner
+            == "apple-container")
 }
 
 @Test

@@ -23,7 +23,7 @@ import NucleusCompositorInputC
         let disable: (OpaquePointer?) -> Int32
 
         @MainActor static let live = unsafe NativeOperations(
-            package: libseat_open_seat,
+            open: libseat_open_seat,
             close: libseat_close_seat,
             disable: libseat_disable_seat)
     }
@@ -60,7 +60,7 @@ import NucleusCompositorInputC
     /// Open the seat. Returns nil if seatd/logind is unavailable. The session is not
     /// active until libseat fires `enable_seat` (dispatch the FD to pump it).
     static func open() -> SeatSession? {
-        package(using: .live)
+        open(using: .live)
     }
 
     /// Internal injection point for deterministic native lifetime coverage.

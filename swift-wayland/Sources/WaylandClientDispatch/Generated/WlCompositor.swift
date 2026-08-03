@@ -8,7 +8,7 @@ package enum WlCompositorClient: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_wl_compositor())
     package nonisolated static let maximumVersion: UInt32 = 7
 }
-package extension WaylandProxy where Interface == WlCompositorClient {
+extension WaylandProxy where Interface == WlCompositorClient {
     package func createSurface() throws(WaylandProxyError) -> WaylandProxy<WlSurfaceClient> {
         let _proxy = try unsafe requireNativeProxy()
         guard

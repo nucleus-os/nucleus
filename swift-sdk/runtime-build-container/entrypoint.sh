@@ -86,6 +86,7 @@ cmake -S /src/swift-testing -B "$swift_testing_build" -G Ninja \
   -DCMAKE_INSTALL_LIBDIR=lib \
   -DFoundation_DIR="/build/Ninja-Release/foundation-linux-$NUCLEUS_TARGET_ARCHITECTURE/cmake/modules" \
   -Ddispatch_DIR="/build/Ninja-Release/libdispatch-linux-$NUCLEUS_TARGET_ARCHITECTURE/cmake/modules" \
+  -DSwiftTesting_MODULE_ABI_NAME_SUFFIX=_toolchain \
   -DSwiftTesting_MACRO=NO
 cmake --build "$swift_testing_build" --parallel "${NUCLEUS_BUILD_JOBS:-16}"
 DESTDIR=/output cmake --install "$swift_testing_build"

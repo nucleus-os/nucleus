@@ -2,12 +2,12 @@
 // Typed server descriptor and dispatch for ext_transient_seat_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ExtTransientSeatV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ExtTransientSeatV1Server>)
 }
-package extension ExtTransientSeatV1Requests {
+extension ExtTransientSeatV1Requests {
     package func destroy(_ request: WaylandRequest<ExtTransientSeatV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -61,7 +61,7 @@ package enum ExtTransientSeatV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ExtTransientSeatV1Server {
+extension WaylandResourceHandle where Interface == ExtTransientSeatV1Server {
     @discardableResult
     package func sendReady(global_name: UInt32) -> Bool {
         guard let target = unsafe resource else {
@@ -79,7 +79,7 @@ package extension WaylandResourceHandle where Interface == ExtTransientSeatV1Ser
         return true
     }
 }
-package extension WlNewId where Interface == ExtTransientSeatV1Server {
+extension WlNewId where Interface == ExtTransientSeatV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -92,7 +92,7 @@ package extension WlNewId where Interface == ExtTransientSeatV1Server {
             installed: installed)
     }
 }
-package extension ExtTransientSeatV1Server {
+extension ExtTransientSeatV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

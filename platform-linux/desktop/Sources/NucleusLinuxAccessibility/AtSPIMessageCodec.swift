@@ -1,5 +1,5 @@
 import NucleusLinuxDBus
-import NucleusUI
+internal import NucleusUI
 
 private let dbusTypeArray = CChar(UInt8(ascii: "a"))
 private let dbusTypeDictEntry = CChar(UInt8(ascii: "e"))

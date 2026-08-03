@@ -1,7 +1,7 @@
 import Foundation
 import Glibc
-import NucleusConfigIO
-import NucleusSessionProtocol
+package import NucleusConfigIO
+package import NucleusSessionProtocol
 
 package enum ActiveConfigurationFileFailure:
     Error, CustomStringConvertible, Sendable
@@ -125,7 +125,7 @@ package struct ActiveConfigurationFile: Sendable {
     }
 
     private func monotonicNanoseconds() -> UInt64 {
-        var time = timespec()
+        var time = timespec(tv_sec: 0, tv_nsec: 0)
         unsafe clock_gettime(CLOCK_MONOTONIC, &time)
         return UInt64(time.tv_sec) * 1_000_000_000 + UInt64(time.tv_nsec)
     }

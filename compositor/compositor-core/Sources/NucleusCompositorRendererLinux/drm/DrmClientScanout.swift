@@ -15,7 +15,7 @@
 // A pending flip retains its buffer until KMS reports that the replacement latched.
 
 import NucleusCompositorDrmC
-import NucleusRenderer
+internal import NucleusRenderer
 
 /// Per-device GEM-handle refcount. `drmPrimeFDToHandle` returns the SAME handle for the
 /// same underlying dmabuf on one device fd, and handles are not refcounted across

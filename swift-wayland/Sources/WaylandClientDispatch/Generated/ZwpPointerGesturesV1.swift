@@ -8,7 +8,7 @@ package enum ZwpPointerGesturesV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_zwp_pointer_gestures_v1())
     package nonisolated static let maximumVersion: UInt32 = 3
 }
-package extension WaylandProxy where Interface == ZwpPointerGesturesV1Client {
+extension WaylandProxy where Interface == ZwpPointerGesturesV1Client {
     package func getSwipeGesture(pointer: WaylandProxy<WlPointerClient>) throws(WaylandProxyError)
         -> WaylandProxy<ZwpPointerGestureSwipeV1Client>
     {

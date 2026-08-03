@@ -8,8 +8,8 @@ struct DrmPresentationClock: Sendable, Equatable {
 
     func normalize(_ kernelTimestampNs: UInt64) -> UInt64? {
         guard !kernelUsesMonotonic else { return kernelTimestampNs }
-        var monotonic = timespec()
-        var realtime = timespec()
+        var monotonic = timespec(tv_sec: 0, tv_nsec: 0)
+        var realtime = timespec(tv_sec: 0, tv_nsec: 0)
         guard unsafe clock_gettime(CLOCK_MONOTONIC, &monotonic) == 0,
             unsafe clock_gettime(CLOCK_REALTIME, &realtime) == 0
         else { return nil }

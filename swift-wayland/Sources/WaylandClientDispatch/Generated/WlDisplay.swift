@@ -8,7 +8,7 @@ package enum WlDisplayClient: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_wl_display())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == WlDisplayClient {
+extension WaylandProxy where Interface == WlDisplayClient {
     package func sync() throws(WaylandProxyError) -> WaylandProxy<WlCallbackClient> {
         let _proxy = try unsafe requireNativeProxy()
         guard let _created = unsafe swift_wayland_client_request_wl_display_sync(_proxy) else {

@@ -2,7 +2,7 @@
 // Typed server descriptor and dispatch for zwp_linux_buffer_release_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 package enum ZwpLinuxBufferReleaseV1Server: WaylandServerInterface {
     package nonisolated static let maximumVersion: Int32 = 1
@@ -17,7 +17,7 @@ package enum ZwpLinuxBufferReleaseV1Server: WaylandServerInterface {
         unsafe zwp_linux_buffer_release_v1_send_immediate_release(target)
     }
 }
-package extension WaylandResourceHandle where Interface == ZwpLinuxBufferReleaseV1Server {
+extension WaylandResourceHandle where Interface == ZwpLinuxBufferReleaseV1Server {
     @discardableResult
     package func sendFencedRelease(fence: Int32) -> Bool {
         guard let target = unsafe resource else {
@@ -35,7 +35,7 @@ package extension WaylandResourceHandle where Interface == ZwpLinuxBufferRelease
         return true
     }
 }
-package extension WlNewId where Interface == ZwpLinuxBufferReleaseV1Server {
+extension WlNewId where Interface == ZwpLinuxBufferReleaseV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -48,7 +48,7 @@ package extension WlNewId where Interface == ZwpLinuxBufferReleaseV1Server {
             installed: installed)
     }
 }
-package extension ZwpLinuxBufferReleaseV1Server {
+extension ZwpLinuxBufferReleaseV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

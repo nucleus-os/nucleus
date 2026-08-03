@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZxdgPopupV6Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZxdgPopupV6Server>)
@@ -11,7 +11,7 @@ import WaylandServerC
         _ request: WaylandRequest<ZxdgPopupV6Server>, seat: WaylandBorrowedObject<WlSeatServer>,
         serial: UInt32)
 }
-package extension ZxdgPopupV6Requests {
+extension ZxdgPopupV6Requests {
     package func destroy(_ request: WaylandRequest<ZxdgPopupV6Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -83,7 +83,7 @@ package enum ZxdgPopupV6Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZxdgPopupV6Server {
+extension WaylandResourceHandle where Interface == ZxdgPopupV6Server {
     @discardableResult
     package func sendConfigure(x: Int32, y: Int32, width: Int32, height: Int32) -> Bool {
         guard let target = unsafe resource else {
@@ -101,18 +101,18 @@ package extension WaylandResourceHandle where Interface == ZxdgPopupV6Server {
         return true
     }
 }
-package extension WaylandRequest where Interface == ZxdgPopupV6Server {
+extension WaylandRequest where Interface == ZxdgPopupV6Server {
     package func postError(_ code: ZxdgPopupV6Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ZxdgPopupV6Server {
+extension WaylandResourceHandle where Interface == ZxdgPopupV6Server {
     @discardableResult
     package func postError(_ code: ZxdgPopupV6Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ZxdgPopupV6Server {
+extension WlNewId where Interface == ZxdgPopupV6Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZxdgPopupV6Requests>(
@@ -125,7 +125,7 @@ package extension WlNewId where Interface == ZxdgPopupV6Server {
             installed: installed)
     }
 }
-package extension ZxdgPopupV6Server {
+extension ZxdgPopupV6Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZxdgPopupV6Requests>(
         implementation: Implementation,

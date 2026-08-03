@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol WpImageDescriptionV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<WpImageDescriptionV1Server>)
@@ -11,7 +11,7 @@ import WaylandServerC
         _ request: WaylandRequest<WpImageDescriptionV1Server>,
         information: WlNewId<WpImageDescriptionInfoV1Server>)
 }
-package extension WpImageDescriptionV1Requests {
+extension WpImageDescriptionV1Requests {
     package func destroy(_ request: WaylandRequest<WpImageDescriptionV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -91,7 +91,7 @@ package enum WpImageDescriptionV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == WpImageDescriptionV1Server {
+extension WaylandResourceHandle where Interface == WpImageDescriptionV1Server {
     package var supportsReady2: Bool {
         guard let version else {
             return false
@@ -126,18 +126,18 @@ package extension WaylandResourceHandle where Interface == WpImageDescriptionV1S
         return true
     }
 }
-package extension WaylandRequest where Interface == WpImageDescriptionV1Server {
+extension WaylandRequest where Interface == WpImageDescriptionV1Server {
     package func postError(_ code: WpImageDescriptionV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WpImageDescriptionV1Server {
+extension WaylandResourceHandle where Interface == WpImageDescriptionV1Server {
     @discardableResult
     package func postError(_ code: WpImageDescriptionV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WpImageDescriptionV1Server {
+extension WlNewId where Interface == WpImageDescriptionV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpImageDescriptionV1Requests>(
@@ -150,7 +150,7 @@ package extension WlNewId where Interface == WpImageDescriptionV1Server {
             installed: installed)
     }
 }
-package extension WpImageDescriptionV1Server {
+extension WpImageDescriptionV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpImageDescriptionV1Requests>(
         implementation: Implementation,

@@ -213,7 +213,7 @@ package final class PortalEnvironmentAdapter: LinuxReactorSource {
     }
 
     private static func monotonicNowNanoseconds() -> UInt64 {
-        var time = timespec()
+        var time = timespec(tv_sec: 0, tv_nsec: 0)
         // `time` is a live, correctly aligned value for the duration of the C
         // call, and clock_gettime writes exactly one initialized timespec.
         let result = unsafe clock_gettime(CLOCK_MONOTONIC, &time)

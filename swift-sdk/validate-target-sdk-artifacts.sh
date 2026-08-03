@@ -62,6 +62,27 @@ validate_linux_sdk_runtime() {
     triple=$1
     description_pattern=$2
     target_root="$linux_sdk_root/swift-linux/$triple/ubuntu-noble.sdk"
+    toolset="$linux_sdk_root/swift-linux/$triple/toolset.json"
+    if [ ! -f "$toolset" ]; then
+        echo "missing Linux SDK toolset: $toolset" >&2
+        exit 1
+    fi
+    /usr/bin/python3 - "$toolset" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as stream:
+    toolset = json.load(stream)
+linker_path = toolset.get("linker", {}).get("path")
+if linker_path is not None:
+    raise SystemExit(f"Linux SDK embeds an execution-environment-specific linker: {path}")
+PY
+    bundled_linker="$linux_sdk_root/swift-linux/$triple/swift.xctoolchain/usr/bin/ld.lld"
+    if [ -e "$bundled_linker" ] || [ -L "$bundled_linker" ]; then
+        echo "Linux SDK bundles an execution-environment-specific ld.lld for $triple" >&2
+        exit 1
+    fi
     if [ ! -d "$target_root" ]; then
         echo "missing Linux SDK target root: $target_root" >&2
         exit 1
@@ -95,6 +116,10 @@ EOF
     fi
     if [ ! -f "$testing_library" ]; then
         echo "Linux SDK does not ship libTesting.so for $triple" >&2
+        exit 1
+    fi
+    if ! grep -F -- '-module-abi-name Testing_toolchain' "$testing_module" >/dev/null; then
+        echo "Linux SDK Swift Testing module does not use the toolchain ABI identity for $triple" >&2
         exit 1
     fi
     require_file_description "$testing_library" "$description_pattern"

@@ -1,4 +1,12 @@
+import Glibc
 package import NucleusAppHostProtocols
+package import NucleusCompositorRendererLinux
+package import NucleusCompositorServer
+internal import NucleusLayers
+import NucleusRenderHost
+package import NucleusRenderModel
+internal import NucleusRenderer
+import Tracy
 
 // The executable-owned render-runtime owner: brings up the Swift render path over a
 // DRM master fd, drives per-frame rendering, and routes client-buffer uploads,
@@ -12,15 +20,6 @@ package import NucleusAppHostProtocols
 //
 // The owner and its entire API are main-actor-isolated: the render path runs on
 // the compositor's single main-loop thread alongside the commit sink and tree.
-
-import Glibc
-package import NucleusCompositorRendererLinux
-package import NucleusCompositorServer
-package import NucleusLayers
-import NucleusRenderHost
-package import NucleusRenderModel
-package import NucleusRenderer
-import Tracy
 
 @MainActor
 package final class RenderRuntime {
@@ -50,7 +49,7 @@ package final class RenderRuntime {
     }
 
     private func monotonicNowNs() -> UInt64 {
-        var ts = timespec()
+        var ts = timespec(tv_sec: 0, tv_nsec: 0)
         unsafe clock_gettime(CLOCK_MONOTONIC, &ts)
         return UInt64(ts.tv_sec) &* 1_000_000_000 &+ UInt64(ts.tv_nsec)
     }

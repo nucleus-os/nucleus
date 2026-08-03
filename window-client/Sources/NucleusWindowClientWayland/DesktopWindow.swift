@@ -2,9 +2,7 @@ public import NucleusWindowClientContracts
 package import WaylandClientDispatch
 
 @MainActor
-public final class NucleusDesktopWindow:
-    XdgSurfaceEvents, XdgToplevelEvents
-{
+public final class NucleusDesktopWindow {
     let surface: WaylandProxy<WlSurfaceClient>
     fileprivate let xdgSurface: WaylandProxy<XdgSurfaceClient>
     private let toplevel: WaylandProxy<XdgToplevelClient>
@@ -156,10 +154,10 @@ public final class NucleusDesktopWindow:
     ) {}
 }
 
+extension NucleusDesktopWindow: XdgSurfaceEvents, XdgToplevelEvents {}
+
 @MainActor
-public final class NucleusDesktopPopup:
-    XdgSurfaceEvents, XdgPopupEvents
-{
+public final class NucleusDesktopPopup {
     private let surface: WaylandProxy<WlSurfaceClient>
     private let xdgSurface: WaylandProxy<XdgSurfaceClient>
     private let popup: WaylandProxy<XdgPopupClient>
@@ -259,8 +257,10 @@ public final class NucleusDesktopPopup:
     ) {}
 }
 
-package extension NucleusDesktopConnection {
-    func createWindow(
+extension NucleusDesktopPopup: XdgSurfaceEvents, XdgPopupEvents {}
+
+extension NucleusDesktopConnection {
+    package func createWindow(
         configuration: NucleusDesktopWindowConfiguration
     ) throws(NucleusDesktopWindowError) -> NucleusDesktopWindow {
         try NucleusDesktopWindow(
@@ -268,7 +268,7 @@ package extension NucleusDesktopConnection {
             configuration: configuration)
     }
 
-    func createPopup(
+    package func createPopup(
         parent: NucleusDesktopWindow,
         configuration: NucleusDesktopPopupConfiguration
     ) throws(NucleusDesktopWindowError) -> NucleusDesktopPopup {
@@ -278,7 +278,7 @@ package extension NucleusDesktopConnection {
             configuration: configuration)
     }
 
-    func createSubsurface(
+    package func createSubsurface(
         parent: NucleusDesktopWindow,
         configuration: NucleusDesktopSubsurfaceConfiguration = .init()
     ) throws(NucleusDesktopWindowError) -> NucleusDesktopSubsurface {
@@ -288,7 +288,7 @@ package extension NucleusDesktopConnection {
             configuration: configuration)
     }
 
-    func createSubsurface(
+    package func createSubsurface(
         parent: NucleusDesktopSubsurface,
         configuration: NucleusDesktopSubsurfaceConfiguration = .init()
     ) throws(NucleusDesktopWindowError) -> NucleusDesktopSubsurface {

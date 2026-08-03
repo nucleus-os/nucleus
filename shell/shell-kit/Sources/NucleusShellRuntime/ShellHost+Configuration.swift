@@ -1,5 +1,5 @@
-import NucleusSessionProtocol
-package import NucleusWindowClientWayland
+internal import NucleusSessionProtocol
+internal import NucleusWindowClientWayland
 
 @MainActor
 extension ShellHost {

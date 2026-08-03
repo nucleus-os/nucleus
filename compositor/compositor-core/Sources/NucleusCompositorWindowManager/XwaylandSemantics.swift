@@ -1,6 +1,6 @@
 package import NucleusCompositorServer
-import NucleusCompositorServerTypes
-import NucleusTypes
+internal import NucleusCompositorServerTypes
+internal import NucleusTypes
 
 @MainActor
 extension WindowManager {

@@ -61,7 +61,7 @@ import Testing
     #expect(result.selected.count == 2)
     #expect(
         result.tasks.filter { $0.id.rawValue.hasPrefix("swift-sdk.download-") }.count
-            == 2 + inputs.linuxTargets.flatMap(\.ubuntuPackages).count)
+            == 2 + inputs.linuxTargets.flatMap(\.allUbuntuPackages).count)
     #expect(
         !result.tasks.contains { $0.id.rawValue == "swift-sdk.download-linux-target" })
     let ubuntuDownloads = result.tasks.compactMap { task -> DownloadSpec? in
@@ -70,7 +70,7 @@ import Testing
         else { return nil }
         return specification
     }
-    #expect(ubuntuDownloads.count == inputs.linuxTargets.flatMap(\.ubuntuPackages).count)
+    #expect(ubuntuDownloads.count == inputs.linuxTargets.flatMap(\.allUbuntuPackages).count)
     #expect(
         ubuntuDownloads.allSatisfy {
             $0.acceptedMediaTypes.contains("application/vnd.debian.binary-package")
@@ -85,6 +85,7 @@ import Testing
     let executions = result.tasks.flatMap { ociExecutions($0.operation) }
     #expect(executions.count == 2)
     #expect(executions.allSatisfy { $0.executionPlatform == .linuxARM64OCI })
+    #expect(executions.allSatisfy { $0.resourceLimits == .parallelBuild })
     #expect(Set(executions.map(\.artifactTarget)) == [.linuxARM64, .linuxX86_64])
 
     for target in linuxTargets {
@@ -94,7 +95,7 @@ import Testing
                 $0.id.rawValue
                     == "swift-sdk.prepare-linux-\(architecture.rawValue)-libcxx-sysroot"
             })
-        #expect(sysroot.dependencies.count == target.target.ubuntuPackages.count)
+        #expect(sysroot.dependencies.count == target.target.runtimeUbuntuPackages.count)
         #expect(
             sysroot.dependencies.allSatisfy {
                 $0.rawValue.hasPrefix(
@@ -133,6 +134,37 @@ import Testing
                         == target.runtimeInstall.string
             })
     }
+
+    let validation = try #require(
+        result.tasks.first { $0.id.rawValue == "swift-sdk.validate-target-sdks" })
+    guard case .sequence(let validationOperations) = validation.operation else {
+        Issue.record("SDK validation must be an ordered task sequence")
+        return
+    }
+    let hostToolset = configuration.candidate.appending("validation/host-toolset.json")
+    let toolsetWrite = try #require(
+        validationOperations.first { operation in
+            guard case .writeFile(let path, _) = operation else { return false }
+            return path == hostToolset
+        })
+    guard case .writeFile(_, let toolsetBytes) = toolsetWrite else {
+        Issue.record("validation toolset must be a file write")
+        return
+    }
+    let toolset = try #require(
+        JSONSerialization.jsonObject(with: Data(toolsetBytes)) as? [String: Any])
+    let linker = try #require(toolset["linker"] as? [String: String])
+    #expect(
+        linker["path"]
+            == configuration.candidate.appending("toolchain/usr/bin/ld.lld").string)
+    let fixtureBuilds = commands(validation.operation).filter {
+        $0.arguments.first == "build"
+    }
+    #expect(fixtureBuilds.count == 4)
+    #expect(
+        fixtureBuilds.allSatisfy {
+            $0.arguments.suffix(2) == ["--toolset", hostToolset.string]
+        })
 }
 
 @Test func checkedInTargetSDKInputsAreComplete() throws {
@@ -151,14 +183,25 @@ import Testing
     #expect(inputs.linuxBundleID == "nucleus-swift-6.4-linux")
     #expect(inputs.linuxTargets.map(\.architecture) == [.arm64, .amd64])
     for target in inputs.linuxTargets {
-        #expect(target.ubuntuPackages.count == 16)
-        #expect(target.ubuntuPackages.allSatisfy { !$0.url.contains("libstdc++") })
-        #expect(target.ubuntuPackages.allSatisfy { !$0.url.contains("libicu") })
-        #expect(target.ubuntuPackages.allSatisfy { !$0.url.contains("libxml2") })
-        #expect(target.ubuntuPackages.contains { $0.url.contains("libc++-18-dev") })
-        #expect(target.ubuntuPackages.contains { $0.url.contains("liblzma5_") })
+        #expect(target.runtimeUbuntuPackages.count == 16)
+        #expect(target.sdkUbuntuPackages.count == 38)
+        #expect(target.allUbuntuPackages.allSatisfy { !$0.url.contains("libstdc++") })
+        #expect(target.allUbuntuPackages.allSatisfy { !$0.url.contains("libicu") })
+        #expect(target.allUbuntuPackages.allSatisfy { !$0.url.contains("libxml2") })
+        #expect(target.runtimeUbuntuPackages.contains { $0.url.contains("libc++-18-dev") })
+        #expect(target.runtimeUbuntuPackages.contains { $0.url.contains("liblzma5_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libvulkan-dev_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libvulkan1_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libpam0g-dev_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libpam0g_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libdrm-dev_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libdrm2_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libgbm-dev_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libgbm1_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libsystemd-dev_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libsystemd0_") })
         #expect(
-            target.ubuntuPackages.allSatisfy {
+            target.allUbuntuPackages.allSatisfy {
                 $0.url.hasSuffix("_\(target.architecture.debianArchitecture).deb")
             })
     }

@@ -41,8 +41,9 @@ Root gitlinks are the sole authority for every Swift source revision, including
 The Linux target pipeline is strictly ordered:
 
 1. Collider downloads and verifies the pinned external inputs.
-2. `prepare-linux-sysroot.sh` extracts only Ubuntu packages into a fresh
-   package-only sysroot and rejects every libstdc++-shaped path.
+2. `prepare-linux-sysroot.sh` extracts the runtime-build Ubuntu package subset into a
+   fresh package-only sysroot and rejects every libstdc++-shaped path. SDK-only link
+   packages never enter the runtime task identity.
 3. Collider prepares the digest-addressed native Linux/arm64 runtime-builder
    image with the official Swift.org bootstrap compiler.
 4. The builder mounts source read-only, builds the Linux/arm64 standard library,
@@ -55,8 +56,8 @@ The Linux target pipeline is strictly ordered:
    is not accepted as success.
 6. The macOS `swift-sdk-generator` consumes those install roots as the sole
    target-Swift packages. It never mixes in an official Linux runtime tarball.
-7. Collider overlays each runtime into its architecture-matched package
-   sysroot, combines both entries into one Linux SDK, installs the official
+7. Collider combines each runtime with its architecture-matched runtime and SDK-link
+   package subsets, combines both entries into one Linux SDK, installs the official
    Android bundle, and builds one behavioral consumer per target triple.
 8. Structural validation rejects libstdc++, requires libc++ on every consumer,
    verifies ELF architecture and interpreter, and verifies Android 16 KiB load
@@ -72,7 +73,7 @@ The pinned source closure is `libxml2`, `llvm-project`, `swift`, `swift-collecti
 `swift-sdk-generator`. Collider refuses dirty or mismatched source before task
 construction. This check enforces the root gitlinks; it does not compare them
 with a second revision manifest. Those exact gitlinks, the runtime preset,
-builder context, external-input manifest, sysroot preparer, Xcode identity,
+builder context, runtime package subset, sysroot preparer, Xcode identity,
 NDK identity,
 validation fixture, and validator select the immutable generation. Unrelated
 Swift compiler-tooling and platform repositories are not source-identity
@@ -85,7 +86,8 @@ configured for upstream build-system dependency resolution but is not built or
 installed into the SDK.
 
 Runtime Ninja products and ccache live outside source submodules. Each
-architecture has an independent content-addressed runtime task, so a target
+architecture has an independent content-addressed runtime task whose package identity
+contains only runtime-build packages, so SDK-link additions do not rebuild Swift and a target
 whose inputs did not change skips the entire task. When an identity changes,
 the architecture-specific external build root and ccache preserve valid
 upstream incremental work; that runtime install root is recreated before
@@ -140,8 +142,9 @@ Phase gate:
 
 Remove the Linux target package from the external-input manifest and download
 graph. Pass the qualified runtime install root directly to
-`swift-sdk-generator --target-swift-package-path`. The sysroot task depends
-only on pinned Ubuntu packages.
+`swift-sdk-generator --target-swift-package-path`. The runtime sysroot task depends
+only on the pinned runtime-build Ubuntu package subset; assembly consumes that subset
+plus the separately pinned SDK-link subset.
 
 Phase gate:
 

@@ -801,7 +801,7 @@ struct SDBusEventLoopOperations {
     package var rawHandle: OpaquePointer? { unsafe bus }
 
     private static func monotonicMicroseconds() -> UInt64 {
-        var now = timespec()
+        var now = timespec(tv_sec: 0, tv_nsec: 0)
         _ = unsafe clock_gettime(CLOCK_MONOTONIC, &now)
         let seconds = UInt64(max(0, now.tv_sec))
         let microseconds = UInt64(max(0, now.tv_nsec)) / 1_000

@@ -1,4 +1,4 @@
-import WaylandServerC
+package import WaylandServerC
 
 /// Safe, immutable metadata for one generated server interface.
 ///

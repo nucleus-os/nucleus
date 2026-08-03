@@ -9,7 +9,7 @@ package enum WpColorManagementSurfaceV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_wp_color_management_surface_v1())
     package nonisolated static let maximumVersion: UInt32 = 2
 }
-package extension WaylandProxy where Interface == WpColorManagementSurfaceV1Client {
+extension WaylandProxy where Interface == WpColorManagementSurfaceV1Client {
     package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in

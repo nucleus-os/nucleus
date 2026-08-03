@@ -9,7 +9,7 @@ import WaylandServerC
     func setModal(_ request: WaylandRequest<XdgDialogV1Server>)
     func unsetModal(_ request: WaylandRequest<XdgDialogV1Server>)
 }
-package extension XdgDialogV1Requests {
+extension XdgDialogV1Requests {
     package func destroy(_ request: WaylandRequest<XdgDialogV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -79,7 +79,7 @@ package enum XdgDialogV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == XdgDialogV1Server {
+extension WlNewId where Interface == XdgDialogV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: XdgDialogV1Requests>(
@@ -92,7 +92,7 @@ package extension WlNewId where Interface == XdgDialogV1Server {
             installed: installed)
     }
 }
-package extension XdgDialogV1Server {
+extension XdgDialogV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & XdgDialogV1Requests>(
         implementation: Implementation,

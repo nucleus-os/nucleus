@@ -12,7 +12,7 @@ import WaylandServerC
         surface: WaylandBorrowedObject<WlSurfaceServer>,
         parent: WaylandBorrowedObject<WlSurfaceServer>)
 }
-package extension WlSubcompositorRequests {
+extension WlSubcompositorRequests {
     package func destroy(_ request: WaylandRequest<WlSubcompositorServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -84,18 +84,18 @@ package enum WlSubcompositorServer: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == WlSubcompositorServer {
+extension WaylandRequest where Interface == WlSubcompositorServer {
     package func postError(_ code: WlSubcompositorError, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WlSubcompositorServer {
+extension WaylandResourceHandle where Interface == WlSubcompositorServer {
     @discardableResult
     package func postError(_ code: WlSubcompositorError, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WlSubcompositorServer {
+extension WlNewId where Interface == WlSubcompositorServer {
     @discardableResult
     @MainActor
     package func create<Owner: WlSubcompositorRequests>(
@@ -108,7 +108,7 @@ package extension WlNewId where Interface == WlSubcompositorServer {
             installed: installed)
     }
 }
-package extension WlSubcompositorServer {
+extension WlSubcompositorServer {
     @MainActor
     package static func global<Implementation: AnyObject & WlSubcompositorRequests>(
         implementation: Implementation,

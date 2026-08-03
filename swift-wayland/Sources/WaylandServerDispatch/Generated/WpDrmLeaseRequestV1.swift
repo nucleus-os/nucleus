@@ -75,18 +75,18 @@ package enum WpDrmLeaseRequestV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == WpDrmLeaseRequestV1Server {
+extension WaylandRequest where Interface == WpDrmLeaseRequestV1Server {
     package func postError(_ code: WpDrmLeaseRequestV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WpDrmLeaseRequestV1Server {
+extension WaylandResourceHandle where Interface == WpDrmLeaseRequestV1Server {
     @discardableResult
     package func postError(_ code: WpDrmLeaseRequestV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WpDrmLeaseRequestV1Server {
+extension WlNewId where Interface == WpDrmLeaseRequestV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpDrmLeaseRequestV1Requests>(
@@ -99,7 +99,7 @@ package extension WlNewId where Interface == WpDrmLeaseRequestV1Server {
             installed: installed)
     }
 }
-package extension WpDrmLeaseRequestV1Server {
+extension WpDrmLeaseRequestV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpDrmLeaseRequestV1Requests>(
         implementation: Implementation,

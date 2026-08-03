@@ -23,7 +23,7 @@ internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowScene
 import NucleusDiagnostics
-package import NucleusLayers
+internal import NucleusLayers
 import Tracy
 
 import struct NucleusRenderModel.TextureHandle
@@ -615,9 +615,6 @@ final class SceneFeeder: BackgroundEffectDelegate, KdeBlurDelegate {
         -> BackgroundEffectRegions
     {
         guard let region else { return BackgroundEffectRegions() }
-        guard region.rectangleCount <= BackgroundEffectRegions.maxRects else {
-            return BackgroundEffectRegions(rects: [], wholeSurface: true)
-        }
         let rects = region.rectangles.map { rect in
             BackgroundEffectRect(
                 x: Float(rect.x), y: Float(rect.y),

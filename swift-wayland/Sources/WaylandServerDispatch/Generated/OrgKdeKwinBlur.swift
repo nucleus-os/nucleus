@@ -11,7 +11,7 @@ import WaylandServerC
         region: WaylandBorrowedObject<WlRegionServer>?)
     func release(_ request: WaylandRequest<OrgKdeKwinBlurServer>)
 }
-package extension OrgKdeKwinBlurRequests {
+extension OrgKdeKwinBlurRequests {
     package func release(_ request: WaylandRequest<OrgKdeKwinBlurServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -88,7 +88,7 @@ package enum OrgKdeKwinBlurServer: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == OrgKdeKwinBlurServer {
+extension WlNewId where Interface == OrgKdeKwinBlurServer {
     @discardableResult
     @MainActor
     package func create<Owner: OrgKdeKwinBlurRequests>(
@@ -101,7 +101,7 @@ package extension WlNewId where Interface == OrgKdeKwinBlurServer {
             installed: installed)
     }
 }
-package extension OrgKdeKwinBlurServer {
+extension OrgKdeKwinBlurServer {
     @MainActor
     package static func global<Implementation: AnyObject & OrgKdeKwinBlurRequests>(
         implementation: Implementation,

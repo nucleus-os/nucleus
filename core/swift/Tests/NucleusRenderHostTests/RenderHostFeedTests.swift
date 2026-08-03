@@ -4,7 +4,7 @@
 // Context/sink and assert a monotonic store revision, so they cannot be split
 // (swift-testing runs @Test funcs in arbitrary order / in parallel).
 
-package import NucleusLayers
+import NucleusLayers
 import NucleusRenderModel
 import NucleusTypes
 import Testing

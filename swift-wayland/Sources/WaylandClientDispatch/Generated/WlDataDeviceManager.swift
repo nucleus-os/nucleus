@@ -8,7 +8,7 @@ package enum WlDataDeviceManagerClient: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_wl_data_device_manager())
     package nonisolated static let maximumVersion: UInt32 = 4
 }
-package extension WaylandProxy where Interface == WlDataDeviceManagerClient {
+extension WaylandProxy where Interface == WlDataDeviceManagerClient {
     package func createDataSource() throws(WaylandProxyError) -> WaylandProxy<WlDataSourceClient> {
         let _proxy = try unsafe requireNativeProxy()
         guard

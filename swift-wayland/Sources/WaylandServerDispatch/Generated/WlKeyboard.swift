@@ -3,12 +3,12 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol WlKeyboardRequests: AnyObject {
     func release(_ request: WaylandRequest<WlKeyboardServer>)
 }
-package extension WlKeyboardRequests {
+extension WlKeyboardRequests {
     package func release(_ request: WaylandRequest<WlKeyboardServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -87,7 +87,7 @@ package enum WlKeyboardServer: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == WlKeyboardServer {
+extension WaylandResourceHandle where Interface == WlKeyboardServer {
     package var supportsRepeatInfo: Bool {
         guard let version else {
             return false
@@ -161,7 +161,7 @@ package extension WaylandResourceHandle where Interface == WlKeyboardServer {
         return true
     }
 }
-package extension WlNewId where Interface == WlKeyboardServer {
+extension WlNewId where Interface == WlKeyboardServer {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -174,7 +174,7 @@ package extension WlNewId where Interface == WlKeyboardServer {
             installed: installed)
     }
 }
-package extension WlKeyboardServer {
+extension WlKeyboardServer {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

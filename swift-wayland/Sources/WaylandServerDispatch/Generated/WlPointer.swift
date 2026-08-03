@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol WlPointerRequests: AnyObject {
     func setCursor(
@@ -11,7 +11,7 @@ import WaylandServerC
         surface: WaylandBorrowedObject<WlSurfaceServer>?, hotspot_x: Int32, hotspot_y: Int32)
     func release(_ request: WaylandRequest<WlPointerServer>)
 }
-package extension WlPointerRequests {
+extension WlPointerRequests {
     package func release(_ request: WaylandRequest<WlPointerServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -138,7 +138,7 @@ package enum WlPointerServer: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == WlPointerServer {
+extension WaylandResourceHandle where Interface == WlPointerServer {
     package var supportsFrame: Bool {
         guard let version else {
             return false
@@ -290,18 +290,18 @@ package extension WaylandResourceHandle where Interface == WlPointerServer {
         return true
     }
 }
-package extension WaylandRequest where Interface == WlPointerServer {
+extension WaylandRequest where Interface == WlPointerServer {
     package func postError(_ code: WlPointerError, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WlPointerServer {
+extension WaylandResourceHandle where Interface == WlPointerServer {
     @discardableResult
     package func postError(_ code: WlPointerError, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WlPointerServer {
+extension WlNewId where Interface == WlPointerServer {
     @discardableResult
     @MainActor
     package func create<Owner: WlPointerRequests>(
@@ -314,7 +314,7 @@ package extension WlNewId where Interface == WlPointerServer {
             installed: installed)
     }
 }
-package extension WlPointerServer {
+extension WlPointerServer {
     @MainActor
     package static func global<Implementation: AnyObject & WlPointerRequests>(
         implementation: Implementation,

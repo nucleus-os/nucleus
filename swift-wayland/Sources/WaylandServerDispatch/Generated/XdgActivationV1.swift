@@ -12,7 +12,7 @@ import WaylandServerC
         _ request: WaylandRequest<XdgActivationV1Server>, token: String,
         surface: WaylandBorrowedObject<WlSurfaceServer>)
 }
-package extension XdgActivationV1Requests {
+extension XdgActivationV1Requests {
     package func destroy(_ request: WaylandRequest<XdgActivationV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -98,7 +98,7 @@ package enum XdgActivationV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == XdgActivationV1Server {
+extension WlNewId where Interface == XdgActivationV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: XdgActivationV1Requests>(
@@ -111,7 +111,7 @@ package extension WlNewId where Interface == XdgActivationV1Server {
             installed: installed)
     }
 }
-package extension XdgActivationV1Server {
+extension XdgActivationV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & XdgActivationV1Requests>(
         implementation: Implementation,

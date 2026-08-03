@@ -2,6 +2,7 @@ import ColliderCore
 import ColliderPlatformC
 import Foundation
 import SystemPackage
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Darwin)
@@ -31,11 +32,6 @@ public struct RecordedRun: Hashable, Sendable {
 }
 
 public actor RunRegistry {
-    /// The run history the workspace keeps. Every run durably holds its
-    /// manifest, event stream, and the captured output of each task it ran, so
-    /// the registry reclaims the oldest runs once history exceeds this depth.
-    static let retainedRuns = 100
-
     private let root: FilePath
     private var sequences: [RunID: UInt64] = [:]
 
@@ -53,8 +49,6 @@ public actor RunRegistry {
             startedAt: timestamp())
         try writeJSON(manifest, to: directory.appending("manifest.json"))
         try replaceLatest(runID: id, runs: runs)
-        // Reclaiming disk is never a reason to fail the run that is starting.
-        try? remove(reclaimableRuns(keeping: Self.retainedRuns))
         sequences[id] = 0
         let handle = RunHandle(id: id, directory: directory)
         try append(
@@ -102,11 +96,12 @@ public actor RunRegistry {
         var manifest = try JSONDecoder().decode(
             RunManifest.self,
             from: Data(contentsOf: URL(fileURLWithPath: path.string)))
-        let identities = Dictionary(uniqueKeysWithValues: plan.map {
-            ($0.task.rawValue, $0.identity)
-        })
+        let identities = Dictionary(
+            uniqueKeysWithValues: plan.map {
+                ($0.task.rawValue, $0.identity)
+            })
         if (manifest.resumeCount ?? 0) > 0,
-           let recorded = manifest.plannedTasks
+            let recorded = manifest.plannedTasks
         {
             for entry in plan where entry.isClean {
                 guard recorded[entry.task.rawValue] == entry.identity else {
@@ -205,23 +200,28 @@ public actor RunRegistry {
     /// Recency is the recorded start, not directory metadata.
     public func reclaimableRuns(keeping: Int) -> [RecordedRun] {
         let runs = root.appending("runs")
-        let recorded = ((try? FileManager.default.contentsOfDirectory(
-            at: URL(fileURLWithPath: runs.string),
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles])) ?? [])
+        let recorded =
+            ((try? FileManager.default.contentsOfDirectory(
+                at: URL(fileURLWithPath: runs.string),
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles])) ?? [])
             .compactMap { url -> (RecordedRun, RunManifest)? in
-                guard let data = try? Data(contentsOf: url.appendingPathComponent(
-                    "manifest.json")),
-                      let manifest = try? JSONDecoder().decode(
+                guard
+                    let data = try? Data(
+                        contentsOf: url.appendingPathComponent(
+                            "manifest.json")),
+                    let manifest = try? JSONDecoder().decode(
                         RunManifest.self, from: data)
                 else { return nil }
                 return (
                     RecordedRun(id: manifest.runID, directory: FilePath(url.path)),
-                    manifest)
+                    manifest
+                )
             }
             .sorted { $0.1.startedAt > $1.1.startedAt }
         let retained = Set(recorded.prefix(max(0, keeping)).map(\.0.id))
-        return recorded
+        return
+            recorded
             .filter { $0.1.status == .succeeded && !retained.contains($0.0.id) }
             .map(\.0)
     }
@@ -239,12 +239,15 @@ public actor RunRegistry {
     }
 
     private func existingEventCount(_ run: RunHandle) -> UInt64 {
-        guard let data = try? Data(contentsOf: URL(
-            fileURLWithPath: run.directory.appending("events.jsonl").string))
+        guard
+            let data = try? Data(
+                contentsOf: URL(
+                    fileURLWithPath: run.directory.appending("events.jsonl").string))
         else { return 0 }
-        return UInt64(data.reduce(into: 0) { count, byte in
-            if byte == 0x0a { count += 1 }
-        })
+        return UInt64(
+            data.reduce(into: 0) { count, byte in
+                if byte == 0x0a { count += 1 }
+            })
     }
 
     private func updateManifest(
@@ -268,9 +271,10 @@ public actor RunRegistry {
     private func replaceLatest(runID: RunID, runs: FilePath) throws {
         let candidate = root.appending(".latest-\(getpid())")
         try? FileManager.default.removeItem(atPath: candidate.string)
-        guard unsafe collider_symlink(
-            "runs/\(runID.rawValue)",
-            candidate.string) == 0
+        guard
+            unsafe collider_symlink(
+                "runs/\(runID.rawValue)",
+                candidate.string) == 0
         else {
             throw Errno(rawValue: errno)
         }
@@ -299,8 +303,8 @@ public enum RunRegistryFailure: Error, CustomStringConvertible, Sendable {
     }
 }
 
-private extension JSONEncoder {
-    static var stable: JSONEncoder {
+extension JSONEncoder {
+    fileprivate static var stable: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         return encoder

@@ -8,7 +8,7 @@ package enum OrgKdeKwinAppmenuClient: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_org_kde_kwin_appmenu())
     package nonisolated static let maximumVersion: UInt32 = 2
 }
-package extension WaylandProxy where Interface == OrgKdeKwinAppmenuClient {
+extension WaylandProxy where Interface == OrgKdeKwinAppmenuClient {
     package func setAddress(service_name: String, object_path: String) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         return try service_name.withCString {

@@ -13,7 +13,7 @@ import WaylandServerC
         _ request: WaylandRequest<XdgToplevelTagManagerV1Server>,
         toplevel: WaylandBorrowedObject<XdgToplevelServer>, description: String)
 }
-package extension XdgToplevelTagManagerV1Requests {
+extension XdgToplevelTagManagerV1Requests {
     package func destroy(_ request: WaylandRequest<XdgToplevelTagManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -100,7 +100,7 @@ package enum XdgToplevelTagManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == XdgToplevelTagManagerV1Server {
+extension WlNewId where Interface == XdgToplevelTagManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: XdgToplevelTagManagerV1Requests>(
@@ -113,7 +113,7 @@ package extension WlNewId where Interface == XdgToplevelTagManagerV1Server {
             installed: installed)
     }
 }
-package extension XdgToplevelTagManagerV1Server {
+extension XdgToplevelTagManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & XdgToplevelTagManagerV1Requests>(
         implementation: Implementation,

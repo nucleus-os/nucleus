@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol XdgPopupRequests: AnyObject {
     func destroy(_ request: WaylandRequest<XdgPopupServer>)
@@ -14,7 +14,7 @@ import WaylandServerC
         _ request: WaylandRequest<XdgPopupServer>,
         positioner: WaylandBorrowedObject<XdgPositionerServer>, token: UInt32)
 }
-package extension XdgPopupRequests {
+extension XdgPopupRequests {
     package func destroy(_ request: WaylandRequest<XdgPopupServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -105,7 +105,7 @@ package enum XdgPopupServer: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == XdgPopupServer {
+extension WaylandResourceHandle where Interface == XdgPopupServer {
     package var supportsRepositioned: Bool {
         guard let version else {
             return false
@@ -138,18 +138,18 @@ package extension WaylandResourceHandle where Interface == XdgPopupServer {
         return true
     }
 }
-package extension WaylandRequest where Interface == XdgPopupServer {
+extension WaylandRequest where Interface == XdgPopupServer {
     package func postError(_ code: XdgPopupError, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == XdgPopupServer {
+extension WaylandResourceHandle where Interface == XdgPopupServer {
     @discardableResult
     package func postError(_ code: XdgPopupError, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == XdgPopupServer {
+extension WlNewId where Interface == XdgPopupServer {
     @discardableResult
     @MainActor
     package func create<Owner: XdgPopupRequests>(
@@ -162,7 +162,7 @@ package extension WlNewId where Interface == XdgPopupServer {
             installed: installed)
     }
 }
-package extension XdgPopupServer {
+extension XdgPopupServer {
     @MainActor
     package static func global<Implementation: AnyObject & XdgPopupRequests>(
         implementation: Implementation,

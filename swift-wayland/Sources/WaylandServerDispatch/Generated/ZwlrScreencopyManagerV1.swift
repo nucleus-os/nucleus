@@ -16,7 +16,7 @@ import WaylandServerC
         height: Int32)
     func destroy(_ request: WaylandRequest<ZwlrScreencopyManagerV1Server>)
 }
-package extension ZwlrScreencopyManagerV1Requests {
+extension ZwlrScreencopyManagerV1Requests {
     package func destroy(_ request: WaylandRequest<ZwlrScreencopyManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -112,7 +112,7 @@ package enum ZwlrScreencopyManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ZwlrScreencopyManagerV1Server {
+extension WlNewId where Interface == ZwlrScreencopyManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwlrScreencopyManagerV1Requests>(
@@ -125,7 +125,7 @@ package extension WlNewId where Interface == ZwlrScreencopyManagerV1Server {
             installed: installed)
     }
 }
-package extension ZwlrScreencopyManagerV1Server {
+extension ZwlrScreencopyManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwlrScreencopyManagerV1Requests>(
         implementation: Implementation,

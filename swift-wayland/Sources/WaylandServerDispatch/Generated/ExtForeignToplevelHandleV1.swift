@@ -2,12 +2,12 @@
 // Typed server descriptor and dispatch for ext_foreign_toplevel_handle_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ExtForeignToplevelHandleV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ExtForeignToplevelHandleV1Server>)
 }
-package extension ExtForeignToplevelHandleV1Requests {
+extension ExtForeignToplevelHandleV1Requests {
     package func destroy(_ request: WaylandRequest<ExtForeignToplevelHandleV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -76,7 +76,7 @@ package enum ExtForeignToplevelHandleV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ExtForeignToplevelHandleV1Server {
+extension WaylandResourceHandle where Interface == ExtForeignToplevelHandleV1Server {
     @discardableResult
     package func sendClosed() -> Bool {
         guard let target = unsafe resource else {
@@ -124,7 +124,7 @@ package extension WaylandResourceHandle where Interface == ExtForeignToplevelHan
         }
     }
 }
-package extension WlNewId where Interface == ExtForeignToplevelHandleV1Server {
+extension WlNewId where Interface == ExtForeignToplevelHandleV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -137,7 +137,7 @@ package extension WlNewId where Interface == ExtForeignToplevelHandleV1Server {
             installed: installed)
     }
 }
-package extension ExtForeignToplevelHandleV1Server {
+extension ExtForeignToplevelHandleV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

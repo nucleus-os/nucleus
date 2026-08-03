@@ -8,7 +8,7 @@ package enum ExtForeignToplevelImageCaptureSourceManagerV1Client: WaylandClientI
         nativeInterface: swift_wayland_iface_ext_foreign_toplevel_image_capture_source_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == ExtForeignToplevelImageCaptureSourceManagerV1Client {
+extension WaylandProxy where Interface == ExtForeignToplevelImageCaptureSourceManagerV1Client {
     package func createSource(toplevel_handle: WaylandProxy<ExtForeignToplevelHandleV1Client>)
         throws(WaylandProxyError) -> WaylandProxy<ExtImageCaptureSourceV1Client>
     {

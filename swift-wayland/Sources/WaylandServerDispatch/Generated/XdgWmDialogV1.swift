@@ -11,7 +11,7 @@ import WaylandServerC
         _ request: WaylandRequest<XdgWmDialogV1Server>, id: WlNewId<XdgDialogV1Server>,
         toplevel: WaylandBorrowedObject<XdgToplevelServer>)
 }
-package extension XdgWmDialogV1Requests {
+extension XdgWmDialogV1Requests {
     package func destroy(_ request: WaylandRequest<XdgWmDialogV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -81,18 +81,18 @@ package enum XdgWmDialogV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == XdgWmDialogV1Server {
+extension WaylandRequest where Interface == XdgWmDialogV1Server {
     package func postError(_ code: XdgWmDialogV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == XdgWmDialogV1Server {
+extension WaylandResourceHandle where Interface == XdgWmDialogV1Server {
     @discardableResult
     package func postError(_ code: XdgWmDialogV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == XdgWmDialogV1Server {
+extension WlNewId where Interface == XdgWmDialogV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: XdgWmDialogV1Requests>(
@@ -105,7 +105,7 @@ package extension WlNewId where Interface == XdgWmDialogV1Server {
             installed: installed)
     }
 }
-package extension XdgWmDialogV1Server {
+extension XdgWmDialogV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & XdgWmDialogV1Requests>(
         implementation: Implementation,

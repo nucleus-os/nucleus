@@ -10,7 +10,7 @@ import WaylandServerC
         object_path: String)
     func release(_ request: WaylandRequest<OrgKdeKwinAppmenuServer>)
 }
-package extension OrgKdeKwinAppmenuRequests {
+extension OrgKdeKwinAppmenuRequests {
     package func release(_ request: WaylandRequest<OrgKdeKwinAppmenuServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -77,7 +77,7 @@ package enum OrgKdeKwinAppmenuServer: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == OrgKdeKwinAppmenuServer {
+extension WlNewId where Interface == OrgKdeKwinAppmenuServer {
     @discardableResult
     @MainActor
     package func create<Owner: OrgKdeKwinAppmenuRequests>(
@@ -90,7 +90,7 @@ package extension WlNewId where Interface == OrgKdeKwinAppmenuServer {
             installed: installed)
     }
 }
-package extension OrgKdeKwinAppmenuServer {
+extension OrgKdeKwinAppmenuServer {
     @MainActor
     package static func global<Implementation: AnyObject & OrgKdeKwinAppmenuRequests>(
         implementation: Implementation,

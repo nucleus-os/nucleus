@@ -2,12 +2,12 @@
 // Typed server descriptor and dispatch for wp_fractional_scale_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol WpFractionalScaleV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<WpFractionalScaleV1Server>)
 }
-package extension WpFractionalScaleV1Requests {
+extension WpFractionalScaleV1Requests {
     package func destroy(_ request: WaylandRequest<WpFractionalScaleV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -59,7 +59,7 @@ package enum WpFractionalScaleV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == WpFractionalScaleV1Server {
+extension WaylandResourceHandle where Interface == WpFractionalScaleV1Server {
     @discardableResult
     package func sendPreferredScale(scale: UInt32) -> Bool {
         guard let target = unsafe resource else {
@@ -69,7 +69,7 @@ package extension WaylandResourceHandle where Interface == WpFractionalScaleV1Se
         return true
     }
 }
-package extension WlNewId where Interface == WpFractionalScaleV1Server {
+extension WlNewId where Interface == WpFractionalScaleV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -82,7 +82,7 @@ package extension WlNewId where Interface == WpFractionalScaleV1Server {
             installed: installed)
     }
 }
-package extension WpFractionalScaleV1Server {
+extension WpFractionalScaleV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

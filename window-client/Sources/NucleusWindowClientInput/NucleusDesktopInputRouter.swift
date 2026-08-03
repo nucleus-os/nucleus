@@ -3,8 +3,6 @@ import NucleusTypes
 package import NucleusUI
 package import NucleusWindowClientWayland
 
-import struct NucleusUI.Point
-
 /// Adapts role-neutral application input into NucleusUI events and dispatches
 /// them into a scene.
 ///

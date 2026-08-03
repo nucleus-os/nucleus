@@ -10,7 +10,7 @@ import WaylandServerC
         _ request: WaylandRequest<ZwpIdleInhibitManagerV1Server>,
         id: WlNewId<ZwpIdleInhibitorV1Server>, surface: WaylandBorrowedObject<WlSurfaceServer>)
 }
-package extension ZwpIdleInhibitManagerV1Requests {
+extension ZwpIdleInhibitManagerV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpIdleInhibitManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -80,7 +80,7 @@ package enum ZwpIdleInhibitManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ZwpIdleInhibitManagerV1Server {
+extension WlNewId where Interface == ZwpIdleInhibitManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpIdleInhibitManagerV1Requests>(
@@ -93,7 +93,7 @@ package extension WlNewId where Interface == ZwpIdleInhibitManagerV1Server {
             installed: installed)
     }
 }
-package extension ZwpIdleInhibitManagerV1Server {
+extension ZwpIdleInhibitManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpIdleInhibitManagerV1Requests>(
         implementation: Implementation,

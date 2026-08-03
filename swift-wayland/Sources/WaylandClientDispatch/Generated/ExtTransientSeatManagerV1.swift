@@ -8,7 +8,7 @@ package enum ExtTransientSeatManagerV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_ext_transient_seat_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == ExtTransientSeatManagerV1Client {
+extension WaylandProxy where Interface == ExtTransientSeatManagerV1Client {
     package func create() throws(WaylandProxyError) -> WaylandProxy<ExtTransientSeatV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         guard

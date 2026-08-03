@@ -17,7 +17,7 @@ import WaylandServerC
     func setSync(_ request: WaylandRequest<WlSubsurfaceServer>)
     func setDesync(_ request: WaylandRequest<WlSubsurfaceServer>)
 }
-package extension WlSubsurfaceRequests {
+extension WlSubsurfaceRequests {
     package func destroy(_ request: WaylandRequest<WlSubsurfaceServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -135,18 +135,18 @@ package enum WlSubsurfaceServer: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == WlSubsurfaceServer {
+extension WaylandRequest where Interface == WlSubsurfaceServer {
     package func postError(_ code: WlSubsurfaceError, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WlSubsurfaceServer {
+extension WaylandResourceHandle where Interface == WlSubsurfaceServer {
     @discardableResult
     package func postError(_ code: WlSubsurfaceError, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WlSubsurfaceServer {
+extension WlNewId where Interface == WlSubsurfaceServer {
     @discardableResult
     @MainActor
     package func create<Owner: WlSubsurfaceRequests>(
@@ -159,7 +159,7 @@ package extension WlNewId where Interface == WlSubsurfaceServer {
             installed: installed)
     }
 }
-package extension WlSubsurfaceServer {
+extension WlSubsurfaceServer {
     @MainActor
     package static func global<Implementation: AnyObject & WlSubsurfaceRequests>(
         implementation: Implementation,

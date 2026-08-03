@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpFullscreenShellV1Requests: AnyObject {
     func release(_ request: WaylandRequest<ZwpFullscreenShellV1Server>)
@@ -17,7 +17,7 @@ import WaylandServerC
         output: WaylandBorrowedObject<WlOutputServer>, framerate: Int32,
         feedback: WlNewId<ZwpFullscreenShellModeFeedbackV1Server>)
 }
-package extension ZwpFullscreenShellV1Requests {
+extension ZwpFullscreenShellV1Requests {
     package func release(_ request: WaylandRequest<ZwpFullscreenShellV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -118,7 +118,7 @@ package enum ZwpFullscreenShellV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwpFullscreenShellV1Server {
+extension WaylandResourceHandle where Interface == ZwpFullscreenShellV1Server {
     @discardableResult
     package func sendCapability(capability: ZwpFullscreenShellV1Capability) -> Bool {
         guard let target = unsafe resource else {
@@ -128,18 +128,18 @@ package extension WaylandResourceHandle where Interface == ZwpFullscreenShellV1S
         return true
     }
 }
-package extension WaylandRequest where Interface == ZwpFullscreenShellV1Server {
+extension WaylandRequest where Interface == ZwpFullscreenShellV1Server {
     package func postError(_ code: ZwpFullscreenShellV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ZwpFullscreenShellV1Server {
+extension WaylandResourceHandle where Interface == ZwpFullscreenShellV1Server {
     @discardableResult
     package func postError(_ code: ZwpFullscreenShellV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ZwpFullscreenShellV1Server {
+extension WlNewId where Interface == ZwpFullscreenShellV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpFullscreenShellV1Requests>(
@@ -152,7 +152,7 @@ package extension WlNewId where Interface == ZwpFullscreenShellV1Server {
             installed: installed)
     }
 }
-package extension ZwpFullscreenShellV1Server {
+extension ZwpFullscreenShellV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpFullscreenShellV1Requests>(
         implementation: Implementation,

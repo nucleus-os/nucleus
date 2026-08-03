@@ -8,7 +8,7 @@ package enum ZwpPrimarySelectionDeviceManagerV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_zwp_primary_selection_device_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == ZwpPrimarySelectionDeviceManagerV1Client {
+extension WaylandProxy where Interface == ZwpPrimarySelectionDeviceManagerV1Client {
     package func createSource() throws(WaylandProxyError) -> WaylandProxy<
         ZwpPrimarySelectionSourceV1Client
     > {

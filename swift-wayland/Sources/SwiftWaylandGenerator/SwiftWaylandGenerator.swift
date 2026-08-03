@@ -726,7 +726,7 @@ package enum SwiftWaylandGenerator {
                     let emitsEvents = !isLibwaylandBootstrap && !iface.events.isEmpty
                     let P = upperCamel(iface.name)
                     var source = SwiftSourceFileBuilder()
-                    source.addImport("WaylandServerC")
+                    source.addImport("WaylandServerC", packageAccess: emitsEvents)
                     source.addImport("WaylandServer", packageAccess: true)
                     let usesProtocolValues =
                         iface.enumerations.contains { $0.name == "error" }
@@ -1575,7 +1575,14 @@ package enum SwiftWaylandGenerator {
                     // client never adds a listener to it. wl_registry IS listened to, so it stays.
                     let P = upperCamel(iface.name)
                     var source = SwiftSourceFileBuilder()
-                    source.addImport("WaylandClientC")
+                    source.addImport(
+                        "WaylandClientC",
+                        packageAccess: iface.name != "wl_display" && !iface.events.isEmpty)
+                    if (iface.requests + iface.events).flatMap(\.args).contains(where: {
+                        resolvedEnumerationName($0, in: iface) != nil
+                    }) {
+                        source.addImport("WaylandProtocolTypes", packageAccess: true)
+                    }
 
                     let descriptor = EnumDeclSyntax(
                         modifiers: [DeclModifierSyntax(name: .keyword(.package))],
@@ -1596,11 +1603,6 @@ package enum SwiftWaylandGenerator {
                     }
                     source.add(DeclSyntax(descriptor))
 
-                    if (iface.requests + iface.events).flatMap(\.args).contains(where: {
-                        resolvedEnumerationName($0, in: iface) != nil
-                    }) {
-                        source.addImport("WaylandProtocolTypes", packageAccess: true)
-                    }
                     if !iface.requests.isEmpty {
                         let requestMembers = iface.requests.map {
                             clientDeclaration(

@@ -304,7 +304,7 @@ package final class Display {
     }
 
     private static func monotonicNowNs() -> UInt64 {
-        var timestamp = timespec()
+        var timestamp = timespec(tv_sec: 0, tv_nsec: 0)
         unsafe clock_gettime(
             CLOCK_MONOTONIC, &timestamp)
         return UInt64(timestamp.tv_sec)

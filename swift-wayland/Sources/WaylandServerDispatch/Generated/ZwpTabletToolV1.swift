@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpTabletToolV1Requests: AnyObject {
     func setCursor(
@@ -11,7 +11,7 @@ import WaylandServerC
         surface: WaylandBorrowedObject<WlSurfaceServer>?, hotspot_x: Int32, hotspot_y: Int32)
     func destroy(_ request: WaylandRequest<ZwpTabletToolV1Server>)
 }
-package extension ZwpTabletToolV1Requests {
+extension ZwpTabletToolV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpTabletToolV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -160,7 +160,7 @@ package enum ZwpTabletToolV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwpTabletToolV1Server {
+extension WaylandResourceHandle where Interface == ZwpTabletToolV1Server {
     @discardableResult
     package func sendType(tool_type: ZwpTabletToolV1Type) -> Bool {
         guard let target = unsafe resource else {
@@ -329,18 +329,18 @@ package extension WaylandResourceHandle where Interface == ZwpTabletToolV1Server
         return true
     }
 }
-package extension WaylandRequest where Interface == ZwpTabletToolV1Server {
+extension WaylandRequest where Interface == ZwpTabletToolV1Server {
     package func postError(_ code: ZwpTabletToolV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ZwpTabletToolV1Server {
+extension WaylandResourceHandle where Interface == ZwpTabletToolV1Server {
     @discardableResult
     package func postError(_ code: ZwpTabletToolV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ZwpTabletToolV1Server {
+extension WlNewId where Interface == ZwpTabletToolV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpTabletToolV1Requests>(
@@ -353,7 +353,7 @@ package extension WlNewId where Interface == ZwpTabletToolV1Server {
             installed: installed)
     }
 }
-package extension ZwpTabletToolV1Server {
+extension ZwpTabletToolV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpTabletToolV1Requests>(
         implementation: Implementation,

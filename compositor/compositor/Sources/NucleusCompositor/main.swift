@@ -1,6 +1,6 @@
 import Glibc
 import NucleusDiagnostics
-package import NucleusRenderServer
+internal import NucleusRenderServer
 import NucleusSessionProtocol
 
 // Keep process policy here: decode launch state, enter the framework, map exit.

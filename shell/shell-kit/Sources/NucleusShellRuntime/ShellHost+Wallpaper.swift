@@ -1,8 +1,8 @@
 import Foundation
-import NucleusShellProduct
-import NucleusUI
+internal import NucleusShellProduct
+internal import NucleusUI
 import NucleusUIEmbedder
-package import NucleusWindowClientWayland
+internal import NucleusWindowClientWayland
 
 @MainActor
 struct NativeWallpaperSurface {

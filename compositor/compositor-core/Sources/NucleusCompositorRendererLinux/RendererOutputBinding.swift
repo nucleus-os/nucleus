@@ -1,8 +1,8 @@
 import Glibc
 import NucleusCompositorDrmC
-package import NucleusRenderer
-import Vulkan
-import VulkanC
+internal import NucleusRenderer
+internal import Vulkan
+internal import VulkanC
 
 /// Owns a diagnostic duplicate of a sync_file. The live synchronization fd is
 /// consumed by Vulkan or KMS; this duplicate exists only for telemetry.

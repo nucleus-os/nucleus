@@ -18,7 +18,7 @@ import WaylandServerC
         pointer: WaylandBorrowedObject<WlPointerServer>,
         region: WaylandBorrowedObject<WlRegionServer>?, lifetime: ZwpPointerConstraintsV1Lifetime)
 }
-package extension ZwpPointerConstraintsV1Requests {
+extension ZwpPointerConstraintsV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpPointerConstraintsV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -125,18 +125,18 @@ package enum ZwpPointerConstraintsV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == ZwpPointerConstraintsV1Server {
+extension WaylandRequest where Interface == ZwpPointerConstraintsV1Server {
     package func postError(_ code: ZwpPointerConstraintsV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ZwpPointerConstraintsV1Server {
+extension WaylandResourceHandle where Interface == ZwpPointerConstraintsV1Server {
     @discardableResult
     package func postError(_ code: ZwpPointerConstraintsV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ZwpPointerConstraintsV1Server {
+extension WlNewId where Interface == ZwpPointerConstraintsV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpPointerConstraintsV1Requests>(
@@ -149,7 +149,7 @@ package extension WlNewId where Interface == ZwpPointerConstraintsV1Server {
             installed: installed)
     }
 }
-package extension ZwpPointerConstraintsV1Server {
+extension ZwpPointerConstraintsV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpPointerConstraintsV1Requests>(
         implementation: Implementation,

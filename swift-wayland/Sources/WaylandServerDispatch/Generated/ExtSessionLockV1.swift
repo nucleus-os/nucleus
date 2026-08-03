@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ExtSessionLockV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ExtSessionLockV1Server>)
@@ -13,7 +13,7 @@ import WaylandServerC
         output: WaylandBorrowedObject<WlOutputServer>)
     func unlockAndDestroy(_ request: WaylandRequest<ExtSessionLockV1Server>)
 }
-package extension ExtSessionLockV1Requests {
+extension ExtSessionLockV1Requests {
     package func destroy(_ request: WaylandRequest<ExtSessionLockV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -111,7 +111,7 @@ package enum ExtSessionLockV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ExtSessionLockV1Server {
+extension WaylandResourceHandle where Interface == ExtSessionLockV1Server {
     @discardableResult
     package func sendLocked() -> Bool {
         guard let target = unsafe resource else {
@@ -129,18 +129,18 @@ package extension WaylandResourceHandle where Interface == ExtSessionLockV1Serve
         return true
     }
 }
-package extension WaylandRequest where Interface == ExtSessionLockV1Server {
+extension WaylandRequest where Interface == ExtSessionLockV1Server {
     package func postError(_ code: ExtSessionLockV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ExtSessionLockV1Server {
+extension WaylandResourceHandle where Interface == ExtSessionLockV1Server {
     @discardableResult
     package func postError(_ code: ExtSessionLockV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ExtSessionLockV1Server {
+extension WlNewId where Interface == ExtSessionLockV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ExtSessionLockV1Requests>(
@@ -153,7 +153,7 @@ package extension WlNewId where Interface == ExtSessionLockV1Server {
             installed: installed)
     }
 }
-package extension ExtSessionLockV1Server {
+extension ExtSessionLockV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ExtSessionLockV1Requests>(
         implementation: Implementation,

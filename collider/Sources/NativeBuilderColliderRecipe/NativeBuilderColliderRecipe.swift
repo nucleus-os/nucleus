@@ -15,16 +15,24 @@ public enum NativeBuilderColliderRecipe {
                     path: configuration.imageID,
                     validation: .regularFile)
             ],
+            postconditions: [
+                PathPostcondition(
+                    path: configuration.ccache,
+                    validation: .exists)
+            ],
             locks: [.checkout("native-builder-image")],
             cachePolicy: .contentAddressed,
-            operation: .prepareOCIImage(
-                OCIImagePreparation(
-                    executionPlatform: .linuxAMD64OCI,
-                    context: configuration.context,
-                    containerFile: configuration.context.appending(
-                        "Containerfile"),
-                    imageID: configuration.imageID,
-                    imageName: "localhost/nucleus-native-build",
-                    environment: configuration.environment)))
+            operation: .sequence([
+                .createDirectory(configuration.ccache),
+                .prepareOCIImage(
+                    OCIImagePreparation(
+                        executionPlatform: .linuxARM64OCI,
+                        context: configuration.context,
+                        containerFile: configuration.context.appending(
+                            "Containerfile"),
+                        imageID: configuration.imageID,
+                        imageName: "localhost/nucleus-linux-build",
+                        environment: configuration.environment)),
+            ]))
     }
 }

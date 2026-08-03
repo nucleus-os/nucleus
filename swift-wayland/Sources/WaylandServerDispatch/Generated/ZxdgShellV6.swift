@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZxdgShellV6Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZxdgShellV6Server>)
@@ -14,7 +14,7 @@ import WaylandServerC
         surface: WaylandBorrowedObject<WlSurfaceServer>)
     func pong(_ request: WaylandRequest<ZxdgShellV6Server>, serial: UInt32)
 }
-package extension ZxdgShellV6Requests {
+extension ZxdgShellV6Requests {
     package func destroy(_ request: WaylandRequest<ZxdgShellV6Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -119,7 +119,7 @@ package enum ZxdgShellV6Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZxdgShellV6Server {
+extension WaylandResourceHandle where Interface == ZxdgShellV6Server {
     @discardableResult
     package func sendPing(serial: UInt32) -> Bool {
         guard let target = unsafe resource else {
@@ -129,18 +129,18 @@ package extension WaylandResourceHandle where Interface == ZxdgShellV6Server {
         return true
     }
 }
-package extension WaylandRequest where Interface == ZxdgShellV6Server {
+extension WaylandRequest where Interface == ZxdgShellV6Server {
     package func postError(_ code: ZxdgShellV6Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ZxdgShellV6Server {
+extension WaylandResourceHandle where Interface == ZxdgShellV6Server {
     @discardableResult
     package func postError(_ code: ZxdgShellV6Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ZxdgShellV6Server {
+extension WlNewId where Interface == ZxdgShellV6Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZxdgShellV6Requests>(
@@ -153,7 +153,7 @@ package extension WlNewId where Interface == ZxdgShellV6Server {
             installed: installed)
     }
 }
-package extension ZxdgShellV6Server {
+extension ZxdgShellV6Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZxdgShellV6Requests>(
         implementation: Implementation,

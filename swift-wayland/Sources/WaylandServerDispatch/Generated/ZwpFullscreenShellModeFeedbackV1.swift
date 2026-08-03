@@ -2,7 +2,7 @@
 // Typed server descriptor and dispatch for zwp_fullscreen_shell_mode_feedback_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 package enum ZwpFullscreenShellModeFeedbackV1Server: WaylandServerInterface {
     package nonisolated static let maximumVersion: Int32 = 1
@@ -19,7 +19,7 @@ package enum ZwpFullscreenShellModeFeedbackV1Server: WaylandServerInterface {
         unsafe zwp_fullscreen_shell_mode_feedback_v1_send_present_cancelled(target)
     }
 }
-package extension WaylandResourceHandle where Interface == ZwpFullscreenShellModeFeedbackV1Server {
+extension WaylandResourceHandle where Interface == ZwpFullscreenShellModeFeedbackV1Server {
     @discardableResult
     package func sendModeSuccessful() -> Bool {
         guard let target = unsafe resource else {
@@ -45,7 +45,7 @@ package extension WaylandResourceHandle where Interface == ZwpFullscreenShellMod
         return true
     }
 }
-package extension WlNewId where Interface == ZwpFullscreenShellModeFeedbackV1Server {
+extension WlNewId where Interface == ZwpFullscreenShellModeFeedbackV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -58,7 +58,7 @@ package extension WlNewId where Interface == ZwpFullscreenShellModeFeedbackV1Ser
             owner: owner, installed: installed)
     }
 }
-package extension ZwpFullscreenShellModeFeedbackV1Server {
+extension ZwpFullscreenShellModeFeedbackV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

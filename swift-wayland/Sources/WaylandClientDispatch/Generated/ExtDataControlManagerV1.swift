@@ -8,7 +8,7 @@ package enum ExtDataControlManagerV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_ext_data_control_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == ExtDataControlManagerV1Client {
+extension WaylandProxy where Interface == ExtDataControlManagerV1Client {
     package func createDataSource() throws(WaylandProxyError) -> WaylandProxy<
         ExtDataControlSourceV1Client
     > {

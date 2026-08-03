@@ -11,7 +11,7 @@ import WaylandServerC
         _ request: WaylandRequest<WpFifoManagerV1Server>, id: WlNewId<WpFifoV1Server>,
         surface: WaylandBorrowedObject<WlSurfaceServer>)
 }
-package extension WpFifoManagerV1Requests {
+extension WpFifoManagerV1Requests {
     package func destroy(_ request: WaylandRequest<WpFifoManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -81,18 +81,18 @@ package enum WpFifoManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == WpFifoManagerV1Server {
+extension WaylandRequest where Interface == WpFifoManagerV1Server {
     package func postError(_ code: WpFifoManagerV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WpFifoManagerV1Server {
+extension WaylandResourceHandle where Interface == WpFifoManagerV1Server {
     @discardableResult
     package func postError(_ code: WpFifoManagerV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WpFifoManagerV1Server {
+extension WlNewId where Interface == WpFifoManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpFifoManagerV1Requests>(
@@ -105,7 +105,7 @@ package extension WlNewId where Interface == WpFifoManagerV1Server {
             installed: installed)
     }
 }
-package extension WpFifoManagerV1Server {
+extension WpFifoManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpFifoManagerV1Requests>(
         implementation: Implementation,

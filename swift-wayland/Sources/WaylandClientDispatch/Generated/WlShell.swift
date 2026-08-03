@@ -8,7 +8,7 @@ package enum WlShellClient: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_wl_shell())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == WlShellClient {
+extension WaylandProxy where Interface == WlShellClient {
     package func getShellSurface(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError)
         -> WaylandProxy<WlShellSurfaceClient>
     {

@@ -12,7 +12,7 @@ import WaylandServerC
         seat: WaylandBorrowedObject<WlSeatServer>)
     func release(_ request: WaylandRequest<WlDataDeviceManagerServer>)
 }
-package extension WlDataDeviceManagerRequests {
+extension WlDataDeviceManagerRequests {
     package func release(_ request: WaylandRequest<WlDataDeviceManagerServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -101,7 +101,7 @@ package enum WlDataDeviceManagerServer: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == WlDataDeviceManagerServer {
+extension WlNewId where Interface == WlDataDeviceManagerServer {
     @discardableResult
     @MainActor
     package func create<Owner: WlDataDeviceManagerRequests>(
@@ -114,7 +114,7 @@ package extension WlNewId where Interface == WlDataDeviceManagerServer {
             installed: installed)
     }
 }
-package extension WlDataDeviceManagerServer {
+extension WlDataDeviceManagerServer {
     @MainActor
     package static func global<Implementation: AnyObject & WlDataDeviceManagerRequests>(
         implementation: Implementation,

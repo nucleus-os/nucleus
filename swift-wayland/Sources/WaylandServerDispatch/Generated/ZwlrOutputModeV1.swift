@@ -2,12 +2,12 @@
 // Typed server descriptor and dispatch for zwlr_output_mode_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwlrOutputModeV1Requests: AnyObject {
     func release(_ request: WaylandRequest<ZwlrOutputModeV1Server>)
 }
-package extension ZwlrOutputModeV1Requests {
+extension ZwlrOutputModeV1Requests {
     package func release(_ request: WaylandRequest<ZwlrOutputModeV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -68,7 +68,7 @@ package enum ZwlrOutputModeV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwlrOutputModeV1Server {
+extension WaylandResourceHandle where Interface == ZwlrOutputModeV1Server {
     @discardableResult
     package func sendSize(width: Int32, height: Int32) -> Bool {
         guard let target = unsafe resource else {
@@ -102,7 +102,7 @@ package extension WaylandResourceHandle where Interface == ZwlrOutputModeV1Serve
         return true
     }
 }
-package extension WlNewId where Interface == ZwlrOutputModeV1Server {
+extension WlNewId where Interface == ZwlrOutputModeV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -115,7 +115,7 @@ package extension WlNewId where Interface == ZwlrOutputModeV1Server {
             installed: installed)
     }
 }
-package extension ZwlrOutputModeV1Server {
+extension ZwlrOutputModeV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

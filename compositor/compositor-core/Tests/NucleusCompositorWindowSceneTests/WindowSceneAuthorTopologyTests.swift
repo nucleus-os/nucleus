@@ -126,8 +126,12 @@ final class RejectingCommitSink: CommitSink {
         let replacement = try #require(replacementTransactions.first)
         #expect(replacement.removed.count == 1)
         #expect(replacement.created.count == 1)
-        #expect(replacement.created.first?.1.initialContent.kind == .snapshot)
-        #expect(replacement.created.first?.1.initialContent.handle == 202)
+        let replacementCreation = try #require(replacement.created.first)
+        guard case .snapshot(let replacementHandle) = replacementCreation.1.initialContent else {
+            Issue.record("replacement overlay did not carry snapshot content")
+            return
+        }
+        #expect(replacementHandle.handle == 202)
 
         let layoutMark = registry.allTransactions.count
         try author.applyLayout(
@@ -181,7 +185,12 @@ final class RejectingCommitSink: CommitSink {
             windowSink.transactions.dropFirst(replacementMark).first)
         #expect(replacement.removed.count == 1)
         #expect(replacement.created.count == 1)
-        #expect(replacement.created.first?.1.initialContent.handle == 202)
+        let replacementCreation = try #require(replacement.created.first)
+        guard case .snapshot(let replacementHandle) = replacementCreation.1.initialContent else {
+            Issue.record("replacement overlay did not carry snapshot content")
+            return
+        }
+        #expect(replacementHandle.handle == 202)
 
         windowSink.rejectNext = true
         #expect(throws: HostCallError.self) {

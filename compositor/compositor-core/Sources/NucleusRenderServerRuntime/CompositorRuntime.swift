@@ -16,7 +16,7 @@ import NucleusLinuxDBus
 import NucleusLinuxReactor
 import NucleusRenderHost
 import NucleusRenderModel
-import NucleusSessionProtocol
+internal import NucleusSessionProtocol
 import Tracy
 
 // The compositor runtime root. `CompositorRuntime` owns the awaitable Linux host
@@ -582,9 +582,8 @@ final class CompositorRuntime {
             waylandRuntime.flushClients()
             processDueLinuxReactorSources()
 
-            // post-drain: always drain libseat — a VT-switch signal arrives as a
-            // delivered EINTR with no CQE, and the io_uring wait returns on it —
-            // then re-collect frame demand for the turn.
+            // Post-drain: always dispatch libseat after the reactor batch, then
+            // re-collect frame demand for the turn.
             waylandRuntime.dispatchSeat()
             frameDemand.sync()
         }
@@ -894,7 +893,7 @@ final class CompositorRuntime {
     }
 
     private static func monotonicNowNs() -> UInt64 {
-        var ts = timespec()
+        var ts = timespec(tv_sec: 0, tv_nsec: 0)
         unsafe clock_gettime(CLOCK_MONOTONIC, &ts)
         return UInt64(ts.tv_sec) &* 1_000_000_000 &+ UInt64(ts.tv_nsec)
     }

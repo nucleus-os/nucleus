@@ -1,6 +1,6 @@
 import Dispatch
 import NucleusReactFabricSmokeC
-import NucleusUI
+internal import NucleusUI
 import Synchronization
 
 private final class MountTestDrainScheduler: Sendable {

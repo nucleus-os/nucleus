@@ -2,12 +2,12 @@
 // Typed server descriptor and dispatch for zwp_keyboard_shortcuts_inhibitor_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpKeyboardShortcutsInhibitorV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZwpKeyboardShortcutsInhibitorV1Server>)
 }
-package extension ZwpKeyboardShortcutsInhibitorV1Requests {
+extension ZwpKeyboardShortcutsInhibitorV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpKeyboardShortcutsInhibitorV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -61,7 +61,7 @@ package enum ZwpKeyboardShortcutsInhibitorV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwpKeyboardShortcutsInhibitorV1Server {
+extension WaylandResourceHandle where Interface == ZwpKeyboardShortcutsInhibitorV1Server {
     @discardableResult
     package func sendActive() -> Bool {
         guard let target = unsafe resource else {
@@ -79,7 +79,7 @@ package extension WaylandResourceHandle where Interface == ZwpKeyboardShortcutsI
         return true
     }
 }
-package extension WlNewId where Interface == ZwpKeyboardShortcutsInhibitorV1Server {
+extension WlNewId where Interface == ZwpKeyboardShortcutsInhibitorV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -92,7 +92,7 @@ package extension WlNewId where Interface == ZwpKeyboardShortcutsInhibitorV1Serv
             owner: owner, installed: installed)
     }
 }
-package extension ZwpKeyboardShortcutsInhibitorV1Server {
+extension ZwpKeyboardShortcutsInhibitorV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

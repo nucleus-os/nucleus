@@ -3,13 +3,13 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ExtSessionLockSurfaceV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ExtSessionLockSurfaceV1Server>)
     func ackConfigure(_ request: WaylandRequest<ExtSessionLockSurfaceV1Server>, serial: UInt32)
 }
-package extension ExtSessionLockSurfaceV1Requests {
+extension ExtSessionLockSurfaceV1Requests {
     package func destroy(_ request: WaylandRequest<ExtSessionLockSurfaceV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -75,7 +75,7 @@ package enum ExtSessionLockSurfaceV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ExtSessionLockSurfaceV1Server {
+extension WaylandResourceHandle where Interface == ExtSessionLockSurfaceV1Server {
     @discardableResult
     package func sendConfigure(serial: UInt32, width: UInt32, height: UInt32) -> Bool {
         guard let target = unsafe resource else {
@@ -85,18 +85,18 @@ package extension WaylandResourceHandle where Interface == ExtSessionLockSurface
         return true
     }
 }
-package extension WaylandRequest where Interface == ExtSessionLockSurfaceV1Server {
+extension WaylandRequest where Interface == ExtSessionLockSurfaceV1Server {
     package func postError(_ code: ExtSessionLockSurfaceV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ExtSessionLockSurfaceV1Server {
+extension WaylandResourceHandle where Interface == ExtSessionLockSurfaceV1Server {
     @discardableResult
     package func postError(_ code: ExtSessionLockSurfaceV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ExtSessionLockSurfaceV1Server {
+extension WlNewId where Interface == ExtSessionLockSurfaceV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ExtSessionLockSurfaceV1Requests>(
@@ -109,7 +109,7 @@ package extension WlNewId where Interface == ExtSessionLockSurfaceV1Server {
             installed: installed)
     }
 }
-package extension ExtSessionLockSurfaceV1Server {
+extension ExtSessionLockSurfaceV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ExtSessionLockSurfaceV1Requests>(
         implementation: Implementation,

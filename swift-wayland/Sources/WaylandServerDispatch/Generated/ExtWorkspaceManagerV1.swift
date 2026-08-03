@@ -2,7 +2,7 @@
 // Typed server descriptor and dispatch for ext_workspace_manager_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ExtWorkspaceManagerV1Requests: AnyObject {
     func commit(_ request: WaylandRequest<ExtWorkspaceManagerV1Server>)
@@ -76,7 +76,7 @@ package enum ExtWorkspaceManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ExtWorkspaceManagerV1Server {
+extension WaylandResourceHandle where Interface == ExtWorkspaceManagerV1Server {
     @discardableResult
     package func sendWorkspaceGroup(
         workspace_group: WaylandResourceHandle<ExtWorkspaceGroupHandleV1Server>
@@ -155,7 +155,7 @@ package extension WaylandResourceHandle where Interface == ExtWorkspaceManagerV1
         return true
     }
 }
-package extension WlNewId where Interface == ExtWorkspaceManagerV1Server {
+extension WlNewId where Interface == ExtWorkspaceManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ExtWorkspaceManagerV1Requests>(
@@ -168,7 +168,7 @@ package extension WlNewId where Interface == ExtWorkspaceManagerV1Server {
             installed: installed)
     }
 }
-package extension ExtWorkspaceManagerV1Server {
+extension ExtWorkspaceManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ExtWorkspaceManagerV1Requests>(
         implementation: Implementation,

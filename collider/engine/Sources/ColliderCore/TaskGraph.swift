@@ -216,6 +216,7 @@ public struct DirectoryRetentionRule: Hashable, Sendable {
     public enum Naming: String, Hashable, Sendable {
         case contentIdentity
         case swiftBuildContext
+        case swiftSDKCandidate
         case aospProduct
     }
 
@@ -434,6 +435,15 @@ public enum OCIProcessFilesystemPolicy: String, Hashable, Sendable {
     case unmasked
 }
 
+/// Controls whether the ARM Linux guest may execute Intel Linux binaries.
+/// This is independent of the OCI image architecture: Nucleus always boots an
+/// ARM64 Linux image on Apple silicon and enables translation only for tasks
+/// that execute x86_64 artifacts.
+public enum OCIIntelBinaryTranslationPolicy: String, Hashable, Sendable {
+    case disabled
+    case required
+}
+
 public struct OCIResourceLimits: Hashable, Sendable {
     public let cpuCount: UInt32?
     public let memoryBytes: UInt64?
@@ -453,6 +463,11 @@ public struct OCIResourceLimits: Hashable, Sendable {
         cpuCount: 20,
         memoryBytes: 96 * 1_024 * 1_024 * 1_024,
         processCount: 32_768)
+
+    public static let parallelBuild = OCIResourceLimits(
+        cpuCount: 11,
+        memoryBytes: 56 * 1_024 * 1_024 * 1_024,
+        processCount: 16_384)
 }
 
 public struct OCIExecution: Hashable, Sendable {
@@ -469,6 +484,7 @@ public struct OCIExecution: Hashable, Sendable {
     public let capabilityPolicy: OCICapabilityPolicy
     public let privilegePolicy: OCIPrivilegePolicy
     public let processFilesystemPolicy: OCIProcessFilesystemPolicy
+    public let intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy
     public let resourceLimits: OCIResourceLimits
     public let containerEnvironment: [String: String]
     public let command: [String]
@@ -489,6 +505,7 @@ public struct OCIExecution: Hashable, Sendable {
         capabilityPolicy: OCICapabilityPolicy,
         privilegePolicy: OCIPrivilegePolicy,
         processFilesystemPolicy: OCIProcessFilesystemPolicy,
+        intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy = .disabled,
         resourceLimits: OCIResourceLimits,
         containerEnvironment: [String: String],
         command: [String],
@@ -508,6 +525,7 @@ public struct OCIExecution: Hashable, Sendable {
         self.capabilityPolicy = capabilityPolicy
         self.privilegePolicy = privilegePolicy
         self.processFilesystemPolicy = processFilesystemPolicy
+        self.intelBinaryTranslationPolicy = intelBinaryTranslationPolicy
         self.resourceLimits = resourceLimits
         self.containerEnvironment = containerEnvironment
         self.command = command
@@ -521,18 +539,77 @@ public struct NativeOCIConfiguration: Sendable {
     public let context: FilePath
     public let imageID: FilePath
     public let ccache: FilePath
+    public let swiftSDKRoot: FilePath
     public let environment: [String: String]
 
     public init(
         context: FilePath,
         imageID: FilePath,
         ccache: FilePath,
+        swiftSDKRoot: FilePath,
         environment: [String: String]
     ) {
         self.context = context
         self.imageID = imageID
         self.ccache = ccache
+        self.swiftSDKRoot = swiftSDKRoot
         self.environment = environment
+    }
+}
+
+/// One Linux artifact lane produced inside the canonical ARM64 builder guest.
+/// The execution architecture is deliberately not part of this value: every
+/// lane executes in Linux/ARM64 and only the x86_64 lane enables Intel binary
+/// translation when it runs target executables.
+public struct NativeLinuxTarget: Hashable, Sendable {
+    public let architecture: PlatformArchitecture
+
+    public init(architecture: PlatformArchitecture) {
+        precondition(architecture == .arm64 || architecture == .x86_64)
+        self.architecture = architecture
+    }
+
+    public var identifier: String {
+        "linux-\(architecture.rawValue)"
+    }
+
+    public var targetTriple: String {
+        switch architecture {
+        case .arm64: "aarch64-unknown-linux-gnu"
+        case .x86_64: "x86_64-unknown-linux-gnu"
+        }
+    }
+
+    public var gnuArchitecture: String {
+        switch architecture {
+        case .arm64: "aarch64-linux-gnu"
+        case .x86_64: "x86_64-linux-gnu"
+        }
+    }
+
+    public var artifactTarget: ArtifactTarget {
+        switch architecture {
+        case .arm64: .linuxARM64
+        case .x86_64: .linuxX86_64
+        }
+    }
+
+    public var intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy {
+        architecture == .x86_64 ? .required : .disabled
+    }
+
+    public var skiaCPU: String {
+        architecture == .arm64 ? "arm64" : "x64"
+    }
+
+    public var containerSwiftSDKRoot: String {
+        "/swift-sdk/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
+            + targetTriple + "/ubuntu-noble.sdk"
+    }
+
+    public var containerRuntimeLibraryPath: String {
+        let root = containerSwiftSDKRoot
+        return "\(root)/usr/lib/\(gnuArchitecture):\(root)/lib/\(gnuArchitecture)"
     }
 }
 

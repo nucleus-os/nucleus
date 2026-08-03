@@ -1,6 +1,6 @@
 package import NucleusCompositorRendererLinux
 package import NucleusCompositorServer
-package import NucleusRenderer
+internal import NucleusRenderer
 
 extension DRMScanoutPresenter: CompositorRenderService {
     package func importShm(

@@ -1,8 +1,8 @@
 import NucleusLayers
-import NucleusUI
+internal import NucleusUI
 import NucleusUIEmbedder
-import NucleusWindowClientInput
-package import NucleusWindowClientRender
+internal import NucleusWindowClientInput
+internal import NucleusWindowClientRender
 import WaylandClientDispatch
 
 /// The single host for every native shell view presented on a Wayland surface.

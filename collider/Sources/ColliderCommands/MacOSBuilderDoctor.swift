@@ -1,3 +1,4 @@
+import ColliderCore
 import Foundation
 
 struct MacOSBuilderContract: Codable, Sendable {
@@ -39,14 +40,29 @@ struct MacOSBuilderContract: Codable, Sendable {
         let memoryBytes: UInt64
     }
 
+    struct Environment: Codable, Sendable {
+        let xdgCacheHome: String
+        let nativeSDKRoot: String
+        let androidSDKRoot: String
+    }
+
     struct Storage: Codable, Sendable {
+        enum Recoverability: String, Codable, Sendable {
+            case protected
+            case reconstructible
+            case immutable
+            case diagnostic
+        }
+
         let name: String
         let mountPath: String
+        let owner: String
+        let storageClass: StorageClass
         let quotaBytes: UInt64
         let reserveBytes: UInt64
-        let recoverability: String
+        let recoverability: Recoverability
         let retention: String
-        let reclaimable: Bool
+        let cleanupPolicy: StorageCleanupPolicy
     }
 
     let operatingSystem: OperatingSystem
@@ -54,15 +70,73 @@ struct MacOSBuilderContract: Codable, Sendable {
     let appleContainer: AppleContainer
     let launchd: Launchd
     let resources: Resources
+    let environment: Environment
     let storage: [Storage]
 
     static let relativePath = "tools/macos-builder/contract.json"
 
     static func load(root: URL) throws -> MacOSBuilderContract {
         let url = root.appendingPathComponent(relativePath)
-        return try JSONDecoder().decode(
+        let contract = try JSONDecoder().decode(
             MacOSBuilderContract.self,
             from: Data(contentsOf: url))
+        try contract.validate()
+        return contract
+    }
+
+    private func validate() throws {
+        guard Set(storage.map(\.name)).count == storage.count,
+            Set(storage.map(\.mountPath)).count == storage.count
+        else {
+            throw MacOSBuilderContractFailure.invalid(
+                "storage names and mount paths must be unique")
+        }
+        for declaration in storage {
+            guard declaration.mountPath.hasPrefix("/"),
+                declaration.quotaBytes > 0,
+                declaration.quotaBytes >= declaration.reserveBytes
+            else {
+                throw MacOSBuilderContractFailure.invalid(
+                    "invalid storage capacity declaration: \(declaration.name)")
+            }
+            if [.source, .sourceSnapshot, .published].contains(
+                declaration.storageClass),
+                declaration.cleanupPolicy != .protected
+            {
+                throw MacOSBuilderContractFailure.invalid(
+                    "protected storage class has a cleanup policy: \(declaration.name)")
+            }
+            if [.protected, .immutable].contains(declaration.recoverability),
+                declaration.cleanupPolicy != .protected
+            {
+                throw MacOSBuilderContractFailure.invalid(
+                    "protected storage is reclaimable: \(declaration.name)")
+            }
+        }
+        guard
+            let cache = storage.first(where: { $0.name == "NucleusCache" }),
+            isDescendant(environment.xdgCacheHome, of: cache.mountPath),
+            isDescendant(environment.nativeSDKRoot, of: cache.mountPath),
+            isDescendant(environment.androidSDKRoot, of: cache.mountPath),
+            let oci = storage.first(where: { $0.name == "NucleusOCI" }),
+            isDescendant(appleContainer.appRoot, of: oci.mountPath),
+            let logs = storage.first(where: { $0.name == "NucleusLogs" }),
+            isDescendant(launchd.standardOutPath, of: logs.mountPath),
+            isDescendant(launchd.standardErrorPath, of: logs.mountPath)
+        else {
+            throw MacOSBuilderContractFailure.invalid(
+                "service and build paths must remain inside their declared storage volumes")
+        }
+    }
+}
+
+enum MacOSBuilderContractFailure: Error, CustomStringConvertible {
+    case invalid(String)
+
+    var description: String {
+        switch self {
+        case .invalid(let message): message
+        }
     }
 }
 
@@ -94,6 +168,7 @@ struct MacOSBuilderDoctor {
             persistentService(contract, scope: scope),
             containerSystem(contract, scope: scope),
             hostOnlyNetwork(contract, scope: scope),
+            storageEnvironment(contract, scope: scope),
             storage(contract, scope: scope),
         ]
     }
@@ -308,18 +383,10 @@ struct MacOSBuilderDoctor {
                 let listOutput = try? await context.run(
                     "/usr/sbin/diskutil", ["apfs", "list", "-plist"],
                     capture: true),
-                let list = try? PropertyListDecoder().decode(
-                    APFSList.self,
-                    from: Data(listOutput.utf8))
+                let volumes = try? APFSStorageInventory.decode(listOutput)
             else { return nil }
             let declaredNames = Set(contract.storage.map(\.name))
-            var volumes: [String: APFSList.Volume] = [:]
-            for volume in list.containers.flatMap(\.volumes)
-            where declaredNames.contains(volume.name) {
-                guard volumes.updateValue(volume, forKey: volume.name) == nil else {
-                    return nil
-                }
-            }
+            guard declaredNames.isSubset(of: Set(volumes.keys)) else { return nil }
             var details: [String] = []
             for declaration in contract.storage {
                 guard
@@ -340,9 +407,34 @@ struct MacOSBuilderDoctor {
                 else { return nil }
                 details.append(
                     "\(declaration.name)=\(volume.capacityInUse)/\(volume.capacityQuota)"
-                        + (declaration.reclaimable ? " reclaimable" : " protected"))
+                        + " \(declaration.cleanupPolicy.rawValue)")
             }
             return details.joined(separator: ", ")
+        }
+    }
+
+    private func storageEnvironment(
+        _ contract: MacOSBuilderContract,
+        scope: String
+    ) -> HostPrerequisite {
+        HostPrerequisite(
+            id: "macos-builder:storage-environment",
+            scope: scope,
+            description: "declared Collider cache and SDK roots",
+            remediation:
+                "source tools/host-env.sh; it resolves macOS storage from \(MacOSBuilderContract.relativePath)"
+        ) {
+            guard
+                normalizedPath(context.environment["XDG_CACHE_HOME"] ?? "")
+                    == normalizedPath(contract.environment.xdgCacheHome),
+                normalizedPath(
+                    context.environment["NUCLEUS_NATIVE_SDK_ROOT"] ?? "")
+                    == normalizedPath(contract.environment.nativeSDKRoot),
+                normalizedPath(context.environment["ANDROID_SDK_ROOT"] ?? "")
+                    == normalizedPath(contract.environment.androidSDKRoot)
+            else { return nil }
+            return
+                "XDG cache \(contract.environment.xdgCacheHome), native SDK \(contract.environment.nativeSDKRoot)"
         }
     }
 
@@ -457,36 +549,6 @@ private struct PersistentServicePlist: Decodable {
     }
 }
 
-private struct APFSList: Decodable {
-    struct Container: Decodable {
-        let volumes: [Volume]
-
-        enum CodingKeys: String, CodingKey {
-            case volumes = "Volumes"
-        }
-    }
-
-    struct Volume: Decodable {
-        let name: String
-        let capacityInUse: UInt64
-        let capacityQuota: UInt64
-        let capacityReserve: UInt64
-
-        enum CodingKeys: String, CodingKey {
-            case name = "Name"
-            case capacityInUse = "CapacityInUse"
-            case capacityQuota = "CapacityQuota"
-            case capacityReserve = "CapacityReserve"
-        }
-    }
-
-    let containers: [Container]
-
-    enum CodingKeys: String, CodingKey {
-        case containers = "Containers"
-    }
-}
-
 private struct MountedVolumeInfo: Decodable {
     let volumeName: String
     let mountPoint: String
@@ -503,4 +565,10 @@ private struct MountedVolumeInfo: Decodable {
 
 private func normalizedPath(_ path: String) -> String {
     URL(fileURLWithPath: path).standardizedFileURL.path
+}
+
+private func isDescendant(_ path: String, of root: String) -> Bool {
+    let path = normalizedPath(path)
+    let root = normalizedPath(root)
+    return path == root || path.hasPrefix(root.hasSuffix("/") ? root : root + "/")
 }

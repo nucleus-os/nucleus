@@ -2,7 +2,7 @@
 // Typed server descriptor and dispatch for zwp_locked_pointer_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpLockedPointerV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZwpLockedPointerV1Server>)
@@ -12,7 +12,7 @@ import WaylandServerC
         _ request: WaylandRequest<ZwpLockedPointerV1Server>,
         region: WaylandBorrowedObject<WlRegionServer>?)
 }
-package extension ZwpLockedPointerV1Requests {
+extension ZwpLockedPointerV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpLockedPointerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -99,7 +99,7 @@ package enum ZwpLockedPointerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwpLockedPointerV1Server {
+extension WaylandResourceHandle where Interface == ZwpLockedPointerV1Server {
     @discardableResult
     package func sendLocked() -> Bool {
         guard let target = unsafe resource else {
@@ -117,7 +117,7 @@ package extension WaylandResourceHandle where Interface == ZwpLockedPointerV1Ser
         return true
     }
 }
-package extension WlNewId where Interface == ZwpLockedPointerV1Server {
+extension WlNewId where Interface == ZwpLockedPointerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpLockedPointerV1Requests>(
@@ -130,7 +130,7 @@ package extension WlNewId where Interface == ZwpLockedPointerV1Server {
             installed: installed)
     }
 }
-package extension ZwpLockedPointerV1Server {
+extension ZwpLockedPointerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpLockedPointerV1Requests>(
         implementation: Implementation,

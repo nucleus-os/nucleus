@@ -18,8 +18,8 @@ import Glibc
 import NucleusCompositorDrmC
 package import NucleusRenderModel
 package import NucleusRenderer
-import Vulkan
-import VulkanC
+internal import Vulkan
+internal import VulkanC
 
 /// The DRM/KMS presentation backend. Constructed at compositor bring-up with the
 /// DRM master fd; outputs are attached as the display layout resolves; the reactor

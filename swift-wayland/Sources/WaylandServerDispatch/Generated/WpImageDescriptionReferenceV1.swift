@@ -7,7 +7,7 @@ import WaylandServerC
 @MainActor package protocol WpImageDescriptionReferenceV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<WpImageDescriptionReferenceV1Server>)
 }
-package extension WpImageDescriptionReferenceV1Requests {
+extension WpImageDescriptionReferenceV1Requests {
     package func destroy(_ request: WaylandRequest<WpImageDescriptionReferenceV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -55,7 +55,7 @@ package enum WpImageDescriptionReferenceV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == WpImageDescriptionReferenceV1Server {
+extension WlNewId where Interface == WpImageDescriptionReferenceV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -68,7 +68,7 @@ package extension WlNewId where Interface == WpImageDescriptionReferenceV1Server
             owner: owner, installed: installed)
     }
 }
-package extension WpImageDescriptionReferenceV1Server {
+extension WpImageDescriptionReferenceV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

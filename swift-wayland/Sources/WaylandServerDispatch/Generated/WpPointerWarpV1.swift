@@ -11,7 +11,7 @@ import WaylandServerC
         surface: WaylandBorrowedObject<WlSurfaceServer>,
         pointer: WaylandBorrowedObject<WlPointerServer>, x: Double, y: Double, serial: UInt32)
 }
-package extension WpPointerWarpV1Requests {
+extension WpPointerWarpV1Requests {
     package func destroy(_ request: WaylandRequest<WpPointerWarpV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -80,7 +80,7 @@ package enum WpPointerWarpV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == WpPointerWarpV1Server {
+extension WlNewId where Interface == WpPointerWarpV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpPointerWarpV1Requests>(
@@ -93,7 +93,7 @@ package extension WlNewId where Interface == WpPointerWarpV1Server {
             installed: installed)
     }
 }
-package extension WpPointerWarpV1Server {
+extension WpPointerWarpV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpPointerWarpV1Requests>(
         implementation: Implementation,

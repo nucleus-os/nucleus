@@ -346,7 +346,7 @@ package final class PamAuthenticator: LockAuthenticator {
     }
 
     private func monotonicNow() -> UInt64 {
-        var time = timespec()
+        var time = timespec(tv_sec: 0, tv_nsec: 0)
         unsafe clock_gettime(CLOCK_MONOTONIC, &time)
         return UInt64(time.tv_sec) &* 1_000_000_000 &+ UInt64(time.tv_nsec)
     }

@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol WpColorManagementSurfaceFeedbackV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<WpColorManagementSurfaceFeedbackV1Server>)
@@ -14,7 +14,7 @@ import WaylandServerC
         _ request: WaylandRequest<WpColorManagementSurfaceFeedbackV1Server>,
         image_description: WlNewId<WpImageDescriptionV1Server>)
 }
-package extension WpColorManagementSurfaceFeedbackV1Requests {
+extension WpColorManagementSurfaceFeedbackV1Requests {
     package func destroy(_ request: WaylandRequest<WpColorManagementSurfaceFeedbackV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -112,7 +112,7 @@ package enum WpColorManagementSurfaceFeedbackV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == WpColorManagementSurfaceFeedbackV1Server {
+extension WaylandResourceHandle where Interface == WpColorManagementSurfaceFeedbackV1Server {
     package var supportsPreferredChanged2: Bool {
         guard let version else {
             return false
@@ -140,19 +140,19 @@ package extension WaylandResourceHandle where Interface == WpColorManagementSurf
         return true
     }
 }
-package extension WaylandRequest where Interface == WpColorManagementSurfaceFeedbackV1Server {
+extension WaylandRequest where Interface == WpColorManagementSurfaceFeedbackV1Server {
     package func postError(_ code: WpColorManagementSurfaceFeedbackV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WpColorManagementSurfaceFeedbackV1Server {
+extension WaylandResourceHandle where Interface == WpColorManagementSurfaceFeedbackV1Server {
     @discardableResult
     package func postError(_ code: WpColorManagementSurfaceFeedbackV1Error, message: String) -> Bool
     {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WpColorManagementSurfaceFeedbackV1Server {
+extension WlNewId where Interface == WpColorManagementSurfaceFeedbackV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpColorManagementSurfaceFeedbackV1Requests>(
@@ -165,7 +165,7 @@ package extension WlNewId where Interface == WpColorManagementSurfaceFeedbackV1S
             owner: owner, installed: installed)
     }
 }
-package extension WpColorManagementSurfaceFeedbackV1Server {
+extension WpColorManagementSurfaceFeedbackV1Server {
     @MainActor
     package static func global<
         Implementation: AnyObject & WpColorManagementSurfaceFeedbackV1Requests

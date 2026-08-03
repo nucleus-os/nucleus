@@ -149,17 +149,11 @@ struct WorkspaceDoctor {
     }
 
     private var runtimePrerequisites: [HostPrerequisite] {
-        [
-            swiftVersion(scope: "runtime"), lavapipe(scope: "runtime"),
-            xwayland(scope: "runtime"), pidfd(scope: "runtime"),
-            ociExecutor(scope: "runtime"),
-        ]
+        [ociExecutor(scope: "runtime")]
             + executables(
                 [
-                    "swift", "swiftc", "git", "cmake", "ninja", "pkg-config",
-                    "corepack", "bun", "tar", "python3", "ccache", "readelf",
-                    "ldd", "patchelf", "strip", "install", "bash",
-                    "systemd-analyze",
+                    "git", "corepack", "bun", "tar", "python3", "unzip",
+                    "chmod",
                 ],
                 scope: "runtime")
             + paths(
@@ -171,11 +165,23 @@ struct WorkspaceDoctor {
                 scope: "runtime")
             + paths(
                 [
-                    "render/include", "render/lib/skia-graphite",
-                    "render/manifest.json", "rn/include", "rn/lib/rn",
-                    "rn/lib/nucleus-cxx-libs",
+                    "linux-arm64/render/include",
+                    "linux-arm64/render/lib/skia-graphite",
+                    "linux-arm64/rn/include", "linux-arm64/rn/lib/rn",
+                    "linux-x86_64/render/include",
+                    "linux-x86_64/render/lib/skia-graphite",
+                    "linux-x86_64/rn/include", "linux-x86_64/rn/lib/rn",
                 ],
                 under: nativeSDKRoot(),
+                scope: "runtime")
+            + paths(
+                [
+                    "nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
+                        + "aarch64-unknown-linux-gnu/swift-sdk.json",
+                    "nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
+                        + "x86_64-unknown-linux-gnu/swift-sdk.json",
+                ],
+                under: runtimeSwiftSDKRoot(),
                 scope: "runtime")
     }
 
@@ -292,56 +298,6 @@ struct WorkspaceDoctor {
         }
     }
 
-    private func lavapipe(scope: String) -> HostPrerequisite {
-        HostPrerequisite(
-            id: "vulkan:lavapipe",
-            scope: scope,
-            description: "staged Mesa lavapipe Vulkan ICD"
-        ) {
-            guard
-                let artifact = try? LavapipeTestArtifact.resolve(
-                    context: context),
-                FileManager.default.isReadableFile(
-                    atPath: artifact.stagedManifest.string),
-                FileManager.default.isReadableFile(
-                    atPath: artifact.library.string)
-            else { return nil }
-            return "\(artifact.stagedManifest) -> \(artifact.library)"
-        }
-    }
-
-    private func xwayland(scope: String) -> HostPrerequisite {
-        HostPrerequisite(
-            id: "executable:Xwayland",
-            scope: scope,
-            description: "verified Xwayland executable"
-        ) {
-            try? resolveXwaylandExecutable(
-                environment: context.environment)
-        }
-    }
-
-    private func pidfd(scope: String) -> HostPrerequisite {
-        HostPrerequisite(
-            id: "kernel:pidfd-open",
-            scope: scope,
-            description: "Linux pidfd_open support"
-        ) {
-            let path = "/proc/self/fd"
-            guard FileManager.default.fileExists(atPath: path) else {
-                return nil
-            }
-            let result = try? await self.context.run(
-                "python3",
-                [
-                    "-c",
-                    "import os; fd=os.pidfd_open(os.getpid()); os.close(fd); print('pidfd_open')",
-                ],
-                capture: true)
-            return result?.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-    }
-
     private func executables(
         _ names: [String],
         scope: String
@@ -388,5 +344,10 @@ struct WorkspaceDoctor {
 
     private func nativeSDKRoot() -> URL {
         context.nativeSDKRoot
+    }
+
+    private func runtimeSwiftSDKRoot() -> URL {
+        context.cacheRoot
+            .appendingPathComponent("nucleus/swift-target-sdks/current/swift-sdks")
     }
 }

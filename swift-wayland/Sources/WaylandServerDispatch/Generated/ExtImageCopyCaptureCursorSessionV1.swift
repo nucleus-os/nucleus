@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ExtImageCopyCaptureCursorSessionV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ExtImageCopyCaptureCursorSessionV1Server>)
@@ -11,7 +11,7 @@ import WaylandServerC
         _ request: WaylandRequest<ExtImageCopyCaptureCursorSessionV1Server>,
         session: WlNewId<ExtImageCopyCaptureSessionV1Server>)
 }
-package extension ExtImageCopyCaptureCursorSessionV1Requests {
+extension ExtImageCopyCaptureCursorSessionV1Requests {
     package func destroy(_ request: WaylandRequest<ExtImageCopyCaptureCursorSessionV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -94,7 +94,7 @@ package enum ExtImageCopyCaptureCursorSessionV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ExtImageCopyCaptureCursorSessionV1Server {
+extension WaylandResourceHandle where Interface == ExtImageCopyCaptureCursorSessionV1Server {
     @discardableResult
     package func sendEnter() -> Bool {
         guard let target = unsafe resource else {
@@ -128,19 +128,19 @@ package extension WaylandResourceHandle where Interface == ExtImageCopyCaptureCu
         return true
     }
 }
-package extension WaylandRequest where Interface == ExtImageCopyCaptureCursorSessionV1Server {
+extension WaylandRequest where Interface == ExtImageCopyCaptureCursorSessionV1Server {
     package func postError(_ code: ExtImageCopyCaptureCursorSessionV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ExtImageCopyCaptureCursorSessionV1Server {
+extension WaylandResourceHandle where Interface == ExtImageCopyCaptureCursorSessionV1Server {
     @discardableResult
     package func postError(_ code: ExtImageCopyCaptureCursorSessionV1Error, message: String) -> Bool
     {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ExtImageCopyCaptureCursorSessionV1Server {
+extension WlNewId where Interface == ExtImageCopyCaptureCursorSessionV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ExtImageCopyCaptureCursorSessionV1Requests>(
@@ -153,7 +153,7 @@ package extension WlNewId where Interface == ExtImageCopyCaptureCursorSessionV1S
             owner: owner, installed: installed)
     }
 }
-package extension ExtImageCopyCaptureCursorSessionV1Server {
+extension ExtImageCopyCaptureCursorSessionV1Server {
     @MainActor
     package static func global<
         Implementation: AnyObject & ExtImageCopyCaptureCursorSessionV1Requests

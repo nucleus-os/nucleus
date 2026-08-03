@@ -32,69 +32,88 @@
     "physicalCPUCount": 24,
     "memoryBytes": 137438953472
   },
+  "environment": {
+    "xdgCacheHome": "/Volumes/NucleusCache",
+    "nativeSDKRoot": "/Volumes/NucleusCache/nucleus/nucleus-native-sdk",
+    "androidSDKRoot": "/Volumes/NucleusCache/android-sdk"
+  },
   "storage": [
     {
       "name": "NucleusDev",
       "mountPath": "/Volumes/NucleusDev",
+      "owner": "remote-development",
+      "storageClass": "source",
       "quotaBytes": 300000000000,
       "reserveBytes": 100000000000,
       "recoverability": "protected",
       "retention": "until explicitly deprovisioned",
-      "reclaimable": false
+      "cleanupPolicy": "protected"
     },
     {
       "name": "NucleusSnapshots",
       "mountPath": "/Volumes/NucleusSnapshots",
+      "owner": "source-snapshot-service",
+      "storageClass": "sourceSnapshot",
       "quotaBytes": 150000000000,
       "reserveBytes": 50000000000,
       "recoverability": "protected",
       "retention": "content-addressed source retention policy",
-      "reclaimable": false
+      "cleanupPolicy": "protected"
     },
     {
       "name": "NucleusBuild",
       "mountPath": "/Volumes/NucleusBuild",
+      "owner": "collider-worker",
+      "storageClass": "incremental",
       "quotaBytes": 500000000000,
       "reserveBytes": 0,
       "recoverability": "reconstructible",
       "retention": "inactive materializations are explicit prune candidates",
-      "reclaimable": true
+      "cleanupPolicy": "explicitClean"
     },
     {
       "name": "NucleusCache",
       "mountPath": "/Volumes/NucleusCache",
+      "owner": "collider-cache",
+      "storageClass": "cache",
       "quotaBytes": 350000000000,
       "reserveBytes": 0,
       "recoverability": "reconstructible",
       "retention": "least-recently-used entries are explicit prune candidates",
-      "reclaimable": true
+      "cleanupPolicy": "explicitPrune"
     },
     {
       "name": "NucleusOCI",
       "mountPath": "/Volumes/NucleusOCI",
+      "owner": "apple-container",
+      "storageClass": "container",
       "quotaBytes": 250000000000,
       "reserveBytes": 0,
       "recoverability": "reconstructible",
       "retention": "unreferenced images and snapshots are explicit prune candidates",
-      "reclaimable": true
+      "cleanupPolicy": "explicitPrune"
     },
     {
       "name": "NucleusArtifacts",
       "mountPath": "/Volumes/NucleusArtifacts",
+      "owner": "artifact-publisher",
+      "storageClass": "published",
       "quotaBytes": 120000000000,
       "reserveBytes": 0,
       "recoverability": "immutable",
       "retention": "artifact lifecycle policy",
-      "reclaimable": false
+      "cleanupPolicy": "protected"
     },
     {
       "name": "NucleusLogs",
       "mountPath": "/Volumes/NucleusLogs",
+      "owner": "collider-diagnostics",
+      "storageClass": "diagnostic",
       "quotaBytes": 30000000000,
       "reserveBytes": 0,
       "recoverability": "diagnostic",
       "retention": "bounded run-log policy",
-      "reclaimable": true
+      "cleanupPolicy": "explicitPrune"
     }
   ]
 }

@@ -1,6 +1,7 @@
 import Foundation
 import SystemPackage
 import Testing
+
 @testable import ColliderRuntime
 
 @Test func validationFixturesMaterializeAsRealProjects() throws {
@@ -12,7 +13,6 @@ import Testing
     defer { try? FileManager.default.removeItem(at: directory) }
 
     let expectedFiles: [ToolchainValidationFixtures.Fixture: [String]] = [
-        .hostSmoke: ["smoke.swift"],
         .cxxInterop: [
             "Package.swift",
             "Sources/Example/Example.swift",
@@ -48,9 +48,10 @@ import Testing
                     .isEmpty == false,
                 "empty \(fixture.rawValue)/\(relativePath)")
         }
-        let enumerator = try #require(FileManager.default.enumerator(
-            at: URL(fileURLWithPath: destination.string),
-            includingPropertiesForKeys: nil))
+        let enumerator = try #require(
+            FileManager.default.enumerator(
+                at: URL(fileURLWithPath: destination.string),
+                includingPropertiesForKeys: nil))
         let containsBuildCache = enumerator.compactMap { $0 as? URL }
             .contains { $0.lastPathComponent == ".build" }
         #expect(

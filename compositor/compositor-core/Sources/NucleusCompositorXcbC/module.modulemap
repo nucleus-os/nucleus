@@ -1,4 +1,6 @@
 module NucleusCompositorXcbC {
     header "NucleusCompositorXcbC.h"
+    link "xcb-ewmh"
+    link "xcb"
     export *
 }

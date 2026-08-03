@@ -9,7 +9,7 @@ package enum WpTearingControlV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_wp_tearing_control_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == WpTearingControlV1Client {
+extension WaylandProxy where Interface == WpTearingControlV1Client {
     package func setPresentationHint(hint: WpTearingControlV1PresentationHint)
         throws(WaylandProxyError)
     {

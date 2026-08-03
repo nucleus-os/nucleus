@@ -13,7 +13,7 @@ import WaylandServerC
         render_intent: WpColorManagerV1RenderIntent)
     func unsetImageDescription(_ request: WaylandRequest<WpColorManagementSurfaceV1Server>)
 }
-package extension WpColorManagementSurfaceV1Requests {
+extension WpColorManagementSurfaceV1Requests {
     package func destroy(_ request: WaylandRequest<WpColorManagementSurfaceV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -94,18 +94,18 @@ package enum WpColorManagementSurfaceV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == WpColorManagementSurfaceV1Server {
+extension WaylandRequest where Interface == WpColorManagementSurfaceV1Server {
     package func postError(_ code: WpColorManagementSurfaceV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WpColorManagementSurfaceV1Server {
+extension WaylandResourceHandle where Interface == WpColorManagementSurfaceV1Server {
     @discardableResult
     package func postError(_ code: WpColorManagementSurfaceV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WpColorManagementSurfaceV1Server {
+extension WlNewId where Interface == WpColorManagementSurfaceV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpColorManagementSurfaceV1Requests>(
@@ -118,7 +118,7 @@ package extension WlNewId where Interface == WpColorManagementSurfaceV1Server {
             installed: installed)
     }
 }
-package extension WpColorManagementSurfaceV1Server {
+extension WpColorManagementSurfaceV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpColorManagementSurfaceV1Requests>(
         implementation: Implementation,

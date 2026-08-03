@@ -2,10 +2,10 @@ import Glibc
 import NucleusLinuxDBus
 import NucleusLinuxReactor
 import NucleusShellAuth
-import NucleusShellServices
+internal import NucleusShellServices
 import NucleusShellSignalC
-import NucleusUI
-import NucleusWindowClientInput
+internal import NucleusUI
+internal import NucleusWindowClientInput
 import NucleusWindowClientPasteboard
 import NucleusWindowClientRuntime
 import WaylandClient

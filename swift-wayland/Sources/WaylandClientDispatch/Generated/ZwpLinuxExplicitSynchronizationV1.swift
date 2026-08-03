@@ -8,7 +8,7 @@ package enum ZwpLinuxExplicitSynchronizationV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_zwp_linux_explicit_synchronization_v1())
     package nonisolated static let maximumVersion: UInt32 = 2
 }
-package extension WaylandProxy where Interface == ZwpLinuxExplicitSynchronizationV1Client {
+extension WaylandProxy where Interface == ZwpLinuxExplicitSynchronizationV1Client {
     package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in

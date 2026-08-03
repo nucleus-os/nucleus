@@ -8,7 +8,7 @@ package enum ZxdgOutputManagerV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_zxdg_output_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 3
 }
-package extension WaylandProxy where Interface == ZxdgOutputManagerV1Client {
+extension WaylandProxy where Interface == ZxdgOutputManagerV1Client {
     package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in

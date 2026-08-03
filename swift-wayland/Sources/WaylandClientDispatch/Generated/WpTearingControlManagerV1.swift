@@ -8,7 +8,7 @@ package enum WpTearingControlManagerV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_wp_tearing_control_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == WpTearingControlManagerV1Client {
+extension WaylandProxy where Interface == WpTearingControlManagerV1Client {
     package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in

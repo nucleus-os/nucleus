@@ -8,7 +8,7 @@ package enum WpDrmLeaseRequestV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_wp_drm_lease_request_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == WpDrmLeaseRequestV1Client {
+extension WaylandProxy where Interface == WpDrmLeaseRequestV1Client {
     package func requestConnector(connector: WaylandProxy<WpDrmLeaseConnectorV1Client>)
         throws(WaylandProxyError)
     {

@@ -1,5 +1,5 @@
 import NucleusConfig
-import NucleusSessionProtocol
+internal import NucleusSessionProtocol
 
 extension CompositorRuntime {
     func publishControlReadiness() {

@@ -11,7 +11,7 @@ import WaylandServerC
         _ request: WaylandRequest<ZxdgExporterV2Server>, id: WlNewId<ZxdgExportedV2Server>,
         surface: WaylandBorrowedObject<WlSurfaceServer>)
 }
-package extension ZxdgExporterV2Requests {
+extension ZxdgExporterV2Requests {
     package func destroy(_ request: WaylandRequest<ZxdgExporterV2Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -81,18 +81,18 @@ package enum ZxdgExporterV2Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == ZxdgExporterV2Server {
+extension WaylandRequest where Interface == ZxdgExporterV2Server {
     package func postError(_ code: ZxdgExporterV2Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ZxdgExporterV2Server {
+extension WaylandResourceHandle where Interface == ZxdgExporterV2Server {
     @discardableResult
     package func postError(_ code: ZxdgExporterV2Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ZxdgExporterV2Server {
+extension WlNewId where Interface == ZxdgExporterV2Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZxdgExporterV2Requests>(
@@ -105,7 +105,7 @@ package extension WlNewId where Interface == ZxdgExporterV2Server {
             installed: installed)
     }
 }
-package extension ZxdgExporterV2Server {
+extension ZxdgExporterV2Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZxdgExporterV2Requests>(
         implementation: Implementation,

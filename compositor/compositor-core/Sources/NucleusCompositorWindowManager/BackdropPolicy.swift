@@ -1,4 +1,4 @@
-import NucleusCompositorServerTypes
+internal import NucleusCompositorServerTypes
 package import NucleusLayers
 package import NucleusTypes
 

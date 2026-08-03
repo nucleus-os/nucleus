@@ -1,6 +1,6 @@
 import Glibc
-import NucleusUI
-import NucleusWindowClientRuntime
+internal import NucleusUI
+internal import NucleusWindowClientRuntime
 
 /// A transient descriptor returned to the desktop host immediately before `poll`.
 ///

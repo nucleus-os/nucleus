@@ -10,7 +10,7 @@ import WaylandServerC
         seat: WlNewId<ExtTransientSeatV1Server>)
     func destroy(_ request: WaylandRequest<ExtTransientSeatManagerV1Server>)
 }
-package extension ExtTransientSeatManagerV1Requests {
+extension ExtTransientSeatManagerV1Requests {
     package func destroy(_ request: WaylandRequest<ExtTransientSeatManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -76,7 +76,7 @@ package enum ExtTransientSeatManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ExtTransientSeatManagerV1Server {
+extension WlNewId where Interface == ExtTransientSeatManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ExtTransientSeatManagerV1Requests>(
@@ -89,7 +89,7 @@ package extension WlNewId where Interface == ExtTransientSeatManagerV1Server {
             installed: installed)
     }
 }
-package extension ExtTransientSeatManagerV1Server {
+extension ExtTransientSeatManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ExtTransientSeatManagerV1Requests>(
         implementation: Implementation,

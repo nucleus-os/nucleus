@@ -9,7 +9,7 @@ import WaylandServerC
     func destroy(_ request: WaylandRequest<WpAlphaModifierSurfaceV1Server>)
     func setMultiplier(_ request: WaylandRequest<WpAlphaModifierSurfaceV1Server>, factor: UInt32)
 }
-package extension WpAlphaModifierSurfaceV1Requests {
+extension WpAlphaModifierSurfaceV1Requests {
     package func destroy(_ request: WaylandRequest<WpAlphaModifierSurfaceV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -70,18 +70,18 @@ package enum WpAlphaModifierSurfaceV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == WpAlphaModifierSurfaceV1Server {
+extension WaylandRequest where Interface == WpAlphaModifierSurfaceV1Server {
     package func postError(_ code: WpAlphaModifierSurfaceV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WpAlphaModifierSurfaceV1Server {
+extension WaylandResourceHandle where Interface == WpAlphaModifierSurfaceV1Server {
     @discardableResult
     package func postError(_ code: WpAlphaModifierSurfaceV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WpAlphaModifierSurfaceV1Server {
+extension WlNewId where Interface == WpAlphaModifierSurfaceV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpAlphaModifierSurfaceV1Requests>(
@@ -94,7 +94,7 @@ package extension WlNewId where Interface == WpAlphaModifierSurfaceV1Server {
             installed: installed)
     }
 }
-package extension WpAlphaModifierSurfaceV1Server {
+extension WpAlphaModifierSurfaceV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpAlphaModifierSurfaceV1Requests>(
         implementation: Implementation,

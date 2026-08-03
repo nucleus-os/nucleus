@@ -1,6 +1,6 @@
 package import NucleusLayers
 
-package import struct NucleusCompositorServerTypes.WireChromeInsets
+internal import struct NucleusCompositorServerTypes.WireChromeInsets
 
 #if canImport(Glibc)
 import Glibc

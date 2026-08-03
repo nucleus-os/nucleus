@@ -3,12 +3,12 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwlrOutputHeadV1Requests: AnyObject {
     func release(_ request: WaylandRequest<ZwlrOutputHeadV1Server>)
 }
-package extension ZwlrOutputHeadV1Requests {
+extension ZwlrOutputHeadV1Requests {
     package func release(_ request: WaylandRequest<ZwlrOutputHeadV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -119,7 +119,7 @@ package enum ZwlrOutputHeadV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwlrOutputHeadV1Server {
+extension WaylandResourceHandle where Interface == ZwlrOutputHeadV1Server {
     package var supportsMake: Bool {
         guard let version else {
             return false
@@ -295,7 +295,7 @@ package extension WaylandResourceHandle where Interface == ZwlrOutputHeadV1Serve
         return true
     }
 }
-package extension WlNewId where Interface == ZwlrOutputHeadV1Server {
+extension WlNewId where Interface == ZwlrOutputHeadV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -308,7 +308,7 @@ package extension WlNewId where Interface == ZwlrOutputHeadV1Server {
             installed: installed)
     }
 }
-package extension ZwlrOutputHeadV1Server {
+extension ZwlrOutputHeadV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

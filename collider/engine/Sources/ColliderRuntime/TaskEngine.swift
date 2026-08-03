@@ -8,19 +8,22 @@ public struct TaskExecutionOptions: Sendable {
     public var verbose: Bool
     public var quiet: Bool
     public var machineReadable: Bool
+    public var maximumParallelism: Int
 
     public init(
         dryRun: Bool = false,
         explain: Bool = false,
         verbose: Bool = false,
         quiet: Bool = false,
-        machineReadable: Bool = false
+        machineReadable: Bool = false,
+        maximumParallelism: Int = 2
     ) {
         self.dryRun = dryRun
         self.explain = explain
         self.verbose = verbose
         self.quiet = quiet
         self.machineReadable = machineReadable
+        self.maximumParallelism = max(1, maximumParallelism)
     }
 }
 
@@ -84,10 +87,149 @@ public struct TaskExecutionReport: Codable, Sendable {
     }
 }
 
-private struct SynthesizedSwiftBuild {
+private struct SynthesizedSwiftBuild: Sendable {
     let task: TaskDeclaration
     let attribution: String
     let context: SwiftBuildContext
+}
+
+private enum ScheduledTask: Hashable, Sendable {
+    case swiftBuild(Int)
+    case declared(Int)
+}
+
+private struct ScheduledTaskExecution: Sendable {
+    let scheduledTask: ScheduledTask
+    let task: TaskDeclaration
+    let plan: TaskPlanEntry
+    let swiftBuildAttribution: String?
+    let recordsActiveArtifact: Bool
+}
+
+private struct ScheduledTaskResources: Sendable {
+    let cpuCount: UInt32
+    let memoryBytes: UInt64
+    let exclusive: Bool
+
+    static let lightweight = ScheduledTaskResources(
+        cpuCount: 1,
+        memoryBytes: 512 * 1_024 * 1_024,
+        exclusive: false)
+}
+
+private struct TaskSchedulerBudget: Sendable {
+    let cpuCount: UInt32
+    let memoryBytes: UInt64
+
+    static var host: TaskSchedulerBudget {
+        let processors = UInt32(ProcessInfo.processInfo.activeProcessorCount)
+        let memory = ProcessInfo.processInfo.physicalMemory
+        let reservedMemory: UInt64 = 16 * 1_024 * 1_024 * 1_024
+        return TaskSchedulerBudget(
+            cpuCount: processors > 2 ? processors - 2 : 1,
+            memoryBytes: memory > reservedMemory ? memory - reservedMemory : memory)
+    }
+}
+
+private func scheduledResources(
+    for operation: TaskOperation,
+    budget: TaskSchedulerBudget
+) -> ScheduledTaskResources {
+    switch operation {
+    case .runOCI(let execution):
+        return ScheduledTaskResources(
+            cpuCount: execution.resourceLimits.cpuCount ?? budget.cpuCount,
+            memoryBytes: execution.resourceLimits.memoryBytes ?? budget.memoryBytes,
+            exclusive: false)
+    case .sequence(let operations):
+        return operations.map {
+            scheduledResources(for: $0, budget: budget)
+        }.reduce(.lightweight) { accumulated, next in
+            ScheduledTaskResources(
+                cpuCount: max(accumulated.cpuCount, next.cpuCount),
+                memoryBytes: max(accumulated.memoryBytes, next.memoryBytes),
+                exclusive: accumulated.exclusive || next.exclusive)
+        }
+    case .prepareOCIImage, .compileAOSPProduct, .buildChromiumProduct:
+        return ScheduledTaskResources(
+            cpuCount: budget.cpuCount,
+            memoryBytes: budget.memoryBytes,
+            exclusive: true)
+    default:
+        return .lightweight
+    }
+}
+
+private func scheduledResources(
+    for build: SynthesizedSwiftBuild,
+    budget: TaskSchedulerBudget
+) -> ScheduledTaskResources {
+    if containsOCIExecution(build.task.operation) {
+        return scheduledResources(for: build.task.operation, budget: budget)
+    }
+    return ScheduledTaskResources(
+        cpuCount: budget.cpuCount,
+        memoryBytes: budget.memoryBytes,
+        exclusive: true)
+}
+
+private func containsOCIExecution(_ operation: TaskOperation) -> Bool {
+    switch operation {
+    case .runOCI:
+        true
+    case .sequence(let operations):
+        operations.contains(where: containsOCIExecution)
+    default:
+        false
+    }
+}
+
+private func canSchedule(
+    _ candidate: ScheduledTask,
+    swiftBuilds: [SynthesizedSwiftBuild],
+    declaredTasks: [TaskDeclaration],
+    running: [ScheduledTask: ScheduledTaskResources],
+    runningLocks: [ScheduledTask: Set<TaskLock>],
+    budget: TaskSchedulerBudget
+) -> Bool {
+    let resources: ScheduledTaskResources
+    let locks: Set<TaskLock>
+    switch candidate {
+    case .swiftBuild(let index):
+        resources = scheduledResources(for: swiftBuilds[index], budget: budget)
+        locks = Set(swiftBuilds[index].task.locks)
+    case .declared(let index):
+        let task = declaredTasks[index]
+        resources = scheduledResources(for: task.operation, budget: budget)
+        locks = Set(task.locks)
+    }
+
+    if running.isEmpty {
+        return true
+    }
+    guard !resources.exclusive,
+        !running.values.contains(where: \.exclusive),
+        runningLocks.values.allSatisfy({ $0.isDisjoint(with: locks) })
+    else { return false }
+
+    let usedCPU = running.values.reduce(UInt32(0)) { $0 + $1.cpuCount }
+    let usedMemory = running.values.reduce(UInt64(0)) { $0 + $1.memoryBytes }
+    return usedCPU + resources.cpuCount <= budget.cpuCount
+        && usedMemory + resources.memoryBytes <= budget.memoryBytes
+}
+
+func requiredSwiftBuildsAreCompleted(
+    for task: TaskDeclaration,
+    buildByContext: [SwiftBuildContext: TaskID],
+    completed: Set<TaskID>
+) -> Bool {
+    let contexts =
+        task.swiftProducts.map(\.invocation.context)
+        + task.swiftTests.map(\.invocation.context)
+    return contexts.allSatisfy { context in
+        guard let build = buildByContext[context] else { return false }
+        return completed.contains(build)
+    }
 }
 
 extension ColliderRuntime {
@@ -250,70 +392,137 @@ extension ColliderRuntime {
             !plan[$0].isClean && !plan[$0].isSubsumed
         }
         var executed: [TaskID] = []
+        let schedulerBudget = TaskSchedulerBudget.host
+        var running: [ScheduledTask: ScheduledTaskResources] = [:]
+        var runningLocks: [ScheduledTask: Set<TaskLock>] = [:]
 
-        while !pendingBuilds.isEmpty || !pendingTasks.isEmpty {
-            if let position = pendingBuilds.firstIndex(where: {
-                buildPrerequisites[swiftBuilds[$0].task.id, default: []]
-                    .isSubset(of: completed)
-            }) {
-                let index = pendingBuilds.remove(at: position)
-                let build = swiftBuilds[index]
-                do {
-                    try await executePlannedTask(
-                        build.task,
-                        plan: swiftBuildPlans[index],
-                        stateRoot: stateRoot,
-                        eventRun: eventRun,
-                        eventRegistry: eventRegistry,
-                        options: options,
-                        recordsActiveArtifact: false)
-                } catch {
-                    throw RuntimeFailure.swiftBuildFailed(
-                        attribution: build.attribution,
-                        reason: String(describing: error))
+        try await withThrowingTaskGroup(of: ScheduledTask.self) { group in
+            while !pendingBuilds.isEmpty || !pendingTasks.isEmpty || !running.isEmpty {
+                while running.count < options.maximumParallelism {
+                    let candidate =
+                        pendingBuilds.compactMap { index -> ScheduledTask? in
+                            buildPrerequisites[swiftBuilds[index].task.id, default: []]
+                                .isSubset(of: completed)
+                                ? .swiftBuild(index) : nil
+                        }.first(where: { candidate in
+                            canSchedule(
+                                candidate,
+                                swiftBuilds: swiftBuilds,
+                                declaredTasks: ordered,
+                                running: running,
+                                runningLocks: runningLocks,
+                                budget: schedulerBudget)
+                        })
+                        ?? pendingTasks.compactMap { index -> ScheduledTask? in
+                            let task = ordered[index]
+                            let dependenciesReady = task.dependencies.allSatisfy {
+                                completed.contains($0)
+                                    || task.subsumedDependencies.contains($0)
+                            }
+                            let swiftBuildsReady = requiredSwiftBuildsAreCompleted(
+                                for: task,
+                                buildByContext: buildByContext,
+                                completed: completed)
+                            return dependenciesReady && swiftBuildsReady
+                                ? .declared(index) : nil
+                        }.first(where: { candidate in
+                            canSchedule(
+                                candidate,
+                                swiftBuilds: swiftBuilds,
+                                declaredTasks: ordered,
+                                running: running,
+                                runningLocks: runningLocks,
+                                budget: schedulerBudget)
+                        })
+
+                    guard let candidate else { break }
+                    let task: TaskDeclaration
+                    let resources: ScheduledTaskResources
+                    let execution: ScheduledTaskExecution
+                    switch candidate {
+                    case .swiftBuild(let index):
+                        pendingBuilds.removeAll { $0 == index }
+                        task = swiftBuilds[index].task
+                        resources = scheduledResources(
+                            for: swiftBuilds[index],
+                            budget: schedulerBudget)
+                        execution = ScheduledTaskExecution(
+                            scheduledTask: candidate,
+                            task: task,
+                            plan: swiftBuildPlans[index],
+                            swiftBuildAttribution: swiftBuilds[index].attribution,
+                            recordsActiveArtifact: false)
+                    case .declared(let index):
+                        pendingTasks.removeAll { $0 == index }
+                        task = ordered[index]
+                        resources = scheduledResources(
+                            for: task.operation,
+                            budget: schedulerBudget)
+                        execution = ScheduledTaskExecution(
+                            scheduledTask: candidate,
+                            task: task,
+                            plan: plan[index],
+                            swiftBuildAttribution: nil,
+                            recordsActiveArtifact: true)
+                    }
+                    running[candidate] = resources
+                    runningLocks[candidate] = Set(task.locks)
+                    executed.append(task.id)
+
+                    group.addTask {
+                        if let attribution = execution.swiftBuildAttribution {
+                            do {
+                                try await self.executePlannedTask(
+                                    execution.task,
+                                    plan: execution.plan,
+                                    stateRoot: stateRoot,
+                                    eventRun: eventRun,
+                                    eventRegistry: eventRegistry,
+                                    options: options,
+                                    recordsActiveArtifact: false)
+                            } catch {
+                                throw RuntimeFailure.swiftBuildFailed(
+                                    attribution: attribution,
+                                    reason: String(describing: error))
+                            }
+                        } else {
+                            try await self.executePlannedTask(
+                                execution.task,
+                                plan: execution.plan,
+                                stateRoot: stateRoot,
+                                eventRun: eventRun,
+                                eventRegistry: eventRegistry,
+                                options: options,
+                                recordsActiveArtifact: execution.recordsActiveArtifact)
+                        }
+                        return execution.scheduledTask
+                    }
                 }
-                completed.insert(build.task.id)
-                executed.append(build.task.id)
-                continue
+
+                guard !running.isEmpty else {
+                    let blocked =
+                        pendingBuilds.map {
+                            swiftBuilds[$0].task.id.rawValue
+                        }
+                        + pendingTasks.map {
+                            ordered[$0].id.rawValue
+                        }
+                    throw RuntimeFailure.unschedulableTaskPlan(blocked.sorted())
+                }
+                guard let finished = try await group.next() else {
+                    preconditionFailure("task group ended with scheduled tasks still running")
+                }
+                running.removeValue(forKey: finished)
+                runningLocks.removeValue(forKey: finished)
+                switch finished {
+                case .swiftBuild(let index):
+                    completed.insert(swiftBuilds[index].task.id)
+                case .declared(let index):
+                    let task = ordered[index]
+                    completed.insert(task.id)
+                    completed.formUnion(task.subsumedDependencies)
+                }
             }
-
-            if let position = pendingTasks.firstIndex(where: { index in
-                let task = ordered[index]
-                let dependenciesReady = task.dependencies.allSatisfy {
-                    completed.contains($0)
-                        || task.subsumedDependencies.contains($0)
-                }
-                let swiftBuildsReady = task.swiftProducts.allSatisfy {
-                    guard let build = buildByContext[$0.invocation.context]
-                    else { return false }
-                    return completed.contains(build)
-                }
-                return dependenciesReady && swiftBuildsReady
-            }) {
-                let index = pendingTasks.remove(at: position)
-                let task = ordered[index]
-                try await executePlannedTask(
-                    task,
-                    plan: plan[index],
-                    stateRoot: stateRoot,
-                    eventRun: eventRun,
-                    eventRegistry: eventRegistry,
-                    options: options,
-                    recordsActiveArtifact: true)
-                completed.insert(task.id)
-                completed.formUnion(task.subsumedDependencies)
-                executed.append(task.id)
-                continue
-            }
-
-            let blocked =
-                pendingBuilds.map {
-                    swiftBuilds[$0].task.id.rawValue
-                }
-                + pendingTasks.map {
-                    ordered[$0].id.rawValue
-                }
-            throw RuntimeFailure.unschedulableTaskPlan(blocked.sorted())
         }
 
         for (index, task) in ordered.enumerated()
@@ -535,10 +744,13 @@ extension ColliderRuntime {
         }
 
         let products = Array(Set(requirements.map(\.qualifiedProduct))).sorted()
-        var inputs = [
-            first.invocation.identityInput,
-            ArtifactInput.tool(.named("swift")),
-        ]
+        var inputs = [first.invocation.identityInput]
+        inputs += first.invocation.context.toolsets.map(ArtifactInput.file)
+        if case .oci(let configuration) = first.invocation.context.execution {
+            inputs.append(.dependencyOutput(configuration.imageID))
+        } else {
+            inputs.append(ArtifactInput.tool(.named("swift")))
+        }
         for requirement in requirements.sorted(by: {
             $0.qualifiedProduct < $1.qualifiedProduct
         }) {
@@ -562,11 +774,10 @@ extension ColliderRuntime {
                     if !$0.contains($1) { $0.append($1) }
                 },
             locks: [first.invocation.lock],
-            operation: .command(
-                first.invocation.command(
-                    arguments: arguments,
-                    workingDirectory: first.invocation.context.packageRoot,
-                    environment: first.environment)))
+            operation: first.invocation.operation(
+                arguments: arguments,
+                workingDirectory: first.invocation.context.packageRoot,
+                environment: first.environment))
     }
 
     private func synthesizedSwiftTestBuild(
@@ -577,6 +788,7 @@ extension ColliderRuntime {
         guard
             requirements.allSatisfy({
                 $0.invocation == first.invocation
+                    && $0.arguments == first.arguments
             })
                 && productRequirements.allSatisfy({
                     $0.invocation == first.invocation
@@ -594,10 +806,13 @@ extension ColliderRuntime {
         let products = Array(
             Set(productRequirements.map(\.qualifiedProduct))
         ).sorted()
-        var inputs = [
-            first.invocation.identityInput,
-            ArtifactInput.tool(.named("swift")),
-        ]
+        var inputs = [first.invocation.identityInput]
+        inputs += first.invocation.context.toolsets.map(ArtifactInput.file)
+        if case .oci(let configuration) = first.invocation.context.execution {
+            inputs.append(.dependencyOutput(configuration.imageID))
+        } else {
+            inputs.append(ArtifactInput.tool(.named("swift")))
+        }
         for requirement in requirements.sorted(by: {
             $0.qualifiedProduct < $1.qualifiedProduct
         }) {
@@ -621,7 +836,7 @@ extension ColliderRuntime {
             identity.append(tag: 3, string: product)
         }
         let digest = ArtifactHasher.digest(bytes: identity.bytes)
-        let arguments = ["test"]
+        let arguments = ["test"] + first.arguments
         return TaskDeclaration(
             id: TaskID(rawValue: "swift.package.test.\(digest)"),
             component: ComponentID(rawValue: "swift-package"),
@@ -633,11 +848,10 @@ extension ColliderRuntime {
                     if !$0.contains($1) { $0.append($1) }
                 },
             locks: [first.invocation.lock],
-            operation: .command(
-                first.invocation.command(
-                    arguments: arguments,
-                    workingDirectory: first.invocation.context.packageRoot,
-                    environment: buildEnvironment)))
+            operation: first.invocation.operation(
+                arguments: arguments,
+                workingDirectory: first.invocation.context.packageRoot,
+                environment: buildEnvironment))
     }
 
     private func subsumedOperations(
@@ -1042,6 +1256,9 @@ extension ColliderRuntime {
             encoder.append(
                 tag: 120,
                 string: execution.processFilesystemPolicy.rawValue)
+            encoder.append(
+                tag: 122,
+                string: execution.intelBinaryTranslationPolicy.rawValue)
             encoder.append(
                 tag: 85,
                 integer: UInt64(execution.resourceLimits.cpuCount ?? 0))
@@ -2028,10 +2245,9 @@ private func publishSymlink(_ publication: SymlinkPublication) throws {
         if existing == publication.target {
             return
         }
-        try fileManager.removeItem(atPath: publication.path.string)
-        try fileManager.createSymbolicLink(
-            atPath: publication.path.string,
-            withDestinationPath: publication.target)
+        try DirectoryLifecycle.activate(
+            target: publication.target,
+            link: publication.path)
         return
     }
     var displaced = false
@@ -2050,9 +2266,9 @@ private func publishSymlink(_ publication: SymlinkPublication) throws {
         displaced = true
     }
     do {
-        try fileManager.createSymbolicLink(
-            atPath: publication.path.string,
-            withDestinationPath: publication.target)
+        try DirectoryLifecycle.activate(
+            target: publication.target,
+            link: publication.path)
     } catch {
         if displaced {
             try? fileManager.moveItem(

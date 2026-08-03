@@ -8,7 +8,7 @@ package enum ZwlrScreencopyManagerV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_zwlr_screencopy_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 3
 }
-package extension WaylandProxy where Interface == ZwlrScreencopyManagerV1Client {
+extension WaylandProxy where Interface == ZwlrScreencopyManagerV1Client {
     package func captureOutput(overlay_cursor: Int32, output: WaylandProxy<WlOutputClient>)
         throws(WaylandProxyError) -> WaylandProxy<ZwlrScreencopyFrameV1Client>
     {

@@ -3,14 +3,14 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpTabletPadStripV2Requests: AnyObject {
     func setFeedback(
         _ request: WaylandRequest<ZwpTabletPadStripV2Server>, description: String, serial: UInt32)
     func destroy(_ request: WaylandRequest<ZwpTabletPadStripV2Server>)
 }
-package extension ZwpTabletPadStripV2Requests {
+extension ZwpTabletPadStripV2Requests {
     package func destroy(_ request: WaylandRequest<ZwpTabletPadStripV2Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -89,7 +89,7 @@ package enum ZwpTabletPadStripV2Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwpTabletPadStripV2Server {
+extension WaylandResourceHandle where Interface == ZwpTabletPadStripV2Server {
     @discardableResult
     package func sendSource(source: ZwpTabletPadStripV2Source) -> Bool {
         guard let target = unsafe resource else {
@@ -123,7 +123,7 @@ package extension WaylandResourceHandle where Interface == ZwpTabletPadStripV2Se
         return true
     }
 }
-package extension WlNewId where Interface == ZwpTabletPadStripV2Server {
+extension WlNewId where Interface == ZwpTabletPadStripV2Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpTabletPadStripV2Requests>(
@@ -136,7 +136,7 @@ package extension WlNewId where Interface == ZwpTabletPadStripV2Server {
             installed: installed)
     }
 }
-package extension ZwpTabletPadStripV2Server {
+extension ZwpTabletPadStripV2Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpTabletPadStripV2Requests>(
         implementation: Implementation,

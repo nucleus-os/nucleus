@@ -2,7 +2,7 @@
 // Typed server descriptor and dispatch for zwp_input_method_context_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpInputMethodContextV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZwpInputMethodContextV1Server>)
@@ -38,7 +38,7 @@ import WaylandServerC
     func textDirection(
         _ request: WaylandRequest<ZwpInputMethodContextV1Server>, serial: UInt32, direction: UInt32)
 }
-package extension ZwpInputMethodContextV1Requests {
+extension ZwpInputMethodContextV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpInputMethodContextV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -328,7 +328,7 @@ package enum ZwpInputMethodContextV1Server: WaylandServerInterface {
                 }
             }
 }
-package extension WaylandResourceHandle where Interface == ZwpInputMethodContextV1Server {
+extension WaylandResourceHandle where Interface == ZwpInputMethodContextV1Server {
     @discardableResult
     package func sendSurroundingText(text: String, cursor: UInt32, anchor: UInt32) -> Bool {
         guard let target = unsafe resource else {
@@ -384,7 +384,7 @@ package extension WaylandResourceHandle where Interface == ZwpInputMethodContext
         }
     }
 }
-package extension WlNewId where Interface == ZwpInputMethodContextV1Server {
+extension WlNewId where Interface == ZwpInputMethodContextV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpInputMethodContextV1Requests>(
@@ -397,7 +397,7 @@ package extension WlNewId where Interface == ZwpInputMethodContextV1Server {
             installed: installed)
     }
 }
-package extension ZwpInputMethodContextV1Server {
+extension ZwpInputMethodContextV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpInputMethodContextV1Requests>(
         implementation: Implementation,

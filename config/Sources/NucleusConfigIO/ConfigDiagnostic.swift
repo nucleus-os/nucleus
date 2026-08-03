@@ -1,4 +1,4 @@
-import NucleusConfig
+package import NucleusConfig
 package import NucleusConfigSyntax
 
 /// One problem found while loading configuration, in a form suitable for both a

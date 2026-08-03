@@ -162,7 +162,7 @@ package func androidDisplayCoordinate(
 }
 
 private func androidInputEventTimeNanoseconds() -> UInt64 {
-    var time = timespec()
+    var time = timespec(tv_sec: 0, tv_nsec: 0)
     guard unsafe clock_gettime(CLOCK_MONOTONIC, &time) == 0,
         time.tv_sec >= 0,
         time.tv_nsec >= 0

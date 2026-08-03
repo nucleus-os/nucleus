@@ -1,5 +1,5 @@
 import NucleusLinuxDBus
-import NucleusUI
+internal import NucleusUI
 
 extension AtSPIService {
     func handleText(

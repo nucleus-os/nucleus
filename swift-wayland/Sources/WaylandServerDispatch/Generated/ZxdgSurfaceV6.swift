@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZxdgSurfaceV6Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZxdgSurfaceV6Server>)
@@ -18,7 +18,7 @@ import WaylandServerC
         height: Int32)
     func ackConfigure(_ request: WaylandRequest<ZxdgSurfaceV6Server>, serial: UInt32)
 }
-package extension ZxdgSurfaceV6Requests {
+extension ZxdgSurfaceV6Requests {
     package func destroy(_ request: WaylandRequest<ZxdgSurfaceV6Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -141,7 +141,7 @@ package enum ZxdgSurfaceV6Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZxdgSurfaceV6Server {
+extension WaylandResourceHandle where Interface == ZxdgSurfaceV6Server {
     @discardableResult
     package func sendConfigure(serial: UInt32) -> Bool {
         guard let target = unsafe resource else {
@@ -151,18 +151,18 @@ package extension WaylandResourceHandle where Interface == ZxdgSurfaceV6Server {
         return true
     }
 }
-package extension WaylandRequest where Interface == ZxdgSurfaceV6Server {
+extension WaylandRequest where Interface == ZxdgSurfaceV6Server {
     package func postError(_ code: ZxdgSurfaceV6Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ZxdgSurfaceV6Server {
+extension WaylandResourceHandle where Interface == ZxdgSurfaceV6Server {
     @discardableResult
     package func postError(_ code: ZxdgSurfaceV6Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ZxdgSurfaceV6Server {
+extension WlNewId where Interface == ZxdgSurfaceV6Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZxdgSurfaceV6Requests>(
@@ -175,7 +175,7 @@ package extension WlNewId where Interface == ZxdgSurfaceV6Server {
             installed: installed)
     }
 }
-package extension ZxdgSurfaceV6Server {
+extension ZxdgSurfaceV6Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZxdgSurfaceV6Requests>(
         implementation: Implementation,

@@ -11,7 +11,7 @@ import WaylandServerC
         id: WlNewId<ZwpXwaylandKeyboardGrabV1Server>,
         surface: WaylandBorrowedObject<WlSurfaceServer>, seat: WaylandBorrowedObject<WlSeatServer>)
 }
-package extension ZwpXwaylandKeyboardGrabManagerV1Requests {
+extension ZwpXwaylandKeyboardGrabManagerV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpXwaylandKeyboardGrabManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -84,7 +84,7 @@ package enum ZwpXwaylandKeyboardGrabManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ZwpXwaylandKeyboardGrabManagerV1Server {
+extension WlNewId where Interface == ZwpXwaylandKeyboardGrabManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpXwaylandKeyboardGrabManagerV1Requests>(
@@ -97,7 +97,7 @@ package extension WlNewId where Interface == ZwpXwaylandKeyboardGrabManagerV1Ser
             owner: owner, installed: installed)
     }
 }
-package extension ZwpXwaylandKeyboardGrabManagerV1Server {
+extension ZwpXwaylandKeyboardGrabManagerV1Server {
     @MainActor
     package static func global<
         Implementation: AnyObject & ZwpXwaylandKeyboardGrabManagerV1Requests

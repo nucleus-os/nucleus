@@ -20,7 +20,7 @@ internal import NucleusCompositorServer
 import NucleusCompositorServerTypes
 internal import NucleusCompositorWindowManager
 import NucleusDiagnostics
-package import NucleusLayers
+internal import NucleusLayers
 import NucleusRenderModel
 import WaylandProtocolTypes
 import WaylandServer

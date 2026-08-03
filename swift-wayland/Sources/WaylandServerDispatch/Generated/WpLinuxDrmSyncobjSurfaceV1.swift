@@ -16,7 +16,7 @@ import WaylandServerC
         timeline: WaylandBorrowedObject<WpLinuxDrmSyncobjTimelineV1Server>, point_hi: UInt32,
         point_lo: UInt32)
 }
-package extension WpLinuxDrmSyncobjSurfaceV1Requests {
+extension WpLinuxDrmSyncobjSurfaceV1Requests {
     package func destroy(_ request: WaylandRequest<WpLinuxDrmSyncobjSurfaceV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -102,18 +102,18 @@ package enum WpLinuxDrmSyncobjSurfaceV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == WpLinuxDrmSyncobjSurfaceV1Server {
+extension WaylandRequest where Interface == WpLinuxDrmSyncobjSurfaceV1Server {
     package func postError(_ code: WpLinuxDrmSyncobjSurfaceV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WpLinuxDrmSyncobjSurfaceV1Server {
+extension WaylandResourceHandle where Interface == WpLinuxDrmSyncobjSurfaceV1Server {
     @discardableResult
     package func postError(_ code: WpLinuxDrmSyncobjSurfaceV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WpLinuxDrmSyncobjSurfaceV1Server {
+extension WlNewId where Interface == WpLinuxDrmSyncobjSurfaceV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpLinuxDrmSyncobjSurfaceV1Requests>(
@@ -126,7 +126,7 @@ package extension WlNewId where Interface == WpLinuxDrmSyncobjSurfaceV1Server {
             installed: installed)
     }
 }
-package extension WpLinuxDrmSyncobjSurfaceV1Server {
+extension WpLinuxDrmSyncobjSurfaceV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpLinuxDrmSyncobjSurfaceV1Requests>(
         implementation: Implementation,

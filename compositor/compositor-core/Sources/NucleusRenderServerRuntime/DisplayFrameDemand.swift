@@ -157,7 +157,7 @@ final class DisplayFrameDemand {
     }
 
     private func monotonicNowNs() -> UInt64 {
-        var ts = timespec()
+        var ts = timespec(tv_sec: 0, tv_nsec: 0)
         unsafe clock_gettime(CLOCK_MONOTONIC, &ts)
         return UInt64(ts.tv_sec) &* 1_000_000_000 &+ UInt64(ts.tv_nsec)
     }

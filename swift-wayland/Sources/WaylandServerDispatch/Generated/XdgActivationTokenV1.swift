@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol XdgActivationTokenV1Requests: AnyObject {
     func setSerial(
@@ -16,7 +16,7 @@ import WaylandServerC
     func commit(_ request: WaylandRequest<XdgActivationTokenV1Server>)
     func destroy(_ request: WaylandRequest<XdgActivationTokenV1Server>)
 }
-package extension XdgActivationTokenV1Requests {
+extension XdgActivationTokenV1Requests {
     package func destroy(_ request: WaylandRequest<XdgActivationTokenV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -132,7 +132,7 @@ package enum XdgActivationTokenV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == XdgActivationTokenV1Server {
+extension WaylandResourceHandle where Interface == XdgActivationTokenV1Server {
     @discardableResult
     package func sendDone(token: String) -> Bool {
         guard let target = unsafe resource else {
@@ -144,18 +144,18 @@ package extension WaylandResourceHandle where Interface == XdgActivationTokenV1S
         }
     }
 }
-package extension WaylandRequest where Interface == XdgActivationTokenV1Server {
+extension WaylandRequest where Interface == XdgActivationTokenV1Server {
     package func postError(_ code: XdgActivationTokenV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == XdgActivationTokenV1Server {
+extension WaylandResourceHandle where Interface == XdgActivationTokenV1Server {
     @discardableResult
     package func postError(_ code: XdgActivationTokenV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == XdgActivationTokenV1Server {
+extension WlNewId where Interface == XdgActivationTokenV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: XdgActivationTokenV1Requests>(
@@ -168,7 +168,7 @@ package extension WlNewId where Interface == XdgActivationTokenV1Server {
             installed: installed)
     }
 }
-package extension XdgActivationTokenV1Server {
+extension XdgActivationTokenV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & XdgActivationTokenV1Requests>(
         implementation: Implementation,

@@ -2,12 +2,12 @@
 // Typed server descriptor and dispatch for zwp_tablet_pad_group_v2.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpTabletPadGroupV2Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZwpTabletPadGroupV2Server>)
 }
-package extension ZwpTabletPadGroupV2Requests {
+extension ZwpTabletPadGroupV2Requests {
     package func destroy(_ request: WaylandRequest<ZwpTabletPadGroupV2Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -85,7 +85,7 @@ package enum ZwpTabletPadGroupV2Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwpTabletPadGroupV2Server {
+extension WaylandResourceHandle where Interface == ZwpTabletPadGroupV2Server {
     package var supportsDial: Bool {
         guard let version else {
             return false
@@ -215,7 +215,7 @@ package extension WaylandResourceHandle where Interface == ZwpTabletPadGroupV2Se
             })
     }
 }
-package extension WlNewId where Interface == ZwpTabletPadGroupV2Server {
+extension WlNewId where Interface == ZwpTabletPadGroupV2Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -228,7 +228,7 @@ package extension WlNewId where Interface == ZwpTabletPadGroupV2Server {
             installed: installed)
     }
 }
-package extension ZwpTabletPadGroupV2Server {
+extension ZwpTabletPadGroupV2Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

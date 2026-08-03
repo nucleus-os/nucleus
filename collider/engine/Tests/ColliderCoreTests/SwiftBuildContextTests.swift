@@ -38,6 +38,23 @@ private let fixturePackageRoot = FilePath("/workspace")
     #expect(first.identityBytes != reorderedFlags.identityBytes)
 }
 
+@Test func swiftBuildContextOwnsMaximumParallelism() {
+    let defaultContext = SwiftBuildContext(
+        packageRoot: fixturePackageRoot,
+        configuration: .debug,
+        target: .host(identity: "x86_64-linux"),
+        toolchainIdentity: "swiftc@fixture")
+    let narrowerContext = SwiftBuildContext(
+        packageRoot: fixturePackageRoot,
+        configuration: .debug,
+        target: .host(identity: "x86_64-linux"),
+        toolchainIdentity: "swiftc@fixture",
+        maximumParallelism: 4)
+
+    #expect(defaultContext.maximumParallelism == 10)
+    #expect(defaultContext.identityBytes != narrowerContext.identityBytes)
+}
+
 @Test func swiftPMInvocationOwnsArgumentsOutputAndSharedLock() {
     let context = SwiftBuildContext(
         packageRoot: fixturePackageRoot,
@@ -63,6 +80,7 @@ private let fixturePackageRoot = FilePath("/workspace")
         command.arguments == [
             "test",
             "--configuration", "release",
+            "--jobs", "10",
             "--scratch-path", scratch.string,
             "--package-path", fixturePackageRoot.string,
             "--triple", "aarch64-unknown-linux-gnu",
@@ -114,6 +132,7 @@ private let fixturePackageRoot = FilePath("/workspace")
             == [
                 "run",
                 "--configuration", "release",
+                "--jobs", "10",
                 "--scratch-path", scratch.string,
                 "--package-path", fixturePackageRoot.string,
                 "--triple", "aarch64-unknown-linux-gnu",
@@ -136,6 +155,7 @@ private let fixturePackageRoot = FilePath("/workspace")
                 name: "swift-release-6.4.x_android",
                 targetTriple: "aarch64-unknown-linux-android24"),
             toolchainIdentity: "swiftc@fixture",
+            toolsets: [FilePath("/workspace/linux-toolset.json")],
             staticSwiftStandardLibrary: true),
         scratchPath: FilePath("/workspace/.nucleus/swiftpm/android"))
 
@@ -143,10 +163,12 @@ private let fixturePackageRoot = FilePath("/workspace")
         invocation.commandArguments(["build"]) == [
             "build",
             "--configuration", "release",
+            "--jobs", "10",
             "--scratch-path", "/workspace/.nucleus/swiftpm/android",
             "--package-path", fixturePackageRoot.string,
             "--swift-sdk", "swift-release-6.4.x_android",
             "--triple", "aarch64-unknown-linux-android24",
+            "--toolset", "/workspace/linux-toolset.json",
             "--static-swift-stdlib",
         ])
     #expect(
@@ -187,4 +209,58 @@ private let fixturePackageRoot = FilePath("/workspace")
     #expect(
         amd64Invocation.configurationProducts
             == scratch.appending("out/Products/Release-android-x86_64"))
+}
+
+@Test func swiftPMOCIExecutionKeepsGuestArchitectureSeparateFromArtifactArchitecture() {
+    let imageID = FilePath("/cache/nucleus-linux-build/image-id")
+    let execution = SwiftPMOCIExecution(
+        executionPlatform: .linuxARM64OCI,
+        artifactTarget: .linuxX86_64,
+        imageID: imageID,
+        hostname: "nucleus-linux-amd64-test",
+        hostWorkingDirectory: fixturePackageRoot,
+        mounts: [
+            OCIMount(
+                source: fixturePackageRoot,
+                target: fixturePackageRoot.string,
+                access: .readWrite)
+        ],
+        intelBinaryTranslationPolicy: .required,
+        containerEnvironment: ["HOME": "/home/nucleus-build"])
+    let context = SwiftBuildContext(
+        packageRoot: fixturePackageRoot,
+        configuration: .debug,
+        target: .swiftSDK(
+            name: "swift-fixture-linux",
+            targetTriple: "x86_64-unknown-linux-gnu"),
+        toolchainIdentity: "nucleus-linux-build@fixture",
+        execution: .oci(execution))
+    let invocation = SwiftPMInvocation(
+        context: context,
+        scratchPath: FilePath("/workspace/.nucleus/swiftpm/linux-amd64"))
+
+    guard
+        case .runOCI(let operation) = invocation.operation(
+            arguments: ["test"],
+            workingDirectory: fixturePackageRoot,
+            environment: [
+                "PATH": "/host/bin",
+                "NUCLEUS_NATIVE_SDK_ROOT": "/cache/native-sdk",
+            ])
+    else {
+        Issue.record("expected an OCI SwiftPM operation")
+        return
+    }
+
+    #expect(operation.executionPlatform == .linuxARM64OCI)
+    #expect(operation.artifactTarget == .linuxX86_64)
+    #expect(operation.intelBinaryTranslationPolicy == .required)
+    #expect(
+        operation.command.starts(with: [
+            "swiftpm", "taskset", "--cpu-list", "0-9", "swift", "test",
+        ]))
+    #expect(operation.containerEnvironment["PATH"] == nil)
+    #expect(
+        operation.containerEnvironment["NUCLEUS_NATIVE_SDK_ROOT"]
+            == "/cache/native-sdk")
 }

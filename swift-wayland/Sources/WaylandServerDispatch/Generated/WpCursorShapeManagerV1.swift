@@ -15,7 +15,7 @@ import WaylandServerC
         cursor_shape_device: WlNewId<WpCursorShapeDeviceV1Server>,
         tablet_tool: WaylandBorrowedObject<ZwpTabletToolV2Server>)
 }
-package extension WpCursorShapeManagerV1Requests {
+extension WpCursorShapeManagerV1Requests {
     package func destroy(_ request: WaylandRequest<WpCursorShapeManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -109,7 +109,7 @@ package enum WpCursorShapeManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == WpCursorShapeManagerV1Server {
+extension WlNewId where Interface == WpCursorShapeManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpCursorShapeManagerV1Requests>(
@@ -122,7 +122,7 @@ package extension WlNewId where Interface == WpCursorShapeManagerV1Server {
             installed: installed)
     }
 }
-package extension WpCursorShapeManagerV1Server {
+extension WpCursorShapeManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpCursorShapeManagerV1Requests>(
         implementation: Implementation,

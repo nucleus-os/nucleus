@@ -220,19 +220,19 @@ package enum WpImageDescriptionCreatorParamsV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == WpImageDescriptionCreatorParamsV1Server {
+extension WaylandRequest where Interface == WpImageDescriptionCreatorParamsV1Server {
     package func postError(_ code: WpImageDescriptionCreatorParamsV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WpImageDescriptionCreatorParamsV1Server {
+extension WaylandResourceHandle where Interface == WpImageDescriptionCreatorParamsV1Server {
     @discardableResult
     package func postError(_ code: WpImageDescriptionCreatorParamsV1Error, message: String) -> Bool
     {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WpImageDescriptionCreatorParamsV1Server {
+extension WlNewId where Interface == WpImageDescriptionCreatorParamsV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpImageDescriptionCreatorParamsV1Requests>(
@@ -245,7 +245,7 @@ package extension WlNewId where Interface == WpImageDescriptionCreatorParamsV1Se
             owner: owner, installed: installed)
     }
 }
-package extension WpImageDescriptionCreatorParamsV1Server {
+extension WpImageDescriptionCreatorParamsV1Server {
     @MainActor
     package static func global<
         Implementation: AnyObject & WpImageDescriptionCreatorParamsV1Requests

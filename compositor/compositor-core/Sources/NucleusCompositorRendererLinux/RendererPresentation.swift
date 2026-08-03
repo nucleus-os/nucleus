@@ -1,5 +1,5 @@
 import NucleusCompositorDrmC
-package import NucleusRenderer
+internal import NucleusRenderer
 
 @MainActor
 extension DRMScanoutPresenter {

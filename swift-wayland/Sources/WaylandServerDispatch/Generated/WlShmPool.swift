@@ -12,7 +12,7 @@ import WaylandServerC
     func destroy(_ request: WaylandRequest<WlShmPoolServer>)
     func resize(_ request: WaylandRequest<WlShmPoolServer>, size: Int32)
 }
-package extension WlShmPoolRequests {
+extension WlShmPoolRequests {
     package func destroy(_ request: WaylandRequest<WlShmPoolServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -92,7 +92,7 @@ package enum WlShmPoolServer: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == WlShmPoolServer {
+extension WlNewId where Interface == WlShmPoolServer {
     @discardableResult
     @MainActor
     package func create<Owner: WlShmPoolRequests>(
@@ -105,7 +105,7 @@ package extension WlNewId where Interface == WlShmPoolServer {
             installed: installed)
     }
 }
-package extension WlShmPoolServer {
+extension WlShmPoolServer {
     @MainActor
     package static func global<Implementation: AnyObject & WlShmPoolRequests>(
         implementation: Implementation,

@@ -10,17 +10,17 @@ import NucleusRenderModel
 import NucleusRenderer
 package import NucleusSessionProtocol
 import NucleusShellAuth
-import NucleusShellProduct
+internal import NucleusShellProduct
 package import NucleusShellServices
 import NucleusShellSignalC
 package import NucleusUI
 import NucleusUIEmbedder
-package import NucleusWindowClientHost
+internal import NucleusWindowClientHost
 package import NucleusWindowClientInput
 import NucleusWindowClientPasteboard
-import NucleusWindowClientRender
+internal import NucleusWindowClientRender
 import NucleusWindowClientRuntime
-package import NucleusWindowClientWayland
+internal import NucleusWindowClientWayland
 import Tracy
 
 #if canImport(FoundationInternationalization)

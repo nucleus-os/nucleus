@@ -2,7 +2,7 @@
 // Typed server descriptor and dispatch for ext_data_control_offer_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ExtDataControlOfferV1Requests: AnyObject {
     func receive(
@@ -10,7 +10,7 @@ import WaylandServerC
         fd: consuming WaylandOwnedFileDescriptor)
     func destroy(_ request: WaylandRequest<ExtDataControlOfferV1Server>)
 }
-package extension ExtDataControlOfferV1Requests {
+extension ExtDataControlOfferV1Requests {
     package func destroy(_ request: WaylandRequest<ExtDataControlOfferV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -80,7 +80,7 @@ package enum ExtDataControlOfferV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ExtDataControlOfferV1Server {
+extension WaylandResourceHandle where Interface == ExtDataControlOfferV1Server {
     @discardableResult
     package func sendOffer(mime_type: String) -> Bool {
         guard let target = unsafe resource else {
@@ -92,7 +92,7 @@ package extension WaylandResourceHandle where Interface == ExtDataControlOfferV1
         }
     }
 }
-package extension WlNewId where Interface == ExtDataControlOfferV1Server {
+extension WlNewId where Interface == ExtDataControlOfferV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ExtDataControlOfferV1Requests>(
@@ -105,7 +105,7 @@ package extension WlNewId where Interface == ExtDataControlOfferV1Server {
             installed: installed)
     }
 }
-package extension ExtDataControlOfferV1Server {
+extension ExtDataControlOfferV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ExtDataControlOfferV1Requests>(
         implementation: Implementation,

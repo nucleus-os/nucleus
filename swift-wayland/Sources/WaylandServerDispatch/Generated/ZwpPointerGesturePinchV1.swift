@@ -2,12 +2,12 @@
 // Typed server descriptor and dispatch for zwp_pointer_gesture_pinch_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpPointerGesturePinchV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZwpPointerGesturePinchV1Server>)
 }
-package extension ZwpPointerGesturePinchV1Requests {
+extension ZwpPointerGesturePinchV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpPointerGesturePinchV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -73,7 +73,7 @@ package enum ZwpPointerGesturePinchV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwpPointerGesturePinchV1Server {
+extension WaylandResourceHandle where Interface == ZwpPointerGesturePinchV1Server {
     @discardableResult
     package func sendBegin(
         serial: UInt32, time: UInt32, surface: WaylandResourceHandle<WlSurfaceServer>,
@@ -110,7 +110,7 @@ package extension WaylandResourceHandle where Interface == ZwpPointerGesturePinc
         return true
     }
 }
-package extension WlNewId where Interface == ZwpPointerGesturePinchV1Server {
+extension WlNewId where Interface == ZwpPointerGesturePinchV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -123,7 +123,7 @@ package extension WlNewId where Interface == ZwpPointerGesturePinchV1Server {
             installed: installed)
     }
 }
-package extension ZwpPointerGesturePinchV1Server {
+extension ZwpPointerGesturePinchV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpTabletPadV2Requests: AnyObject {
     func setFeedback(
@@ -11,7 +11,7 @@ import WaylandServerC
         serial: UInt32)
     func destroy(_ request: WaylandRequest<ZwpTabletPadV2Server>)
 }
-package extension ZwpTabletPadV2Requests {
+extension ZwpTabletPadV2Requests {
     package func destroy(_ request: WaylandRequest<ZwpTabletPadV2Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -113,7 +113,7 @@ package enum ZwpTabletPadV2Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwpTabletPadV2Server {
+extension WaylandResourceHandle where Interface == ZwpTabletPadV2Server {
     @discardableResult
     package func sendGroup(pad_group: WaylandResourceHandle<ZwpTabletPadGroupV2Server>) -> Bool {
         guard let target = unsafe resource else {
@@ -217,7 +217,7 @@ package extension WaylandResourceHandle where Interface == ZwpTabletPadV2Server 
         return true
     }
 }
-package extension WlNewId where Interface == ZwpTabletPadV2Server {
+extension WlNewId where Interface == ZwpTabletPadV2Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpTabletPadV2Requests>(
@@ -230,7 +230,7 @@ package extension WlNewId where Interface == ZwpTabletPadV2Server {
             installed: installed)
     }
 }
-package extension ZwpTabletPadV2Server {
+extension ZwpTabletPadV2Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpTabletPadV2Requests>(
         implementation: Implementation,

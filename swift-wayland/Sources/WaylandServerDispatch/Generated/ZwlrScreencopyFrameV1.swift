@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwlrScreencopyFrameV1Requests: AnyObject {
     func copy(
@@ -14,7 +14,7 @@ import WaylandServerC
         _ request: WaylandRequest<ZwlrScreencopyFrameV1Server>,
         buffer: WaylandBorrowedObject<WlBufferServer>)
 }
-package extension ZwlrScreencopyFrameV1Requests {
+extension ZwlrScreencopyFrameV1Requests {
     package func destroy(_ request: WaylandRequest<ZwlrScreencopyFrameV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -129,7 +129,7 @@ package enum ZwlrScreencopyFrameV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwlrScreencopyFrameV1Server {
+extension WaylandResourceHandle where Interface == ZwlrScreencopyFrameV1Server {
     package var supportsDamage: Bool {
         guard let version else {
             return false
@@ -211,18 +211,18 @@ package extension WaylandResourceHandle where Interface == ZwlrScreencopyFrameV1
         return true
     }
 }
-package extension WaylandRequest where Interface == ZwlrScreencopyFrameV1Server {
+extension WaylandRequest where Interface == ZwlrScreencopyFrameV1Server {
     package func postError(_ code: ZwlrScreencopyFrameV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ZwlrScreencopyFrameV1Server {
+extension WaylandResourceHandle where Interface == ZwlrScreencopyFrameV1Server {
     @discardableResult
     package func postError(_ code: ZwlrScreencopyFrameV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ZwlrScreencopyFrameV1Server {
+extension WlNewId where Interface == ZwlrScreencopyFrameV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwlrScreencopyFrameV1Requests>(
@@ -235,7 +235,7 @@ package extension WlNewId where Interface == ZwlrScreencopyFrameV1Server {
             installed: installed)
     }
 }
-package extension ZwlrScreencopyFrameV1Server {
+extension ZwlrScreencopyFrameV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwlrScreencopyFrameV1Requests>(
         implementation: Implementation,

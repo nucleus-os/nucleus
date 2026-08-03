@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol XdgSessionV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<XdgSessionV1Server>)
@@ -16,7 +16,7 @@ import WaylandServerC
         toplevel: WaylandBorrowedObject<XdgToplevelServer>, name: String)
     func removeToplevel(_ request: WaylandRequest<XdgSessionV1Server>, name: String)
 }
-package extension XdgSessionV1Requests {
+extension XdgSessionV1Requests {
     package func destroy(_ request: WaylandRequest<XdgSessionV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -159,7 +159,7 @@ package enum XdgSessionV1Server: WaylandServerInterface {
                 }
             }
 }
-package extension WaylandResourceHandle where Interface == XdgSessionV1Server {
+extension WaylandResourceHandle where Interface == XdgSessionV1Server {
     @discardableResult
     package func sendCreated(session_id: String) -> Bool {
         guard let target = unsafe resource else {
@@ -187,18 +187,18 @@ package extension WaylandResourceHandle where Interface == XdgSessionV1Server {
         return true
     }
 }
-package extension WaylandRequest where Interface == XdgSessionV1Server {
+extension WaylandRequest where Interface == XdgSessionV1Server {
     package func postError(_ code: XdgSessionV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == XdgSessionV1Server {
+extension WaylandResourceHandle where Interface == XdgSessionV1Server {
     @discardableResult
     package func postError(_ code: XdgSessionV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == XdgSessionV1Server {
+extension WlNewId where Interface == XdgSessionV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: XdgSessionV1Requests>(
@@ -211,7 +211,7 @@ package extension WlNewId where Interface == XdgSessionV1Server {
             installed: installed)
     }
 }
-package extension XdgSessionV1Server {
+extension XdgSessionV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & XdgSessionV1Requests>(
         implementation: Implementation,

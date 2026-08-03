@@ -29,6 +29,7 @@ import Testing
         arm64.commandArguments(["build"]) == [
             "build",
             "--configuration", "release",
+            "--jobs", "10",
             "--scratch-path", scratch.string,
             "--package-path", packageRoot.string,
             "--swift-sdk", "fixture-sdk",
@@ -38,6 +39,7 @@ import Testing
         amd64.commandArguments(["build"]) == [
             "build",
             "--configuration", "release",
+            "--jobs", "10",
             "--scratch-path", scratch.string,
             "--package-path", packageRoot.string,
             "--swift-sdk", "fixture-sdk",

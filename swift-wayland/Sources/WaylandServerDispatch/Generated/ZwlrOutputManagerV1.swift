@@ -2,7 +2,7 @@
 // Typed server descriptor and dispatch for zwlr_output_manager_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwlrOutputManagerV1Requests: AnyObject {
     func createConfiguration(
@@ -79,7 +79,7 @@ package enum ZwlrOutputManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwlrOutputManagerV1Server {
+extension WaylandResourceHandle where Interface == ZwlrOutputManagerV1Server {
     @discardableResult
     package func sendHead(head: WaylandResourceHandle<ZwlrOutputHeadV1Server>) -> Bool {
         guard let target = unsafe resource else {
@@ -126,7 +126,7 @@ package extension WaylandResourceHandle where Interface == ZwlrOutputManagerV1Se
         return true
     }
 }
-package extension WlNewId where Interface == ZwlrOutputManagerV1Server {
+extension WlNewId where Interface == ZwlrOutputManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwlrOutputManagerV1Requests>(
@@ -139,7 +139,7 @@ package extension WlNewId where Interface == ZwlrOutputManagerV1Server {
             installed: installed)
     }
 }
-package extension ZwlrOutputManagerV1Server {
+extension ZwlrOutputManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwlrOutputManagerV1Requests>(
         implementation: Implementation,

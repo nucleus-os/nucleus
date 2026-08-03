@@ -10,7 +10,7 @@ import WaylandServerC
         _ request: WaylandRequest<XdgSystemBellV1Server>,
         surface: WaylandBorrowedObject<WlSurfaceServer>?)
 }
-package extension XdgSystemBellV1Requests {
+extension XdgSystemBellV1Requests {
     package func destroy(_ request: WaylandRequest<XdgSystemBellV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -75,7 +75,7 @@ package enum XdgSystemBellV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == XdgSystemBellV1Server {
+extension WlNewId where Interface == XdgSystemBellV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: XdgSystemBellV1Requests>(
@@ -88,7 +88,7 @@ package extension WlNewId where Interface == XdgSystemBellV1Server {
             installed: installed)
     }
 }
-package extension XdgSystemBellV1Server {
+extension XdgSystemBellV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & XdgSystemBellV1Requests>(
         implementation: Implementation,

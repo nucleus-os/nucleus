@@ -1,4 +1,5 @@
 module NucleusCompositorDrmC {
     header "NucleusCompositorDrmC.h"
+    link "drm"
     export *
 }

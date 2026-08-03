@@ -1,5 +1,6 @@
 import SystemPackage
 import Testing
+
 @testable import ColliderCore
 
 @Test func taskGraphOrdersDependenciesOnce() throws {
@@ -41,6 +42,77 @@ import Testing
 
     #expect(throws: TaskGraphFailure.self) {
         _ = try TaskGraph([build, test])
+    }
+}
+
+@Test func storageCatalogAllowsProtectedParentsWithLockedRemovalBoundaries() throws {
+    let workspace = FilePath("/workspace")
+    let state = workspace.appending(".nucleus")
+    let declarations = [
+        StorageDeclaration(
+            id: "state",
+            owner: "runtime",
+            storageClass: .incremental,
+            root: state,
+            safetyRoot: workspace,
+            cleanupPolicy: .protected,
+            retention: "checkout state"),
+        StorageDeclaration(
+            id: "runs",
+            owner: "runtime",
+            storageClass: .runRecord,
+            root: state.appending("runs"),
+            safetyRoot: state,
+            cleanupPolicy: .explicitPrune,
+            workflowLock: state.appending("locks/cache-prune.lock"),
+            retention: "bounded history"),
+    ]
+
+    try StorageCatalog.validate(
+        declarations,
+        forbiddenRemovalRoots: [FilePath("/"), workspace])
+}
+
+@Test func storageCatalogRejectsUnsafeOrOverlappingRemovalBoundaries() {
+    let cache = FilePath("/cache")
+    #expect(throws: StorageCatalogFailure.self) {
+        try StorageCatalog.validate(
+            [
+                StorageDeclaration(
+                    id: "cache",
+                    owner: "runtime",
+                    storageClass: .cache,
+                    root: cache,
+                    safetyRoot: cache,
+                    cleanupPolicy: .explicitPrune,
+                    workflowLock: cache.appending("prune.lock"),
+                    retention: "unsafe fixture")
+            ],
+            forbiddenRemovalRoots: [cache])
+    }
+    #expect(throws: StorageCatalogFailure.self) {
+        try StorageCatalog.validate(
+            [
+                StorageDeclaration(
+                    id: "parent",
+                    owner: "first",
+                    storageClass: .cache,
+                    root: cache.appending("generated"),
+                    safetyRoot: cache,
+                    cleanupPolicy: .explicitPrune,
+                    workflowLock: cache.appending("first.lock"),
+                    retention: "fixture"),
+                StorageDeclaration(
+                    id: "child",
+                    owner: "second",
+                    storageClass: .generation,
+                    root: cache.appending("generated/candidates"),
+                    safetyRoot: cache,
+                    cleanupPolicy: .explicitPrune,
+                    workflowLock: cache.appending("second.lock"),
+                    retention: "fixture"),
+            ],
+            forbiddenRemovalRoots: [cache])
     }
 }
 

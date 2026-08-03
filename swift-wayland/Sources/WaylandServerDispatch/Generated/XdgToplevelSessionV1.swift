@@ -2,13 +2,13 @@
 // Typed server descriptor and dispatch for xdg_toplevel_session_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol XdgToplevelSessionV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<XdgToplevelSessionV1Server>)
     func rename(_ request: WaylandRequest<XdgToplevelSessionV1Server>, name: String)
 }
-package extension XdgToplevelSessionV1Requests {
+extension XdgToplevelSessionV1Requests {
     package func destroy(_ request: WaylandRequest<XdgToplevelSessionV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -74,7 +74,7 @@ package enum XdgToplevelSessionV1Server: WaylandServerInterface {
                 }
             }
 }
-package extension WaylandResourceHandle where Interface == XdgToplevelSessionV1Server {
+extension WaylandResourceHandle where Interface == XdgToplevelSessionV1Server {
     @discardableResult
     package func sendRestored() -> Bool {
         guard let target = unsafe resource else {
@@ -84,7 +84,7 @@ package extension WaylandResourceHandle where Interface == XdgToplevelSessionV1S
         return true
     }
 }
-package extension WlNewId where Interface == XdgToplevelSessionV1Server {
+extension WlNewId where Interface == XdgToplevelSessionV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: XdgToplevelSessionV1Requests>(
@@ -97,7 +97,7 @@ package extension WlNewId where Interface == XdgToplevelSessionV1Server {
             installed: installed)
     }
 }
-package extension XdgToplevelSessionV1Server {
+extension XdgToplevelSessionV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & XdgToplevelSessionV1Requests>(
         implementation: Implementation,

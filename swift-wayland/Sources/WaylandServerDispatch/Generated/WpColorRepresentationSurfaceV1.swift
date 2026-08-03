@@ -18,7 +18,7 @@ import WaylandServerC
         _ request: WaylandRequest<WpColorRepresentationSurfaceV1Server>,
         chroma_location: WpColorRepresentationSurfaceV1ChromaLocation)
 }
-package extension WpColorRepresentationSurfaceV1Requests {
+extension WpColorRepresentationSurfaceV1Requests {
     package func destroy(_ request: WaylandRequest<WpColorRepresentationSurfaceV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -114,18 +114,18 @@ package enum WpColorRepresentationSurfaceV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == WpColorRepresentationSurfaceV1Server {
+extension WaylandRequest where Interface == WpColorRepresentationSurfaceV1Server {
     package func postError(_ code: WpColorRepresentationSurfaceV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WpColorRepresentationSurfaceV1Server {
+extension WaylandResourceHandle where Interface == WpColorRepresentationSurfaceV1Server {
     @discardableResult
     package func postError(_ code: WpColorRepresentationSurfaceV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WpColorRepresentationSurfaceV1Server {
+extension WlNewId where Interface == WpColorRepresentationSurfaceV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpColorRepresentationSurfaceV1Requests>(
@@ -138,7 +138,7 @@ package extension WlNewId where Interface == WpColorRepresentationSurfaceV1Serve
             owner: owner, installed: installed)
     }
 }
-package extension WpColorRepresentationSurfaceV1Server {
+extension WpColorRepresentationSurfaceV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpColorRepresentationSurfaceV1Requests>(
         implementation: Implementation,

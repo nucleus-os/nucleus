@@ -11,7 +11,7 @@ import WaylandServerC
         tv_nsec: UInt32)
     func destroy(_ request: WaylandRequest<WpCommitTimerV1Server>)
 }
-package extension WpCommitTimerV1Requests {
+extension WpCommitTimerV1Requests {
     package func destroy(_ request: WaylandRequest<WpCommitTimerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -73,18 +73,18 @@ package enum WpCommitTimerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == WpCommitTimerV1Server {
+extension WaylandRequest where Interface == WpCommitTimerV1Server {
     package func postError(_ code: WpCommitTimerV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WpCommitTimerV1Server {
+extension WaylandResourceHandle where Interface == WpCommitTimerV1Server {
     @discardableResult
     package func postError(_ code: WpCommitTimerV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WpCommitTimerV1Server {
+extension WlNewId where Interface == WpCommitTimerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpCommitTimerV1Requests>(
@@ -97,7 +97,7 @@ package extension WlNewId where Interface == WpCommitTimerV1Server {
             installed: installed)
     }
 }
-package extension WpCommitTimerV1Server {
+extension WpCommitTimerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpCommitTimerV1Requests>(
         implementation: Implementation,

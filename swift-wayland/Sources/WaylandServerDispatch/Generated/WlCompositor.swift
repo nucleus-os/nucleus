@@ -9,7 +9,7 @@ import WaylandServerC
     func createRegion(_ request: WaylandRequest<WlCompositorServer>, id: WlNewId<WlRegionServer>)
     func release(_ request: WaylandRequest<WlCompositorServer>)
 }
-package extension WlCompositorRequests {
+extension WlCompositorRequests {
     package func release(_ request: WaylandRequest<WlCompositorServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -93,7 +93,7 @@ package enum WlCompositorServer: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == WlCompositorServer {
+extension WlNewId where Interface == WlCompositorServer {
     @discardableResult
     @MainActor
     package func create<Owner: WlCompositorRequests>(
@@ -106,7 +106,7 @@ package extension WlNewId where Interface == WlCompositorServer {
             installed: installed)
     }
 }
-package extension WlCompositorServer {
+extension WlCompositorServer {
     @MainActor
     package static func global<Implementation: AnyObject & WlCompositorRequests>(
         implementation: Implementation,

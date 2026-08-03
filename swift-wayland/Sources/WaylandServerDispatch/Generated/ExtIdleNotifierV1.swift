@@ -15,7 +15,7 @@ import WaylandServerC
         id: WlNewId<ExtIdleNotificationV1Server>, timeout: UInt32,
         seat: WaylandBorrowedObject<WlSeatServer>)
 }
-package extension ExtIdleNotifierV1Requests {
+extension ExtIdleNotifierV1Requests {
     package func destroy(_ request: WaylandRequest<ExtIdleNotifierV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -108,7 +108,7 @@ package enum ExtIdleNotifierV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ExtIdleNotifierV1Server {
+extension WlNewId where Interface == ExtIdleNotifierV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ExtIdleNotifierV1Requests>(
@@ -121,7 +121,7 @@ package extension WlNewId where Interface == ExtIdleNotifierV1Server {
             installed: installed)
     }
 }
-package extension ExtIdleNotifierV1Server {
+extension ExtIdleNotifierV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ExtIdleNotifierV1Requests>(
         implementation: Implementation,

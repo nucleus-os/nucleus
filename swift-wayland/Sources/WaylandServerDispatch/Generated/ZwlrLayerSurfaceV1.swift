@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwlrLayerSurfaceV1Requests: AnyObject {
     func setSize(_ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, width: UInt32, height: UInt32)
@@ -25,7 +25,7 @@ import WaylandServerC
     func setExclusiveEdge(
         _ request: WaylandRequest<ZwlrLayerSurfaceV1Server>, edge: ZwlrLayerSurfaceV1Anchor)
 }
-package extension ZwlrLayerSurfaceV1Requests {
+extension ZwlrLayerSurfaceV1Requests {
     package func destroy(_ request: WaylandRequest<ZwlrLayerSurfaceV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -217,7 +217,7 @@ package enum ZwlrLayerSurfaceV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwlrLayerSurfaceV1Server {
+extension WaylandResourceHandle where Interface == ZwlrLayerSurfaceV1Server {
     @discardableResult
     package func sendConfigure(serial: UInt32, width: UInt32, height: UInt32) -> Bool {
         guard let target = unsafe resource else {
@@ -235,18 +235,18 @@ package extension WaylandResourceHandle where Interface == ZwlrLayerSurfaceV1Ser
         return true
     }
 }
-package extension WaylandRequest where Interface == ZwlrLayerSurfaceV1Server {
+extension WaylandRequest where Interface == ZwlrLayerSurfaceV1Server {
     package func postError(_ code: ZwlrLayerSurfaceV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ZwlrLayerSurfaceV1Server {
+extension WaylandResourceHandle where Interface == ZwlrLayerSurfaceV1Server {
     @discardableResult
     package func postError(_ code: ZwlrLayerSurfaceV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ZwlrLayerSurfaceV1Server {
+extension WlNewId where Interface == ZwlrLayerSurfaceV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwlrLayerSurfaceV1Requests>(
@@ -259,7 +259,7 @@ package extension WlNewId where Interface == ZwlrLayerSurfaceV1Server {
             installed: installed)
     }
 }
-package extension ZwlrLayerSurfaceV1Server {
+extension ZwlrLayerSurfaceV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwlrLayerSurfaceV1Requests>(
         implementation: Implementation,

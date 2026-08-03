@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol WpPresentationRequests: AnyObject {
     func destroy(_ request: WaylandRequest<WpPresentationServer>)
@@ -12,7 +12,7 @@ import WaylandServerC
         surface: WaylandBorrowedObject<WlSurfaceServer>,
         callback: WlNewId<WpPresentationFeedbackServer>)
 }
-package extension WpPresentationRequests {
+extension WpPresentationRequests {
     package func destroy(_ request: WaylandRequest<WpPresentationServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -84,7 +84,7 @@ package enum WpPresentationServer: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == WpPresentationServer {
+extension WaylandResourceHandle where Interface == WpPresentationServer {
     @discardableResult
     package func sendClockId(clk_id: UInt32) -> Bool {
         guard let target = unsafe resource else {
@@ -94,18 +94,18 @@ package extension WaylandResourceHandle where Interface == WpPresentationServer 
         return true
     }
 }
-package extension WaylandRequest where Interface == WpPresentationServer {
+extension WaylandRequest where Interface == WpPresentationServer {
     package func postError(_ code: WpPresentationError, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WpPresentationServer {
+extension WaylandResourceHandle where Interface == WpPresentationServer {
     @discardableResult
     package func postError(_ code: WpPresentationError, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WpPresentationServer {
+extension WlNewId where Interface == WpPresentationServer {
     @discardableResult
     @MainActor
     package func create<Owner: WpPresentationRequests>(
@@ -118,7 +118,7 @@ package extension WlNewId where Interface == WpPresentationServer {
             installed: installed)
     }
 }
-package extension WpPresentationServer {
+extension WpPresentationServer {
     @MainActor
     package static func global<Implementation: AnyObject & WpPresentationRequests>(
         implementation: Implementation,

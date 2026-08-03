@@ -3,7 +3,7 @@
 // closure is @convention(c) and cannot capture, so per-global context travels
 // through wl_global_create's `data` pointer or process-global state.
 
-import WaylandServerC
+package import WaylandServerC
 
 /// Owns the native global and keeps its display alive for the global's entire
 /// lifetime. Binding is serialized on that display's event-loop thread.

@@ -19,7 +19,7 @@
 // `OutputBufferOwner` via `makeOwner`, which captures the three destroy verbs.
 
 import NucleusCompositorDrmC
-import NucleusRenderer
+internal import NucleusRenderer
 package import Vulkan
 package import VulkanC
 

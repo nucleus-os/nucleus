@@ -11,7 +11,7 @@ import WaylandServerC
         _ request: WaylandRequest<ExtBackgroundEffectSurfaceV1Server>,
         region: WaylandBorrowedObject<WlRegionServer>?)
 }
-package extension ExtBackgroundEffectSurfaceV1Requests {
+extension ExtBackgroundEffectSurfaceV1Requests {
     package func destroy(_ request: WaylandRequest<ExtBackgroundEffectSurfaceV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -77,18 +77,18 @@ package enum ExtBackgroundEffectSurfaceV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == ExtBackgroundEffectSurfaceV1Server {
+extension WaylandRequest where Interface == ExtBackgroundEffectSurfaceV1Server {
     package func postError(_ code: ExtBackgroundEffectSurfaceV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ExtBackgroundEffectSurfaceV1Server {
+extension WaylandResourceHandle where Interface == ExtBackgroundEffectSurfaceV1Server {
     @discardableResult
     package func postError(_ code: ExtBackgroundEffectSurfaceV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ExtBackgroundEffectSurfaceV1Server {
+extension WlNewId where Interface == ExtBackgroundEffectSurfaceV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ExtBackgroundEffectSurfaceV1Requests>(
@@ -101,7 +101,7 @@ package extension WlNewId where Interface == ExtBackgroundEffectSurfaceV1Server 
             installed: installed)
     }
 }
-package extension ExtBackgroundEffectSurfaceV1Server {
+extension ExtBackgroundEffectSurfaceV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ExtBackgroundEffectSurfaceV1Requests>(
         implementation: Implementation,

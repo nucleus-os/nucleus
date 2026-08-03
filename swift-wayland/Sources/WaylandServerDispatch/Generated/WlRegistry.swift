@@ -10,7 +10,7 @@ package enum WlRegistryServer: WaylandServerInterface {
         nativeInterface: swift_wayland_iface_wl_registry(),
         nativeRequestVtable: nil)
 }
-package extension WlNewId where Interface == WlRegistryServer {
+extension WlNewId where Interface == WlRegistryServer {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -23,7 +23,7 @@ package extension WlNewId where Interface == WlRegistryServer {
             installed: installed)
     }
 }
-package extension WlRegistryServer {
+extension WlRegistryServer {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

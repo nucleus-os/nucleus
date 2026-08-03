@@ -11,7 +11,7 @@ import WaylandServerC
     func subtract(
         _ request: WaylandRequest<WlRegionServer>, x: Int32, y: Int32, width: Int32, height: Int32)
 }
-package extension WlRegionRequests {
+extension WlRegionRequests {
     package func destroy(_ request: WaylandRequest<WlRegionServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -85,7 +85,7 @@ package enum WlRegionServer: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == WlRegionServer {
+extension WlNewId where Interface == WlRegionServer {
     @discardableResult
     @MainActor
     package func create<Owner: WlRegionRequests>(
@@ -98,7 +98,7 @@ package extension WlNewId where Interface == WlRegionServer {
             installed: installed)
     }
 }
-package extension WlRegionServer {
+extension WlRegionServer {
     @MainActor
     package static func global<Implementation: AnyObject & WlRegionRequests>(
         implementation: Implementation,

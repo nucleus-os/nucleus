@@ -1,4 +1,10 @@
 internal import NucleusAppHostProtocols
+import NucleusDiagnostics
+package import NucleusRenderModel
+import NucleusSkiaGraphiteBridge
+package import VulkanC
+
+internal import struct NucleusTypes.OutputPixelRect
 
 // The top-level per-frame renderer. `FrameDriver.renderFrame` builds a FramePlan
 // from the retained tree, pre-resolves each texture handle to a GPU image, composites
@@ -7,13 +13,6 @@ internal import NucleusAppHostProtocols
 // `FrameDemand` is the Graphite-native analog of FrameDemand.collect +
 // render_demand.shouldRenderThisVblank — the render-demand predicate the reactor
 // uses to decide whether to render a vblank.
-
-import NucleusDiagnostics
-package import NucleusRenderModel
-import NucleusSkiaGraphiteBridge
-import VulkanC
-
-internal import struct NucleusTypes.OutputPixelRect
 
 #if canImport(Glibc)
 import Glibc

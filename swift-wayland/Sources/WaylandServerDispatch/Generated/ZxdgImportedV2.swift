@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZxdgImportedV2Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZxdgImportedV2Server>)
@@ -11,7 +11,7 @@ import WaylandServerC
         _ request: WaylandRequest<ZxdgImportedV2Server>,
         surface: WaylandBorrowedObject<WlSurfaceServer>)
 }
-package extension ZxdgImportedV2Requests {
+extension ZxdgImportedV2Requests {
     package func destroy(_ request: WaylandRequest<ZxdgImportedV2Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -78,7 +78,7 @@ package enum ZxdgImportedV2Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZxdgImportedV2Server {
+extension WaylandResourceHandle where Interface == ZxdgImportedV2Server {
     @discardableResult
     package func sendDestroyed() -> Bool {
         guard let target = unsafe resource else {
@@ -88,18 +88,18 @@ package extension WaylandResourceHandle where Interface == ZxdgImportedV2Server 
         return true
     }
 }
-package extension WaylandRequest where Interface == ZxdgImportedV2Server {
+extension WaylandRequest where Interface == ZxdgImportedV2Server {
     package func postError(_ code: ZxdgImportedV2Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ZxdgImportedV2Server {
+extension WaylandResourceHandle where Interface == ZxdgImportedV2Server {
     @discardableResult
     package func postError(_ code: ZxdgImportedV2Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ZxdgImportedV2Server {
+extension WlNewId where Interface == ZxdgImportedV2Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZxdgImportedV2Requests>(
@@ -112,7 +112,7 @@ package extension WlNewId where Interface == ZxdgImportedV2Server {
             installed: installed)
     }
 }
-package extension ZxdgImportedV2Server {
+extension ZxdgImportedV2Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZxdgImportedV2Requests>(
         implementation: Implementation,

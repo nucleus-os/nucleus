@@ -1,6 +1,6 @@
 import NucleusAppHostBundle
 import NucleusAppHostProtocols
-package import NucleusLayers
+import NucleusLayers
 import NucleusRenderHost
 import NucleusRenderModel
 import Testing

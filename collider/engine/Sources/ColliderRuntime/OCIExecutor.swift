@@ -112,6 +112,9 @@ struct PodmanExecutor: OCIExecutor {
         temporaryDirectory: FilePath?
     ) throws -> CommandSpec {
         try validateExecutionPolicies(execution)
+        guard execution.intelBinaryTranslationPolicy == .disabled else {
+            throw OCIExecutorFailure.intelBinaryTranslationRequiresAppleContainer
+        }
         var arguments = [
             "run",
             "--rm",
@@ -239,7 +242,7 @@ struct AppleContainerExecutor: OCIExecutor {
             "--rm",
             "--platform", ociPlatformName(execution.executionPlatform),
         ]
-        if execution.executionPlatform.architecture == .x86_64 {
+        if execution.intelBinaryTranslationPolicy == .required {
             arguments.append("--rosetta")
         }
         arguments += [
@@ -331,6 +334,11 @@ private func validateExecutionPolicies(
     else {
         throw OCIExecutorFailure.unsupportedPolicy
     }
+    if execution.intelBinaryTranslationPolicy == .required {
+        guard execution.executionPlatform == .linuxARM64OCI else {
+            throw OCIExecutorFailure.invalidIntelBinaryTranslationContract
+        }
+    }
 }
 
 private func ociPlatformName(_ platform: ExecutionPlatform) -> String {
@@ -344,6 +352,8 @@ private func ociPlatformName(_ platform: ExecutionPlatform) -> String {
 
 enum OCIExecutorFailure: Error, CustomStringConvertible {
     case invalidAppleImageInspection
+    case intelBinaryTranslationRequiresAppleContainer
+    case invalidIntelBinaryTranslationContract
     case unsupportedExecutionPlatform(ExecutionPlatform)
     case unsupportedPolicy
     case unsupportedRunner(RunnerPlatform)
@@ -352,6 +362,10 @@ enum OCIExecutorFailure: Error, CustomStringConvertible {
         switch self {
         case .invalidAppleImageInspection:
             "Apple container image inspection did not return one OCI digest"
+        case .intelBinaryTranslationRequiresAppleContainer:
+            "Intel Linux binary translation requires Apple Container on an ARM64 macOS runner"
+        case .invalidIntelBinaryTranslationContract:
+            "Intel Linux binary translation requires an ARM64 Linux OCI execution platform"
         case .unsupportedExecutionPlatform(let platform):
             "unsupported OCI execution platform: "
                 + "\(platform.environment.rawValue)/"

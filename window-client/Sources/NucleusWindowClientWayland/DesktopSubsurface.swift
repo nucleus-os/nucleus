@@ -1,5 +1,5 @@
 public import NucleusWindowClientContracts
-package import WaylandClientDispatch
+import WaylandClientDispatch
 
 /// One independently backed child in a synchronized Wayland surface tree.
 ///

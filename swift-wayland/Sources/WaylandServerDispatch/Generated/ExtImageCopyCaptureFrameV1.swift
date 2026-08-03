@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ExtImageCopyCaptureFrameV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ExtImageCopyCaptureFrameV1Server>)
@@ -15,7 +15,7 @@ import WaylandServerC
         width: Int32, height: Int32)
     func capture(_ request: WaylandRequest<ExtImageCopyCaptureFrameV1Server>)
 }
-package extension ExtImageCopyCaptureFrameV1Requests {
+extension ExtImageCopyCaptureFrameV1Requests {
     package func destroy(_ request: WaylandRequest<ExtImageCopyCaptureFrameV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -134,7 +134,7 @@ package enum ExtImageCopyCaptureFrameV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ExtImageCopyCaptureFrameV1Server {
+extension WaylandResourceHandle where Interface == ExtImageCopyCaptureFrameV1Server {
     @discardableResult
     package func sendTransform(transform: WlOutputTransform) -> Bool {
         guard let target = unsafe resource else {
@@ -178,18 +178,18 @@ package extension WaylandResourceHandle where Interface == ExtImageCopyCaptureFr
         return true
     }
 }
-package extension WaylandRequest where Interface == ExtImageCopyCaptureFrameV1Server {
+extension WaylandRequest where Interface == ExtImageCopyCaptureFrameV1Server {
     package func postError(_ code: ExtImageCopyCaptureFrameV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ExtImageCopyCaptureFrameV1Server {
+extension WaylandResourceHandle where Interface == ExtImageCopyCaptureFrameV1Server {
     @discardableResult
     package func postError(_ code: ExtImageCopyCaptureFrameV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ExtImageCopyCaptureFrameV1Server {
+extension WlNewId where Interface == ExtImageCopyCaptureFrameV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ExtImageCopyCaptureFrameV1Requests>(
@@ -202,7 +202,7 @@ package extension WlNewId where Interface == ExtImageCopyCaptureFrameV1Server {
             installed: installed)
     }
 }
-package extension ExtImageCopyCaptureFrameV1Server {
+extension ExtImageCopyCaptureFrameV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ExtImageCopyCaptureFrameV1Requests>(
         implementation: Implementation,

@@ -2,12 +2,12 @@
 // Typed server descriptor and dispatch for zwp_input_timestamps_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpInputTimestampsV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZwpInputTimestampsV1Server>)
 }
-package extension ZwpInputTimestampsV1Requests {
+extension ZwpInputTimestampsV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpInputTimestampsV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -60,7 +60,7 @@ package enum ZwpInputTimestampsV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwpInputTimestampsV1Server {
+extension WaylandResourceHandle where Interface == ZwpInputTimestampsV1Server {
     @discardableResult
     package func sendTimestamp(tv_sec_hi: UInt32, tv_sec_lo: UInt32, tv_nsec: UInt32) -> Bool {
         guard let target = unsafe resource else {
@@ -70,7 +70,7 @@ package extension WaylandResourceHandle where Interface == ZwpInputTimestampsV1S
         return true
     }
 }
-package extension WlNewId where Interface == ZwpInputTimestampsV1Server {
+extension WlNewId where Interface == ZwpInputTimestampsV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -83,7 +83,7 @@ package extension WlNewId where Interface == ZwpInputTimestampsV1Server {
             installed: installed)
     }
 }
-package extension ZwpInputTimestampsV1Server {
+extension ZwpInputTimestampsV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

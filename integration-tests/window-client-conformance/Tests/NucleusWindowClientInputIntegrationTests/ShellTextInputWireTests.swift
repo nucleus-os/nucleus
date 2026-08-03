@@ -3,7 +3,7 @@ import NucleusRenderServerTestSupport
 import NucleusUI
 import NucleusUITestSupport
 import NucleusWindowClientContracts
-package import NucleusWindowClientWayland
+import NucleusWindowClientWayland
 import Testing
 import WaylandClientC
 import WaylandClientDispatch

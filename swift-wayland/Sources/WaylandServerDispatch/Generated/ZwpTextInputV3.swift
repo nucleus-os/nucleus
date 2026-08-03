@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpTextInputV3Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZwpTextInputV3Server>)
@@ -25,7 +25,7 @@ import WaylandServerC
     func showInputPanel(_ request: WaylandRequest<ZwpTextInputV3Server>)
     func hideInputPanel(_ request: WaylandRequest<ZwpTextInputV3Server>)
 }
-package extension ZwpTextInputV3Requests {
+extension ZwpTextInputV3Requests {
     package func destroy(_ request: WaylandRequest<ZwpTextInputV3Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -260,7 +260,7 @@ package enum ZwpTextInputV3Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwpTextInputV3Server {
+extension WaylandResourceHandle where Interface == ZwpTextInputV3Server {
     package var supportsAction: Bool {
         guard let version else {
             return false
@@ -370,18 +370,18 @@ package extension WaylandResourceHandle where Interface == ZwpTextInputV3Server 
         return true
     }
 }
-package extension WaylandRequest where Interface == ZwpTextInputV3Server {
+extension WaylandRequest where Interface == ZwpTextInputV3Server {
     package func postError(_ code: ZwpTextInputV3Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ZwpTextInputV3Server {
+extension WaylandResourceHandle where Interface == ZwpTextInputV3Server {
     @discardableResult
     package func postError(_ code: ZwpTextInputV3Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ZwpTextInputV3Server {
+extension WlNewId where Interface == ZwpTextInputV3Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpTextInputV3Requests>(
@@ -394,7 +394,7 @@ package extension WlNewId where Interface == ZwpTextInputV3Server {
             installed: installed)
     }
 }
-package extension ZwpTextInputV3Server {
+extension ZwpTextInputV3Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpTextInputV3Requests>(
         implementation: Implementation,

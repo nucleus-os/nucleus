@@ -12,7 +12,7 @@ import WaylandServerC
         _ request: WaylandRequest<XdgToplevelIconV1Server>,
         buffer: WaylandBorrowedObject<WlBufferServer>, scale: Int32)
 }
-package extension XdgToplevelIconV1Requests {
+extension XdgToplevelIconV1Requests {
     package func destroy(_ request: WaylandRequest<XdgToplevelIconV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -93,18 +93,18 @@ package enum XdgToplevelIconV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == XdgToplevelIconV1Server {
+extension WaylandRequest where Interface == XdgToplevelIconV1Server {
     package func postError(_ code: XdgToplevelIconV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == XdgToplevelIconV1Server {
+extension WaylandResourceHandle where Interface == XdgToplevelIconV1Server {
     @discardableResult
     package func postError(_ code: XdgToplevelIconV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == XdgToplevelIconV1Server {
+extension WlNewId where Interface == XdgToplevelIconV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: XdgToplevelIconV1Requests>(
@@ -117,7 +117,7 @@ package extension WlNewId where Interface == XdgToplevelIconV1Server {
             installed: installed)
     }
 }
-package extension XdgToplevelIconV1Server {
+extension XdgToplevelIconV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & XdgToplevelIconV1Requests>(
         implementation: Implementation,

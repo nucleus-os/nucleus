@@ -2,12 +2,12 @@
 // Typed server descriptor and dispatch for zwp_tablet_seat_v2.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpTabletSeatV2Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZwpTabletSeatV2Server>)
 }
-package extension ZwpTabletSeatV2Requests {
+extension ZwpTabletSeatV2Requests {
     package func destroy(_ request: WaylandRequest<ZwpTabletSeatV2Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -69,7 +69,7 @@ package enum ZwpTabletSeatV2Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwpTabletSeatV2Server {
+extension WaylandResourceHandle where Interface == ZwpTabletSeatV2Server {
     @discardableResult
     package func sendTabletAdded(id: WaylandResourceHandle<ZwpTabletV2Server>) -> Bool {
         guard let target = unsafe resource else {
@@ -158,7 +158,7 @@ package extension WaylandResourceHandle where Interface == ZwpTabletSeatV2Server
             })
     }
 }
-package extension WlNewId where Interface == ZwpTabletSeatV2Server {
+extension WlNewId where Interface == ZwpTabletSeatV2Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -171,7 +171,7 @@ package extension WlNewId where Interface == ZwpTabletSeatV2Server {
             installed: installed)
     }
 }
-package extension ZwpTabletSeatV2Server {
+extension ZwpTabletSeatV2Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

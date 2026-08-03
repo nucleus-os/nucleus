@@ -10,7 +10,7 @@ import WaylandServerC
         _ request: WaylandRequest<ExtSessionLockManagerV1Server>,
         id: WlNewId<ExtSessionLockV1Server>)
 }
-package extension ExtSessionLockManagerV1Requests {
+extension ExtSessionLockManagerV1Requests {
     package func destroy(_ request: WaylandRequest<ExtSessionLockManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -76,7 +76,7 @@ package enum ExtSessionLockManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ExtSessionLockManagerV1Server {
+extension WlNewId where Interface == ExtSessionLockManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ExtSessionLockManagerV1Requests>(
@@ -89,7 +89,7 @@ package extension WlNewId where Interface == ExtSessionLockManagerV1Server {
             installed: installed)
     }
 }
-package extension ExtSessionLockManagerV1Server {
+extension ExtSessionLockManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ExtSessionLockManagerV1Requests>(
         implementation: Implementation,

@@ -2,12 +2,12 @@
 // Typed server descriptor and dispatch for ext_idle_notification_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ExtIdleNotificationV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ExtIdleNotificationV1Server>)
 }
-package extension ExtIdleNotificationV1Requests {
+extension ExtIdleNotificationV1Requests {
     package func destroy(_ request: WaylandRequest<ExtIdleNotificationV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -60,7 +60,7 @@ package enum ExtIdleNotificationV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ExtIdleNotificationV1Server {
+extension WaylandResourceHandle where Interface == ExtIdleNotificationV1Server {
     @discardableResult
     package func sendIdled() -> Bool {
         guard let target = unsafe resource else {
@@ -78,7 +78,7 @@ package extension WaylandResourceHandle where Interface == ExtIdleNotificationV1
         return true
     }
 }
-package extension WlNewId where Interface == ExtIdleNotificationV1Server {
+extension WlNewId where Interface == ExtIdleNotificationV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -91,7 +91,7 @@ package extension WlNewId where Interface == ExtIdleNotificationV1Server {
             installed: installed)
     }
 }
-package extension ExtIdleNotificationV1Server {
+extension ExtIdleNotificationV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

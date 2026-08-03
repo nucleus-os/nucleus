@@ -2,7 +2,7 @@
 // Typed server descriptor and dispatch for wp_drm_lease_device_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol WpDrmLeaseDeviceV1Requests: AnyObject {
     func createLeaseRequest(
@@ -80,7 +80,7 @@ package enum WpDrmLeaseDeviceV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == WpDrmLeaseDeviceV1Server {
+extension WaylandResourceHandle where Interface == WpDrmLeaseDeviceV1Server {
     @discardableResult
     package func sendDrmFd(fd: Int32) -> Bool {
         guard let target = unsafe resource else {
@@ -135,7 +135,7 @@ package extension WaylandResourceHandle where Interface == WpDrmLeaseDeviceV1Ser
         return true
     }
 }
-package extension WlNewId where Interface == WpDrmLeaseDeviceV1Server {
+extension WlNewId where Interface == WpDrmLeaseDeviceV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpDrmLeaseDeviceV1Requests>(
@@ -148,7 +148,7 @@ package extension WlNewId where Interface == WpDrmLeaseDeviceV1Server {
             installed: installed)
     }
 }
-package extension WpDrmLeaseDeviceV1Server {
+extension WpDrmLeaseDeviceV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpDrmLeaseDeviceV1Requests>(
         implementation: Implementation,

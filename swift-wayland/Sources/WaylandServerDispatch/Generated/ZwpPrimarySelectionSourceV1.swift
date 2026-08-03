@@ -2,13 +2,13 @@
 // Typed server descriptor and dispatch for zwp_primary_selection_source_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpPrimarySelectionSourceV1Requests: AnyObject {
     func offer(_ request: WaylandRequest<ZwpPrimarySelectionSourceV1Server>, mime_type: String)
     func destroy(_ request: WaylandRequest<ZwpPrimarySelectionSourceV1Server>)
 }
-package extension ZwpPrimarySelectionSourceV1Requests {
+extension ZwpPrimarySelectionSourceV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpPrimarySelectionSourceV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -80,7 +80,7 @@ package enum ZwpPrimarySelectionSourceV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwpPrimarySelectionSourceV1Server {
+extension WaylandResourceHandle where Interface == ZwpPrimarySelectionSourceV1Server {
     @discardableResult
     package func sendSend(mime_type: String, fd: Int32) -> Bool {
         guard let target = unsafe resource else {
@@ -100,7 +100,7 @@ package extension WaylandResourceHandle where Interface == ZwpPrimarySelectionSo
         return true
     }
 }
-package extension WlNewId where Interface == ZwpPrimarySelectionSourceV1Server {
+extension WlNewId where Interface == ZwpPrimarySelectionSourceV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpPrimarySelectionSourceV1Requests>(
@@ -113,7 +113,7 @@ package extension WlNewId where Interface == ZwpPrimarySelectionSourceV1Server {
             installed: installed)
     }
 }
-package extension ZwpPrimarySelectionSourceV1Server {
+extension ZwpPrimarySelectionSourceV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpPrimarySelectionSourceV1Requests>(
         implementation: Implementation,

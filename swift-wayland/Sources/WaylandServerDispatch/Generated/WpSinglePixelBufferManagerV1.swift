@@ -10,7 +10,7 @@ import WaylandServerC
         _ request: WaylandRequest<WpSinglePixelBufferManagerV1Server>, id: WlNewId<WlBufferServer>,
         r: UInt32, g: UInt32, b: UInt32, a: UInt32)
 }
-package extension WpSinglePixelBufferManagerV1Requests {
+extension WpSinglePixelBufferManagerV1Requests {
     package func destroy(_ request: WaylandRequest<WpSinglePixelBufferManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -80,7 +80,7 @@ package enum WpSinglePixelBufferManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == WpSinglePixelBufferManagerV1Server {
+extension WlNewId where Interface == WpSinglePixelBufferManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpSinglePixelBufferManagerV1Requests>(
@@ -93,7 +93,7 @@ package extension WlNewId where Interface == WpSinglePixelBufferManagerV1Server 
             installed: installed)
     }
 }
-package extension WpSinglePixelBufferManagerV1Server {
+extension WpSinglePixelBufferManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpSinglePixelBufferManagerV1Requests>(
         implementation: Implementation,

@@ -33,9 +33,9 @@ func pkgConfig(_ arguments: [String]) -> [String] {
         .map(String.init)
 }
 
-let icuLibraryDirectory =
-    pkgConfig(["--variable=libdir", "icu-uc"]).first
-    ?? "/usr/lib"
+let gfxstreamBuildRoot =
+    environment["NUCLEUS_GFXSTREAM_BUILD_ROOT"]
+    ?? repoRoot + "/android-runtime/.gfxstream-build/linux-arm64"
 
 let isAndroidTarget = environment["NUCLEUS_TARGET_PLATFORM"] == "android"
 let androidSDKSearchRoot: String = {
@@ -115,7 +115,6 @@ let hostProducts: [Product] = [
     .library(name: "NucleusReactRuntimeHostCxx", targets: ["NucleusReactRuntimeHostCxx"]),
     .library(name: "NucleusSessionProtocol", type: .dynamic, targets: ["NucleusSessionProtocol"]),
     .library(name: "NucleusShellKit", type: .dynamic, targets: ["NucleusShellRuntime"]),
-    .library(name: "SwiftTracy", type: .dynamic, targets: ["Tracy"]),
     .library(name: "SwiftVulkan", type: .dynamic, targets: ["Vulkan"]),
     .library(name: "WaylandServer", targets: ["WaylandServer"]),
     .library(name: "WaylandClient", targets: ["WaylandClient"]),
@@ -269,7 +268,7 @@ let hostTargets: [Target] = [
         ],
         linkerSettings: [
             .unsafeFlags([
-                repoRoot + "/android-runtime/.gfxstream-build/host/host/libgfxstream_backend.a",
+                gfxstreamBuildRoot + "/host/host/libgfxstream_backend.a",
                 "-Xlinker",
                 "-rpath", "-Xlinker", swiftToolchain + "/lib",
             ]), .linkedLibrary("dl"), .linkedLibrary("rt"),
@@ -443,7 +442,7 @@ let hostTargets: [Target] = [
         cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [
             .define(
-                "NUCLEUS_ANDROID_GFXSTREAM_GUEST_ICD=\"\(repoRoot)/android-runtime/.gfxstream-build/guest/src/gfxstream/guest/vulkan/libvulkan_gfxstream.so\""
+                "NUCLEUS_ANDROID_GFXSTREAM_GUEST_ICD=\"\(gfxstreamBuildRoot)/guest/src/gfxstream/guest/vulkan/libvulkan_gfxstream.so\""
             ),
             .unsafeFlags([
                 "-I\(repoRoot)/third-party/mesa/src/gfxstream/guest/vulkan_enc"
@@ -499,6 +498,7 @@ let hostTargets: [Target] = [
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
             .interoperabilityMode(.Cxx),
+            .enableUpcomingFeature("InternalImportsByDefault"),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
@@ -665,12 +665,10 @@ let hostTargets: [Target] = [
         ]),
     .systemLibrary(
         name: "NucleusCompositorDrmC",
-        path: "compositor/compositor-core/Sources/NucleusCompositorDrmC",
-        pkgConfig: "libdrm"),
+        path: "compositor/compositor-core/Sources/NucleusCompositorDrmC"),
     .systemLibrary(
         name: "NucleusCompositorXcbC",
-        path: "compositor/compositor-core/Sources/NucleusCompositorXcbC",
-        pkgConfig: "xcb-ewmh"),
+        path: "compositor/compositor-core/Sources/NucleusCompositorXcbC"),
     .systemLibrary(
         name: "NucleusCompositorInputC",
         path: "compositor/compositor-core/Sources/NucleusCompositorInputC"),
@@ -780,10 +778,11 @@ let hostTargets: [Target] = [
             "NucleusLinuxSessionC",
             "NucleusThemeAssetIO", "NucleusConfig", "Tracy",
         ], path: "compositor/compositor-core/Sources/NucleusCompositorWaylandRuntime",
-        exclude: ["README.md"], cSettings: [.unsafeFlags(["-Werror"])],
+        cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
             .interoperabilityMode(.Cxx),
+            .enableUpcomingFeature("InternalImportsByDefault"),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
             .unsafeFlags([]), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
@@ -801,6 +800,7 @@ let hostTargets: [Target] = [
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
             .interoperabilityMode(.Cxx),
+            .enableUpcomingFeature("InternalImportsByDefault"),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
@@ -1076,6 +1076,7 @@ let hostTargets: [Target] = [
         ], cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
             .interoperabilityMode(.Cxx),
+            .enableUpcomingFeature("InternalImportsByDefault"),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
             .unsafeFlags([]), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
@@ -1152,6 +1153,7 @@ let hostTargets: [Target] = [
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
             .interoperabilityMode(.Cxx),
+            .enableUpcomingFeature("InternalImportsByDefault"),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1176,6 +1178,7 @@ let hostTargets: [Target] = [
         cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
             .interoperabilityMode(.Cxx),
+            .enableUpcomingFeature("InternalImportsByDefault"),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1368,6 +1371,7 @@ let hostTargets: [Target] = [
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
             .interoperabilityMode(.Cxx),
+            .enableUpcomingFeature("InternalImportsByDefault"),
             .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
@@ -1555,6 +1559,7 @@ let hostTargets: [Target] = [
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
             .interoperabilityMode(.Cxx),
+            .enableUpcomingFeature("InternalImportsByDefault"),
             .unsafeFlags([
                 "-Xcc", "-I", "-Xcc",
                 nativeSDKRoot + "/render/include/skia/third_party/externals/vulkan-headers/include",
@@ -2046,8 +2051,7 @@ let hostTargets: [Target] = [
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .systemLibrary(
-        name: "NucleusLinuxDBusC", path: "platform-linux/Sources/NucleusLinuxDBusC",
-        pkgConfig: "libsystemd"),
+        name: "NucleusLinuxDBusC", path: "platform-linux/Sources/NucleusLinuxDBusC"),
     .target(
         name: "NucleusLinuxDBus", dependencies: ["NucleusLinuxDBusC", "NucleusLinuxReactor"],
         path: "platform-linux/Sources/NucleusLinuxDBus", cSettings: [.unsafeFlags(["-Werror"])],
@@ -2266,7 +2270,8 @@ let hostTargets: [Target] = [
                 nativeSDKRoot + "/rn/include/hermes/API/jsi", "-I",
                 nativeSDKRoot + "/rn/include/hermes/public", "-I",
                 nativeSDKRoot + "/rn/include/hermes/include", "-I",
-                nativeSDKRoot + "/rn/include/folly",
+                nativeSDKRoot + "/rn/include/folly", "-I",
+                nativeSDKRoot + "/rn/include",
                 "-I", nativeSDKRoot + "/rn/include/boost", "-I",
                 nativeSDKRoot + "/rn/include/glog-gen",
                 "-I", nativeSDKRoot + "/rn/include/glog/src", "-I",
@@ -2302,9 +2307,8 @@ let hostTargets: [Target] = [
                 nativeSDKRoot + "/rn/lib/rn/fmt/libfmt.a",
                 nativeSDKRoot + "/rn/lib/rn/double-conversion/src/libdouble-conversion.a",
                 "-Xlinker",
-                "--end-group", "-licui18n", "-licuuc", "-licudata", "-Xlinker", "-rpath",
-                "-Xlinker",
-                icuLibraryDirectory, "-lpthread", "-ldl", "-lm",
+                "--end-group", "-L", nativeSDKRoot + "/render/lib/skia-graphite", "-licu",
+                "-lpthread", "-ldl", "-lm",
             ])
         ]),
     .systemLibrary(
@@ -2396,6 +2400,7 @@ let hostTargets: [Target] = [
                 nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCxxPlatform",
                 "-Xcc",
                 "-I", "-Xcc", nativeSDKRoot + "/rn/include/folly", "-Xcc", "-I", "-Xcc",
+                nativeSDKRoot + "/rn/include", "-Xcc", "-I", "-Xcc",
                 nativeSDKRoot + "/rn/include/boost", "-Xcc", "-I", "-Xcc",
                 nativeSDKRoot + "/rn/include/glog-gen", "-Xcc", "-I", "-Xcc",
                 nativeSDKRoot + "/rn/include/glog/src", "-Xcc", "-I", "-Xcc",
@@ -2432,9 +2437,7 @@ let hostTargets: [Target] = [
                 nativeSDKRoot + "/rn/lib/rn/fmt/libfmt.a",
                 nativeSDKRoot + "/rn/lib/rn/double-conversion/src/libdouble-conversion.a",
                 "-Xlinker",
-                "--end-group", "-latomic", "-licui18n", "-licuuc", "-licudata", "-Xlinker",
-                "-rpath",
-                "-Xlinker", icuLibraryDirectory, "-lpthread", "-ldl", "-lm", "-L",
+                "--end-group", "-latomic", "-lpthread", "-ldl", "-lm", "-L",
                 nativeSDKRoot + "/render/lib/skia-graphite", "-Xlinker", "--start-group", "-lskia",
                 "-lskshaper", "-lskparagraph", "-lskunicode_core", "-lskunicode_icu", "-lsvg",
                 "-lskcms",
@@ -2474,9 +2477,7 @@ let hostTargets: [Target] = [
                 nativeSDKRoot + "/rn/lib/rn/fmt/libfmt.a",
                 nativeSDKRoot + "/rn/lib/rn/double-conversion/src/libdouble-conversion.a",
                 "-Xlinker",
-                "--end-group", "-latomic", "-licui18n", "-licuuc", "-licudata", "-Xlinker",
-                "-rpath",
-                "-Xlinker", icuLibraryDirectory, "-lpthread", "-ldl", "-lm", "-L",
+                "--end-group", "-latomic", "-lpthread", "-ldl", "-lm", "-L",
                 nativeSDKRoot + "/render/lib/skia-graphite", "-Xlinker", "--start-group", "-lskia",
                 "-lskshaper", "-lskparagraph", "-lskunicode_core", "-lskunicode_icu", "-lsvg",
                 "-lskcms",
@@ -2573,6 +2574,7 @@ let hostTargets: [Target] = [
                 nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCxxPlatform",
                 "-Xcc",
                 "-I", "-Xcc", nativeSDKRoot + "/rn/include/folly", "-Xcc", "-I", "-Xcc",
+                nativeSDKRoot + "/rn/include", "-Xcc", "-I", "-Xcc",
                 nativeSDKRoot + "/rn/include/boost", "-Xcc", "-I", "-Xcc",
                 nativeSDKRoot + "/rn/include/glog-gen", "-Xcc", "-I", "-Xcc",
                 nativeSDKRoot + "/rn/include/glog/src", "-Xcc", "-I", "-Xcc",
@@ -2609,9 +2611,7 @@ let hostTargets: [Target] = [
                 nativeSDKRoot + "/rn/lib/rn/fmt/libfmt.a",
                 nativeSDKRoot + "/rn/lib/rn/double-conversion/src/libdouble-conversion.a",
                 "-Xlinker",
-                "--end-group", "-latomic", "-licui18n", "-licuuc", "-licudata", "-Xlinker",
-                "-rpath",
-                "-Xlinker", icuLibraryDirectory, "-lpthread", "-ldl", "-lm", "-L",
+                "--end-group", "-latomic", "-lpthread", "-ldl", "-lm", "-L",
                 nativeSDKRoot + "/render/lib/skia-graphite", "-Xlinker", "--start-group", "-lskia",
                 "-lskshaper", "-lskparagraph", "-lskunicode_core", "-lskunicode_icu", "-lsvg",
                 "-lskcms",
@@ -2708,6 +2708,7 @@ let hostTargets: [Target] = [
                 nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCxxPlatform",
                 "-Xcc",
                 "-I", "-Xcc", nativeSDKRoot + "/rn/include/folly", "-Xcc", "-I", "-Xcc",
+                nativeSDKRoot + "/rn/include", "-Xcc", "-I", "-Xcc",
                 nativeSDKRoot + "/rn/include/boost", "-Xcc", "-I", "-Xcc",
                 nativeSDKRoot + "/rn/include/glog-gen", "-Xcc", "-I", "-Xcc",
                 nativeSDKRoot + "/rn/include/glog/src", "-Xcc", "-I", "-Xcc",
@@ -2796,7 +2797,8 @@ let hostTargets: [Target] = [
                 "-I",
                 nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCxxPlatform",
                 "-I",
-                nativeSDKRoot + "/rn/include/folly", "-I", nativeSDKRoot + "/rn/include/boost",
+                nativeSDKRoot + "/rn/include/folly", "-I", nativeSDKRoot + "/rn/include", "-I",
+                nativeSDKRoot + "/rn/include/boost",
                 "-I",
                 nativeSDKRoot + "/rn/include/glog-gen", "-I",
                 nativeSDKRoot + "/rn/include/glog/src", "-I",
@@ -2907,6 +2909,7 @@ let hostTargets: [Target] = [
                 nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCxxPlatform",
                 "-Xcc",
                 "-I", "-Xcc", nativeSDKRoot + "/rn/include/folly", "-Xcc", "-I", "-Xcc",
+                nativeSDKRoot + "/rn/include", "-Xcc", "-I", "-Xcc",
                 nativeSDKRoot + "/rn/include/boost", "-Xcc", "-I", "-Xcc",
                 nativeSDKRoot + "/rn/include/glog-gen", "-Xcc", "-I", "-Xcc",
                 nativeSDKRoot + "/rn/include/glog/src", "-Xcc", "-I", "-Xcc",
@@ -3239,11 +3242,9 @@ let hostTargets: [Target] = [
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .systemLibrary(
-        name: "WaylandServerC", path: "swift-wayland/Sources/WaylandServerC",
-        pkgConfig: "wayland-server"),
+        name: "WaylandServerC", path: "swift-wayland/Sources/WaylandServerC"),
     .systemLibrary(
-        name: "WaylandClientC", path: "swift-wayland/Sources/WaylandClientC",
-        pkgConfig: "wayland-client"),
+        name: "WaylandClientC", path: "swift-wayland/Sources/WaylandClientC"),
     .target(
         name: "WaylandServer",
         dependencies: [
@@ -3253,6 +3254,7 @@ let hostTargets: [Target] = [
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
             .interoperabilityMode(.Cxx),
+            .enableUpcomingFeature("InternalImportsByDefault"),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
@@ -3268,6 +3270,7 @@ let hostTargets: [Target] = [
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
             .interoperabilityMode(.Cxx),
+            .enableUpcomingFeature("InternalImportsByDefault"),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
@@ -3282,6 +3285,7 @@ let hostTargets: [Target] = [
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
             .interoperabilityMode(.Cxx),
+            .enableUpcomingFeature("InternalImportsByDefault"),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
@@ -3292,6 +3296,7 @@ let hostTargets: [Target] = [
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
             .interoperabilityMode(.Cxx),
+            .enableUpcomingFeature("InternalImportsByDefault"),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
@@ -3366,8 +3371,7 @@ let hostTargets: [Target] = [
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .systemLibrary(
-        name: "WaylandUtilC", path: "swift-wayland/protocol-runtime/Sources/WaylandUtilC",
-        pkgConfig: "wayland-client"),
+        name: "WaylandUtilC", path: "swift-wayland/protocol-runtime/Sources/WaylandUtilC"),
     .target(
         name: "WaylandProtocolsC", dependencies: ["WaylandUtilC"],
         path: "swift-wayland/protocol-runtime/Sources/WaylandProtocolsC"),
@@ -3402,8 +3406,7 @@ let hostTargets: [Target] = [
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .systemLibrary(
-        name: "NucleusWindowClientXkbC", path: "window-client/Sources/NucleusWindowClientXkbC",
-        pkgConfig: "xkbcommon"),
+        name: "NucleusWindowClientXkbC", path: "window-client/Sources/NucleusWindowClientXkbC"),
     .systemLibrary(
         name: "NucleusWindowClientVulkanWaylandC",
         path: "window-client/Sources/NucleusWindowClientVulkanWaylandC"),
@@ -3417,6 +3420,7 @@ let hostTargets: [Target] = [
         cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
             .interoperabilityMode(.Cxx),
+            .enableUpcomingFeature("InternalImportsByDefault"),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
             .unsafeFlags([]), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),

@@ -1,10 +1,10 @@
 import NucleusConfig
-import NucleusSessionProtocol
-import NucleusShellProduct
-import NucleusShellServices
-import NucleusUI
+internal import NucleusSessionProtocol
+internal import NucleusShellProduct
+internal import NucleusShellServices
+internal import NucleusUI
 import NucleusUIEmbedder
-package import NucleusWindowClientWayland
+internal import NucleusWindowClientWayland
 
 @MainActor
 struct NativeFeedbackSurface {

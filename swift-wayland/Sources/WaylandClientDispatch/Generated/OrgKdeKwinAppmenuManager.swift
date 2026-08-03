@@ -8,7 +8,7 @@ package enum OrgKdeKwinAppmenuManagerClient: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_org_kde_kwin_appmenu_manager())
     package nonisolated static let maximumVersion: UInt32 = 2
 }
-package extension WaylandProxy where Interface == OrgKdeKwinAppmenuManagerClient {
+extension WaylandProxy where Interface == OrgKdeKwinAppmenuManagerClient {
     package func create(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError)
         -> WaylandProxy<OrgKdeKwinAppmenuClient>
     {

@@ -77,7 +77,7 @@ package enum OrgKdeKwinBlurManagerServer: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == OrgKdeKwinBlurManagerServer {
+extension WlNewId where Interface == OrgKdeKwinBlurManagerServer {
     @discardableResult
     @MainActor
     package func create<Owner: OrgKdeKwinBlurManagerRequests>(
@@ -90,7 +90,7 @@ package extension WlNewId where Interface == OrgKdeKwinBlurManagerServer {
             installed: installed)
     }
 }
-package extension OrgKdeKwinBlurManagerServer {
+extension OrgKdeKwinBlurManagerServer {
     @MainActor
     package static func global<Implementation: AnyObject & OrgKdeKwinBlurManagerRequests>(
         implementation: Implementation,

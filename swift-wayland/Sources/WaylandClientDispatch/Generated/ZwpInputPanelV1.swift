@@ -8,7 +8,7 @@ package enum ZwpInputPanelV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_zwp_input_panel_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == ZwpInputPanelV1Client {
+extension WaylandProxy where Interface == ZwpInputPanelV1Client {
     package func getInputPanelSurface(surface: WaylandProxy<WlSurfaceClient>)
         throws(WaylandProxyError) -> WaylandProxy<ZwpInputPanelSurfaceV1Client>
     {

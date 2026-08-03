@@ -1,7 +1,7 @@
-import NucleusCompositorServer
 internal import NucleusAppHostProtocols
+import NucleusCompositorServer
 import NucleusRenderModel
-package import NucleusRenderer
+import NucleusRenderer
 import Testing
 
 @testable import NucleusCompositorRenderRuntime

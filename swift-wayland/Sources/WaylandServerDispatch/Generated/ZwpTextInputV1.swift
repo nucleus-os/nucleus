@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpTextInputV1Requests: AnyObject {
     func activate(
@@ -289,7 +289,7 @@ package enum ZwpTextInputV1Server: WaylandServerInterface {
                 }
             }
 }
-package extension WaylandResourceHandle where Interface == ZwpTextInputV1Server {
+extension WaylandResourceHandle where Interface == ZwpTextInputV1Server {
     @discardableResult
     package func sendEnter(surface: WaylandResourceHandle<WlSurfaceServer>) -> Bool {
         guard let target = unsafe resource else {
@@ -413,7 +413,7 @@ package extension WaylandResourceHandle where Interface == ZwpTextInputV1Server 
         return true
     }
 }
-package extension WlNewId where Interface == ZwpTextInputV1Server {
+extension WlNewId where Interface == ZwpTextInputV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpTextInputV1Requests>(
@@ -426,7 +426,7 @@ package extension WlNewId where Interface == ZwpTextInputV1Server {
             installed: installed)
     }
 }
-package extension ZwpTextInputV1Server {
+extension ZwpTextInputV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpTextInputV1Requests>(
         implementation: Implementation,

@@ -619,15 +619,24 @@ struct Validate: AsyncParsableCommand {
 }
 
 struct Cache: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(subcommands: [Status.self, Prune.self])
+    static let configuration = CommandConfiguration(
+        abstract: "Inspect and explicitly reclaim Collider-owned generated storage.",
+        subcommands: [Status.self, Prune.self])
     struct Status: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract:
+                "Report ownership, retention, allocation, and reclaimability for declared storage.")
         @OptionGroup var reportOptions: ReportOptions
         mutating func run() async throws {
-            try RepositoryCache(context: context()).status(
+            try await RepositoryCache(context: context()).status(
                 json: reportOptions.json)
         }
     }
     struct Prune: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract:
+                "Remove stale run records, abandoned Swift SDK candidates, and dangling OCI images."
+        )
         @Flag(help: "Print removals without applying them.")
         var dryRun = false
         @Flag(help: "Emit stable machine-readable records.")

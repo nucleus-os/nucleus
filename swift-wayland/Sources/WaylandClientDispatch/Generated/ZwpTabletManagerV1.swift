@@ -8,7 +8,7 @@ package enum ZwpTabletManagerV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_zwp_tablet_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == ZwpTabletManagerV1Client {
+extension WaylandProxy where Interface == ZwpTabletManagerV1Client {
     package func getTabletSeat(seat: WaylandProxy<WlSeatClient>) throws(WaylandProxyError)
         -> WaylandProxy<ZwpTabletSeatV1Client>
     {

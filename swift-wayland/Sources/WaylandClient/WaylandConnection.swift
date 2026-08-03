@@ -3,7 +3,7 @@
 // the only blocking operation is the explicitly setup-only bootstrap roundtrip.
 
 import WaylandClientC
-import WaylandClientDispatch
+package import WaylandClientDispatch
 
 #if canImport(Glibc)
 import Glibc

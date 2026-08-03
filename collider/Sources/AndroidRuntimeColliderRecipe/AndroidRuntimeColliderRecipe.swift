@@ -21,49 +21,6 @@ public enum AndroidRuntimeColliderRecipe {
         ]
     }
 
-    public static func tasks(
-        root: FilePath,
-        repositoryRoot: FilePath,
-        environment: [String: String],
-        swiftPM: SwiftPMInvocation
-    ) throws -> [TaskDeclaration] {
-        [
-            try gfxstream(
-                root: root,
-                repositoryRoot: repositoryRoot,
-                environment: environment),
-            build(
-                root: root,
-                environment: environment,
-                swiftPM: swiftPM),
-        ]
-    }
-
-    public static func test(
-        root: FilePath,
-        environment: [String: String],
-        swiftPM: SwiftPMInvocation
-    ) -> TaskDeclaration {
-        let requirement = swiftPM.testProduct(
-            package: "android-runtime",
-            testProduct: "android-runtimePackageTests",
-            packageRoot: root,
-            environment: environment)
-        return TaskDeclaration(
-            id: TaskID(rawValue: "android-runtime.test"),
-            component: component,
-            dependencies: [TaskID(rawValue: "android-runtime.build")],
-            subsumedDependencies: [
-                TaskID(rawValue: "android-runtime.build")
-            ],
-            swiftTests: [requirement],
-            locks: [.checkout("android-runtime")],
-            cachePolicy: .always,
-            operation: .runSwiftTest(
-                SwiftTestExecution(
-                    requirement: requirement)))
-    }
-
     public static func verifyAOSPSourceLock(
         root: FilePath,
         environment: [String: String]
@@ -570,34 +527,31 @@ public enum AndroidRuntimeColliderRecipe {
             ".aosp-tools/repo-\(lock.repo.launcherVersion)")
     }
 
-    private static func gfxstream(
+    public static func buildGfxstream(
         root: FilePath,
         repositoryRoot: FilePath,
-        environment: [String: String]
-    ) throws -> TaskDeclaration {
-        let buildRoot = root.appending(".gfxstream-build")
+        environment: [String: String],
+        target: NativeLinuxTarget,
+        builder: NativeOCIConfiguration
+    ) -> TaskDeclaration {
+        let buildRoot = root.appending(".gfxstream-build/\(target.identifier)")
         let hostSource = repositoryRoot.appending("third-party/gfxstream")
         let guestSource = repositoryRoot.appending("third-party/mesa")
-        let hostBuild = buildRoot.appending("host")
-        let guestBuild = buildRoot.appending("guest")
-        guard let toolchain = environment["SWIFT_TOOLCHAIN"] else {
-            throw AndroidRuntimeRecipeFailure.missingSwiftToolchain
-        }
-        let buildEnvironment = environment.merging([
-            "CC": "\(toolchain)/bin/clang",
-            "CXX": "\(toolchain)/bin/clang++",
-            "LDFLAGS": "-Wl,-rpath,\(toolchain)/lib"
-                + environment["LDFLAGS"].map { " \($0)" }.orEmpty,
-        ]) { _, required in required }
+        let crossFile = root.appending("build-support/linux-x86_64.ini")
+        let crossOption =
+            target.architecture == .x86_64
+            ? " --cross-file=/build-support/linux-x86_64.ini" : ""
+        let hostBuild = "/tmp/nucleus-gfxstream-host"
+        let guestBuild = "/tmp/nucleus-gfxstream-guest"
         return TaskDeclaration(
-            id: TaskID(rawValue: "android-runtime.gfxstream"),
+            id: TaskID(rawValue: "android-runtime.gfxstream.\(target.identifier)"),
             component: component,
             inputs: [
                 .tree(hostSource),
                 .tree(guestSource),
-                .tool(.named("git")),
-                .tool(.named("meson")),
-            ],
+                .dependencyOutput(builder.imageID),
+                .tree(builder.swiftSDKRoot),
+            ] + (target.architecture == .x86_64 ? [.file(crossFile)] : []),
             outputs: [
                 OutputDeclaration(
                     path: buildRoot.appending("host/host/libgfxstream_backend.a"),
@@ -608,141 +562,115 @@ public enum AndroidRuntimeColliderRecipe {
                     validation: .regularFile),
             ],
             locks: [
-                .checkout("android-runtime"),
-                .checkout("gfxstream"),
-                .checkout("mesa"),
+                .checkout("android-runtime-gfxstream-\(target.identifier)")
             ],
+            cachePolicy: .contentAddressed,
             operation: .sequence([
-                .configureMeson(
-                    MesonSetup(
-                        source: hostSource,
-                        build: hostBuild,
-                        arguments: [
-                            "-Dbuildtype=release",
-                            "-Ddefault_library=static",
-                            "-Ddecoders=gles,vulkan,composer",
-                            "-Dgfxstream-build=host",
-                        ],
-                        environment: buildEnvironment)),
-                .command(
-                    CommandSpec(
-                        executable: .named("meson"),
-                        arguments: [
-                            "compile", "-C", hostBuild.string,
-                            "gfxstream_backend",
-                        ],
-                        workingDirectory: root,
-                        environment: buildEnvironment)),
-                .configureMeson(
-                    MesonSetup(
-                        source: guestSource,
-                        build: guestBuild,
-                        arguments: [
-                            "-Dbuildtype=release",
-                            "-Dvulkan-drivers=gfxstream",
-                            "-Dgallium-drivers=[]",
-                            "-Dplatforms=[]",
-                            "-Dglx=disabled",
-                            "-Degl=disabled",
-                            "-Dgbm=disabled",
-                            "-Dgles1=disabled",
-                            "-Dgles2=disabled",
-                            "-Dopengl=false",
-                            "-Dllvm=disabled",
-                            "-Dshared-glapi=disabled",
-                            "-Dvalgrind=disabled",
-                            "-Dlibunwind=disabled",
-                            "-Dbuild-tests=false",
-                            "-Dvideo-codecs=[]",
-                            "-Dc_args=[]",
-                            "-Dcpp_args=[]",
-                        ],
-                        environment: buildEnvironment)),
-                .command(
-                    CommandSpec(
-                        executable: .named("meson"),
-                        arguments: [
-                            "compile", "-C", guestBuild.string,
-                            "vulkan_gfxstream",
-                            "gfxstream_vk_icd",
-                            "gfxstream_vk_devenv_icd",
-                        ],
-                        workingDirectory: root,
-                        environment: buildEnvironment)),
+                .removePath(buildRoot),
+                .createDirectory(buildRoot),
+                gfxstreamOperation(
+                    root: root,
+                    hostSource: hostSource,
+                    guestSource: guestSource,
+                    buildRoot: buildRoot,
+                    target: target,
+                    builder: builder,
+                    environment: environment,
+                    command: [
+                        "bash", "-lc",
+                        "meson setup \(hostBuild) /gfxstream"
+                            + " -Dbuildtype=release -Ddefault_library=static"
+                            + " -Ddecoders=gles,vulkan,composer -Dgfxstream-build=host"
+                            + crossOption
+                            + " && meson compile -C \(hostBuild) gfxstream_backend"
+                            + " && mkdir -p /build/host/host"
+                            + " && cp \(hostBuild)/host/libgfxstream_backend.a"
+                            + " /build/host/host/libgfxstream_backend.a",
+                    ]),
+                gfxstreamOperation(
+                    root: root,
+                    hostSource: hostSource,
+                    guestSource: guestSource,
+                    buildRoot: buildRoot,
+                    target: target,
+                    builder: builder,
+                    environment: environment,
+                    command: [
+                        "bash", "-lc",
+                        "meson setup \(guestBuild) /mesa"
+                            + " -Dbuildtype=release -Dvulkan-drivers=gfxstream"
+                            + " -Dgallium-drivers=[] -Dplatforms=[] -Dglx=disabled"
+                            + " -Degl=disabled -Dgbm=disabled -Dgles1=disabled"
+                            + " -Dgles2=disabled -Dopengl=false -Dllvm=disabled"
+                            + " -Dshared-glapi=disabled -Dvalgrind=disabled"
+                            + " -Dlibunwind=disabled -Dbuild-tests=false"
+                            + " -Dvideo-codecs=[]"
+                            + crossOption
+                            + " && meson compile -C \(guestBuild) vulkan_gfxstream"
+                            + " gfxstream_vk_icd gfxstream_vk_devenv_icd"
+                            + " && mkdir -p /build/guest"
+                            + " && cp -a \(guestBuild)/. /build/guest/",
+                    ]),
             ]))
     }
 
-    private static func build(
-        root: FilePath,
-        environment: [String: String],
-        swiftPM: SwiftPMInvocation
-    ) -> TaskDeclaration {
-        swiftTask(
-            id: "android-runtime.build",
-            root: root,
-            environment: environment,
-            arguments: ["build"],
-            dependencies: [
-                TaskID(rawValue: "linux.build"),
-                TaskID(rawValue: "android-runtime.gfxstream"),
-            ],
-            swiftPM: swiftPM)
-    }
+}
 
-    private static func swiftTask(
-        id: String,
-        root: FilePath,
-        environment: [String: String],
-        arguments: [String],
-        dependencies: [TaskID],
-        subsumedDependencies: [TaskID] = [],
-        swiftPM: SwiftPMInvocation
-    ) -> TaskDeclaration {
-        let buildProducts =
-            id == "android-runtime.build"
-            ? [
-                "nucleus-android-gpu-broker",
-                "nucleus-android-gfxstream-workload",
-                "nucleus-android-gfxstream-broker",
-                "nucleus-android-display-host",
-                "nucleus-android-shared-ring-stress",
-            ] : []
-        return TaskDeclaration(
-            id: TaskID(rawValue: id),
-            component: component,
-            dependencies: dependencies,
-            subsumedDependencies: subsumedDependencies,
-            swiftProducts: buildProducts.map {
-                swiftPM.product(
-                    package: "android-runtime",
-                    product: $0,
-                    packageRoot: root,
-                    environment: environment,
-                    expectedOutputs: [
-                        PathPostcondition(
-                            path: swiftPM.executable($0),
-                            validation: .executableFile)
-                    ])
-            },
-            inputs: [
-                .tree(root.appending("Sources")),
-                .tree(root.appending("Tests")),
-                .tree(
-                    root.appending(
-                        "aosp/device/nucleus/nucleus_x86_64/native")),
-                swiftPM.identityInput,
-                .tool(.named("swift")),
+private func gfxstreamOperation(
+    root: FilePath,
+    hostSource: FilePath,
+    guestSource: FilePath,
+    buildRoot: FilePath,
+    target: NativeLinuxTarget,
+    builder: NativeOCIConfiguration,
+    environment: [String: String],
+    command: [String]
+) -> TaskOperation {
+    .runOCI(
+        OCIExecution(
+            executionPlatform: .linuxARM64OCI,
+            artifactTarget: target.artifactTarget,
+            imageID: builder.imageID,
+            hostname: "native-gfxstream-\(target.architecture.rawValue)",
+            workingDirectory: "/build",
+            hostWorkingDirectory: root,
+            mounts: [
+                OCIMount(source: hostSource, target: "/gfxstream", access: .readOnly),
+                OCIMount(source: guestSource, target: "/mesa", access: .readOnly),
+                OCIMount(source: buildRoot, target: "/build", access: .readWrite),
+                OCIMount(
+                    source: root.appending("build-support"),
+                    target: "/build-support",
+                    access: .readOnly),
+                OCIMount(
+                    source: builder.ccache,
+                    target: "/ccache",
+                    access: .readWrite),
+                OCIMount(
+                    source: builder.swiftSDKRoot,
+                    target: "/swift-sdk",
+                    access: .readOnly),
             ],
-            postconditions: [swiftPM.postcondition],
-            locks: [.checkout("android-runtime")]
-                + (buildProducts.isEmpty ? [swiftPM.lock] : []),
-            operation: buildProducts.isEmpty
-                ? .command(
-                    swiftPM.command(
-                        arguments: arguments,
-                        workingDirectory: root,
-                        environment: environment)) : .sequence([]))
-    }
+            networkPolicy: .externalDisabled,
+            userPolicy: .builder,
+            capabilityPolicy: .dropAll,
+            privilegePolicy: .prohibitAcquisition,
+            processFilesystemPolicy: .standard,
+            intelBinaryTranslationPolicy: target.intelBinaryTranslationPolicy,
+            resourceLimits: .parallelBuild,
+            containerEnvironment: [
+                "CC": "clang",
+                "CCACHE_DIR": "/ccache",
+                "CXX": "clang++",
+                "CXXFLAGS": "-stdlib=libc++",
+                "LDFLAGS": "-stdlib=libc++ -fuse-ld=lld",
+                "LD_LIBRARY_PATH": target.containerRuntimeLibraryPath,
+                "PKG_CONFIG_LIBDIR":
+                    "/usr/lib/\(target.gnuArchitecture)/pkgconfig:/usr/share/pkgconfig",
+            ],
+            command: ["gfxstream"] + command,
+            environment: environment,
+            output: .logged))
 }
 
 private struct AOSPSourceLock: Decodable {
@@ -897,14 +825,9 @@ private struct AOSPProductLock: Decodable {
 private let aospSigningSubject =
     "/C=US/O=Nucleus/OU=Android Development"
 
-extension Optional where Wrapped == String {
-    fileprivate var orEmpty: String { self ?? "" }
-}
-
 public enum AndroidRuntimeRecipeFailure: Error, CustomStringConvertible {
     case invalidAOSPProductLock(String)
     case invalidAOSPSourceLock(String)
-    case missingSwiftToolchain
 
     public var description: String {
         switch self {
@@ -912,8 +835,6 @@ public enum AndroidRuntimeRecipeFailure: Error, CustomStringConvertible {
             "invalid AOSP product lock: \(detail)"
         case .invalidAOSPSourceLock(let detail):
             "invalid AOSP source lock: \(detail)"
-        case .missingSwiftToolchain:
-            "SWIFT_TOOLCHAIN is required to build gfxstream"
         }
     }
 }

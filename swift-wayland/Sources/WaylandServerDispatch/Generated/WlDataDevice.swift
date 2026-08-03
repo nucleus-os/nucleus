@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol WlDataDeviceRequests: AnyObject {
     func startDrag(
@@ -16,7 +16,7 @@ import WaylandServerC
         source: WaylandBorrowedObject<WlDataSourceServer>?, serial: UInt32)
     func release(_ request: WaylandRequest<WlDataDeviceServer>)
 }
-package extension WlDataDeviceRequests {
+extension WlDataDeviceRequests {
     package func release(_ request: WaylandRequest<WlDataDeviceServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -138,7 +138,7 @@ package enum WlDataDeviceServer: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == WlDataDeviceServer {
+extension WaylandResourceHandle where Interface == WlDataDeviceServer {
     @discardableResult
     package func sendDataOffer(id: WaylandResourceHandle<WlDataOfferServer>) -> Bool {
         guard let target = unsafe resource else {
@@ -236,18 +236,18 @@ package extension WaylandResourceHandle where Interface == WlDataDeviceServer {
         return true
     }
 }
-package extension WaylandRequest where Interface == WlDataDeviceServer {
+extension WaylandRequest where Interface == WlDataDeviceServer {
     package func postError(_ code: WlDataDeviceError, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WlDataDeviceServer {
+extension WaylandResourceHandle where Interface == WlDataDeviceServer {
     @discardableResult
     package func postError(_ code: WlDataDeviceError, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WlDataDeviceServer {
+extension WlNewId where Interface == WlDataDeviceServer {
     @discardableResult
     @MainActor
     package func create<Owner: WlDataDeviceRequests>(
@@ -260,7 +260,7 @@ package extension WlNewId where Interface == WlDataDeviceServer {
             installed: installed)
     }
 }
-package extension WlDataDeviceServer {
+extension WlDataDeviceServer {
     @MainActor
     package static func global<Implementation: AnyObject & WlDataDeviceRequests>(
         implementation: Implementation,

@@ -3,14 +3,14 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ExtWorkspaceGroupHandleV1Requests: AnyObject {
     func createWorkspace(
         _ request: WaylandRequest<ExtWorkspaceGroupHandleV1Server>, workspace: String)
     func destroy(_ request: WaylandRequest<ExtWorkspaceGroupHandleV1Server>)
 }
-package extension ExtWorkspaceGroupHandleV1Requests {
+extension ExtWorkspaceGroupHandleV1Requests {
     package func destroy(_ request: WaylandRequest<ExtWorkspaceGroupHandleV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -102,7 +102,7 @@ package enum ExtWorkspaceGroupHandleV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ExtWorkspaceGroupHandleV1Server {
+extension WaylandResourceHandle where Interface == ExtWorkspaceGroupHandleV1Server {
     @discardableResult
     package func sendCapabilities(capabilities: ExtWorkspaceGroupHandleV1GroupCapabilities) -> Bool
     {
@@ -169,7 +169,7 @@ package extension WaylandResourceHandle where Interface == ExtWorkspaceGroupHand
         return true
     }
 }
-package extension WlNewId where Interface == ExtWorkspaceGroupHandleV1Server {
+extension WlNewId where Interface == ExtWorkspaceGroupHandleV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ExtWorkspaceGroupHandleV1Requests>(
@@ -182,7 +182,7 @@ package extension WlNewId where Interface == ExtWorkspaceGroupHandleV1Server {
             installed: installed)
     }
 }
-package extension ExtWorkspaceGroupHandleV1Server {
+extension ExtWorkspaceGroupHandleV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ExtWorkspaceGroupHandleV1Requests>(
         implementation: Implementation,

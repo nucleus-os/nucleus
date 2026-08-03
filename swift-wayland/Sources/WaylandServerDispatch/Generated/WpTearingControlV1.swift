@@ -11,7 +11,7 @@ import WaylandServerC
         hint: WpTearingControlV1PresentationHint)
     func destroy(_ request: WaylandRequest<WpTearingControlV1Server>)
 }
-package extension WpTearingControlV1Requests {
+extension WpTearingControlV1Requests {
     package func destroy(_ request: WaylandRequest<WpTearingControlV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -73,7 +73,7 @@ package enum WpTearingControlV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == WpTearingControlV1Server {
+extension WlNewId where Interface == WpTearingControlV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpTearingControlV1Requests>(
@@ -86,7 +86,7 @@ package extension WlNewId where Interface == WpTearingControlV1Server {
             installed: installed)
     }
 }
-package extension WpTearingControlV1Server {
+extension WpTearingControlV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpTearingControlV1Requests>(
         implementation: Implementation,

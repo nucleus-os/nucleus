@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwlrOutputConfigurationV1Requests: AnyObject {
     func enableHead(
@@ -17,7 +17,7 @@ import WaylandServerC
     func test(_ request: WaylandRequest<ZwlrOutputConfigurationV1Server>)
     func destroy(_ request: WaylandRequest<ZwlrOutputConfigurationV1Server>)
 }
-package extension ZwlrOutputConfigurationV1Requests {
+extension ZwlrOutputConfigurationV1Requests {
     package func destroy(_ request: WaylandRequest<ZwlrOutputConfigurationV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -139,7 +139,7 @@ package enum ZwlrOutputConfigurationV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwlrOutputConfigurationV1Server {
+extension WaylandResourceHandle where Interface == ZwlrOutputConfigurationV1Server {
     @discardableResult
     package func sendSucceeded() -> Bool {
         guard let target = unsafe resource else {
@@ -165,18 +165,18 @@ package extension WaylandResourceHandle where Interface == ZwlrOutputConfigurati
         return true
     }
 }
-package extension WaylandRequest where Interface == ZwlrOutputConfigurationV1Server {
+extension WaylandRequest where Interface == ZwlrOutputConfigurationV1Server {
     package func postError(_ code: ZwlrOutputConfigurationV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ZwlrOutputConfigurationV1Server {
+extension WaylandResourceHandle where Interface == ZwlrOutputConfigurationV1Server {
     @discardableResult
     package func postError(_ code: ZwlrOutputConfigurationV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ZwlrOutputConfigurationV1Server {
+extension WlNewId where Interface == ZwlrOutputConfigurationV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwlrOutputConfigurationV1Requests>(
@@ -189,7 +189,7 @@ package extension WlNewId where Interface == ZwlrOutputConfigurationV1Server {
             installed: installed)
     }
 }
-package extension ZwlrOutputConfigurationV1Server {
+extension ZwlrOutputConfigurationV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwlrOutputConfigurationV1Requests>(
         implementation: Implementation,

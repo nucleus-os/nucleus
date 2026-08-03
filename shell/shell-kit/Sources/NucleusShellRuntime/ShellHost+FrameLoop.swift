@@ -2,15 +2,15 @@ import Glibc
 import NucleusDiagnostics
 import NucleusLinuxAccessibility
 import NucleusLinuxReactor
-import NucleusSessionProtocol
-import NucleusShellProduct
-import NucleusUI
+internal import NucleusSessionProtocol
+internal import NucleusShellProduct
+internal import NucleusUI
 import NucleusUIEmbedder
-import NucleusWindowClientInput
+internal import NucleusWindowClientInput
 import NucleusWindowClientPasteboard
-import NucleusWindowClientRender
+internal import NucleusWindowClientRender
 import NucleusWindowClientRuntime
-package import NucleusWindowClientWayland
+internal import NucleusWindowClientWayland
 import WaylandClient
 
 @MainActor

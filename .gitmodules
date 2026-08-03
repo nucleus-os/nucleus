@@ -101,3 +101,6 @@
 [submodule "swift-sdk/source/swift-testing"]
 	path = swift-sdk/source/swift-testing
 	url = https://github.com/swiftlang/swift-testing.git
+[submodule "swift-wayland/third-party/wayland"]
+	path = swift-wayland/third-party/wayland
+	url = https://gitlab.freedesktop.org/wayland/wayland.git

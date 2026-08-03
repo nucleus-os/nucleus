@@ -9,7 +9,7 @@ package enum ZwlrLayerShellV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_zwlr_layer_shell_v1())
     package nonisolated static let maximumVersion: UInt32 = 5
 }
-package extension WaylandProxy where Interface == ZwlrLayerShellV1Client {
+extension WaylandProxy where Interface == ZwlrLayerShellV1Client {
     package func getLayerSurface(
         surface: WaylandProxy<WlSurfaceClient>, output: WaylandProxy<WlOutputClient>?,
         layer: ZwlrLayerShellV1Layer, namespace: String

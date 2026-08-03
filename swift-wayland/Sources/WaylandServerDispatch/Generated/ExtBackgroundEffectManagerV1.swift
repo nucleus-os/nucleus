@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ExtBackgroundEffectManagerV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ExtBackgroundEffectManagerV1Server>)
@@ -12,7 +12,7 @@ import WaylandServerC
         id: WlNewId<ExtBackgroundEffectSurfaceV1Server>,
         surface: WaylandBorrowedObject<WlSurfaceServer>)
 }
-package extension ExtBackgroundEffectManagerV1Requests {
+extension ExtBackgroundEffectManagerV1Requests {
     package func destroy(_ request: WaylandRequest<ExtBackgroundEffectManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -88,7 +88,7 @@ package enum ExtBackgroundEffectManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ExtBackgroundEffectManagerV1Server {
+extension WaylandResourceHandle where Interface == ExtBackgroundEffectManagerV1Server {
     @discardableResult
     package func sendCapabilities(flags: ExtBackgroundEffectManagerV1Capability) -> Bool {
         guard let target = unsafe resource else {
@@ -98,18 +98,18 @@ package extension WaylandResourceHandle where Interface == ExtBackgroundEffectMa
         return true
     }
 }
-package extension WaylandRequest where Interface == ExtBackgroundEffectManagerV1Server {
+extension WaylandRequest where Interface == ExtBackgroundEffectManagerV1Server {
     package func postError(_ code: ExtBackgroundEffectManagerV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ExtBackgroundEffectManagerV1Server {
+extension WaylandResourceHandle where Interface == ExtBackgroundEffectManagerV1Server {
     @discardableResult
     package func postError(_ code: ExtBackgroundEffectManagerV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ExtBackgroundEffectManagerV1Server {
+extension WlNewId where Interface == ExtBackgroundEffectManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ExtBackgroundEffectManagerV1Requests>(
@@ -122,7 +122,7 @@ package extension WlNewId where Interface == ExtBackgroundEffectManagerV1Server 
             installed: installed)
     }
 }
-package extension ExtBackgroundEffectManagerV1Server {
+extension ExtBackgroundEffectManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ExtBackgroundEffectManagerV1Requests>(
         implementation: Implementation,

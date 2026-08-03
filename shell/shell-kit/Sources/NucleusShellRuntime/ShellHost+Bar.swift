@@ -1,10 +1,10 @@
 import Foundation
 import NucleusLinuxDBus
-import NucleusShellProduct
-import NucleusShellServices
-import NucleusUI
+internal import NucleusShellProduct
+internal import NucleusShellServices
+internal import NucleusUI
 import NucleusUIEmbedder
-package import NucleusWindowClientWayland
+internal import NucleusWindowClientWayland
 
 #if canImport(FoundationInternationalization)
 import FoundationInternationalization

@@ -10,7 +10,7 @@ import WaylandServerC
         _ request: WaylandRequest<ZwpTextInputManagerV3Server>, id: WlNewId<ZwpTextInputV3Server>,
         seat: WaylandBorrowedObject<WlSeatServer>)
 }
-package extension ZwpTextInputManagerV3Requests {
+extension ZwpTextInputManagerV3Requests {
     package func destroy(_ request: WaylandRequest<ZwpTextInputManagerV3Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -80,7 +80,7 @@ package enum ZwpTextInputManagerV3Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ZwpTextInputManagerV3Server {
+extension WlNewId where Interface == ZwpTextInputManagerV3Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpTextInputManagerV3Requests>(
@@ -93,7 +93,7 @@ package extension WlNewId where Interface == ZwpTextInputManagerV3Server {
             installed: installed)
     }
 }
-package extension ZwpTextInputManagerV3Server {
+extension ZwpTextInputManagerV3Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpTextInputManagerV3Requests>(
         implementation: Implementation,

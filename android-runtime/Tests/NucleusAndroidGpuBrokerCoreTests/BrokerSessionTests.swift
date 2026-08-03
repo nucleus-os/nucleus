@@ -1,9 +1,10 @@
 import Glibc
-import Testing
 internal import NucleusAndroidGraphicsContract
 internal import NucleusAndroidGraphicsPlatform
-@testable import NucleusAndroidGpuBrokerCore
 internal import NucleusAndroidIPC
+import Testing
+
+@testable import NucleusAndroidGpuBrokerCore
 
 @Test func brokerRejectsProtocolRequestsBeforeHello() throws {
     let (client, server) = try BrokerPacketConnection.socketPair()
@@ -15,12 +16,13 @@ internal import NucleusAndroidIPC
     #expect(reply.envelope.failure?.code == "invalid_state_transition")
 }
 
-@Test func brokerLoopbackAllocatesTheExactDmabufRingAndRenders() throws {
-    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+@Test func gpuDRM_brokerLoopbackAllocatesTheExactDmabufRingAndRenders() throws {
+    let candidate = try #require(DrmDeviceDiscovery.enumerate().first)
     let probe = try AndroidGraphicsDevice(candidate: candidate)
-    let pair = try #require(probe.formatModifiers(format: DrmFormats.xrgb8888)
-        .map(\.pair)
-        .first(where: probe.supports))
+    let pair = try #require(
+        probe.formatModifiers(format: DrmFormats.xrgb8888)
+            .map(\.pair)
+            .first(where: probe.supports))
     let feedback = WaylandDmabufFeedback(
         mainDevice: candidate.renderDevice,
         tranches: [
@@ -36,13 +38,14 @@ internal import NucleusAndroidIPC
     try session.handleNextPacket()
     #expect(try client.receive().envelope.kind == .helloReply)
 
-    try client.send(BrokerEnvelope(
-        messageID: 2,
-        kind: .allocate,
-        allocationRequest: BufferAllocationRequest(
-            width: 64,
-            height: 64,
-            feedback: feedback)))
+    try client.send(
+        BrokerEnvelope(
+            messageID: 2,
+            kind: .allocate,
+            allocationRequest: BufferAllocationRequest(
+                width: 64,
+                height: 64,
+                feedback: feedback)))
     try session.handleNextPacket()
     let allocationPacket = try client.receive()
     #expect(allocationPacket.envelope.kind == .allocationReply)
@@ -52,22 +55,24 @@ internal import NucleusAndroidIPC
     let descriptors = allocationPacket.takeDescriptors()
     defer { for descriptor in descriptors { _ = close(descriptor) } }
 
-    try client.send(BrokerEnvelope(
-        messageID: 3,
-        kind: .render,
-        renderRequest: RenderRequest(bufferID: 1, frameNumber: 1)))
+    try client.send(
+        BrokerEnvelope(
+            messageID: 3,
+            kind: .render,
+            renderRequest: RenderRequest(bufferID: 1, frameNumber: 1)))
     try session.handleNextPacket()
     let renderPacket = try client.receive()
     #expect(renderPacket.envelope.renderReply?.acquirePoint == 1)
     #expect(renderPacket.envelope.renderReply?.releasePoint == 2)
 }
 
-@Test func brokerRejectsOutOfOrderFramesBeforeSubmittingGpuWork() throws {
-    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+@Test func gpuDRM_brokerRejectsOutOfOrderFramesBeforeSubmittingGpuWork() throws {
+    let candidate = try #require(DrmDeviceDiscovery.enumerate().first)
     let probe = try AndroidGraphicsDevice(candidate: candidate)
-    let pair = try #require(probe.formatModifiers(format: DrmFormats.xrgb8888)
-        .map(\.pair)
-        .first(where: probe.supports))
+    let pair = try #require(
+        probe.formatModifiers(format: DrmFormats.xrgb8888)
+            .map(\.pair)
+            .first(where: probe.supports))
     let feedback = WaylandDmabufFeedback(
         mainDevice: candidate.renderDevice,
         tranches: [
@@ -81,18 +86,20 @@ internal import NucleusAndroidIPC
     try client.send(BrokerEnvelope(messageID: 1, kind: .hello))
     try session.handleNextPacket()
     _ = try client.receive()
-    try client.send(BrokerEnvelope(
-        messageID: 2,
-        kind: .allocate,
-        allocationRequest: BufferAllocationRequest(width: 32, height: 32, feedback: feedback)))
+    try client.send(
+        BrokerEnvelope(
+            messageID: 2,
+            kind: .allocate,
+            allocationRequest: BufferAllocationRequest(width: 32, height: 32, feedback: feedback)))
     try session.handleNextPacket()
     let allocation = try client.receive()
     let descriptors = allocation.takeDescriptors()
     defer { for descriptor in descriptors { _ = close(descriptor) } }
-    try client.send(BrokerEnvelope(
-        messageID: 3,
-        kind: .render,
-        renderRequest: RenderRequest(bufferID: 1, frameNumber: 2)))
+    try client.send(
+        BrokerEnvelope(
+            messageID: 3,
+            kind: .render,
+            renderRequest: RenderRequest(bufferID: 1, frameNumber: 2)))
     try session.handleNextPacket()
     let failure = try client.receive()
     #expect(failure.envelope.failure?.code == "invalid_frame_sequence")

@@ -1,6 +1,6 @@
 import NucleusConfig
 import NucleusDiagnostics
-import NucleusSessionProtocol
+internal import NucleusSessionProtocol
 
 #if canImport(Glibc)
 import Glibc

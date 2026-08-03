@@ -56,7 +56,22 @@ public struct SwiftTargetSDKInputs: Codable, Equatable, Sendable {
 
     public struct LinuxTarget: Codable, Equatable, Sendable {
         public let architecture: LinuxArchitecture
-        public let ubuntuPackages: [UbuntuPackage]
+        public let runtimeUbuntuPackages: [UbuntuPackage]
+        public let sdkUbuntuPackages: [UbuntuPackage]
+
+        public init(
+            architecture: LinuxArchitecture,
+            runtimeUbuntuPackages: [UbuntuPackage],
+            sdkUbuntuPackages: [UbuntuPackage]
+        ) {
+            self.architecture = architecture
+            self.runtimeUbuntuPackages = runtimeUbuntuPackages
+            self.sdkUbuntuPackages = sdkUbuntuPackages
+        }
+
+        public var allUbuntuPackages: [UbuntuPackage] {
+            runtimeUbuntuPackages + sdkUbuntuPackages
+        }
     }
 
     public struct Artifacts: Codable, Equatable, Sendable {
@@ -228,7 +243,7 @@ public enum SwiftTargetSDKColliderRecipe {
             downloads: downloads,
             generator: generator,
             runtimes: runtimes)
-        let validation = validationTask(configuration, assembly: assembly)
+        let validation = try validationTask(configuration, assembly: assembly)
         let activation = activationTask(configuration, validation: validation)
         let discoveries = discoveryTasks(configuration, activation: activation)
 
@@ -249,8 +264,13 @@ public enum SwiftTargetSDKColliderRecipe {
 
     private struct LinuxDownloads {
         let architecture: SwiftTargetSDKInputs.LinuxArchitecture
-        let tasks: [TaskDeclaration]
-        let packages: [FilePath]
+        let runtimeTasks: [TaskDeclaration]
+        let runtimePackages: [FilePath]
+        let sdkTasks: [TaskDeclaration]
+        let sdkPackages: [FilePath]
+
+        var tasks: [TaskDeclaration] { runtimeTasks + sdkTasks }
+        var allPackages: [FilePath] { runtimePackages + sdkPackages }
     }
 
     private static func validate(_ inputs: SwiftTargetSDKInputs) throws {
@@ -259,7 +279,9 @@ public enum SwiftTargetSDKColliderRecipe {
                 == SwiftTargetSDKInputs.LinuxArchitecture.allCases.sorted(by: {
                     $0.rawValue < $1.rawValue
                 }),
-            inputs.linuxTargets.allSatisfy({ !$0.ubuntuPackages.isEmpty })
+            inputs.linuxTargets.allSatisfy({
+                !$0.runtimeUbuntuPackages.isEmpty && !$0.sdkUbuntuPackages.isEmpty
+            })
         else {
             throw SwiftTargetSDKRecipeFailure.invalidInput(
                 "Swift target SDK inputs are incomplete")
@@ -278,21 +300,31 @@ public enum SwiftTargetSDKColliderRecipe {
             input: configuration.inputs.artifacts.androidSDK,
             destination: configuration.downloadRoot.appending("android-sdk.tar.gz"))
         let linux = try configuration.inputs.linuxTargets.map { target in
-            let tasks = try target.ubuntuPackages.enumerated().map { index, package in
-                let name = try fileName(from: package.url)
-                return try downloadTask(
-                    id: "swift-sdk.download-ubuntu-\(target.architecture.rawValue)-\(index)",
-                    input: SwiftTargetSDKInputs.Input(
-                        maximumResponseSize: 32 * 1_024 * 1_024,
-                        sha256: package.sha256,
-                        url: package.url),
-                    destination: configuration.downloadRoot.appending(
-                        "ubuntu/\(target.architecture.rawValue)/\(name)"))
+            func tasks(
+                for packages: [SwiftTargetSDKInputs.UbuntuPackage],
+                role: String
+            ) throws -> [TaskDeclaration] {
+                try packages.enumerated().map { index, package in
+                    let name = try fileName(from: package.url)
+                    return try downloadTask(
+                        id:
+                            "swift-sdk.download-ubuntu-\(target.architecture.rawValue)-\(role)-\(index)",
+                        input: SwiftTargetSDKInputs.Input(
+                            maximumResponseSize: 32 * 1_024 * 1_024,
+                            sha256: package.sha256,
+                            url: package.url),
+                        destination: configuration.downloadRoot.appending(
+                            "ubuntu/\(target.architecture.rawValue)/\(name)"))
+                }
             }
+            let runtimeTasks = try tasks(for: target.runtimeUbuntuPackages, role: "runtime")
+            let sdkTasks = try tasks(for: target.sdkUbuntuPackages, role: "sdk")
             return LinuxDownloads(
                 architecture: target.architecture,
-                tasks: tasks,
-                packages: tasks.map { $0.outputs[0].path })
+                runtimeTasks: runtimeTasks,
+                runtimePackages: runtimeTasks.map { $0.outputs[0].path },
+                sdkTasks: sdkTasks,
+                sdkPackages: sdkTasks.map { $0.outputs[0].path })
         }
         return Downloads(
             tasks: [host, android] + linux.flatMap(\.tasks),
@@ -384,9 +416,9 @@ public enum SwiftTargetSDKColliderRecipe {
                 rawValue:
                     "swift-sdk.prepare-linux-\(architecture.rawValue)-libcxx-sysroot"),
             component: component,
-            dependencies: downloads.tasks.map(\.id),
+            dependencies: downloads.runtimeTasks.map(\.id),
             inputs: [.file(configuration.sysrootPreparer)]
-                + downloads.packages.map { .dependencyOutput($0) },
+                + downloads.runtimePackages.map { .dependencyOutput($0) },
             outputs: [
                 OutputDeclaration(
                     path: target.sysroot,
@@ -401,7 +433,7 @@ public enum SwiftTargetSDKColliderRecipe {
                         arguments: [
                             target.sysroot.string,
                             architecture.gnuArchitecture,
-                        ] + downloads.packages.map(\.string),
+                        ] + downloads.runtimePackages.map(\.string),
                         workingDirectory: target.sysroot.removingLastComponent(),
                         environment: configuration.environment,
                         output: .logged)),
@@ -498,7 +530,7 @@ public enum SwiftTargetSDKColliderRecipe {
                         capabilityPolicy: .dropAll,
                         privilegePolicy: .prohibitAcquisition,
                         processFilesystemPolicy: .standard,
-                        resourceLimits: .build,
+                        resourceLimits: .parallelBuild,
                         containerEnvironment: containerEnvironment,
                         command: ["--reconfigure"],
                         environment: configuration.environment,
@@ -562,6 +594,9 @@ public enum SwiftTargetSDKColliderRecipe {
 
         var hostEnvironment = configuration.environment
         hostEnvironment["ANDROID_NDK_HOME"] = configuration.ndkRoot.string
+        hostEnvironment["PATH"] =
+            hostToolchain.appending("usr/bin").string + ":"
+            + (hostEnvironment["PATH"] ?? "/usr/bin:/bin")
         hostEnvironment.removeValue(forKey: "SWIFTCI_USE_LOCAL_DEPS")
 
         var operations: [TaskOperation] = [
@@ -614,7 +649,7 @@ public enum SwiftTargetSDKColliderRecipe {
                 "--bundle-version", configuration.inputs.snapshot,
                 "--output-path", generatedTarget.string,
             ]
-            for package in targetDownloads.packages {
+            for package in targetDownloads.allPackages {
                 generatorArguments += ["--target-system-package-path", package.string]
             }
             operations += [
@@ -768,10 +803,16 @@ public enum SwiftTargetSDKColliderRecipe {
     private static func validationTask(
         _ configuration: SwiftTargetSDKGenerationConfiguration,
         assembly: TaskDeclaration
-    ) -> TaskDeclaration {
+    ) throws -> TaskDeclaration {
         let hostSwift = assembly.outputs[0].path
+        let hostLinker = hostSwift.removingLastComponent().appending("ld.lld")
         let sdkRoot = configuration.candidate.appending("swift-sdks")
         let validationRoot = configuration.candidate.appending("validation")
+        let hostToolset = validationRoot.appending("host-toolset.json")
+        let hostToolsetBytes = try jsonBytes([
+            "schemaVersion": "1.0",
+            "linker": ["path": hostLinker.string],
+        ])
         let linuxARM64Build = validationRoot.appending("linux-arm64")
         let linuxAMD64Build = validationRoot.appending("linux-x86_64")
         let androidARM64Build = validationRoot.appending("android-arm64")
@@ -798,6 +839,7 @@ public enum SwiftTargetSDKColliderRecipe {
                         "--swift-sdks-path", sdkRoot.string,
                         "--swift-sdk", sdk,
                         "--triple", triple,
+                        "--toolset", hostToolset.string,
                     ],
                     workingDirectory: configuration.validationFixture,
                     environment: environment,
@@ -827,6 +869,7 @@ public enum SwiftTargetSDKColliderRecipe {
             ],
             operation: .sequence([
                 .createDirectory(validationRoot),
+                .writeFile(hostToolset, bytes: hostToolsetBytes),
                 build(
                     linuxARM64Build,
                     sdk: configuration.inputs.linuxBundleID,

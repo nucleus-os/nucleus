@@ -1,40 +1,231 @@
-FROM docker.io/library/ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
+FROM docker.io/library/ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update \
+COPY ubuntu-amd64.sources /etc/apt/sources.list.d/ubuntu-amd64.sources
+
+# Ubuntu's libgudev development package is not co-installable across arm64 and
+# amd64 because its shared GIR differs between the two package instances.
+# Install the architecture-neutral libinput headers from the native package,
+# then expose the amd64 runtime SONAME through the normal linker development
+# name without pulling in the conflicting amd64 development package.
+RUN test "$(dpkg --print-architecture)" = arm64 \
+    && sed -i '/^Types: deb$/a Architectures: arm64' \
+        /etc/apt/sources.list.d/ubuntu.sources \
+    && dpkg --add-architecture amd64 \
+    && apt-get update \
     && apt-get install --yes --no-install-recommends \
-        ca-certificates \
+        binfmt-support \
         binutils \
+        build-essential \
+        ca-certificates \
         ccache \
         clang \
         curl \
+        git \
         libc++-dev \
         libc++abi-dev \
+        libblocksruntime-dev \
+        libbsd-dev \
+        libcurl4-openssl-dev \
+        libdrm-dev \
+        libedit-dev \
+        libffi-dev \
         libfontconfig1-dev \
+        libfreetype-dev \
+        libgbm-dev \
         libgl-dev \
         libicu-dev \
+        libinput-dev \
+        libncurses-dev \
+        libpam0g-dev \
+        libpython3-dev \
+        libseat-dev \
+        libsqlite3-dev \
+        libssl-dev \
+        libsystemd-dev \
+        libudev-dev \
+        libvulkan-dev \
+        libwayland-dev \
+        libx11-xcb-dev \
+        libxcb-composite0-dev \
+        libxcb-ewmh-dev \
+        libxcb-icccm4-dev \
+        libxcb-res0-dev \
+        libxcb-xfixes0-dev \
+        libxcb1-dev \
+        libxkbcommon-dev \
+        libxml2-dev \
+        libzstd-dev \
+        lld \
+        mesa-vulkan-drivers \
+        meson \
         ninja-build \
+        patch \
+        patchelf \
+        pkg-config \
         python3 \
+        python3-mako \
+        python3-yaml \
+        rsync \
         unzip \
-    && curl --fail --location --output /tmp/cmake.tar.gz \
-        https://github.com/Kitware/CMake/releases/download/v3.30.2/cmake-3.30.2-linux-x86_64.tar.gz \
-    && echo 'cdd7fb352605cee3ae53b0e18b5929b642900e33d6b0173e19f6d4f2067ebf16  /tmp/cmake.tar.gz' \
+        util-linux \
+        uuid-dev \
+        xwayland \
+        zlib1g-dev \
+        libc6-dev:amd64 \
+        libbsd-dev:amd64 \
+        libdrm-dev:amd64 \
+        libedit-dev:amd64 \
+        libffi-dev:amd64 \
+        libfontconfig1-dev:amd64 \
+        libfreetype-dev:amd64 \
+        libgcc-13-dev:amd64 \
+        libgbm-dev:amd64 \
+        libgl-dev:amd64 \
+        libicu-dev:amd64 \
+        libinput10:amd64 \
+        libncurses-dev:amd64 \
+        libpam0g-dev:amd64 \
+        libseat-dev:amd64 \
+        libsqlite3-dev:amd64 \
+        libssl-dev:amd64 \
+        libsystemd-dev:amd64 \
+        libudev-dev:amd64 \
+        libvulkan-dev:amd64 \
+        libwayland-dev:amd64 \
+        libx11-xcb-dev:amd64 \
+        libxcb-composite0-dev:amd64 \
+        libxcb-ewmh-dev:amd64 \
+        libxcb-icccm4-dev:amd64 \
+        libxcb-res0-dev:amd64 \
+        libxcb-xfixes0-dev:amd64 \
+        libxcb1-dev:amd64 \
+        libxkbcommon-dev:amd64 \
+        libxml2-dev:amd64 \
+        libzstd-dev:amd64 \
+        mesa-vulkan-drivers:amd64 \
+        uuid-dev:amd64 \
+        zlib1g-dev:amd64 \
+    && ln -s libinput.so.10 /usr/lib/x86_64-linux-gnu/libinput.so \
+    && rm -rf /var/lib/apt/lists/*
+
+# Apple Container VMs can begin a few hundred milliseconds behind the host
+# clock. Meson's 1 ms tolerance then rejects files it just wrote to a host bind
+# mount. One second still detects clock errors large enough to cause perpetual
+# regeneration while admitting the measured VM startup skew.
+RUN sed -i 's/if delta > 0\.001:/if delta > 1.0:/' \
+        /usr/lib/python3/dist-packages/mesonbuild/backend/backends.py \
+    && grep -Fq 'if delta > 1.0:' \
+        /usr/lib/python3/dist-packages/mesonbuild/backend/backends.py
+
+RUN curl --fail --location --output /tmp/swift.tar.gz \
+        https://download.swift.org/swift-6.4.x-branch/ubuntu2404-aarch64/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a-ubuntu24.04-aarch64.tar.gz \
+    && echo '0171839645e5569ab3c0c9b53bba104660a8f76740ad9eb5126b526b60f6dd34  /tmp/swift.tar.gz' \
         | sha256sum --check --strict \
-    && mkdir /opt/cmake \
-    && tar xzf /tmp/cmake.tar.gz \
+    && mkdir -p /opt/swift \
+    && tar --extract --gzip \
+        --file /tmp/swift.tar.gz \
+        --directory /opt/swift \
         --strip-components=1 \
-        -C /opt/cmake \
-    && test "$(/opt/cmake/bin/cmake --version | head -n 1)" = \
-        'cmake version 3.30.2' \
+    && rm -f /tmp/swift.tar.gz \
+    && /opt/swift/usr/bin/swiftc -print-target-info \
+        | grep --fixed-strings 'aarch64-unknown-linux-gnu'
+
+RUN curl --fail --location --output /tmp/cmake.tar.gz \
+        https://github.com/Kitware/CMake/releases/download/v3.30.2/cmake-3.30.2-linux-aarch64.tar.gz \
+    && echo 'd18f50f01b001303d21f53c6c16ff12ee3aa45df5da1899c2fe95be7426aa026  /tmp/cmake.tar.gz' \
+        | sha256sum --check --strict \
+    && mkdir -p /opt/cmake \
+    && tar --extract --gzip \
+        --file /tmp/cmake.tar.gz \
+        --directory /opt/cmake \
+        --strip-components=1 \
     && rm -f /tmp/cmake.tar.gz \
-    && curl --fail --location --output /tmp/android-ndk.zip \
+    && /opt/cmake/bin/cmake --version \
+        | grep --fixed-strings 'cmake version 3.30.2'
+
+# Ubuntu 24.04's packaged loader only advertises Vulkan 1.3. Build the Khronos
+# loader matching Nucleus's vendored Vulkan 1.4.350 headers for both Linux
+# architecture lanes. The loader only enables the Wayland WSI used by Nucleus;
+# headless operation needs no WSI extension.
+RUN curl --fail --location --output /tmp/vulkan-headers.tar.gz \
+        https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.350.tar.gz \
+    && echo '6dd105e5cc7ddab6e7b611ae2c1872740d1727557cc8bf9daf13d6de1e4b3999  /tmp/vulkan-headers.tar.gz' \
+        | sha256sum --check --strict \
+    && curl --fail --location --output /tmp/vulkan-loader.tar.gz \
+        https://github.com/KhronosGroup/Vulkan-Loader/archive/refs/tags/v1.4.350.tar.gz \
+    && echo 'fe472f15c49b1915137c065d997dbce86e31750f5bfb56c5c9a3b5b4919e44eb  /tmp/vulkan-loader.tar.gz' \
+        | sha256sum --check --strict \
+    && mkdir -p /tmp/vulkan-source \
+    && tar --extract --gzip --file /tmp/vulkan-headers.tar.gz \
+        --directory /tmp/vulkan-source \
+    && tar --extract --gzip --file /tmp/vulkan-loader.tar.gz \
+        --directory /tmp/vulkan-source \
+    && /opt/cmake/bin/cmake \
+        -S /tmp/vulkan-source/Vulkan-Headers-1.4.350 \
+        -B /tmp/vulkan-headers-build \
+        -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/tmp/vulkan-headers-install \
+    && /opt/cmake/bin/cmake --build /tmp/vulkan-headers-build \
+        --target install \
+    && /opt/cmake/bin/cmake \
+        -S /tmp/vulkan-source/Vulkan-Loader-1.4.350 \
+        -B /tmp/vulkan-loader-arm64 \
+        -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DVULKAN_HEADERS_INSTALL_DIR=/tmp/vulkan-headers-install \
+        -DCMAKE_INSTALL_PREFIX=/opt/nucleus-vulkan-loader/aarch64-linux-gnu \
+        -DBUILD_TESTS=OFF \
+        -DBUILD_WSI_XCB_SUPPORT=OFF \
+        -DBUILD_WSI_XLIB_SUPPORT=OFF \
+        -DBUILD_WSI_WAYLAND_SUPPORT=ON \
+    && /opt/cmake/bin/cmake --build /tmp/vulkan-loader-arm64 \
+        --target install \
+    && PKG_CONFIG_LIBDIR=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig \
+        /opt/cmake/bin/cmake \
+        -S /tmp/vulkan-source/Vulkan-Loader-1.4.350 \
+        -B /tmp/vulkan-loader-x86_64 \
+        -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DVULKAN_HEADERS_INSTALL_DIR=/tmp/vulkan-headers-install \
+        -DCMAKE_INSTALL_PREFIX=/opt/nucleus-vulkan-loader/x86_64-linux-gnu \
+        -DCMAKE_SYSTEM_NAME=Linux \
+        -DCMAKE_SYSTEM_PROCESSOR=x86_64 \
+        -DCMAKE_C_COMPILER=clang \
+        -DCMAKE_C_FLAGS=--target=x86_64-linux-gnu \
+        -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld \
+        -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld \
+        -DBUILD_TESTS=OFF \
+        -DBUILD_WSI_XCB_SUPPORT=OFF \
+        -DBUILD_WSI_XLIB_SUPPORT=OFF \
+        -DBUILD_WSI_WAYLAND_SUPPORT=ON \
+    && /opt/cmake/bin/cmake --build /tmp/vulkan-loader-x86_64 \
+        --target install \
+    && readelf -h \
+        /opt/nucleus-vulkan-loader/aarch64-linux-gnu/lib/libvulkan.so.1 \
+        | grep --fixed-strings 'AArch64' \
+    && readelf -h \
+        /opt/nucleus-vulkan-loader/x86_64-linux-gnu/lib/libvulkan.so.1 \
+        | grep --fixed-strings 'Advanced Micro Devices X86-64' \
+    && rm -rf \
+        /tmp/vulkan-headers-build \
+        /tmp/vulkan-headers-install \
+        /tmp/vulkan-loader-arm64 \
+        /tmp/vulkan-loader-x86_64 \
+        /tmp/vulkan-source \
+        /tmp/vulkan-headers.tar.gz \
+        /tmp/vulkan-loader.tar.gz
+
+# Android's NDK host tools remain x86_64. The ARM guest executes them through
+# the same explicit Intel-translation policy used by the Linux amd64 test lane.
+RUN curl --fail --location --output /tmp/android-ndk.zip \
         https://dl.google.com/android/repository/android-ndk-r30-beta2-linux.zip \
     && echo '069427047d18cc6e44369cd7b8e711bfc2c7a3b5  /tmp/android-ndk.zip' \
         | sha1sum --check --strict \
     && unzip -q /tmp/android-ndk.zip -d /opt \
-    && rm -f /tmp/android-ndk.zip \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -f /tmp/android-ndk.zip
 
 RUN usermod \
         --login nucleus-build \
@@ -45,10 +236,12 @@ RUN usermod \
     && groupmod --new-name nucleus-build ubuntu \
     && usermod \
         --groups '' \
-        --comment 'Nucleus Native Build' \
+        --comment 'Nucleus Linux Build' \
         nucleus-build
 
-COPY --chmod=0755 entrypoint.sh /usr/local/bin/nucleus-native-build
+COPY --chmod=0755 entrypoint.sh /usr/local/bin/nucleus-build
+RUN install --directory --mode=0755 /opt/nucleus-swiftpm-libcxx
+COPY --chmod=0644 libcxx-swiftpm.ld /opt/nucleus-swiftpm-libcxx/libstdc++.so
 
 USER nucleus-build
 WORKDIR /src
@@ -59,7 +252,7 @@ ENV ANDROID_NDK_HOME=/opt/android-ndk-r30-beta2 \
     HOME=/home/nucleus-build \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    PATH=/opt/cmake/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PATH=/opt/cmake/bin:/opt/swift/usr/bin:/usr/lib/ccache:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     TZ=UTC
 
-ENTRYPOINT ["/usr/local/bin/nucleus-native-build"]
+ENTRYPOINT ["/usr/local/bin/nucleus-build"]

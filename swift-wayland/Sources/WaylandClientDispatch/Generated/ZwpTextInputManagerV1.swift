@@ -8,7 +8,7 @@ package enum ZwpTextInputManagerV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_zwp_text_input_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == ZwpTextInputManagerV1Client {
+extension WaylandProxy where Interface == ZwpTextInputManagerV1Client {
     package func createTextInput() throws(WaylandProxyError) -> WaylandProxy<ZwpTextInputV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         guard

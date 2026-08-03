@@ -2,9 +2,9 @@ import Glibc
 package import NucleusAppHostProtocols
 import NucleusDiagnostics
 package import NucleusRenderModel
-package import NucleusRenderer
-import Vulkan
-import VulkanC
+internal import NucleusRenderer
+internal import Vulkan
+internal import VulkanC
 
 package struct RendererOutputInfo:
     Sendable, Equatable
@@ -95,7 +95,7 @@ func rendererErrno() -> Int32 {
 }
 
 func rendererMonotonicNowNs() -> UInt64 {
-    var timestamp = timespec()
+    var timestamp = timespec(tv_sec: 0, tv_nsec: 0)
     unsafe clock_gettime(CLOCK_MONOTONIC, &timestamp)
     return UInt64(timestamp.tv_sec)
         &* 1_000_000_000

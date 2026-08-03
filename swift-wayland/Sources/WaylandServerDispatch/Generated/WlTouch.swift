@@ -2,12 +2,12 @@
 // Typed server descriptor and dispatch for wl_touch.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol WlTouchRequests: AnyObject {
     func release(_ request: WaylandRequest<WlTouchServer>)
 }
-package extension WlTouchRequests {
+extension WlTouchRequests {
     package func release(_ request: WaylandRequest<WlTouchServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -87,7 +87,7 @@ package enum WlTouchServer: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == WlTouchServer {
+extension WaylandResourceHandle where Interface == WlTouchServer {
     package var supportsShape: Bool {
         guard let version else {
             return false
@@ -171,7 +171,7 @@ package extension WaylandResourceHandle where Interface == WlTouchServer {
         return true
     }
 }
-package extension WlNewId where Interface == WlTouchServer {
+extension WlNewId where Interface == WlTouchServer {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -184,7 +184,7 @@ package extension WlNewId where Interface == WlTouchServer {
         )
     }
 }
-package extension WlTouchServer {
+extension WlTouchServer {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

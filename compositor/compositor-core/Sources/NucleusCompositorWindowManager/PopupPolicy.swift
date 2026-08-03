@@ -1,6 +1,6 @@
-import NucleusCompositorServer
+internal import NucleusCompositorServer
 package import NucleusCompositorServerTypes
-import NucleusTypes
+internal import NucleusTypes
 
 private struct PopupRect: Equatable {
     var x: Int32

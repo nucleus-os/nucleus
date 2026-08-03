@@ -1,6 +1,6 @@
 import CxxStdlib
 import NucleusReactRuntimeCxxBridge
-import NucleusUI
+internal import NucleusUI
 import NucleusUIEmbedder
 
 /// The mounted view for an RN text component.

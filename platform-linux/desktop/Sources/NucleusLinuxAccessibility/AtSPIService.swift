@@ -380,7 +380,7 @@ package final class AtSPIService: LinuxReactorSource {
     }
 
     private static func monotonicMicroseconds() -> UInt64 {
-        var now = timespec()
+        var now = timespec(tv_sec: 0, tv_nsec: 0)
         // `now` is a live, correctly aligned value for the duration of the C
         // call, and clock_gettime writes exactly one initialized timespec.
         let result = unsafe clock_gettime(CLOCK_MONOTONIC, &now)

@@ -1,9 +1,9 @@
 import Glibc
 import NucleusCompositorDrmC
-import NucleusRenderModel
-package import NucleusRenderer
-import Vulkan
-import VulkanC
+internal import NucleusRenderModel
+internal import NucleusRenderer
+internal import Vulkan
+internal import VulkanC
 
 @MainActor
 extension DRMScanoutPresenter {

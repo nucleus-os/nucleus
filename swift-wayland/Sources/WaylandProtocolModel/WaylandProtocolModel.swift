@@ -187,7 +187,11 @@ package enum WaylandProtocolParser {
     package static func parse(data: Data, path: String = "<memory>") throws -> WaylandProtocol {
         let delegate = ParserDelegate(path: path)
         let parser = XMLParser(data: data)
+        #if canImport(Darwin)
+        unsafe parser.delegate = delegate
+        #else
         parser.delegate = delegate
+        #endif
         guard parser.parse() else {
             if let failure = delegate.failure {
                 throw failure

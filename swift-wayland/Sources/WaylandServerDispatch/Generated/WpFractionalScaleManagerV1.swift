@@ -11,7 +11,7 @@ import WaylandServerC
         _ request: WaylandRequest<WpFractionalScaleManagerV1Server>,
         id: WlNewId<WpFractionalScaleV1Server>, surface: WaylandBorrowedObject<WlSurfaceServer>)
 }
-package extension WpFractionalScaleManagerV1Requests {
+extension WpFractionalScaleManagerV1Requests {
     package func destroy(_ request: WaylandRequest<WpFractionalScaleManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -82,18 +82,18 @@ package enum WpFractionalScaleManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == WpFractionalScaleManagerV1Server {
+extension WaylandRequest where Interface == WpFractionalScaleManagerV1Server {
     package func postError(_ code: WpFractionalScaleManagerV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WpFractionalScaleManagerV1Server {
+extension WaylandResourceHandle where Interface == WpFractionalScaleManagerV1Server {
     @discardableResult
     package func postError(_ code: WpFractionalScaleManagerV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WpFractionalScaleManagerV1Server {
+extension WlNewId where Interface == WpFractionalScaleManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpFractionalScaleManagerV1Requests>(
@@ -106,7 +106,7 @@ package extension WlNewId where Interface == WpFractionalScaleManagerV1Server {
             installed: installed)
     }
 }
-package extension WpFractionalScaleManagerV1Server {
+extension WpFractionalScaleManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpFractionalScaleManagerV1Requests>(
         implementation: Implementation,

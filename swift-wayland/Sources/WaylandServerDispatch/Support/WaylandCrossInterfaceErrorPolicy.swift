@@ -1,5 +1,5 @@
 import WaylandProtocolTypes
-import WaylandServer
+package import WaylandServer
 
 extension WaylandRequest
 where Interface == ZxdgDecorationManagerV1Server {

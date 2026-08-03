@@ -1,6 +1,6 @@
 // Stable client-side runtime types used by generated listener dispatch.
 
-import WaylandClientC
+package import WaylandClientC
 
 #if canImport(Glibc)
 import Glibc

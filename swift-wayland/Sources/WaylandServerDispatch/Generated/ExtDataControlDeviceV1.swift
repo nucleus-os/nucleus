@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ExtDataControlDeviceV1Requests: AnyObject {
     func setSelection(
@@ -14,7 +14,7 @@ import WaylandServerC
         _ request: WaylandRequest<ExtDataControlDeviceV1Server>,
         source: WaylandBorrowedObject<ExtDataControlSourceV1Server>?)
 }
-package extension ExtDataControlDeviceV1Requests {
+extension ExtDataControlDeviceV1Requests {
     package func destroy(_ request: WaylandRequest<ExtDataControlDeviceV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -119,7 +119,7 @@ package enum ExtDataControlDeviceV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ExtDataControlDeviceV1Server {
+extension WaylandResourceHandle where Interface == ExtDataControlDeviceV1Server {
     @discardableResult
     package func sendDataOffer(id: WaylandResourceHandle<ExtDataControlOfferV1Server>) -> Bool {
         guard let target = unsafe resource else {
@@ -194,18 +194,18 @@ package extension WaylandResourceHandle where Interface == ExtDataControlDeviceV
         return true
     }
 }
-package extension WaylandRequest where Interface == ExtDataControlDeviceV1Server {
+extension WaylandRequest where Interface == ExtDataControlDeviceV1Server {
     package func postError(_ code: ExtDataControlDeviceV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ExtDataControlDeviceV1Server {
+extension WaylandResourceHandle where Interface == ExtDataControlDeviceV1Server {
     @discardableResult
     package func postError(_ code: ExtDataControlDeviceV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ExtDataControlDeviceV1Server {
+extension WlNewId where Interface == ExtDataControlDeviceV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ExtDataControlDeviceV1Requests>(
@@ -218,7 +218,7 @@ package extension WlNewId where Interface == ExtDataControlDeviceV1Server {
             installed: installed)
     }
 }
-package extension ExtDataControlDeviceV1Server {
+extension ExtDataControlDeviceV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ExtDataControlDeviceV1Requests>(
         implementation: Implementation,

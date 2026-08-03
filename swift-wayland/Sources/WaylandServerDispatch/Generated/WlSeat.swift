@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol WlSeatRequests: AnyObject {
     func getPointer(_ request: WaylandRequest<WlSeatServer>, id: WlNewId<WlPointerServer>)
@@ -11,7 +11,7 @@ import WaylandServerC
     func getTouch(_ request: WaylandRequest<WlSeatServer>, id: WlNewId<WlTouchServer>)
     func release(_ request: WaylandRequest<WlSeatServer>)
 }
-package extension WlSeatRequests {
+extension WlSeatRequests {
     package func release(_ request: WaylandRequest<WlSeatServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -120,7 +120,7 @@ package enum WlSeatServer: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == WlSeatServer {
+extension WaylandResourceHandle where Interface == WlSeatServer {
     package var supportsName: Bool {
         guard let version else {
             return false
@@ -147,18 +147,18 @@ package extension WaylandResourceHandle where Interface == WlSeatServer {
         }
     }
 }
-package extension WaylandRequest where Interface == WlSeatServer {
+extension WaylandRequest where Interface == WlSeatServer {
     package func postError(_ code: WlSeatError, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WlSeatServer {
+extension WaylandResourceHandle where Interface == WlSeatServer {
     @discardableResult
     package func postError(_ code: WlSeatError, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WlSeatServer {
+extension WlNewId where Interface == WlSeatServer {
     @discardableResult
     @MainActor
     package func create<Owner: WlSeatRequests>(
@@ -170,7 +170,7 @@ package extension WlNewId where Interface == WlSeatServer {
             vtable: WlSeatServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
     }
 }
-package extension WlSeatServer {
+extension WlSeatServer {
     @MainActor
     package static func global<Implementation: AnyObject & WlSeatRequests>(
         implementation: Implementation,

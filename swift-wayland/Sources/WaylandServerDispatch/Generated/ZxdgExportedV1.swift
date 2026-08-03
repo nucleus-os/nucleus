@@ -2,12 +2,12 @@
 // Typed server descriptor and dispatch for zxdg_exported_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZxdgExportedV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZxdgExportedV1Server>)
 }
-package extension ZxdgExportedV1Requests {
+extension ZxdgExportedV1Requests {
     package func destroy(_ request: WaylandRequest<ZxdgExportedV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -59,7 +59,7 @@ package enum ZxdgExportedV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZxdgExportedV1Server {
+extension WaylandResourceHandle where Interface == ZxdgExportedV1Server {
     @discardableResult
     package func sendHandle(handle: String) -> Bool {
         guard let target = unsafe resource else {
@@ -71,7 +71,7 @@ package extension WaylandResourceHandle where Interface == ZxdgExportedV1Server 
         }
     }
 }
-package extension WlNewId where Interface == ZxdgExportedV1Server {
+extension WlNewId where Interface == ZxdgExportedV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -84,7 +84,7 @@ package extension WlNewId where Interface == ZxdgExportedV1Server {
             installed: installed)
     }
 }
-package extension ZxdgExportedV1Server {
+extension ZxdgExportedV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

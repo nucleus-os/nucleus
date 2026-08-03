@@ -22,7 +22,7 @@ import WaylandServerC
         _ request: WaylandRequest<XdgPositionerServer>, parent_width: Int32, parent_height: Int32)
     func setParentConfigure(_ request: WaylandRequest<XdgPositionerServer>, serial: UInt32)
 }
-package extension XdgPositionerRequests {
+extension XdgPositionerRequests {
     package func destroy(_ request: WaylandRequest<XdgPositionerServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -201,18 +201,18 @@ package enum XdgPositionerServer: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == XdgPositionerServer {
+extension WaylandRequest where Interface == XdgPositionerServer {
     package func postError(_ code: XdgPositionerError, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == XdgPositionerServer {
+extension WaylandResourceHandle where Interface == XdgPositionerServer {
     @discardableResult
     package func postError(_ code: XdgPositionerError, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == XdgPositionerServer {
+extension WlNewId where Interface == XdgPositionerServer {
     @discardableResult
     @MainActor
     package func create<Owner: XdgPositionerRequests>(
@@ -225,7 +225,7 @@ package extension WlNewId where Interface == XdgPositionerServer {
             installed: installed)
     }
 }
-package extension XdgPositionerServer {
+extension XdgPositionerServer {
     @MainActor
     package static func global<Implementation: AnyObject & XdgPositionerRequests>(
         implementation: Implementation,

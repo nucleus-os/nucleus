@@ -2,7 +2,7 @@
 // Typed server descriptor and dispatch for zwlr_foreign_toplevel_manager_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwlrForeignToplevelManagerV1Requests: AnyObject {
     func stop(_ request: WaylandRequest<ZwlrForeignToplevelManagerV1Server>)
@@ -54,7 +54,7 @@ package enum ZwlrForeignToplevelManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwlrForeignToplevelManagerV1Server {
+extension WaylandResourceHandle where Interface == ZwlrForeignToplevelManagerV1Server {
     @discardableResult
     package func sendToplevel(toplevel: WaylandResourceHandle<ZwlrForeignToplevelHandleV1Server>)
         -> Bool
@@ -95,7 +95,7 @@ package extension WaylandResourceHandle where Interface == ZwlrForeignToplevelMa
         return true
     }
 }
-package extension WlNewId where Interface == ZwlrForeignToplevelManagerV1Server {
+extension WlNewId where Interface == ZwlrForeignToplevelManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwlrForeignToplevelManagerV1Requests>(
@@ -108,7 +108,7 @@ package extension WlNewId where Interface == ZwlrForeignToplevelManagerV1Server 
             installed: installed)
     }
 }
-package extension ZwlrForeignToplevelManagerV1Server {
+extension ZwlrForeignToplevelManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwlrForeignToplevelManagerV1Requests>(
         implementation: Implementation,

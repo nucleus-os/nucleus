@@ -8,7 +8,7 @@ package enum WpCursorShapeManagerV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_wp_cursor_shape_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 2
 }
-package extension WaylandProxy where Interface == WpCursorShapeManagerV1Client {
+extension WaylandProxy where Interface == WpCursorShapeManagerV1Client {
     package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in

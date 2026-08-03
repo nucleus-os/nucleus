@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol WlShmRequests: AnyObject {
     func createPool(
@@ -11,7 +11,7 @@ import WaylandServerC
         fd: consuming WaylandOwnedFileDescriptor, size: Int32)
     func release(_ request: WaylandRequest<WlShmServer>)
 }
-package extension WlShmRequests {
+extension WlShmRequests {
     package func release(_ request: WaylandRequest<WlShmServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -77,7 +77,7 @@ package enum WlShmServer: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == WlShmServer {
+extension WaylandResourceHandle where Interface == WlShmServer {
     @discardableResult
     package func sendFormat(format: WlShmFormat) -> Bool {
         guard let target = unsafe resource else {
@@ -87,18 +87,18 @@ package extension WaylandResourceHandle where Interface == WlShmServer {
         return true
     }
 }
-package extension WaylandRequest where Interface == WlShmServer {
+extension WaylandRequest where Interface == WlShmServer {
     package func postError(_ code: WlShmError, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WlShmServer {
+extension WaylandResourceHandle where Interface == WlShmServer {
     @discardableResult
     package func postError(_ code: WlShmError, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WlShmServer {
+extension WlNewId where Interface == WlShmServer {
     @discardableResult
     @MainActor
     package func create<Owner: WlShmRequests>(
@@ -110,7 +110,7 @@ package extension WlNewId where Interface == WlShmServer {
             vtable: WlShmServer.descriptor.nativeRequestVtable, owner: owner, installed: installed)
     }
 }
-package extension WlShmServer {
+extension WlShmServer {
     @MainActor
     package static func global<Implementation: AnyObject & WlShmRequests>(
         implementation: Implementation,

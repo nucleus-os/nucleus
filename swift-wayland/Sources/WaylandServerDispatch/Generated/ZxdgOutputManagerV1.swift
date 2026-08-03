@@ -10,7 +10,7 @@ import WaylandServerC
         _ request: WaylandRequest<ZxdgOutputManagerV1Server>, id: WlNewId<ZxdgOutputV1Server>,
         output: WaylandBorrowedObject<WlOutputServer>)
 }
-package extension ZxdgOutputManagerV1Requests {
+extension ZxdgOutputManagerV1Requests {
     package func destroy(_ request: WaylandRequest<ZxdgOutputManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -80,7 +80,7 @@ package enum ZxdgOutputManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ZxdgOutputManagerV1Server {
+extension WlNewId where Interface == ZxdgOutputManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZxdgOutputManagerV1Requests>(
@@ -93,7 +93,7 @@ package extension WlNewId where Interface == ZxdgOutputManagerV1Server {
             installed: installed)
     }
 }
-package extension ZxdgOutputManagerV1Server {
+extension ZxdgOutputManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZxdgOutputManagerV1Requests>(
         implementation: Implementation,

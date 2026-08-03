@@ -34,7 +34,7 @@ import Testing
     #expect(events.split(separator: "\n").count == 3)
 }
 
-@Test func runRegistryReclaimsOnlySupersededSucceededRuns() async throws {
+@Test func runRegistryLeavesReclamationToTheExplicitLifecycleCommand() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-retention-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -42,7 +42,8 @@ import Testing
     let runs = directory.appendingPathComponent("runs")
     try manager.createDirectory(at: runs, withIntermediateDirectories: true)
     let overflow = 5
-    let existing = Int(RunRegistry.retainedRuns) + overflow
+    let retained = 100
+    let existing = retained + overflow
     func record(_ id: String, startedAt: String, status: RunStatus) throws {
         let run = runs.appendingPathComponent(id)
         try manager.createDirectory(at: run, withIntermediateDirectories: true)
@@ -73,13 +74,16 @@ import Testing
 
     let registry = RunRegistry(root: FilePath(directory.path))
     let run = try await registry.begin(command: ["collider", "doctor"])
+    let reclaimable = Set(
+        await registry.reclaimableRuns(keeping: retained).map(\.id.rawValue))
 
     let remaining = Set(try manager.contentsOfDirectory(atPath: runs.path))
     #expect(remaining.contains(run.id.rawValue))
     #expect(remaining.contains("2020-01-01T00-00-00Z-7"))
     #expect(remaining.contains(oldest[0]))
     for id in oldest[1...overflow] {
-        #expect(!remaining.contains(id))
+        #expect(remaining.contains(id))
+        #expect(reclaimable.contains(id))
     }
     #expect(remaining.contains(oldest[oldest.count - 1]))
 }

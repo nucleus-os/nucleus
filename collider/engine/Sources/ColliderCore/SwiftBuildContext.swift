@@ -13,9 +13,60 @@ public enum SwiftBuildTarget: Hashable, Sendable {
     case swiftSDK(name: String, targetTriple: String)
 }
 
+public enum SwiftPMExecution: Hashable, Sendable {
+    case host
+    case oci(SwiftPMOCIExecution)
+}
+
+public struct SwiftPMOCIExecution: Hashable, Sendable {
+    public let executionPlatform: ExecutionPlatform
+    public let artifactTarget: ArtifactTarget
+    public let imageID: FilePath
+    public let hostname: String
+    public let hostWorkingDirectory: FilePath
+    public let mounts: [OCIMount]
+    public let temporaryDirectory: FilePath?
+    public let processFilesystemPolicy: OCIProcessFilesystemPolicy
+    public let intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy
+    public let resourceLimits: OCIResourceLimits
+    public let containerEnvironment: [String: String]
+    public let commandPrefix: [String]
+
+    public init(
+        executionPlatform: ExecutionPlatform,
+        artifactTarget: ArtifactTarget,
+        imageID: FilePath,
+        hostname: String,
+        hostWorkingDirectory: FilePath,
+        mounts: [OCIMount],
+        temporaryDirectory: FilePath? = nil,
+        processFilesystemPolicy: OCIProcessFilesystemPolicy = .standard,
+        intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy = .disabled,
+        resourceLimits: OCIResourceLimits = .build,
+        containerEnvironment: [String: String] = [:],
+        commandPrefix: [String] = ["swiftpm"]
+    ) {
+        precondition(executionPlatform == .linuxARM64OCI)
+        self.executionPlatform = executionPlatform
+        self.artifactTarget = artifactTarget
+        self.imageID = imageID
+        self.hostname = hostname
+        self.hostWorkingDirectory = hostWorkingDirectory
+        self.mounts = mounts
+        self.temporaryDirectory = temporaryDirectory
+        self.processFilesystemPolicy = processFilesystemPolicy
+        self.intelBinaryTranslationPolicy = intelBinaryTranslationPolicy
+        self.resourceLimits = resourceLimits
+        self.containerEnvironment = containerEnvironment
+        self.commandPrefix = commandPrefix
+    }
+}
+
 /// Every setting that determines whether SwiftPM compilation artifacts may be
 /// reused by another task.
 public struct SwiftBuildContext: Hashable, Sendable {
+    public static let defaultMaximumParallelism: UInt32 = 10
+
     public let packageRoot: FilePath
     public let configuration: SwiftBuildConfiguration
     public let target: SwiftBuildTarget
@@ -26,7 +77,10 @@ public struct SwiftBuildContext: Hashable, Sendable {
     public let cFlags: [String]
     public let cxxFlags: [String]
     public let linkerFlags: [String]
+    public let toolsets: [FilePath]
     public let staticSwiftStandardLibrary: Bool
+    public let maximumParallelism: UInt32
+    public let execution: SwiftPMExecution
 
     public init(
         packageRoot: FilePath,
@@ -39,9 +93,13 @@ public struct SwiftBuildContext: Hashable, Sendable {
         cFlags: [String] = [],
         cxxFlags: [String] = [],
         linkerFlags: [String] = [],
-        staticSwiftStandardLibrary: Bool = false
+        toolsets: [FilePath] = [],
+        staticSwiftStandardLibrary: Bool = false,
+        maximumParallelism: UInt32 = SwiftBuildContext.defaultMaximumParallelism,
+        execution: SwiftPMExecution = .host
     ) {
         precondition(packageRoot.isAbsolute && packageRoot.isLexicallyNormal)
+        precondition(maximumParallelism > 0)
         self.packageRoot = packageRoot
         self.configuration = configuration
         self.target = target
@@ -52,7 +110,10 @@ public struct SwiftBuildContext: Hashable, Sendable {
         self.cFlags = cFlags
         self.cxxFlags = cxxFlags
         self.linkerFlags = linkerFlags
+        self.toolsets = toolsets
         self.staticSwiftStandardLibrary = staticSwiftStandardLibrary
+        self.maximumParallelism = maximumParallelism
+        self.execution = execution
     }
 
     /// Stable canonical bytes used both in task identity and to derive the
@@ -80,9 +141,43 @@ public struct SwiftBuildContext: Hashable, Sendable {
         append(cFlags, tag: 8, into: &encoder)
         append(cxxFlags, tag: 9, into: &encoder)
         append(linkerFlags, tag: 11, into: &encoder)
+        for toolset in toolsets {
+            encoder.append(tag: 26, string: toolset.string)
+        }
         encoder.append(
             tag: 12,
             integer: staticSwiftStandardLibrary ? 1 : 0)
+        encoder.append(tag: 25, integer: UInt64(maximumParallelism))
+        switch execution {
+        case .host:
+            encoder.append(tag: 14, string: "host")
+        case .oci(let configuration):
+            encoder.append(tag: 14, string: "oci")
+            encoder.append(
+                tag: 15,
+                string: configuration.executionPlatform.operatingSystem.rawValue)
+            encoder.append(
+                tag: 16,
+                string: configuration.executionPlatform.architecture.rawValue)
+            encoder.append(
+                tag: 17,
+                string: configuration.artifactTarget.operatingSystem.rawValue)
+            encoder.append(
+                tag: 18,
+                string: configuration.artifactTarget.architecture.rawValue)
+            encoder.append(tag: 19, string: configuration.imageID.string)
+            encoder.append(
+                tag: 20,
+                string: configuration.intelBinaryTranslationPolicy.rawValue)
+            for mount in configuration.mounts {
+                encoder.append(tag: 21, string: mount.source.string)
+                encoder.append(tag: 22, string: mount.target)
+                encoder.append(tag: 23, string: mount.access.rawValue)
+            }
+            for argument in configuration.commandPrefix {
+                encoder.append(tag: 24, string: argument)
+            }
+        }
         return encoder.bytes
     }
 }
@@ -195,6 +290,106 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             environment: commandEnvironment(environment))
     }
 
+    public func operation(
+        arguments: [String],
+        workingDirectory: FilePath,
+        environment: [String: String]
+    ) -> TaskOperation {
+        switch context.execution {
+        case .host:
+            return .command(
+                command(
+                    arguments: arguments,
+                    workingDirectory: workingDirectory,
+                    environment: environment))
+        case .oci(let configuration):
+            var containerEnvironment: [String: String] = [:]
+            for (name, value) in commandEnvironment(environment)
+            where containerEnvironmentVariable(name) {
+                containerEnvironment[name] = value
+            }
+            containerEnvironment.merge(
+                configuration.containerEnvironment,
+                uniquingKeysWith: { _, configured in configured })
+            return .runOCI(
+                OCIExecution(
+                    executionPlatform: configuration.executionPlatform,
+                    artifactTarget: configuration.artifactTarget,
+                    imageID: configuration.imageID,
+                    hostname: configuration.hostname,
+                    workingDirectory: workingDirectory.string,
+                    hostWorkingDirectory: configuration.hostWorkingDirectory,
+                    mounts: configuration.mounts,
+                    temporaryDirectory: configuration.temporaryDirectory,
+                    networkPolicy: .externalDisabled,
+                    userPolicy: .builder,
+                    capabilityPolicy: .dropAll,
+                    privilegePolicy: .prohibitAcquisition,
+                    processFilesystemPolicy: configuration.processFilesystemPolicy,
+                    intelBinaryTranslationPolicy: configuration.intelBinaryTranslationPolicy,
+                    resourceLimits: configuration.resourceLimits,
+                    containerEnvironment: containerEnvironment,
+                    command: configuration.commandPrefix + processorAffinityArguments + ["swift"]
+                        + commandArguments(arguments),
+                    environment: environment,
+                    output: .logged))
+        }
+    }
+
+    /// Executes a built product in the same host or OCI context that produced it.
+    public func operation(
+        executable: FilePath,
+        arguments: [String],
+        workingDirectory: FilePath,
+        environment: [String: String]
+    ) -> TaskOperation {
+        switch context.execution {
+        case .host:
+            return .command(
+                CommandSpec(
+                    executable: .taskOutput(executable),
+                    arguments: arguments,
+                    workingDirectory: workingDirectory,
+                    environment: commandEnvironment(environment)))
+        case .oci(let configuration):
+            var containerEnvironment: [String: String] = [:]
+            for (name, value) in commandEnvironment(environment)
+            where containerEnvironmentVariable(name) {
+                containerEnvironment[name] = value
+            }
+            containerEnvironment.merge(
+                configuration.containerEnvironment,
+                uniquingKeysWith: { _, configured in configured })
+            return .runOCI(
+                OCIExecution(
+                    executionPlatform: configuration.executionPlatform,
+                    artifactTarget: configuration.artifactTarget,
+                    imageID: configuration.imageID,
+                    hostname: configuration.hostname,
+                    workingDirectory: workingDirectory.string,
+                    hostWorkingDirectory: configuration.hostWorkingDirectory,
+                    mounts: configuration.mounts,
+                    temporaryDirectory: configuration.temporaryDirectory,
+                    networkPolicy: .externalDisabled,
+                    userPolicy: .builder,
+                    capabilityPolicy: .dropAll,
+                    privilegePolicy: .prohibitAcquisition,
+                    processFilesystemPolicy: configuration.processFilesystemPolicy,
+                    intelBinaryTranslationPolicy: configuration.intelBinaryTranslationPolicy,
+                    resourceLimits: configuration.resourceLimits,
+                    containerEnvironment: containerEnvironment,
+                    command: configuration.commandPrefix + processorAffinityArguments
+                        + [executable.string] + arguments,
+                    environment: environment,
+                    output: .logged))
+        }
+    }
+
+    private var processorAffinityArguments: [String] {
+        let lastProcessor = context.maximumParallelism - 1
+        return ["taskset", "--cpu-list", "0-\(lastProcessor)"]
+    }
+
     public func commandArguments(_ arguments: [String]) -> [String] {
         guard let subcommand = arguments.first else {
             return contextArguments
@@ -233,6 +428,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
     private var contextArguments: [String] {
         var arguments = [
             "--configuration", context.configuration.rawValue,
+            "--jobs", String(context.maximumParallelism),
             "--scratch-path", scratchPath.string,
             "--package-path", context.packageRoot.string,
         ]
@@ -241,6 +437,9 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         }
         if case .swiftSDK(let name, let targetTriple) = context.target {
             arguments += ["--swift-sdk", name, "--triple", targetTriple]
+        }
+        for toolset in context.toolsets {
+            arguments += ["--toolset", toolset.string]
         }
         if context.staticSwiftStandardLibrary {
             arguments.append("--static-swift-stdlib")
@@ -378,6 +577,13 @@ private func targetProductsSuffix(forTriple triple: String) -> String {
             platforms.first(where: { $0 == "linux" }) ?? parts[2])
     }
     return "\(productsPlatform(platform))-\(parts[0])"
+}
+
+private func containerEnvironmentVariable(_ name: String) -> Bool {
+    name.hasPrefix("NUCLEUS_")
+        || name.hasPrefix("SWIFTPM_")
+        || name.hasPrefix("CCACHE_")
+        || ["LANG", "LC_ALL", "TZ", "TERM"].contains(name)
 }
 
 private func productsPlatform(_ platform: String) -> String {

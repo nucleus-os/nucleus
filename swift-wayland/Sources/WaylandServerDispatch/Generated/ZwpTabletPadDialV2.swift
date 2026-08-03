@@ -2,14 +2,14 @@
 // Typed server descriptor and dispatch for zwp_tablet_pad_dial_v2.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwpTabletPadDialV2Requests: AnyObject {
     func setFeedback(
         _ request: WaylandRequest<ZwpTabletPadDialV2Server>, description: String, serial: UInt32)
     func destroy(_ request: WaylandRequest<ZwpTabletPadDialV2Server>)
 }
-package extension ZwpTabletPadDialV2Requests {
+extension ZwpTabletPadDialV2Requests {
     package func destroy(_ request: WaylandRequest<ZwpTabletPadDialV2Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -79,7 +79,7 @@ package enum ZwpTabletPadDialV2Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwpTabletPadDialV2Server {
+extension WaylandResourceHandle where Interface == ZwpTabletPadDialV2Server {
     @discardableResult
     package func sendDelta(value120: Int32) -> Bool {
         guard let target = unsafe resource else {
@@ -97,7 +97,7 @@ package extension WaylandResourceHandle where Interface == ZwpTabletPadDialV2Ser
         return true
     }
 }
-package extension WlNewId where Interface == ZwpTabletPadDialV2Server {
+extension WlNewId where Interface == ZwpTabletPadDialV2Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpTabletPadDialV2Requests>(
@@ -110,7 +110,7 @@ package extension WlNewId where Interface == ZwpTabletPadDialV2Server {
             installed: installed)
     }
 }
-package extension ZwpTabletPadDialV2Server {
+extension ZwpTabletPadDialV2Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpTabletPadDialV2Requests>(
         implementation: Implementation,

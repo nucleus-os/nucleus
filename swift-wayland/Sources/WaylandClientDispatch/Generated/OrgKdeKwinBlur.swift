@@ -8,7 +8,7 @@ package enum OrgKdeKwinBlurClient: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_org_kde_kwin_blur())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == OrgKdeKwinBlurClient {
+extension WaylandProxy where Interface == OrgKdeKwinBlurClient {
     package func commit() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_org_kde_kwin_blur_commit(_proxy)

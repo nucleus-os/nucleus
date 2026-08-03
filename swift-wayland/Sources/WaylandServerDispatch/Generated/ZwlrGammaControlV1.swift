@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZwlrGammaControlV1Requests: AnyObject {
     func setGamma(
@@ -11,7 +11,7 @@ import WaylandServerC
         fd: consuming WaylandOwnedFileDescriptor)
     func destroy(_ request: WaylandRequest<ZwlrGammaControlV1Server>)
 }
-package extension ZwlrGammaControlV1Requests {
+extension ZwlrGammaControlV1Requests {
     package func destroy(_ request: WaylandRequest<ZwlrGammaControlV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -79,7 +79,7 @@ package enum ZwlrGammaControlV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZwlrGammaControlV1Server {
+extension WaylandResourceHandle where Interface == ZwlrGammaControlV1Server {
     @discardableResult
     package func sendGammaSize(size: UInt32) -> Bool {
         guard let target = unsafe resource else {
@@ -97,18 +97,18 @@ package extension WaylandResourceHandle where Interface == ZwlrGammaControlV1Ser
         return true
     }
 }
-package extension WaylandRequest where Interface == ZwlrGammaControlV1Server {
+extension WaylandRequest where Interface == ZwlrGammaControlV1Server {
     package func postError(_ code: ZwlrGammaControlV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ZwlrGammaControlV1Server {
+extension WaylandResourceHandle where Interface == ZwlrGammaControlV1Server {
     @discardableResult
     package func postError(_ code: ZwlrGammaControlV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ZwlrGammaControlV1Server {
+extension WlNewId where Interface == ZwlrGammaControlV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwlrGammaControlV1Requests>(
@@ -121,7 +121,7 @@ package extension WlNewId where Interface == ZwlrGammaControlV1Server {
             installed: installed)
     }
 }
-package extension ZwlrGammaControlV1Server {
+extension ZwlrGammaControlV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwlrGammaControlV1Requests>(
         implementation: Implementation,

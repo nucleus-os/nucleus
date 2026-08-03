@@ -2,7 +2,7 @@
 // Typed server descriptor and dispatch for zwp_input_method_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 package enum ZwpInputMethodV1Server: WaylandServerInterface {
     package nonisolated static let maximumVersion: Int32 = 1
@@ -20,7 +20,7 @@ package enum ZwpInputMethodV1Server: WaylandServerInterface {
         unsafe zwp_input_method_v1_send_deactivate(target, context)
     }
 }
-package extension WaylandResourceHandle where Interface == ZwpInputMethodV1Server {
+extension WaylandResourceHandle where Interface == ZwpInputMethodV1Server {
     @discardableResult
     package func sendActivate(id: WaylandResourceHandle<ZwpInputMethodContextV1Server>) -> Bool {
         guard let target = unsafe resource else {
@@ -64,7 +64,7 @@ package extension WaylandResourceHandle where Interface == ZwpInputMethodV1Serve
         return true
     }
 }
-package extension WlNewId where Interface == ZwpInputMethodV1Server {
+extension WlNewId where Interface == ZwpInputMethodV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -77,7 +77,7 @@ package extension WlNewId where Interface == ZwpInputMethodV1Server {
             installed: installed)
     }
 }
-package extension ZwpInputMethodV1Server {
+extension ZwpInputMethodV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

@@ -304,6 +304,21 @@ artifacts, and logs. Each root has an owner, quota, retention policy, and
 recoverability classification. The development workspace and uncommitted source
 snapshots are protected data. Build trees and caches are reconstructible data.
 
+The source-controlled host contract is also the environment authority. It maps
+`XDG_CACHE_HOME`, the native SDK root, and the Android SDK root into
+`NucleusCache`; shell startup files are not the build-system source of truth.
+The persistent development workspace remains on `NucleusDev`, protected source
+snapshots remain on `NucleusSnapshots`, and host-worker materializations remain
+on `NucleusBuild`.
+
+Collider validates typed owner, storage-class, cleanup-policy, quota, reserve,
+and mount evidence. `collider cache status` combines that APFS evidence with
+logical cache generations and Apple Container disk usage. `collider cache
+prune --dry-run` enumerates proven candidates; the mutating form removes stale
+run records, locked abandoned Swift SDK candidates, and dangling OCI images.
+It never prunes the development workspace, source snapshots, active SDK
+generation, immutable artifacts, or reusable incremental build trees.
+
 ### Exit Gate
 
 - `collider doctor ci-macos-builder` is entirely read-only and passes without

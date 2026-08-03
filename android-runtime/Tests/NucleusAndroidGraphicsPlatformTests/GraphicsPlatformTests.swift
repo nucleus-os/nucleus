@@ -1,8 +1,9 @@
 import Glibc
-import Testing
 import NucleusAndroidDrmC
 import NucleusAndroidDrmCTestSupport
 internal import NucleusAndroidGraphicsContract
+import Testing
+
 @testable import NucleusAndroidGraphicsPlatform
 
 private struct RawGraphicsTestError: Error, CustomStringConvertible {
@@ -19,9 +20,11 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
         format rawFormat: UInt32 = nucleus_android_drm_format_xrgb8888()
     ) throws {
         var error = [CChar](repeating: 0, count: 1_024)
-        guard let handle = candidate.renderNode.withCString({ path in
-            unsafe nucleus_android_gpu_create(path, &error, error.count)
-        }) else {
+        guard
+            let handle = candidate.renderNode.withCString({ path in
+                unsafe nucleus_android_gpu_create(path, &error, error.count)
+            })
+        else {
             throw RawGraphicsTestError(description: Self.errorString(error))
         }
 
@@ -69,9 +72,10 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
 
     func diagnostic() throws -> nucleus_android_gpu_diagnostic {
         var diagnostic = nucleus_android_gpu_diagnostic()
-        guard unsafe nucleus_android_gpu_get_diagnostic(
-            handle,
-            &diagnostic) == 0
+        guard
+            unsafe nucleus_android_gpu_get_diagnostic(
+                handle,
+                &diagnostic) == 0
         else {
             throw RawGraphicsTestError(description: "GPU diagnostic unavailable")
         }
@@ -101,8 +105,8 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     }
 }
 
-@Test func higherPrecisionBufferContractsAllocateAndImport() throws {
-    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+@Test func gpuDRM_higherPrecisionBufferContractsAllocateAndImport() throws {
+    let candidate = try #require(DrmDeviceDiscovery.enumerate().first)
     for format in [
         nucleus_android_drm_format_abgr16161616f(),
         nucleus_android_drm_format_abgr2101010(),
@@ -127,8 +131,9 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     let handle: OpaquePointer
 
     init(gpu: RawGraphicsTestGPU) throws {
-        guard let handle = unsafe nucleus_android_syncobj_timeline_create(
-            gpu.handle)
+        guard
+            let handle = unsafe nucleus_android_syncobj_timeline_create(
+                gpu.handle)
         else {
             throw RawGraphicsTestError(description: "syncobj timeline creation failed")
         }
@@ -155,15 +160,16 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
 
     init(gpu: RawGraphicsTestGPU) throws {
         var error = [CChar](repeating: 0, count: 1_024)
-        guard let handle = unsafe nucleus_android_gpu_buffer_create(
-            gpu.handle,
-            64,
-            64,
-            gpu.format,
-            gpu.modifier,
-            0,
-            &error,
-            error.count)
+        guard
+            let handle = unsafe nucleus_android_gpu_buffer_create(
+                gpu.handle,
+                64,
+                64,
+                gpu.format,
+                gpu.modifier,
+                0,
+                &error,
+                error.count)
         else {
             throw RawGraphicsTestError(
                 description: error.withUnsafeBufferPointer {
@@ -189,15 +195,16 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
             throw RawGraphicsTestError(description: "buffer was already released")
         }
         var error = [CChar](repeating: 0, count: 1_024)
-        guard unsafe nucleus_android_gpu_buffer_render(
-            handle,
-            frame,
-            acquire.handle,
-            acquirePoint,
-            release?.handle,
-            releasePoint,
-            &error,
-            error.count) == 0
+        guard
+            unsafe nucleus_android_gpu_buffer_render(
+                handle,
+                frame,
+                acquire.handle,
+                acquirePoint,
+                release?.handle,
+                releasePoint,
+                &error,
+                error.count) == 0
         else {
             throw RawGraphicsTestError(
                 description: error.withUnsafeBufferPointer {
@@ -223,7 +230,7 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     }
 }
 
-@Test func drmDiscoveryReturnsStableNodeAndPciIdentity() throws {
+@Test func gpuDRM_drmDiscoveryReturnsStableNodeAndPciIdentity() throws {
     let candidates = try DrmDeviceDiscovery.enumerate()
     for candidate in candidates {
         #expect(candidate.renderNode.hasPrefix("/dev/dri/renderD"))
@@ -236,8 +243,8 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     }
 }
 
-@Test func selectedHardwareVulkanDeviceMatchesTheDrmRenderNode() throws {
-    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+@Test func gpuDRM_selectedHardwareVulkanDeviceMatchesTheDrmRenderNode() throws {
+    let candidate = try #require(DrmDeviceDiscovery.enumerate().first)
     let device = try AndroidGraphicsDevice(candidate: candidate)
     #expect(device.diagnostic.renderDevice == candidate.renderDevice)
     #expect(device.diagnostic.hardwareDriver)
@@ -247,12 +254,13 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     #expect(!device.diagnostic.gbmBackend.isEmpty)
 }
 
-@Test func brokerAllocatesRendersAndSignalsAnExplicitAcquirePoint() throws {
-    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+@Test func gpuDRM_brokerAllocatesRendersAndSignalsAnExplicitAcquirePoint() throws {
+    let candidate = try #require(DrmDeviceDiscovery.enumerate().first)
     let device = try AndroidGraphicsDevice(candidate: candidate)
-    let pair = try #require(device.formatModifiers(format: DrmFormats.xrgb8888)
-        .map(\.pair)
-        .first(where: device.supports))
+    let pair = try #require(
+        device.formatModifiers(format: DrmFormats.xrgb8888)
+            .map(\.pair)
+            .first(where: device.supports))
     let feedback = WaylandDmabufFeedback(
         mainDevice: candidate.renderDevice,
         tranches: [
@@ -261,10 +269,11 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
                 scanout: false,
                 formats: [pair])
         ])
-    let ring = try device.allocate(BufferAllocationRequest(
-        width: 64,
-        height: 64,
-        feedback: feedback))
+    let ring = try device.allocate(
+        BufferAllocationRequest(
+            width: 64,
+            height: 64,
+            feedback: feedback))
     #expect(ring.buffers.count == 3)
     #expect(ring.buffers.allSatisfy { $0.planeCount == 1 })
     let plane = try ring.buffers[0].exportPlane(at: 0)
@@ -285,12 +294,13 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     #expect(signaled)
 }
 
-@Test func threeBufferReuseMaintainsAcquireReleaseTimelineOrdering() throws {
-    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+@Test func gpuDRM_threeBufferReuseMaintainsAcquireReleaseTimelineOrdering() throws {
+    let candidate = try #require(DrmDeviceDiscovery.enumerate().first)
     let device = try AndroidGraphicsDevice(candidate: candidate)
-    let pair = try #require(device.formatModifiers(format: DrmFormats.xrgb8888)
-        .map(\.pair)
-        .first(where: device.supports))
+    let pair = try #require(
+        device.formatModifiers(format: DrmFormats.xrgb8888)
+            .map(\.pair)
+            .first(where: device.supports))
     let feedback = WaylandDmabufFeedback(
         mainDevice: candidate.renderDevice,
         tranches: [
@@ -299,10 +309,11 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
                 scanout: false,
                 formats: [pair])
         ])
-    let ring = try device.allocate(BufferAllocationRequest(
-        width: 64,
-        height: 64,
-        feedback: feedback))
+    let ring = try device.allocate(
+        BufferAllocationRequest(
+            width: 64,
+            height: 64,
+            feedback: feedback))
     var releases: [UInt64: UInt64] = [:]
     for frame in UInt64(1)...120 {
         let buffer = ring.buffers[Int((frame - 1) % 3)]
@@ -328,23 +339,25 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     #expect(finalAcquireSignaled)
 }
 
-@Test func releaseTimelineSignalsAPollableEventfdWithoutFenceWaiting() throws {
-    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+@Test func gpuDRM_releaseTimelineSignalsAPollableEventfdWithoutFenceWaiting() throws {
+    let candidate = try #require(DrmDeviceDiscovery.enumerate().first)
     let device = try AndroidGraphicsDevice(candidate: candidate)
-    let pair = try #require(device.formatModifiers(format: DrmFormats.xrgb8888)
-        .map(\.pair)
-        .first(where: device.supports))
-    let ring = try device.allocate(BufferAllocationRequest(
-        width: 32,
-        height: 32,
-        feedback: WaylandDmabufFeedback(
-            mainDevice: candidate.renderDevice,
-            tranches: [
-                WaylandDmabufTranche(
-                    targetDevice: candidate.renderDevice,
-                    scanout: false,
-                    formats: [pair])
-            ])))
+    let pair = try #require(
+        device.formatModifiers(format: DrmFormats.xrgb8888)
+            .map(\.pair)
+            .first(where: device.supports))
+    let ring = try device.allocate(
+        BufferAllocationRequest(
+            width: 32,
+            height: 32,
+            feedback: WaylandDmabufFeedback(
+                mainDevice: candidate.renderDevice,
+                tranches: [
+                    WaylandDmabufTranche(
+                        targetDevice: candidate.renderDevice,
+                        scanout: false,
+                        formats: [pair])
+                ])))
     let timeline = try #require(ring.releaseTimeline(for: 1))
     let timelineFD = try timeline.exportFileDescriptor()
     defer { _ = close(timelineFD) }
@@ -374,8 +387,8 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     #expect(isSignaled == 1)
 }
 
-@Test func perBufferReleaseTimelineExportsPendingFenceAfterAvailability() throws {
-    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+@Test func gpuDRM_perBufferReleaseTimelineExportsPendingFenceAfterAvailability() throws {
+    let candidate = try #require(DrmDeviceDiscovery.enumerate().first)
     var bridgeError = [CChar](repeating: 0, count: 1_024)
     let bridge = candidate.renderNode.withCString { path in
         unsafe nucleus_android_syncobj_bridge_create(
@@ -401,7 +414,8 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     }
     defer { unsafe nucleus_android_gpu_destroy(gpu) }
 
-    guard let timeline =
+    guard
+        let timeline =
             unsafe nucleus_android_syncobj_bridge_create_timeline(bridge)
     else {
         throw RawGraphicsTestError(
@@ -410,11 +424,12 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     defer { unsafe nucleus_android_syncobj_timeline_destroy(timeline) }
 
     var producerFence: Int32 = -1
-    guard let nativeFence = unsafe nucleus_android_native_fence_create(
-        gpu,
-        &producerFence,
-        &error,
-        error.count)
+    guard
+        let nativeFence = unsafe nucleus_android_native_fence_create(
+            gpu,
+            &producerFence,
+            &error,
+            error.count)
     else {
         throw RawGraphicsTestError(
             description: error.withUnsafeBufferPointer {
@@ -426,19 +441,22 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
         _ = close(producerFence)
     }
 
-    #expect(unsafe nucleus_android_syncobj_timeline_arm_available(
-        timeline, 7) == 0)
+    #expect(
+        unsafe nucleus_android_syncobj_timeline_arm_available(
+            timeline, 7) == 0)
     var availability = pollfd(
         fd: unsafe nucleus_android_syncobj_timeline_availability_fd(
             timeline),
         events: Int16(POLLIN),
         revents: 0)
     #expect(unsafe poll(&availability, 1, 0) == 0)
-    #expect(unsafe nucleus_android_syncobj_timeline_import_sync_file(
-        timeline, 7, producerFence) == 0)
+    #expect(
+        unsafe nucleus_android_syncobj_timeline_import_sync_file(
+            timeline, 7, producerFence) == 0)
     #expect(unsafe poll(&availability, 1, 1_000) == 1)
-    #expect(unsafe nucleus_android_syncobj_timeline_drain_available(
-        timeline) == 0)
+    #expect(
+        unsafe nucleus_android_syncobj_timeline_drain_available(
+            timeline) == 0)
 
     let releaseFence =
         unsafe nucleus_android_syncobj_timeline_export_sync_file(
@@ -451,21 +469,23 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
         events: Int16(POLLIN),
         revents: 0)
     #expect(unsafe poll(&releaseState, 1, 0) == 0)
-    #expect(unsafe nucleus_android_native_fence_signal(
-        nativeFence, &error, error.count) == 0)
+    #expect(
+        unsafe nucleus_android_native_fence_signal(
+            nativeFence, &error, error.count) == 0)
     #expect(unsafe poll(&releaseState, 1, 1_000) == 1)
 }
 
-@Test func nativeFenceExportsUnsignaledSyncFileThenSignalsIt() throws {
-    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+@Test func gpuDRM_nativeFenceExportsUnsignaledSyncFileThenSignalsIt() throws {
+    let candidate = try #require(DrmDeviceDiscovery.enumerate().first)
     let gpu = try RawGraphicsTestGPU(candidate: candidate)
     var syncFile: Int32 = -1
     var error = [CChar](repeating: 0, count: 1_024)
-    guard let nativeFence = unsafe nucleus_android_native_fence_create(
-        gpu.handle,
-        &syncFile,
-        &error,
-        error.count)
+    guard
+        let nativeFence = unsafe nucleus_android_native_fence_create(
+            gpu.handle,
+            &syncFile,
+            &error,
+            error.count)
     else {
         throw RawGraphicsTestError(
             description: error.withUnsafeBufferPointer {
@@ -482,15 +502,16 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
         events: Int16(POLLIN),
         revents: 0)
     #expect(unsafe poll(&descriptor, 1, 0) == 0)
-    #expect(unsafe nucleus_android_native_fence_signal(
-        nativeFence,
-        &error,
-        error.count) == 0)
+    #expect(
+        unsafe nucleus_android_native_fence_signal(
+            nativeFence,
+            &error,
+            error.count) == 0)
     #expect(unsafe poll(&descriptor, 1, 1_000) == 1)
 }
 
-@Test func neverSubmittedBufferIsReclaimedWhileGPUStaysAlive() throws {
-    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+@Test func gpuDRM_neverSubmittedBufferIsReclaimedWhileGPUStaysAlive() throws {
+    let candidate = try #require(DrmDeviceDiscovery.enumerate().first)
     let gpu = try RawGraphicsTestGPU(candidate: candidate)
     let baseline = try gpu.diagnostic()
     let buffer = try RawGraphicsTestBuffer(gpu: gpu)
@@ -507,8 +528,8 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     #expect(reclaimed.reclaimed_buffer_count == baseline.reclaimed_buffer_count + 1)
 }
 
-@Test func inFlightBufferIsReclaimedOnlyAfterItsFenceSignals() throws {
-    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+@Test func gpuDRM_inFlightBufferIsReclaimedOnlyAfterItsFenceSignals() throws {
+    let candidate = try #require(DrmDeviceDiscovery.enumerate().first)
     let gpu = try RawGraphicsTestGPU(candidate: candidate)
     let acquire = try RawGraphicsTestTimeline(gpu: gpu)
     let baseline = try gpu.diagnostic()
@@ -549,8 +570,8 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     #expect(reclaimed.terminal_submission_result == 0)
 }
 
-@Test func postSubmitFailurePreservesSubmittedBufferState() throws {
-    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+@Test func gpuDRM_postSubmitFailurePreservesSubmittedBufferState() throws {
+    let candidate = try #require(DrmDeviceDiscovery.enumerate().first)
     let gpu = try RawGraphicsTestGPU(candidate: candidate)
     let acquire = try RawGraphicsTestTimeline(gpu: gpu)
     let baseline = try gpu.diagnostic()
@@ -590,8 +611,8 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     #expect(reclaimed.completed_serial == reclaimed.submitted_serial)
 }
 
-@Test func repeatedRenderReleaseCyclesReturnLiveBuffersToBaseline() throws {
-    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+@Test func gpuDRM_repeatedRenderReleaseCyclesReturnLiveBuffersToBaseline() throws {
+    let candidate = try #require(DrmDeviceDiscovery.enumerate().first)
     let gpu = try RawGraphicsTestGPU(candidate: candidate)
     let acquire = try RawGraphicsTestTimeline(gpu: gpu)
     let baseline = try gpu.diagnostic()
@@ -619,8 +640,8 @@ private struct RawGraphicsTestError: Error, CustomStringConvertible {
     #expect(reclaimed.completed_serial == reclaimed.submitted_serial)
 }
 
-@Test func concurrentRendersAndReleasesShareOneGPULifetimeDomain() async throws {
-    guard let candidate = try DrmDeviceDiscovery.enumerate().first else { return }
+@Test func gpuDRM_concurrentRendersAndReleasesShareOneGPULifetimeDomain() async throws {
+    let candidate = try #require(DrmDeviceDiscovery.enumerate().first)
     let gpu = try RawGraphicsTestGPU(candidate: candidate)
     let acquire = try RawGraphicsTestTimeline(gpu: gpu)
     let baseline = try gpu.diagnostic()

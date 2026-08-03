@@ -2,13 +2,13 @@
 // Typed server descriptor and dispatch for ext_foreign_toplevel_list_v1.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ExtForeignToplevelListV1Requests: AnyObject {
     func stop(_ request: WaylandRequest<ExtForeignToplevelListV1Server>)
     func destroy(_ request: WaylandRequest<ExtForeignToplevelListV1Server>)
 }
-package extension ExtForeignToplevelListV1Requests {
+extension ExtForeignToplevelListV1Requests {
     package func destroy(_ request: WaylandRequest<ExtForeignToplevelListV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -76,7 +76,7 @@ package enum ExtForeignToplevelListV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ExtForeignToplevelListV1Server {
+extension WaylandResourceHandle where Interface == ExtForeignToplevelListV1Server {
     @discardableResult
     package func sendToplevel(toplevel: WaylandResourceHandle<ExtForeignToplevelHandleV1Server>)
         -> Bool
@@ -117,7 +117,7 @@ package extension WaylandResourceHandle where Interface == ExtForeignToplevelLis
         return true
     }
 }
-package extension WlNewId where Interface == ExtForeignToplevelListV1Server {
+extension WlNewId where Interface == ExtForeignToplevelListV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ExtForeignToplevelListV1Requests>(
@@ -130,7 +130,7 @@ package extension WlNewId where Interface == ExtForeignToplevelListV1Server {
             installed: installed)
     }
 }
-package extension ExtForeignToplevelListV1Server {
+extension ExtForeignToplevelListV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ExtForeignToplevelListV1Requests>(
         implementation: Implementation,

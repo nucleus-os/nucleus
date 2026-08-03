@@ -91,7 +91,7 @@ struct WorkspaceContext: Sendable {
         if normalizedEnvironment["NUCLEUS_NATIVE_SDK_ROOT"]?.isEmpty != false {
             let cacheRoot: URL
             if let value = normalizedEnvironment["XDG_CACHE_HOME"],
-               !value.isEmpty
+                !value.isEmpty
             {
                 cacheRoot = URL(fileURLWithPath: value, isDirectory: true)
             } else if let home = normalizedEnvironment["HOME"], !home.isEmpty {
@@ -115,6 +115,25 @@ struct WorkspaceContext: Sendable {
         var environment = ProcessInfo.processInfo.environment
         let root = try resolveWorkspaceRoot(environment: environment)
         environment["NUCLEUS_WORKSPACE_ROOT"] = root
+        #if os(macOS)
+        if let contract = try? MacOSBuilderContract.load(
+            root: URL(fileURLWithPath: root, isDirectory: true))
+        {
+            if environment["XDG_CACHE_HOME"]?.isEmpty != false {
+                environment["XDG_CACHE_HOME"] = contract.environment.xdgCacheHome
+            }
+            if environment["NUCLEUS_NATIVE_SDK_ROOT"]?.isEmpty != false {
+                environment["NUCLEUS_NATIVE_SDK_ROOT"] =
+                    contract.environment.nativeSDKRoot
+            }
+            if environment["ANDROID_SDK_ROOT"]?.isEmpty != false {
+                environment["ANDROID_SDK_ROOT"] = contract.environment.androidSDKRoot
+            }
+            if environment["ANDROID_HOME"]?.isEmpty != false {
+                environment["ANDROID_HOME"] = contract.environment.androidSDKRoot
+            }
+        }
+        #endif
         let logging = activeCommandLogging.withLock { $0 }
         let cancellation =
             activeCancellation.withLock { $0 }
@@ -142,7 +161,8 @@ struct WorkspaceContext: Sendable {
         var environment = sanitizedEnvironment(self.environment)
         environment["CCACHE_BASEDIR"] = root.path
         environment["CCACHE_COMPILERCHECK"] = "content"
-        environment["CCACHE_DIR"] = cacheRoot
+        environment["CCACHE_DIR"] =
+            cacheRoot
             .appendingPathComponent("nucleus/host-ccache", isDirectory: true)
             .path
         environment["CCACHE_MAXSIZE"] = "50G"
@@ -245,10 +265,11 @@ struct WorkspaceContext: Sendable {
                 returning: Value.self
             ) { group in
                 group.addTask {
-                    let outcome: Result<
-                        CommandResult,
-                        RunningCommandFailure
-                    >
+                    let outcome:
+                        Result<
+                            CommandResult,
+                            RunningCommandFailure
+                        >
                     do {
                         let result = try await runtime.execute(
                             specification,
@@ -369,15 +390,12 @@ private actor RunningCommandState {
 
     private var phase = Phase.starting
     private(set) var processIdentifier: Int32?
-    private var readiness: [
-        CheckedContinuation<Result<Void, RunningCommandFailure>, Never>
-    ] = []
-    private var completion: [
-        CheckedContinuation<
+    private var readiness: [CheckedContinuation<Result<Void, RunningCommandFailure>, Never>] = []
+    private var completion:
+        [CheckedContinuation<
             Result<CommandResult, RunningCommandFailure>,
             Never
-        >
-    ] = []
+        >] = []
 
     var isRunning: Bool {
         switch phase {

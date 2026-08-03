@@ -2,7 +2,7 @@
 // Typed server descriptor and dispatch for zxdg_toplevel_v6.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol ZxdgToplevelV6Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZxdgToplevelV6Server>)
@@ -30,7 +30,7 @@ import WaylandServerC
     func unsetFullscreen(_ request: WaylandRequest<ZxdgToplevelV6Server>)
     func setMinimized(_ request: WaylandRequest<ZxdgToplevelV6Server>)
 }
-package extension ZxdgToplevelV6Requests {
+extension ZxdgToplevelV6Requests {
     package func destroy(_ request: WaylandRequest<ZxdgToplevelV6Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -293,7 +293,7 @@ package enum ZxdgToplevelV6Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == ZxdgToplevelV6Server {
+extension WaylandResourceHandle where Interface == ZxdgToplevelV6Server {
     @discardableResult
     package func sendConfigure<StatesElement>(width: Int32, height: Int32, states: [StatesElement])
         -> Bool
@@ -315,7 +315,7 @@ package extension WaylandResourceHandle where Interface == ZxdgToplevelV6Server 
         return true
     }
 }
-package extension WlNewId where Interface == ZxdgToplevelV6Server {
+extension WlNewId where Interface == ZxdgToplevelV6Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZxdgToplevelV6Requests>(
@@ -328,7 +328,7 @@ package extension WlNewId where Interface == ZxdgToplevelV6Server {
             installed: installed)
     }
 }
-package extension ZxdgToplevelV6Server {
+extension ZxdgToplevelV6Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZxdgToplevelV6Requests>(
         implementation: Implementation,

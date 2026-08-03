@@ -67,7 +67,7 @@ package enum ZwpInputPanelSurfaceV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ZwpInputPanelSurfaceV1Server {
+extension WlNewId where Interface == ZwpInputPanelSurfaceV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpInputPanelSurfaceV1Requests>(
@@ -80,7 +80,7 @@ package extension WlNewId where Interface == ZwpInputPanelSurfaceV1Server {
             installed: installed)
     }
 }
-package extension ZwpInputPanelSurfaceV1Server {
+extension ZwpInputPanelSurfaceV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpInputPanelSurfaceV1Requests>(
         implementation: Implementation,

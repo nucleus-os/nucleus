@@ -8,7 +8,7 @@ package enum WlFixesClient: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_wl_fixes())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == WlFixesClient {
+extension WaylandProxy where Interface == WlFixesClient {
     package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in

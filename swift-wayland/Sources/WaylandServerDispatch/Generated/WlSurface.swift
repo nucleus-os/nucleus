@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol WlSurfaceRequests: AnyObject {
     func destroy(_ request: WaylandRequest<WlSurfaceServer>)
@@ -26,7 +26,7 @@ import WaylandServerC
     func offset(_ request: WaylandRequest<WlSurfaceServer>, x: Int32, y: Int32)
     func getRelease(_ request: WaylandRequest<WlSurfaceServer>, callback: WlNewId<WlCallbackServer>)
 }
-package extension WlSurfaceRequests {
+extension WlSurfaceRequests {
     package func destroy(_ request: WaylandRequest<WlSurfaceServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -270,7 +270,7 @@ package enum WlSurfaceServer: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == WlSurfaceServer {
+extension WaylandResourceHandle where Interface == WlSurfaceServer {
     package var supportsPreferredBufferScale: Bool {
         guard let version else {
             return false
@@ -327,18 +327,18 @@ package extension WaylandResourceHandle where Interface == WlSurfaceServer {
         return true
     }
 }
-package extension WaylandRequest where Interface == WlSurfaceServer {
+extension WaylandRequest where Interface == WlSurfaceServer {
     package func postError(_ code: WlSurfaceError, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WlSurfaceServer {
+extension WaylandResourceHandle where Interface == WlSurfaceServer {
     @discardableResult
     package func postError(_ code: WlSurfaceError, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WlSurfaceServer {
+extension WlNewId where Interface == WlSurfaceServer {
     @discardableResult
     @MainActor
     package func create<Owner: WlSurfaceRequests>(
@@ -351,7 +351,7 @@ package extension WlNewId where Interface == WlSurfaceServer {
             installed: installed)
     }
 }
-package extension WlSurfaceServer {
+extension WlSurfaceServer {
     @MainActor
     package static func global<Implementation: AnyObject & WlSurfaceRequests>(
         implementation: Implementation,

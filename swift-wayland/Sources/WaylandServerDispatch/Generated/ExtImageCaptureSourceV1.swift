@@ -7,7 +7,7 @@ import WaylandServerC
 @MainActor package protocol ExtImageCaptureSourceV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ExtImageCaptureSourceV1Server>)
 }
-package extension ExtImageCaptureSourceV1Requests {
+extension ExtImageCaptureSourceV1Requests {
     package func destroy(_ request: WaylandRequest<ExtImageCaptureSourceV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -54,7 +54,7 @@ package enum ExtImageCaptureSourceV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ExtImageCaptureSourceV1Server {
+extension WlNewId where Interface == ExtImageCaptureSourceV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -67,7 +67,7 @@ package extension WlNewId where Interface == ExtImageCaptureSourceV1Server {
             installed: installed)
     }
 }
-package extension ExtImageCaptureSourceV1Server {
+extension ExtImageCaptureSourceV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

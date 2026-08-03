@@ -2,7 +2,7 @@
 // Typed server descriptor and dispatch for wl_callback.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 package enum WlCallbackServer: WaylandServerInterface {
     package nonisolated static let maximumVersion: Int32 = 1
@@ -14,7 +14,7 @@ package enum WlCallbackServer: WaylandServerInterface {
         unsafe wl_callback_send_done(target, callback_data)
     }
 }
-package extension WaylandResourceHandle where Interface == WlCallbackServer {
+extension WaylandResourceHandle where Interface == WlCallbackServer {
     @discardableResult
     package func sendDone(callback_data: UInt32) -> Bool {
         guard let target = unsafe resource else {
@@ -24,7 +24,7 @@ package extension WaylandResourceHandle where Interface == WlCallbackServer {
         return true
     }
 }
-package extension WlNewId where Interface == WlCallbackServer {
+extension WlNewId where Interface == WlCallbackServer {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -42,7 +42,7 @@ package extension WlNewId where Interface == WlCallbackServer {
         _createBare()
     }
 }
-package extension WlCallbackServer {
+extension WlCallbackServer {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

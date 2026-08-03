@@ -2,12 +2,12 @@
 // Typed server descriptor and dispatch for wl_buffer.
 
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol WlBufferRequests: AnyObject {
     func destroy(_ request: WaylandRequest<WlBufferServer>)
 }
-package extension WlBufferRequests {
+extension WlBufferRequests {
     package func destroy(_ request: WaylandRequest<WlBufferServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -52,7 +52,7 @@ package enum WlBufferServer: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == WlBufferServer {
+extension WaylandResourceHandle where Interface == WlBufferServer {
     @discardableResult
     package func sendRelease() -> Bool {
         guard let target = unsafe resource else {
@@ -62,7 +62,7 @@ package extension WaylandResourceHandle where Interface == WlBufferServer {
         return true
     }
 }
-package extension WlNewId where Interface == WlBufferServer {
+extension WlNewId where Interface == WlBufferServer {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -75,7 +75,7 @@ package extension WlNewId where Interface == WlBufferServer {
             installed: installed)
     }
 }
-package extension WlBufferServer {
+extension WlBufferServer {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

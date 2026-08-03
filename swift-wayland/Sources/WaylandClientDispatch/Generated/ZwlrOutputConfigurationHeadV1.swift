@@ -9,7 +9,7 @@ package enum ZwlrOutputConfigurationHeadV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_zwlr_output_configuration_head_v1())
     package nonisolated static let maximumVersion: UInt32 = 4
 }
-package extension WaylandProxy where Interface == ZwlrOutputConfigurationHeadV1Client {
+extension WaylandProxy where Interface == ZwlrOutputConfigurationHeadV1Client {
     package func setMode(mode: WaylandProxy<ZwlrOutputModeV1Client>) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _modeProxy = try unsafe mode.requireNativeProxy()

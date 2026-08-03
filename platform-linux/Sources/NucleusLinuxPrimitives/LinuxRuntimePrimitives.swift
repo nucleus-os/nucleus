@@ -4,7 +4,7 @@ import NucleusLinuxPrimitivesC
 /// The process-wide Linux monotonic clock, expressed as saturating nanoseconds.
 package enum LinuxMonotonicClock {
     package static func nowNanoseconds() -> UInt64 {
-        var value = timespec()
+        var value = timespec(tv_sec: 0, tv_nsec: 0)
         guard unsafe clock_gettime(CLOCK_MONOTONIC, &value) == 0,
             value.tv_sec >= 0,
             value.tv_nsec >= 0

@@ -12,7 +12,7 @@ import WaylandServerC
         id: WlNewId<ZwpKeyboardShortcutsInhibitorV1Server>,
         surface: WaylandBorrowedObject<WlSurfaceServer>, seat: WaylandBorrowedObject<WlSeatServer>)
 }
-package extension ZwpKeyboardShortcutsInhibitManagerV1Requests {
+extension ZwpKeyboardShortcutsInhibitManagerV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpKeyboardShortcutsInhibitManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -87,12 +87,12 @@ package enum ZwpKeyboardShortcutsInhibitManagerV1Server: WaylandServerInterface 
             }
         }
 }
-package extension WaylandRequest where Interface == ZwpKeyboardShortcutsInhibitManagerV1Server {
+extension WaylandRequest where Interface == ZwpKeyboardShortcutsInhibitManagerV1Server {
     package func postError(_ code: ZwpKeyboardShortcutsInhibitManagerV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == ZwpKeyboardShortcutsInhibitManagerV1Server {
+extension WaylandResourceHandle where Interface == ZwpKeyboardShortcutsInhibitManagerV1Server {
     @discardableResult
     package func postError(_ code: ZwpKeyboardShortcutsInhibitManagerV1Error, message: String)
         -> Bool
@@ -100,7 +100,7 @@ package extension WaylandResourceHandle where Interface == ZwpKeyboardShortcutsI
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == ZwpKeyboardShortcutsInhibitManagerV1Server {
+extension WlNewId where Interface == ZwpKeyboardShortcutsInhibitManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpKeyboardShortcutsInhibitManagerV1Requests>(
@@ -113,7 +113,7 @@ package extension WlNewId where Interface == ZwpKeyboardShortcutsInhibitManagerV
             owner: owner, installed: installed)
     }
 }
-package extension ZwpKeyboardShortcutsInhibitManagerV1Server {
+extension ZwpKeyboardShortcutsInhibitManagerV1Server {
     @MainActor
     package static func global<
         Implementation: AnyObject & ZwpKeyboardShortcutsInhibitManagerV1Requests

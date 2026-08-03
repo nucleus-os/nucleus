@@ -7,7 +7,7 @@ import WaylandServerC
 @MainActor package protocol ZwpXwaylandKeyboardGrabV1Requests: AnyObject {
     func destroy(_ request: WaylandRequest<ZwpXwaylandKeyboardGrabV1Server>)
 }
-package extension ZwpXwaylandKeyboardGrabV1Requests {
+extension ZwpXwaylandKeyboardGrabV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpXwaylandKeyboardGrabV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -54,7 +54,7 @@ package enum ZwpXwaylandKeyboardGrabV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ZwpXwaylandKeyboardGrabV1Server {
+extension WlNewId where Interface == ZwpXwaylandKeyboardGrabV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -67,7 +67,7 @@ package extension WlNewId where Interface == ZwpXwaylandKeyboardGrabV1Server {
             installed: installed)
     }
 }
-package extension ZwpXwaylandKeyboardGrabV1Server {
+extension ZwpXwaylandKeyboardGrabV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

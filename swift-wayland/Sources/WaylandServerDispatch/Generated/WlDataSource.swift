@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 @MainActor package protocol WlDataSourceRequests: AnyObject {
     func offer(_ request: WaylandRequest<WlDataSourceServer>, mime_type: String)
@@ -11,7 +11,7 @@ import WaylandServerC
     func setActions(
         _ request: WaylandRequest<WlDataSourceServer>, dnd_actions: WlDataDeviceManagerDndAction)
 }
-package extension WlDataSourceRequests {
+extension WlDataSourceRequests {
     package func destroy(_ request: WaylandRequest<WlDataSourceServer>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -112,7 +112,7 @@ package enum WlDataSourceServer: WaylandServerInterface {
             }
         }
 }
-package extension WaylandResourceHandle where Interface == WlDataSourceServer {
+extension WaylandResourceHandle where Interface == WlDataSourceServer {
     package var supportsDndDropPerformed: Bool {
         guard let version else {
             return false
@@ -188,18 +188,18 @@ package extension WaylandResourceHandle where Interface == WlDataSourceServer {
         return true
     }
 }
-package extension WaylandRequest where Interface == WlDataSourceServer {
+extension WaylandRequest where Interface == WlDataSourceServer {
     package func postError(_ code: WlDataSourceError, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WlDataSourceServer {
+extension WaylandResourceHandle where Interface == WlDataSourceServer {
     @discardableResult
     package func postError(_ code: WlDataSourceError, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WlDataSourceServer {
+extension WlNewId where Interface == WlDataSourceServer {
     @discardableResult
     @MainActor
     package func create<Owner: WlDataSourceRequests>(
@@ -212,7 +212,7 @@ package extension WlNewId where Interface == WlDataSourceServer {
             installed: installed)
     }
 }
-package extension WlDataSourceServer {
+extension WlDataSourceServer {
     @MainActor
     package static func global<Implementation: AnyObject & WlDataSourceRequests>(
         implementation: Implementation,

@@ -10,7 +10,7 @@ import WaylandServerC
         _ request: WaylandRequest<ZwpRelativePointerManagerV1Server>,
         id: WlNewId<ZwpRelativePointerV1Server>, pointer: WaylandBorrowedObject<WlPointerServer>)
 }
-package extension ZwpRelativePointerManagerV1Requests {
+extension ZwpRelativePointerManagerV1Requests {
     package func destroy(_ request: WaylandRequest<ZwpRelativePointerManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -81,7 +81,7 @@ package enum ZwpRelativePointerManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WlNewId where Interface == ZwpRelativePointerManagerV1Server {
+extension WlNewId where Interface == ZwpRelativePointerManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ZwpRelativePointerManagerV1Requests>(
@@ -94,7 +94,7 @@ package extension WlNewId where Interface == ZwpRelativePointerManagerV1Server {
             installed: installed)
     }
 }
-package extension ZwpRelativePointerManagerV1Server {
+extension ZwpRelativePointerManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & ZwpRelativePointerManagerV1Requests>(
         implementation: Implementation,

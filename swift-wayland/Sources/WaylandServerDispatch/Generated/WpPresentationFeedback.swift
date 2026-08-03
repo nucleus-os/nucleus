@@ -3,7 +3,7 @@
 
 package import WaylandProtocolTypes
 package import WaylandServer
-import WaylandServerC
+package import WaylandServerC
 
 package enum WpPresentationFeedbackServer: WaylandServerInterface {
     package nonisolated static let maximumVersion: Int32 = 2
@@ -27,7 +27,7 @@ package enum WpPresentationFeedbackServer: WaylandServerInterface {
         unsafe wp_presentation_feedback_send_discarded(target)
     }
 }
-package extension WaylandResourceHandle where Interface == WpPresentationFeedbackServer {
+extension WaylandResourceHandle where Interface == WpPresentationFeedbackServer {
     @discardableResult
     package func sendSyncOutput(output: WaylandResourceHandle<WlOutputServer>) -> Bool {
         guard let target = unsafe resource else {
@@ -60,7 +60,7 @@ package extension WaylandResourceHandle where Interface == WpPresentationFeedbac
         return true
     }
 }
-package extension WlNewId where Interface == WpPresentationFeedbackServer {
+extension WlNewId where Interface == WpPresentationFeedbackServer {
     @discardableResult
     @MainActor
     package func create<Owner: AnyObject>(
@@ -78,7 +78,7 @@ package extension WlNewId where Interface == WpPresentationFeedbackServer {
         _createBare()
     }
 }
-package extension WpPresentationFeedbackServer {
+extension WpPresentationFeedbackServer {
     @MainActor
     package static func global<Implementation: AnyObject & AnyObject>(
         implementation: Implementation,

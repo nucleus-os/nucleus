@@ -21,14 +21,14 @@ esac
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export NUCLEUS_WORKSPACE_ROOT="$root"
-: "${NUCLEUS_NATIVE_SDK_ROOT:=${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/nucleus-native-sdk}"
-export NUCLEUS_NATIVE_SDK_ROOT
 
 host_env="$root/tools/host-env.sh"
 pkg="$root/collider"
 bin="$pkg/.build/release/collider"
 
 source "$root/tools/host-platform-env.sh"
+: "${NUCLEUS_NATIVE_SDK_ROOT:=${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/nucleus-native-sdk}"
+export NUCLEUS_NATIVE_SDK_ROOT
 
 # Collider builds a complete monorepo checkout. Initialize only absent
 # submodules before compiling Collider itself. Existing checkouts are user

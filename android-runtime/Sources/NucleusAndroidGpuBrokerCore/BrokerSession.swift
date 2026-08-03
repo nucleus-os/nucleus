@@ -1,5 +1,5 @@
 import Glibc
-package import NucleusAndroidGraphicsContract
+import NucleusAndroidGraphicsContract
 package import NucleusAndroidGraphicsPlatform
 package import NucleusAndroidIPC
 

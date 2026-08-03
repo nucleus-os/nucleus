@@ -1,9 +1,9 @@
 // The desktop Wayland client policy over swift-wayland's typed client layer.
 
-import NucleusWindowClientContracts
+package import NucleusWindowClientContracts
 package import WaylandClient
 package import WaylandClientDispatch
-import WaylandProtocolTypes
+package import WaylandProtocolTypes
 import WaylandProtocolsC
 
 /// A live `wl_output` the desktop client can anchor surfaces to.
@@ -68,8 +68,9 @@ package final class NucleusDesktopConnection {
     private var dmaBufFeedback: NucleusDesktopDmaBufFeedback?
 
     package private(set) var outputs: [UInt32: NucleusDesktopOutput] = [:]
-    package private(set) var capabilities: [NucleusDesktopCapabilityKind: NucleusDesktopCapability] =
-        [:]
+    package private(set) var capabilities:
+        [NucleusDesktopCapabilityKind: NucleusDesktopCapability] =
+            [:]
 
     package var onReady: (() -> Void)?
     package var onOutputsChanged: (() -> Void)?

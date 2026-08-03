@@ -8,7 +8,7 @@ package enum ZwpInputPanelSurfaceV1Client: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_zwp_input_panel_surface_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == ZwpInputPanelSurfaceV1Client {
+extension WaylandProxy where Interface == ZwpInputPanelSurfaceV1Client {
     package func setToplevel(output: WaylandProxy<WlOutputClient>, position: UInt32)
         throws(WaylandProxyError)
     {

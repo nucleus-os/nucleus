@@ -14,7 +14,7 @@ import Glibc
     package init() {}
 
     package func installDeviceSeat(
-        package: @escaping (UnsafePointer<CChar>?) -> Int32,
+        open: @escaping (UnsafePointer<CChar>?) -> Int32,
         close: @escaping (Int32) -> Void
     ) {
         unsafe openDevice = open

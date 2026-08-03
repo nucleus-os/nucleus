@@ -115,6 +115,13 @@ let package = Package(
                 "WaylandColliderRecipe",
             ]),
         .testTarget(
+            name: "ColliderCoreTests",
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                .product(name: "ColliderRuntime", package: "engine"),
+            ],
+            path: "engine/Tests/ColliderCoreTests"),
+        .testTarget(
             name: "SwiftTargetSDKColliderRecipeTests",
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),

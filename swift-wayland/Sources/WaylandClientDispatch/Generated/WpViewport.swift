@@ -8,7 +8,7 @@ package enum WpViewportClient: WaylandClientInterface {
         nativeInterface: swift_wayland_iface_wp_viewport())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-package extension WaylandProxy where Interface == WpViewportClient {
+extension WaylandProxy where Interface == WpViewportClient {
     package func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in

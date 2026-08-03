@@ -11,7 +11,7 @@ import WaylandServerC
         _ request: WaylandRequest<WpCommitTimingManagerV1Server>,
         id: WlNewId<WpCommitTimerV1Server>, surface: WaylandBorrowedObject<WlSurfaceServer>)
 }
-package extension WpCommitTimingManagerV1Requests {
+extension WpCommitTimingManagerV1Requests {
     package func destroy(_ request: WaylandRequest<WpCommitTimingManagerV1Server>) {
         unsafe wl_resource_destroy(request.resource)
     }
@@ -81,18 +81,18 @@ package enum WpCommitTimingManagerV1Server: WaylandServerInterface {
             }
         }
 }
-package extension WaylandRequest where Interface == WpCommitTimingManagerV1Server {
+extension WaylandRequest where Interface == WpCommitTimingManagerV1Server {
     package func postError(_ code: WpCommitTimingManagerV1Error, message: String) {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WaylandResourceHandle where Interface == WpCommitTimingManagerV1Server {
+extension WaylandResourceHandle where Interface == WpCommitTimingManagerV1Server {
     @discardableResult
     package func postError(_ code: WpCommitTimingManagerV1Error, message: String) -> Bool {
         postError(code: code.rawValue, message: message)
     }
 }
-package extension WlNewId where Interface == WpCommitTimingManagerV1Server {
+extension WlNewId where Interface == WpCommitTimingManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: WpCommitTimingManagerV1Requests>(
@@ -105,7 +105,7 @@ package extension WlNewId where Interface == WpCommitTimingManagerV1Server {
             installed: installed)
     }
 }
-package extension WpCommitTimingManagerV1Server {
+extension WpCommitTimingManagerV1Server {
     @MainActor
     package static func global<Implementation: AnyObject & WpCommitTimingManagerV1Requests>(
         implementation: Implementation,

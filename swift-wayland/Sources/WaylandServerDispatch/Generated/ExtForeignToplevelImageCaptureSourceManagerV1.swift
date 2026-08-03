@@ -11,7 +11,7 @@ import WaylandServerC
         toplevel_handle: WaylandBorrowedObject<ExtForeignToplevelHandleV1Server>)
     func destroy(_ request: WaylandRequest<ExtForeignToplevelImageCaptureSourceManagerV1Server>)
 }
-package extension ExtForeignToplevelImageCaptureSourceManagerV1Requests {
+extension ExtForeignToplevelImageCaptureSourceManagerV1Requests {
     package func destroy(
         _ request: WaylandRequest<ExtForeignToplevelImageCaptureSourceManagerV1Server>
     ) {
@@ -91,7 +91,7 @@ package enum ExtForeignToplevelImageCaptureSourceManagerV1Server: WaylandServerI
             }
         }
 }
-package extension WlNewId where Interface == ExtForeignToplevelImageCaptureSourceManagerV1Server {
+extension WlNewId where Interface == ExtForeignToplevelImageCaptureSourceManagerV1Server {
     @discardableResult
     @MainActor
     package func create<Owner: ExtForeignToplevelImageCaptureSourceManagerV1Requests>(
@@ -105,7 +105,7 @@ package extension WlNewId where Interface == ExtForeignToplevelImageCaptureSourc
                 .nativeRequestVtable, owner: owner, installed: installed)
     }
 }
-package extension ExtForeignToplevelImageCaptureSourceManagerV1Server {
+extension ExtForeignToplevelImageCaptureSourceManagerV1Server {
     @MainActor
     package static func global<
         Implementation: AnyObject & ExtForeignToplevelImageCaptureSourceManagerV1Requests

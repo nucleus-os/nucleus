@@ -1,5 +1,5 @@
 import NucleusHostProjectionTestSupport
-package import NucleusLayers
+import NucleusLayers
 import NucleusRendererTestSupport
 import NucleusResourceTestSupport
 import NucleusRetainedSceneTestSupport
