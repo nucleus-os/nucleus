@@ -1,9 +1,10 @@
 import ColliderCore
+import ColliderRuntime
 import Foundation
 import SystemPackage
 import Testing
 
-@testable import ColliderRuntime
+@testable import AndroidRuntimeColliderRecipe
 
 @Test func aospSourceLockVerificationChecksPinnedUpstreamsAndLauncher() async throws {
     let fixture = try AOSPWorkflowFixture(name: "source-lock")
@@ -61,19 +62,21 @@ import Testing
         to: git)
     let task = TaskDeclaration(
         id: TaskID(rawValue: "fixture.aosp-source-lock"),
-        component: ComponentID(rawValue: "fixture"),
+        component: ComponentID(rawValue: "android-runtime"),
         outputs: [
             OutputDeclaration(
                 path: FilePath(report.path),
                 validation: .json)
         ],
         assessmentPolicy: .always,
-        operation: .verifyAOSPSourceLock(
-            AOSPSourceLockVerification(
-                specification: fixture.specification,
-                launcher: FilePath(fixture.launcher.path),
-                report: FilePath(report.path),
-                environment: fixture.environment)))
+        operation: .action(
+            try AnyColliderAction(
+                VerifyAOSPSourceLockAction(
+                    verification: AOSPSourceLockVerification(
+                        specification: fixture.specification,
+                        launcher: FilePath(fixture.launcher.path),
+                        report: FilePath(report.path),
+                        environment: fixture.environment)))))
 
     let execution = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
@@ -178,7 +181,7 @@ import Testing
         ".nucleus/resolved-manifest.xml")
     let task = TaskDeclaration(
         id: TaskID(rawValue: "fixture.aosp-source"),
-        component: ComponentID(rawValue: "fixture"),
+        component: ComponentID(rawValue: "android-runtime"),
         outputs: [
             OutputDeclaration(
                 path: FilePath(resolvedManifest.path),
@@ -187,14 +190,16 @@ import Testing
                 path: FilePath(provenance.path),
                 validation: .json),
         ],
-        operation: .prepareAOSPSource(
-            AOSPSourcePreparation(
-                specification: fixture.specification,
-                launcher: FilePath(fixture.launcher.path),
-                source: FilePath(source.path),
-                syncJobs: 4,
-                retryFetches: 3,
-                environment: environment)))
+        operation: .action(
+            try AnyColliderAction(
+                PrepareAOSPSourceAction(
+                    preparation: AOSPSourcePreparation(
+                        specification: fixture.specification,
+                        launcher: FilePath(fixture.launcher.path),
+                        source: FilePath(source.path),
+                        syncJobs: 4,
+                        retryFetches: 3,
+                        environment: environment)))))
 
     let execution = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
@@ -241,6 +246,167 @@ import Testing
             atPath: source.appendingPathComponent(
                 ".nucleus/patched-resolved-manifest.xml"
             ).path))
+}
+
+@Test func aospSigningIdentityCreatesAndValidatesEveryRequiredAlias() async throws {
+    let fixture = try AOSPWorkflowFixture(name: "signing")
+    defer { fixture.remove() }
+    try fixture.writeExecutable(
+        #"""
+        #!/bin/sh
+        set -eu
+        command="$1"
+        shift
+        output=
+        while test "$#" -gt 0; do
+          if test "$1" = -out; then
+            output="$2"
+            shift 2
+          else
+            shift
+          fi
+        done
+        test -n "$output"
+        case "$command" in
+          genpkey) printf 'private-key\n' > "$output" ;;
+          req) printf 'certificate\n' > "$output" ;;
+          pkcs8) printf 'pkcs8\n' > "$output" ;;
+          x509|pkey) printf 'public-key\n' > "$output" ;;
+          *) exit 2 ;;
+        esac
+        """#,
+        to: fixture.bin.appendingPathComponent("openssl"))
+    let destination = fixture.root.appendingPathComponent("signing")
+    let identity = destination.appendingPathComponent("signing-identity.json")
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "android-runtime.fixture-signing"),
+        component: ComponentID(rawValue: "android-runtime"),
+        outputs: [
+            OutputDeclaration(
+                path: FilePath(identity.path),
+                validation: .json),
+            OutputDeclaration(
+                path: FilePath(destination.path),
+                validation: .nonEmptyDirectory),
+        ],
+        assessmentPolicy: .always,
+        operation: .action(
+            try AnyColliderAction(
+                PrepareAOSPSigningIdentityAction(
+                    preparation: AOSPSigningIdentityPreparation(
+                        destination: FilePath(destination.path),
+                        subject: "/O=Nucleus/CN=Fixture",
+                        environment: fixture.environment)))))
+
+    let runtime = ColliderRuntime()
+    let graph = try TaskGraph([task])
+    let stateRoot = FilePath(
+        fixture.root.appendingPathComponent("state").path)
+    _ = try await runtime.execute(
+        graph: graph,
+        selected: [task.id],
+        stateRoot: stateRoot)
+    _ = try await runtime.execute(
+        graph: graph,
+        selected: [task.id],
+        stateRoot: stateRoot)
+
+    let metadata = try JSONDecoder().decode(
+        AOSPSigningIdentityFixture.self,
+        from: Data(contentsOf: identity))
+    #expect(metadata.purpose == "local-development")
+    #expect(metadata.subject == "/O=Nucleus/CN=Fixture")
+    #expect(
+        metadata.certificates.map(\.alias) == [
+            "releasekey", "platform", "shared", "media", "networkstack",
+        ])
+    for alias in metadata.certificates.map(\.alias) {
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: destination.appendingPathComponent("\(alias).pem").path)
+        #expect((attributes[.posixPermissions] as? NSNumber)?.uint16Value == 0o600)
+    }
+}
+
+@Test func aospProductPublicationCommitsOutputsThenActivatesTheGeneration() async throws {
+    let fixture = try AOSPWorkflowFixture(name: "publication")
+    defer { fixture.remove() }
+    let aospRoot = fixture.root.appendingPathComponent("aosp-build")
+    let buildRoot = aospRoot.appendingPathComponent("generations/generation-one")
+    let staged = buildRoot.appendingPathComponent("staged")
+    let stagedImages = staged.appendingPathComponent("images")
+    try FileManager.default.createDirectory(
+        at: stagedImages,
+        withIntermediateDirectories: true)
+    for (name, contents) in [
+        ("nucleus_x86_64-target_files.zip", "target-files"),
+        ("nucleus_x86_64-images.zip", "images-archive"),
+        ("image-provenance.json", "{}"),
+    ] {
+        try Data(contents.utf8).write(to: staged.appendingPathComponent(name))
+    }
+    try Data("system-image".utf8).write(
+        to: stagedImages.appendingPathComponent("system.img"))
+    let build = AOSPProductBuild(
+        productSource: FilePath(fixture.root.path),
+        source: FilePath(fixture.root.path),
+        repoLauncher: FilePath(fixture.launcher.path),
+        sourceProvenance: FilePath(fixture.root.appendingPathComponent("source.json").path),
+        buildRoot: FilePath(buildRoot.path),
+        ccacheDirectory: FilePath(fixture.root.appendingPathComponent("ccache").path),
+        containerImageID: FilePath(fixture.root.appendingPathComponent("image-id").path),
+        signingIdentity: FilePath(fixture.root.appendingPathComponent("signing").path),
+        product: "nucleus_x86_64",
+        release: "fixture",
+        variant: "user",
+        buildNumber: "1",
+        buildTimestamp: 1,
+        buildJobs: 1,
+        expectedPlatformSDK: 37,
+        expectedVendorAPILevel: 37,
+        environment: fixture.environment)
+    let active = aospRoot.appendingPathComponent("current")
+    let publishedProvenance = buildRoot.appendingPathComponent(
+        "signed/image-provenance.json")
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "android-runtime.fixture-publication"),
+        component: ComponentID(rawValue: "android-runtime"),
+        outputs: [
+            OutputDeclaration(
+                path: FilePath(active.path),
+                validation: .symlinkTarget),
+            OutputDeclaration(
+                path: FilePath(publishedProvenance.path),
+                validation: .json),
+        ],
+        assessmentPolicy: .always,
+        operation: .action(
+            try AnyColliderAction(PublishAOSPProductAction(build: build))))
+
+    _ = try await ColliderRuntime().execute(
+        graph: TaskGraph([task]),
+        selected: [task.id],
+        stateRoot: FilePath(fixture.root.appendingPathComponent("state").path))
+
+    #expect(
+        try FileManager.default.destinationOfSymbolicLink(atPath: active.path)
+            == "generations/generation-one")
+    #expect(
+        try String(
+            contentsOf: buildRoot.appendingPathComponent("images/system.img"),
+            encoding: .utf8) == "system-image")
+    #expect(
+        try String(contentsOf: publishedProvenance, encoding: .utf8) == "{}")
+}
+
+private struct AOSPSigningIdentityFixture: Decodable {
+    struct Certificate: Decodable {
+        let alias: String
+        let x509SHA256: String
+    }
+
+    let purpose: String
+    let subject: String
+    let certificates: [Certificate]
 }
 
 private struct AOSPWorkflowFixture {

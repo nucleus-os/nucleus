@@ -2,18 +2,197 @@ import ColliderCore
 import Foundation
 import SystemPackage
 
-extension ColliderRuntime {
+struct AOSPPlatformSource: Hashable, Sendable {
+    let release: String
+    let revision: String
+    let manifestURL: String
+    let manifestRevision: String
+    let manifestCommit: String
+    let defaultManifestDigest: ArtifactDigest
+    let superprojectURL: String
+    let superprojectRevision: String
+    let superprojectCommit: String
+}
+
+struct AOSPRepoSource: Hashable, Sendable {
+    let launcherVersion: String
+    let launcherDigest: ArtifactDigest
+    let repositoryURL: String
+    let revision: String
+    let tagObject: String
+    let commit: String
+}
+
+struct AOSPSourceSpecification: Hashable, Sendable {
+    let platform: AOSPPlatformSource
+    let repo: AOSPRepoSource
+}
+
+struct AOSPSourceLockVerification: Hashable, Sendable {
+    let specification: AOSPSourceSpecification
+    let launcher: FilePath
+    let report: FilePath
+    let environment: [String: String]
+}
+
+struct AOSPSourcePreparation: Hashable, Sendable {
+    let specification: AOSPSourceSpecification
+    let launcher: FilePath
+    let source: FilePath
+    let syncJobs: UInt32
+    let retryFetches: UInt32
+    let environment: [String: String]
+}
+
+struct VerifyAOSPSourceLockAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let specification: AOSPSourceSpecification
+        let launcher: FilePath
+        let report: FilePath
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encodeAOSPSourceSpecification(specification, into: &encoder)
+            encoder.append(tag: 20, string: launcher.string)
+            encoder.append(tag: 21, string: report.string)
+        }
+    }
+
+    static let kind: ActionKind = "android-runtime.verify-aosp-source-lock"
+
+    let verification: AOSPSourceLockVerification
+
+    var identity: Identity {
+        Identity(
+            specification: verification.specification,
+            launcher: verification.launcher,
+            report: verification.report)
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "git",
+                    executable: .named("git"),
+                    role: .semantic)
+            ],
+            effects: [
+                ActionEffect(.read, scope: .input(verification.launcher)),
+                ActionEffect(.readWrite, scope: .scratch(scratch)),
+                ActionEffect(.write, scope: .output(verification.report)),
+            ])
+    }
+
+    var environment: [String: String] { verification.environment }
+
+    private var scratch: FilePath {
+        verification.report.removingLastComponent().appending(
+            "source-lock-scratch")
+    }
+
+    func execute(in context: ActionContext) async throws {
+        try await AOSPSourceWorkflow(context: context).verifyAOSPSourceLock(
+            verification,
+            scratch: scratch,
+            stage: TaskID(rawValue: "android-runtime.verify-aosp-source-lock"))
+    }
+}
+
+struct PrepareAOSPSourceAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let specification: AOSPSourceSpecification
+        let launcher: FilePath
+        let source: FilePath
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encodeAOSPSourceSpecification(specification, into: &encoder)
+            encoder.append(tag: 20, string: launcher.string)
+            encoder.append(tag: 21, string: source.string)
+        }
+    }
+
+    static let kind: ActionKind = "android-runtime.prepare-aosp-source"
+
+    let preparation: AOSPSourcePreparation
+
+    var identity: Identity {
+        Identity(
+            specification: preparation.specification,
+            launcher: preparation.launcher,
+            source: preparation.source)
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "git",
+                    executable: .named("git"),
+                    role: .semantic),
+                ActionToolRequirement(
+                    "python3",
+                    executable: .named("python3"),
+                    role: .semantic),
+            ],
+            effects: [
+                ActionEffect(.read, scope: .input(preparation.launcher)),
+                ActionEffect(.readWrite, scope: .checkout(preparation.source)),
+            ])
+    }
+
+    var environment: [String: String] { preparation.environment }
+
+    func execute(in context: ActionContext) async throws {
+        try await AOSPSourceWorkflow(context: context).prepareAOSPSource(
+            preparation,
+            stage: TaskID(rawValue: "android-runtime.prepare-aosp-source"))
+    }
+}
+
+private func encodeAOSPSourceSpecification(
+    _ specification: AOSPSourceSpecification,
+    into encoder: inout ActionIdentityEncoder
+) {
+    let platform = specification.platform
+    encoder.append(tag: 1, string: platform.release)
+    encoder.append(tag: 2, string: platform.revision)
+    encoder.append(tag: 3, string: platform.manifestURL)
+    encoder.append(tag: 4, string: platform.manifestRevision)
+    encoder.append(tag: 5, string: platform.manifestCommit)
+    encoder.append(tag: 6, bytes: platform.defaultManifestDigest.bytes)
+    encoder.append(tag: 7, string: platform.superprojectURL)
+    encoder.append(tag: 8, string: platform.superprojectRevision)
+    encoder.append(tag: 9, string: platform.superprojectCommit)
+    let repo = specification.repo
+    encoder.append(tag: 10, string: repo.launcherVersion)
+    encoder.append(tag: 11, bytes: repo.launcherDigest.bytes)
+    encoder.append(tag: 12, string: repo.repositoryURL)
+    encoder.append(tag: 13, string: repo.revision)
+    encoder.append(tag: 14, string: repo.tagObject)
+    encoder.append(tag: 15, string: repo.commit)
+}
+
+private struct AOSPSourceWorkflow {
+    let context: ActionContext
+
     func verifyAOSPSourceLock(
         _ verification: AOSPSourceLockVerification,
+        scratch: FilePath,
         stage: TaskID
     ) async throws {
         let specification = verification.specification
         let platform = specification.platform
         let repo = specification.repo
+        try context.files.remove(scratch)
+        try context.files.createDirectory(scratch)
+        defer {
+            try? context.files.remove(scratch)
+        }
 
         let manifestRefs = try await aospRemoteRefs(
             url: platform.manifestURL,
             revisions: [platform.manifestRevision],
+            in: scratch,
             environment: verification.environment,
             stage: stage)
         try requireAOSPRemoteRef(
@@ -22,19 +201,10 @@ extension ColliderRuntime {
             expected: platform.manifestCommit,
             description: "manifest revision")
 
-        let temporary = FilePath(
-            FileManager.default.temporaryDirectory
-                .appendingPathComponent(
-                    "nucleus-aosp-manifest-\(UUID().uuidString)"
-                )
-                .path)
-        defer {
-            try? FileManager.default.removeItem(atPath: temporary.string)
-        }
+        let temporary = scratch.appending("manifest-checkout")
         let checkout = temporary.appending("manifest")
-        try FileManager.default.createDirectory(
-            atPath: temporary.string,
-            withIntermediateDirectories: true)
+        try context.files.remove(temporary)
+        try context.files.createDirectory(temporary)
         try await aospChecked(
             .named("git"),
             [
@@ -76,14 +246,14 @@ extension ColliderRuntime {
             environment: verification.environment,
             stage: stage)
         guard manifestCommit == platform.manifestCommit else {
-            throw RuntimeFailure.invalidOutput(
+            throw AOSPSourceWorkflowFailure.invalidOutput(
                 "manifest checkout is \(manifestCommit); expected "
                     + platform.manifestCommit)
         }
         let manifest = checkout.appending("default.xml")
-        let manifestDigest = try ArtifactHasher.digest(file: manifest)
+        let manifestDigest = try context.files.digest(file: manifest)
         guard manifestDigest == platform.defaultManifestDigest else {
-            throw RuntimeFailure.invalidOutput(
+            throw AOSPSourceWorkflowFailure.invalidOutput(
                 "default.xml digest is \(manifestDigest); expected "
                     + platform.defaultManifestDigest.description)
         }
@@ -91,6 +261,7 @@ extension ColliderRuntime {
         let superprojectRefs = try await aospRemoteRefs(
             url: platform.superprojectURL,
             revisions: [platform.superprojectRevision],
+            in: scratch,
             environment: verification.environment,
             stage: stage)
         try requireAOSPRemoteRef(
@@ -102,6 +273,7 @@ extension ColliderRuntime {
         let repoRefs = try await aospRemoteRefs(
             url: repo.repositoryURL,
             revisions: [repo.revision, repo.revision + "^{}"],
+            in: scratch,
             environment: verification.environment,
             stage: stage)
         try requireAOSPRemoteRef(
@@ -115,46 +287,46 @@ extension ColliderRuntime {
             expected: repo.commit,
             description: "Repo tag commit")
 
-        let launcherAttributes = try FileManager.default.attributesOfItem(
-            atPath: verification.launcher.string)
-        guard let launcherSize = launcherAttributes[.size] as? NSNumber,
-            launcherSize.int64Value <= 2 * 1_024 * 1_024
+        guard
+            let launcherMetadata = try context.files.metadata(
+                for: verification.launcher),
+            launcherMetadata.size <= 2 * 1_024 * 1_024
         else {
-            throw RuntimeFailure.invalidOutput(
+            throw AOSPSourceWorkflowFailure.invalidOutput(
                 "Repo launcher exceeds the maximum response size")
         }
-        let launcherDigest = try ArtifactHasher.digest(
-            file: verification.launcher)
+        let launcherDigest = try context.files.digest(
+            file:
+                verification.launcher)
         guard launcherDigest == repo.launcherDigest else {
-            throw RuntimeFailure.invalidOutput(
+            throw AOSPSourceWorkflowFailure.invalidOutput(
                 "Repo launcher digest is \(launcherDigest); expected "
                     + repo.launcherDigest.description)
         }
-        let launcherData = try Data(
-            contentsOf: URL(
-                fileURLWithPath: verification.launcher.string))
+        let launcherData = Data(try context.files.read(verification.launcher))
         let launcherVersion = try aospRepoLauncherVersion(launcherData)
         guard launcherVersion == repo.launcherVersion else {
-            throw RuntimeFailure.invalidOutput(
+            throw AOSPSourceWorkflowFailure.invalidOutput(
                 "Repo launcher version is \(launcherVersion); expected "
                     + repo.launcherVersion)
         }
 
-        try DurableFile.writeJSON(
-            AOSPSourceLockReport(
-                status: "verified",
-                platform: AOSPSourceLockReport.Platform(
-                    release: platform.release,
-                    revision: platform.revision,
-                    manifestCommit: platform.manifestCommit,
-                    defaultManifestSHA256:
-                        platform.defaultManifestDigest.sha256Hex,
-                    superprojectCommit: platform.superprojectCommit),
-                repo: AOSPSourceLockReport.Repo(
-                    version: repo.launcherVersion,
-                    tagObject: repo.tagObject,
-                    commit: repo.commit,
-                    launcherSHA256: repo.launcherDigest.sha256Hex)),
+        let report = AOSPSourceLockReport(
+            status: "verified",
+            platform: AOSPSourceLockReport.Platform(
+                release: platform.release,
+                revision: platform.revision,
+                manifestCommit: platform.manifestCommit,
+                defaultManifestSHA256:
+                    platform.defaultManifestDigest.sha256Hex,
+                superprojectCommit: platform.superprojectCommit),
+            repo: AOSPSourceLockReport.Repo(
+                version: repo.launcherVersion,
+                tagObject: repo.tagObject,
+                commit: repo.commit,
+                launcherSHA256: repo.launcherDigest.sha256Hex))
+        try context.files.write(
+            Array(try JSONEncoder().encode(report)),
             to: verification.report)
     }
 
@@ -165,30 +337,26 @@ extension ColliderRuntime {
         guard preparation.syncJobs > 0,
             preparation.retryFetches > 0
         else {
-            throw RuntimeFailure.invalidOutput(
+            throw AOSPSourceWorkflowFailure.invalidOutput(
                 "AOSP source concurrency and retry counts must be positive")
         }
         let source = preparation.source
-        try FileManager.default.createDirectory(
-            atPath: source.removingLastComponent().string,
-            withIntermediateDirectories: true)
-        let launcherDigest = try ArtifactHasher.digest(
-            file: preparation.launcher)
+        let launcherDigest = try context.files.digest(file: preparation.launcher)
         guard launcherDigest == preparation.specification.repo.launcherDigest
         else {
-            throw RuntimeFailure.invalidOutput(
+            throw AOSPSourceWorkflowFailure.invalidOutput(
                 "Repo launcher digest is \(launcherDigest); expected "
                     + preparation.specification.repo.launcherDigest.description)
         }
 
-        try requireEmptyOrRepo(source)
+        try requireEmptyOrRepo(source, files: context.files)
         for obsolete in [
             "base-resolved-manifest.xml",
             "patched-resolved-manifest.xml",
         ] {
             let path = source.appending(".nucleus").appending(obsolete)
-            if FileManager.default.fileExists(atPath: path.string) {
-                try FileManager.default.removeItem(atPath: path.string)
+            if try context.files.metadataWithoutFollowingSymlinks(for: path) != nil {
+                try context.files.remove(path)
             }
         }
         try await requireCleanAOSPSource(preparation, stage: stage)
@@ -206,8 +374,8 @@ extension ColliderRuntime {
             return
         }
         let superprojectRoot = source.appending(".repo/exp-superproject")
-        if FileManager.default.fileExists(atPath: superprojectRoot.string) {
-            try FileManager.default.removeItem(atPath: superprojectRoot.string)
+        if try context.files.metadataWithoutFollowingSymlinks(for: superprojectRoot) != nil {
+            try context.files.remove(superprojectRoot)
         }
 
         _ = try await aospRepo(
@@ -262,32 +430,33 @@ extension ColliderRuntime {
             againstSuperproject: superprojectCommit,
             preparation: preparation,
             stage: stage)
-        let resolvedDigest = ArtifactHasher.digest(bytes: resolvedData)
         let metadata = source.appending(".nucleus")
         for obsolete in [
             "base-resolved-manifest.xml",
             "patched-resolved-manifest.xml",
         ] {
             let path = metadata.appending(obsolete)
-            if FileManager.default.fileExists(atPath: path.string) {
-                try FileManager.default.removeItem(atPath: path.string)
+            if try context.files.metadataWithoutFollowingSymlinks(for: path) != nil {
+                try context.files.remove(path)
             }
         }
-        try withTaskCancellationShield {
-            try DurableFile.write(
-                resolvedData,
-                to: metadata.appending("resolved-manifest.xml"))
-            try DurableFile.writeJSON(
-                AOSPSourceProvenance(
-                    status: "materialized",
-                    release: platform.release,
-                    revision: platform.revision,
-                    manifestCommit: initialized.manifestCommit,
-                    superprojectCommit: superprojectCommit,
-                    repoCommit: initialized.repoCommit,
-                    resolvedManifestSHA256: resolvedDigest.sha256Hex),
-                to: metadata.appending("source-provenance.json"))
-        }
+        try context.cancellation.check()
+        let resolvedManifest = metadata.appending("resolved-manifest.xml")
+        try context.files.write(
+            Array(resolvedData),
+            to: resolvedManifest)
+        let resolvedDigest = try context.files.digest(file: resolvedManifest)
+        let provenance = AOSPSourceProvenance(
+            status: "materialized",
+            release: platform.release,
+            revision: platform.revision,
+            manifestCommit: initialized.manifestCommit,
+            superprojectCommit: superprojectCommit,
+            repoCommit: initialized.repoCommit,
+            resolvedManifestSHA256: resolvedDigest.sha256Hex)
+        try context.files.write(
+            Array(try JSONEncoder().encode(provenance)),
+            to: metadata.appending("source-provenance.json"))
     }
 
     private func validateExistingAOSPSourceIdentity(
@@ -295,39 +464,45 @@ extension ColliderRuntime {
         stage: TaskID
     ) async throws -> AOSPSourceProvenance? {
         let manifest = preparation.source.appending(".repo/manifest.xml")
-        guard FileManager.default.fileExists(atPath: manifest.string) else {
+        guard try context.files.metadata(for: manifest) != nil else {
             return nil
         }
         let provenancePath = preparation.source.appending(
             ".nucleus/source-provenance.json")
-        guard FileManager.default.fileExists(atPath: provenancePath.string)
+        guard try context.files.metadata(for: provenancePath) != nil
         else {
             return nil
         }
         let provenance = try JSONDecoder().decode(
             AOSPSourceProvenance.self,
-            from: Data(contentsOf: URL(
-                fileURLWithPath: provenancePath.string)))
+            from: Data(try context.files.read(provenancePath)))
         guard provenance.status == "materialized" else {
-            throw RuntimeFailure.invalidOutput(
+            throw AOSPSourceWorkflowFailure.invalidOutput(
                 "existing AOSP source provenance is not materialized")
         }
         let platform = preparation.specification.platform
         let repo = preparation.specification.repo
         guard provenance.release == platform.release,
-              provenance.revision == platform.revision,
-              provenance.manifestCommit == platform.manifestCommit,
-              provenance.superprojectCommit == platform.superprojectCommit,
-              provenance.repoCommit == repo.commit
+            provenance.revision == platform.revision,
+            provenance.manifestCommit == platform.manifestCommit,
+            provenance.superprojectCommit == platform.superprojectCommit,
+            provenance.repoCommit == repo.commit
         else {
             return nil
         }
         let current = try await aospResolvedManifest(
             preparation,
             stage: stage)
-        let digest = ArtifactHasher.digest(bytes: current)
+        let resolvedManifest = preparation.source.appending(
+            ".nucleus/resolved-manifest.xml")
+        guard Data(try context.files.read(resolvedManifest)) == current else {
+            throw AOSPSourceWorkflowFailure.invalidOutput(
+                "existing AOSP project revisions do not match their "
+                    + "recorded resolved manifest; refusing to run Repo sync")
+        }
+        let digest = try context.files.digest(file: resolvedManifest)
         guard digest.sha256Hex == provenance.resolvedManifestSHA256 else {
-            throw RuntimeFailure.invalidOutput(
+            throw AOSPSourceWorkflowFailure.invalidOutput(
                 "existing AOSP project revisions do not match their "
                     + "recorded provenance; refusing to run Repo sync")
         }
@@ -357,13 +532,11 @@ extension ColliderRuntime {
     ) async throws {
         let superprojectRoot = preparation.source.appending(
             ".repo/exp-superproject")
-        let superprojects = try FileManager.default.contentsOfDirectory(
-            atPath: superprojectRoot.string
-        )
-        .filter { $0.hasSuffix("-superproject.git") }
-        .sorted()
+        let superprojects = try directoryNames(
+            in: superprojectRoot,
+            suffix: "-superproject.git")
         guard superprojects.count == 1 else {
-            throw RuntimeFailure.invalidOutput(
+            throw AOSPSourceWorkflowFailure.invalidOutput(
                 "Repo must materialize exactly one pinned superproject")
         }
         let tree = try await aospCaptured(
@@ -381,7 +554,7 @@ extension ColliderRuntime {
             let fields = line.split(separator: "\t", maxSplits: 1)
             let identity = fields[0].split(separator: " ")
             guard fields.count == 2, identity.count == 3,
-                  identity[0] == "160000", identity[1] == "commit"
+                identity[0] == "160000", identity[1] == "commit"
             else {
                 continue
             }
@@ -391,8 +564,7 @@ extension ColliderRuntime {
         var resolved: [String: String] = [:]
         for line in String(decoding: manifest, as: UTF8.self)
             .split(whereSeparator: \.isNewline)
-        where line.contains("<project ")
-        {
+        where line.contains("<project ") {
             let record = String(line)
             guard
                 let revision = aospManifestAttribute(
@@ -401,14 +573,14 @@ extension ColliderRuntime {
                     ?? aospManifestAttribute("name", in: record),
                 resolved.updateValue(revision, forKey: path) == nil
             else {
-                throw RuntimeFailure.invalidOutput(
+                throw AOSPSourceWorkflowFailure.invalidOutput(
                     "resolved manifest contains an invalid project record")
             }
         }
         if let mismatch = resolved.keys.sorted()
             .first(where: { resolved[$0] != expected[$0] })
         {
-            throw RuntimeFailure.invalidOutput(
+            throw AOSPSourceWorkflowFailure.invalidOutput(
                 "resolved manifest does not match superproject at \(mismatch)")
         }
     }
@@ -416,20 +588,21 @@ extension ColliderRuntime {
     private func aospRemoteRefs(
         url: String,
         revisions: [String],
+        in directory: FilePath,
         environment: [String: String],
         stage: TaskID
     ) async throws -> [String: String] {
         let output = try await aospCaptured(
             .named("git"),
             ["ls-remote", url] + revisions,
-            in: FilePath(FileManager.default.temporaryDirectory.path),
+            in: directory,
             environment: environment,
             stage: stage)
         var refs: [String: String] = [:]
         for line in output.split(whereSeparator: \.isNewline) {
             let pieces = line.split(separator: "\t", maxSplits: 1)
             guard pieces.count == 2 else {
-                throw RuntimeFailure.invalidOutput(
+                throw AOSPSourceWorkflowFailure.invalidOutput(
                     "git ls-remote returned a malformed record for \(url)")
             }
             refs[String(pieces[1])] = String(pieces[0])
@@ -459,18 +632,17 @@ extension ColliderRuntime {
         output: CommandSpec.Output,
         stage: TaskID
     ) async throws -> String {
-        let result = try await execute(
+        let result = try await context.commands.execute(
             CommandSpec(
                 executable: .named("python3"),
                 arguments: [preparation.launcher.string] + arguments,
                 workingDirectory: preparation.source,
                 environment: preparation.environment,
-                output: output),
-            stage: stage)
+                output: output))
         guard result.status == 0 else {
             let detail = result.standardOutput.trimmingCharacters(
                 in: .whitespacesAndNewlines)
-            throw RuntimeFailure.invalidOutput(
+            throw AOSPSourceWorkflowFailure.invalidOutput(
                 "Repo \(arguments.first ?? "command") failed"
                     + (detail.isEmpty ? "" : ": \(detail)"))
         }
@@ -482,7 +654,7 @@ extension ColliderRuntime {
         stage: TaskID
     ) async throws {
         let manifest = preparation.source.appending(".repo/manifest.xml")
-        guard FileManager.default.fileExists(atPath: manifest.string) else {
+        guard try context.files.metadata(for: manifest) != nil else {
             return
         }
         let command =
@@ -518,7 +690,7 @@ extension ColliderRuntime {
             environment: preparation.environment,
             stage: stage)
         guard manifestCommit == platform.manifestCommit else {
-            throw RuntimeFailure.invalidOutput(
+            throw AOSPSourceWorkflowFailure.invalidOutput(
                 "manifest checkout is \(manifestCommit); expected "
                     + platform.manifestCommit)
         }
@@ -528,13 +700,13 @@ extension ColliderRuntime {
             environment: preparation.environment,
             stage: stage)
         guard repoCommit == repo.commit else {
-            throw RuntimeFailure.invalidOutput(
+            throw AOSPSourceWorkflowFailure.invalidOutput(
                 "Repo checkout is \(repoCommit); expected \(repo.commit)")
         }
         let manifest = manifestRepository.appending("default.xml")
-        let manifestDigest = try ArtifactHasher.digest(file: manifest)
+        let manifestDigest = try context.files.digest(file: manifest)
         guard manifestDigest == platform.defaultManifestDigest else {
-            throw RuntimeFailure.invalidOutput(
+            throw AOSPSourceWorkflowFailure.invalidOutput(
                 "default manifest digest is \(manifestDigest); expected "
                     + platform.defaultManifestDigest.description)
         }
@@ -550,13 +722,11 @@ extension ColliderRuntime {
         let platform = preparation.specification.platform
         let superprojectRoot = preparation.source.appending(
             ".repo/exp-superproject")
-        let superprojects = try FileManager.default.contentsOfDirectory(
-            atPath: superprojectRoot.string
-        )
-        .filter { $0.hasSuffix("-superproject.git") }
-        .sorted()
+        let superprojects = try directoryNames(
+            in: superprojectRoot,
+            suffix: "-superproject.git")
         guard superprojects.count == 1 else {
-            throw RuntimeFailure.invalidOutput(
+            throw AOSPSourceWorkflowFailure.invalidOutput(
                 "Repo must materialize exactly one pinned experimental "
                     + "superproject checkout")
         }
@@ -566,7 +736,7 @@ extension ColliderRuntime {
             environment: preparation.environment,
             stage: stage)
         guard superprojectCommit == platform.superprojectCommit else {
-            throw RuntimeFailure.invalidOutput(
+            throw AOSPSourceWorkflowFailure.invalidOutput(
                 "superproject revision \(platform.superprojectRevision) is "
                     + "\(superprojectCommit); expected "
                     + platform.superprojectCommit)
@@ -581,16 +751,15 @@ extension ColliderRuntime {
         environment: [String: String],
         stage: TaskID
     ) async throws -> String {
-        let result = try await execute(
+        let result = try await context.commands.execute(
             CommandSpec(
                 executable: executable,
                 arguments: arguments,
                 workingDirectory: directory,
                 environment: environment,
-                output: .captured(limit: 32 * 1_024 * 1_024)),
-            stage: stage)
+                output: .captured(limit: 32 * 1_024 * 1_024)))
         guard result.status == 0 else {
-            throw RuntimeFailure.invalidOutput(
+            throw AOSPSourceWorkflowFailure.invalidOutput(
                 "\(arguments.first ?? "command") failed: "
                     + result.standardOutput.trimmingCharacters(
                         in: .whitespacesAndNewlines))
@@ -611,6 +780,20 @@ extension ColliderRuntime {
             in: directory,
             environment: environment,
             stage: stage)
+    }
+
+    private func directoryNames(
+        in directory: FilePath,
+        suffix: String
+    ) throws -> [String] {
+        try context.files.listRecursively(directory)
+            .filter {
+                !$0.relativePath.contains("/")
+                    && $0.metadata.type == .directory
+                    && $0.relativePath.hasSuffix(suffix)
+            }
+            .map(\.relativePath)
+            .sorted()
     }
 }
 
@@ -636,31 +819,38 @@ private func requireAOSPRemoteRef(
     description: String
 ) throws {
     guard refs[revision] == expected else {
-        throw RuntimeFailure.invalidOutput(
+        throw AOSPSourceWorkflowFailure.invalidOutput(
             "\(description) resolved to \(refs[revision] ?? "nothing"); "
                 + "expected \(expected)")
     }
 }
 
-private func requireEmptyOrRepo(_ source: FilePath) throws {
-    let manager = FileManager.default
-    if !manager.fileExists(atPath: source.string) {
-        try manager.createDirectory(
-            atPath: source.string,
-            withIntermediateDirectories: true)
+private func requireEmptyOrRepo(
+    _ source: FilePath,
+    files: ActionFileSystem
+) throws {
+    if try files.metadata(for: source) == nil {
+        try files.createDirectory(source)
         return
     }
-    let repoValues = try? URL(
-        fileURLWithPath: source.appending(".repo").string)
-        .resourceValues(forKeys: [.isDirectoryKey])
-    if repoValues?.isDirectory == true {
+    if try files.metadata(for: source.appending(".repo"))?.type == .directory {
         return
     }
-    let entries = try manager.contentsOfDirectory(atPath: source.string)
+    let entries = try files.listRecursively(source)
     guard entries.isEmpty else {
-        throw RuntimeFailure.invalidOutput(
+        throw AOSPSourceWorkflowFailure.invalidOutput(
             "\(source) exists without Repo metadata and is not empty; "
                 + "refusing to overwrite it")
+    }
+}
+
+private enum AOSPSourceWorkflowFailure: Error, CustomStringConvertible {
+    case invalidOutput(String)
+
+    var description: String {
+        switch self {
+        case .invalidOutput(let message): message
+        }
     }
 }
 
@@ -672,7 +862,7 @@ private func aospRepoLauncherVersion(_ data: Data) throws -> String {
             .map(String.init)
             .first(where: { $0.hasPrefix(prefix) && $0.hasSuffix(")") })
     else {
-        throw RuntimeFailure.invalidOutput(
+        throw AOSPSourceWorkflowFailure.invalidOutput(
             "Repo launcher does not declare a recognizable version")
     }
     let components =
@@ -684,14 +874,14 @@ private func aospRepoLauncherVersion(_ data: Data) throws -> String {
     guard components.count == 2,
         components.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) })
     else {
-        throw RuntimeFailure.invalidOutput(
+        throw AOSPSourceWorkflowFailure.invalidOutput(
             "Repo launcher does not declare a recognizable version")
     }
     return components.joined(separator: ".")
 }
 
-private extension ArtifactDigest {
-    var sha256Hex: String {
+extension ArtifactDigest {
+    fileprivate var sha256Hex: String {
         let prefix = "sha256:"
         precondition(description.hasPrefix(prefix))
         return String(description.dropFirst(prefix.count))

@@ -87,119 +87,6 @@ public struct DirectoryRetentionPlan: Hashable, Sendable {
     }
 }
 
-public struct AOSPPlatformSource: Hashable, Sendable {
-    public let release: String
-    public let revision: String
-    public let manifestURL: String
-    public let manifestRevision: String
-    public let manifestCommit: String
-    public let defaultManifestDigest: ArtifactDigest
-    public let superprojectURL: String
-    public let superprojectRevision: String
-    public let superprojectCommit: String
-
-    public init(
-        release: String,
-        revision: String,
-        manifestURL: String,
-        manifestRevision: String,
-        manifestCommit: String,
-        defaultManifestDigest: ArtifactDigest,
-        superprojectURL: String,
-        superprojectRevision: String,
-        superprojectCommit: String
-    ) {
-        self.release = release
-        self.revision = revision
-        self.manifestURL = manifestURL
-        self.manifestRevision = manifestRevision
-        self.manifestCommit = manifestCommit
-        self.defaultManifestDigest = defaultManifestDigest
-        self.superprojectURL = superprojectURL
-        self.superprojectRevision = superprojectRevision
-        self.superprojectCommit = superprojectCommit
-    }
-}
-
-public struct AOSPRepoSource: Hashable, Sendable {
-    public let launcherVersion: String
-    public let launcherDigest: ArtifactDigest
-    public let repositoryURL: String
-    public let revision: String
-    public let tagObject: String
-    public let commit: String
-
-    public init(
-        launcherVersion: String,
-        launcherDigest: ArtifactDigest,
-        repositoryURL: String,
-        revision: String,
-        tagObject: String,
-        commit: String
-    ) {
-        self.launcherVersion = launcherVersion
-        self.launcherDigest = launcherDigest
-        self.repositoryURL = repositoryURL
-        self.revision = revision
-        self.tagObject = tagObject
-        self.commit = commit
-    }
-}
-
-public struct AOSPSourceSpecification: Hashable, Sendable {
-    public let platform: AOSPPlatformSource
-    public let repo: AOSPRepoSource
-
-    public init(platform: AOSPPlatformSource, repo: AOSPRepoSource) {
-        self.platform = platform
-        self.repo = repo
-    }
-}
-
-public struct AOSPSourceLockVerification: Hashable, Sendable {
-    public let specification: AOSPSourceSpecification
-    public let launcher: FilePath
-    public let report: FilePath
-    public let environment: [String: String]
-
-    public init(
-        specification: AOSPSourceSpecification,
-        launcher: FilePath,
-        report: FilePath,
-        environment: [String: String]
-    ) {
-        self.specification = specification
-        self.launcher = launcher
-        self.report = report
-        self.environment = environment
-    }
-}
-
-public struct AOSPSourcePreparation: Hashable, Sendable {
-    public let specification: AOSPSourceSpecification
-    public let launcher: FilePath
-    public let source: FilePath
-    public let syncJobs: UInt32
-    public let retryFetches: UInt32
-    public let environment: [String: String]
-
-    public init(
-        specification: AOSPSourceSpecification,
-        launcher: FilePath,
-        source: FilePath,
-        syncJobs: UInt32,
-        retryFetches: UInt32,
-        environment: [String: String]
-    ) {
-        self.specification = specification
-        self.launcher = launcher
-        self.source = source
-        self.syncJobs = syncJobs
-        self.retryFetches = retryFetches
-        self.environment = environment
-    }
-}
-
 public struct OCIImagePreparation: Hashable, Sendable {
     public let executionPlatform: ExecutionPlatform
     public let context: FilePath
@@ -449,22 +336,6 @@ public struct NativeLinuxTarget: Hashable, Sendable {
     public var containerRuntimeLibraryPath: String {
         let root = containerSwiftSDKRoot
         return "\(root)/usr/lib/\(gnuArchitecture):\(root)/lib/\(gnuArchitecture)"
-    }
-}
-
-public struct AOSPSigningIdentityPreparation: Hashable, Sendable {
-    public let destination: FilePath
-    public let subject: String
-    public let environment: [String: String]
-
-    public init(
-        destination: FilePath,
-        subject: String,
-        environment: [String: String]
-    ) {
-        self.destination = destination
-        self.subject = subject
-        self.environment = environment
     }
 }
 
@@ -750,16 +621,12 @@ public enum AOSPProductOperationStage: String, Hashable, Sendable {
     case sign
     case assembleImages = "assemble-images"
     case validate
-    case publish
 }
 
 public enum TaskOperation: Hashable, Sendable {
     case action(AnyColliderAction)
     case command(CommandSpec)
-    case verifyAOSPSourceLock(AOSPSourceLockVerification)
-    case prepareAOSPSource(AOSPSourcePreparation)
     case runOCI(OCIExecution)
-    case prepareAOSPSigningIdentity(AOSPSigningIdentityPreparation)
     case aospProduct(AOSPProductOperationStage, AOSPProductBuild)
     case prepareChromiumSource(ChromiumSourcePreparation)
     case buildChromiumProduct(ChromiumProductBuild)

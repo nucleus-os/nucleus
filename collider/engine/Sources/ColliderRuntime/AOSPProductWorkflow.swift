@@ -29,112 +29,6 @@ public func aospProductDefinitionDigest(
 }
 
 extension ColliderRuntime {
-    func prepareAOSPSigningIdentity(
-        _ preparation: AOSPSigningIdentityPreparation,
-        stage: TaskID
-    ) async throws {
-        if FileManager.default.fileExists(
-            atPath: preparation.destination.string)
-        {
-            try await validateAOSPSigningIdentity(
-                preparation,
-                stage: stage)
-            try DurableFile.writeJSON(
-                try aospSigningIdentity(at: preparation.destination),
-                to: preparation.destination.appending(
-                    "signing-identity.json"))
-            return
-        }
-
-        let parent = preparation.destination.removingLastComponent()
-        try FileManager.default.createDirectory(
-            atPath: parent.string,
-            withIntermediateDirectories: true)
-        let candidate = parent.appending(
-            ".\(preparation.destination.lastComponent?.string ?? "signing")"
-                + ".candidate-\(UUID().uuidString)")
-        defer {
-            try? FileManager.default.removeItem(atPath: candidate.string)
-        }
-        try FileManager.default.createDirectory(
-            atPath: candidate.string,
-            withIntermediateDirectories: false)
-
-        var certificates: [AOSPSigningIdentity.Certificate] = []
-        for alias in aospSigningAliases {
-            let base = candidate.appending(alias)
-            let privateKey = FilePath(base.string + ".pem")
-            let certificate = FilePath(base.string + ".x509.pem")
-            let pkcs8 = FilePath(base.string + ".pk8")
-            try await checkedAOSPProductCommand(
-                .named("openssl"),
-                [
-                    "genpkey",
-                    "-algorithm", "RSA",
-                    "-pkeyopt", "rsa_keygen_bits:4096",
-                    "-out", privateKey.string,
-                ],
-                in: candidate,
-                environment: preparation.environment,
-                stage: stage)
-            try await checkedAOSPProductCommand(
-                .named("openssl"),
-                [
-                    "req",
-                    "-new",
-                    "-x509",
-                    "-sha256",
-                    "-key", privateKey.string,
-                    "-out", certificate.string,
-                    "-days", "3650",
-                    "-subj",
-                    preparation.subject
-                        + "/CN=Nucleus Android \(alias)",
-                ],
-                in: candidate,
-                environment: preparation.environment,
-                stage: stage)
-            try await checkedAOSPProductCommand(
-                .named("openssl"),
-                [
-                    "pkcs8",
-                    "-in", privateKey.string,
-                    "-topk8",
-                    "-outform", "DER",
-                    "-out", pkcs8.string,
-                    "-nocrypt",
-                ],
-                in: candidate,
-                environment: preparation.environment,
-                stage: stage)
-            for path in [privateKey, pkcs8] {
-                try FileManager.default.setAttributes(
-                    [.posixPermissions: 0o600],
-                    ofItemAtPath: path.string)
-            }
-            certificates.append(
-                AOSPSigningIdentity.Certificate(
-                    alias: alias,
-                    x509SHA256: try ArtifactHasher.digest(
-                        file: certificate
-                    ).sha256Hex))
-        }
-
-        try DurableFile.writeJSON(
-            AOSPSigningIdentity(
-                purpose: "local-development",
-                subject: preparation.subject,
-                certificates: certificates),
-            to: candidate.appending("signing-identity.json"))
-        try FileManager.default.moveItem(
-            atPath: candidate.string,
-            toPath: preparation.destination.string)
-        try DurableFile.synchronizeDirectory(parent)
-        try await validateAOSPSigningIdentity(
-            preparation,
-            stage: stage)
-    }
-
     func compileAOSPProduct(
         _ build: AOSPProductBuild,
         stage: TaskID
@@ -341,12 +235,8 @@ extension ColliderRuntime {
         stage: TaskID
     ) async throws {
         try await validateAOSPSigningIdentity(
-            AOSPSigningIdentityPreparation(
-                destination: build.signingIdentity,
-                subject: try aospSigningIdentity(
-                    at: build.signingIdentity
-                ).subject,
-                environment: build.environment),
+            at: build.signingIdentity,
+            environment: build.environment,
             stage: stage)
         let output = build.buildRoot.appending("out")
         let unsigned = build.buildRoot.appending("unsigned")
@@ -692,79 +582,20 @@ extension ColliderRuntime {
             to: staged.appending("image-provenance.json"))
     }
 
-    func publishAOSPProduct(
-        _ build: AOSPProductBuild,
-        stage _: TaskID
-    ) async throws {
-        let staged = build.buildRoot.appending("staged")
-        let signed = build.buildRoot.appending("signed")
-        let finalImages = build.buildRoot.appending("images")
-        try FileManager.default.createDirectory(
-            atPath: signed.string,
-            withIntermediateDirectories: true)
-
-        try publishAOSPProductFile(
-            staged.appending("\(build.product)-target_files.zip"),
-            to: signed.appending("\(build.product)-target_files.zip"))
-        try publishAOSPProductFile(
-            staged.appending("\(build.product)-images.zip"),
-            to: signed.appending("\(build.product)-images.zip"))
-
-        let imageCandidate = build.buildRoot.appending(
-            ".images.publish-\(UUID().uuidString)")
-        defer {
-            try? FileManager.default.removeItem(
-                atPath: imageCandidate.string)
-        }
-        try linkAOSPProductTree(
-            staged.appending("images"),
-            to: imageCandidate)
-        if FileManager.default.fileExists(atPath: finalImages.string) {
-            try FileManager.default.removeItem(atPath: finalImages.string)
-        }
-        try FileManager.default.moveItem(
-            atPath: imageCandidate.string,
-            toPath: finalImages.string)
-
-        // Provenance is the publication commit marker. Framework boot rejects
-        // any artifact set whose digests do not match this file.
-        try publishAOSPProductFile(
-            staged.appending("image-provenance.json"),
-            to: signed.appending("image-provenance.json"))
-
-        let generations = build.buildRoot.removingLastComponent()
-        let aospBuildRoot = generations.removingLastComponent()
-        let active = aospBuildRoot.appending("current")
-        let generationName = build.buildRoot.lastComponent?.string ?? ""
-        try DirectoryLifecycle.activate(
-            target: "generations/\(generationName)",
-            link: active)
-        try DirectoryLifecycle.prune(
-            DirectoryRetentionPlan(
-                safetyRoot: aospBuildRoot,
-                rules: [
-                    DirectoryRetentionRule(
-                        root: generations,
-                        current: active,
-                        retain: 2,
-                        naming: .aospProduct)
-                ]))
-    }
-
     private func validateAOSPSigningIdentity(
-        _ preparation: AOSPSigningIdentityPreparation,
+        at destination: FilePath,
+        environment: [String: String],
         stage: TaskID
     ) async throws {
         let identity = try aospSigningIdentity(
-            at: preparation.destination)
+            at: destination)
         guard identity.purpose == "local-development",
-            identity.subject == preparation.subject,
             identity.certificates.map(\.alias) == aospSigningAliases
         else {
             throw RuntimeFailure.invalidOutput(
                 "AOSP signing identity metadata is invalid")
         }
-        let validationDirectory = preparation.destination.appending(
+        let validationDirectory = destination.appending(
             ".validation-\(UUID().uuidString)")
         try FileManager.default.createDirectory(
             atPath: validationDirectory.string,
@@ -774,7 +605,7 @@ extension ColliderRuntime {
                 atPath: validationDirectory.string)
         }
         for item in identity.certificates {
-            let base = preparation.destination.appending(item.alias)
+            let base = destination.appending(item.alias)
             let privateKey = FilePath(base.string + ".pem")
             let certificate = FilePath(base.string + ".x509.pem")
             let pkcs8 = FilePath(base.string + ".pk8")
@@ -807,8 +638,8 @@ extension ColliderRuntime {
                     "-noout",
                     "-out", certificatePEM.string,
                 ],
-                in: preparation.destination,
-                environment: preparation.environment,
+                in: destination,
+                environment: environment,
                 stage: stage)
             try await checkedAOSPProductCommand(
                 .named("openssl"),
@@ -819,8 +650,8 @@ extension ColliderRuntime {
                     "-outform", "DER",
                     "-out", certificateDER.string,
                 ],
-                in: preparation.destination,
-                environment: preparation.environment,
+                in: destination,
+                environment: environment,
                 stage: stage)
             try await checkedAOSPProductCommand(
                 .named("openssl"),
@@ -831,8 +662,8 @@ extension ColliderRuntime {
                     "-outform", "DER",
                     "-out", privateDER.string,
                 ],
-                in: preparation.destination,
-                environment: preparation.environment,
+                in: destination,
+                environment: environment,
                 stage: stage)
             guard
                 try ArtifactHasher.digest(file: certificateDER)
@@ -1642,61 +1473,6 @@ private func aospProductEnvironment(
     environment["PATH"] =
         hostTools.string + ":" + (environment["PATH"] ?? "/usr/bin:/bin")
     return environment
-}
-
-private func publishAOSPProductFile(
-    _ source: FilePath,
-    to destination: FilePath
-) throws {
-    guard source.isRegularFile else {
-        throw RuntimeFailure.invalidOutput(
-            "AOSP publication input is missing: \(source)")
-    }
-    let candidate = FilePath(
-        destination.string + ".candidate-\(UUID().uuidString)")
-    defer {
-        try? FileManager.default.removeItem(atPath: candidate.string)
-    }
-    try FileManager.default.linkItem(
-        atPath: source.string,
-        toPath: candidate.string)
-    try replaceAOSPProductFile(candidate, with: destination)
-}
-
-private func linkAOSPProductTree(
-    _ source: FilePath,
-    to destination: FilePath
-) throws {
-    let sourceURL = URL(fileURLWithPath: source.string)
-    let values = try? sourceURL.resourceValues(forKeys: [.isDirectoryKey])
-    guard values?.isDirectory == true
-    else {
-        throw RuntimeFailure.invalidOutput(
-            "AOSP image publication tree is missing: \(source)")
-    }
-    try FileManager.default.createDirectory(
-        atPath: destination.string,
-        withIntermediateDirectories: false)
-    for name in try FileManager.default.contentsOfDirectory(
-        atPath: source.string)
-    {
-        let child = source.appending(name)
-        let published = destination.appending(name)
-        let childValues = try? URL(
-            fileURLWithPath: child.string
-        ).resourceValues(forKeys: [.isDirectoryKey])
-        guard let childIsDirectory = childValues?.isDirectory else {
-            throw RuntimeFailure.invalidOutput(
-                "AOSP image publication entry disappeared: \(child)")
-        }
-        if childIsDirectory {
-            try linkAOSPProductTree(child, to: published)
-        } else {
-            try FileManager.default.linkItem(
-                atPath: child.string,
-                toPath: published.string)
-        }
-    }
 }
 
 private func aospImageIsSparse(_ path: FilePath) throws -> Bool {

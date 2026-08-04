@@ -1097,9 +1097,9 @@ private func fixtureReactNativeNodeModules(
         }())
     #expect(
         {
-            guard case .aospProduct(.publish, _) = operations[4] else {
+            guard case .action(let action) = operations[4] else {
                 return false
             }
-            return true
+            return action.kind == "android-runtime.publish-aosp-product"
         }())
 }

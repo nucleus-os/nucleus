@@ -175,7 +175,7 @@ private func scheduledResources(
                 cpuCount: budget.cpuCount,
                 memoryBytes: budget.memoryBytes,
                 exclusive: true)
-        case .sign, .assembleImages, .validate, .publish:
+        case .sign, .assembleImages, .validate:
             return .lightweight
         }
     case .action(let action):
@@ -184,8 +184,7 @@ private func scheduledResources(
             memoryBytes: action.requirements.resources.memoryBytes ?? budget.memoryBytes,
             exclusive: action.requirements.resources.exclusive)
     case .command,
-        .verifyAOSPSourceLock, .prepareAOSPSource,
-        .prepareAOSPSigningIdentity, .prepareChromiumSource, .assembleBrowserArtifact,
+        .prepareChromiumSource, .assembleBrowserArtifact,
         .validateBrowserArtifact, .assembleCEFArtifact, .validateCEFArtifact,
         .installBrowser:
         return .lightweight
@@ -214,8 +213,7 @@ private func containsOCIExecution(_ operation: TaskOperation) -> Bool {
     case .action(let action):
         action.requirements.executionPlatform?.environment == .oci
     case .command,
-        .verifyAOSPSourceLock, .prepareAOSPSource,
-        .prepareAOSPSigningIdentity, .aospProduct,
+        .aospProduct,
         .prepareChromiumSource, .buildChromiumProduct, .assembleBrowserArtifact,
         .validateBrowserArtifact, .assembleCEFArtifact, .validateCEFArtifact,
         .installBrowser:
@@ -1277,49 +1275,6 @@ extension ColliderRuntime {
                 encoder.append(tag: 53, bytes: bytes)
             }
             encoder.append(tag: 25, integer: command.timeoutNanoseconds ?? 0)
-        case .verifyAOSPSourceLock(let verification):
-            encode(
-                aospSource: verification.specification,
-                into: &encoder)
-            encoder.append(tag: 182, string: "verify")
-            encoder.append(tag: 185, string: verification.launcher.string)
-            encoder.append(tag: 185, string: verification.report.string)
-            let git = try resolvedToolIdentity(
-                .named("git"),
-                environment: verification.environment)
-            encoder.append(tag: 187, string: git.path.string)
-            encoder.append(tag: 188, bytes: git.digest.bytes)
-            for (name, value) in artifactEnvironment(
-                verification.environment)
-            {
-                encoder.append(tag: 189, string: name)
-                encoder.append(tag: 190, string: value)
-            }
-        case .prepareAOSPSource(let preparation):
-            encode(
-                aospSource: preparation.specification,
-                into: &encoder)
-            encoder.append(tag: 182, string: "prepare")
-            encoder.append(tag: 185, string: preparation.launcher.string)
-            encoder.append(tag: 185, string: preparation.source.string)
-            // Sync concurrency and retry limits affect execution only, not the
-            // materialized source identity.
-            for executable in [
-                CommandSpec.Executable.named("git"),
-                CommandSpec.Executable.named("python3"),
-            ] {
-                let tool = try resolvedToolIdentity(
-                    executable,
-                    environment: preparation.environment)
-                encoder.append(tag: 187, string: tool.path.string)
-                encoder.append(tag: 188, bytes: tool.digest.bytes)
-            }
-            for (name, value) in artifactEnvironment(
-                preparation.environment)
-            {
-                encoder.append(tag: 189, string: name)
-                encoder.append(tag: 190, string: value)
-            }
         case .runOCI(let execution):
             let executor = try OCIExecutorResolver.resolve(
                 executionPlatform: execution.executionPlatform)
@@ -1393,20 +1348,6 @@ extension ColliderRuntime {
                 environment: execution.environment)
             encoder.append(tag: 253, string: tool.path.string)
             encoder.append(tag: 254, bytes: tool.digest.bytes)
-        case .prepareAOSPSigningIdentity(let preparation):
-            encoder.append(tag: 191, string: preparation.destination.string)
-            encoder.append(tag: 192, string: preparation.subject)
-            let tool = try resolvedToolIdentity(
-                .named("openssl"),
-                environment: preparation.environment)
-            encoder.append(tag: 193, string: tool.path.string)
-            encoder.append(tag: 194, bytes: tool.digest.bytes)
-            for (name, value) in artifactEnvironment(
-                preparation.environment)
-            {
-                encoder.append(tag: 195, string: name)
-                encoder.append(tag: 196, string: value)
-            }
         case .aospProduct(let stage, let build):
             encoder.append(tag: 196, string: stage.rawValue)
             for path in [
@@ -1456,7 +1397,7 @@ extension ColliderRuntime {
                     environment: build.environment)
                 encoder.append(tag: 200, string: tool.path.string)
                 encoder.append(tag: 201, bytes: tool.digest.bytes)
-            case .validate, .publish:
+            case .validate:
                 break
             }
         case .prepareChromiumSource(let preparation):
@@ -1591,39 +1532,6 @@ extension ColliderRuntime {
         encoder.append(tag: 9, string: backend.rawValue)
     }
 
-    private func encode(
-        aospSource specification: AOSPSourceSpecification,
-        into encoder: inout CanonicalDigestEncoder
-    ) {
-        let platform = specification.platform
-        for value in [
-            platform.release,
-            platform.revision,
-            platform.manifestURL,
-            platform.manifestRevision,
-            platform.manifestCommit,
-            platform.superprojectURL,
-            platform.superprojectRevision,
-            platform.superprojectCommit,
-        ] {
-            encoder.append(tag: 183, string: value)
-        }
-        encoder.append(
-            tag: 184,
-            bytes: platform.defaultManifestDigest.bytes)
-        let repo = specification.repo
-        for value in [
-            repo.launcherVersion,
-            repo.repositoryURL,
-            repo.revision,
-            repo.tagObject,
-            repo.commit,
-        ] {
-            encoder.append(tag: 183, string: value)
-        }
-        encoder.append(tag: 184, bytes: repo.launcherDigest.bytes)
-    }
-
     private func resolvedToolIdentity(
         _ executable: CommandSpec.Executable,
         environment: [String: String]
@@ -1719,20 +1627,8 @@ extension ColliderRuntime {
             guard result.status == 0 else {
                 throw RuntimeFailure.commandFailed(status: result.status)
             }
-        case .verifyAOSPSourceLock(let verification):
-            try await verifyAOSPSourceLock(
-                verification,
-                stage: stage)
-        case .prepareAOSPSource(let preparation):
-            try await prepareAOSPSource(
-                preparation,
-                stage: stage)
         case .runOCI(let execution):
             try await runOCI(execution, stage: stage)
-        case .prepareAOSPSigningIdentity(let preparation):
-            try await prepareAOSPSigningIdentity(
-                preparation,
-                stage: stage)
         case .aospProduct(let operationStage, let build):
             switch operationStage {
             case .compile:
@@ -1743,8 +1639,6 @@ extension ColliderRuntime {
                 try await assembleAOSPProductImages(build, stage: stage)
             case .validate:
                 try await validateAOSPProduct(build, stage: stage)
-            case .publish:
-                try await publishAOSPProduct(build, stage: stage)
             }
         case .prepareChromiumSource(let preparation):
             try await prepareChromiumSource(preparation, stage: stage)
@@ -1832,9 +1726,7 @@ extension ColliderRuntime {
             for operation in operations {
                 try validateActionOutputs(operation)
             }
-        case .command,
-            .verifyAOSPSourceLock, .prepareAOSPSource,
-            .runOCI, .prepareAOSPSigningIdentity,
+        case .command, .runOCI,
             .aospProduct, .prepareChromiumSource,
             .buildChromiumProduct, .assembleBrowserArtifact,
             .validateBrowserArtifact, .assembleCEFArtifact, .validateCEFArtifact,
@@ -2075,14 +1967,8 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
         action.environment
     case .command(let command):
         command.environment
-    case .verifyAOSPSourceLock(let verification):
-        verification.environment
-    case .prepareAOSPSource(let preparation):
-        preparation.environment
     case .runOCI(let execution):
         execution.environment
-    case .prepareAOSPSigningIdentity(let preparation):
-        preparation.environment
     case .aospProduct(_, let build):
         build.environment
     case .prepareChromiumSource(let preparation):
@@ -2140,7 +2026,7 @@ private func executionCoordinates(
                 execution: platform,
                 backend: executor.backend,
                 artifact: .androidX86_64(apiLevel: build.expectedPlatformSDK))
-        case .validate, .publish:
+        case .validate:
             return nil
         }
     case .sequence(let operations):
@@ -2154,8 +2040,7 @@ private func executionCoordinates(
         }
         return first
     case .command,
-        .verifyAOSPSourceLock, .prepareAOSPSource,
-        .prepareAOSPSigningIdentity, .prepareChromiumSource, .buildChromiumProduct,
+        .prepareChromiumSource, .buildChromiumProduct,
         .assembleBrowserArtifact, .validateBrowserArtifact,
         .assembleCEFArtifact, .validateCEFArtifact, .installBrowser:
         return nil

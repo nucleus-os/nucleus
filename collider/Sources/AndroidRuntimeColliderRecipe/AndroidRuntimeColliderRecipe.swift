@@ -209,12 +209,14 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             ],
             locks: [.checkout("android-runtime-aosp-source-lock")],
             assessmentPolicy: .always,
-            operation: .verifyAOSPSourceLock(
-                AOSPSourceLockVerification(
-                    specification: specification,
-                    launcher: launcher.path,
-                    report: report,
-                    environment: environment))
+            operation: .action(
+                try AnyColliderAction(
+                    VerifyAOSPSourceLockAction(
+                        verification: AOSPSourceLockVerification(
+                            specification: specification,
+                            launcher: launcher.path,
+                            report: report,
+                            environment: environment))))
         )
         return SourceLockArtifacts(task: task, verification: verification)
     }
@@ -348,14 +350,16 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .tool(.named("python3")),
             ],
             locks: [.checkout("android-runtime-aosp-source")],
-            operation: .prepareAOSPSource(
-                AOSPSourcePreparation(
-                    specification: specification,
-                    launcher: launcher.path,
-                    source: source,
-                    syncJobs: 4,
-                    retryFetches: 3,
-                    environment: environment))
+            operation: .action(
+                try AnyColliderAction(
+                    PrepareAOSPSourceAction(
+                        preparation: AOSPSourcePreparation(
+                            specification: specification,
+                            launcher: launcher.path,
+                            source: source,
+                            syncJobs: 4,
+                            retryFetches: 3,
+                            environment: environment))))
         )
         return SourceTaskArtifacts(task: task, provenance: provenance)
     }
@@ -385,11 +389,13 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .tool(.named("openssl")),
             ],
             locks: [.checkout("android-runtime-aosp-signing")],
-            operation: .prepareAOSPSigningIdentity(
-                AOSPSigningIdentityPreparation(
-                    destination: signingIdentity,
-                    subject: aospSigningSubject,
-                    environment: environment)))
+            operation: .action(
+                try AnyColliderAction(
+                    PrepareAOSPSigningIdentityAction(
+                        preparation: AOSPSigningIdentityPreparation(
+                            destination: signingIdentity,
+                            subject: aospSigningSubject,
+                            environment: environment)))))
         return SigningArtifacts(
             task: task,
             identity: identity,
@@ -696,7 +702,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         let publish = publishBuilder.build(
             inputs: [],
             locks: [.checkout("android-runtime-aosp-build")],
-            operation: .aospProduct(.publish, build)
+            operation: .action(
+                try AnyColliderAction(
+                    PublishAOSPProductAction(build: build)))
         )
         return PublishedAOSPArtifacts(
             tasks: [compile.task, sign, assemble.task, validate, publish],

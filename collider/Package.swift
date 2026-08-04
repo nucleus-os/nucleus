@@ -126,6 +126,7 @@ let package = Package(
                 "ChromiumColliderRecipe",
                 "CompositorColliderRecipe",
                 .product(name: "ColliderCore", package: "engine"),
+                .product(name: "ColliderRuntime", package: "engine"),
                 "CoreColliderRecipe",
                 "NativeBuilderColliderRecipe",
                 .product(

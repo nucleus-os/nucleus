@@ -1459,6 +1459,23 @@ which injects it into React Native's Hermes build. The raw generated ICU path,
 handwritten Core task dependency, and React Native recipe dependency on the Core
 recipe module are deleted. React Native SDK publication likewise no longer
 carries an unrelated ordering dependency on Core SDK publication.
+AOSP source-lock verification and exact Repo source materialization now execute
+as Android-runtime actions through scoped filesystem and command capabilities.
+Their behavioral fixtures moved beside the owning recipe, the source-domain
+payloads left `ColliderCore`, and both global operation cases, digest branches,
+runtime dispatch branches, and the 735-line engine workflow are deleted.
+AOSP signing-identity creation and validation now follow the same ownership:
+the Android-runtime action declares OpenSSL as a semantic tool, scopes all key
+material effects to its output root, validates certificate/private-key pairs,
+and retains behavioral coverage for initial creation and repeat validation. Its
+payload, global operation case, legacy digest and dispatch branches, and engine
+preparation method are deleted.
+AOSP product publication is also recipe-owned. The action commits signed files
+and the image tree, writes provenance last, activates the generation, and
+applies bounded retention through scoped filesystem capabilities. The publish
+stage, engine workflow method, hard-link publication helpers, and its runtime
+dispatch branch are deleted; behavioral coverage proves commit-marker ordering,
+generation activation, and image publication.
 
 Complete the existing action seam with:
 
