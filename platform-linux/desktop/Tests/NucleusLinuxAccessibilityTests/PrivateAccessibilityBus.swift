@@ -1,5 +1,6 @@
 import Foundation
 import Glibc
+
 @testable import NucleusLinuxAccessibility
 
 struct BusctlResult {
@@ -18,9 +19,19 @@ final class PrivateAccessibilityBus {
     private let daemonError: Pipe
     private let registryOutput: Pipe
     private let registryError: Pipe
+    private let runtimeDirectory: URL
     private var stopped = false
 
     init() throws {
+        let runtimeDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nucleus-atspi-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: runtimeDirectory,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        var environment = ProcessInfo.processInfo.environment
+        environment["XDG_RUNTIME_DIR"] = runtimeDirectory.path
+
         let daemon = Process()
         let daemonOutput = Pipe()
         let daemonError = Pipe()
@@ -31,15 +42,17 @@ final class PrivateAccessibilityBus {
             "--nopidfile",
             "--print-address=1",
         ]
+        daemon.environment = environment
         daemon.standardOutput = daemonOutput
         daemon.standardError = daemonError
         try daemon.run()
-        guard let address = Self.readLine(
-            from: daemonOutput.fileHandleForReading.fileDescriptor),
-              !address.isEmpty
+        guard
+            let address = Self.readLine(
+                from: daemonOutput.fileHandleForReading.fileDescriptor),
+            !address.isEmpty
         else {
-            daemon.terminate()
-            daemon.waitUntilExit()
+            Self.stop(daemon)
+            try? FileManager.default.removeItem(at: runtimeDirectory)
             throw AtSPIServiceError(
                 operation: "reading private accessibility bus address",
                 code: -EIO)
@@ -51,7 +64,6 @@ final class PrivateAccessibilityBus {
         registry.executableURL = URL(
             fileURLWithPath: "/usr/libexec/at-spi2-registryd")
         registry.arguments = []
-        var environment = ProcessInfo.processInfo.environment
         environment["DBUS_SESSION_BUS_ADDRESS"] = address
         environment["AT_SPI_BUS_ADDRESS"] = address
         registry.environment = environment
@@ -60,8 +72,8 @@ final class PrivateAccessibilityBus {
         do {
             try registry.run()
         } catch {
-            daemon.terminate()
-            daemon.waitUntilExit()
+            Self.stop(daemon)
+            try? FileManager.default.removeItem(at: runtimeDirectory)
             throw error
         }
 
@@ -71,6 +83,7 @@ final class PrivateAccessibilityBus {
         self.daemonError = daemonError
         self.registryOutput = registryOutput
         self.registryError = registryError
+        self.runtimeDirectory = runtimeDirectory
         self.address = address
 
         guard waitForRegistryName() else {
@@ -94,6 +107,7 @@ final class PrivateAccessibilityBus {
         stopped = true
         Self.stop(registry)
         Self.stop(daemon)
+        try? FileManager.default.removeItem(at: runtimeDirectory)
     }
 
     @MainActor
@@ -154,12 +168,10 @@ final class PrivateAccessibilityBus {
     @MainActor
     func monitorSignals(
         adapter: AtSPIService,
-        count: Int,
         interface: String? = nil,
         member: String? = nil,
         trigger: () throws -> Void
     ) throws -> BusctlResult {
-        precondition(count > 0)
         let process = Process()
         let output = Pipe()
         let error = Pipe()
@@ -174,7 +186,6 @@ final class PrivateAccessibilityBus {
         process.arguments = [
             "--address=\(address)",
             "--no-pager",
-            "--limit-messages=\(count)",
             "--match=\(match)",
             "monitor",
         ]
@@ -182,12 +193,34 @@ final class PrivateAccessibilityBus {
         process.standardError = error
         try process.run()
 
-        // Establish the monitor connection before the trigger publishes. The
-        // adapter pump keeps the production connection live while busctl
-        // completes its Hello exchange.
-        for _ in 0..<40 {
+        // busctl writes this announcement only after its AddMatch handshake
+        // succeeds. Waiting for it prevents the one-shot trigger from racing
+        // monitor registration on a busy builder.
+        var readinessPoll = pollfd(
+            fd: error.fileHandleForReading.fileDescriptor,
+            events: Int16(POLLIN),
+            revents: 0)
+        var monitorIsReady = false
+        for _ in 0..<10_000 where process.isRunning {
             _ = adapter.process()
+            readinessPoll.revents = 0
+            if unsafe poll(&readinessPoll, 1, 0) > 0,
+                readinessPoll.revents & Int16(POLLIN) != 0
+            {
+                monitorIsReady = true
+                break
+            }
             usleep(250)
+        }
+        guard monitorIsReady else {
+            Self.stop(process)
+            let detail = Self.availableText(
+                from: error.fileHandleForReading)
+            throw AtSPIServiceError(
+                operation: detail.isEmpty
+                    ? "starting AT-SPI signal monitor"
+                    : "starting AT-SPI signal monitor: \(detail)",
+                code: process.terminationStatus == 0 ? -ETIMEDOUT : -EIO)
         }
         do {
             try trigger()
@@ -196,22 +229,31 @@ final class PrivateAccessibilityBus {
             throw error
         }
 
-        var iterations = 0
-        while process.isRunning, iterations < 10_000 {
+        var outputPoll = pollfd(
+            fd: output.fileHandleForReading.fileDescriptor,
+            events: Int16(POLLIN),
+            revents: 0)
+        var observedSignal = false
+        for _ in 0..<10_000 where process.isRunning {
             _ = adapter.process()
+            outputPoll.revents = 0
+            if unsafe poll(&outputPoll, 1, 0) > 0,
+                outputPoll.revents & Int16(POLLIN) != 0
+            {
+                observedSignal = true
+                break
+            }
             usleep(250)
-            iterations += 1
         }
-        guard !process.isRunning else {
-            process.terminate()
-            Self.waitForExit(process)
+        guard observedSignal else {
+            Self.stop(process)
             throw AtSPIServiceError(
                 operation: "waiting for AT-SPI signals",
                 code: -ETIMEDOUT)
         }
-        process.waitUntilExit()
+        Self.stop(process)
         return BusctlResult(
-            status: process.terminationStatus,
+            status: 0,
             standardOutput: Self.availableText(
                 from: output.fileHandleForReading),
             standardError: Self.availableText(

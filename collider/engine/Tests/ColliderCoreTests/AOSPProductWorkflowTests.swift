@@ -48,40 +48,32 @@ import Testing
         readOnlyMounts: [(path("source"), "/src")],
         environment: ["TZ": "UTC"],
         command: ["/bin/true"])
-    let command = try PodmanExecutor().runCommand(
+    let executor = AppleContainerExecutor()
+    let flags = appleContainerFlags(
         execution,
-        imageID: "sha256:" + String(repeating: "a", count: 64),
+        name: try executor.containerName(for: execution),
         temporaryDirectory: nil)
-    let arguments = command.arguments
 
     #expect(execution.executionPlatform == .linuxAMD64OCI)
     #expect(execution.artifactTarget == .androidX86_64(apiLevel: 37))
     #expect(execution.processFilesystemPolicy == .unmasked)
-    #expect(arguments.contains("--network=none"))
-    #expect(arguments.contains("--cap-drop=all"))
-    #expect(arguments.contains("--security-opt=no-new-privileges"))
-    #expect(arguments.contains("--security-opt=unmask=/proc/*"))
-    #expect(arguments.contains("--hostname=android-build"))
-    #expect(arguments.contains("--read-only"))
-    #expect(arguments.contains("--tmpfs=/tmp:rw,nosuid,nodev,size=8g"))
+    #expect(flags.management.networks == [OCIBackendContract.appleOfflineNetwork])
+    #expect(flags.management.capDrop == ["ALL"])
+    #expect(flags.management.readOnly)
+    #expect(flags.management.tmpFs.contains("/tmp"))
+    #expect(flags.management.tmpFs.contains("/home/nucleus-build"))
     #expect(
-        arguments.contains(
-            "--tmpfs=/home/nucleus-build:rw,nosuid,nodev,noexec,size=1g"))
-    #expect(!arguments.contains("--privileged"))
-    #expect(!arguments.contains("--security-opt=seccomp=unconfined"))
-    #expect(!arguments.contains("--security-opt=unmask=ALL"))
+        flags.management.mounts.contains(
+            "type=bind,source=\(path("source").string),target=/src,readonly"))
     #expect(
-        arguments.contains(
-            "type=bind,src=\(path("source").string),target=/src,ro=true"))
+        flags.management.mounts.contains(
+            "type=bind,source=\(path("output").string),target=/output"))
     #expect(
-        arguments.contains(
-            "type=bind,src=\(path("output").string),target=/output,rw=true"))
+        flags.management.mounts.contains(
+            "type=bind,source=\(path("ccache").string),"
+                + "target=/src/out/nucleus/.ccache"))
     #expect(
-        arguments.contains(
-            "type=bind,src=\(path("ccache").string),"
-                + "target=/src/out/nucleus/.ccache,rw=true"))
-    #expect(
-        !arguments.contains(where: {
+        !flags.process.env.contains(where: {
             $0.contains("SSH_AUTH_SOCK") || $0.contains("WAYLAND_DISPLAY")
         }))
 }

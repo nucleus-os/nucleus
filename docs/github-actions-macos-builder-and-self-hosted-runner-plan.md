@@ -58,20 +58,34 @@ manifests, and explanations carry those coordinates. Linux amd64 artifact tasks
 reject unsupported runner, execution, artifact, and translation combinations
 before launching a child process.
 
-Collider now owns one backend-neutral OCI operation model. Product recipes no
-longer construct Podman commands. The rootless Podman executor and Apple
-`container` executor translate the same mount, network, user, capability,
-privilege, process-filesystem, resource, environment, platform, and output
-contract. AOSP compilation, signing, image assembly, and sandbox validation use
-that contract. Behavioral tests cover both translations and planning evidence.
+Collider now owns one OCI operation model. Product recipes never construct
+backend commands. `AppleContainerExecutor` translates the declared mount,
+network, user, capability, privilege, process-filesystem, resource,
+environment, platform, and output contract. AOSP compilation, signing, image
+assembly, and sandbox validation use that contract. Behavioral tests cover the
+translation and planning evidence.
 
-The Apple backend is implemented but not hardware-qualified. The M2 Ultra now
+Container lifecycle is an in-process Swift boundary. Collider builds against
+the root-owned `apple/container`, `apple/containerization`, and `apple/swift-log`
+upstream-main gitlinks, constructs the same typed configuration as Apple's CLI, and calls
+`ContainerClient` for create, bootstrap, process start/wait, forced deletion,
+and exact-name deletion verification. Cancellation shares the same idempotent
+cleanup transaction. The CLI remains only for image build and inspection and
+for the host-only network probe. Clone-local SwiftPM mirrors make every
+transitive dependency edge resolve to the root-owned gitlink without modifying
+Apple's manifests. Doctor exercises the typed XPC health request, so an
+installed CLI alone cannot satisfy the backend contract.
+
+The Apple backend's concurrent build lifecycle is hardware-qualified. The M2 Ultra now
 runs macOS 27.0 build `26A5388g`, Xcode 27 beta 4 build `27A5228h`, Apple
 `container` 1.2.0. Native `linux/arm64` execution passes on the
 host-only `nucleus-build-internal` network, and the declared case-sensitive
-APFS volumes are provisioned. Collider's macOS graph compiles through the
-public Apple Swift surface and the focused builder-doctor suite passes under
-the selected Xcode. Native macOS builds now use that Xcode toolchain directly.
+APFS volumes are provisioned. A forced concurrent ARM64 and x86_64 runtime
+build passes through the typed lifecycle and leaves no managed container after
+completion. `collider build runtime --rebuild` dirties only the selected build
+tasks while reusing clean prerequisites. Collider's macOS graph compiles
+through the public Apple Swift surface and the focused builder-doctor suite
+passes under the selected Xcode. Native macOS builds now use that Xcode toolchain directly.
 Swift compilers and LLVM are no longer built from source. Collider uses an
 official Linux/arm64 Swift bootstrap compiler in a native Apple container to
 build the Linux/arm64 target runtime natively and cross-build the Linux/amd64
@@ -210,7 +224,7 @@ Add first-class platform types to `ColliderCore`:
   and architecture.
 - `ArtifactTarget` identifies the product operating system, architecture, ABI,
   and Android API level where applicable.
-- `ExecutionBackend` selects native execution, Apple `container`, or Podman.
+- `ExecutionBackend` distinguishes native execution from Apple `container`.
 
 Replace recipe-level `#if os(macOS)` and `#if os(Linux)` decisions that choose a
 product, architecture, tool path, or build strategy. Compile-time conditionals
@@ -231,9 +245,9 @@ NDK host tags with values resolved from the explicit execution contract.
 - An accidentally resolved `linux/arm64` image fails before execution.
 - No recipe uses the compiler host as an implicit product target.
 
-## Phase 3: Make OCI Execution Backend-Neutral
+## Phase 3: Centralize OCI Execution
 
-Replace Podman-specific build operations with one `OCIExecution` contract. It
+Represent every container build operation with one `OCIExecution` contract. It
 contains:
 
 - immutable image identity and required OCI platform;
@@ -247,35 +261,44 @@ contains:
 - resource limits;
 - declared outputs.
 
-Implement `AppleContainerExecutor` for macOS and `PodmanExecutor` for Linux.
-Both executors enforce the same contract and produce the same structured
-execution evidence. Recipes never construct backend CLI arguments.
+Implement `AppleContainerExecutor` as the only OCI build executor. It runs only
+on the macOS ARM64 builder and produces structured execution evidence. Recipes
+never construct backend CLI arguments or call Apple lifecycle APIs.
 
-The Apple backend uses the supported `container` command on macOS 26 or newer.
-It requests `linux/arm64` explicitly. Collider does not implement a custom Virtualization.framework or
-Containerization.framework VM manager.
+The Apple backend uses `ContainerAPIClient` and `ContainerCommands` from the
+upstream-main `apple/container` source plus upstream-main
+`apple/containerization` and `apple/swift-log`. It requests `linux/arm64` explicitly and owns create,
+bootstrap, process start/wait, cancellation, force-delete, and deletion
+verification as one typed transaction. Collider does not implement a custom
+Virtualization.framework VM manager.
 
-Pin the exact Apple `container` release used by provisioning and CI. Keep every
-CLI argument and output parser behind `AppleContainerExecutor` and a separate
-`AppleContainerMachine` adapter. A change to the selected release is an
-explicit infrastructure update with contract qualification; no recipe or
-development command consumes the backend CLI directly.
+Pin the installed Apple `container` service release used by provisioning and
+CI. Pin the client, containerization, and logging sources independently with
+root gitlinks that track their canonical upstream main branches. `collider-setup.sh`
+generates clone-local SwiftPM mirrors so all shared identities resolve to the
+root-owned source closure. Keep image-build CLI arguments and output parsing
+behind `AppleContainerExecutor`; keep lifecycle calls behind the typed runtime
+adapter. A source or service update is an explicit infrastructure update with
+contract qualification.
 
-The Linux backend continues to use rootless Podman. Both backends disable
-networking during compilation, drop capabilities, prohibit privilege
-acquisition, hide the runner home, expose no desktop or device sockets, and
-mount source inputs read-only.
+The executor disables external networking during compilation, drops
+capabilities, prohibits privilege acquisition, hides the runner home, exposes
+no desktop or device sockets, and mounts source inputs read-only. Linux hosts
+never execute OCI build tasks; native Linux workers only qualify already-built
+artifacts against declared capabilities.
 
 ### Exit Gate
 
-- One behavioral contract suite runs against both executors.
+- The behavioral contract suite covers typed Apple container configuration,
+  exact-name cleanup, cleanup retry, and concurrent cleanup idempotence.
 - Mount, network, privilege, environment, and platform violations fail before
   the child command starts.
-- The same digest-selected image produces equivalent declared outputs through
-  Apple `container` and Podman.
+- Every OCI task resolves to Apple `container` on the macOS ARM64 builder.
 - Backend command lines do not appear in product recipes.
-- Upgrading Apple `container` cannot change execution without updating and
-  passing the backend contract suite.
+- The resolved dependency graph uses the root-owned upstream-main `container`
+  and `containerization` gitlinks without conflicting SwiftPM identities.
+- Updating the source gitlinks or installed service cannot change execution
+  without passing typed health, behavioral, cancellation, and real-build gates.
 
 ## Phase 4: Qualify the macOS ARM64 Host Contract
 
@@ -319,7 +342,7 @@ Provision the first M2 Ultra executor in this order:
 5. allocate the case-sensitive Collider storage roots and apply their quotas;
 6. install and select Xcode 27 beta 4 build `27A5228h`, verify its Swift 6.4
    compiler and Swift Testing macro plugin, and build Collider;
-7. run `collider doctor` and the Podman/Apple OCI behavioral contract suite;
+7. run `collider doctor` and the Apple OCI behavioral contract suite;
 8. build one Linux amd64 fixture through Apple `container`, transfer its
    declared output to a Linux x86_64 qualifier, and validate the artifact
    target independently of the runner.
@@ -530,9 +553,10 @@ strict task graph and capability contract:
    manifest validation, generated-source consistency, and focused Collider
    tests on disposable hosted workers.
 2. `macos-arm64-build` builds and validates native macOS products.
-3. `linux-amd64-build` builds Linux products in Apple `container` or Podman.
+3. `linux-amd64-build` builds Linux products through Apple `container`.
 4. `android-build` builds AOSP, SwiftAndroid, and Android native products in
-   their declared amd64 OCI builders.
+   declared ARM64 OCI environments, cross-compiling target architectures and
+   translating only required x86_64 host utilities.
 5. `linux-x86_64-qualify` validates produced Linux artifacts on native x86_64.
 6. `gpu-drm-qualify` runs the physical Vulkan/DRM/GBM and session gates.
 7. `publish` verifies qualification evidence, signs products, records
@@ -871,9 +895,9 @@ executors. macOS artifacts remain native ARM64 products.
 
 Collider owns platform selection, container policy, task ordering, artifact
 identity, storage lifecycle, qualification requirements, and publication
-admission. Apple `container` and Podman are interchangeable executors of the
-same declared OCI contract. GitHub Actions owns event handling, trust routing,
-and job presentation only.
+admission. Apple `container` on the macOS ARM64 builder is the only OCI build
+executor. Linux workers perform native qualification only. GitHub Actions owns
+event handling, trust routing, and job presentation only.
 
 The native Collider worker accepts content-addressed snapshots directly from the
 M2-owned workspace and from explicitly imported workspaces, so the same capacity

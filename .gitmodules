@@ -104,3 +104,15 @@
 [submodule "swift-wayland/third-party/wayland"]
 	path = swift-wayland/third-party/wayland
 	url = https://gitlab.freedesktop.org/wayland/wayland.git
+[submodule "third-party/container"]
+	path = third-party/container
+	url = https://github.com/apple/container.git
+	branch = main
+[submodule "third-party/containerization"]
+	path = third-party/containerization
+	url = https://github.com/apple/containerization.git
+	branch = main
+[submodule "third-party/swift-log"]
+	path = third-party/swift-log
+	url = https://github.com/apple/swift-log.git
+	branch = main

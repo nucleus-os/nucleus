@@ -13,7 +13,7 @@ All first-party runtime code belongs to the single SwiftPM package rooted at `Pa
 - `config/`, `session/`, and `platform-linux/` own shared runtime services and platform contracts.
 - `swift-vulkan/`, `swift-wayland/`, and `swift-tracy/` are root-package targets, not separately selected build tiers.
 
-The compositor links no React runtime. The shell is an ordinary Wayland client and communicates with compositor policy through typed session channels. Android is an optional session capability hosted in an LXC container; its surfaces enter the same compositor path through the Android graphics broker.
+The compositor links no React runtime. The shell is an ordinary Wayland client and communicates with compositor policy through typed session channels. Android is a separately signed, architecture-specific downloadable add-on hosted in an LXC container. The base Nucleus OS contains only the compatibility declaration and generic session-capability machinery; installing the add-on contributes the Android executables, images, policy, tools, and capability declaration. Its surfaces enter the same compositor path through the Android graphics broker.
 
 The separate `collider/` package provides the checkout build, test, install, and run tool. Its `collider/engine/` package owns the reusable execution kernel. Collider consumes the runtime package only through `NucleusSessionProtocol` and `NucleusAndroidRuntimeCore`.
 
@@ -62,6 +62,14 @@ collider bootstrap rn
 collider android build
 collider android-runtime image
 collider install session
+```
+
+On Nucleus OS, the installed product CLI manages a downloaded Android add-on without
+a source checkout or Collider:
+
+```sh
+sudo nucleus addon install <artifact-directory>
+nucleus addon status
 ```
 
 `collider run` builds, installs, and starts the complete DRM-owning session. Run it only from a free virtual terminal or display-manager session; it is not a nested desktop application.

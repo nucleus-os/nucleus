@@ -29,10 +29,10 @@ private struct SupervisorFixture {
             "NucleusControlService")
         let controlCLI = products.appendingPathComponent("nucleus")
         guard FileManager.default.isExecutableFile(atPath: supervisor.path),
-              FileManager.default.isExecutableFile(atPath: child.path),
-              FileManager.default.isExecutableFile(atPath: configService.path),
-              FileManager.default.isExecutableFile(atPath: controlService.path),
-              FileManager.default.isExecutableFile(atPath: controlCLI.path)
+            FileManager.default.isExecutableFile(atPath: child.path),
+            FileManager.default.isExecutableFile(atPath: configService.path),
+            FileManager.default.isExecutableFile(atPath: controlService.path),
+            FileManager.default.isExecutableFile(atPath: controlCLI.path)
         else {
             throw CocoaError(.fileNoSuchFile)
         }
@@ -132,26 +132,23 @@ private struct SupervisorFixture {
         return try #require(pid_t(value))
     }
 
-    func childProcessID(
-        of supervisor: pid_t,
-        executableNamed name: String
+    func announcedProcessID(
+        after message: String,
+        iterations: Int = 500
     ) throws -> pid_t {
-        let children = try String(
-            contentsOfFile:
-                "/proc/\(supervisor)/task/\(supervisor)/children",
-            encoding: .utf8)
-        for field in children.split(whereSeparator: \.isWhitespace) {
-            guard let processID = pid_t(field),
-                  let commandLine = try? Data(
-                    contentsOf: URL(
-                        fileURLWithPath: "/proc/\(processID)/cmdline")),
-                  let terminator = commandLine.firstIndex(of: 0)
-            else { continue }
-            let executable = String(
-                decoding: commandLine[..<terminator], as: UTF8.self)
-            if URL(fileURLWithPath: executable).lastPathComponent == name {
+        for _ in 0..<iterations {
+            if let log = try? String(
+                contentsOf: path("supervisor.log"),
+                encoding: .utf8),
+                let line = log.split(separator: "\n").last(where: {
+                    $0.contains(message)
+                }),
+                let suffix = line.range(of: message).map({ line[$0.upperBound...] }),
+                let processID = pid_t(suffix)
+            {
                 return processID
             }
+            usleep(10_000)
         }
         throw CocoaError(.fileNoSuchFile)
     }
@@ -199,7 +196,8 @@ private struct SupervisorFixture {
             String(
                 decoding:
                     errors.fileHandleForReading.readDataToEndOfFile(),
-                as: UTF8.self))
+                as: UTF8.self)
+        )
     }
 }
 
@@ -245,16 +243,20 @@ private func processIsGone(_ processID: pid_t) -> Bool {
         let process = try fixture.launch(capability: declaration)
         #expect(fixture.waitForFile("capability-pid"))
         #expect(fixture.waitForFile("capability-started"))
-        #expect(fixture.status() == SessionReadinessMessage(
-            role: .shell,
-            milestone: .shellReady))
+        #expect(
+            fixture.status()
+                == SessionReadinessMessage(
+                    role: .shell,
+                    milestone: .shellReady))
         let identifier = try String(
             contentsOf: fixture.path("capability-identifier"),
             encoding: .utf8)
         #expect(identifier == declaration.identifier)
-        let capabilityPID = try #require(pid_t(String(
-            contentsOf: fixture.path("capability-pid"),
-            encoding: .utf8)))
+        let capabilityPID = try #require(
+            pid_t(
+                String(
+                    contentsOf: fixture.path("capability-pid"),
+                    encoding: .utf8)))
 
         _ = kill(process.processIdentifier, SIGTERM)
         #expect(waitForExit(process))
@@ -294,12 +296,16 @@ private func processIsGone(_ processID: pid_t) -> Bool {
             capabilityMode: "exit-once-nonzero")
         defer { stop(process) }
         #expect(fixture.waitForFile("capability-restarted"))
-        let firstPID = try #require(pid_t(String(
-            contentsOf: fixture.path("capability-first-pid"),
-            encoding: .utf8)))
-        let activePID = try #require(pid_t(String(
-            contentsOf: fixture.path("capability-pid"),
-            encoding: .utf8)))
+        let firstPID = try #require(
+            pid_t(
+                String(
+                    contentsOf: fixture.path("capability-first-pid"),
+                    encoding: .utf8)))
+        let activePID = try #require(
+            pid_t(
+                String(
+                    contentsOf: fixture.path("capability-pid"),
+                    encoding: .utf8)))
         #expect(firstPID != activePID)
         #expect(processIsGone(firstPID))
         #expect(!processIsGone(activePID))
@@ -323,8 +329,9 @@ private func processIsGone(_ processID: pid_t) -> Bool {
         defer { stop(process) }
         #expect(fixture.waitForFile("capability-exited-zero"))
         usleep(100_000)
-        #expect(!FileManager.default.fileExists(
-            atPath: fixture.path("capability-restarted").path))
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: fixture.path("capability-restarted").path))
         #expect(process.isRunning)
         #expect(fixture.waitForFile("shell-ready"))
     }
@@ -344,9 +351,11 @@ private func processIsGone(_ processID: pid_t) -> Bool {
         #expect(fixture.waitForFile("shell-ready"))
         usleep(100_000)
         #expect(process.isRunning)
-        #expect(fixture.status() == SessionReadinessMessage(
-            role: .shell,
-            milestone: .shellReady))
+        #expect(
+            fixture.status()
+                == SessionReadinessMessage(
+                    role: .shell,
+                    milestone: .shellReady))
     }
 
     @Test func compositorReadinessGatesShellAndBothReceiveOneConfiguration()
@@ -365,13 +374,16 @@ private func processIsGone(_ processID: pid_t) -> Bool {
 
         #expect(fixture.waitForFile("compositor-pid"))
         usleep(100_000)
-        #expect(!FileManager.default.fileExists(
-            atPath: fixture.path("shell-pid").path))
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: fixture.path("shell-pid").path))
         try fixture.release("compositor")
         #expect(fixture.waitForFile("shell-ready"))
-        #expect(fixture.status() == SessionReadinessMessage(
-            role: .shell,
-            milestone: .shellReady))
+        #expect(
+            fixture.status()
+                == SessionReadinessMessage(
+                    role: .shell,
+                    milestone: .shellReady))
 
         let compositorConfiguration = try String(
             contentsOf: fixture.path("compositor-configuration"),
@@ -404,10 +416,12 @@ private func processIsGone(_ processID: pid_t) -> Bool {
             return
         }
         #expect(version.configurationService.available)
-        #expect(version.configurationService.version
-            == "nucleus-configuration-schema 1")
+        #expect(
+            version.configurationService.version
+                == "nucleus-configuration-schema 1")
         #expect(version.renderServer.version == "fixture-render-server 1")
-        guard case .configuration(let current) =
+        guard
+            case .configuration(let current) =
                 try client.send(.configuration)
         else {
             Issue.record("expected configuration response")
@@ -418,9 +432,10 @@ private func processIsGone(_ processID: pid_t) -> Bool {
         #expect(current.canonicalSource.contains("\"config_version\""))
         let outputResponse = try client.send(.outputs)
         guard case .outputs(let outputs) = outputResponse else {
-            let log = (try? String(
-                contentsOf: fixture.path("supervisor.log"),
-                encoding: .utf8)) ?? "<unavailable>"
+            let log =
+                (try? String(
+                    contentsOf: fixture.path("supervisor.log"),
+                    encoding: .utf8)) ?? "<unavailable>"
             Issue.record(
                 "expected outputs response, got \(outputResponse); log: \(log)")
             return
@@ -477,23 +492,29 @@ private func processIsGone(_ processID: pid_t) -> Bool {
         let decodedDescriptorReply = try ControlCoding.decoder().decode(
             ControlResponseEnvelope.self,
             from: Data(descriptorReply.bytes))
-        #expect(decodedDescriptorReply.response == .error(ControlFailure(
-            code: .invalidRequest,
-            message: "request carried unexpected descriptors")))
+        #expect(
+            decodedDescriptorReply.response
+                == .error(
+                    ControlFailure(
+                        code: .invalidRequest,
+                        message: "request carried unexpected descriptors")))
 
         let unsupported = try PacketConnection.connect(
             path: fixture.controlSocketPath)
-        try unsupported.send(ControlCoding.packet(ControlRequestEnvelope(
-            protocolVersion: ControlProtocolVersion.current + 1,
-            requestID: ControlRequestID(rawValue: 92),
-            request: .version)))
+        try unsupported.send(
+            ControlCoding.packet(
+                ControlRequestEnvelope(
+                    protocolVersion: ControlProtocolVersion.current + 1,
+                    requestID: ControlRequestID(rawValue: 92),
+                    request: .version)))
         let unsupportedReply = try unsupported.receive(
             maximumBytes: 64 * 1024,
             maximumDescriptors: 0)
         let decodedUnsupported = try ControlCoding.decoder().decode(
             ControlResponseEnvelope.self,
             from: Data(unsupportedReply.bytes))
-        guard case .error(let unsupportedFailure) =
+        guard
+            case .error(let unsupportedFailure) =
                 decodedUnsupported.response
         else {
             Issue.record("expected unsupported-version failure")
@@ -502,10 +523,12 @@ private func processIsGone(_ processID: pid_t) -> Bool {
         #expect(unsupportedFailure.code == .unsupportedVersion)
 
         let client = ControlClient(path: fixture.controlSocketPath)
-        #expect(try client.send(.replaceConfiguration("{}"))
-            == .error(ControlFailure(
-                code: .unauthorized,
-                message: "request requires an elevated capability")))
+        #expect(
+            try client.send(.replaceConfiguration("{}"))
+                == .error(
+                    ControlFailure(
+                        code: .unauthorized,
+                        message: "request requires an elevated capability")))
         guard case .version = try client.send(.version) else {
             Issue.record("broker stopped after invalid peer traffic")
             return
@@ -524,7 +547,8 @@ private func processIsGone(_ processID: pid_t) -> Bool {
         #expect(result == "completed")
 
         let client = ControlClient(path: fixture.controlSocketPath)
-        guard case .configuration(let snapshot) =
+        guard
+            case .configuration(let snapshot) =
                 try client.send(.configuration)
         else {
             Issue.record("expected configuration after elevated replacement")
@@ -572,8 +596,8 @@ private func processIsGone(_ processID: pid_t) -> Bool {
             if let source = try? String(
                 contentsOf: fixture.path("shell-attachment-count"),
                 encoding: .utf8),
-               let count = Int(source),
-               count >= 2
+                let count = Int(source),
+                count >= 2
             {
                 attachmentCount = count
                 break
@@ -583,11 +607,14 @@ private func processIsGone(_ processID: pid_t) -> Bool {
         #expect(attachmentCount >= 2)
         #expect(try fixture.processID("compositor") == compositorPID)
         let replacementShellPID = try fixture.processID("shell")
-        #expect(fixture.waitForFile(
-            "shell-policy-endpoint-\(replacementShellPID)"))
+        #expect(
+            fixture.waitForFile(
+                "shell-policy-endpoint-\(replacementShellPID)"))
         #expect(process.isRunning)
-        guard case .version = try ControlClient(
-            path: fixture.controlSocketPath).send(.version)
+        guard
+            case .version = try ControlClient(
+                path: fixture.controlSocketPath
+            ).send(.version)
         else {
             Issue.record("control broker did not survive shell restart")
             return
@@ -606,9 +633,10 @@ private func processIsGone(_ processID: pid_t) -> Bool {
         var observedAbsence = false
         for _ in 0..<100 {
             let response = try ControlClient(
-                path: fixture.controlSocketPath).send(.outputs)
+                path: fixture.controlSocketPath
+            ).send(.outputs)
             if case .error(let failure) = response,
-               failure.code == .ownerUnavailable
+                failure.code == .ownerUnavailable
             {
                 observedAbsence = true
                 break
@@ -618,9 +646,10 @@ private func processIsGone(_ processID: pid_t) -> Bool {
         #expect(observedAbsence)
         let restarted = fixture.waitForFile("compositor-restarted")
         if !restarted {
-            let log = (try? String(
-                contentsOf: fixture.path("supervisor.log"),
-                encoding: .utf8)) ?? "<unavailable>"
+            let log =
+                (try? String(
+                    contentsOf: fixture.path("supervisor.log"),
+                    encoding: .utf8)) ?? "<unavailable>"
             Issue.record("render owner did not restart; log: \(log)")
         }
         #expect(restarted)
@@ -628,8 +657,10 @@ private func processIsGone(_ processID: pid_t) -> Bool {
         let replacementSocketIdentity = try fixture.controlSocketIdentity()
         #expect(replacementSocketIdentity.device == socketIdentity.device)
         #expect(replacementSocketIdentity.inode == socketIdentity.inode)
-        guard case .version(let version) = try ControlClient(
-            path: fixture.controlSocketPath).send(.version)
+        guard
+            case .version(let version) = try ControlClient(
+                path: fixture.controlSocketPath
+            ).send(.version)
         else {
             Issue.record("control broker did not survive render restart")
             return
@@ -647,24 +678,24 @@ private func processIsGone(_ processID: pid_t) -> Bool {
         #expect(fixture.waitForFile("shell-ready"))
 
         let client = ControlClient(path: fixture.controlSocketPath)
-        guard case .configuration(let initial) =
+        guard
+            case .configuration(let initial) =
                 try client.send(.configuration)
         else {
             Issue.record("expected initial configuration snapshot")
             return
         }
         let socketIdentity = try fixture.controlSocketIdentity()
-        let configService = try fixture.childProcessID(
-            of: process.processIdentifier,
-            executableNamed: "NucleusConfigService")
+        let configService = try fixture.announcedProcessID(
+            after: "configuration service ready pid=")
         _ = kill(configService, SIGKILL)
 
         var replacement: ControlConfigurationSnapshot?
         for _ in 0..<500 {
             if case .configuration(let candidate) =
-                    try? client.send(.configuration),
-               candidate.configuredEpochHigh != initial.configuredEpochHigh
-                || candidate.configuredEpochLow != initial.configuredEpochLow
+                try? client.send(.configuration),
+                candidate.configuredEpochHigh != initial.configuredEpochHigh
+                    || candidate.configuredEpochLow != initial.configuredEpochLow
             {
                 replacement = candidate
                 break
@@ -679,8 +710,8 @@ private func processIsGone(_ processID: pid_t) -> Bool {
         var recoveredVersion: ControlVersionInfo?
         for _ in 0..<500 {
             if case .version(let version) = try? client.send(.version),
-               version.configurationService.available,
-               version.renderServer.available
+                version.configurationService.available,
+                version.renderServer.available
             {
                 recoveredVersion = version
                 break
@@ -715,8 +746,9 @@ private func processIsGone(_ processID: pid_t) -> Bool {
         #expect(waitForExit(process))
         #expect(process.terminationStatus == 1)
         #expect(fixture.status()?.milestone == .failed)
-        #expect(fixture.status()?.detail
-            == SessionFailureReason.shellReadinessInvalid.rawValue)
+        #expect(
+            fixture.status()?.detail
+                == SessionFailureReason.shellReadinessInvalid.rawValue)
         #expect(processIsGone(compositorPID))
         #expect(processIsGone(shellPID))
     }
@@ -731,11 +763,13 @@ private func processIsGone(_ processID: pid_t) -> Bool {
         let compositorPID = try fixture.processID("compositor")
         #expect(waitForExit(process, iterations: 300))
         #expect(process.terminationStatus == 1)
-        #expect(!FileManager.default.fileExists(
-            atPath: fixture.path("shell-pid").path))
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: fixture.path("shell-pid").path))
         #expect(fixture.status()?.milestone == .failed)
-        #expect(fixture.status()?.detail
-            == SessionFailureReason.compositorStartupTimedOut.rawValue)
+        #expect(
+            fixture.status()?.detail
+                == SessionFailureReason.compositorStartupTimedOut.rawValue)
         #expect(processIsGone(compositorPID))
     }
 }

@@ -105,7 +105,6 @@ public struct ArtifactTarget: Codable, Hashable, Sendable {
 public enum ExecutionBackend: String, Codable, Hashable, Sendable {
     case appleContainer = "apple-container"
     case native
-    case podman
 }
 
 public enum OCIBackendContract {

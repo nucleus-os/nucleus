@@ -116,6 +116,9 @@ struct TaskControlOptions: ParsableArguments {
     @Flag(help: "Print the resolved task graph without executing it.")
     var dryRun = false
 
+    @Flag(help: "Rebuild the selected tasks while reusing clean prerequisites.")
+    var rebuild = false
+
     @Flag(help: "Explain why each selected task is clean or dirty.")
     var explain = false
 
@@ -140,6 +143,7 @@ struct TaskControlOptions: ParsableArguments {
     var controls: TaskControls {
         TaskControls(
             dryRun: dryRun,
+            rebuild: rebuild,
             explain: explain,
             verbose: verbose,
             quiet: quiet,
@@ -357,6 +361,7 @@ struct Install: AsyncParsableCommand {
         var commands: [ParsableCommand.Type] = [Browser.self]
         #if os(Linux)
         commands.insert(Session.self, at: 0)
+        commands.insert(AndroidAddon.self, at: 1)
         #endif
         return commands
     }
@@ -370,6 +375,80 @@ struct Install: AsyncParsableCommand {
         @Option var prefix: String?
         mutating func run() async throws {
             try await InstallCommand(context: context()).run(prefix: prefix)
+        }
+    }
+
+    struct AndroidAddon: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "android-addon",
+            abstract: "Install or deactivate an independently signed Android add-on.",
+            subcommands: [Activate.self, Deactivate.self, Uninstall.self])
+
+        struct Activate: AsyncParsableCommand {
+            @Argument var artifact: String
+            @Option(name: .customLong("trust-key")) var trustKey: String?
+            @Option(name: .customLong("base-prefix")) var basePrefix: String?
+            @Option(name: .customLong("store-root")) var storeRoot: String?
+            @Option(name: .customLong("state-root")) var stateRoot: String?
+
+            mutating func run() async throws {
+                let workspace = try context()
+                let resolvedBase =
+                    basePrefix.map {
+                        AndroidAddon.resolve($0, relativeTo: workspace.root)
+                    } ?? workspace.layout.installPrefix
+                try AndroidAddonInstallCommand().install(
+                    artifact: AndroidAddon.resolve(
+                        artifact, relativeTo: workspace.root),
+                    trustKey: trustKey.map {
+                        AndroidAddon.resolve($0, relativeTo: workspace.root)
+                    }
+                        ?? resolvedBase.appendingPathComponent(
+                            "share/nucleus/trust/android-addon-publisher.pem"),
+                    basePrefix: resolvedBase,
+                    storeRoot: storeRoot.map {
+                        AndroidAddon.resolve($0, relativeTo: workspace.root)
+                    } ?? workspace.layout.androidAddonStore,
+                    persistentStateRoot: stateRoot.map {
+                        AndroidAddon.resolve($0, relativeTo: workspace.root)
+                    } ?? workspace.layout.androidPersistentState)
+            }
+        }
+
+        struct Deactivate: ParsableCommand {
+            @Option(name: .customLong("store-root")) var storeRoot: String?
+            @Option(name: .customLong("state-root")) var stateRoot: String?
+
+            mutating func run() throws {
+                let workspace = try context()
+                try AndroidAddonInstallCommand().deactivate(
+                    storeRoot: storeRoot.map {
+                        AndroidAddon.resolve($0, relativeTo: workspace.root)
+                    } ?? workspace.layout.androidAddonStore,
+                    persistentStateRoot: stateRoot.map {
+                        AndroidAddon.resolve($0, relativeTo: workspace.root)
+                    } ?? workspace.layout.androidPersistentState)
+            }
+        }
+
+        struct Uninstall: ParsableCommand {
+            @Option(name: .customLong("store-root")) var storeRoot: String?
+            @Option(name: .customLong("state-root")) var stateRoot: String?
+
+            mutating func run() throws {
+                let workspace = try context()
+                try AndroidAddonInstallCommand().uninstall(
+                    storeRoot: storeRoot.map {
+                        AndroidAddon.resolve($0, relativeTo: workspace.root)
+                    } ?? workspace.layout.androidAddonStore,
+                    persistentStateRoot: stateRoot.map {
+                        AndroidAddon.resolve($0, relativeTo: workspace.root)
+                    } ?? workspace.layout.androidPersistentState)
+            }
+        }
+
+        private static func resolve(_ value: String, relativeTo root: URL) -> URL {
+            URL(fileURLWithPath: value, relativeTo: root).standardizedFileURL
         }
     }
     #endif
@@ -461,14 +540,22 @@ struct Android: AsyncParsableCommand {
 }
 
 struct AndroidRuntime: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "android-runtime",
-        abstract: "Build and operate the contained Android runtime.",
-        subcommands: [
+    private static func subcommands() -> [ParsableCommand.Type] {
+        var commands: [ParsableCommand.Type] = [
             SourceLock.self,
             Source.self,
             Image.self,
-        ])
+        ]
+        #if os(Linux)
+        commands.append(PackageAddon.self)
+        #endif
+        return commands
+    }
+
+    static let configuration = CommandConfiguration(
+        commandName: "android-runtime",
+        abstract: "Build and operate the contained Android runtime.",
+        subcommands: subcommands())
 
     struct SourceLock: TaskControlledCommand {
         static let configuration = CommandConfiguration(
@@ -506,6 +593,40 @@ struct AndroidRuntime: AsyncParsableCommand {
                     controls: taskOptions.controls)
         }
     }
+
+    #if os(Linux)
+    struct PackageAddon: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "package-addon",
+            abstract: "Assemble and sign a downloadable Android add-on artifact.")
+        @Option(name: .customLong("runtime-root")) var runtimeRoot: String?
+        @Option(name: .customLong("aosp-generation")) var aospGeneration: String?
+        @Option(name: .customLong("compatibility")) var compatibility: String
+        @Option(name: .customLong("aosp-signing-key")) var aospSigningKey: String
+        @Option(name: .customLong("addon-signing-key")) var addonSigningKey: String
+        @Option var output: String
+
+        mutating func run() async throws {
+            let workspace = try context()
+            let android = workspace.layout.androidRuntime
+            try await AndroidAddonPackageCommand(context: workspace).run(
+                runtimeRoot: runtimeRoot.map {
+                    resolve($0, relativeTo: workspace.root)
+                },
+                aospGeneration: aospGeneration.map {
+                    resolve($0, relativeTo: workspace.root)
+                } ?? android.appendingPathComponent(".aosp-build/current"),
+                compatibilityURL: resolve(compatibility, relativeTo: workspace.root),
+                aospSigningKey: resolve(aospSigningKey, relativeTo: workspace.root),
+                addonSigningKey: resolve(addonSigningKey, relativeTo: workspace.root),
+                output: resolve(output, relativeTo: workspace.root))
+        }
+
+        private func resolve(_ value: String, relativeTo root: URL) -> URL {
+            URL(fileURLWithPath: value, relativeTo: root).standardizedFileURL
+        }
+    }
+    #endif
 
 }
 

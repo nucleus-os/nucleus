@@ -292,9 +292,10 @@ open class TextView:
     }
 
     public func setSelectedRange(_ range: Range<Int>) {
-        model.setSelection(TextSelection(
-            anchor: range.lowerBound,
-            head: range.upperBound))
+        model.setSelection(
+            TextSelection(
+                anchor: range.lowerBound,
+                head: range.upperBound))
         afterSelectionChange(resetPreferredX: true)
     }
 
@@ -475,9 +476,10 @@ open class TextView:
                 selectParagraph(containing: offset)
             default:
                 if event.modifierFlags.contains(.shift) {
-                    model.setSelection(TextSelection(
-                        anchor: model.selection.anchor,
-                        head: offset))
+                    model.setSelection(
+                        TextSelection(
+                            anchor: model.selection.anchor,
+                            head: offset))
                 } else {
                     model.setCaret(at: offset)
                 }
@@ -488,9 +490,10 @@ open class TextView:
         case .pointerDragged:
             guard let selectionDragAnchor else { return .notHandled }
             autoscrollSelection(toward: event.location)
-            model.setSelection(TextSelection(
-                anchor: selectionDragAnchor,
-                head: documentOffset(at: event.location)))
+            model.setSelection(
+                TextSelection(
+                    anchor: selectionDragAnchor,
+                    head: documentOffset(at: event.location)))
             afterSelectionChange(resetPreferredX: true)
             return .handled
         case .pointerUp:
@@ -510,7 +513,8 @@ open class TextView:
     }
 
     private func handleKeyDown(_ event: Event) -> EventHandling {
-        let byWord = event.modifierFlags.contains(.option)
+        let byWord =
+            event.modifierFlags.contains(.option)
             || event.modifierFlags.contains(.control)
         let extending = event.modifierFlags.contains(.shift)
         let command = event.modifierFlags.contains(.command)
@@ -583,7 +587,8 @@ open class TextView:
                 extendingSelection: extending)
             return .handled
         case .home:
-            let offset = command
+            let offset =
+                command
                 ? 0
                 : documentLayout.lineBoundary(
                     atUTF16Offset: model.selection.head,
@@ -595,7 +600,8 @@ open class TextView:
                 resetPreferredX: true)
             return .handled
         case .end:
-            let offset = command
+            let offset =
+                command
                 ? model.utf16Count
                 : documentLayout.lineBoundary(
                     atUTF16Offset: model.selection.head,
@@ -636,15 +642,16 @@ open class TextView:
         }
 
         if command, let characters = event.characters?.lowercased() {
-            let action: ActionID? = switch characters {
-            case "a": .selectAll
-            case "c": .copy
-            case "x": .cut
-            case "v": .paste
-            case "z":
-                event.modifierFlags.contains(.shift) ? .redo : .undo
-            default: nil
-            }
+            let action: ActionID? =
+                switch characters {
+                case "a": .selectAll
+                case "c": .copy
+                case "x": .cut
+                case "v": .paste
+                case "z":
+                    event.modifierFlags.contains(.shift) ? .redo : .undo
+                default: nil
+                }
             guard let action else { return .notHandled }
             return performAction(action, event: event)
                 ? .handled
@@ -652,7 +659,7 @@ open class TextView:
         }
 
         guard let characters = event.characters,
-              !characters.isEmpty
+            !characters.isEmpty
         else { return .notHandled }
         model.insert(characters)
         afterEdit()
@@ -665,9 +672,10 @@ open class TextView:
         probe.moveCaret(.wordForward)
         let end = probe.selection.head
         probe.moveCaret(.wordBackward)
-        model.setSelection(TextSelection(
-            anchor: probe.selection.head,
-            head: end))
+        model.setSelection(
+            TextSelection(
+                anchor: probe.selection.head,
+                head: end))
         afterSelectionChange(resetPreferredX: true)
     }
 
@@ -687,9 +695,10 @@ open class TextView:
     private func selectParagraph(containing offset: Int) {
         let range = documentLayout.paragraphRange(
             atUTF16Offset: offset)
-        model.setSelection(TextSelection(
-            anchor: range.lowerBound,
-            head: range.upperBound))
+        model.setSelection(
+            TextSelection(
+                anchor: range.lowerBound,
+                head: range.upperBound))
         afterSelectionChange(resetPreferredX: true)
     }
 
@@ -703,7 +712,9 @@ open class TextView:
         preferredCaretX = x
         let target = Point(
             x: x - textInsets.left,
-            y: caret.origin.y - textInsets.top + deltaY)
+            y: caret.origin.y - textInsets.top
+                + caret.size.height / 2
+                + deltaY)
         let offset = documentLayout.utf16Offset(
             at: target,
             textSystem: uiContext.services.textSystem)
@@ -719,9 +730,10 @@ open class TextView:
         resetPreferredX: Bool
     ) {
         if extendingSelection {
-            model.setSelection(TextSelection(
-                anchor: model.selection.anchor,
-                head: offset))
+            model.setSelection(
+                TextSelection(
+                    anchor: model.selection.anchor,
+                    head: offset))
         } else {
             model.setCaret(at: offset)
         }
@@ -795,7 +807,8 @@ open class TextView:
     private var effectiveParagraphStyle: ParagraphStyle {
         var style = paragraphStyle
         style.maximumLineCount = 0
-        style.lineBreakMode = lineLayout == .wrap
+        style.lineBreakMode =
+            lineLayout == .wrap
             ? .byWordWrapping
             : .byClipping
         return style
@@ -803,10 +816,12 @@ open class TextView:
 
     private var layoutWidth: Double? {
         guard lineLayout == .wrap else { return nil }
-        let viewportWidth = scrollView.clipView.frame.size.width > 0
+        let viewportWidth =
+            scrollView.clipView.frame.size.width > 0
             ? scrollView.clipView.frame.size.width
             : bounds.size.width
-        let width = viewportWidth
+        let width =
+            viewportWidth
             - textInsets.left
             - textInsets.right
         return width > 0 ? width : nil
@@ -912,18 +927,24 @@ open class TextView:
 
     private func drawMarkedText(in context: GraphicsContext) {
         guard let markedRange = model.markedRange else { return }
-        let spans = preeditStyles.isEmpty
-            ? [TextInputPreeditSpan(
-                range: 0..<markedRange.count,
-                style: .active)]
+        let spans =
+            preeditStyles.isEmpty
+            ? [
+                TextInputPreeditSpan(
+                    range: 0..<markedRange.count,
+                    style: .active)
+            ]
             : preeditStyles
         for span in spans {
-            let lower = markedRange.lowerBound
+            let lower =
+                markedRange.lowerBound
                 + min(max(0, span.range.lowerBound), markedRange.count)
-            let upper = markedRange.lowerBound
+            let upper =
+                markedRange.lowerBound
                 + min(max(0, span.range.upperBound), markedRange.count)
             guard lower < upper else { continue }
-            context.fillColor = span.style == .incorrect
+            context.fillColor =
+                span.style == .incorrect
                 ? Color(0.95, 0.25, 0.25, 0.9)
                 : textColor.opacity(
                     span.style == .inactive ? 0.45 : 0.7)
@@ -938,13 +959,14 @@ open class TextView:
             {
                 var underline = Path()
                 let documentRect = offsetForInsets(rect)
-                underline.addRect(Rect(
-                    x: documentRect.origin.x,
-                    y: documentRect.origin.y
-                        + documentRect.size.height
-                        - thickness,
-                    width: documentRect.size.width,
-                    height: thickness))
+                underline.addRect(
+                    Rect(
+                        x: documentRect.origin.x,
+                        y: documentRect.origin.y
+                            + documentRect.size.height
+                            - thickness,
+                        width: documentRect.size.width,
+                        height: thickness))
                 context.fill(underline)
             }
         }

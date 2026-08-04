@@ -16,6 +16,7 @@ extension JSONEncoder {
 /// the Collider task runtime.
 struct TaskControls: Sendable {
     var dryRun = false
+    var rebuild = false
     var explain = false
     var verbose = false
     var quiet = false
@@ -24,6 +25,7 @@ struct TaskControls: Sendable {
     var executionOptions: TaskExecutionOptions {
         TaskExecutionOptions(
             dryRun: dryRun,
+            rebuildSelected: rebuild,
             explain: explain,
             verbose: verbose,
             quiet: quiet,

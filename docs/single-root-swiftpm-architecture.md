@@ -44,9 +44,9 @@ context. Component tasks retain attribution and source ownership, but they do
 not launch SwiftPM independently. Runtime installation consumes the complete
 root build instead of rebuilding each executable.
 
-Android cross-compilation sets `NUCLEUS_TARGET_PLATFORM=android`, which adds the
-JNI product and its `swift-java` dependency to the same manifest without
-placing target-only JNI headers in the host graph.
+The root graph always declares the Android JNI product and its `swift-java`
+dependency. Collider selects that product with an explicit Swift SDK and target
+triple; ambient environment state never changes the manifest graph.
 
 ## SourceKit-LSP Result
 

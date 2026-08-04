@@ -141,11 +141,17 @@ extension ColliderRuntime {
             }
         }
 
-        return try await execute(
-            try executor.runCommand(
-                execution,
-                imageID: imageID,
-                temporaryDirectory: temporaryDirectory),
+        let name = try executor.containerName(for: execution)
+        let output =
+            taskOutputPresentation?.output(for: execution.output)
+            ?? execution.output
+        return try await AppleContainerLifecycle().execute(
+            execution,
+            name: name,
+            imageReference: appleImageReference(imageID),
+            temporaryDirectory: temporaryDirectory,
+            output: output,
+            logging: logging,
             stage: stage)
     }
 }

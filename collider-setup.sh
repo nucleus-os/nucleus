@@ -68,12 +68,14 @@ if ! toolchain_present; then
     exit 127
   fi
   echo "collider-setup: building collider with the bootstrap compiler..." >&2
+  "$root/tools/configure-swiftpm-mirrors.sh"
   swift build --package-path "$pkg" -c release >&2
   "$bin" swift-sdk rebuild
 fi
 
 # 2. Build the optimized collider binary with the native host compiler.
 source "$host_env"
+"$root/tools/configure-swiftpm-mirrors.sh"
 echo "collider-setup: building collider (release)..." >&2
 swift build --package-path "$pkg" -c release >&2
 
@@ -115,10 +117,16 @@ source "$host_env"
 
 pkg="$root/collider"
 bin="$pkg/.build/release/collider"
+"$root/tools/configure-swiftpm-mirrors.sh"
 
 # Build inputs: the collider package and every *ColliderRecipe target. The
 # binary's mtime is the fingerprint; rebuild only when an input is newer.
-input_roots=("$pkg/Package.swift" "$pkg/Sources" "$pkg/engine")
+input_roots=(
+  "$pkg/Package.swift"
+  "$pkg/Sources"
+  "$pkg/engine"
+  "$root/tools/configure-swiftpm-mirrors.sh"
+)
 while IFS= read -r recipe; do
   input_roots+=("$recipe")
 done < <(find "$root" -maxdepth 5 -type d -name '*ColliderRecipe' \

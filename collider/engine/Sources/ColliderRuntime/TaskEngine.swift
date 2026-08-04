@@ -4,6 +4,7 @@ import SystemPackage
 
 public struct TaskExecutionOptions: Sendable {
     public var dryRun: Bool
+    public var rebuildSelected: Bool
     public var explain: Bool
     public var verbose: Bool
     public var quiet: Bool
@@ -12,6 +13,7 @@ public struct TaskExecutionOptions: Sendable {
 
     public init(
         dryRun: Bool = false,
+        rebuildSelected: Bool = false,
         explain: Bool = false,
         verbose: Bool = false,
         quiet: Bool = false,
@@ -19,6 +21,7 @@ public struct TaskExecutionOptions: Sendable {
         maximumParallelism: Int = 2
     ) {
         self.dryRun = dryRun
+        self.rebuildSelected = rebuildSelected
         self.explain = explain
         self.verbose = verbose
         self.quiet = quiet
@@ -248,6 +251,7 @@ extension ColliderRuntime {
         defer { taskOutputPresentation = previousOutputPresentation }
 
         let ordered = try graph.orderedTasks(selecting: selected)
+        let explicitlySelected = Set(selected)
         try FileManager.default.createDirectory(
             atPath: stateRoot.string, withIntermediateDirectories: true)
         let eventRegistry = registry ?? logging?.registry
@@ -280,7 +284,10 @@ extension ColliderRuntime {
                 dependencies: dependencyIdentities,
                 digestCache: digestCache)
             identities[task.id] = identity
-            let assessment = assess(task, identity: identity, stateRoot: stateRoot)
+            let assessment =
+                options.rebuildSelected && explicitlySelected.contains(task.id)
+                ? (clean: false, reason: "rebuild requested for selected task")
+                : assess(task, identity: identity, stateRoot: stateRoot)
             plan.append(
                 TaskPlanEntry(
                     task: task.id, identity: identity,
@@ -744,6 +751,7 @@ extension ColliderRuntime {
         }
 
         let products = Array(Set(requirements.map(\.qualifiedProduct))).sorted()
+        let productNames = Array(Set(requirements.map(\.product))).sorted()
         var inputs = [first.invocation.identityInput]
         inputs += first.invocation.context.toolsets.map(ArtifactInput.file)
         if case .oci(let configuration) = first.invocation.context.execution {
@@ -764,7 +772,6 @@ extension ColliderRuntime {
             identity.append(tag: 2, string: product)
         }
         let digest = ArtifactHasher.digest(bytes: identity.bytes)
-        let arguments = ["build"]
         return TaskDeclaration(
             id: TaskID(rawValue: "swift.package.build.\(digest)"),
             component: ComponentID(rawValue: "swift-package"),
@@ -774,10 +781,13 @@ extension ColliderRuntime {
                     if !$0.contains($1) { $0.append($1) }
                 },
             locks: [first.invocation.lock],
-            operation: first.invocation.operation(
-                arguments: arguments,
-                workingDirectory: first.invocation.context.packageRoot,
-                environment: first.environment))
+            operation: .sequence(
+                productNames.map { product in
+                    first.invocation.operation(
+                        arguments: ["build", "--product", product],
+                        workingDirectory: first.invocation.context.packageRoot,
+                        environment: first.environment)
+                }))
     }
 
     private func synthesizedSwiftTestBuild(

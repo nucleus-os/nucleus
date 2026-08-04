@@ -12,8 +12,9 @@ public func resolveAndroidRuntimeHostConfiguration<
         "sudo", "mount", "umount", "lxc-start", "lxc-stop",
         "lxc-attach", "newuidmap", "newgidmap", "systemd-run",
         "aa-enabled", "apparmor_parser", "modprobe", "modinfo",
-        "uname", "journalctl", "fsverity", "sha256sum",
-    ] where resolveAndroidRuntimeExecutable(
+        "uname", "journalctl", "fsverity", "sha256sum", "python3",
+    ]
+    where resolveAndroidRuntimeExecutable(
         tool,
         environment: environment
     ) == nil {
@@ -47,7 +48,8 @@ public func resolveAndroidRuntimeHostConfiguration<
                 + "for per-instance BPF delegation"
         ),
     ] {
-        let available = mountedFileSystems
+        let available =
+            mountedFileSystems
             .split(whereSeparator: \.isNewline)
             .contains {
                 $0.split(whereSeparator: \.isWhitespace).last

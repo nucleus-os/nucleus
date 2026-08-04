@@ -1,5 +1,6 @@
 import ArgumentParser
 import ColliderCore
+import ColliderRuntime
 import Foundation
 
 enum DoctorScope: String, CaseIterable, ExpressibleByArgument {
@@ -234,17 +235,9 @@ struct WorkspaceDoctor {
 
     private func ociExecutor(scope: String) -> HostPrerequisite {
         let runner = RunnerPlatform.current
-        let executable: String
-        let arguments: [String]
         let backend: String
         switch (runner.operatingSystem, runner.architecture) {
-        case (.linux, .x86_64):
-            executable = "podman"
-            arguments = ["info", "--format", "json"]
-            backend = ExecutionBackend.podman.rawValue
         case (.macOS, .arm64):
-            executable = "container"
-            arguments = ["system", "status", "--format", "json"]
             backend = ExecutionBackend.appleContainer.rawValue
         default:
             return HostPrerequisite(
@@ -258,27 +251,23 @@ struct WorkspaceDoctor {
             scope: scope,
             description: "\(backend) OCI executor"
         ) {
-            guard
-                let output = try? await context.run(
-                    executable,
-                    arguments,
-                    capture: true),
-                !output.isEmpty
+            guard executablePath("container") != nil,
+                let health = try? await appleContainerBackendHealth(),
+                health.apiServerAppName == "container-apiserver"
             else { return nil }
-            if runner.operatingSystem == .macOS {
-                guard
-                    let network = try? await context.run(
-                        executable,
-                        [
-                            "network", "inspect",
-                            OCIBackendContract.appleOfflineNetwork,
-                        ],
-                        capture: true),
-                    network.contains("hostOnly")
-                else { return nil }
-            }
+            guard
+                let network = try? await context.run(
+                    "container",
+                    [
+                        "network", "inspect",
+                        OCIBackendContract.appleOfflineNetwork,
+                    ],
+                    capture: true),
+                network.contains("hostOnly")
+            else { return nil }
             return "\(runner.operatingSystem.rawValue)/"
-                + "\(runner.architecture.rawValue) via \(backend)"
+                + "\(runner.architecture.rawValue) via \(backend); "
+                + health.apiServerVersion
         }
     }
 

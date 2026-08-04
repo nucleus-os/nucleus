@@ -1,8 +1,8 @@
 # Collider Kernel, Planning, and Execution Architecture
 
 **Status: active.** This is the sole authority for Collider graph declaration,
-planning, execution, persistence, caching, output ownership, input auditing, and
-resource-aware scheduling.
+planning, execution, persistence, caching, output ownership, input auditing,
+target/host execution placement, and resource-aware scheduling.
 
 ## Invariants
 
@@ -17,6 +17,37 @@ all dirty requirements for one `SwiftBuildContext` into one stock root
 `swift build` or `swift test` invocation. A test invocation subsumes the build
 invocation for the same context. No component action launches its own SwiftPM
 build.
+
+**Every command executes through the plan.** A command selects entrypoints and
+hands the selection to planning. No command shells a build system, test runner,
+benchmark, or sanitizer harness directly. Benchmarks, sanitizer lanes, and
+repository-wide test gates are component entrypoints with declared inputs,
+identities, execution contracts, and run-log attribution. The only processes
+Collider launches outside a planned action are the ones that produce the plan.
+
+**Execution environment is declared, never inherited.** A task that produces or
+exercises a Linux artifact declares a Linux execution contract and runs in the
+pinned container image regardless of runner operating system. The host runner is
+never an implicit substitute for the target. Planning rejects a host-executed
+task whose Swift build context, artifact target, or machine requirement names a
+non-host platform. There is no host fallback path.
+
+**Identity-bearing tools are pinned.** A tool whose binary digest enters task
+identity is resolved inside the pinned container image or is a first-party
+artifact produced by another task. Ambient host tools may participate only in
+host-only source materialization, and such a task declares no target artifact.
+A task whose identity depends on the contents of the runner's `/usr/bin` cannot
+share state across runners and is never portable.
+
+**One environment name has one meaning.** A path exported to both host and
+container execution resolves to the same logical level in both. The native SDK
+root is always per-target; there is no untargeted level and no environment
+variable whose interpretation depends on where it is read.
+
+**Every published path has a producing task.** Every path a manifest, action, or
+external build system reads from a Collider-owned publication root is a typed
+output slot with exactly one producer. Symlink publication validates the link
+target, not merely the link.
 
 **The kernel never enumerates component workflows.** Adding or changing an
 AOSP, Chromium, Swift toolchain, React Native, compositor, or other
@@ -63,6 +94,15 @@ stores, lock managers, process implementations, or nested action dispatch.
 Large build systems receive explicitly scoped tree capabilities rather than an
 unrestricted filesystem object.
 
+**Exhaustiveness is the compiler's job.** No switch over a closed Collider enum
+carries a `default:` clause. Adding a case is a compile error at every site that
+must handle it, not a silent fallthrough to an empty environment, a lightweight
+resource claim, or a skipped validation.
+
+**The declaration layer speaks one path type.** `FilePath` is the path type of
+declarations, recipes, workspace layout, and the engine API. `URL` appears only
+at the call site of a Foundation API that requires it.
+
 **Concurrency is resource-aware.** A task launches only after its dependencies
 complete and all weighted capacities, exclusive resources, output ownership,
 machine requirements, and cross-process locks are satisfied. A single root
@@ -84,41 +124,216 @@ never used for discovery.
 The production repository already has the foundations this plan preserves:
 
 - the repository root owns one first-party SwiftPM graph;
-- Collider synthesizes one stock Swift build or test per compatible context;
+- Collider synthesizes one stock Swift build or test per compatible context,
+  and `subsumedDependencies` already implements test-over-build subsumption;
 - `SwiftBuildContext` separates incompatible toolchain, target, sanitizer,
-  trait, flag, and standard-library configurations;
+  trait, flag, and standard-library configurations, and `SwiftPMExecution`
+  already distinguishes host from OCI execution;
 - recipe targets live under `collider/Sources`;
 - `TaskGraph` validates dependencies and returns deterministic topological
   order;
 - declared inputs, outputs, postconditions, task locks, state records, run
   records, and artifact digests already exist;
-- cross-process file locks already protect shared mutable state.
+- cross-process file locks already protect shared mutable state;
+- `ExecutionPlatform`, `RunnerPlatform`, `ArtifactTarget`, and
+  `OCIExecutorResolver` already model where a task runs and what it produces;
+- `RunRegistry` already records planning duration and per-stage run logs.
 
-The remaining architectural debt is concentrated in four places:
+Two capabilities the earlier revision of this plan proposed to create already
+exist in production and are completed rather than introduced:
+
+- **The action seam exists but has one consumer.** `ColliderAction`,
+  `ColliderActionIdentity`, `AnyColliderAction`, `ActionContext`,
+  `ActionFileSystem`, and `CanonicalDigestEncoder` are implemented in
+  `ColliderCore`. `TaskOperation.action` is their only call site. The
+  outstanding work is completing the contract and converting the remaining
+  thirty-eight operation cases, not designing the seam.
+- **The concurrent scheduler exists but is under-declared.** `TaskEngine`
+  already runs a bounded ready queue over `withThrowingTaskGroup` with weighted
+  CPU and memory admission, exclusive claims, and lock-disjointness checks. The
+  outstanding work is output-tree ownership reservation, atomic canonical-order
+  claim reservation, per-task-class resource declarations, and critical-path
+  measurement, not replacing serial execution.
+
+The remaining architectural debt is concentrated in seven places:
 
 1. `TaskOperation` is a closed enum containing generic and domain-specific
-   behavior.
+   behavior, dispatched through eight parallel switches and a hand-allocated
+   digest tag space.
 2. `ColliderRuntime` is both the execution implementation and a namespace for
    AOSP, Chromium, Android SDK, browser, and toolchain workflows.
-3. `ComponentRegistry` reconstructs different task arrays for each command and
-   owns component-specific selection behavior.
-4. planning, state assessment, synthesized SwiftPM execution, and serial
-   execution remain coupled inside `TaskEngine`.
+3. `ComponentRegistry` reconstructs different task arrays for each command,
+   owns component-specific selection behavior, and carries unreachable
+   selection branches.
+4. planning, state assessment, synthesized SwiftPM execution, and execution
+   admission remain coupled inside `TaskEngine`.
+5. several commands bypass the graph entirely and drive host SwiftPM against
+   Linux-only targets.
+6. host tools shape target artifacts and enter target task identity.
+7. the command layer carries duplicated path resolution, two path types, and
+   string-keyed task identifiers.
+
+## Verified Defects
+
+These are confirmed by source reading and, where noted, by inspecting the
+provisioned SDK cache. Each is assigned to the phase that repairs it.
+
+### Host and target placement
+
+**The repository-wide test gates run on the host.** `ColliderCommand.Test`
+invokes `Orchestrator.runRepositoryWideTestGates()` whenever the component is
+unset or `all` and the run is not a dry run, with no platform guard.
+`Orchestrator.testReleaseSuite` takes a host `swiftPMInvocation` and shells
+`swift test --filter` six times through `context.run`. Three of the six suites
+cannot build on macOS: `NucleusFoundationPublicationStressTests` lives in
+`NucleusUITests`, whose linker settings use GNU `--start-group`/`--end-group`
+and `-lvulkan`; `NucleusPlatformTransportStressTests` and
+`NucleusCompositorTransitionStressTests` are Wayland and Linux-platform suites.
+Repaired in phase 2, absorbed into entrypoints in phase 5.
+
+**`collider benchmark` builds Linux products on the host.** `BenchmarkCommand`
+takes a host release `swiftPMInvocation` and builds `NucleusLinuxBenchmarks`,
+which depends on `NucleusLinuxReactorC`, `NucleusLinuxDBus`, and
+`NucleusLinuxSessionC`. The command is registered unconditionally, unlike `Run`.
+Repaired in phase 2, absorbed into entrypoints in phase 5.
+
+**`collider sanitize` builds and executes Linux harnesses on the host.**
+`SanitizerCommand.run` takes a host sanitizer `swiftPMInvocation`, runs
+`swift test` or `swift build`, then executes the produced binary directly. Its
+invocation table spans `platform-linux`, `compositor`, `android-runtime`, and
+`integration-tests/window-client-conformance`. Its own source comment states
+the Linux-host assumption. Repaired in phase 2, absorbed into entrypoints in
+phase 5.
+
+**`wayland.generate` uses an unpinned host scanner.** The task declares
+`.tool(.named("wayland-scanner"))` and emits `executable: .named(...)`, a host
+`PATH` lookup, while `wayland.native-sdk.linux-arm64` builds a pinned scanner
+into the native SDK and mounts it for the x86_64 cross build. The task's outputs
+are committed source: `Sources/WaylandServerC`, `Sources/WaylandClientC`, and
+`protocol-runtime/Sources/WaylandProtocolsC`. `WorkspaceDoctor` does not list
+`wayland-scanner` as a prerequisite, so `collider doctor` passes on a machine
+where the task cannot run. Repaired in phase 2.
+
+**The native SDK root means two different levels.** `tools/host-env.sh` and
+`collider-setup.sh` export `NUCLEUS_NATIVE_SDK_ROOT` as the untargeted parent,
+and `WorkspaceContext.init` defaults it the same way, while the container mounts
+built by `ComponentRegistry.linuxArchitectureTasks` export it as
+`<root>/<target>`. The root manifest reads `$NUCLEUS_NATIVE_SDK_ROOT/render/...`
+and therefore resolves to a different tree depending on where it is evaluated.
+Repaired in phase 2.
+
+**The host render SDK slot points at an orphan.** `publishRenderSDK` symlinks
+`<root>/render/lib/skia-graphite` to `core/.skia-build/graphite`. No task in any
+recipe builds `.skia-build/graphite`; the only Skia producers write
+`.skia-build/linux-arm64`, `.skia-build/linux-x86_64`, and
+`.skia-build/android-arm64`. On the provisioned cache the `graphite` directory
+is a stale host build predating the target split, and the sibling
+`skia-graphite-android-arm64` link is dangling because its target does not
+exist. The task's default dependency `core.skia.host` names a task ID no recipe
+declares, and survives only because every call site overrides it. Repaired in
+phase 2, made structurally impossible in phase 6.
+
+**Dangling symlinks satisfy output validation.** `PathValidation.exists` is
+implemented as `stat(followTargetSymlink: false)`, so `lstat` succeeds on a
+broken link and the publishing task reports success. Repaired in phase 1.
+
+**Host tool digests enter target task identity.** `core.sources` declares
+`.tool` inputs for `git`, `python3`, `unzip`, and `chmod`; `rn.generate`
+declares `node`; `rn.javascript-dependencies` declares `corepack`. A macOS point
+release that touches `/usr/bin/chmod` re-runs Skia dependency sync, and no task
+state is shareable between a macOS and a Linux runner. The `unzip` and `chmod`
+steps carry no semantic content: the extracted `gn` is a Linux ELF used only
+inside the container. `corepack yarn install` additionally resolves
+platform-gated optional dependencies by runner platform, so
+`third-party/react-native/node_modules` is host-shaped. Repaired in phase 2.
+
+### Declaration surface
+
+**Five switches over `TaskOperation` carry `default:` clauses.**
+`scheduledResources`, `containsOCIExecution`, `validateArtifactOutputs`,
+`operationEnvironment`, and `executionCoordinates` each enumerate nearly every
+case and then swallow the rest. `operationEnvironment` is the dangerous one: its
+result resolves `.tool` inputs during identity calculation, so a new operation
+carrying an environment and declaring tool inputs resolves those tools against
+the process `PATH` and records a digest for the wrong binary. Repaired in
+phase 1.
+
+**Six recipe modules carry the same private task helper.** `CoreColliderRecipe`,
+`VulkanColliderRecipe`, `WaylandColliderRecipe`, `ReactNativeColliderRecipe`,
+`CompositorAppColliderRecipe`, and `CompositorColliderRecipe` each define a
+structurally identical `task`/`packageTask` differing only in component ID,
+package name, product list, source tree names, and lock. They have already
+drifted in signature — positional versus labeled `swiftPM`, required versus
+defaulted dependencies, three positions for `subsumedDependencies` — and each
+branches on `let isBuild = arguments == ["build"]`, keying behavior to a string
+comparison against a magic argument array. Repaired in phase 5, homed in
+`ColliderSwiftPM` in phase 8.
+
+**`WorkspaceLayout` vends `URL` into a `FilePath` API.** Every layout property
+returns `URL`, and consumers immediately reconstruct `FilePath` from `.path` —
+fifty-seven times in `ComponentRegistry` alone, one hundred thirty-two across
+the package. Repaired in phase 3.
+
+**Path resolution is implemented more than once.** `WorkspaceContext.init` and
+`WorkspaceContext.cacheRoot` independently implement the
+`XDG_CACHE_HOME`/`HOME`/`.cache` fallback. `nativeSDKRoot` exists three times,
+in `CommandSupport`, `ComponentRegistry`, and `WorkspaceDoctor`, one of which
+force-unwraps the environment value. `resolve(_:relativeTo:)` is defined twice
+in `ColliderCommand.swift` with identical bodies. Repaired in phase 3.
+
+**Task identifiers are strings.** One hundred eighty-one
+`TaskID(rawValue: "…")` literal sites cover ninety-seven distinct identifiers.
+The command layer derives them by concatenation and by a dictionary of string
+arrays; recipes cross-reference each other by literal. A typo compiles and fails
+at graph validation. Repaired in phase 3 for recipe-to-recipe references and in
+phase 5 for command-to-recipe selection.
+
+**Selection carries unreachable branches.** In `selectedBuildTasks`, every
+selection not in `runtimeLinuxSelections` is rejected by the following guard, so
+the final `selection.rawValue + ".build"` return is dead. In
+`selectedTestTasks`, `runtimeLinuxSelections` is tested first, so the
+`taskNames` entries for `tracy`, `vulkan`, `wayland`, `core`, `config`, `ipc`,
+`linux`, `rn`, `compositor`, `shell`, and `android-runtime` are unreachable —
+only `loader`, `gpu-headless`, and `gpu-drm` resolve through it. The host-context
+per-component build and test tasks these branches appear to select are
+constructed on every planning pass and never selected. Repaired in phase 3.
+
+**The command layer has two catch-all files.** `WorkspaceContext`, workspace
+root discovery, three global mutable slots, and `WorkspaceFileLock` share
+`ProcessRunner.swift`. `TaskControls`, plan rendering, language-server
+publication, `swiftPMInvocation`, compiler discovery, and directory pruning
+share `CommandSupport.swift`. `ColliderCommand.swift` holds roughly thirty-five
+command types. Repaired in phase 3.
+
+**`RunOptions` maintains specified-ness by hand.** `Run` declares eighteen
+parsed properties and copies each into `RunOptions`, hand-setting
+`outputOptionWasSpecified` and `tracyOnlyOptionWasSpecified`. Repaired in
+phase 3.
+
+**The engine package has no tests.** `ColliderCoreTests` is declared by the
+outer `collider` manifest with `path: "engine/Tests/ColliderCoreTests"`, and
+`engine/Package.swift` declares no test target, so the engine cannot be verified
+as an independent boundary. Repaired in phase 3.
 
 ## Target Package Graph
 
-The final engine package exposes six products with one-way dependencies:
+The final engine package exposes its products with one-way dependencies:
 
 ```text
 ColliderMacros ───────────────→ ColliderCore
 ColliderPlanning ─────────────→ ColliderCore
 ColliderPersistence ──────────→ ColliderCore
+ColliderDownloads ────────────→ ColliderCore
 ColliderRuntime ──────────────→ ColliderCore
 ColliderRuntime ──────────────→ ColliderPlanning
 ColliderRuntime ──────────────→ ColliderPersistence
+ColliderRuntime ──────────────→ ColliderDownloads
 ColliderTesting ──────────────→ ColliderCore
 ColliderTesting ──────────────→ ColliderPlanning
 ```
+
+`ColliderPlatformC` remains a leaf C target consumed by `ColliderDownloads` and
+`ColliderRuntime`.
 
 `ColliderSwiftPM` lives in the outer `collider` package and depends on
 `ColliderCore` and `ColliderPlanning`. Recipe modules that declare Swift
@@ -163,7 +378,7 @@ explicit read-only planning services. It owns:
 - graph and action-kind validation;
 - artifact-edge derivation;
 - output ownership analysis;
-- execution-contract validation;
+- execution-contract validation, including host/target placement rejection;
 - resource normalization;
 - selected-input digest requests;
 - tool snapshot requests;
@@ -200,7 +415,6 @@ The public protocols consumed by planning and execution remain in
 - host and container execution sessions;
 - process lifecycle and process-group cancellation;
 - terminal and log I/O;
-- downloads;
 - scoped filesystem capability implementations;
 - hardware, kernel, privilege, and device probes;
 - in-process resource admission;
@@ -298,13 +512,17 @@ The one canonical encoder:
 - never depends on dictionary or set iteration order;
 - emits canonical bytes without choosing a hash algorithm.
 
+Tags are action-local. There is no global tag space and no hand-maintained
+allocation table shared across unrelated payloads.
+
 Task identity contains:
 
 1. task ID and component ID;
 2. dependency identities keyed and sorted by dependency `TaskID`;
 3. named declared inputs in canonical order;
 4. typed output-slot contracts;
-5. execution properties that can affect results;
+5. execution properties that can affect results, including the resolved
+   execution environment and artifact target;
 6. action kind;
 7. action-local identity bytes;
 8. task execution policy.
@@ -317,7 +535,9 @@ It excludes:
 - shared and exclusive scheduler claims;
 - `--jobs` and scheduler capacity;
 - log presentation settings;
-- absolute resolved output paths for portable artifacts.
+- absolute resolved output paths for portable artifacts;
+- the runner operating system, for any task whose execution environment is a
+  pinned container.
 
 If a resource changes output behavior, the task declares the semantic value as
 an identity input in addition to its scheduling claim.
@@ -392,6 +612,11 @@ Input.tool(requirement)
 
 Generated outputs may not re-enter the graph as unrelated raw paths. The
 planner first warns during migration and then rejects this condition.
+
+Output validation distinguishes a link from its target. `exists` means the path
+resolves; a slot that publishes a symlink declares `symlinkTarget` with the
+required target validation. No validation contract is satisfiable by a broken
+link.
 
 ### Scoped filesystem capabilities
 
@@ -470,6 +695,10 @@ This centralizes:
 - declared path validation;
 - safe diagnostic redaction.
 
+`ExecutableReference` distinguishes an ambient host tool, a container-resolved
+tool, and a first-party artifact. An ambient host tool is legal only in a task
+whose execution contract is host and whose outputs declare no artifact target.
+
 Typed arguments do not claim to observe every filesystem access made by a
 subprocess. Scoped tree capabilities declare the actual mutation boundary.
 
@@ -504,15 +733,25 @@ build
 test.default
 test.gpu-headless
 test.gpu-drm
+test.release-gate
 bootstrap
 generate
 install
+benchmark
+sanitize.address
+sanitize.undefined
+sanitize.thread
 qualify
 ```
 
 A task may be reachable from any number of entrypoints. `TaskMetadata` may carry
 facets, lanes, and tags for reporting and ad hoc filtering, but those labels do
 not duplicate tasks or determine identity.
+
+Every entrypoint a component publishes is reachable from at least one selection
+spelling, and every selection spelling resolves to a declared entrypoint.
+Registry construction rejects an entrypoint no group or alias can select and a
+selection table entry shadowed by an earlier match.
 
 The command package contains one explicit root registry:
 
@@ -549,10 +788,12 @@ Registry construction validates:
 - action/component namespace mismatch;
 - unknown dependencies and artifact producers;
 - entrypoints with unknown roots;
+- unreachable entrypoints and shadowed selection spellings;
 - overlapping output ownership.
 
-`RecipeContext` contains declared repository layout and build-context values. It
-does not inspect hardware, resolve tools, hash trees, or execute commands.
+`RecipeContext` contains declared repository layout and build-context values as
+`FilePath`. It does not inspect hardware, resolve tools, hash trees, or execute
+commands.
 
 ## Execution Contracts
 
@@ -581,6 +822,15 @@ other kernel or container privileges.
 Network access is a policy, not hardware. Portable tasks declare whether
 network is forbidden or restricted to content-addressed fetches. Unrestricted
 network access disqualifies portable caching.
+
+Planning rejects, as a structural error rather than a runtime failure:
+
+- a host execution contract on a task whose Swift build context targets a
+  non-host triple;
+- a host execution contract on a task declaring an artifact target the runner
+  cannot produce;
+- an ambient host tool requirement on a task declaring an artifact target;
+- a container execution contract naming an image the runner cannot execute.
 
 Planning resolves and snapshots requirements only for the selected dependency
 closure. Structural validation still covers the complete component graph. A
@@ -629,6 +879,16 @@ swift build --package-path <repository-root> --scratch-path <context-scratch>
 swift test  --package-path <repository-root> --scratch-path <context-scratch>
 ```
 
+The execution environment of a synthesized invocation is derived from its
+`SwiftBuildContext`, not from the runner. A Linux-target context always lowers
+to a container invocation. Benchmark, sanitizer, and release-gate contexts are
+ordinary contexts and receive no exemption.
+
+`ColliderSwiftPM` also owns the one Swift package task builder shared by every
+recipe. A recipe names its component, package, products, source trees, lock, and
+test product; it does not restate the input, postcondition, lock, and operation
+shape, and no recipe infers build-versus-test from an argument array.
+
 No architecture phase may replace this lowering with one SwiftPM process per
 component.
 
@@ -642,17 +902,18 @@ Planning follows one strict order:
 4. derive artifact dependencies;
 5. validate the complete structural graph and action namespaces;
 6. validate complete output ownership;
-7. expand command selection into component entrypoints;
-8. compute selected dependency closure;
-9. normalize execution and resource contracts for the selected closure;
-10. request tool and container snapshots for the selected closure;
-11. hash selected declared inputs through the persistent digest index;
-12. calculate logical task identities in deterministic graph order;
-13. assess logical local state and output postconditions;
-14. run registered deterministic lowerings, including SwiftPM coalescing;
-15. calculate identities and assessments for synthesized execution tasks;
-16. freeze output ownership, resource indexes, attribution, and reporting order;
-17. produce the immutable `ExecutionPlan`.
+7. validate execution-contract placement across the complete graph;
+8. expand command selection into component entrypoints;
+9. compute selected dependency closure;
+10. normalize execution and resource contracts for the selected closure;
+11. request tool and container snapshots for the selected closure;
+12. hash selected declared inputs through the persistent digest index;
+13. calculate logical task identities in deterministic graph order;
+14. assess logical local state and output postconditions;
+15. run registered deterministic lowerings, including SwiftPM coalescing;
+16. calculate identities and assessments for synthesized execution tasks;
+17. freeze output ownership, resource indexes, attribution, and reporting order;
+18. produce the immutable `ExecutionPlan`.
 
 `ExecutionPlan` contains:
 
@@ -694,6 +955,9 @@ Resources include:
 - container image preparation;
 - hardware device exclusivity;
 - canonical output tree.
+
+Every task class declares its real resource request. No task class receives a
+lightweight default because a dispatch switch failed to name it.
 
 All in-process claims are reserved atomically in canonical key order before
 launch. A task never occupies an execution slot while waiting for another
@@ -749,6 +1013,7 @@ May restore a verified artifact snapshot. It requires:
 - no undeclared mutable state;
 - no unrestricted path capability;
 - no unrestricted network;
+- no ambient host tool in its identity;
 - representable permissions, symlinks, and file types;
 - an audited execution environment.
 
@@ -767,6 +1032,7 @@ Run manifests record:
 - container image digest and container-resolved tools;
 - Swift build context;
 - execution and machine requirements;
+- runner platform, execution environment, and artifact target;
 - scoped effect roots;
 - hardware probe results;
 - policy and assessment;
@@ -816,7 +1082,18 @@ materially regress its bootstrap path.
 
 ## Sequential Implementation Plan
 
-## Phase 1 — Freeze the production invariants
+## Phase 1 — Freeze the invariants and close the exhaustiveness escapes
+
+Delete the `default:` clause from every switch over a closed Collider enum and
+enumerate the remaining cases: `scheduledResources`, `containsOCIExecution`,
+`validateArtifactOutputs`, `operationEnvironment`, and `executionCoordinates`.
+Replace the five-case AOSP product family, which re-discriminates one shared
+payload back into a stage string inside `encode(operation:into:)`, with one case
+carrying an explicit stage value. From this phase forward the compiler
+enumerates the conversion surface for phase 4.
+
+Add `PathValidation.symlinkTarget`, which resolves the link and validates the
+target, and convert every symlink-publishing output declaration to it.
 
 Add regression coverage before moving engine boundaries:
 
@@ -829,7 +1106,11 @@ Add regression coverage before moving engine boundaries:
 4. assert that unselected DRM, Android, and container tasks do not trigger tool
    resolution or hardware probes;
 5. assert that complete graph reporting remains deterministic;
-6. record planning duration, selected input-hashing duration, invocation count,
+6. assert that a publication task whose symlink target is absent fails output
+   validation;
+7. assert that every task selected by every public CLI spelling declares an
+   execution environment its artifact target can be produced in;
+8. record planning duration, selected input-hashing duration, invocation count,
    and critical-path execution duration as the baseline.
 
 The existing synthesized SwiftPM behavior remains the enforced reference while
@@ -837,21 +1118,126 @@ the later planner is extracted.
 
 ### Verification gate
 
-Collider command and engine tests pass. A dry-run of the complete build reports
-one root Swift invocation for the ordinary host context. A dry-run of complete
-tests reports one root test and no redundant root build.
+Collider command and engine tests pass. No switch over a Collider enum contains
+`default:`. A dry-run of the complete build reports one root Swift invocation for
+the ordinary host context. A dry-run of complete tests reports one root test and
+no redundant root build. Assertion 7 fails against the current tree and names
+the benchmark, sanitizer, and release-gate workloads; phase 2 makes it pass.
 
-## Phase 2 — Replace `TaskOperation` with the action seam
+## Phase 2 — Close the host/target execution split
 
-Create in `ColliderCore`:
+This phase repairs live incorrect behavior and establishes the placement rule
+the rest of the architecture depends on.
+
+Collapse the native SDK root to one meaning. `NUCLEUS_NATIVE_SDK_ROOT` becomes
+per-target everywhere: `tools/host-env.sh`, `collider-setup.sh`,
+`WorkspaceContext` defaulting, container mounts, `WorkspaceDoctor` path checks,
+and the root manifest all resolve the same level. Delete the untargeted
+`<root>/render` and `<root>/rn` publication slots along with
+`publishRenderSDK`'s orphan `.skia-build/graphite` link and its nonexistent
+`core.skia.host` default dependency. The Android render publication becomes a
+per-target slot named for the target it holds, produced by the task that builds
+it. Reset the affected derived state once rather than tolerating a stale layout.
+
+Move every Linux-target Swift workload off the host runner:
+
+1. give `BenchmarkCommand` an OCI Swift build context per benchmark suite,
+   derived the same way `ComponentRegistry.linuxArchitectureTasks` derives the
+   architecture lanes;
+2. give `SanitizerCommand` an OCI Swift build context per sanitizer, preserving
+   the sanitizer runtime environment, suppression files, and harness execution
+   inside the container;
+3. declare the six release structural suites as Linux lane test tasks on the
+   release build context, selected through the ordinary test selection path,
+   and delete `Orchestrator`, `WorkspaceComponent`, and the direct `swift test`
+   shelling with them. Phase 5 gives these tasks their own `test.release-gate`
+   entrypoint; phase 2 only moves them into the graph and the container.
+
+Move code generation that shapes committed source into the container. The
+`wayland.generate` scanner steps execute against the pinned scanner produced by
+`wayland.native-sdk.linux-arm64` rather than an ambient `PATH` lookup.
+`SwiftWaylandGen` and `VulkanGen` remain first-party host Swift tools producing
+portable output and are unchanged.
+
+Remove ambient host tools from target task identity. `core.sources` keeps host
+`git` and `python3` for source materialization only and declares no artifact
+target; its `unzip` and `chmod` steps become engine operations so the extracted
+Linux `gn` never depends on the runner's coreutils. `rn.generate` and
+`rn.javascript-dependencies` resolve `node` and `corepack` from the pinned
+container image, which also makes `node_modules` target-shaped rather than
+runner-shaped.
+
+Add `wayland-scanner` and the per-target native SDK paths to `WorkspaceDoctor`,
+and delete its private `nativeSDKRoot` duplicate in favor of the single
+workspace accessor.
+
+Register `Benchmark` and `Sanitize` with the same platform gating as their
+execution contract requires, so no subcommand is offered that cannot run.
+
+### Verification gate
+
+Phase 1 assertion 7 passes. `collider test`, `collider benchmark`, and
+`collider sanitize` complete on an arm64 macOS runner and produce artifacts
+byte-identical to a Linux runner for every container-executed task. No task
+declaring an artifact target resolves an ambient host tool. `collider doctor`
+fails on a machine missing any prerequisite that a selected entrypoint needs.
+Regenerating the Wayland protocol sources on macOS and on Linux produces
+identical committed output. Every path under the native SDK root has exactly one
+producing task, and deleting any of them fails validation rather than reporting
+success.
+
+## Phase 3 — Normalize the declaration surface
+
+The layer that later phases rewrite must first speak one path type, one
+workspace context, and one task-identifier vocabulary.
+
+Change `WorkspaceLayout` to vend `FilePath` and fix every consumer. `URL`
+remains only at Foundation call sites that require it.
+
+Collapse duplicated resolution to one implementation each: the cache root, the
+native SDK root, and the workspace-relative path resolver defined twice in
+`ColliderCommand.swift`. Remove the force-unwrapped environment read by making
+the invariant explicit at the type instead of at the use site.
+
+Give every recipe module public `TaskID` constants for the tasks other modules
+reference, and replace recipe-to-recipe string literals with them. Command-layer
+selection remains string-driven until phase 5 replaces it with entrypoints.
+
+Delete the unreachable selection branches in `selectedBuildTasks` and
+`selectedTestTasks`, and delete the host-context per-component build and test
+task construction that only those branches appeared to select. Planning stops
+resolving and hashing the host Swift compiler on commands that select no host
+task.
+
+Split the two catch-all command files. `WorkspaceContext`, workspace root
+discovery, the process runner, task controls, and language-server publication
+each get their own file, and `ColliderCommand.swift` becomes one file per
+top-level command.
+
+Make `RunOptions` the parsed representation rather than a hand-copied mirror,
+deriving specified-ness from optionality and deleting both `wasSpecified` flags.
+
+Move the engine test target into `engine/Package.swift` so the engine is
+verifiable as an independent boundary.
+
+### Verification gate
+
+No `FilePath(...path)` conversion remains in the command layer or recipes.
+`swift test --package-path collider/engine` runs the engine suite. Every public
+CLI spelling resolves to a task that exists; no selection table entry is
+unreachable. `RunOptionsTests` passes unchanged. Building or testing one
+component resolves no tool the selection does not require.
+
+## Phase 4 — Complete the action seam
+
+`ColliderAction`, `ColliderActionIdentity`, `AnyColliderAction`, `ActionContext`,
+`ActionFileSystem`, and `CanonicalDigestEncoder` already exist in
+`ColliderCore`. Complete them with:
 
 - `ActionKind`;
-- `ActionIdentity`;
-- `ActionIdentityEncoder`;
-- `ColliderAction`;
-- `AnyColliderAction`;
 - `ActionRequirements`;
-- `ActionContext`;
+- `ActionIdentityEncoder` with action-local tags and duplicate/zero/reserved
+  rejection;
 - cancellation, logger, filesystem, command, and download capability protocols;
 - the canonical replacement identity encoding.
 
@@ -859,7 +1245,8 @@ Convert operations in strict order:
 
 1. command and process actions;
 2. create, copy, write, remove, and symlink actions;
-3. download and archive actions;
+3. download and archive actions, including the extraction step that replaced
+   host `unzip` in phase 2;
 4. generation activation, retention, and publication actions;
 5. Swift source, host toolchain, Android SDK, wiring, sanitation, and validation
    actions;
@@ -882,7 +1269,7 @@ step. Recipe modules import `ColliderCore`, never `ColliderRuntime`.
 There is no general `LegacyTaskOperationAction`, compatibility encoder, or
 permanent dual dispatch. After the final conversion:
 
-- delete `TaskOperation`;
+- delete `TaskOperation` and the hand-allocated global digest tag space;
 - remove operation dispatch from `ColliderRuntime`;
 - remove every domain workflow file from `ColliderRuntime`;
 - change `TaskDeclaration` to store `AnyColliderAction`;
@@ -895,27 +1282,38 @@ permanent dual dispatch. After the final conversion:
 
 All recipe actions execute through `ActionContext`. Identical action identities
 produce identical bytes; changing each identity-bearing field changes the
-digest. Duplicate kinds and invalid namespaces fail graph validation. A clean
-second run performs no work. No domain term remains in engine source. No
-identity version, compatibility decoder, or legacy state remains.
+digest. Duplicate kinds, invalid namespaces, and duplicate identity tags fail
+validation. A clean second run performs no work. No domain term remains in
+engine source. No identity version, compatibility decoder, or legacy state
+remains. Task identity for a container-executed task is independent of runner
+operating system.
 
-## Phase 3 — Unify components and command entrypoints
+## Phase 5 — Unify components and command entrypoints
 
 Add `ColliderComponent`, `ComponentDescriptor`, `ComponentDefinition`,
 `ComponentEntrypoint`, `RecipeContext`, and immutable task collection builders
 to `ColliderCore`.
 
 Convert every recipe module to one `makeComponent(in:)` implementation. Move all
-build, test, bootstrap, generate, install, and qualification declarations into
-that graph. Define named entrypoints rather than separate recipe methods.
+build, test, bootstrap, generate, install, benchmark, sanitizer, and
+qualification declarations into that graph. Define named entrypoints rather than
+separate recipe methods. The benchmark and sanitizer workloads relocated in
+phase 2 become `benchmark` and `sanitize.*` entrypoints, and the release
+structural suites become `test.release-gate`; `BenchmarkCommand` and
+`SanitizerCommand` are deleted along with the last `context.run` call sites that
+drive a build system.
+
+Introduce the one shared Swift package task builder and delete the six
+near-identical private recipe helpers, including every
+`arguments == ["build"]` sentinel. Build versus test is an explicit declaration.
 
 Replace:
 
 - `ComponentSelection`;
-- `WorkspaceComponent`;
 - per-command recipe calls;
 - command-owned task reconstruction;
-- hard-coded component path switches.
+- hard-coded component path switches;
+- the remaining command-layer `TaskID` string derivation.
 
 Create one explicit root component list and registry-owned selection groups in
 `ColliderCommands`. Commands parse component/group/entrypoint arguments and
@@ -928,10 +1326,14 @@ container inspection, and tool discovery into selected planning requirements.
 
 Every accepted CLI spelling resolves through registry metadata. Frozen public
 CLI tables preserve intended aliases. Expanding all component graphs produces
-no duplicate IDs, aliases, kinds, entrypoints, or output ownership. Building an
-unrelated component does not probe optional hardware.
+no duplicate IDs, aliases, kinds, entrypoints, or output ownership, and no
+unreachable entrypoint. Building an unrelated component does not probe optional
+hardware. No command in `ColliderCommands` launches a build system, test runner,
+benchmark, or sanitizer outside a planned action. One recipe declares a Swift
+package build and test in fewer lines than the deleted helper, and no recipe
+restates the shared shape.
 
-## Phase 4 — Introduce typed artifacts and scoped effects
+## Phase 6 — Introduce typed artifacts and scoped effects
 
 Add artifact marker types, `ArtifactReference`, output slots,
 `ResolvedArtifact`, declared path references, and scoped tree capabilities.
@@ -954,6 +1356,10 @@ For each relationship:
 - resolve host/container placement only in planning;
 - delete the redundant manual dependency-output input.
 
+The native SDK publication slots repaired in phase 2 become typed artifacts,
+which makes a slot without a producing task unrepresentable rather than merely
+tested against.
+
 Add scoped checkout, scratch, output, and publication capabilities for large
 external build systems. Record every granted scope in the run manifest.
 
@@ -968,13 +1374,15 @@ unrelated raw path a planner error.
 
 Planner tests prove automatic dependency derivation, type mismatch rejection,
 host/container path mapping, output overlap detection, and placement-independent
-artifact identity. Representative AOSP, Chromium, SwiftPM, and publication
-actions operate only within declared scopes.
+artifact identity. A publication slot with no producer fails to compile.
+Representative AOSP, Chromium, SwiftPM, and publication actions operate only
+within declared scopes.
 
-## Phase 5 — Extract deterministic planning and persistence
+## Phase 7 — Extract deterministic planning and persistence
 
 Create `ColliderPlanning` and move graph normalization, selection, identity,
-assessment, output ownership, and plan construction out of `TaskEngine`.
+assessment, execution-contract placement validation, output ownership, and plan
+construction out of `TaskEngine`.
 
 Define immutable planning service protocols in `ColliderCore`. Create
 `ColliderPersistence` and move:
@@ -990,7 +1398,7 @@ Define immutable planning service protocols in `ColliderCore`. Create
 Planning receives immutable snapshots and request/response service values.
 Execution receives an `ExecutionPlan`; it cannot access planner mutation APIs.
 
-Delete the serial planning/execution coordinator from `TaskEngine`. Keep only a
+Delete the planning and assessment coordinator from `TaskEngine`. Keep only a
 thin runtime orchestration entrypoint that obtains planning snapshots, invokes
 the planner, and hands the frozen plan to execution.
 
@@ -1002,11 +1410,11 @@ unselected hardware is not probed. Execution cannot mutate task identities or
 add tasks. Persistence tests cover interrupted writes, corrupt state, and
 bounded artifact retention.
 
-## Phase 6 — Move SwiftPM aggregation into explicit plan lowering
+## Phase 8 — Move SwiftPM aggregation into explicit plan lowering
 
-Create `ColliderSwiftPM` with logical build/test requirement declarations and
-one deterministic lowering. Register it explicitly in the command-layer planner
-configuration.
+Create `ColliderSwiftPM` with logical build/test requirement declarations, the
+shared Swift package task builder introduced in phase 5, and one deterministic
+lowering. Register it explicitly in the command-layer planner configuration.
 
 Move the existing synthesized-build behavior out of runtime execution and into
 the lowering. Preserve:
@@ -1017,39 +1425,42 @@ the lowering. Preserve:
 - test-over-build subsumption;
 - expected output validation;
 - logical component attribution;
-- stock SwiftPM command arguments.
+- stock SwiftPM command arguments;
+- execution environment derived from the build context, never the runner.
 
 Delete synthesized Swift planning from `ColliderRuntime`. Runtime sees ordinary
 physical execution tasks and attribution metadata only.
 
 ### Verification gate
 
-The Phase 1 invocation-count tests pass unchanged against the new planner.
+The phase 1 invocation-count tests pass unchanged against the new planner.
 Editing one component may dirty multiple logical dependents but still produces
 one SwiftPM process for their compatible context. Root build and root test pass
-with the stock patch-free toolchain.
+with the stock patch-free toolchain. Benchmark, sanitizer, release-gate, and
+lane contexts all lower to container invocations without special-casing.
 
-## Phase 7 — Add the resource-aware scheduler
+## Phase 9 — Complete the resource-aware scheduler
 
-Replace serial task execution with a bounded ready queue.
+The bounded ready queue, weighted CPU and memory admission, exclusive claims,
+and lock-disjointness checks already exist in `TaskEngine`. Move them into
+`ColliderRuntime`'s scheduler over the frozen plan and complete them.
 
-Implement:
+Implement the missing pieces:
 
-- dependency counters and dependent indexes;
-- stable ready ordering;
-- weighted CPU, memory, and I/O admission;
-- atomic shared/exclusive resource reservation;
 - canonical output-tree reservation;
-- cancellation-aware cross-process locks;
-- execution-session tracking;
-- failure propagation and cleanup;
+- atomic reservation of all in-process claims in canonical key order;
+- explicit resource requests for every task class, replacing the lightweight
+  default the deleted `default:` clause used to supply;
+- bounded I/O-heavy slots;
+- execution-session tracking and container cleanup on cancellation;
+- failure propagation that never publishes state after failure;
 - stable final reporting;
 - critical-path and resource-wait measurements.
 
-Assign explicit resource requests to every task class. The root SwiftPM task
-reserves its scratch database exclusively and receives a high CPU weight.
-AOSP, Chromium, native SDK, downloads, and publication tasks declare their real
-checkout, cache, memory, I/O, container, and output constraints.
+The root SwiftPM task reserves its scratch database exclusively and receives a
+high CPU weight. AOSP, Chromium, native SDK, download, and publication tasks
+declare their real checkout, cache, memory, I/O, container, and output
+constraints.
 
 First execute all acceptance suites with scheduler capacity one. Then enable the
 production capacity policy.
@@ -1059,10 +1470,10 @@ production capacity policy.
 Capacity-one and concurrent executions select the same tasks and produce
 artifact-equivalent outputs. Stress tests show no overlapping output mutation,
 lock-order deadlock, leaked process group, leaked container session, or state
-publication after failure. Logs remain task-local and final reports remain
-stable.
+publication after failure. Every task class declares a resource request. Logs
+remain task-local and final reports remain stable.
 
-## Phase 8 — Add macro authoring support
+## Phase 10 — Add macro authoring support
 
 Create the macro implementation target and public declarations. Add
 `@ActionIdentity`, `@IdentityField`, `@ColliderAction`, and
@@ -1078,7 +1489,7 @@ Macro-generated and handwritten identities produce identical canonical bytes.
 Diagnostics cover tag, type, ordering, and omitted-field mistakes. Collider's
 bootstrap build remains within the recorded compile and dependency budget.
 
-## Phase 9 — Add audited portable caching
+## Phase 11 — Add audited portable caching
 
 Rename existing policy cases to `always`, `incremental`, and `portable`. Migrate
 all current reusable work to `incremental`; this rename grants no portable
@@ -1097,16 +1508,18 @@ Audit and promote bounded actions in strict order:
 
 Keep SwiftPM scratch trees, mutable source checkouts, AOSP build trees, Chromium
 build trees, hardware qualification, and unrestricted shell/network workflows
-non-portable unless a later complete audit proves otherwise.
+non-portable unless a later complete audit proves otherwise. A task whose
+identity contains an ambient host tool is never promoted.
 
 ### Verification gate
 
 Deleting a portable local output and restoring it reproduces the complete
 validated tree, metadata, permissions, and symlinks. Corrupt snapshots are
 quarantined and rebuilt. Relocation tests prove that absolute checkout paths are
-not artifact identity.
+not artifact identity. A macOS runner and a Linux runner exchange portable
+artifacts for every container-executed task.
 
-## Phase 10 — Remove superseded architecture and validate the end state
+## Phase 12 — Remove superseded architecture and validate the end state
 
 Delete:
 
@@ -1114,8 +1527,9 @@ Delete:
 - component-specific runtime extensions;
 - command-specific graph construction;
 - duplicate component identity types;
+- duplicate path and cache-root resolution;
 - raw generated-output path dependencies;
-- serial executor code;
+- serial and pre-plan execution code;
 - temporary migration diagnostics and adapters.
 
 Run the complete acceptance matrix:
@@ -1128,9 +1542,11 @@ Run the complete acceptance matrix:
 5. capacity-one and production-capacity scheduler replays;
 6. clean second-run verification for every component entrypoint;
 7. portable restore and corruption tests;
-8. SourceKit-LSP configuration and semantic checks;
-9. planning, hashing, invocation-count, resource-wait, and critical-path
-   comparison against the Phase 1 baseline.
+8. macOS-runner and Linux-runner equivalence for every container-executed
+   entrypoint;
+9. SourceKit-LSP configuration and semantic checks;
+10. planning, hashing, invocation-count, resource-wait, and critical-path
+    comparison against the phase 1 baseline.
 
 The architecture is complete only when:
 
@@ -1138,9 +1554,13 @@ The architecture is complete only when:
 - a component workflow change touches only its recipe and generic contract
   extensions;
 - commands select entrypoints without reconstructing task arrays;
+- no command drives a build system outside a planned action;
 - execution accepts only immutable plans;
 - one compatible Swift context produces one root SwiftPM invocation;
+- a task's execution environment follows its declared target, never its runner;
+- no task producing a target artifact depends on an ambient host tool;
 - generated artifacts flow through typed producer/output references;
+- every published path has exactly one producing task;
 - every mutable effect is scoped and recorded;
 - concurrency is safe across tasks and Collider processes;
 - portable restoration is content-verified and explicitly audited.
@@ -1157,6 +1577,7 @@ This architecture does not add:
 - automatic syscall-based dependency discovery;
 - universal sandboxing;
 - a second dependency resolver;
+- a host execution fallback for target workloads;
 - portable caching claims for opaque external build trees.
 
 Collider remains a compiled, explicit, deterministic Nucleus meta-build system:
@@ -1164,7 +1585,7 @@ Collider remains a compiled, explicit, deterministic Nucleus meta-build system:
 ```text
 recipes own declarations and actions
 commands select component entrypoints
-planning validates, assesses, and lowers
+planning validates, assesses, places, and lowers
 runtime schedules and executes
 persistence records and restores
 ```

@@ -1317,7 +1317,11 @@ func validateAOSPFontContract(
         let delegate = AOSPFontReferenceParser()
         // XMLParser keeps this reference unowned; the local strong reference
         // outlives the synchronous parse below.
+        #if canImport(Darwin)
         unsafe parser.delegate = delegate
+        #else
+        parser.delegate = delegate
+        #endif
         guard parser.parse() else {
             throw RuntimeFailure.invalidOutput(
                 "signed Android font configuration \(path) is invalid: "

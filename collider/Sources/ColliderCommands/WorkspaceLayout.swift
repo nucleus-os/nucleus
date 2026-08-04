@@ -23,6 +23,12 @@ struct WorkspaceLayout: Sendable {
     var runtimeState: URL {
         state.appendingPathComponent("runtime", isDirectory: true)
     }
+    var androidAddonStore: URL {
+        runtimeState.appendingPathComponent("android-addon", isDirectory: true)
+    }
+    var androidPersistentState: URL {
+        runtimeState.appendingPathComponent("android-state", isDirectory: true)
+    }
     var locks: URL {
         state.appendingPathComponent("locks", isDirectory: true)
     }

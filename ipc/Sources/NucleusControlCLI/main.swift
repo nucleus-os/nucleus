@@ -1,22 +1,106 @@
 import ArgumentParser
 import Foundation
 import Glibc
+import NucleusAndroidRuntimeCore
 import NucleusConfig
 import NucleusControlClient
 import NucleusControlProtocol
 
-// The `nucleus` command: a thin client over the control protocol.
-//
-// It holds no policy of its own. Every subcommand maps to one ControlRequest,
-// and every request names an operation the compositor already understands from
-// its binding table — so a command and a keybinding cannot drift apart.
+// The `nucleus` command owns installed-product administration. `msg` remains a
+// thin client over the compositor control protocol; `addon` manages separately
+// signed product capabilities without requiring a source checkout or Collider.
 
 @main
 struct NucleusCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "nucleus",
-        abstract: "Control a running Nucleus compositor.",
-        subcommands: [Message.self])
+        abstract: "Control and administer a Nucleus OS installation.",
+        subcommands: [Message.self, Addon.self])
+}
+
+struct Addon: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "Manage independently signed Nucleus OS add-ons.",
+        subcommands: [Install.self, Deactivate.self, Uninstall.self, Status.self])
+
+    struct Locations: ParsableArguments {
+        @Option(name: .customLong("base-prefix"))
+        var basePrefix = "/opt/nucleus/current"
+        @Option(name: .customLong("store-root"))
+        var storeRoot = "/opt/nucleus/addons/android"
+        @Option(name: .customLong("state-root"))
+        var stateRoot = "/var/lib/nucleus/android"
+
+        func manager(trustKey: String? = nil) throws -> AndroidAddonManager {
+            try AndroidAddonManager(
+                basePrefix: absoluteURL(basePrefix),
+                storeRoot: absoluteURL(storeRoot),
+                persistentStateRoot: absoluteURL(stateRoot),
+                trustKey: trustKey.map(absoluteURL))
+        }
+
+        private func absoluteURL(_ path: String) -> URL {
+            URL(fileURLWithPath: path).standardizedFileURL
+        }
+    }
+
+    struct Install: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Verify and atomically install an Android add-on artifact.")
+        @OptionGroup var locations: Locations
+        @Option(name: .customLong("trust-key")) var trustKey: String?
+        @Argument var artifact: String
+
+        func run() throws {
+            try requireAddonAdministrationPrivileges()
+            try locations.manager(trustKey: trustKey).install(
+                artifact: URL(fileURLWithPath: artifact).standardizedFileURL)
+        }
+    }
+
+    struct Deactivate: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Deactivate Android while retaining its installed content and state.")
+        @OptionGroup var locations: Locations
+
+        func run() throws {
+            try requireAddonAdministrationPrivileges()
+            try locations.manager().deactivate()
+        }
+    }
+
+    struct Uninstall: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Remove Android add-on content while retaining persistent state.")
+        @OptionGroup var locations: Locations
+
+        func run() throws {
+            try requireAddonAdministrationPrivileges()
+            try locations.manager().uninstall()
+        }
+    }
+
+    struct Status: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Print the active Android add-on generation.")
+        @OptionGroup var locations: Locations
+
+        func run() throws {
+            guard let manifest = try locations.manager().activeManifest() else {
+                print("inactive")
+                return
+            }
+            print(
+                "\(manifest.release) \(manifest.buildNumber) "
+                    + "(\(manifest.architecture.rawValue))")
+        }
+    }
+}
+
+private func requireAddonAdministrationPrivileges() throws {
+    guard geteuid() == 0 else {
+        throw ValidationError("add-on installation changes system state; rerun with sudo")
+    }
 }
 
 struct Message: ParsableCommand {

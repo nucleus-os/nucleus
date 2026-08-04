@@ -9,9 +9,12 @@ let package = Package(
         .library(name: "ColliderRuntime", targets: ["ColliderRuntime"]),
     ],
     dependencies: [
+        .package(path: "../../third-party/container"),
+        .package(path: "../../third-party/containerization"),
         .package(path: "../../third-party/swift-system"),
         .package(path: "../../third-party/swift-subprocess"),
         .package(path: "../../third-party/swift-crypto"),
+        .package(path: "../../third-party/swift-log"),
     ],
     targets: [
         .target(
@@ -41,9 +44,22 @@ let package = Package(
                 "ColliderDownloads",
                 "ColliderPlatformC",
                 .product(
+                    name: "ContainerAPIClient",
+                    package: "container"),
+                .product(
+                    name: "ContainerCommands",
+                    package: "container"),
+                .product(
+                    name: "ContainerResource",
+                    package: "container"),
+                .product(
+                    name: "Containerization",
+                    package: "containerization"),
+                .product(
                     name: "Subprocess",
                     package: "swift-subprocess"),
                 .product(name: "Crypto", package: "swift-crypto"),
+                .product(name: "Logging", package: "swift-log"),
                 .product(name: "SystemPackage", package: "swift-system"),
             ],
             resources: [

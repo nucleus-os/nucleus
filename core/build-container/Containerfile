@@ -18,10 +18,12 @@ RUN test "$(dpkg --print-architecture)" = arm64 \
         binfmt-support \
         binutils \
         build-essential \
+        at-spi2-core \
         ca-certificates \
         ccache \
         clang \
         curl \
+        dbus-daemon \
         git \
         libc++-dev \
         libc++abi-dev \
@@ -75,6 +77,7 @@ RUN test "$(dpkg --print-architecture)" = arm64 \
         zlib1g-dev \
         libc6-dev:amd64 \
         libbsd-dev:amd64 \
+        libcurl4t64:amd64 \
         libdrm-dev:amd64 \
         libedit-dev:amd64 \
         libffi-dev:amd64 \

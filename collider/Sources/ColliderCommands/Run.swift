@@ -130,7 +130,10 @@ struct RunCommand {
         var environment = context.environment
         try configureRuntimeEnvironment(options, environment: &environment)
         if options.android {
-            try requireInstalledAndroidCapability(installation)
+            try requireInstalledAndroidCapability()
+            environment["NUCLEUS_SESSION_CAPABILITY_ROOT"] =
+                context.layout.androidAddonStore
+                .appendingPathComponent("session-capabilities", isDirectory: true).path
         }
 
         if options.tracy {
@@ -195,21 +198,22 @@ struct RunCommand {
         }
     }
 
-    private func requireInstalledAndroidCapability(
-        _ installation: RuntimeInstallation
-    ) throws {
-        let manifest = installation.prefix.appendingPathComponent(
-            "share/nucleus/session-capabilities/android.json")
+    private func requireInstalledAndroidCapability() throws {
+        let store = context.layout.androidAddonStore
+        let manifest = store.appendingPathComponent(
+            "session-capabilities/android.json")
+        let executable = store.appendingPathComponent(
+            "current/libexec/nucleus-android-runtime")
         let values = try? manifest.resourceValues(
             forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
         guard values?.isRegularFile == true,
             values?.isSymbolicLink != true,
             FileManager.default.isExecutableFile(
-                atPath: installation.androidRuntime.path)
+                atPath: executable.path)
         else {
             throw WorkspaceFailure.message(
-                "the Android runtime is not installed; build the signed "
-                    + "Android image and rerun without --no-build")
+                "the Android add-on is not installed; install a signed "
+                    + "add-on generation before requesting --android")
         }
     }
 

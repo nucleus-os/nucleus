@@ -11,5 +11,8 @@
 **/.cxx-build/
 /swift-sdk/source/build/
 **/.runtime-data/
+collider/.swiftpm/configuration/mirrors.json
+collider/engine/.swiftpm/configuration/mirrors.json
+/collider/engine/Package.resolved
 **/__pycache__/
 *.py[cod]

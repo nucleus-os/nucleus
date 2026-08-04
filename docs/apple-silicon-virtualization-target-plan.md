@@ -140,7 +140,7 @@ shipping runtime and does not wrap the compositor in another OCI namespace.
 | Contract | Owner | Required shape |
 | --- | --- | --- |
 | Runtime target | Collider | Immutable artifact and execution coordinates |
-| VM lifecycle and storage | `NucleusMacHostRuntime` | macOS 27 `Virtualization.framework` |
+| VM lifecycle and storage | `NucleusMacHostRuntime` | macOS 27 `Virtualization.framework` and `DiskImageKit` |
 | Window and presentation surface | `NucleusMacHost` | AppKit on `MainActor`; caller-owned `CAMetalLayer` |
 | Virtio transport | Virtualization.framework bridge | Queue delivery, guest mappings, shared aperture, interrupts |
 | Virtio-gpu semantics | `NucleusVirtioGPUDeviceModelCxx` | Standard virtio-gpu device ID 16 and protocol |
@@ -189,6 +189,8 @@ The target baseline is:
 
 - macOS 27 and the Xcode 27 SDK;
 - the `com.apple.security.virtualization` entitlement;
+- macOS 27 `DiskImageKit`, ASIF overlays, and the
+  `VZDiskImageStorageDeviceAttachment` DiskImage initializer;
 - the macOS 27 custom-Virtio, guest-memory-mapping, and Virtio shared-memory
   APIs;
 - macOS 27's integrated Intel binary translation facility,
@@ -211,6 +213,10 @@ Authoritative external references:
 - [VZVirtioQueueElement](https://developer.apple.com/documentation/virtualization/vzvirtioqueueelement)
 - [VZVirtioSharedMemoryRegionConfiguration](https://developer.apple.com/documentation/virtualization/vzvirtiosharedmemoryregionconfiguration)
 - [Adding the Virtualization entitlement](https://developer.apple.com/documentation/virtualization/adding-the-virtualization-entitlement-to-your-project)
+- [DiskImageKit](https://developer.apple.com/documentation/diskimagekit)
+- [DiskImage](https://developer.apple.com/documentation/diskimagekit/diskimage)
+- [StackedImage](https://developer.apple.com/documentation/diskimagekit/stackedimage)
+- [Attaching a DiskImage to a virtual machine](https://developer.apple.com/documentation/virtualization/vzdiskimagestoragedeviceattachment/init(diskimage:cachingmode:synchronizationmode:))
 - [Running Intel Binaries in Linux VMs](https://developer.apple.com/documentation/virtualization/running-intel-binaries-in-linux-vms)
 - [Accelerating the performance of Rosetta](https://developer.apple.com/documentation/virtualization/accelerating-the-performance-of-rosetta)
 - [VZLinuxRosettaDirectoryShare](https://developer.apple.com/documentation/virtualization/vzlinuxrosettadirectoryshare)
@@ -323,6 +329,18 @@ First, capture one behavioral baseline on the physical Linux qualifier:
 The baseline is diagnostic evidence, not a compatibility fixture. Every
 replaced implementation is deleted as its callers move, and the resulting
 Linux behavior must continue to satisfy the same runtime contracts.
+
+Baseline capture reuses the existing runtime interfaces. It does not introduce
+a baseline schema, a second capability model, or a baseline-specific Collider
+command. On the physical Linux qualifier, preserve one Collider run containing
+`collider test gpu-drm --verbose`, the existing Vulkan lane-probe output,
+`vulkaninfo` and `drm_info` output, the installed-product ELF and symbol
+inventory, and one bounded `collider run --tracy` capture with Android enabled.
+The Collider run record, compositor log, Tracy event and plot exports, and
+trace summary are the evidence bundle. The current dual-architecture
+`collider build runtime` and `collider test runtime` run records establish the
+host-independent build and test baseline; they do not substitute for the
+physical DRM/KMS capture.
 
 Second, settle source and dependency ownership before adding platform code:
 
@@ -735,10 +753,18 @@ remain loadable modules because Android `netd` probes that ABI. Collider derives
 the build-time validation directly from the runtime requirement list and fails
 on a missing built-in symbol, module, or required value.
 
-The guest image is a persistent VM system, not an Apple OCI container:
+The guest image is a persistent VM system, not an Apple OCI container. Phase 6
+publishes two deterministic, content-verified RAW block artifacts: an immutable
+root filesystem and an immutable initialized data-filesystem base. RAW remains
+the build output because Linux image assembly owns filesystem creation while
+DiskImageKit owns host-side opening and stacking in Phase 7. Neither artifact is
+ever opened writable after publication.
+
+The image contains:
 
 - immutable base root filesystem;
-- separate writable data disk;
+- separate data filesystem whose writable lifetime begins in a per-machine ASIF
+  overlay;
 - a real init system that owns service readiness and shutdown;
 - a root-owned `/run/nucleus/rosetta` mount point and a VirtioFS mount unit for
   the fixed validated `nucleus-rosetta` tag;
@@ -780,11 +806,14 @@ Phase gate:
    requirement and every VirtioFS, binfmt, and per-thread TSO requirement.
 3. The image boots, mounts the immutable and writable filesystems, reaches the
    service target, and shuts down cleanly.
-4. With the Phase 3 host fixture, the translation readiness target succeeds on
+4. The root and initialized data-base RAW artifacts have exact declared block
+   counts, deterministic contents, and recorded content digests; a post-build
+   mutation changes their identities and fails validation.
+5. With the Phase 3 host fixture, the translation readiness target succeeds on
    every boot and after a controlled service restart without duplicate binfmt
    state.
-5. The LXC host-requirements probe passes without suppressed checks.
-6. The Android AppArmor profile loads and a minimal LXC payload reaches binderfs,
+6. The LXC host-requirements probe passes without suppressed checks.
+7. The Android AppArmor profile loads and a minimal LXC payload reaches binderfs,
    cgroup v2, networking, and the shared render node.
 
 ## Phase 7 — Build the Shipping macOS Host and Control Plane
@@ -805,10 +834,77 @@ its `NSWindow`, presentation view, `CAMetalLayer`, menu and application
 lifecycle on `MainActor`. VM and custom-device callbacks run on dedicated serial
 queues and cross to `MainActor` only for AppKit state.
 
+`NucleusMacHostRuntime` is the sole owner of shipping VM block-image lifetime.
+It imports `DiskImageKit` directly and uses this fixed storage topology:
+
+- the content-addressed Phase 6 root RAW is opened explicitly read-only and
+  attached as the immutable root disk;
+- the content-addressed Phase 6 data-base RAW is opened explicitly read-only;
+- every installed VM owns one ASIF overlay graph with exactly one active chain
+  above that data-base artifact;
+- every parent layer is opened read-only and only the top overlay is opened
+  read-write;
+- the complete `DiskImage` or `StackedImage` object graph remains alive for the
+  lifetime of its `VZDiskImageStorageDeviceAttachment` and VM;
+- the data attachment uses full synchronization. A clean guest shutdown and
+  attachment closure complete before any layer transition.
+
+The first launch creates an ASIF overlay that inherits the data-base artifact's
+block geometry. A stopped-disk restore point seals the current top layer,
+reopens the complete existing chain read-only, and appends a new ASIF overlay
+that receives all subsequent writes. Restoring selects a validated historical
+chain prefix and appends a new writable overlay; Nucleus never reopens the
+selected historical top for writing. This preserves DiskImageKit's parent/layer
+UUID compatibility and permits multiple restore branches without mutating their
+common ancestry.
+
+The app stores one atomically replaced internal storage record beside the
+machine directory. It contains the exact root and data-base artifact digests,
+every sealed layer URL and its final layer and parent UUID, the writable top URL
+and expected parent UUID, the ordered active chain, and retained restore-point
+tips. It has no protocol version because only the same installed monorepo
+product reads and writes it. A writable top's layer UUID is deliberately not a
+persisted identity because DiskImageKit changes that UUID when the layer is
+written. The transition that seals a top records its final UUID before making
+it a parent.
+
+Startup opens every layer reachable from the active chain or a retained restore
+point. It validates format, block size, block count, open mode, ordering, every
+sealed UUID edge, the writable top's parent UUID, and base digest against the
+record, and fails before VM construction on any mismatch, missing layer,
+corruption, unexpected writable parent, or child above the writable top. It
+never repairs or guesses a graph from directory contents.
+
+Every layer transition is a crash-safe publication. The runtime creates the new
+layer at its final unique URL, validates the resulting stack, synchronizes the
+image and containing directory, then atomically replaces the storage record.
+An interruption before record replacement leaves an unreferenced candidate that
+can be removed after proving that no machine record names it. An interruption
+after replacement leaves the new active chain complete. Root-image replacement
+uses the same stopped-VM transaction. Existing machines retain their pinned
+data-base digest; a newer data base applies only to newly created machines.
+
+DiskImageKit does not replace host filesystem ownership. Immutable bases,
+machine records, and overlays remain in an app-owned persistent APFS directory;
+APFS continues to own encryption, backup, free-space accounting, and quotas.
+Collider owns installation and atomic replacement of immutable base artifacts.
+`NucleusMacHostRuntime` owns only machine records and overlays. No cleanup can
+remove a base referenced by a machine record, a layer referenced by a retained
+restore branch, or any image held by a running VM.
+
+The initial product creates no DiskImageKit cache layer: its bases are local and
+content-addressed, so an additional read cache has no demonstrated benefit. A
+future VM-based remote-development product may add the single permitted cache
+layer only when its immutable base resides on measured slow or remote storage.
+Apple `container` build execution, its OCI image store, the current OCI remote
+development environment, Collider caches, source snapshots, and build-volume
+APFS layout never pass through DiskImageKit.
+
 `NucleusMacHostRuntime` creates the full `VZVirtualMachineConfiguration`:
 
 - Phase 6 kernel and boot arguments;
-- immutable root disk and writable data disk;
+- immutable RAW root `DiskImage` and the writable RAW-base-plus-ASIF data
+  `StackedImage`;
 - entropy, memory balloon, console, network, and vsock devices;
 - the custom virtio-gpu configuration established by Phase 3;
 - a validated `nucleus-rosetta` VirtioFS device whose share is a directly
@@ -867,8 +963,17 @@ Phase gate:
    without claiming an unavailable cache-hit signal.
 4. Darwin and Linux codec tests exchange every control message and reject every
    malformed framing case.
-5. Root and data disk lifetimes survive app relaunch without snapshotting custom
-   device state.
+5. Root and data disk lifetimes survive app relaunch. A stopped VM creates a
+   restore point, advances to a new writable overlay, restores by branching from
+   the retained prefix, and rejects reordered, missing, corrupted,
+   writable-parent, UUID-incompatible, and wrong-base chains.
+6. Two installed VMs share the same read-only root and data-base artifacts while
+   owning disjoint overlays. Concurrent startup never opens a writable overlay
+   from both machines, and deleting one machine cannot remove shared bases or
+   the other machine's layers.
+7. Truncating a DiskImage is never treated as filesystem resizing, no cache
+   layer is created for local bases, and stopped-disk restore points make no
+   claim to preserve CPU, memory, custom-device, or gfxstream state.
 
 ## Phase 8 — Complete and Harden the virtio-gpu Device
 
@@ -1515,8 +1620,11 @@ The target is complete only when every gate passes in this order:
    the compositor-owned GBM allocator is gone.
 6. The pinned Android Common Kernel and persistent guest satisfy every declared
    Android/LXC, VirtioFS, binfmt, TSO, and Proton process-primitive requirement.
-7. The signed macOS app configures the required translation share and AOT cache,
-   boots the guest, and controls it through the bounded typed vsock channel.
+7. The signed macOS app validates and attaches the read-only RAW root plus the
+   DiskImageKit RAW-base/ASIF data stack, configures the required translation
+   share and AOT cache, boots the guest, and controls it through the bounded
+   typed vsock channel. Stopped-disk restore branching and crash recovery pass
+   without claiming live VM state capture.
 8. The complete virtio-gpu device passes protocol, security, all Vulkan
    profiles, cross-architecture resource-sharing, presentation, fuzz, and reset
    gates.
@@ -1564,10 +1672,11 @@ the declared compatibility matrix, not universal Windows-game compatibility.
 A title requiring an instruction that macOS 27's translated CPU profile does
 not advertise is unsupported; Nucleus never fabricates CPUID support.
 
-Custom-device save/restore, VM snapshots containing live gfxstream state, live
-migration, macOS 26 and earlier, macOS guests, Intel Mac hosts, non-Apple
-hypervisors, `VZVirtualMachineView` framebuffer presentation, software
-rendering, and streamed-display fallbacks are outside this plan.
+Custom-device save/restore, VM snapshots containing live gfxstream state,
+online disk checkpoints, ASIF layer merge or compaction, live migration, macOS
+26 and earlier, macOS guests, Intel Mac hosts, non-Apple hypervisors,
+`VZVirtualMachineView` framebuffer presentation, software rendering, and
+streamed-display fallbacks are outside this plan.
 
 The AOSP Repo-manifest ownership exception, first-party C/C++ bridge rules,
 Swift visibility contract, and root-package product boundaries remain in force.

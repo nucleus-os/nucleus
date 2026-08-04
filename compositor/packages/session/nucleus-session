@@ -364,8 +364,15 @@ supervisor_arguments=(
   --control-service "$session_libexec_dir/NucleusControlService"
   --shell "$session_bin_dir/NucleusShell"
 )
-session_capability_dir="$session_bin_dir/../share/nucleus/session-capabilities"
+session_capability_dir="${NUCLEUS_SESSION_CAPABILITY_ROOT:-$session_bin_dir/../share/nucleus/session-capabilities}"
 if [ "${#requested_capabilities[@]}" -gt 0 ]; then
+  case "$session_capability_dir" in
+    /*) ;;
+    *)
+      echo "nucleus-session: capability root must be absolute: $session_capability_dir" >&2
+      exit 64
+      ;;
+  esac
   if [ -L "$session_capability_dir" ] || [ ! -d "$session_capability_dir" ]; then
     echo "nucleus-session: requested capability directory is unavailable: $session_capability_dir" >&2
     exit 64

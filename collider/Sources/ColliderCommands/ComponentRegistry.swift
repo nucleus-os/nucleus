@@ -576,6 +576,8 @@ struct ComponentRegistry {
             let target = NativeLinuxTarget(architecture: architecture)
             let nativeSDK = nativeSDKRoot.appending(target.identifier)
             let waylandSDK = nativeSDK.appending("wayland")
+            let swiftPMUserRoot = root.appending(
+                ".nucleus/swiftpm-user/\(target.identifier)")
             let guestTargetSDK =
                 guestSDKRoot
                 + "/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
@@ -592,6 +594,14 @@ struct ComponentRegistry {
                 OCIMount(
                     source: builder.ccache,
                     target: "/ccache",
+                    access: .readWrite),
+                OCIMount(
+                    source: swiftPMUserRoot.appending("cache"),
+                    target: "/home/nucleus-build/.cache",
+                    access: .readWrite),
+                OCIMount(
+                    source: swiftPMUserRoot.appending("configuration"),
+                    target: "/home/nucleus-build/.swiftpm",
                     access: .readWrite),
                 OCIMount(
                     source: sdkRoot,

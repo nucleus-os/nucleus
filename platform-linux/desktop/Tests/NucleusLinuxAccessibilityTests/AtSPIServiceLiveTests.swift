@@ -1,7 +1,8 @@
-import NucleusUITestSupport
 import Glibc
 import NucleusUI
+import NucleusUITestSupport
 import Testing
+
 @testable import NucleusLinuxAccessibility
 
 @MainActor
@@ -29,7 +30,7 @@ struct AtSPIServiceLiveTests {
         root.addSubview(field)
         var buttonProperties = button.accessibilityProperties
         buttonProperties.relationships[.controls] = [
-            field.accessibilityID,
+            field.accessibilityID
         ]
         button.accessibilityProperties = buttonProperties
         let secureField = TextField(
@@ -87,10 +88,12 @@ struct AtSPIServiceLiveTests {
         let registration = try privateBus.registryApplications(
             pumping: adapter)
         #expect(registration.status == 0)
-        #expect(registration.standardOutput.contains(
-            adapter.applicationBusName))
-        #expect(registration.standardOutput.contains(
-            AtSPIExportModel.rootPath))
+        #expect(
+            registration.standardOutput.contains(
+                adapter.applicationBusName))
+        #expect(
+            registration.standardOutput.contains(
+                AtSPIExportModel.rootPath))
 
         let windowPath = AtSPIExportModel.path(
             for: window.accessibilityID)
@@ -153,8 +156,9 @@ struct AtSPIServiceLiveTests {
             interface: AtSPIInterface.accessible,
             member: "GetRelationSet")
         #expect(relations.status == 0)
-        #expect(relations.standardOutput.contains(
-            AtSPIExportModel.path(for: field.accessibilityID)))
+        #expect(
+            relations.standardOutput.contains(
+                AtSPIExportModel.path(for: field.accessibilityID)))
         let interfaces = try liveCall(
             path: buttonPath,
             interface: AtSPIInterface.accessible,
@@ -167,8 +171,9 @@ struct AtSPIServiceLiveTests {
             interface: AtSPIInterface.accessible,
             member: "GetApplication")
         #expect(application.status == 0)
-        #expect(application.standardOutput.contains(
-            AtSPIExportModel.rootPath))
+        #expect(
+            application.standardOutput.contains(
+                AtSPIExportModel.rootPath))
         let indexInParent = try liveCall(
             path: buttonPath,
             interface: AtSPIInterface.accessible,
@@ -244,8 +249,9 @@ struct AtSPIServiceLiveTests {
             signature: "i",
             arguments: ["-1"])
         #expect(invalidAction.status != 0)
-        #expect(invalidAction.standardError.contains(
-            "arguments are invalid"))
+        #expect(
+            invalidAction.standardError.contains(
+                "arguments are invalid"))
         #expect(pressCount == 1)
         let wrongSignature = try liveCall(
             path: buttonPath,
@@ -254,8 +260,9 @@ struct AtSPIServiceLiveTests {
             signature: "ii",
             arguments: ["0", "1"])
         #expect(wrongSignature.status != 0)
-        #expect(wrongSignature.standardError.contains(
-            "arguments are invalid"))
+        #expect(
+            wrongSignature.standardError.contains(
+                "arguments are invalid"))
         #expect(pressCount == 1)
         let unclaimedInterface = try liveCall(
             path: buttonPath,
@@ -264,8 +271,9 @@ struct AtSPIServiceLiveTests {
             signature: "ii",
             arguments: ["0", "-1"])
         #expect(unclaimedInterface.status != 0)
-        #expect(unclaimedInterface.standardError.contains(
-            "does not implement"))
+        #expect(
+            unclaimedInterface.standardError.contains(
+                "does not implement"))
 
         let locale = try privateBus.call(
             adapter: adapter,
@@ -381,8 +389,9 @@ struct AtSPIServiceLiveTests {
             signature: "i",
             arguments: ["0"])
         #expect(selectedChild.status == 0)
-        #expect(!selectedChild.standardOutput.contains(
-            AtSPIExportModel.nullPath))
+        #expect(
+            !selectedChild.standardOutput.contains(
+                AtSPIExportModel.nullPath))
         let selectSecond = try liveCall(
             path: tabsPath,
             interface: AtSPIInterface.selection,
@@ -437,8 +446,9 @@ struct AtSPIServiceLiveTests {
             interface: AtSPIInterface.accessible,
             member: "GetRole")
         #expect(removed.status != 0)
-        #expect(removed.standardError.contains(
-            "No accessible object exists"))
+        #expect(
+            removed.standardError.contains(
+                "No accessible object exists"))
         #expect(removed.standardError.contains(buttonPath))
 
         try scene.disconnect()
@@ -450,8 +460,9 @@ struct AtSPIServiceLiveTests {
             signature: "s",
             arguments: ["must-not-apply"])
         #expect(disconnectedAction.status != 0)
-        #expect(disconnectedAction.standardError.contains(
-            "No accessible object exists"))
+        #expect(
+            disconnectedAction.standardError.contains(
+                "No accessible object exists"))
         #expect(field.stringValue == "replacement")
 
         let oldBusName = adapter.applicationBusName
@@ -512,7 +523,6 @@ struct AtSPIServiceLiveTests {
         ) throws -> String {
             let result = try privateBus.monitorSignals(
                 adapter: adapter,
-                count: 1,
                 interface: interface,
                 member: member
             ) {
@@ -520,8 +530,6 @@ struct AtSPIServiceLiveTests {
                 _ = bridge.publish()
             }
             #expect(result.status == 0)
-            #expect(result.standardError.contains(
-                "Received requested maximum number of messages"))
             #expect(result.standardOutput.contains(interface))
             #expect(result.standardOutput.contains(member))
             return result.standardOutput
@@ -533,8 +541,9 @@ struct AtSPIServiceLiveTests {
         ) {
             #expect(window.makeFirstResponder(button))
         }
-        #expect(focus.contains(
-            AtSPIExportModel.path(for: button.accessibilityID)))
+        #expect(
+            focus.contains(
+                AtSPIExportModel.path(for: button.accessibilityID)))
 
         let property = try observe(
             interface: "org.a11y.atspi.Event.Object",
@@ -567,12 +576,14 @@ struct AtSPIServiceLiveTests {
         ) {
             tabs.setSelectedIDs([CollectionItemID("two")])
         }
-        let segmentPaths = scene.accessibilityTree.snapshot.nodes[
-            tabs.accessibilityID]?.childIDs.map(AtSPIExportModel.path(for:))
+        let segmentPaths =
+            scene.accessibilityTree.snapshot.nodes[
+                tabs.accessibilityID]?.childIDs.map(AtSPIExportModel.path(for:))
             ?? []
-        #expect(segmentPaths.contains {
-            selection.contains($0)
-        })
+        #expect(
+            segmentPaths.contains {
+                selection.contains($0)
+            })
 
         let announcement = try observe(
             interface: "org.a11y.atspi.Event.Object",
@@ -593,8 +604,9 @@ struct AtSPIServiceLiveTests {
             root.addSubview(inserted)
         }
         #expect(insertion.contains("add"))
-        #expect(insertion.contains(
-            AtSPIExportModel.path(for: inserted.accessibilityID)))
+        #expect(
+            insertion.contains(
+                AtSPIExportModel.path(for: inserted.accessibilityID)))
 
         let removal = try observe(
             interface: "org.a11y.atspi.Event.Object",
@@ -603,8 +615,9 @@ struct AtSPIServiceLiveTests {
             inserted.removeFromSuperview()
         }
         #expect(removal.contains("remove"))
-        #expect(removal.contains(
-            AtSPIExportModel.path(for: inserted.accessibilityID)))
+        #expect(
+            removal.contains(
+                AtSPIExportModel.path(for: inserted.accessibilityID)))
 
         let bounds = try observe(
             interface: "org.a11y.atspi.Event.Object",
@@ -613,8 +626,9 @@ struct AtSPIServiceLiveTests {
             secure.stringValue = "more-never-export"
             field.frame.origin.x += 5
         }
-        #expect(bounds.contains(
-            AtSPIExportModel.path(for: field.accessibilityID)))
+        #expect(
+            bounds.contains(
+                AtSPIExportModel.path(for: field.accessibilityID)))
         #expect(!bounds.contains("never-export"))
         #expect(!bounds.contains("more-never-export"))
     }
@@ -643,22 +657,26 @@ struct AtSPIServiceLiveTests {
 
         let privateBus = try PrivateAccessibilityBus()
         defer { privateBus.stop() }
-        let addressInstalled = unsafe setenv(
-            "AT_SPI_BUS_ADDRESS", privateBus.address, 1) == 0
+        let addressInstalled =
+            unsafe setenv(
+                "AT_SPI_BUS_ADDRESS", privateBus.address, 1) == 0
         #expect(addressInstalled)
         try privateBus.waitUntilReady(service)
 
         #expect(service.isReady)
         #expect(service.connectionGeneration == 1)
-        #expect(AtSPIService.liveResourceCounts == .init(
-            connections: baseline.connections + 1,
-            fallbackSlots: baseline.fallbackSlots + 1))
+        #expect(
+            AtSPIService.liveResourceCounts
+                == .init(
+                    connections: baseline.connections + 1,
+                    fallbackSlots: baseline.fallbackSlots + 1))
 
         let registration = try privateBus.registryApplications(
             pumping: service)
         #expect(registration.status == 0)
-        #expect(registration.standardOutput.contains(
-            service.applicationBusName))
+        #expect(
+            registration.standardOutput.contains(
+                service.applicationBusName))
 
         service.close()
         #expect(AtSPIService.liveResourceCounts == baseline)
@@ -709,9 +727,10 @@ struct AtSPIServiceLiveTests {
         adapter.diagnosticHandler = { diagnostics.append(($0, $1)) }
         adapter.transportDidFail(operation: "repeated disconnect")
         adapter.transportDidFail(operation: "repeated disconnect")
-        #expect(diagnostics.filter {
-            $0.0.operation == "repeated disconnect" && $0.1 == 1
-        }.count == 1)
+        #expect(
+            diagnostics.filter {
+                $0.0.operation == "repeated disconnect" && $0.1 == 1
+            }.count == 1)
 
         for index in 0..<300 {
             button.postAccessibilityAnnouncement("queued-\(index)")
@@ -721,10 +740,11 @@ struct AtSPIServiceLiveTests {
 
         let replacementBus = try PrivateAccessibilityBus()
         defer { replacementBus.stop() }
-        let replacementAddressInstalled = unsafe setenv(
-            "AT_SPI_BUS_ADDRESS",
-            replacementBus.address,
-            1) == 0
+        let replacementAddressInstalled =
+            unsafe setenv(
+                "AT_SPI_BUS_ADDRESS",
+                replacementBus.address,
+                1) == 0
         #expect(replacementAddressInstalled)
 
         for _ in 0..<1_000 where adapter.connectionGeneration == 1 {
@@ -738,8 +758,10 @@ struct AtSPIServiceLiveTests {
         let registration = try replacementBus.registryApplications(
             pumping: adapter)
         #expect(registration.status == 0)
-        let nameOccurrences = registration.standardOutput.components(
-            separatedBy: adapter.applicationBusName).count - 1
+        let nameOccurrences =
+            registration.standardOutput.components(
+                separatedBy: adapter.applicationBusName
+            ).count - 1
         #expect(nameOccurrences == 1)
 
         let buttonPath = AtSPIExportModel.path(
@@ -775,9 +797,10 @@ struct AtSPIServiceLiveTests {
         let list = ListView()
         list.frame = Rect(x: 0, y: 0, width: 200, height: 84)
         list.makeRow = { View() }
-        let itemLabels = Dictionary(uniqueKeysWithValues: (0..<100).map {
-            (CollectionItemID($0), "Result \($0)")
-        })
+        let itemLabels = Dictionary(
+            uniqueKeysWithValues: (0..<100).map {
+                (CollectionItemID($0), "Result \($0)")
+            })
         list.accessibilityItemProperties = { item, _ in
             AccessibilityProperties(
                 isElement: true,
@@ -871,9 +894,11 @@ struct AtSPIServiceLiveTests {
             let adapter = AtSPIService(
                 applicationName: "Lifetime-\(iteration)")
             try privateBus.waitUntilReady(adapter)
-            #expect(AtSPIService.liveResourceCounts == .init(
-                connections: baseline.connections + 1,
-                fallbackSlots: baseline.fallbackSlots + 1))
+            #expect(
+                AtSPIService.liveResourceCounts
+                    == .init(
+                        connections: baseline.connections + 1,
+                        fallbackSlots: baseline.fallbackSlots + 1))
             let name = adapter.applicationBusName
             let registered = try privateBus.registryApplications(
                 pumping: adapter)

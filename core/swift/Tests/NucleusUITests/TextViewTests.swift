@@ -162,9 +162,9 @@ struct NucleusTextEditorStressTests {
 
         editor.setSelectedRange(1..<1)
         #expect(editor.handleEvent(key(.downArrow)) == .handled)
-        #expect(editor.selectedRange.lowerBound >= 3)
+        #expect(editor.selectedRange == 5..<5)
         #expect(editor.handleEvent(key(.upArrow)) == .handled)
-        #expect(editor.selectedRange.lowerBound <= 2)
+        #expect(editor.selectedRange == 1..<1)
     }
 
     @Test

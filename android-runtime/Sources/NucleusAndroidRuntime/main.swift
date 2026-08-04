@@ -21,10 +21,10 @@ enum NucleusAndroidRuntimeMain {
                 do {
                     try await group.next()
                     group.cancelAll()
-                    while let _ = try await group.next() {}
+                    while (try await group.next()) != nil {}
                 } catch is CancellationError {
                     group.cancelAll()
-                    while let _ = try? await group.next() {}
+                    while (try? await group.next()) != nil {}
                 }
             }
         } catch {
@@ -37,9 +37,13 @@ enum NucleusAndroidRuntimeMain {
     private static func run() async throws {
         let arguments = Array(CommandLine.arguments.dropFirst())
         let environment = ProcessInfo.processInfo.environment
-        guard let androidRoot = option(
-            "android-root",
-            in: arguments),
+        guard
+            let addonRoot = option(
+                "addon-root",
+                in: arguments),
+            let persistentStateRoot = option(
+                "state-root",
+                in: arguments),
             option(
                 "nucleus-session-capability-id",
                 in: arguments) == "android",
@@ -84,14 +88,18 @@ enum NucleusAndroidRuntimeMain {
         } else {
             gfxstreamBrokerEnvironment = [:]
         }
-        let gfxstreamBrokerExecutable = environment[
-            "NUCLEUS_ANDROID_GFXSTREAM_BROKER_EXECUTABLE"
-        ].map(URL.init(fileURLWithPath:))
+        let gfxstreamBrokerExecutable =
+            environment[
+                "NUCLEUS_ANDROID_GFXSTREAM_BROKER_EXECUTABLE"
+            ].map(URL.init(fileURLWithPath:))
             ?? libexec.appendingPathComponent(
                 "nucleus-android-gfxstream-broker")
         let configuration = try AndroidRuntimeBrokerConfiguration(
-            androidRoot: URL(
-                fileURLWithPath: androidRoot,
+            addonRoot: URL(
+                fileURLWithPath: addonRoot,
+                isDirectory: true),
+            persistentStateRoot: URL(
+                fileURLWithPath: persistentStateRoot,
                 isDirectory: true),
             sessionRuntimeDirectory: URL(
                 fileURLWithPath: sessionRuntimeDirectory,

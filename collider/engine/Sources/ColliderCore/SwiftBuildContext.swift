@@ -409,13 +409,6 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         } else {
             environment.removeValue(forKey: "NUCLEUS_SWIFTPM_SANITIZER")
         }
-        if case .swiftSDK(_, let triple) = context.target,
-            triple.contains("android")
-        {
-            environment["NUCLEUS_TARGET_PLATFORM"] = "android"
-        } else {
-            environment.removeValue(forKey: "NUCLEUS_TARGET_PLATFORM")
-        }
         return environment
     }
 

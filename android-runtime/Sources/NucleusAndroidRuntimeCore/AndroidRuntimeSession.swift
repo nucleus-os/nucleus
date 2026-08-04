@@ -69,7 +69,6 @@ public actor AndroidRuntimeSession<
         host: AndroidRuntimeHostConfiguration,
         privilegedHelperExecutable: String,
         swiftRuntime: AndroidSwiftRuntime,
-        dataProvenanceKey: String,
         gfxstreamBrokerEnvironment: [String: String],
         progress: AndroidRuntimeEventRecorder
     ) {
@@ -78,9 +77,8 @@ public actor AndroidRuntimeSession<
         self.host = host
         self.privilegedHelperExecutable = privilegedHelperExecutable
         self.swiftRuntime = swiftRuntime
-        self.persistentData = layout.androidRoot
-            .appendingPathComponent(".runtime-data", isDirectory: true)
-            .appendingPathComponent(dataProvenanceKey, isDirectory: true)
+        self.persistentData = layout.persistentStateRoot
+            .appendingPathComponent("data", isDirectory: true)
         self.gfxstreamBrokerEnvironment = gfxstreamBrokerEnvironment
         self.progress = progress
     }
@@ -588,7 +586,6 @@ public actor AndroidRuntimeSession<
     }
 
     private func discoverApexes() async throws -> [AndroidFrameworkApex] {
-        let deapexer = layout.hostTools.appendingPathComponent("deapexer")
         var apexes: [AndroidFrameworkApex] = []
         var names = Set<String>()
         for partition in [
@@ -638,31 +635,15 @@ public actor AndroidRuntimeSession<
                 guard archive.pathExtension == "apex" else {
                     continue
                 }
-                let payload = try AndroidApexArchive.payload(in: archive)
-                let payloadType = try await context.run(
-                    deapexer.path,
-                    ["info", "--print-payload-type", archive.path],
-                    capture: true)
-                guard
-                    let payloadFileSystem =
-                        AndroidRuntimeApexPayloadFileSystem(
-                            rawValue: payloadType)
-                else {
-                    throw AndroidRuntimeFailure(
-                        "Nucleus container APEX payload filesystem is "
-                            + "unsupported (\(payloadType)): \(archive.path)")
-                }
-                let manifestOutput = try await context.run(
-                    deapexer.path,
-                    ["info", archive.path],
-                    capture: true)
-                let manifest = try JSONDecoder().decode(
-                    AndroidFrameworkApexManifest.self,
-                    from: Data(manifestOutput.utf8))
-                guard isValidApexName(manifest.name),
-                    let version = Int32(manifest.version),
-                    version > 0,
-                    names.insert(manifest.name).inserted
+                let metadata = try AndroidApexArchive.metadata(in: archive)
+                let payloadFileSystem: AndroidRuntimeApexPayloadFileSystem =
+                    switch metadata.payloadFileSystem {
+                    case .erofs: .erofs
+                    case .ext4: .ext4
+                    }
+                guard isValidApexName(metadata.name),
+                    metadata.version <= UInt64(Int32.max),
+                    names.insert(metadata.name).inserted
                 else {
                     throw AndroidRuntimeFailure(
                         "Nucleus container APEX manifest is invalid or "
@@ -670,12 +651,12 @@ public actor AndroidRuntimeSession<
                 }
                 apexes.append(
                     AndroidFrameworkApex(
-                        name: manifest.name,
-                        version: String(version),
+                        name: metadata.name,
+                        version: String(metadata.version),
                         containerPath:
                             partition.container + "/" + archive.lastPathComponent,
                         payloadFileSystem: payloadFileSystem,
-                        payload: payload))
+                        payload: metadata.payload))
             }
         }
         return apexes.sorted { $0.name < $1.name }
@@ -751,9 +732,10 @@ public actor AndroidRuntimeSession<
 
     public func recordRuntimeBridgeListener() throws {
         var metadata = stat()
-        guard unsafe lstat(
-            layout.runtimeBridgeSocket.path,
-            &metadata) == 0
+        guard
+            unsafe lstat(
+                layout.runtimeBridgeSocket.path,
+                &metadata) == 0
         else {
             throw AndroidRuntimeFailure(
                 "Android runtime bridge listener is not visible before "
@@ -820,8 +802,9 @@ public actor AndroidRuntimeSession<
                 output: .file(self.layout.gfxstreamBrokerLog)
             ) { gfxstreamBroker in
                 try await gfxstreamBroker.waitUntilReady()
-                guard let gfxstreamBrokerPID =
-                    await gfxstreamBroker.processIdentifier
+                guard
+                    let gfxstreamBrokerPID =
+                        await gfxstreamBroker.processIdentifier
                 else {
                     throw AndroidRuntimeFailure(
                         "Android gfxstream broker started without a "
@@ -856,13 +839,14 @@ public actor AndroidRuntimeSession<
                             "\(UInt64(self.host.subordinateUID) + 2_900)",
                         ],
                         environmentOverrides: [
-                            "XDG_RUNTIME_DIR": waylandRuntimeDirectory.path,
+                            "XDG_RUNTIME_DIR": waylandRuntimeDirectory.path
                         ],
                         output: .file(self.layout.displayHostLog)
                     ) { displayHost in
                         try await displayHost.waitUntilReady()
-                        guard let displayHostPID =
-                            await displayHost.processIdentifier
+                        guard
+                            let displayHostPID =
+                                await displayHost.processIdentifier
                         else {
                             throw AndroidRuntimeFailure(
                                 "Android display host started without a "
@@ -956,10 +940,8 @@ public actor AndroidRuntimeSession<
         }
         guard let metadata, !metadata.isEmpty else {
             try? Data(
-                (
-                    "systemd-coredump did not publish metadata for "
-                        + "gfxstream broker PID \(identifier)\n"
-                ).utf8
+                ("systemd-coredump did not publish metadata for "
+                    + "gfxstream broker PID \(identifier)\n").utf8
             ).write(
                 to: layout.gfxstreamCoreCollectorLog,
                 options: .atomic)
@@ -987,10 +969,8 @@ public actor AndroidRuntimeSession<
             }
         } catch {
             try? Data(
-                (
-                    "collecting gfxstream broker core for PID "
-                        + "\(identifier) failed: \(error)\n"
-                ).utf8
+                ("collecting gfxstream broker core for PID "
+                    + "\(identifier) failed: \(error)\n").utf8
             ).write(
                 to: layout.gfxstreamCoreCollectorLog,
                 options: .atomic)
@@ -1004,10 +984,10 @@ public actor AndroidRuntimeSession<
         while ContinuousClock.now < deadline {
             if FileManager.default.fileExists(
                 atPath: layout.displayHostSocket.path),
-               FileManager.default.fileExists(
-                atPath: layout.presentationSocket.path),
-               FileManager.default.fileExists(
-                atPath: layout.displayControlSocket.path)
+                FileManager.default.fileExists(
+                    atPath: layout.presentationSocket.path),
+                FileManager.default.fileExists(
+                    atPath: layout.displayControlSocket.path)
             {
                 return
             }
@@ -1048,9 +1028,10 @@ public actor AndroidRuntimeSession<
         container: RuntimeHost.RunningProcess
     ) async throws {
         var metadata = stat()
-        guard unsafe lstat(
-            hostPath,
-            &metadata) == 0,
+        guard
+            unsafe lstat(
+                hostPath,
+                &metadata) == 0,
             metadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFSOCK)
         else {
             throw AndroidRuntimeFailure(
@@ -1291,7 +1272,7 @@ public actor AndroidRuntimeSession<
             throw AndroidRuntimeFailure(
                 "Android gfxstream broker exited unexpectedly during runtime operation "
                     + "(status \(status)); diagnostics: "
-                + layout.diagnostics.path)
+                    + layout.diagnostics.path)
         }
         if let log = try? String(
             contentsOf: layout.gfxstreamBrokerLog,
@@ -1692,18 +1673,12 @@ public actor AndroidRuntimeSession<
     }
 }
 
-
 private struct AndroidFrameworkApex {
     let name: String
     let version: String
     let containerPath: String
     let payloadFileSystem: AndroidRuntimeApexPayloadFileSystem
     let payload: AndroidApexPayload
-}
-
-private struct AndroidFrameworkApexManifest: Decodable {
-    let name: String
-    let version: String
 }
 
 private func isValidApexName(_ value: String) -> Bool {
@@ -1718,7 +1693,6 @@ private func isValidApexName(_ value: String) -> Bool {
             && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "_")
     }
 }
-
 
 private func writeStandardError(_ message: String) {
     FileHandle.standardError.write(Data(message.utf8))

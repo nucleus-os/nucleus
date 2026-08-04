@@ -37,16 +37,12 @@ let gfxstreamBuildRoot =
     environment["NUCLEUS_GFXSTREAM_BUILD_ROOT"]
     ?? repoRoot + "/android-runtime/.gfxstream-build/linux-arm64"
 
-let isAndroidTarget = environment["NUCLEUS_TARGET_PLATFORM"] == "android"
 let androidSDKSearchRoot: String = {
     if let path = environment["NUCLEUS_SWIFT_SDKS_PATH"] { return path }
-    if isAndroidTarget {
-        fatalError("NUCLEUS_SWIFT_SDKS_PATH is required for an Android target")
-    }
     return homeDirectory + "/.cache/nucleus/swift-platforms/unused"
 }()
 
-let hostProducts: [Product] = [
+let products: [Product] = [
     .library(name: "NucleusAndroidRuntimeCore", targets: ["NucleusAndroidRuntimeCore"]),
     .executable(name: "nucleus-android-runtime", targets: ["NucleusAndroidRuntime"]),
     .executable(
@@ -131,19 +127,15 @@ let hostProducts: [Product] = [
             "NucleusWindowClientInput",
             "NucleusWindowClientHost",
         ]),
+    .library(name: "nucleus-android", type: .dynamic, targets: ["NucleusAndroidJNI"]),
 ]
-let androidProducts: [Product] = [
-    .library(name: "nucleus-android", type: .dynamic, targets: ["NucleusAndroidJNI"])
-]
-let hostDependencies: [Package.Dependency] = [
+let dependencies: [Package.Dependency] = [
     .package(name: "swift-argument-parser", path: "third-party/swift-argument-parser"),
+    .package(name: "swift-java", path: "third-party/swift-java"),
     .package(name: "swift-syntax", path: "third-party/swift-syntax"),
     .package(name: "swift-system", path: "third-party/swift-system"),
 ]
-let androidDependencies: [Package.Dependency] = [
-    .package(name: "swift-java", path: "third-party/swift-java")
-]
-let hostTargets: [Target] = [
+let targets: [Target] = [
     .target(
         name: "NucleusAndroidProcessLifecycleC",
         path: "android-runtime/Sources/NucleusAndroidProcessLifecycleC",
@@ -1920,13 +1912,23 @@ let hostTargets: [Target] = [
     .executableTarget(
         name: "NucleusControlCLI",
         dependencies: [
-            "NucleusControlClient", "NucleusControlProtocol", "NucleusConfig",
+            "NucleusAndroidRuntimeCore", "NucleusControlClient", "NucleusControlProtocol",
+            "NucleusConfig",
             .product(name: "ArgumentParser", package: "swift-argument-parser"),
         ], path: "ipc/Sources/NucleusControlCLI", cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
             .interoperabilityMode(.Cxx),
             .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
+            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+        ]),
+    .testTarget(
+        name: "NucleusControlCLITests",
+        dependencies: ["NucleusControlCLI"],
+        path: "ipc/Tests/NucleusControlCLITests",
+        swiftSettings: [
+            .interoperabilityMode(.Cxx), .strictMemorySafety(),
+            .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .target(
@@ -3511,8 +3513,6 @@ let hostTargets: [Target] = [
             .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
-]
-let androidTargets: [Target] = [
     .target(name: "NucleusAndroidC", path: "core/platform-android/c", publicHeadersPath: "."),
     .target(
         name: "NucleusAndroidCore",
@@ -3564,7 +3564,7 @@ let androidTargets: [Target] = [
 let package = Package(
     name: "Nucleus",
     platforms: [.macOS("27")],
-    products: hostProducts + (isAndroidTarget ? androidProducts : []),
-    dependencies: hostDependencies + (isAndroidTarget ? androidDependencies : []),
-    targets: hostTargets + (isAndroidTarget ? androidTargets : []),
+    products: products,
+    dependencies: dependencies,
+    targets: targets,
     cxxLanguageStandard: .cxx20)

@@ -4,7 +4,8 @@ internal import NucleusAndroidRuntimeBridgeProtocol
 import NucleusAndroidRuntimeCore
 
 package struct AndroidRuntimeBrokerConfiguration: Sendable {
-    package let androidRoot: URL
+    package let addonRoot: URL
+    package let persistentStateRoot: URL
     package let sessionRuntimeDirectory: URL
     package let diagnosticsRunDirectory: URL
     package let waylandSocket: String
@@ -16,7 +17,8 @@ package struct AndroidRuntimeBrokerConfiguration: Sendable {
     package let gfxstreamBrokerEnvironment: [String: String]
 
     package init(
-        androidRoot: URL,
+        addonRoot: URL,
+        persistentStateRoot: URL,
         sessionRuntimeDirectory: URL,
         diagnosticsRunDirectory: URL,
         waylandSocket: String,
@@ -28,7 +30,8 @@ package struct AndroidRuntimeBrokerConfiguration: Sendable {
         gfxstreamBrokerEnvironment: [String: String] = [:]
     ) throws {
         for path in [
-            androidRoot,
+            addonRoot,
+            persistentStateRoot,
             sessionRuntimeDirectory,
             diagnosticsRunDirectory,
             gfxstreamBrokerExecutable,
@@ -48,7 +51,8 @@ package struct AndroidRuntimeBrokerConfiguration: Sendable {
             throw AndroidRuntimeFailure(
                 "Android runtime Wayland/timeout configuration is invalid")
         }
-        self.androidRoot = androidRoot
+        self.addonRoot = addonRoot
+        self.persistentStateRoot = persistentStateRoot
         self.sessionRuntimeDirectory = sessionRuntimeDirectory
         self.diagnosticsRunDirectory = diagnosticsRunDirectory
         self.waylandSocket = waylandSocket
@@ -67,8 +71,9 @@ package func runAndroidRuntimeBroker<
     host runtimeHost: RuntimeHost,
     environment: [String: String]
 ) async throws {
-    let layout = AndroidRuntimeLayout(
-        androidRoot: configuration.androidRoot,
+    let layout = try AndroidRuntimeLayout(
+        addonRoot: configuration.addonRoot,
+        persistentStateRoot: configuration.persistentStateRoot,
         diagnosticsRunDirectory:
             configuration.diagnosticsRunDirectory,
         gfxstreamBrokerExecutable:
@@ -88,10 +93,10 @@ package func runAndroidRuntimeBroker<
     for input in [
         layout.appArmorProfile,
         layout.seccompProfile,
+        layout.addonManifest,
         layout.provenance,
-        layout.hostTools.appendingPathComponent("avbtool"),
-        layout.hostTools.appendingPathComponent("deapexer"),
-        layout.signingIdentity.appendingPathComponent("releasekey.pem"),
+        layout.avbTool,
+        layout.verificationKey,
     ] where !FileManager.default.fileExists(atPath: input.path) {
         throw AndroidRuntimeFailure(
             "Android runtime input is missing: \(input.path)")
@@ -110,10 +115,6 @@ package func runAndroidRuntimeBroker<
         privilegedHelperExecutable:
             configuration.privilegedHelperExecutable.path,
         swiftRuntime: configuration.swiftRuntime,
-        dataProvenanceKey:
-            provenance.sourceManifestSHA256
-            + "-"
-            + provenance.productTreeSHA256,
         gfxstreamBrokerEnvironment:
             configuration.gfxstreamBrokerEnvironment,
         progress: progress)

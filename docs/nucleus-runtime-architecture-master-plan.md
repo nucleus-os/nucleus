@@ -23,13 +23,13 @@ nucleus-session
        │    ├─ NucleusUI product surfaces
        │    ├─ Wayland client/input/render runtime
        │    └─ Linux service projections
-       └─ optional NucleusAndroidRuntime
+       └─ installed Android add-on capability
             ├─ privileged LXC launcher
             ├─ Android 17 userspace
             └─ graphics broker and display host
 ```
 
-The supervisor starts the compositor first, waits for typed physical-presentation readiness, then starts the shell and optional capabilities. Required child failure retires the complete session. Shutdown proceeds from optional services to shell to compositor so producers stop before consumers disappear.
+The supervisor starts the compositor first, waits for typed physical-presentation readiness, then starts the shell and selected installed capabilities. The base runtime has no Android binaries or declaration; a verified architecture-matched add-on contributes its declaration through the external capability registry. Required child failure retires the complete session. Shutdown proceeds from optional services to shell to compositor so producers stop before consumers disappear.
 
 ## Package graph
 

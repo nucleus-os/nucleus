@@ -77,7 +77,6 @@ if [[ "$(uname -s)" != Darwin ]]; then
   export SWIFT_LIBRARY_PATH="$nucleus_toolchain/lib/swift/linux"
 fi
 export PATH="$nucleus_toolchain/bin:$PATH"
-export SWIFTCI_USE_LOCAL_DEPS=1
 : "${SWIFT_BACKTRACE:=enable=no}"
 export SWIFT_BACKTRACE
 : "${NUCLEUS_NATIVE_SDK_ROOT:=${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/nucleus-native-sdk}"
@@ -86,7 +85,6 @@ export NUCLEUS_NATIVE_SDK_ROOT
 # swift-java exposes this explicit override for workspace integrators. Nucleus
 # always resolves its paired JNI ABI fork from the pinned root submodule; this is
 # a declared build-environment choice, not conditional sibling discovery.
-export SWIFT_JAVA_JNI_CORE_PATH="$nucleus_workspace_root/third-party/swift-java-jni-core"
 
 # The workspace build directory, published by Collider when it resolves the
 # default build context. A manifest that needs SwiftPM's generated header

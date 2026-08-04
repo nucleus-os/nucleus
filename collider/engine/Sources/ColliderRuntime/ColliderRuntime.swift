@@ -649,7 +649,7 @@ private struct StreamResult: Sendable {
     let bytes: [UInt8]
 }
 
-private actor CommandOutputSink {
+actor CommandOutputSink {
     let logging: CommandLogging?
     let stage: TaskID?
     var file: FileDescriptor?

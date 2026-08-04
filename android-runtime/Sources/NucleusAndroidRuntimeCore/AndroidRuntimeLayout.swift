@@ -1,7 +1,8 @@
 import Foundation
 
 public struct AndroidRuntimeLayout: Sendable {
-    public let androidRoot: URL
+    public let addonRoot: URL
+    public let persistentStateRoot: URL
     public let name: String
     public let runtime: URL
     public let instance: URL
@@ -41,23 +42,26 @@ public struct AndroidRuntimeLayout: Sendable {
     public let containerTombstones: URL
     public let diagnosticTombstones: URL
     public let images: URL
+    public let addonManifest: URL
     public let provenance: URL
-    public let sourceProvenance: URL
-    public let sourceLock: URL
-    public let productLock: URL
-    public let signingIdentity: URL
-    public let hostTools: URL
+    public let avbTool: URL
+    public let verificationKey: URL
     public let appArmorProfile: URL
     public let seccompProfile: URL
 
     public init(
-        androidRoot: URL,
+        addonRoot: URL,
+        persistentStateRoot: URL,
         diagnosticsRunDirectory: URL,
         gfxstreamBrokerExecutable: URL,
         displayHostExecutable: URL,
         processIdentifier: Int32 = ProcessInfo.processInfo.processIdentifier
-    ) {
-        self.androidRoot = androidRoot
+    ) throws {
+        let store = try AndroidAddonStoreLayout(
+            root: addonRoot,
+            persistentStateRoot: persistentStateRoot)
+        self.addonRoot = store.active
+        self.persistentStateRoot = store.persistentStateRoot
         name = "nucleus-android-runtime-\(processIdentifier)"
         runtime = URL(
             fileURLWithPath: "/run/nucleus/android",
@@ -84,7 +88,8 @@ public struct AndroidRuntimeLayout: Sendable {
         gfxstreamBrokerDirectory = instance.appendingPathComponent(
             "gfxstream-broker",
             isDirectory: true)
-        gfxstreamBrokerSocket = gfxstreamBrokerDirectory
+        gfxstreamBrokerSocket =
+            gfxstreamBrokerDirectory
             .appendingPathComponent("gfxstream.sock")
         runtimeBridgeDirectory = instance.appendingPathComponent(
             "runtime-bridge",
@@ -100,9 +105,11 @@ public struct AndroidRuntimeLayout: Sendable {
         hostKernelConfigurationDirectory = instance.appendingPathComponent(
             "kernel-configuration",
             isDirectory: true)
-        hostKernelConfiguration = hostKernelConfigurationDirectory
+        hostKernelConfiguration =
+            hostKernelConfigurationDirectory
             .appendingPathComponent("host-kernel.config")
-        displayHostSocket = gfxstreamBrokerDirectory
+        displayHostSocket =
+            gfxstreamBrokerDirectory
             .appendingPathComponent("composer.sock")
         swiftRuntime = instance.appendingPathComponent(
             "swift-runtime",
@@ -140,25 +147,18 @@ public struct AndroidRuntimeLayout: Sendable {
             isDirectory: true)
         self.gfxstreamBrokerExecutable = gfxstreamBrokerExecutable
         self.displayHostExecutable = displayHostExecutable
-        images = androidRoot.appendingPathComponent(
-            ".aosp-build/current/images",
+        images = store.active.appendingPathComponent(
+            "images",
             isDirectory: true)
-        provenance = androidRoot.appendingPathComponent(
-            ".aosp-build/current/signed/image-provenance.json")
-        sourceProvenance = androidRoot.appendingPathComponent(
-            ".aosp-source/.nucleus/source-provenance.json")
-        sourceLock = androidRoot.appendingPathComponent("aosp.lock.json")
-        productLock = androidRoot.appendingPathComponent(
-            "aosp-product.lock.json")
-        signingIdentity = androidRoot.appendingPathComponent(
-            ".aosp-signing/local-development",
-            isDirectory: true)
-        hostTools = androidRoot.appendingPathComponent(
-            ".aosp-build/current/out/host/linux-x86/bin",
-            isDirectory: true)
-        appArmorProfile = androidRoot.appendingPathComponent(
-            "container/lxc-nucleus-android.apparmor")
-        seccompProfile = androidRoot.appendingPathComponent(
-            "container/nucleus-android.seccomp")
+        addonManifest = store.active.appendingPathComponent("addon-manifest.json")
+        provenance = store.active.appendingPathComponent("image-provenance.json")
+        avbTool = store.active.appendingPathComponent(
+            "libexec/android-tools/avbtool")
+        verificationKey = store.active.appendingPathComponent(
+            "share/nucleus/android/avb-release-key.pem")
+        appArmorProfile = store.active.appendingPathComponent(
+            "share/nucleus/android/lxc-nucleus-android.apparmor")
+        seccompProfile = store.active.appendingPathComponent(
+            "share/nucleus/android/nucleus-android.seccomp")
     }
 }

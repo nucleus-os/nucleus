@@ -208,6 +208,73 @@ private struct ParallelismProbeAction: ColliderAction {
     #expect(received.suffix(2) == ["--filter", "gpuHeadless_"])
 }
 
+@Test func synthesizedSwiftBuildSelectsEveryDeclaredProduct() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-swift-product-selection-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let package = directory.appendingPathComponent("package")
+    let tools = directory.appendingPathComponent("tools")
+    let scratch = directory.appendingPathComponent("scratch")
+    try FileManager.default.createDirectory(
+        at: package, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        at: tools, withIntermediateDirectories: true)
+    try Data("// swift-tools-version: 6.4\n".utf8).write(
+        to: package.appendingPathComponent("Package.swift"))
+
+    let arguments = directory.appendingPathComponent("arguments")
+    let swift = tools.appendingPathComponent("swift")
+    let script = """
+        #!/bin/sh
+        set -eu
+        printf '%s ' "$@" >> "\(arguments.path)"
+        printf '\n' >> "\(arguments.path)"
+        mkdir -p "\(scratch.path)"
+        """
+    try Data(script.utf8).write(to: swift)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755], ofItemAtPath: swift.path)
+
+    let packageRoot = FilePath(package.path)
+    let context = SwiftBuildContext(
+        packageRoot: packageRoot,
+        configuration: .debug,
+        target: .host(identity: "arm64-macos"),
+        toolchainIdentity: "fixture-toolchain")
+    let invocation = SwiftPMInvocation(
+        context: context,
+        scratchPath: FilePath(scratch.path))
+    let tasks = ["SecondProduct", "FirstProduct"].map { product in
+        let requirement = SwiftProductRequirement(
+            package: "fixture",
+            product: product,
+            packageRoot: packageRoot,
+            invocation: invocation,
+            inputs: [],
+            environment: ["PATH": "\(tools.path):/usr/bin:/bin"])
+        return TaskDeclaration(
+            id: TaskID(rawValue: "fixture.\(product)"),
+            component: ComponentID(rawValue: "fixture"),
+            swiftProducts: [requirement],
+            operation: .sequence([]))
+    }
+
+    _ = try await ColliderRuntime().execute(
+        graph: TaskGraph(tasks),
+        selected: tasks.map(\.id),
+        stateRoot: FilePath(directory.appendingPathComponent("state").path))
+
+    let received = try String(contentsOf: arguments, encoding: .utf8)
+        .split(whereSeparator: \.isNewline)
+        .map { $0.split(whereSeparator: \.isWhitespace).map(String.init) }
+    #expect(received.map(\.first) == ["build", "build"])
+    #expect(
+        received.map { Array($0.suffix(2)) } == [
+            ["--product", "FirstProduct"],
+            ["--product", "SecondProduct"],
+        ])
+}
+
 @Test func taskOutputStreamsLoggedCommandsByDefaultAndQuietSuppressesInheritedOutput() {
     #expect(
         TaskOutputPresentation.stream.output(for: .logged)
@@ -416,6 +483,14 @@ private struct ParallelismProbeAction: ColliderAction {
         graph: graph, selected: [task.id], stateRoot: state)
     #expect(second.executed.isEmpty)
     #expect(second.plan[0].isClean)
+    let rebuilt = try await runtime.execute(
+        graph: graph,
+        selected: [task.id],
+        stateRoot: state,
+        options: TaskExecutionOptions(rebuildSelected: true))
+    #expect(rebuilt.executed == [task.id])
+    #expect(!rebuilt.plan[0].isClean)
+    #expect(rebuilt.plan[0].explanation == "rebuild requested for selected task")
 }
 
 @Test func selectedSupersetTaskOmitsAndCompletesRedundantDependencyOperation()
@@ -1390,7 +1465,7 @@ private struct ParallelismProbeAction: ColliderAction {
     let depot = directory.appendingPathComponent("depot_tools")
     let imageID = directory.appendingPathComponent("image-id")
     let tools = directory.appendingPathComponent("tools")
-    let podman = tools.appendingPathComponent("podman")
+    let container = tools.appendingPathComponent("container")
     let gn = chromium.appendingPathComponent("buildtools/linux64/gn")
     let clang = chromium.appendingPathComponent(
         "third_party/llvm-build/Release+Asserts/bin/clang")
@@ -1404,8 +1479,10 @@ private struct ParallelismProbeAction: ColliderAction {
         at: source, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(
         at: tools, withIntermediateDirectories: true)
-    try Data(("sha256:" + String(repeating: "a", count: 64) + "\n").utf8)
-        .write(to: imageID)
+    try Data(
+        ("localhost/nucleus-chromium:latest\nsha256:"
+            + String(repeating: "a", count: 64) + "\n").utf8
+    ).write(to: imageID)
     try JSONSerialization.data(
         withJSONObject: ["sourceID": "source-fixture"],
         options: [.sortedKeys]
@@ -1432,14 +1509,14 @@ private struct ParallelismProbeAction: ColliderAction {
             --mount)
               specification="$2"
               case "$specification" in
-                *,target=/build,*)
-                  build="${specification#*src=}"
+                *,target=/build*)
+                  build="${specification#*source=}"
                   build="${build%%,target=*}"
                   ;;
               esac
               shift 2
               ;;
-            sha256:*) shift; break ;;
+            localhost/*) shift; break ;;
             *) shift ;;
           esac
         done
@@ -1452,8 +1529,8 @@ private struct ParallelismProbeAction: ColliderAction {
           *) exit 64 ;;
         esac
         """.utf8
-    ).write(to: podman)
-    for executable in [gn, clang, autoninja, podman] {
+    ).write(to: container)
+    for executable in [gn, clang, autoninja, container] {
         try FileManager.default.setAttributes(
             [.posixPermissions: 0o755],
             ofItemAtPath: executable.path)

@@ -145,6 +145,7 @@ for target in package.targets {
     }
     var swiftSettings =
         (target.swiftSettings ?? []) + [
+            .interoperabilityMode(.Cxx),
             .strictMemorySafety(),
             .unsafeFlags(["-warnings-as-errors"]),
             .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
