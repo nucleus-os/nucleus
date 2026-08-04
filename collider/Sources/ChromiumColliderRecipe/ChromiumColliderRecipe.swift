@@ -162,19 +162,24 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     chromium.appending(
                         "share/applications/dev.nucleus.Browser.desktop.in")),
             ]
-        let depotToolsTask = TaskDeclaration(
+        var depotToolsBuilder = TaskBuilder(
             id: TaskID(rawValue: "browser.depot-tools"),
-            component: ComponentID(rawValue: "browser"),
+            component: ComponentID(rawValue: "browser"))
+        let _: ArtifactReference<FileArtifact> = try depotToolsBuilder.output(
+            "head",
+            path: depotTools.appending(".git/HEAD"),
+            validation: .regularFile)
+        let depotBootstrapExecutable: ArtifactReference<ExecutableArtifact> =
+            try depotToolsBuilder.output(
+                "bootstrap-executable",
+                path: depotTools.appending("ensure_bootstrap"),
+                validation: .executableFile)
+        let depotToolsTask = depotToolsBuilder.build(
             inputs: [
                 .value(
                     name: "depot-tools-revision",
                     bytes: Array(sourceLock.depotTools.commit.utf8)),
                 .tool(.named("git")),
-            ],
-            outputs: [
-                OutputDeclaration(
-                    path: depotTools.appending(".git/HEAD"),
-                    validation: .regularFile)
             ],
             locks: [.shared(cache.appending("locks/depot-tools.lock"))],
             assessmentPolicy: .always,
@@ -184,26 +189,22 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     remote: sourceLock.depotTools.remote,
                     commit: sourceLock.depotTools.commit,
                     environment: childEnvironment)))
-        let depotBootstrap = TaskDeclaration(
+        var bootstrapBuilder = TaskBuilder(
             id: TaskID(rawValue: "browser.depot-tools-bootstrap"),
-            component: ComponentID(rawValue: "browser"),
-            dependencies: [depotToolsTask.id],
-            inputs: [
-                .dependencyOutput(depotTools.appending("ensure_bootstrap"))
-            ],
-            outputs: [
-                OutputDeclaration(
-                    path: depotTools.appending("python3_bin_reldir.txt"),
-                    validation: .regularFile)
-            ],
+            component: ComponentID(rawValue: "browser"))
+        bootstrapBuilder.consume(depotBootstrapExecutable)
+        let bootstrapMarker: ArtifactReference<FileArtifact> = try bootstrapBuilder.output(
+            "python-relative-directory",
+            path: depotTools.appending("python3_bin_reldir.txt"),
+            validation: .regularFile)
+        let depotBootstrap = bootstrapBuilder.build(
             locks: [.shared(cache.appending("locks/depot-tools.lock"))],
-            operation: .command(
-                CommandSpec(
-                    executable: .taskOutput(
-                        depotTools.appending("ensure_bootstrap")),
-                    arguments: [],
-                    workingDirectory: depotTools,
-                    environment: depotEnvironment)))
+            operation: .action(
+                try AnyColliderAction(
+                    BootstrapChromiumDepotToolsAction(
+                        executable: depotBootstrapExecutable.path,
+                        repository: depotTools,
+                        environment: depotEnvironment))))
         let sourcePreparation = ChromiumSourcePreparation(
             sourceID: layout.sourceID,
             sourceRoot: source,
@@ -213,30 +214,30 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             sourceLockFile: sourceLockFile,
             sourceLock: sourceLock,
             environment: childEnvironment)
-        let sourceTask = TaskDeclaration(
+        var sourceBuilder = TaskBuilder(
             id: ChromiumTaskIDs.source,
-            component: ComponentID(rawValue: "browser"),
-            dependencies: [depotBootstrap.id],
+            component: ComponentID(rawValue: "browser"))
+        sourceBuilder.consume(bootstrapMarker)
+        let sourceProvenance: ArtifactReference<JSONArtifact> = try sourceBuilder.output(
+            "provenance",
+            path: source.appending("source-provenance.json"),
+            validation: .json)
+        let sourceTask = sourceBuilder.build(
             inputs: commonInputs,
-            outputs: [
-                OutputDeclaration(
-                    path: source.appending("source-provenance.json"),
-                    validation: .json)
-            ],
             locks: [
                 .shared(cache.appending("locks/source.lock"))
             ],
             operation: .prepareChromiumSource(sourcePreparation))
-        let builderTask = TaskDeclaration(
+        var imageBuilder = TaskBuilder(
             id: TaskID(rawValue: "browser.builder"),
-            component: ComponentID(rawValue: "browser"),
+            component: ComponentID(rawValue: "browser"))
+        let builderImage: ArtifactReference<FileArtifact> = try imageBuilder.output(
+            "image-id",
+            path: builderImageID,
+            validation: .regularFile)
+        let builderTask = imageBuilder.build(
             inputs: [
                 .tree(builderContext)
-            ],
-            outputs: [
-                OutputDeclaration(
-                    path: builderImageID,
-                    validation: .regularFile)
             ],
             locks: [.shared(cache.appending("locks/builder.lock"))],
             operation: .prepareOCIImage(
@@ -255,16 +256,17 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             cefCheckout: cefRepository.commit,
             chromiumVersion: sourceLock.chromiumVersion,
             environment: childEnvironment)
-        let cefTask = TaskDeclaration(
+        var cefBuilder = TaskBuilder(
             id: TaskID(rawValue: "browser.cef"),
-            component: ComponentID(rawValue: "browser"),
-            dependencies: [sourceTask.id, builderTask.id],
-            inputs: commonInputs + [.dependencyOutput(builderImageID)],
-            outputs: [
-                OutputDeclaration(
-                    path: cefDistribution.appending("current"),
-                    validation: .symlinkTarget)
-            ],
+            component: ComponentID(rawValue: "browser"))
+        cefBuilder.consume(sourceProvenance)
+        cefBuilder.consume(builderImage)
+        let cefPublication: ArtifactReference<PathArtifact> = try cefBuilder.output(
+            "publication",
+            path: cefDistribution.appending("current"),
+            validation: .symlinkTarget)
+        let cefTask = cefBuilder.build(
+            inputs: commonInputs,
             locks: [
                 .shared(cache.appending("locks/cef-output.lock")),
                 .shared(cache.appending("locks/cef-publication.lock")),
@@ -292,16 +294,17 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             desktopTemplate: chromium.appending(
                 "share/applications/dev.nucleus.Browser.desktop.in"),
             environment: childEnvironment)
-        let browserTask = TaskDeclaration(
+        var browserBuilder = TaskBuilder(
             id: TaskID(rawValue: "browser.artifact"),
-            component: ComponentID(rawValue: "browser"),
-            dependencies: [cefTask.id],
+            component: ComponentID(rawValue: "browser"))
+        browserBuilder.consume(cefPublication)
+        browserBuilder.consume(builderImage)
+        let browserPublication: ArtifactReference<PathArtifact> = try browserBuilder.output(
+            "publication",
+            path: browserDistribution.appending("current"),
+            validation: .symlinkTarget)
+        let browserTask = browserBuilder.build(
             inputs: commonInputs,
-            outputs: [
-                OutputDeclaration(
-                    path: browserDistribution.appending("current"),
-                    validation: .symlinkTarget)
-            ],
             locks: [
                 .shared(cache.appending("locks/browser-output.lock")),
                 .shared(cache.appending("locks/browser-publication.lock")),
@@ -321,10 +324,11 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 .assembleBrowserArtifact(browserAssembly),
                 .validateBrowserArtifact(browserAssembly),
             ]))
-        let retention = TaskDeclaration(
+        var retentionBuilder = TaskBuilder(
             id: ChromiumTaskIDs.retention,
-            component: ComponentID(rawValue: "browser"),
-            dependencies: [browserTask.id],
+            component: ComponentID(rawValue: "browser"))
+        retentionBuilder.consume(browserPublication)
+        let retention = retentionBuilder.build(
             inputs: commonInputs,
             locks: [
                 .shared(cache.appending("locks/cache-retention.lock"))
@@ -355,10 +359,12 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                             retain: 2,
                             naming: .contentIdentity),
                     ])))
-        let test = TaskDeclaration(
+        var testBuilder = TaskBuilder(
             id: ChromiumTaskIDs.test,
-            component: ComponentID(rawValue: "browser"),
-            dependencies: [browserTask.id],
+            component: ComponentID(rawValue: "browser"))
+        testBuilder.consume(browserPublication)
+        testBuilder.consume(builderImage)
+        let test = testBuilder.build(
             inputs: commonInputs,
             locks: [
                 .shared(cache.appending("locks/cef-output.lock")),
@@ -379,33 +385,18 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                 + "output_presenter_ozone_unittests",
                         ],
                         environment: childEnvironment)),
-                .command(
-                    CommandSpec(
-                        executable: .taskOutput(
-                            browserOutput.appending("ozone_unittests")),
-                        arguments: [
-                            "--gtest_filter=*OzonePresenter*",
-                            "--single-process-tests",
-                        ],
-                        workingDirectory: browserOutput,
-                        environment: childEnvironment)),
-                .command(
-                    CommandSpec(
-                        executable: .taskOutput(
-                            browserOutput.appending(
-                                "output_presenter_ozone_unittests")),
-                        arguments: [
-                            "--gtest_filter=OutputPresenterOzoneTest.*",
-                            "--single-process-tests",
-                        ],
-                        workingDirectory: browserOutput,
-                        environment: childEnvironment)),
+                .action(
+                    try AnyColliderAction(
+                        RunChromiumOzoneTestsAction(
+                            output: browserOutput,
+                            environment: childEnvironment))),
                 .validateBrowserArtifact(browserAssembly),
             ]))
-        let install = TaskDeclaration(
+        var installBuilder = TaskBuilder(
             id: ChromiumTaskIDs.install,
-            component: ComponentID(rawValue: "browser"),
-            dependencies: [browserTask.id],
+            component: ComponentID(rawValue: "browser"))
+        installBuilder.consume(browserPublication)
+        let install = installBuilder.build(
             inputs: commonInputs,
             locks: [
                 .shared(cache.appending("locks/browser-publication.lock"))
@@ -496,6 +487,132 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
             }
     }
+}
+
+private struct BootstrapChromiumDepotToolsAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let executable: FilePath
+        let repository: FilePath
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: executable.string)
+            encoder.append(tag: 2, string: repository.string)
+        }
+    }
+
+    static let kind: ActionKind = "browser.bootstrap-depot-tools"
+
+    let executable: FilePath
+    let repository: FilePath
+    let environment: [String: String]
+
+    var identity: Identity {
+        Identity(executable: executable, repository: repository)
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "ensure-bootstrap",
+                    executable: .taskOutput(executable),
+                    role: .operational)
+            ],
+            effects: [
+                ActionEffect(.readWrite, scope: .checkout(repository))
+            ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        let result = try await context.commands.execute(
+            CommandSpec(
+                executable: .taskOutput(executable),
+                arguments: [],
+                workingDirectory: repository,
+                environment: environment))
+        guard result.status == 0 else {
+            throw ChromiumBootstrapFailure.commandFailed(result.status)
+        }
+    }
+}
+
+private struct RunChromiumOzoneTestsAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let output: FilePath
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: output.string)
+            encoder.append(tag: 2, string: "*OzonePresenter*")
+            encoder.append(tag: 3, string: "OutputPresenterOzoneTest.*")
+            encoder.append(tag: 4, string: "single-process-tests")
+        }
+    }
+
+    static let kind: ActionKind = "browser.test-ozone"
+
+    let output: FilePath
+    let environment: [String: String]
+
+    var identity: Identity { Identity(output: output) }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "ozone-tests",
+                    executable: .taskOutput(output.appending("ozone_unittests")),
+                    role: .operational),
+                ActionToolRequirement(
+                    "output-presenter-tests",
+                    executable: .taskOutput(
+                        output.appending("output_presenter_ozone_unittests")),
+                    role: .operational),
+            ],
+            effects: [
+                ActionEffect(.readWrite, scope: .scratch(output))
+            ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        try await run(
+            executable: output.appending("ozone_unittests"),
+            arguments: [
+                "--gtest_filter=*OzonePresenter*",
+                "--single-process-tests",
+            ],
+            context: context)
+        try await run(
+            executable: output.appending("output_presenter_ozone_unittests"),
+            arguments: [
+                "--gtest_filter=OutputPresenterOzoneTest.*",
+                "--single-process-tests",
+            ],
+            context: context)
+    }
+
+    private func run(
+        executable: FilePath,
+        arguments: [String],
+        context: ActionContext
+    ) async throws {
+        let result = try await context.commands.execute(
+            CommandSpec(
+                executable: .taskOutput(executable),
+                arguments: arguments,
+                workingDirectory: output,
+                environment: environment))
+        guard result.status == 0 else {
+            throw ChromiumOzoneTestFailure.commandFailed(result.status)
+        }
+    }
+}
+
+private enum ChromiumBootstrapFailure: Error {
+    case commandFailed(Int32)
+}
+
+private enum ChromiumOzoneTestFailure: Error {
+    case commandFailed(Int32)
 }
 
 private func chromiumBuildExecution(

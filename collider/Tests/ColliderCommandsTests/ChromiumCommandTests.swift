@@ -62,21 +62,19 @@ func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() throws {
             "browser.retention",
         ])
 
-    func commands(_ operation: TaskOperation) -> [CommandSpec] {
+    func actions(_ operation: TaskOperation) -> [AnyColliderAction] {
         switch operation {
-        case .command(let command): [command]
+        case .action(let action): [action]
         case .sequence(let operations):
-            operations.flatMap(commands)
+            operations.flatMap(actions)
         default: []
         }
     }
     #expect(
-        tasks.flatMap { commands($0.operation) }.allSatisfy {
-            if case .path(let path) = $0.executable {
-                return path != workspace.appending("chromium/build.sh")
-            }
-            return true
-        })
+        Set(tasks.flatMap { actions($0.operation).map(\.kind) }).isSuperset(of: [
+            ActionKind(rawValue: "browser.bootstrap-depot-tools"),
+            ActionKind(rawValue: "browser.test-ozone"),
+        ]))
 
     func builds(_ operation: TaskOperation) -> [ChromiumProductBuild] {
         switch operation {

@@ -102,21 +102,29 @@ import Testing
                 $0.rawValue.hasPrefix(
                     "swift-sdk.download-ubuntu-\(architecture.rawValue)-")
             })
-        guard case .sequence(let sysrootOperations) = sysroot.operation else {
-            Issue.record("sysroot preparation must establish its working directory")
+        guard case .action(let sysrootAction) = sysroot.operation else {
+            Issue.record("sysroot preparation must be a recipe-owned action")
             return
         }
         #expect(
-            sysrootOperations.first
-                == .createDirectory(target.sysroot.removingLastComponent()))
+            sysrootAction.kind
+                == ActionKind(rawValue: "swift-sdk.prepare-linux-sysroot"))
+        #expect(
+            sysrootAction.requirements.effects.contains(
+                ActionEffect(
+                    .readWrite,
+                    scope: .output(target.sysroot.removingLastComponent()))))
     }
 
     let generator = try #require(
         result.tasks.first { $0.id.rawValue == "swift-sdk.build-sdk-generator" })
+    guard case .action(let generatorAction) = generator.operation else {
+        Issue.record("SDK generator compilation must be a recipe-owned action")
+        return
+    }
     #expect(
-        commands(generator.operation).contains {
-            $0.arguments.contains("--disable-automatic-resolution")
-        })
+        generatorAction.kind
+            == ActionKind(rawValue: "swift-sdk.build-generator"))
     let generatorLock = TaskLock.shared(
         configuration.generatorScratch.appending(".collider.lock"))
     let rebuildLock = TaskLock.shared(configuration.rebuildLock)
@@ -124,49 +132,35 @@ import Testing
 
     let assembly = try #require(
         result.tasks.first { $0.id.rawValue == "swift-sdk.assemble-target-sdks" })
-    let assemblyCommands = commands(assembly.operation)
     #expect(assembly.locks == [generatorLock, rebuildLock])
+    guard case .action(let assemblyAction) = assembly.operation else {
+        Issue.record("SDK assembly must be a recipe-owned action")
+        return
+    }
+    #expect(
+        assemblyAction.kind
+            == ActionKind(rawValue: "swift-sdk.assemble-target-sdks"))
     for target in linuxTargets {
         #expect(
-            assemblyCommands.contains {
-                guard let option = $0.arguments.firstIndex(of: "--target-swift-package-path")
-                else { return false }
-                return $0.arguments.index(after: option) < $0.arguments.endIndex
-                    && $0.arguments[$0.arguments.index(after: option)]
-                        == target.runtimeInstall.string
-            })
+            assemblyAction.requirements.effects.contains(
+                ActionEffect(.read, scope: .input(target.runtimeInstall))))
     }
 
     let validation = try #require(
         result.tasks.first { $0.id.rawValue == "swift-sdk.validate-target-sdks" })
-    guard case .sequence(let validationOperations) = validation.operation else {
-        Issue.record("SDK validation must be an ordered task sequence")
+    guard case .action(let validationAction) = validation.operation else {
+        Issue.record("SDK validation must be a recipe-owned action")
         return
     }
-    let hostToolset = configuration.candidate.appending("validation/host-toolset.json")
-    let toolsetWrite = try #require(
-        validationOperations.first { operation in
-            guard case .writeFile(let path, _) = operation else { return false }
-            return path == hostToolset
-        })
-    guard case .writeFile(_, let toolsetBytes) = toolsetWrite else {
-        Issue.record("validation toolset must be a file write")
-        return
-    }
-    let toolset = try #require(
-        JSONSerialization.jsonObject(with: Data(toolsetBytes)) as? [String: Any])
-    let linker = try #require(toolset["linker"] as? [String: String])
     #expect(
-        linker["path"]
-            == configuration.candidate.appending("toolchain/usr/bin/ld.lld").string)
-    let fixtureBuilds = commands(validation.operation).filter {
-        $0.arguments.first == "build"
-    }
-    #expect(fixtureBuilds.count == 4)
+        validationAction.kind
+            == ActionKind(rawValue: "swift-sdk.validate-target-sdks"))
+    #expect(validation.outputs.count == 4)
     #expect(
-        fixtureBuilds.allSatisfy {
-            $0.arguments.suffix(2) == ["--toolset", hostToolset.string]
-        })
+        validationAction.requirements.effects.contains(
+            ActionEffect(
+                .readWrite,
+                scope: .output(configuration.candidate.appending("validation")))))
 }
 
 @Test func checkedInTargetSDKInputsAreComplete() throws {
@@ -217,17 +211,6 @@ private func ociExecutions(_ operation: TaskOperation) -> [OCIExecution] {
         [execution]
     case .sequence(let operations):
         operations.flatMap(ociExecutions)
-    default:
-        []
-    }
-}
-
-private func commands(_ operation: TaskOperation) -> [CommandSpec] {
-    switch operation {
-    case .command(let command):
-        [command]
-    case .sequence(let operations):
-        operations.flatMap(commands)
     default:
         []
     }

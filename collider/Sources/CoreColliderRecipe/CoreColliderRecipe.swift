@@ -4,6 +4,7 @@ import NativeBuilderColliderRecipe
 import SystemPackage
 
 package enum CoreTaskIDs {
+    package static let gnDownload = TaskID(rawValue: "core.gn-download")
     package static let sources = TaskID(rawValue: "core.sources")
     package static let androidNativeSDK = TaskID(rawValue: "core.native-sdk.android-arm64")
     package static let androidSkia = TaskID(rawValue: "core.skia.android-arm64")
@@ -22,6 +23,17 @@ package enum CoreTaskIDs {
 }
 
 public enum CoreColliderRecipe: ColliderComponent {
+    package struct SkiaSourceArtifacts: Sendable {
+        package let tasks: [TaskDeclaration]
+        package let externalSources: ArtifactReference<DirectoryArtifact>
+        package let gn: ArtifactReference<ExecutableArtifact>
+    }
+
+    package struct SkiaBuildArtifacts: Sendable {
+        package let task: TaskDeclaration
+        package let buildDirectory: ArtifactReference<DirectoryArtifact>
+    }
+
     public static let descriptor = ComponentDescriptor(
         id: ComponentID(rawValue: "core"),
         canonicalName: "core",
@@ -31,23 +43,25 @@ public enum CoreColliderRecipe: ColliderComponent {
         in context: RecipeContext
     ) throws -> ComponentDefinition {
         let root = context.componentRoot(descriptor)
-        let source = try prepareSkiaDependencies(
+        let sources = try prepareSkiaDependencies(
             root: root,
             environment: context.environment)
-        var tasks = [source]
+        var tasks = sources.tasks
         var roots: Set<TaskID> = []
         for architecture in PlatformArchitecture.allCases {
             let target = NativeLinuxTarget(architecture: architecture)
-            let skia = buildSkiaLinux(
+            let skia = try buildSkiaLinux(
                 root: root,
                 environment: context.environment,
                 target: target,
+                sources: sources,
                 builder: context.nativeBuilder)
-            let sdk = publishLinuxRenderSDK(
+            let sdk = try publishLinuxRenderSDK(
                 root: root,
                 sdkRoot: context.nativeSDK(for: target),
-                target: target)
-            tasks += [skia, sdk]
+                target: target,
+                skia: skia.buildDirectory)
+            tasks += [skia.task, sdk]
             roots.insert(sdk.id)
         }
         let androidToolchain = try AndroidToolchainVersions.load(
@@ -59,15 +73,16 @@ public enum CoreColliderRecipe: ColliderComponent {
         let androidSDKRoot = context.nativeSDKRoot.appending("android-arm64")
         var androidEnvironment = context.environment
         androidEnvironment["NUCLEUS_NATIVE_SDK_ROOT"] = androidSDKRoot.string
-        let androidSkia = buildSkiaAndroid(
+        let androidSkia = try buildSkiaAndroid(
             root: root,
             minimumAndroidAPI: androidToolchain.minimumSDK,
             environment: androidEnvironment,
+            sources: sources,
             builder: context.nativeBuilder)
-        let androidNativeSDK = publishAndroidRenderSDK(
+        let androidNativeSDK = try publishAndroidRenderSDK(
             root: root,
             sdkRoot: androidSDKRoot,
-            dependencies: [androidSkia.id])
+            skia: androidSkia.buildDirectory)
         let androidSwiftPM = try context.swiftPM(
             .androidARM64(apiLevel: androidToolchain.minimumSDK))
         let androidHost = buildAndroidHost(
@@ -82,12 +97,12 @@ public enum CoreColliderRecipe: ColliderComponent {
             ndk: ndk,
             environment: androidEnvironment,
             dependencies: [androidHost.id])
-        let androidBuild = buildAndroidProject(
+        let androidBuild = try buildAndroidProject(
             root: root,
             environment: androidEnvironment,
             dependency: androidValidation.id)
         tasks += [
-            androidSkia, androidNativeSDK, androidHost, androidValidation,
+            androidSkia.task, androidNativeSDK, androidHost, androidValidation,
             androidBuild,
         ]
         return try ComponentDefinition(
@@ -105,13 +120,13 @@ public enum CoreColliderRecipe: ColliderComponent {
             ])
     }
 
-    public static func prepareSkiaDependencies(
+    package static func prepareSkiaDependencies(
         root: FilePath,
         environment: [String: String]
-    ) throws -> TaskDeclaration {
+    ) throws -> SkiaSourceArtifacts {
         let skia = root.appending("third-party/skia")
         let gnArchive = root.appending(".skia-build/downloads/gn-linux-arm64.zip")
-        let dependencyVerifier = root.appending(".skia-build/verify-deps.py")
+        let dependencies = try skiaGitDependencies(from: skia.appending("DEPS"))
         guard
             let gnURL = URL(
                 string:
@@ -132,66 +147,99 @@ public enum CoreColliderRecipe: ColliderComponent {
             expectedDigest: gnDigest,
             maximumResponseSize: 16 * 1_024 * 1_024,
             acceptedMediaTypes: ["application/octet-stream"])
-        return TaskDeclaration(
+        var downloadBuilder = TaskBuilder(
+            id: CoreTaskIDs.gnDownload,
+            component: ComponentID(rawValue: "core"))
+        let archive: ArtifactReference<FileArtifact> = try downloadBuilder.output(
+            "archive",
+            path: gnArchive,
+            validation: .regularFile)
+        let download = downloadBuilder.build(
+            locks: [.checkout("core-sources")],
+            operation: .download(gnDownload, candidate: gnArchive))
+
+        var sourceBuilder = TaskBuilder(
             id: CoreTaskIDs.sources,
-            component: ComponentID(rawValue: "core"),
+            component: ComponentID(rawValue: "core"))
+        sourceBuilder.consume(archive)
+        let externalSources: ArtifactReference<DirectoryArtifact> = try sourceBuilder.output(
+            "external-sources",
+            path: skia.appending("third_party/externals"),
+            validation: .nonEmptyDirectory)
+        let gn: ArtifactReference<ExecutableArtifact> = try sourceBuilder.output(
+            "gn",
+            path: skia.appending("bin/gn"),
+            validation: .executableFile)
+        let sources = sourceBuilder.build(
             inputs: [
-                .file(skia.appending("DEPS")),
-                .file(skia.appending("tools/git-sync-deps")),
-                .file(skia.appending("bin/fetch-gn")),
-            ],
-            outputs: [
-                OutputDeclaration(
-                    path: skia.appending("DEPS"),
-                    validation: .regularFile),
-                OutputDeclaration(
-                    path: skia.appending("third_party/externals"),
-                    validation: .nonEmptyDirectory),
-                OutputDeclaration(
-                    path: skia.appending("bin/gn"),
-                    validation: .executableFile),
+                .file(skia.appending("DEPS"))
             ],
             locks: [.checkout("core-sources")],
             assessmentPolicy: .always,
             operation: .sequence([
-                .command(
-                    CommandSpec(
-                        executable: .operationalNamed("python3"),
-                        arguments: [
-                            skia.appending("tools/git-sync-deps").string
-                        ],
-                        workingDirectory: root,
-                        environment: environment)),
-                .writeFile(
-                    dependencyVerifier,
-                    bytes: Array(skiaDependencyVerifier.utf8)),
-                .command(
-                    CommandSpec(
-                        executable: .operationalNamed("python3"),
-                        arguments: [dependencyVerifier.string, skia.appending("DEPS").string],
-                        workingDirectory: skia,
-                        environment: environment)),
-                .download(gnDownload, candidate: gnArchive),
-                .extractZip(
-                    ZipExtraction(
-                        archive: gnArchive,
-                        entry: "gn",
-                        destination: skia.appending("bin"),
-                        environment: environment)),
-                .setPermissions(
-                    FilePermissionUpdate(
-                        path: skia.appending("bin/gn"),
-                        permissions: 0o755)),
+                .action(
+                    try AnyColliderAction(
+                        MaterializeSkiaDependenciesAction(
+                            skia: skia,
+                            dependencies: dependencies,
+                            environment: environment))),
+                .action(
+                    try AnyColliderAction(
+                        InstallSkiaGNAction(
+                            archive: gnArchive,
+                            executable: skia.appending("bin/gn"),
+                            environment: environment))),
             ]))
+        return SkiaSourceArtifacts(
+            tasks: [download, sources],
+            externalSources: externalSources,
+            gn: gn)
     }
 
-    public static func buildSkiaLinux(
+    private static func skiaGitDependencies(
+        from deps: FilePath
+    ) throws -> [SkiaGitDependency] {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: deps.string),
+            encoding: .utf8)
+        let expression = try NSRegularExpression(
+            pattern:
+                #"(?m)^\s*["']([^"']+)["']\s*:\s*["'](https://[^"']+)@([0-9a-f]{40})["']\s*,?\s*$"#)
+        let range = NSRange(source.startIndex..., in: source)
+        var paths: Set<String> = []
+        let dependencies = expression.matches(in: source, range: range).map { match in
+            func capture(_ index: Int) -> String {
+                String(source[Range(match.range(at: index), in: source)!])
+            }
+            return SkiaGitDependency(
+                relativePath: capture(1),
+                remote: capture(2),
+                commit: capture(3))
+        }.sorted { $0.relativePath < $1.relativePath }
+        guard !dependencies.isEmpty else {
+            throw SkiaDependencyFailure.noGitDependencies(deps)
+        }
+        for dependency in dependencies {
+            let path = FilePath(dependency.relativePath)
+            guard !path.isAbsolute,
+                !dependency.relativePath.split(separator: "/").contains(".."),
+                paths.insert(dependency.relativePath).inserted
+            else {
+                throw SkiaDependencyFailure.invalidCheckout(
+                    dependency.relativePath)
+            }
+        }
+        return dependencies
+    }
+
+    package static func buildSkiaLinux(
         root: FilePath,
         environment: [String: String],
         target: NativeLinuxTarget,
+        sources: SkiaSourceArtifacts,
         builder: NativeOCIConfiguration
-    ) -> TaskDeclaration {
-        skiaTask(
+    ) throws -> SkiaBuildArtifacts {
+        try skiaTask(
             id: CoreTaskIDs.skia(target),
             root: root,
             environment: environment,
@@ -201,17 +249,20 @@ public enum CoreColliderRecipe: ColliderComponent {
             artifactTarget: target.artifactTarget,
             intelBinaryTranslationPolicy: target.intelBinaryTranslationPolicy,
             containerEnvironment: targetEnvironment(target),
+            externalSources: sources.externalSources,
+            gn: sources.gn,
             builder: builder)
     }
 
-    public static func buildSkiaAndroid(
+    package static func buildSkiaAndroid(
         root: FilePath,
         minimumAndroidAPI: UInt32,
         environment: [String: String],
+        sources: SkiaSourceArtifacts,
         builder: NativeOCIConfiguration
-    ) -> TaskDeclaration {
+    ) throws -> SkiaBuildArtifacts {
         let ndk = "/opt/android-ndk-r30-beta2"
-        return skiaTask(
+        return try skiaTask(
             id: CoreTaskIDs.androidSkia,
             root: root,
             environment: environment,
@@ -227,6 +278,8 @@ public enum CoreColliderRecipe: ColliderComponent {
             artifactTarget: .androidARM64(apiLevel: minimumAndroidAPI),
             intelBinaryTranslationPolicy: .required,
             containerEnvironment: [:],
+            externalSources: sources.externalSources,
+            gn: sources.gn,
             builder: builder)
     }
 
@@ -307,7 +360,7 @@ public enum CoreColliderRecipe: ColliderComponent {
         root: FilePath,
         environment: [String: String],
         dependency: TaskID
-    ) -> TaskDeclaration {
+    ) throws -> TaskDeclaration {
         let android = root.appending("android")
         return TaskDeclaration(
             id: CoreTaskIDs.androidBuild,
@@ -323,38 +376,39 @@ public enum CoreColliderRecipe: ColliderComponent {
             ],
             locks: [.checkout("core-android-gradle")],
             assessmentPolicy: .always,
-            operation: .command(
-                CommandSpec(
-                    executable: .path(android.appending("gradlew")),
-                    arguments: ["verifyDebug"],
-                    workingDirectory: android,
-                    environment: environment)))
+            operation: .action(
+                try AnyColliderAction(
+                    VerifyAndroidProjectAction(
+                        project: android,
+                        environment: environment))))
     }
 
     public static func publishAndroidRenderSDK(
         root: FilePath,
         sdkRoot: FilePath,
-        dependencies: [TaskID]
-    ) -> TaskDeclaration {
+        skia: ArtifactReference<DirectoryArtifact>
+    ) throws -> TaskDeclaration {
         let sdk = sdkRoot.appending("render")
         let links: [(String, FilePath)] = [
             ("include/skia", root.appending("third-party/skia")),
-            ("lib/skia-graphite", root.appending(".skia-build/android-arm64")),
+            ("lib/skia-graphite", skia.path),
             ("include/skia-text", root.appending("render-cxx/skia")),
         ]
-        return TaskDeclaration(
+        var builder = TaskBuilder(
             id: CoreTaskIDs.androidNativeSDK,
-            component: ComponentID(rawValue: "core"),
-            dependencies: dependencies,
+            component: ComponentID(rawValue: "core"))
+        builder.consume(skia)
+        for (name, _) in links {
+            let _: ArtifactReference<PathArtifact> = try builder.output(
+                OutputSlotID(rawValue: name),
+                path: sdk.appending(name),
+                validation: .symlinkTarget)
+        }
+        return builder.build(
             inputs: links.map {
                 .value(
                     name: $0.0,
                     bytes: Array($0.1.string.utf8))
-            },
-            outputs: links.map {
-                OutputDeclaration(
-                    path: sdk.appending($0.0),
-                    validation: .symlinkTarget)
             },
             locks: [
                 .shared(sdkRoot.appending(".render.lock"))
@@ -370,30 +424,31 @@ public enum CoreColliderRecipe: ColliderComponent {
     public static func publishLinuxRenderSDK(
         root: FilePath,
         sdkRoot: FilePath,
-        target: NativeLinuxTarget
-    ) -> TaskDeclaration {
+        target: NativeLinuxTarget,
+        skia: ArtifactReference<DirectoryArtifact>
+    ) throws -> TaskDeclaration {
         let sdk = sdkRoot.appending("render")
         let links: [(String, FilePath)] = [
             ("include/skia", root.appending("third-party/skia")),
             (
                 "lib/skia-graphite",
-                root.appending(".skia-build/\(target.identifier)")
+                skia.path
             ),
             ("include/skia-text", root.appending("render-cxx/skia")),
         ]
-        return TaskDeclaration(
+        var builder = TaskBuilder(
             id: CoreTaskIDs.nativeSDK(target),
-            component: ComponentID(rawValue: "core"),
-            dependencies: [
-                CoreTaskIDs.skia(target)
-            ],
+            component: ComponentID(rawValue: "core"))
+        builder.consume(skia)
+        for (name, _) in links {
+            let _: ArtifactReference<PathArtifact> = try builder.output(
+                OutputSlotID(rawValue: name),
+                path: sdk.appending(name),
+                validation: .symlinkTarget)
+        }
+        return builder.build(
             inputs: links.map {
                 .value(name: $0.0, bytes: Array($0.1.string.utf8))
-            },
-            outputs: links.map {
-                OutputDeclaration(
-                    path: sdk.appending($0.0),
-                    validation: .symlinkTarget)
             },
             locks: [.shared(sdkRoot.appending(".render.lock"))],
             operation: .sequence(
@@ -405,38 +460,279 @@ public enum CoreColliderRecipe: ColliderComponent {
     }
 }
 
-private let skiaDependencyVerifier = #"""
-    import os
-    import subprocess
-    import sys
+private struct VerifyAndroidProjectAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let project: FilePath
 
-    deps_path = os.path.abspath(sys.argv[1])
-    scope = {}
-    with open(deps_path, encoding="utf-8") as source:
-        exec("def Var(name): return vars[name]\n" + source.read(), scope)
-    for relative, specification in sorted(scope["deps"].items()):
-        if not isinstance(specification, str):
-            continue
-        _, revision = specification.rsplit("@", 1)
-        checkout = os.path.join(os.path.dirname(deps_path), relative)
-        expected = subprocess.check_output(
-            ["git", "rev-parse", f"{revision}^{{commit}}"], cwd=checkout, text=True
-        ).strip()
-        actual = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=checkout, text=True
-        ).strip()
-        if actual != expected:
-            raise SystemExit(
-                f"{relative}: expected {revision} ({expected}), found {actual}"
-            )
-        dirty = subprocess.check_output(
-            ["git", "status", "--porcelain", "--untracked-files=no"],
-            cwd=checkout,
-            text=True,
-        )
-        if dirty:
-            raise SystemExit(f"{relative}: tracked source modifications remain")
-    """#
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: project.string)
+            encoder.append(tag: 2, string: "verifyDebug")
+        }
+    }
+
+    static let kind: ActionKind = "core.verify-android-project"
+
+    let project: FilePath
+    let environment: [String: String]
+
+    var identity: Identity { Identity(project: project) }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "gradle-wrapper",
+                    executable: .path(project.appending("gradlew")),
+                    role: .semantic)
+            ],
+            effects: [
+                ActionEffect(.readWrite, scope: .checkout(project))
+            ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        let result = try await context.commands.execute(
+            CommandSpec(
+                executable: .path(project.appending("gradlew")),
+                arguments: ["verifyDebug"],
+                workingDirectory: project,
+                environment: environment))
+        guard result.status == 0 else {
+            throw AndroidProjectVerificationFailure.commandFailed(result.status)
+        }
+    }
+}
+
+private enum AndroidProjectVerificationFailure: Error {
+    case commandFailed(Int32)
+}
+
+private struct SkiaGitDependency: Hashable, Sendable {
+    let relativePath: String
+    let remote: String
+    let commit: String
+}
+
+private struct MaterializeSkiaDependenciesAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let skia: FilePath
+        let dependencies: [SkiaGitDependency]
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: skia.string)
+            encoder.append(
+                tag: 2,
+                string: dependencies.map {
+                    "\($0.relativePath)\u{1}\($0.remote)\u{1}\($0.commit)"
+                }.joined(separator: "\0"))
+        }
+    }
+
+    static let kind: ActionKind = "core.materialize-skia-dependencies"
+
+    let skia: FilePath
+    let dependencies: [SkiaGitDependency]
+    let environment: [String: String]
+
+    var identity: Identity { Identity(skia: skia, dependencies: dependencies) }
+
+    var requirements: ActionRequirements {
+        let checkouts = dependencies.map { skia.appending($0.relativePath) }
+        let parents = Set(checkouts.map { $0.removingLastComponent() }).sorted {
+            $0.string < $1.string
+        }
+        return ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "git", executable: .named("git"), role: .operational)
+            ],
+            effects: [
+                ActionEffect(.read, scope: .input(skia.appending("DEPS"))),
+                ActionEffect(
+                    .read,
+                    scope: .input(skia.appending("sync-deps.disable"))),
+            ]
+                + parents.map {
+                    ActionEffect(.readWrite, scope: .checkout($0))
+                }
+                + checkouts.map {
+                    ActionEffect(.readWrite, scope: .checkout($0))
+                })
+    }
+
+    func execute(in context: ActionContext) async throws {
+        let disabled = skia.appending("sync-deps.disable")
+        guard try context.files.metadata(for: disabled) == nil else {
+            throw SkiaDependencyFailure.disabled(disabled)
+        }
+        for dependency in dependencies {
+            try context.cancellation.check()
+            let checkout = skia.appending(dependency.relativePath)
+            try context.files.createDirectory(checkout.removingLastComponent())
+            let gitDirectory = checkout.appending(".git")
+            if try context.files.metadata(for: gitDirectory) == nil {
+                try await requireSuccess(
+                    ["init", checkout.string],
+                    workingDirectory: skia,
+                    context: context)
+                try await requireSuccess(
+                    ["-C", checkout.string, "remote", "add", "origin", dependency.remote],
+                    workingDirectory: skia,
+                    context: context)
+            } else {
+                let dirty = try await git(
+                    [
+                        "-C", checkout.string, "status", "--porcelain",
+                        "--untracked-files=no",
+                    ],
+                    workingDirectory: skia,
+                    context: context)
+                guard dirty.status == 0, dirty.standardOutput.isEmpty else {
+                    throw SkiaDependencyFailure.trackedModifications(
+                        dependency.relativePath)
+                }
+                try await requireSuccess(
+                    [
+                        "-C", checkout.string, "remote", "set-url", "origin",
+                        dependency.remote,
+                    ],
+                    workingDirectory: skia,
+                    context: context)
+            }
+
+            let object = try await git(
+                ["-C", checkout.string, "cat-file", "-e", "\(dependency.commit)^{commit}"],
+                workingDirectory: skia,
+                context: context)
+            if object.status != 0 {
+                try await requireSuccess(
+                    [
+                        "-C", checkout.string, "fetch", "--no-tags", "--depth=1",
+                        "origin", dependency.commit,
+                    ],
+                    workingDirectory: skia,
+                    context: context)
+            }
+            try await requireSuccess(
+                ["-C", checkout.string, "checkout", "--detach", "--force", dependency.commit],
+                workingDirectory: skia,
+                context: context)
+            let resolved = try await git(
+                ["-C", checkout.string, "rev-parse", "HEAD"],
+                workingDirectory: skia,
+                context: context)
+            guard resolved.status == 0,
+                resolved.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    == dependency.commit
+            else {
+                throw SkiaDependencyFailure.wrongCommit(
+                    dependency.relativePath,
+                    expected: dependency.commit,
+                    actual: resolved.standardOutput)
+            }
+            let dirty = try await git(
+                [
+                    "-C", checkout.string, "status", "--porcelain",
+                    "--untracked-files=no",
+                ],
+                workingDirectory: skia,
+                context: context)
+            guard dirty.status == 0, dirty.standardOutput.isEmpty else {
+                throw SkiaDependencyFailure.trackedModifications(
+                    dependency.relativePath)
+            }
+        }
+    }
+
+    private func requireSuccess(
+        _ arguments: [String],
+        workingDirectory: FilePath,
+        context: ActionContext
+    ) async throws {
+        let result = try await git(
+            arguments,
+            workingDirectory: workingDirectory,
+            context: context)
+        guard result.status == 0 else {
+            throw SkiaDependencyFailure.gitFailed(arguments, result.status)
+        }
+    }
+
+    private func git(
+        _ arguments: [String],
+        workingDirectory: FilePath,
+        context: ActionContext
+    ) async throws -> CommandResult {
+        try await context.commands.execute(
+            CommandSpec(
+                executable: .named("git"),
+                arguments: arguments,
+                workingDirectory: workingDirectory,
+                environment: environment,
+                output: .combined(limit: 1_048_576)))
+    }
+}
+
+private struct InstallSkiaGNAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let archive: FilePath
+        let executable: FilePath
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: archive.string)
+            encoder.append(tag: 2, string: executable.string)
+            encoder.append(tag: 3, string: "gn")
+            encoder.append(tag: 4, integer: 0o755)
+        }
+    }
+
+    static let kind: ActionKind = "core.install-skia-gn"
+
+    let archive: FilePath
+    let executable: FilePath
+    let environment: [String: String]
+
+    var identity: Identity { Identity(archive: archive, executable: executable) }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "unzip", executable: .named("unzip"), role: .operational)
+            ],
+            effects: [
+                ActionEffect(.read, scope: .input(archive)),
+                ActionEffect(
+                    .readWrite,
+                    scope: .output(executable.removingLastComponent())),
+            ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        let destination = executable.removingLastComponent()
+        try context.files.createDirectory(destination)
+        let result = try await context.commands.execute(
+            CommandSpec(
+                executable: .named("unzip"),
+                arguments: ["-o", archive.string, "gn", "-d", destination.string],
+                workingDirectory: destination,
+                environment: environment))
+        guard result.status == 0 else {
+            throw SkiaDependencyFailure.unzipFailed(result.status)
+        }
+        try context.files.setPermissions(0o755, for: executable)
+    }
+}
+
+private enum SkiaDependencyFailure: Error {
+    case noGitDependencies(FilePath)
+    case invalidCheckout(String)
+    case disabled(FilePath)
+    case trackedModifications(String)
+    case wrongCommit(String, expected: String, actual: String)
+    case gitFailed([String], Int32)
+    case unzipFailed(Int32)
+}
 
 private let ninjaTargets = ["skia", "skshaper", "skparagraph", "skunicode", "svg"]
 private let requiredArchives = [
@@ -511,13 +807,12 @@ private func skiaTask(
     artifactTarget: ArtifactTarget,
     intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy,
     containerEnvironment: [String: String],
+    externalSources: ArtifactReference<DirectoryArtifact>,
+    gn: ArtifactReference<ExecutableArtifact>,
     builder: NativeOCIConfiguration
-) -> TaskDeclaration {
+) throws -> CoreColliderRecipe.SkiaBuildArtifacts {
     let skia = root.appending("third-party/skia")
-    let dependencies = [
-        CoreTaskIDs.sources,
-        NativeBuilderTaskIDs.prepare,
-    ]
+    let dependencies = [NativeBuilderTaskIDs.prepare]
     let imageInputs: [ArtifactInput] = [
         .dependencyOutput(builder.imageID)
     ]
@@ -572,22 +867,32 @@ private func skiaTask(
         execution(
             ["ninja", "-C", containerBuildDirectory] + ninjaTargets),
     ])
-    return TaskDeclaration(
+    var task = TaskBuilder(
         id: id,
-        component: ComponentID(rawValue: "core"),
-        dependencies: dependencies,
+        component: ComponentID(rawValue: "core"))
+    task.consume(externalSources)
+    task.consume(gn)
+    let directory: ArtifactReference<DirectoryArtifact> = try task.output(
+        "build-directory",
+        path: buildDirectory,
+        validation: .nonEmptyDirectory)
+    for archive in requiredArchives {
+        let _: ArtifactReference<FileArtifact> = try task.output(
+            OutputSlotID(rawValue: archive),
+            path: buildDirectory.appending(archive),
+            validation: .regularFile)
+    }
+    let declaration = task.build(
         inputs: [
-            .dependencyOutput(skia),
             .tree(builder.swiftSDKRoot),
             .value(
                 name: "gn-arguments",
                 bytes: Array(gnArguments.joined(separator: "\u{0}").utf8)),
         ] + imageInputs,
-        outputs: requiredArchives.map {
-            OutputDeclaration(
-                path: buildDirectory.appending($0),
-                validation: .regularFile)
-        },
         locks: [.checkout(id.rawValue)],
-        operation: operation)
+        operation: operation
+    ).addingDependencies(dependencies)
+    return CoreColliderRecipe.SkiaBuildArtifacts(
+        task: declaration,
+        buildDirectory: directory)
 }

@@ -18,7 +18,7 @@ public enum CompositorColliderRecipe: ColliderComponent {
     ) throws -> ComponentDefinition {
         let root = context.componentRoot(descriptor)
         let swiftPM = try context.swiftPM(.hostDebug)
-        let preflight = preflightDRMGPU(
+        let preflight = try preflightDRMGPU(
             root: root,
             environment: context.environment,
             swiftPM: swiftPM)
@@ -50,8 +50,8 @@ public enum CompositorColliderRecipe: ColliderComponent {
         root: FilePath,
         environment: [String: String],
         swiftPM: SwiftPMInvocation
-    ) -> TaskDeclaration {
-        preflightTask(
+    ) throws -> TaskDeclaration {
+        try preflightTask(
             CompositorTaskIDs.preflightGPUDRM,
             root, environment, "gpu-drm",
             [],
@@ -66,7 +66,7 @@ private func preflightTask(
     _ lane: String,
     _ dependencies: [TaskID],
     _ swiftPM: SwiftPMInvocation
-) -> TaskDeclaration {
+) throws -> TaskDeclaration {
     return TaskDeclaration(
         id: id,
         component: ComponentID(rawValue: "compositor"),
@@ -91,14 +91,69 @@ private func preflightTask(
         outputs: [],
         locks: [.checkout("compositor-core")],
         assessmentPolicy: .always,
-        operation: .command(
+        operation: .action(
+            try AnyColliderAction(
+                CompositorLanePreflightAction(
+                    probe: swiftPM.executable("NucleusVulkanLaneProbe"),
+                    lane: lane,
+                    workingDirectory: root,
+                    environment: environment))))
+}
+
+private struct CompositorLanePreflightAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let probe: FilePath
+        let lane: String
+        let workingDirectory: FilePath
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: probe.string)
+            encoder.append(tag: 2, string: lane)
+            encoder.append(tag: 3, string: workingDirectory.string)
+        }
+    }
+
+    static let kind: ActionKind = "compositor.preflight-lane"
+
+    let probe: FilePath
+    let lane: String
+    let workingDirectory: FilePath
+    let environment: [String: String]
+
+    var identity: Identity {
+        Identity(probe: probe, lane: lane, workingDirectory: workingDirectory)
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "lane-probe",
+                    executable: .taskOutput(probe),
+                    role: .operational)
+            ],
+            effects: [
+                ActionEffect(
+                    .read,
+                    scope: .unrestricted(FilePath("/dev/dri")))
+            ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        let result = try await context.commands.execute(
             CommandSpec(
-                executable: .taskOutput(
-                    swiftPM.executable(
-                        "NucleusVulkanLaneProbe")),
+                executable: .taskOutput(probe),
                 arguments: [lane],
-                workingDirectory: root,
-                environment: environment)))
+                workingDirectory: workingDirectory,
+                environment: environment))
+        guard result.status == 0 else {
+            throw CompositorPreflightFailure.commandFailed(result.status)
+        }
+    }
+}
+
+private enum CompositorPreflightFailure: Error {
+    case commandFailed(Int32)
 }
 
 private func testTask(

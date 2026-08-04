@@ -59,7 +59,8 @@ public struct StageRuntimeELFAction: ColliderAction {
             ],
             effects: [
                 ActionEffect(.read, scope: .input(products)),
-                ActionEffect(.write, scope: .output(prefix)),
+                ActionEffect(.read, scope: .unrestricted(FilePath("/"))),
+                ActionEffect(.readWrite, scope: .output(prefix)),
             ])
     }
 

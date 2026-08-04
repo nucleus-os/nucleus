@@ -278,34 +278,34 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         let downloads = try downloadTasks(configuration)
         let runtimeBuilder = runtimeBuilderTask(configuration)
         let sysroots = try configuration.linuxTargets.map { target in
-            linuxSysrootTask(
+            try linuxSysrootTask(
                 configuration,
                 target: target,
                 downloads: try linuxDownloads(
                     for: target.target.architecture,
                     in: downloads))
         }
-        let runtimes = zip(configuration.linuxTargets, sysroots).map { target, sysroot in
-            linuxRuntimeTask(
+        let runtimes = try zip(configuration.linuxTargets, sysroots).map { target, sysroot in
+            try linuxRuntimeTask(
                 configuration,
                 target: target,
                 builder: runtimeBuilder,
-                sysroot: sysroot)
+                sysroot: sysroot.artifact)
         }
-        let generator = generatorTask(configuration)
+        let generator = try generatorTask(configuration)
         let assembly = try assemblyTask(
             configuration,
             downloads: downloads,
             generator: generator,
             runtimes: runtimes)
         let validation = try validationTask(configuration, assembly: assembly)
-        let activation = activationTask(configuration, validation: validation)
+        let activation = try activationTask(configuration, validation: validation)
         let discoveries = discoveryTasks(configuration, activation: activation)
 
         let tasks =
             downloads.tasks
-            + [runtimeBuilder] + sysroots + runtimes
-            + [generator, assembly, validation, activation]
+            + [runtimeBuilder] + sysroots.map(\.task) + runtimes.map(\.task)
+            + [generator.task, assembly.task, validation.task, activation.task]
             + discoveries
         return SwiftTargetSDKTaskSet(
             tasks: tasks.map {
@@ -315,21 +315,68 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
     }
 
     private struct Downloads {
-        let tasks: [TaskDeclaration]
-        let host: FilePath
-        let android: FilePath
+        let host: DownloadArtifact
+        let android: DownloadArtifact
         let linux: [LinuxDownloads]
+
+        var tasks: [TaskDeclaration] {
+            [host.task, android.task] + linux.flatMap(\.tasks)
+        }
+
+        var artifacts: [ArtifactReference<FileArtifact>] {
+            [host.artifact, android.artifact] + linux.flatMap(\.allPackages)
+        }
+    }
+
+    private struct DownloadArtifact {
+        let task: TaskDeclaration
+        let artifact: ArtifactReference<FileArtifact>
+    }
+
+    private struct SysrootArtifact {
+        let task: TaskDeclaration
+        let artifact: ArtifactReference<DirectoryArtifact>
+    }
+
+    private struct RuntimeArtifact {
+        let task: TaskDeclaration
+        let install: ArtifactReference<DirectoryArtifact>
+    }
+
+    private struct GeneratorArtifact {
+        let task: TaskDeclaration
+        let executable: ArtifactReference<ExecutableArtifact>
+    }
+
+    private struct AssemblyArtifacts {
+        let task: TaskDeclaration
+        let hostSwift: ArtifactReference<ExecutableArtifact>
+        let linuxSDK: ArtifactReference<DirectoryArtifact>
+        let androidSDK: ArtifactReference<DirectoryArtifact>
+    }
+
+    private struct ValidationArtifacts {
+        let task: TaskDeclaration
+        let executables: [ArtifactReference<ExecutableArtifact>]
+    }
+
+    private struct ActivationArtifact {
+        let task: TaskDeclaration
+        let generationMarker: ArtifactReference<FileArtifact>
     }
 
     private struct LinuxDownloads {
         let architecture: SwiftTargetSDKInputs.LinuxArchitecture
-        let runtimeTasks: [TaskDeclaration]
-        let runtimePackages: [FilePath]
-        let sdkTasks: [TaskDeclaration]
-        let sdkPackages: [FilePath]
+        let runtimePackages: [DownloadArtifact]
+        let sdkPackages: [DownloadArtifact]
 
-        var tasks: [TaskDeclaration] { runtimeTasks + sdkTasks }
-        var allPackages: [FilePath] { runtimePackages + sdkPackages }
+        var tasks: [TaskDeclaration] {
+            (runtimePackages + sdkPackages).map(\.task)
+        }
+
+        var allPackages: [ArtifactReference<FileArtifact>] {
+            (runtimePackages + sdkPackages).map(\.artifact)
+        }
     }
 
     private static func validate(_ inputs: SwiftTargetSDKInputs) throws {
@@ -362,7 +409,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             func tasks(
                 for packages: [SwiftTargetSDKInputs.UbuntuPackage],
                 role: String
-            ) throws -> [TaskDeclaration] {
+            ) throws -> [DownloadArtifact] {
                 try packages.enumerated().map { index, package in
                     let name = try fileName(from: package.url)
                     return try downloadTask(
@@ -380,15 +427,12 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             let sdkTasks = try tasks(for: target.sdkUbuntuPackages, role: "sdk")
             return LinuxDownloads(
                 architecture: target.architecture,
-                runtimeTasks: runtimeTasks,
-                runtimePackages: runtimeTasks.map { $0.outputs[0].path },
-                sdkTasks: sdkTasks,
-                sdkPackages: sdkTasks.map { $0.outputs[0].path })
+                runtimePackages: runtimeTasks,
+                sdkPackages: sdkTasks)
         }
         return Downloads(
-            tasks: [host, android] + linux.flatMap(\.tasks),
-            host: host.outputs[0].path,
-            android: android.outputs[0].path,
+            host: host,
+            android: android,
             linux: linux)
     }
 
@@ -396,7 +440,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         id: String,
         input: SwiftTargetSDKInputs.Input,
         destination: FilePath
-    ) throws -> TaskDeclaration {
+    ) throws -> DownloadArtifact {
         guard let url = URL(string: input.url),
             let digest = ArtifactDigest(sha256Hex: input.sha256)
         else {
@@ -429,14 +473,17 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             maximumRedirects: 5,
             maximumRetries: 2,
             resumption: .validatorRequired)
-        return TaskDeclaration(
+        var builder = TaskBuilder(
             id: TaskID(rawValue: id),
-            component: component,
-            outputs: [
-                OutputDeclaration(path: destination, validation: .regularFile)
-            ],
+            component: component)
+        let artifact: ArtifactReference<FileArtifact> = try builder.output(
+            "download",
+            path: destination,
+            validation: .regularFile)
+        let task = builder.build(
             locks: [.checkout("swift-target-sdk-downloads")],
             operation: .download(specification, candidate: destination))
+        return DownloadArtifact(task: task, artifact: artifact)
     }
 
     private static func runtimeBuilderTask(
@@ -468,43 +515,40 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         _ configuration: SwiftTargetSDKGenerationConfiguration,
         target: SwiftLinuxTargetBuildConfiguration,
         downloads: LinuxDownloads
-    ) -> TaskDeclaration {
+    ) throws -> SysrootArtifact {
         let architecture = target.target.architecture
-        return TaskDeclaration(
+        var builder = TaskBuilder(
             id: TaskID(
                 rawValue:
                     "swift-sdk.prepare-linux-\(architecture.rawValue)-libcxx-sysroot"),
-            component: component,
-            dependencies: downloads.runtimeTasks.map(\.id),
-            inputs: [.file(configuration.sysrootPreparer)]
-                + downloads.runtimePackages.map { .dependencyOutput($0) },
-            outputs: [
-                OutputDeclaration(
-                    path: target.sysroot,
-                    validation: .nonEmptyDirectory)
-            ],
+            component: component)
+        for package in downloads.runtimePackages {
+            builder.consume(package.artifact)
+        }
+        let artifact: ArtifactReference<DirectoryArtifact> = try builder.output(
+            "sysroot",
+            path: target.sysroot,
+            validation: .nonEmptyDirectory)
+        let task = builder.build(
+            inputs: [.file(configuration.sysrootPreparer)],
             assessmentPolicy: .incremental,
-            operation: .sequence([
-                .createDirectory(target.sysroot.removingLastComponent()),
-                .command(
-                    CommandSpec(
-                        executable: .path(configuration.sysrootPreparer),
-                        arguments: [
-                            target.sysroot.string,
-                            architecture.gnuArchitecture,
-                        ] + downloads.runtimePackages.map(\.string),
-                        workingDirectory: target.sysroot.removingLastComponent(),
-                        environment: configuration.environment,
-                        output: .logged)),
-            ]))
+            operation: .action(
+                try AnyColliderAction(
+                    PrepareLinuxSysrootAction(
+                        preparer: configuration.sysrootPreparer,
+                        sysroot: target.sysroot,
+                        architecture: architecture.gnuArchitecture,
+                        packages: downloads.runtimePackages.map(\.artifact.path),
+                        environment: configuration.environment))))
+        return SysrootArtifact(task: task, artifact: artifact)
     }
 
     private static func linuxRuntimeTask(
         _ configuration: SwiftTargetSDKGenerationConfiguration,
         target: SwiftLinuxTargetBuildConfiguration,
         builder: TaskDeclaration,
-        sysroot: TaskDeclaration
-    ) -> TaskDeclaration {
+        sysroot: ArtifactReference<DirectoryArtifact>
+    ) throws -> RuntimeArtifact {
         let architecture = target.target.architecture
         let runtimeLibrary = target.runtimeInstall.appending(
             "usr/lib/swift/linux/libswiftCore.so")
@@ -550,23 +594,34 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         {
             containerEnvironment["NUCLEUS_BUILD_JOBS"] = jobs
         }
-        return TaskDeclaration(
+        var taskBuilder = TaskBuilder(
             id: TaskID(
                 rawValue: "swift-sdk.build-linux-\(architecture.rawValue)-runtime"),
-            component: component,
-            dependencies: [builder.id, sysroot.id],
+            component: component)
+        taskBuilder.consume(sysroot)
+        let install: ArtifactReference<DirectoryArtifact> = try taskBuilder.output(
+            "runtime-install",
+            path: target.runtimeInstall,
+            validation: .nonEmptyDirectory)
+        let _: ArtifactReference<FileArtifact> = try taskBuilder.output(
+            "swift-core-runtime",
+            path: runtimeLibrary,
+            validation: .regularFile)
+        let _: ArtifactReference<FileArtifact> = try taskBuilder.output(
+            "swift-testing-module",
+            path: swiftTestingModule,
+            validation: .regularFile)
+        let _: ArtifactReference<FileArtifact> = try taskBuilder.output(
+            "swift-testing-runtime",
+            path: swiftTestingLibrary,
+            validation: .regularFile)
+        let task = taskBuilder.build(
             inputs: [
                 .dependencyOutput(configuration.runtimeBuilderImageID),
-                .dependencyOutput(target.sysroot),
                 .file(
                     configuration.inputsFile.removingLastComponent().appending(
                         "nucleus-target-runtime-presets.ini")),
                 .value(name: "swift-source-gitlinks", bytes: Array(configuration.sourceID.utf8)),
-            ],
-            outputs: [
-                OutputDeclaration(path: runtimeLibrary, validation: .regularFile),
-                OutputDeclaration(path: swiftTestingModule, validation: .regularFile),
-                OutputDeclaration(path: swiftTestingLibrary, validation: .regularFile),
             ],
             locks: [.checkout("swift-linux-\(architecture.rawValue)-runtime")],
             assessmentPolicy: .incremental,
@@ -594,62 +649,55 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                         command: ["--reconfigure"],
                         environment: configuration.environment,
                         output: .logged)),
-            ]))
+            ])
+        )
+        .addingDependencies([builder.id])
+        return RuntimeArtifact(task: task, install: install)
     }
 
     private static func generatorTask(
         _ configuration: SwiftTargetSDKGenerationConfiguration
-    ) -> TaskDeclaration {
+    ) throws -> GeneratorArtifact {
         let executable = configuration.generatorScratch.appending(
             "release/swift-sdk-generator")
         var environment = configuration.environment
         environment.removeValue(forKey: "SWIFTCI_USE_LOCAL_DEPS")
-        return TaskDeclaration(
+        var builder = TaskBuilder(
             id: TaskID(rawValue: "swift-sdk.build-sdk-generator"),
-            component: component,
+            component: component)
+        let artifact: ArtifactReference<ExecutableArtifact> = try builder.output(
+            "executable",
+            path: executable,
+            validation: .executableFile)
+        let task = builder.build(
             inputs: [
                 .tree(configuration.generatorSource),
                 .file(configuration.swiftExecutable),
             ],
-            outputs: [
-                OutputDeclaration(path: executable, validation: .executableFile)
-            ],
             locks: [
                 .shared(configuration.generatorScratch.appending(".collider.lock"))
             ],
-            operation: .command(
-                CommandSpec(
-                    executable: .path(configuration.swiftExecutable),
-                    arguments: [
-                        "build",
-                        "--package-path", configuration.generatorSource.string,
-                        "--scratch-path", configuration.generatorScratch.string,
-                        "--disable-automatic-resolution",
-                        "-c", "release",
-                        "--product", "swift-sdk-generator",
-                    ],
-                    workingDirectory: configuration.generatorSource,
-                    environment: environment,
-                    output: .logged)))
+            operation: .action(
+                try AnyColliderAction(
+                    BuildSwiftSDKGeneratorAction(
+                        swift: configuration.swiftExecutable,
+                        source: configuration.generatorSource,
+                        scratch: configuration.generatorScratch,
+                        environment: environment))))
+        return GeneratorArtifact(task: task, executable: artifact)
     }
 
     private static func assemblyTask(
         _ configuration: SwiftTargetSDKGenerationConfiguration,
         downloads: Downloads,
-        generator: TaskDeclaration,
-        runtimes: [TaskDeclaration]
-    ) throws -> TaskDeclaration {
-        let expandedHost = configuration.candidate.appending("host-package")
-        let hostPayload = expandedHost.appending(
-            "\(configuration.inputs.snapshot)-osx-package.pkg/Payload")
+        generator: GeneratorArtifact,
+        runtimes: [RuntimeArtifact]
+    ) throws -> AssemblyArtifacts {
         let hostToolchain = configuration.candidate.appending("toolchain")
-        let generatedLinux = configuration.candidate.appending("generated-linux")
         let sdkRoot = configuration.candidate.appending("swift-sdks")
         let androidBundle = "\(configuration.inputs.androidBundleID).artifactbundle"
         let linuxBundle = "\(configuration.inputs.linuxBundleID).artifactbundle"
-        let finalLinuxBundle = sdkRoot.appending(linuxBundle)
-        let finalLinuxSDK = finalLinuxBundle.appending("swift-linux")
-        let generatorExecutable = generator.outputs[0].path
+        let generatorExecutable = generator.executable.path
 
         var hostEnvironment = configuration.environment
         hostEnvironment["ANDROID_NDK_HOME"] = configuration.ndkRoot.string
@@ -658,147 +706,73 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             + (hostEnvironment["PATH"] ?? "/usr/bin:/bin")
         hostEnvironment.removeValue(forKey: "SWIFTCI_USE_LOCAL_DEPS")
 
-        var operations: [TaskOperation] = [
-            .removePath(configuration.candidate),
-            .createDirectory(configuration.candidate),
-            .command(
-                CommandSpec(
-                    executable: .path(FilePath("/usr/sbin/pkgutil")),
-                    arguments: [
-                        "--expand-full", downloads.host.string,
-                        expandedHost.string,
-                    ],
-                    workingDirectory: configuration.candidate,
-                    environment: hostEnvironment,
-                    output: .logged)),
-            .createDirectory(hostToolchain),
-            .command(
-                CommandSpec(
-                    executable: .path(FilePath("/usr/bin/ditto")),
-                    arguments: [
-                        hostPayload.appending("usr").string,
-                        hostToolchain.appending("usr").string,
-                    ],
-                    workingDirectory: configuration.candidate,
-                    environment: hostEnvironment,
-                    output: .logged)),
-            .createDirectory(sdkRoot),
-            .createDirectory(finalLinuxSDK),
-        ]
-
+        var assemblyTargets: [SwiftSDKAssemblyTarget] = []
         for target in configuration.linuxTargets {
             let architecture = target.target.architecture
             let targetDownloads = try linuxDownloads(
                 for: architecture,
                 in: downloads)
-            let generatedTarget = generatedLinux.appending(architecture.rawValue)
-            let temporarySDKName = "\(configuration.inputs.linuxBundleID)-\(architecture.rawValue)"
-            let generatedTripleRoot = generatedTarget.appending(
-                "Bundles/\(linuxBundle)/\(temporarySDKName)/\(architecture.triple)")
-            var generatorArguments = [
-                "make-linux-sdk",
-                "--no-host-toolchain",
-                "--target", architecture.triple,
-                "--distribution-name", "ubuntu",
-                "--distribution-version", "24.04",
-                "--swift-version", configuration.inputs.snapshot,
-                "--target-swift-package-path", target.runtimeInstall.string,
-                "--sdk-name", temporarySDKName,
-                "--bundle-name", configuration.inputs.linuxBundleID,
-                "--bundle-version", configuration.inputs.snapshot,
-                "--output-path", generatedTarget.string,
-            ]
-            for package in targetDownloads.allPackages {
-                generatorArguments += ["--target-system-package-path", package.string]
-            }
-            operations += [
-                .command(
-                    CommandSpec(
-                        executable: .taskOutput(generatorExecutable),
-                        arguments: generatorArguments,
-                        workingDirectory: configuration.candidate,
-                        environment: hostEnvironment,
-                        output: .logged)),
-                .command(
-                    CommandSpec(
-                        executable: .path(FilePath("/usr/bin/ditto")),
-                        arguments: [
-                            target.runtimeInstall.appending("usr").string,
-                            generatedTripleRoot.appending("ubuntu-noble.sdk/usr").string,
-                        ],
-                        workingDirectory: configuration.candidate,
-                        environment: hostEnvironment,
-                        output: .logged)),
-                .command(
-                    CommandSpec(
-                        executable: .path(FilePath("/usr/bin/ditto")),
-                        arguments: [
-                            generatedTripleRoot.string,
-                            finalLinuxSDK.appending(architecture.triple).string,
-                        ],
-                        workingDirectory: configuration.candidate,
-                        environment: hostEnvironment,
-                        output: .logged)),
-            ]
+            assemblyTargets.append(
+                SwiftSDKAssemblyTarget(
+                    architecture: architecture.rawValue,
+                    triple: architecture.triple,
+                    runtimeInstall: target.runtimeInstall,
+                    packages: targetDownloads.allPackages.map(\.path)))
         }
+        let manifest = try linuxArtifactBundleManifest(configuration.inputs)
+        let metadata = try linuxSwiftSDKMetadata(configuration.inputs)
 
-        operations += [
-            .writeFile(
-                finalLinuxBundle.appending("info.json"),
-                bytes: try linuxArtifactBundleManifest(configuration.inputs)),
-            .writeFile(
-                finalLinuxSDK.appending("swift-sdk.json"),
-                bytes: try linuxSwiftSDKMetadata(configuration.inputs)),
-            .command(
-                CommandSpec(
-                    executable: .path(FilePath("/usr/bin/tar")),
-                    arguments: [
-                        "-xzf", downloads.android.string,
-                        "-C", sdkRoot.string,
-                    ],
-                    workingDirectory: configuration.candidate,
-                    environment: hostEnvironment,
-                    output: .logged)),
-            .command(
-                CommandSpec(
-                    executable: .taskOutput(
-                        sdkRoot.appending(
-                            "\(androidBundle)/swift-android/scripts/setup-android-sdk.sh")),
-                    arguments: [],
-                    workingDirectory: sdkRoot,
-                    environment: hostEnvironment,
-                    output: .logged)),
-            .writeFile(
-                configuration.candidate.appending(".nucleus-target-sdk-generation"),
-                bytes: Array(configuration.inputs.snapshot.utf8)),
-        ]
-
-        return TaskDeclaration(
+        var builder = TaskBuilder(
             id: TaskID(rawValue: "swift-sdk.assemble-target-sdks"),
-            component: component,
-            dependencies: downloads.tasks.map(\.id) + [generator.id] + runtimes.map(\.id),
+            component: component)
+        for artifact in downloads.artifacts {
+            builder.consume(artifact)
+        }
+        builder.consume(generator.executable)
+        for runtime in runtimes {
+            builder.consume(runtime.install)
+        }
+        let hostSwift: ArtifactReference<ExecutableArtifact> = try builder.output(
+            "host-swift",
+            path: hostToolchain.appending("usr/bin/swift"),
+            validation: .executableFile)
+        let linuxSDK: ArtifactReference<DirectoryArtifact> = try builder.output(
+            "linux-sdk",
+            path: sdkRoot.appending(linuxBundle),
+            validation: .nonEmptyDirectory)
+        let androidSDK: ArtifactReference<DirectoryArtifact> = try builder.output(
+            "android-sdk",
+            path: sdkRoot.appending(androidBundle),
+            validation: .nonEmptyDirectory)
+        let task = builder.build(
             inputs: [
                 .file(configuration.inputsFile),
                 .file(configuration.ndkRoot.appending("source.properties")),
-            ] + downloads.tasks.map { .dependencyOutput($0.outputs[0].path) }
-                + [
-                    .dependencyOutput(generatorExecutable)
-                ] + runtimes.map { .dependencyOutput($0.outputs[0].path) },
-            outputs: [
-                OutputDeclaration(
-                    path: hostToolchain.appending("usr/bin/swift"),
-                    validation: .executableFile),
-                OutputDeclaration(
-                    path: sdkRoot.appending(linuxBundle),
-                    validation: .nonEmptyDirectory),
-                OutputDeclaration(
-                    path: sdkRoot.appending(androidBundle),
-                    validation: .nonEmptyDirectory),
             ],
             locks: [
                 .shared(configuration.generatorScratch.appending(".collider.lock"))
             ],
-            operation: .sequence(operations))
+            operation: .action(
+                try AnyColliderAction(
+                    AssembleSwiftTargetSDKsAction(
+                        candidate: configuration.candidate,
+                        hostArchive: downloads.host.artifact.path,
+                        androidArchive: downloads.android.artifact.path,
+                        ndkRoot: configuration.ndkRoot,
+                        generator: generatorExecutable,
+                        snapshot: configuration.inputs.snapshot,
+                        linuxBundleID: configuration.inputs.linuxBundleID,
+                        androidBundleID: configuration.inputs.androidBundleID,
+                        targets: assemblyTargets,
+                        linuxManifest: manifest,
+                        linuxMetadata: metadata,
+                        environment: hostEnvironment)))
+        )
+        return AssemblyArtifacts(
+            task: task,
+            hostSwift: hostSwift,
+            linuxSDK: linuxSDK,
+            androidSDK: androidSDK)
     }
 
     private static func linuxArtifactBundleManifest(
@@ -861,9 +835,9 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
 
     private static func validationTask(
         _ configuration: SwiftTargetSDKGenerationConfiguration,
-        assembly: TaskDeclaration
-    ) throws -> TaskDeclaration {
-        let hostSwift = assembly.outputs[0].path
+        assembly: AssemblyArtifacts
+    ) throws -> ValidationArtifacts {
+        let hostSwift = assembly.hostSwift.path
         let hostLinker = hostSwift.removingLastComponent().appending("ld.lld")
         let sdkRoot = configuration.candidate.appending("swift-sdks")
         let validationRoot = configuration.candidate.appending("validation")
@@ -887,97 +861,66 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         var environment = configuration.environment
         environment["ANDROID_NDK_HOME"] = configuration.ndkRoot.string
 
-        func build(_ scratch: FilePath, sdk: String, triple: String) -> TaskOperation {
-            .command(
-                CommandSpec(
-                    executable: .taskOutput(hostSwift),
-                    arguments: [
-                        "build",
-                        "--package-path", configuration.validationFixture.string,
-                        "--scratch-path", scratch.string,
-                        "--swift-sdks-path", sdkRoot.string,
-                        "--swift-sdk", sdk,
-                        "--triple", triple,
-                        "--toolset", hostToolset.string,
-                    ],
-                    workingDirectory: configuration.validationFixture,
-                    environment: environment,
-                    output: .logged))
-        }
-
-        return TaskDeclaration(
+        var builder = TaskBuilder(
             id: TaskID(rawValue: "swift-sdk.validate-target-sdks"),
-            component: component,
-            dependencies: [assembly.id],
+            component: component)
+        builder.consume(assembly.hostSwift)
+        builder.consume(assembly.linuxSDK)
+        builder.consume(assembly.androidSDK)
+        let executablePaths = [
+            linuxARM64Executable,
+            linuxAMD64Executable,
+            androidARM64Executable,
+            androidAMD64Executable,
+        ]
+        let executables: [ArtifactReference<ExecutableArtifact>] = try executablePaths.enumerated()
+            .map { index, path in
+                try builder.output(
+                    OutputSlotID(rawValue: "executable-\(index)"),
+                    path: path,
+                    validation: .executableFile)
+            }
+        let task = builder.build(
             inputs: [
-                .dependencyOutput(hostSwift),
-                .dependencyOutput(assembly.outputs[1].path),
-                .dependencyOutput(assembly.outputs[2].path),
                 .tree(configuration.validationFixture),
                 .file(configuration.validator),
             ],
-            outputs: [
-                OutputDeclaration(
-                    path: linuxARM64Executable, validation: .executableFile),
-                OutputDeclaration(
-                    path: linuxAMD64Executable, validation: .executableFile),
-                OutputDeclaration(
-                    path: androidARM64Executable, validation: .executableFile),
-                OutputDeclaration(
-                    path: androidAMD64Executable, validation: .executableFile),
-            ],
-            operation: .sequence([
-                .createDirectory(validationRoot),
-                .writeFile(hostToolset, bytes: hostToolsetBytes),
-                build(
-                    linuxARM64Build,
-                    sdk: configuration.inputs.linuxBundleID,
-                    triple: "aarch64-unknown-linux-gnu"),
-                build(
-                    linuxAMD64Build,
-                    sdk: configuration.inputs.linuxBundleID,
-                    triple: "x86_64-unknown-linux-gnu"),
-                build(
-                    androidARM64Build,
-                    sdk: configuration.inputs.androidBundleID,
-                    triple:
-                        "aarch64-unknown-linux-android\(configuration.androidAPILevel)"),
-                build(
-                    androidAMD64Build,
-                    sdk: configuration.inputs.androidBundleID,
-                    triple:
-                        "x86_64-unknown-linux-android\(configuration.androidAPILevel)"),
-                .command(
-                    CommandSpec(
-                        executable: .path(configuration.validator),
-                        arguments: [
-                            assembly.outputs[1].path.string,
-                            linuxARM64Executable.string,
-                            linuxAMD64Executable.string,
-                            androidARM64Executable.string,
-                            androidAMD64Executable.string,
-                        ],
-                        workingDirectory: validationRoot,
-                        environment: environment,
-                        output: .logged)),
-            ]))
+            operation: .action(
+                try AnyColliderAction(
+                    ValidateSwiftTargetSDKsAction(
+                        hostSwift: hostSwift,
+                        hostToolset: hostToolset,
+                        hostToolsetBytes: hostToolsetBytes,
+                        sdkRoot: sdkRoot,
+                        linuxSDK: assembly.linuxSDK.path,
+                        validationRoot: validationRoot,
+                        fixture: configuration.validationFixture,
+                        validator: configuration.validator,
+                        ndkRoot: configuration.ndkRoot,
+                        linuxBundleID: configuration.inputs.linuxBundleID,
+                        androidBundleID: configuration.inputs.androidBundleID,
+                        androidAPILevel: configuration.androidAPILevel,
+                        executablePaths: executablePaths,
+                        environment: environment))))
+        return ValidationArtifacts(task: task, executables: executables)
     }
 
     private static func activationTask(
         _ configuration: SwiftTargetSDKGenerationConfiguration,
-        validation: TaskDeclaration
-    ) -> TaskDeclaration {
-        TaskDeclaration(
+        validation: ValidationArtifacts
+    ) throws -> ActivationArtifact {
+        var builder = TaskBuilder(
             id: TaskID(rawValue: "swift-sdk.activate-target-sdks"),
-            component: component,
-            dependencies: [validation.id],
-            inputs: validation.outputs.map { .dependencyOutput($0.path) },
-            outputs: [
-                OutputDeclaration(
-                    path: configuration.generation.appending(
-                        ".nucleus-target-sdk-generation"),
-                    validation: .regularFile)
-            ],
+            component: component)
+        for executable in validation.executables {
+            builder.consume(executable)
+        }
+        let marker: ArtifactReference<FileArtifact> = try builder.output(
+            "generation-marker",
+            path: configuration.generation.appending(
+                ".nucleus-target-sdk-generation"),
+            validation: .regularFile)
+        let task = builder.build(
             postconditions: [
                 PathPostcondition(
                     path: configuration.active,
@@ -988,11 +931,12 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 candidate: configuration.candidate,
                 generation: configuration.generation,
                 active: configuration.active))
+        return ActivationArtifact(task: task, generationMarker: marker)
     }
 
     private static func discoveryTasks(
         _ configuration: SwiftTargetSDKGenerationConfiguration,
-        activation: TaskDeclaration
+        activation: ActivationArtifact
     ) -> [TaskDeclaration] {
         [configuration.inputs.linuxBundleID, configuration.inputs.androidBundleID]
             .map { bundleID in
@@ -1000,12 +944,11 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 let link = configuration.sdkDiscoveryRoot.appending(name)
                 let target = configuration.generation.appending(
                     "swift-sdks/\(name)")
-                return TaskDeclaration(
+                var builder = TaskBuilder(
                     id: TaskID(rawValue: "swift-sdk.discover-\(bundleID)"),
-                    component: component,
-                    dependencies: [activation.id],
-                    inputs: [.dependencyOutput(activation.outputs[0].path)],
-                    outputs: [],
+                    component: component)
+                builder.consume(activation.generationMarker)
+                return builder.build(
                     postconditions: [
                         PathPostcondition(path: link, validation: .symlinkTarget)
                     ],
@@ -1025,4 +968,540 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         }
         return url.lastPathComponent
     }
+}
+
+private struct SwiftSDKAssemblyTarget: Hashable, Sendable {
+    let architecture: String
+    let triple: String
+    let runtimeInstall: FilePath
+    let packages: [FilePath]
+}
+
+private struct AssembleSwiftTargetSDKsAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let candidate: FilePath
+        let hostArchive: FilePath
+        let androidArchive: FilePath
+        let ndkRoot: FilePath
+        let generator: FilePath
+        let snapshot: String
+        let linuxBundleID: String
+        let androidBundleID: String
+        let targets: [SwiftSDKAssemblyTarget]
+        let linuxManifest: [UInt8]
+        let linuxMetadata: [UInt8]
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: candidate.string)
+            encoder.append(tag: 2, string: hostArchive.string)
+            encoder.append(tag: 3, string: androidArchive.string)
+            encoder.append(tag: 4, string: ndkRoot.string)
+            encoder.append(tag: 5, string: generator.string)
+            encoder.append(tag: 6, string: snapshot)
+            encoder.append(tag: 7, string: linuxBundleID)
+            encoder.append(tag: 8, string: androidBundleID)
+            encoder.append(
+                tag: 9,
+                string: targets.map { target in
+                    [
+                        target.architecture,
+                        target.triple,
+                        target.runtimeInstall.string,
+                        target.packages.map(\.string).joined(separator: "\u{1}"),
+                    ].joined(separator: "\u{2}")
+                }.joined(separator: "\0"))
+            encoder.append(tag: 10, bytes: linuxManifest)
+            encoder.append(tag: 11, bytes: linuxMetadata)
+        }
+    }
+
+    static let kind: ActionKind = "swift-sdk.assemble-target-sdks"
+
+    let candidate: FilePath
+    let hostArchive: FilePath
+    let androidArchive: FilePath
+    let ndkRoot: FilePath
+    let generator: FilePath
+    let snapshot: String
+    let linuxBundleID: String
+    let androidBundleID: String
+    let targets: [SwiftSDKAssemblyTarget]
+    let linuxManifest: [UInt8]
+    let linuxMetadata: [UInt8]
+    let environment: [String: String]
+
+    var identity: Identity {
+        Identity(
+            candidate: candidate,
+            hostArchive: hostArchive,
+            androidArchive: androidArchive,
+            ndkRoot: ndkRoot,
+            generator: generator,
+            snapshot: snapshot,
+            linuxBundleID: linuxBundleID,
+            androidBundleID: androidBundleID,
+            targets: targets,
+            linuxManifest: linuxManifest,
+            linuxMetadata: linuxMetadata)
+    }
+
+    var requirements: ActionRequirements {
+        let packagePaths = Set(targets.flatMap(\.packages)).sorted {
+            $0.string < $1.string
+        }
+        return ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "pkgutil",
+                    executable: .path(FilePath("/usr/sbin/pkgutil")),
+                    role: .operational),
+                ActionToolRequirement(
+                    "ditto",
+                    executable: .path(FilePath("/usr/bin/ditto")),
+                    role: .operational),
+                ActionToolRequirement(
+                    "tar",
+                    executable: .path(FilePath("/usr/bin/tar")),
+                    role: .operational),
+                ActionToolRequirement(
+                    "swift-sdk-generator",
+                    executable: .taskOutput(generator),
+                    role: .operational),
+                ActionToolRequirement(
+                    "android-sdk-setup",
+                    executable: .taskOutput(androidSetupScript),
+                    role: .operational),
+            ],
+            effects: [
+                ActionEffect(.read, scope: .input(hostArchive)),
+                ActionEffect(.read, scope: .input(androidArchive)),
+                ActionEffect(.read, scope: .input(ndkRoot)),
+                ActionEffect(.read, scope: .input(generator)),
+                ActionEffect(.readWrite, scope: .output(candidate)),
+            ]
+                + targets.map {
+                    ActionEffect(.read, scope: .input($0.runtimeInstall))
+                }
+                + packagePaths.map {
+                    ActionEffect(.read, scope: .input($0))
+                })
+    }
+
+    private var sdkRoot: FilePath { candidate.appending("swift-sdks") }
+    private var linuxBundle: String { "\(linuxBundleID).artifactbundle" }
+    private var androidBundle: String { "\(androidBundleID).artifactbundle" }
+    private var androidSetupScript: FilePath {
+        sdkRoot.appending("\(androidBundle)/swift-android/scripts/setup-android-sdk.sh")
+    }
+
+    func execute(in context: ActionContext) async throws {
+        let expandedHost = candidate.appending("host-package")
+        let hostPayload = expandedHost.appending(
+            "\(snapshot)-osx-package.pkg/Payload")
+        let hostToolchain = candidate.appending("toolchain")
+        let generatedLinux = candidate.appending("generated-linux")
+        let finalLinuxBundle = sdkRoot.appending(linuxBundle)
+        let finalLinuxSDK = finalLinuxBundle.appending("swift-linux")
+
+        try context.files.remove(candidate)
+        try context.files.createDirectory(candidate)
+        try await run(
+            executable: .path(FilePath("/usr/sbin/pkgutil")),
+            arguments: ["--expand-full", hostArchive.string, expandedHost.string],
+            workingDirectory: candidate,
+            context: context)
+        try context.files.createDirectory(hostToolchain)
+        try await run(
+            executable: .path(FilePath("/usr/bin/ditto")),
+            arguments: [
+                hostPayload.appending("usr").string,
+                hostToolchain.appending("usr").string,
+            ],
+            workingDirectory: candidate,
+            context: context)
+        try context.files.createDirectory(sdkRoot)
+        try context.files.createDirectory(finalLinuxSDK)
+
+        for target in targets {
+            let generatedTarget = generatedLinux.appending(target.architecture)
+            let temporarySDKName = "\(linuxBundleID)-\(target.architecture)"
+            let generatedTripleRoot = generatedTarget.appending(
+                "Bundles/\(linuxBundle)/\(temporarySDKName)/\(target.triple)")
+            var arguments = [
+                "make-linux-sdk",
+                "--no-host-toolchain",
+                "--target", target.triple,
+                "--distribution-name", "ubuntu",
+                "--distribution-version", "24.04",
+                "--swift-version", snapshot,
+                "--target-swift-package-path", target.runtimeInstall.string,
+                "--sdk-name", temporarySDKName,
+                "--bundle-name", linuxBundleID,
+                "--bundle-version", snapshot,
+                "--output-path", generatedTarget.string,
+            ]
+            for package in target.packages {
+                arguments += ["--target-system-package-path", package.string]
+            }
+            try await run(
+                executable: .taskOutput(generator),
+                arguments: arguments,
+                workingDirectory: candidate,
+                context: context)
+            try await run(
+                executable: .path(FilePath("/usr/bin/ditto")),
+                arguments: [
+                    target.runtimeInstall.appending("usr").string,
+                    generatedTripleRoot.appending("ubuntu-noble.sdk/usr").string,
+                ],
+                workingDirectory: candidate,
+                context: context)
+            try await run(
+                executable: .path(FilePath("/usr/bin/ditto")),
+                arguments: [
+                    generatedTripleRoot.string,
+                    finalLinuxSDK.appending(target.triple).string,
+                ],
+                workingDirectory: candidate,
+                context: context)
+        }
+
+        try context.files.write(
+            linuxManifest,
+            to: finalLinuxBundle.appending("info.json"))
+        try context.files.write(
+            linuxMetadata,
+            to: finalLinuxSDK.appending("swift-sdk.json"))
+        try await run(
+            executable: .path(FilePath("/usr/bin/tar")),
+            arguments: ["-xzf", androidArchive.string, "-C", sdkRoot.string],
+            workingDirectory: candidate,
+            context: context)
+        try await run(
+            executable: .taskOutput(androidSetupScript),
+            arguments: [],
+            workingDirectory: sdkRoot,
+            context: context)
+        try context.files.write(
+            Array(snapshot.utf8),
+            to: candidate.appending(".nucleus-target-sdk-generation"))
+    }
+
+    private func run(
+        executable: CommandSpec.Executable,
+        arguments: [String],
+        workingDirectory: FilePath,
+        context: ActionContext
+    ) async throws {
+        let result = try await context.commands.execute(
+            CommandSpec(
+                executable: executable,
+                arguments: arguments,
+                workingDirectory: workingDirectory,
+                environment: environment,
+                output: .logged))
+        guard result.status == 0 else {
+            throw SwiftSDKAssemblyFailure.commandFailed(result.status)
+        }
+    }
+}
+
+private struct BuildSwiftSDKGeneratorAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let swift: FilePath
+        let source: FilePath
+        let scratch: FilePath
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: swift.string)
+            encoder.append(tag: 2, string: source.string)
+            encoder.append(tag: 3, string: scratch.string)
+            encoder.append(tag: 4, string: "swift-sdk-generator")
+            encoder.append(tag: 5, string: "release")
+        }
+    }
+
+    static let kind: ActionKind = "swift-sdk.build-generator"
+
+    let swift: FilePath
+    let source: FilePath
+    let scratch: FilePath
+    let environment: [String: String]
+
+    var identity: Identity {
+        Identity(swift: swift, source: source, scratch: scratch)
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "swift",
+                    executable: .path(swift),
+                    role: .semantic)
+            ],
+            effects: [
+                ActionEffect(.read, scope: .checkout(source)),
+                ActionEffect(.readWrite, scope: .scratch(scratch)),
+            ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        let result = try await context.commands.execute(
+            CommandSpec(
+                executable: .path(swift),
+                arguments: [
+                    "build",
+                    "--package-path", source.string,
+                    "--scratch-path", scratch.string,
+                    "--disable-automatic-resolution",
+                    "-c", "release",
+                    "--product", "swift-sdk-generator",
+                ],
+                workingDirectory: source,
+                environment: environment,
+                output: .logged))
+        guard result.status == 0 else {
+            throw SwiftSDKGeneratorBuildFailure.commandFailed(result.status)
+        }
+    }
+}
+
+private struct ValidateSwiftTargetSDKsAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let hostSwift: FilePath
+        let hostToolset: FilePath
+        let hostToolsetBytes: [UInt8]
+        let sdkRoot: FilePath
+        let linuxSDK: FilePath
+        let validationRoot: FilePath
+        let fixture: FilePath
+        let validator: FilePath
+        let ndkRoot: FilePath
+        let linuxBundleID: String
+        let androidBundleID: String
+        let androidAPILevel: UInt32
+        let executablePaths: [FilePath]
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: hostSwift.string)
+            encoder.append(tag: 2, string: hostToolset.string)
+            encoder.append(tag: 3, bytes: hostToolsetBytes)
+            encoder.append(tag: 4, string: sdkRoot.string)
+            encoder.append(tag: 5, string: linuxSDK.string)
+            encoder.append(tag: 6, string: validationRoot.string)
+            encoder.append(tag: 7, string: fixture.string)
+            encoder.append(tag: 8, string: validator.string)
+            encoder.append(tag: 9, string: ndkRoot.string)
+            encoder.append(tag: 10, string: linuxBundleID)
+            encoder.append(tag: 11, string: androidBundleID)
+            encoder.append(tag: 12, integer: UInt64(androidAPILevel))
+            encoder.append(
+                tag: 13,
+                string: executablePaths.map(\.string).joined(separator: "\0"))
+        }
+    }
+
+    static let kind: ActionKind = "swift-sdk.validate-target-sdks"
+
+    let hostSwift: FilePath
+    let hostToolset: FilePath
+    let hostToolsetBytes: [UInt8]
+    let sdkRoot: FilePath
+    let linuxSDK: FilePath
+    let validationRoot: FilePath
+    let fixture: FilePath
+    let validator: FilePath
+    let ndkRoot: FilePath
+    let linuxBundleID: String
+    let androidBundleID: String
+    let androidAPILevel: UInt32
+    let executablePaths: [FilePath]
+    let environment: [String: String]
+
+    var identity: Identity {
+        Identity(
+            hostSwift: hostSwift,
+            hostToolset: hostToolset,
+            hostToolsetBytes: hostToolsetBytes,
+            sdkRoot: sdkRoot,
+            linuxSDK: linuxSDK,
+            validationRoot: validationRoot,
+            fixture: fixture,
+            validator: validator,
+            ndkRoot: ndkRoot,
+            linuxBundleID: linuxBundleID,
+            androidBundleID: androidBundleID,
+            androidAPILevel: androidAPILevel,
+            executablePaths: executablePaths)
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "host-swift",
+                    executable: .taskOutput(hostSwift),
+                    role: .operational),
+                ActionToolRequirement(
+                    "sdk-validator",
+                    executable: .path(validator),
+                    role: .operational),
+            ],
+            effects: [
+                ActionEffect(.read, scope: .input(hostSwift)),
+                ActionEffect(.read, scope: .input(sdkRoot)),
+                ActionEffect(.read, scope: .checkout(fixture)),
+                ActionEffect(.read, scope: .input(validator)),
+                ActionEffect(.read, scope: .input(ndkRoot)),
+                ActionEffect(.readWrite, scope: .output(validationRoot)),
+            ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        try context.files.createDirectory(validationRoot)
+        try context.files.write(hostToolsetBytes, to: hostToolset)
+        let builds = [
+            (
+                validationRoot.appending("linux-arm64"),
+                linuxBundleID,
+                "aarch64-unknown-linux-gnu"
+            ),
+            (
+                validationRoot.appending("linux-x86_64"),
+                linuxBundleID,
+                "x86_64-unknown-linux-gnu"
+            ),
+            (
+                validationRoot.appending("android-arm64"),
+                androidBundleID,
+                "aarch64-unknown-linux-android\(androidAPILevel)"
+            ),
+            (
+                validationRoot.appending("android-amd64"),
+                androidBundleID,
+                "x86_64-unknown-linux-android\(androidAPILevel)"
+            ),
+        ]
+        for (scratch, sdk, triple) in builds {
+            try await run(
+                executable: .taskOutput(hostSwift),
+                arguments: [
+                    "build",
+                    "--package-path", fixture.string,
+                    "--scratch-path", scratch.string,
+                    "--swift-sdks-path", sdkRoot.string,
+                    "--swift-sdk", sdk,
+                    "--triple", triple,
+                    "--toolset", hostToolset.string,
+                ],
+                workingDirectory: fixture,
+                context: context)
+        }
+        try await run(
+            executable: .path(validator),
+            arguments: [linuxSDK.string] + executablePaths.map(\.string),
+            workingDirectory: validationRoot,
+            context: context)
+    }
+
+    private func run(
+        executable: CommandSpec.Executable,
+        arguments: [String],
+        workingDirectory: FilePath,
+        context: ActionContext
+    ) async throws {
+        let result = try await context.commands.execute(
+            CommandSpec(
+                executable: executable,
+                arguments: arguments,
+                workingDirectory: workingDirectory,
+                environment: environment,
+                output: .logged))
+        guard result.status == 0 else {
+            throw SwiftSDKValidationFailure.commandFailed(result.status)
+        }
+    }
+}
+
+private struct PrepareLinuxSysrootAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let preparer: FilePath
+        let sysroot: FilePath
+        let architecture: String
+        let packages: [FilePath]
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: preparer.string)
+            encoder.append(tag: 2, string: sysroot.string)
+            encoder.append(tag: 3, string: architecture)
+            encoder.append(
+                tag: 4,
+                string: packages.map(\.string).joined(separator: "\0"))
+        }
+    }
+
+    static let kind: ActionKind = "swift-sdk.prepare-linux-sysroot"
+
+    let preparer: FilePath
+    let sysroot: FilePath
+    let architecture: String
+    let packages: [FilePath]
+    let environment: [String: String]
+
+    var identity: Identity {
+        Identity(
+            preparer: preparer,
+            sysroot: sysroot,
+            architecture: architecture,
+            packages: packages)
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "sysroot-preparer",
+                    executable: .path(preparer),
+                    role: .operational)
+            ],
+            effects: packages.map {
+                ActionEffect(.read, scope: .input($0))
+            } + [
+                ActionEffect(
+                    .readWrite,
+                    scope: .output(sysroot.removingLastComponent()))
+            ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        let workingDirectory = sysroot.removingLastComponent()
+        try context.files.createDirectory(workingDirectory)
+        let result = try await context.commands.execute(
+            CommandSpec(
+                executable: .path(preparer),
+                arguments: [sysroot.string, architecture] + packages.map(\.string),
+                workingDirectory: workingDirectory,
+                environment: environment,
+                output: .logged))
+        guard result.status == 0 else {
+            throw LinuxSysrootPreparationFailure.commandFailed(result.status)
+        }
+    }
+}
+
+private enum SwiftSDKGeneratorBuildFailure: Error {
+    case commandFailed(Int32)
+}
+
+private enum SwiftSDKValidationFailure: Error {
+    case commandFailed(Int32)
+}
+
+private enum SwiftSDKAssemblyFailure: Error {
+    case commandFailed(Int32)
+}
+
+private enum LinuxSysrootPreparationFailure: Error {
+    case commandFailed(Int32)
 }

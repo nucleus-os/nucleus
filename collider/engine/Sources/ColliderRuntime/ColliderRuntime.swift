@@ -63,7 +63,7 @@ public actor ColliderRuntime {
         stage: TaskID?
     ) async throws {
         let context = ActionContext(
-            files: actionFileSystem(),
+            files: actionFileSystem().scoped(to: action.requirements.effects),
             cancellation: ActionCancellation {
                 try Task.checkCancellation()
             },
@@ -249,6 +249,20 @@ public actor ColliderRuntime {
                     active: $2)
             },
             pruneDirectories: { try DirectoryLifecycle.prune($0) },
+            replaceSymlink: { path, target in
+                if FileManager.default.fileExists(atPath: path.string)
+                    || (try? FileManager.default.destinationOfSymbolicLink(
+                        atPath: path.string)) != nil
+                {
+                    try FileManager.default.removeItem(atPath: path.string)
+                }
+                try FileManager.default.createDirectory(
+                    atPath: path.removingLastComponent().string,
+                    withIntermediateDirectories: true)
+                try FileManager.default.createSymbolicLink(
+                    atPath: path.string,
+                    withDestinationPath: target)
+            },
             setPermissions: { path, permissions in
                 try FileManager.default.setAttributes(
                     [.posixPermissions: NSNumber(value: permissions)],

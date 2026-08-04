@@ -52,8 +52,9 @@ struct InstallRuntimeAction: ColliderAction {
             ActionEffect(.read, scope: .input(products)),
             ActionEffect(.read, scope: .checkout(sessionPackage)),
             ActionEffect(.read, scope: .checkout(kernelContract)),
+            ActionEffect(.read, scope: .unrestricted(FilePath("/"))),
             ActionEffect(.readWrite, scope: .scratch(generationsRoot)),
-            ActionEffect(.write, scope: .publication(prefix)),
+            ActionEffect(.readWrite, scope: .publication(prefix)),
         ]
         if let trustKey {
             effects.append(ActionEffect(.read, scope: .input(trustKey)))

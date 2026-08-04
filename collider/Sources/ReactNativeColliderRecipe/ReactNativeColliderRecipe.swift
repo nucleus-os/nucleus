@@ -10,6 +10,32 @@ package enum ReactNativeTaskIDs {
     }
 }
 
+package struct BoostArtifacts: Sendable {
+    package let tasks: [TaskDeclaration]
+    package let active: ArtifactReference<PathArtifact>
+}
+
+package struct GeneratedReactNativeSources: Sendable {
+    package let task: TaskDeclaration
+    package let spec: ArtifactReference<DirectoryArtifact>
+}
+
+package struct HermesArtifacts: Sendable {
+    package let task: TaskDeclaration
+    package let libraries: [ArtifactReference<FileArtifact>]
+    package let compiler: ArtifactReference<ExecutableArtifact>
+}
+
+package struct SupportLibraryArtifacts: Sendable {
+    package let task: TaskDeclaration
+    package let libraries: [ArtifactReference<FileArtifact>]
+}
+
+package struct CxxRuntimeArtifacts: Sendable {
+    package let task: TaskDeclaration
+    package let outputs: [ArtifactReference<FileArtifact>]
+}
+
 public enum ReactNativeColliderRecipe: ColliderComponent {
     public static let descriptor = ComponentDescriptor(
         id: ComponentID(rawValue: "rn"),
@@ -25,37 +51,42 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
             root: root,
             environment: context.environment,
             builder: context.nativeBuilder)
-        let generation = generate(
+        let generation = try generate(
             root: root,
             environment: context.environment,
             builder: context.nativeBuilder)
         let boost = try provisionBoost(
             root: root,
             environment: context.environment)
-        var tasks = [javascript, generation, boost]
+        var tasks = [javascript, generation.task] + boost.tasks
         var bootstrapRoots: Set<TaskID> = []
         for architecture in PlatformArchitecture.allCases {
             let target = NativeLinuxTarget(architecture: architecture)
-            let hermes = buildHermes(
+            let hermes = try buildHermes(
                 root: root,
                 environment: context.environment,
                 target: target,
                 builder: context.nativeBuilder)
-            let support = buildSupportLibraries(
+            let support = try buildSupportLibraries(
                 root: root,
                 environment: context.environment,
                 target: target,
                 builder: context.nativeBuilder)
-            let cxx = buildCxxRuntime(
+            let cxx = try buildCxxRuntime(
                 root: root,
                 environment: context.environment,
                 target: target,
+                boost: boost.active,
+                generated: generation.spec,
+                hermes: hermes,
+                support: support,
                 builder: context.nativeBuilder)
-            let sdk = publishNativeSDK(
+            let sdk = try publishNativeSDK(
                 root: root,
                 sdkRoot: context.nativeSDK(for: target),
-                target: target)
-            tasks += [hermes, support, cxx, sdk]
+                target: target,
+                runtime: cxx)
+            tasks += [hermes.task, support.task, cxx.task, sdk]
             bootstrapRoots.insert(sdk.id)
         }
         return try ComponentDefinition(
@@ -63,7 +94,7 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
             tasks: tasks,
             entrypoints: [
                 ComponentEntrypoint(id: .bootstrap, roots: bootstrapRoots),
-                ComponentEntrypoint(id: .generate, roots: [generation.id]),
+                ComponentEntrypoint(id: .generate, roots: [generation.task.id]),
             ])
     }
 
@@ -110,10 +141,10 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                 environment: environment))
     }
 
-    public static func provisionBoost(
+    package static func provisionBoost(
         root: FilePath,
         environment: [String: String]
-    ) throws -> TaskDeclaration {
+    ) throws -> BoostArtifacts {
         guard let digest = ArtifactDigest(sha256Hex: boostArchiveSHA256),
             let url = URL(
                 string:
@@ -139,65 +170,68 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
             ".candidate-\(boostArchiveSHA256)")
         let generation = generations.appending(boostArchiveSHA256)
         let active = generations.appending("current")
-        return TaskDeclaration(
+        var downloadBuilder = TaskBuilder(
+            id: TaskID(rawValue: "rn.boost-download"),
+            component: ComponentID(rawValue: "rn"))
+        let downloadedArchive: ArtifactReference<FileArtifact> = try downloadBuilder.output(
+            "archive",
+            path: archive,
+            validation: .regularFile)
+        let downloadTask = downloadBuilder.build(
+            locks: [.checkout("rn-boost")],
+            operation: .download(download, candidate: archive))
+
+        var boostBuilder = TaskBuilder(
             id: TaskID(rawValue: "rn.boost"),
-            component: ComponentID(rawValue: "rn"),
+            component: ComponentID(rawValue: "rn"))
+        boostBuilder.consume(downloadedArchive)
+        let _: ArtifactReference<FileArtifact> = try boostBuilder.output(
+            "version-header",
+            path: generation.appending("version.hpp"),
+            validation: .regularFile)
+        let activeArtifact: ArtifactReference<PathArtifact> = try boostBuilder.output(
+            "active-generation",
+            path: active,
+            validation: .symlinkTarget)
+        let boostTask = boostBuilder.build(
             inputs: [
                 .value(
                     name: "boost-version",
                     bytes: Array(boostVersion.utf8)),
                 .tool(.named("tar")),
             ],
-            outputs: [
-                OutputDeclaration(
-                    path: generation.appending("version.hpp"),
-                    validation: .regularFile),
-                OutputDeclaration(path: active, validation: .symlinkTarget),
-            ],
             locks: [.checkout("rn-boost")],
-            operation: .sequence([
-                .download(download, candidate: archive),
-                .removePath(candidate),
-                .createDirectory(candidate),
-                .command(
-                    CommandSpec(
-                        executable: .named("tar"),
-                        arguments: [
-                            "xzf", archive.string,
-                            "--strip-components=2",
-                            "-C", candidate.string,
-                            "boost_1_84_0/boost",
-                        ],
+            operation: .action(
+                try AnyColliderAction(
+                    ProvisionBoostAction(
+                        archive: archive,
+                        candidate: candidate,
+                        generation: generation,
+                        active: active,
                         workingDirectory: root,
-                        environment: environment)),
-                .replaceSymlink(
-                    path: candidate.appending("boost"),
-                    target: "."),
-                .activateGeneration(
-                    candidate: candidate,
-                    generation: generation,
-                    active: active),
-            ]))
+                        environment: environment))))
+        return BoostArtifacts(
+            tasks: [downloadTask, boostTask],
+            active: activeArtifact)
     }
 
-    public static func generate(
+    package static func generate(
         root: FilePath,
         environment: [String: String],
         builder: NativeOCIConfiguration
-    ) -> TaskDeclaration {
-        TaskDeclaration(
+    ) throws -> GeneratedReactNativeSources {
+        var taskBuilder = TaskBuilder(
             id: TaskID(rawValue: "rn.generate"),
-            component: ComponentID(rawValue: "rn"),
-            dependencies: [TaskID(rawValue: "rn.javascript-dependencies")],
+            component: ComponentID(rawValue: "rn"))
+        let spec: ArtifactReference<DirectoryArtifact> = try taskBuilder.output(
+            "fb-react-native-spec",
+            path: root.appending(".rn-build/generated/FBReactNativeSpec"),
+            validation: .nonEmptyDirectory)
+        let task = taskBuilder.build(
             inputs: [
                 .file(root.appending("tools/generate-rn-spec.js")),
                 .tree(root.appending("third-party/react-native/packages/react-native-codegen")),
                 .dependencyOutput(builder.imageID),
-            ],
-            outputs: [
-                OutputDeclaration(
-                    path: root.appending(".rn-build/generated/FBReactNativeSpec"),
-                    validation: .nonEmptyDirectory)
             ],
             locks: [.checkout("rn")],
             operation: javascriptOperation(
@@ -208,15 +242,18 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                     "/opt/node/bin/node",
                     root.appending("tools/generate-rn-spec.js").string,
                 ],
-                environment: environment))
+                environment: environment)
+        )
+        .addingDependencies([TaskID(rawValue: "rn.javascript-dependencies")])
+        return GeneratedReactNativeSources(task: task, spec: spec)
     }
 
-    public static func buildHermes(
+    package static func buildHermes(
         root: FilePath,
         environment: [String: String],
         target: NativeLinuxTarget,
         builder: NativeOCIConfiguration
-    ) -> TaskDeclaration {
+    ) throws -> HermesArtifacts {
         let source = root.appending("third-party/hermes")
         let build = root.appending(".rn-build/\(target.identifier)/hermes")
         let combined = build.appending("libhermes_lean_combined.a")
@@ -238,18 +275,22 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
         ]
         let cmakeArguments: [String] = []
         let ninjaEnvironment = environment
-        return TaskDeclaration(
+        var taskBuilder = TaskBuilder(
             id: TaskID(rawValue: "rn.hermes.\(target.identifier)"),
-            component: ComponentID(rawValue: "rn"),
-            dependencies: dependencies,
+            component: ComponentID(rawValue: "rn"))
+        let combinedArtifact: ArtifactReference<FileArtifact> = try taskBuilder.output(
+            "combined-library",
+            path: combined,
+            validation: .regularFile)
+        let compilerArtifact: ArtifactReference<ExecutableArtifact> = try taskBuilder.output(
+            "compiler",
+            path: hermesc,
+            validation: .executableFile)
+        let task = taskBuilder.build(
             inputs: [
                 .tree(source),
                 .file(root.appending("../tools/merge-static-archives.sh")),
             ] + nativeInputs,
-            outputs: [
-                OutputDeclaration(path: combined, validation: .regularFile),
-                OutputDeclaration(path: hermesc, validation: .executableFile),
-            ],
             locks: [.checkout("rn-native-\(target.identifier)")],
             operation: .sequence([
                 nativeCMake(
@@ -318,37 +359,41 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                     ],
                     environment: environment,
                     target: target),
-            ]))
+            ])
+        ).addingDependencies(dependencies)
+        return HermesArtifacts(
+            task: task,
+            libraries: [combinedArtifact],
+            compiler: compilerArtifact)
     }
 
-    public static func buildSupportLibraries(
+    package static func buildSupportLibraries(
         root: FilePath,
         environment: [String: String],
         target: NativeLinuxTarget,
         builder: NativeOCIConfiguration
-    ) -> TaskDeclaration {
+    ) throws -> SupportLibraryArtifacts {
         let buildRoot = root.appending(".rn-build/\(target.identifier)")
         let fmtBuild = buildRoot.appending("fmt")
         let conversionBuild = buildRoot.appending("double-conversion")
-        return TaskDeclaration(
+        var taskBuilder = TaskBuilder(
             id: TaskID(rawValue: "rn.support.\(target.identifier)"),
-            component: ComponentID(rawValue: "rn"),
-            dependencies: nativeBuilderDependencies,
+            component: ComponentID(rawValue: "rn"))
+        let fmt: ArtifactReference<FileArtifact> = try taskBuilder.output(
+            "fmt-library",
+            path: fmtBuild.appending("libfmt.a"),
+            validation: .regularFile)
+        let conversion: ArtifactReference<FileArtifact> = try taskBuilder.output(
+            "double-conversion-library",
+            path: conversionBuild.appending("src/libdouble-conversion.a"),
+            validation: .regularFile)
+        let task = taskBuilder.build(
             inputs: [
                 .tree(root.appending("third-party/fmt")),
                 .tree(
                     root.appending(
                         "third-party/double-conversion")),
             ] + nativeBuilderInputs(builder),
-            outputs: [
-                OutputDeclaration(
-                    path: fmtBuild.appending("libfmt.a"),
-                    validation: .regularFile),
-                OutputDeclaration(
-                    path: conversionBuild.appending(
-                        "src/libdouble-conversion.a"),
-                    validation: .regularFile),
-            ],
             locks: [.checkout("rn-native-\(target.identifier)")],
             operation: .sequence([
                 nativeCMake(
@@ -390,56 +435,62 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                     root: root, environment: environment,
                     target: target,
                     builder: builder),
-            ]))
+            ])
+        ).addingDependencies(nativeBuilderDependencies)
+        return SupportLibraryArtifacts(
+            task: task,
+            libraries: [fmt, conversion])
     }
 
-    public static func buildCxxRuntime(
+    package static func buildCxxRuntime(
         root: FilePath,
         environment: [String: String],
         target: NativeLinuxTarget,
+        boost: ArtifactReference<PathArtifact>,
+        generated: ArtifactReference<DirectoryArtifact>,
+        hermes: HermesArtifacts,
+        support: SupportLibraryArtifacts,
         builder: NativeOCIConfiguration
-    ) -> TaskDeclaration {
+    ) throws -> CxxRuntimeArtifacts {
         let buildRoot = root.appending(".rn-build/\(target.identifier)")
         let glogBuild = buildRoot.appending("glog")
         let nativeBuild = buildRoot.appending("reactnative")
         let reactNative = root.appending(
             "third-party/react-native/packages/react-native")
-        return TaskDeclaration(
+        var taskBuilder = TaskBuilder(
             id: TaskID(rawValue: "rn.cxx.\(target.identifier)"),
-            component: ComponentID(rawValue: "rn"),
-            dependencies: [
-                TaskID(rawValue: "rn.support.\(target.identifier)"),
-                TaskID(rawValue: "rn.generate"),
-                TaskID(rawValue: "rn.boost"),
-                TaskID(rawValue: "rn.hermes.\(target.identifier)"),
-            ],
+            component: ComponentID(rawValue: "rn"))
+        taskBuilder.consume(boost)
+        taskBuilder.consume(generated)
+        for library in hermes.libraries + support.libraries {
+            taskBuilder.consume(library)
+        }
+        taskBuilder.consume(hermes.compiler)
+        var outputArtifacts: [ArtifactReference<FileArtifact>] = []
+        for output in [
+            glogBuild.appending("libglog.a"),
+            glogBuild.appending("glog/logging.h"),
+        ]
+            + [
+                "libfolly_runtime.a", "libjsi.a", "libreact_native.a",
+                "libreact_cxx_platform.a", "libyogacore.a",
+            ].map({ nativeBuild.appending($0) })
+        {
+            let artifact: ArtifactReference<FileArtifact> = try taskBuilder.output(
+                OutputSlotID(rawValue: output.lastComponent?.string ?? "output"),
+                path: output,
+                validation: .regularFile)
+            outputArtifacts.append(artifact)
+        }
+        let task = taskBuilder.build(
             inputs: [
                 .tree(root.appending("third-party/glog")),
                 .tree(root.appending("third-party/folly")),
                 .tree(root.appending("third-party/fast_float")),
-                .dependencyOutput(
-                    root.appending(".rn-build/dependencies/boost/current")),
                 .tree(root.appending("third-party/hermes")),
                 .tree(reactNative.appending("ReactCommon")),
-                .dependencyOutput(root.appending(".rn-build/generated")),
                 .tree(root.appending("../core/swiftpm/cmake/reactnative")),
             ] + nativeBuilderInputs(builder),
-            outputs: [
-                OutputDeclaration(
-                    path: glogBuild.appending("libglog.a"),
-                    validation: .regularFile),
-                OutputDeclaration(
-                    path: glogBuild.appending("glog/logging.h"),
-                    validation: .regularFile),
-            ]
-                + [
-                    "libfolly_runtime.a", "libjsi.a", "libreact_native.a",
-                    "libreact_cxx_platform.a", "libyogacore.a",
-                ].map {
-                    OutputDeclaration(
-                        path: nativeBuild.appending($0),
-                        validation: .regularFile)
-                },
             locks: [.checkout("rn-native-\(target.identifier)")],
             operation: .sequence([
                 nativeCMake(
@@ -479,7 +530,7 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                         "-DFAST_FLOAT_INC=\(nativePath(root.appending("third-party/fast_float/include"), "/src/third-party/fast_float/include"))",
                         "-DJSI_DIR=\(nativePath(reactNative.appending("ReactCommon/jsi"), "/src/third-party/react-native/packages/react-native/ReactCommon/jsi"))",
                         "-DRN_ROOT=\(nativePath(reactNative, "/src/third-party/react-native/packages/react-native"))",
-                        "-DRN_CODEGEN_ROOT=\(nativePath(root.appending(".rn-build/generated"), "/build/generated"))",
+                        "-DRN_CODEGEN_ROOT=\(nativePath(generated.path.removingLastComponent(), "/build/generated"))",
                         "-DHERMES_DIR=\(nativePath(root.appending("third-party/hermes"), "/src/third-party/hermes"))",
                     ],
                     root: root,
@@ -497,14 +548,17 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                     environment: environment,
                     target: target,
                     builder: builder),
-            ]))
+            ])
+        )
+        return CxxRuntimeArtifacts(task: task, outputs: outputArtifacts)
     }
 
-    public static func publishNativeSDK(
+    package static func publishNativeSDK(
         root: FilePath,
         sdkRoot: FilePath,
-        target: NativeLinuxTarget
-    ) -> TaskDeclaration {
+        target: NativeLinuxTarget,
+        runtime: CxxRuntimeArtifacts
+    ) throws -> TaskDeclaration {
         let buildRoot = root.appending(".rn-build/\(target.identifier)")
         let sdk = sdkRoot.appending("rn")
         let links: [(String, FilePath)] = [
@@ -539,22 +593,23 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                     "swift/Sources/NucleusReactRuntime/cxx")
             ),
         ]
-        return TaskDeclaration(
+        var builder = TaskBuilder(
             id: TaskID(rawValue: "rn.native-sdk.\(target.identifier)"),
-            component: ComponentID(rawValue: "rn"),
-            dependencies: [
-                CoreTaskIDs.nativeSDK(target),
-                TaskID(rawValue: "rn.cxx.\(target.identifier)"),
-            ],
+            component: ComponentID(rawValue: "rn"))
+        for output in runtime.outputs {
+            builder.consume(output)
+        }
+        for (name, _) in links {
+            let _: ArtifactReference<PathArtifact> = try builder.output(
+                OutputSlotID(rawValue: name),
+                path: sdk.appending(name),
+                validation: .symlinkTarget)
+        }
+        return builder.build(
             inputs: links.map {
                 .value(
                     name: $0.0,
                     bytes: Array($0.1.string.utf8))
-            },
-            outputs: links.map {
-                OutputDeclaration(
-                    path: sdk.appending($0.0),
-                    validation: .symlinkTarget)
             },
             locks: [
                 .shared(sdkRoot.appending(".rn.lock"))
@@ -564,9 +619,89 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                     .replaceSymlink(
                         path: sdk.appending($0.0),
                         target: $0.1.string)
-                }))
+                })
+        ).addingDependencies([CoreTaskIDs.nativeSDK(target)])
     }
 
+}
+
+private struct ProvisionBoostAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let archive: FilePath
+        let candidate: FilePath
+        let generation: FilePath
+        let active: FilePath
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: archive.string)
+            encoder.append(tag: 2, string: candidate.string)
+            encoder.append(tag: 3, string: generation.string)
+            encoder.append(tag: 4, string: active.string)
+            encoder.append(tag: 5, string: "boost_1_84_0/boost")
+            encoder.append(tag: 6, integer: 2)
+        }
+    }
+
+    static let kind: ActionKind = "rn.provision-boost"
+
+    let archive: FilePath
+    let candidate: FilePath
+    let generation: FilePath
+    let active: FilePath
+    let workingDirectory: FilePath
+    let environment: [String: String]
+
+    var identity: Identity {
+        Identity(
+            archive: archive,
+            candidate: candidate,
+            generation: generation,
+            active: active)
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "tar", executable: .named("tar"), role: .operational)
+            ],
+            effects: [
+                ActionEffect(.read, scope: .input(archive)),
+                ActionEffect(.readWrite, scope: .scratch(candidate)),
+                ActionEffect(.readWrite, scope: .output(generation)),
+                ActionEffect(.readWrite, scope: .publication(active)),
+            ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        try context.files.remove(candidate)
+        try context.files.createDirectory(candidate)
+        let result = try await context.commands.execute(
+            CommandSpec(
+                executable: .named("tar"),
+                arguments: [
+                    "xzf", archive.string,
+                    "--strip-components=2",
+                    "-C", candidate.string,
+                    "boost_1_84_0/boost",
+                ],
+                workingDirectory: workingDirectory,
+                environment: environment))
+        guard result.status == 0 else {
+            throw BoostProvisioningFailure.commandFailed(result.status)
+        }
+        try context.files.replaceSymlink(
+            at: candidate.appending("boost"),
+            target: ".")
+        try context.files.publishGeneration(
+            candidate: candidate,
+            generation: generation,
+            active: active)
+    }
+}
+
+private enum BoostProvisioningFailure: Error {
+    case commandFailed(Int32)
 }
 
 private func javascriptOperation(

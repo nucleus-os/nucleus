@@ -179,8 +179,9 @@ struct PackageAndroidAddonAction: ColliderAction {
             ActionEffect(.read, scope: .input(addonSigningKey)),
             ActionEffect(.read, scope: .checkout(appArmorPolicy)),
             ActionEffect(.read, scope: .checkout(seccompPolicy)),
+            ActionEffect(.read, scope: .unrestricted(FilePath("/"))),
             ActionEffect(.readWrite, scope: .scratch(runtimeScratch)),
-            ActionEffect(.write, scope: .output(output.removingLastComponent())),
+            ActionEffect(.readWrite, scope: .output(output.removingLastComponent())),
         ]
         if let runtimeRoot {
             effects.append(ActionEffect(.read, scope: .input(runtimeRoot)))

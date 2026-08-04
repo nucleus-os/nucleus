@@ -48,7 +48,7 @@ public enum ShellColliderRecipe: ColliderComponent {
         let task = installTask(
             configuration: configuration,
             repositoryRoot: context.repositoryRoot)
-        let tracy = tracyReceiversTask(in: context)
+        let tracy = try tracyReceiversTask(in: context)
         return try ComponentDefinition(
             descriptor: descriptor,
             tasks: [task, tracy],
@@ -122,50 +122,13 @@ public enum ShellColliderRecipe: ColliderComponent {
 
     private static func tracyReceiversTask(
         in context: RecipeContext
-    ) -> TaskDeclaration {
+    ) throws -> TaskDeclaration {
         let source = context.repositoryRoot.appending(
             "swift-tracy/third-party/tracy")
         let build = context.repositoryRoot.appending(
             "compositor/.tracy-build")
         var environment = context.environment
         environment["CPM_SOURCE_CACHE"] = build.appending(".cpm-cache").string
-        var operations = [
-            "source", "build-tracy-capture", "build-tracy-csvexport",
-        ].map { TaskOperation.removePath(build.appending($0)) }
-        operations.append(.createDirectory(build))
-        for (name, subdirectory) in [
-            ("tracy-capture", "capture"),
-            ("tracy-csvexport", "csvexport"),
-        ] {
-            let toolBuild = build.appending("build-submodule-\(name)")
-            operations += [
-                .command(
-                    CommandSpec(
-                        executable: .named("cmake"),
-                        arguments: [
-                            "-S", source.appending(subdirectory).string,
-                            "-B", toolBuild.string,
-                            "-DCMAKE_BUILD_TYPE=Release",
-                            "-DDOWNLOAD_CAPSTONE=ON",
-                            "-DCMAKE_CXX_FLAGS=-stdlib=libc++",
-                            "-DCMAKE_EXE_LINKER_FLAGS=-stdlib=libc++ -static-libgcc",
-                        ],
-                        workingDirectory: context.repositoryRoot,
-                        environment: environment)),
-                .command(
-                    CommandSpec(
-                        executable: .named("cmake"),
-                        arguments: [
-                            "--build", toolBuild.string, "--parallel",
-                            "--target", name,
-                        ],
-                        workingDirectory: context.repositoryRoot,
-                        environment: environment)),
-                .copyFile(
-                    source: toolBuild.appending(name),
-                    destination: build.appending(name)),
-            ]
-        }
         return TaskDeclaration(
             id: TaskID(rawValue: "shell.tracy-receivers"),
             component: descriptor.id,
@@ -182,7 +145,112 @@ public enum ShellColliderRecipe: ColliderComponent {
                     validation: .executableFile),
             ],
             locks: [.checkout("shell-tracy-receivers")],
-            operation: .sequence(operations))
+            operation: .action(
+                try AnyColliderAction(
+                    BuildTracyReceiversAction(
+                        source: source,
+                        build: build,
+                        workingDirectory: context.repositoryRoot,
+                        environment: environment))))
     }
     #endif
 }
+
+#if os(Linux)
+private struct BuildTracyReceiversAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let source: FilePath
+        let build: FilePath
+        let workingDirectory: FilePath
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: source.string)
+            encoder.append(tag: 2, string: build.string)
+            encoder.append(tag: 3, string: workingDirectory.string)
+            encoder.append(tag: 4, string: "tracy-capture\0capture")
+            encoder.append(tag: 5, string: "tracy-csvexport\0csvexport")
+        }
+    }
+
+    static let kind: ActionKind = "shell.build-tracy-receivers"
+
+    let source: FilePath
+    let build: FilePath
+    let workingDirectory: FilePath
+    let environment: [String: String]
+
+    var identity: Identity {
+        Identity(
+            source: source,
+            build: build,
+            workingDirectory: workingDirectory)
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "cmake",
+                    executable: .named("cmake"),
+                    role: .semantic)
+            ],
+            effects: [
+                ActionEffect(.read, scope: .checkout(source)),
+                ActionEffect(.readWrite, scope: .output(build)),
+            ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        for directory in [
+            "source", "build-tracy-capture", "build-tracy-csvexport",
+        ] {
+            try context.files.remove(build.appending(directory))
+        }
+        try context.files.createDirectory(build)
+        for (name, subdirectory) in [
+            ("tracy-capture", "capture"),
+            ("tracy-csvexport", "csvexport"),
+        ] {
+            let toolBuild = build.appending("build-submodule-\(name)")
+            try await run(
+                [
+                    "-S", source.appending(subdirectory).string,
+                    "-B", toolBuild.string,
+                    "-DCMAKE_BUILD_TYPE=Release",
+                    "-DDOWNLOAD_CAPSTONE=ON",
+                    "-DCMAKE_CXX_FLAGS=-stdlib=libc++",
+                    "-DCMAKE_EXE_LINKER_FLAGS=-stdlib=libc++ -static-libgcc",
+                ],
+                context: context)
+            try await run(
+                [
+                    "--build", toolBuild.string, "--parallel",
+                    "--target", name,
+                ],
+                context: context)
+            try context.files.copy(
+                from: toolBuild.appending(name),
+                to: build.appending(name))
+        }
+    }
+
+    private func run(
+        _ arguments: [String],
+        context: ActionContext
+    ) async throws {
+        let result = try await context.commands.execute(
+            CommandSpec(
+                executable: .named("cmake"),
+                arguments: arguments,
+                workingDirectory: workingDirectory,
+                environment: environment))
+        guard result.status == 0 else {
+            throw TracyReceiverBuildFailure.commandFailed(result.status)
+        }
+    }
+}
+
+private enum TracyReceiverBuildFailure: Error {
+    case commandFailed(Int32)
+}
+#endif

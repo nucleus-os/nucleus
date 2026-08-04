@@ -12,6 +12,12 @@ import WaylandColliderRecipe
 @testable import ColliderCommands
 
 private let fixtureSwiftPackageRoot = FilePath("/workspace")
+private let fixtureRepositoryRoot = FilePath(
+    URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent().path)
 
 @Test func androidToolchainCatalogDrivesColliderVersionsAndNDKSelection() throws {
     let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -415,7 +421,7 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
     }
 }
 
-@Test func migratedGeneratorsInvokeComponentToolsWithoutCommandPlugins() {
+@Test func migratedGeneratorsInvokeComponentToolsWithoutCommandPlugins() throws {
     let root = FilePath("/workspace")
     let environment = ["PATH": "/usr/bin"]
     let swiftPM = SwiftPMInvocation(
@@ -426,12 +432,12 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
             toolchainIdentity: "swiftc@fixture"),
         scratchPath: root.appending(".nucleus/swiftpm/fixture"))
 
-    let vulkan = VulkanColliderRecipe.generate(
+    let vulkan = try VulkanColliderRecipe.generate(
         root: root.appending("swift-vulkan"),
         environment: environment,
         swiftPM: swiftPM)
-    guard case .command(let vulkanCommand) = vulkan.operation else {
-        Issue.record("Vulkan generation must be a typed command")
+    guard case .action(let vulkanAction) = vulkan.operation else {
+        Issue.record("Vulkan generation must be a recipe-owned action")
         return
     }
     #expect(
@@ -439,16 +445,16 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
             "swift-vulkan:VulkanGen"
         ])
     #expect(
-        vulkanCommand.executable
-            == .taskOutput(swiftPM.executable("VulkanGen")))
+        vulkanAction.kind == ActionKind(rawValue: "vulkan.generate-bindings"))
     #expect(
-        vulkanCommand.arguments == [
-            "/workspace/swift-vulkan/third-party/vk.xml",
-            "/workspace/swift-vulkan/Sources/Vulkan/Vulkan.swift",
-            "1",
+        vulkanAction.requirements.tools == [
+            ActionToolRequirement(
+                "vulkan-generator",
+                executable: .taskOutput(swiftPM.executable("VulkanGen")),
+                role: .operational)
         ])
 
-    let reactNative = ReactNativeColliderRecipe.generate(
+    let reactNative = try ReactNativeColliderRecipe.generate(
         root: root.appending("react-native"),
         environment: environment,
         builder: NativeOCIConfiguration(
@@ -456,7 +462,8 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
             imageID: FilePath("/cache/native/image-id"),
             ccache: FilePath("/cache/native/ccache"),
             swiftSDKRoot: FilePath("/cache/swift-sdks"),
-            environment: environment))
+            environment: environment)
+    ).task
     guard case .runOCI(let reactNativeCommand) = reactNative.operation else {
         Issue.record("React Native generation must be a typed OCI command")
         return
@@ -478,8 +485,23 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
+    let root = FilePath(workspace.appendingPathComponent("swift-wayland").path)
+    let builder = NativeOCIConfiguration(
+        context: FilePath(workspace.appendingPathComponent("core/build-container").path),
+        imageID: FilePath("/cache/native/image-id"),
+        ccache: FilePath("/cache/native/ccache"),
+        swiftSDKRoot: FilePath("/cache/swift-sdks"),
+        environment: ["PATH": "/usr/bin"])
+    let nativeSDK = try WaylandColliderRecipe.buildNativeSDK(
+        root: root,
+        sdkRoot: FilePath("/cache/native-sdk/linux-arm64"),
+        environment: ["PATH": "/usr/bin"],
+        target: NativeLinuxTarget(architecture: .arm64),
+        nativeScanner: nil,
+        builder: builder)
+    let scanner = try #require(nativeSDK.scanner)
     let task = try WaylandColliderRecipe.generate(
-        root: FilePath(workspace.appendingPathComponent("swift-wayland").path),
+        root: root,
         environment: ["PATH": "/usr/bin"],
         swiftPM: SwiftPMInvocation(
             context: SwiftBuildContext(
@@ -491,50 +513,35 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
                 workspace.appendingPathComponent(
                     ".nucleus/swiftpm/fixture"
                 ).path)),
-        builder: NativeOCIConfiguration(
-            context: FilePath(workspace.appendingPathComponent("core/build-container").path),
-            imageID: FilePath("/cache/native/image-id"),
-            ccache: FilePath("/cache/native/ccache"),
-            swiftSDKRoot: FilePath("/cache/swift-sdks"),
-            environment: ["PATH": "/usr/bin"]),
-        scannerSDK: FilePath("/cache/native-sdk/linux-arm64/wayland"))
+        builder: builder,
+        scanner: scanner)
     guard case .sequence(let operations) = task.operation else {
         Issue.record("Wayland generation must be one ordered task sequence")
         return
     }
-    let commands = operations.compactMap { operation -> CommandSpec? in
-        guard case .command(let command) = operation else { return nil }
-        return command
-    }
-    let buildCommands = commands.filter {
-        $0.executable == .named("swift")
-    }
-    let generatorCommands = commands.filter {
-        if case .taskOutput = $0.executable { return true }
-        return false
+    let actions = operations.compactMap { operation -> AnyColliderAction? in
+        guard case .action(let action) = operation else { return nil }
+        return action
     }
     let scannerContainers = operations.filter {
         guard case .runOCI(let execution) = $0 else { return false }
         return execution.hostname == "wayland-source-generation"
     }
-    #expect(buildCommands.isEmpty)
     #expect(
         task.swiftProducts.map(\.qualifiedProduct) == [
             "swift-wayland:SwiftWaylandGen"
         ])
-    #expect(generatorCommands.count == 2)
+    #expect(
+        actions.map(\.kind).contains(
+            ActionKind(rawValue: "wayland.generate-swift-sources")))
     #expect(scannerContainers.count == 1)
     if case .runOCI(let scanner) = scannerContainers[0] {
         #expect(scanner.command.first == "wayland-generate")
     }
-    #expect(
-        commands.allSatisfy {
-            !$0.arguments.contains("generate-wayland")
-        })
 }
 
-@Test func skiaRecipesUseTheIsolatedNativeBuilder() {
-    let root = FilePath("/workspace/core")
+@Test func skiaRecipesUseTheIsolatedNativeBuilder() throws {
+    let root = fixtureRepositoryRoot.appending("core")
     let environment = [
         "PATH": "/usr/bin",
         "NUCLEUS_ANDROID_NDK_HOME": "/opt/android-ndk",
@@ -546,17 +553,38 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
         environment: environment)
     let linuxARM64 = NativeLinuxTarget(architecture: .arm64)
+    let sources = try CoreColliderRecipe.prepareSkiaDependencies(
+        root: root,
+        environment: environment)
+    let sourceTask = try #require(
+        sources.tasks.first { $0.id == CoreTaskIDs.sources })
+    guard case .sequence(let sourceOperations) = sourceTask.operation else {
+        Issue.record("Skia source preparation must be an ordered action sequence")
+        return
+    }
+    #expect(
+        sourceOperations.compactMap { operation -> ActionKind? in
+            guard case .action(let action) = operation else { return nil }
+            return action.kind
+        } == [
+            ActionKind(rawValue: "core.materialize-skia-dependencies"),
+            ActionKind(rawValue: "core.install-skia-gn"),
+        ])
     for task in [
-        CoreColliderRecipe.buildSkiaLinux(
+        try CoreColliderRecipe.buildSkiaLinux(
             root: root,
             environment: environment,
             target: linuxARM64,
-            builder: builder),
-        CoreColliderRecipe.buildSkiaAndroid(
+            sources: sources,
+            builder: builder
+        ).task,
+        try CoreColliderRecipe.buildSkiaAndroid(
             root: root,
             minimumAndroidAPI: 24,
             environment: environment,
-            builder: builder),
+            sources: sources,
+            builder: builder
+        ).task,
     ] {
         guard case .sequence(let operations) = task.operation else {
             Issue.record("Skia provisioning must be an ordered task sequence")
@@ -589,8 +617,8 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
     }
 }
 
-@Test func nativeArchitectureBuildsHaveIndependentLocks() {
-    let coreRoot = FilePath("/workspace/core")
+@Test func nativeArchitectureBuildsHaveIndependentLocks() throws {
+    let coreRoot = fixtureRepositoryRoot.appending("core")
     let reactNativeRoot = FilePath("/workspace/react-native")
     let environment = [
         "PATH": "/usr/bin",
@@ -604,54 +632,78 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         environment: environment)
     let arm64 = NativeLinuxTarget(architecture: .arm64)
     let x86_64 = NativeLinuxTarget(architecture: .x86_64)
+    let skiaSources = try CoreColliderRecipe.prepareSkiaDependencies(
+        root: coreRoot,
+        environment: environment)
+    let boost = try ReactNativeColliderRecipe.provisionBoost(
+        root: reactNativeRoot,
+        environment: environment
+    ).active
+    let generated = try ReactNativeColliderRecipe.generate(
+        root: reactNativeRoot,
+        environment: environment,
+        builder: builder
+    ).spec
+    let armHermes = try ReactNativeColliderRecipe.buildHermes(
+        root: reactNativeRoot,
+        environment: environment,
+        target: arm64,
+        builder: builder)
+    let x86Hermes = try ReactNativeColliderRecipe.buildHermes(
+        root: reactNativeRoot,
+        environment: environment,
+        target: x86_64,
+        builder: builder)
+    let armSupport = try ReactNativeColliderRecipe.buildSupportLibraries(
+        root: reactNativeRoot,
+        environment: environment,
+        target: arm64,
+        builder: builder)
+    let x86Support = try ReactNativeColliderRecipe.buildSupportLibraries(
+        root: reactNativeRoot,
+        environment: environment,
+        target: x86_64,
+        builder: builder)
     let architecturePairs = [
         (
-            CoreColliderRecipe.buildSkiaLinux(
+            try CoreColliderRecipe.buildSkiaLinux(
                 root: coreRoot,
                 environment: environment,
                 target: arm64,
-                builder: builder),
-            CoreColliderRecipe.buildSkiaLinux(
+                sources: skiaSources,
+                builder: builder
+            ).task,
+            try CoreColliderRecipe.buildSkiaLinux(
                 root: coreRoot,
                 environment: environment,
                 target: x86_64,
-                builder: builder)
+                sources: skiaSources,
+                builder: builder
+            ).task
         ),
+        (armHermes.task, x86Hermes.task),
+        (armSupport.task, x86Support.task),
         (
-            ReactNativeColliderRecipe.buildHermes(
+            try ReactNativeColliderRecipe.buildCxxRuntime(
                 root: reactNativeRoot,
                 environment: environment,
                 target: arm64,
-                builder: builder),
-            ReactNativeColliderRecipe.buildHermes(
+                boost: boost,
+                generated: generated,
+                hermes: armHermes,
+                support: armSupport,
+                builder: builder
+            ).task,
+            try ReactNativeColliderRecipe.buildCxxRuntime(
                 root: reactNativeRoot,
                 environment: environment,
                 target: x86_64,
-                builder: builder)
-        ),
-        (
-            ReactNativeColliderRecipe.buildSupportLibraries(
-                root: reactNativeRoot,
-                environment: environment,
-                target: arm64,
-                builder: builder),
-            ReactNativeColliderRecipe.buildSupportLibraries(
-                root: reactNativeRoot,
-                environment: environment,
-                target: x86_64,
-                builder: builder)
-        ),
-        (
-            ReactNativeColliderRecipe.buildCxxRuntime(
-                root: reactNativeRoot,
-                environment: environment,
-                target: arm64,
-                builder: builder),
-            ReactNativeColliderRecipe.buildCxxRuntime(
-                root: reactNativeRoot,
-                environment: environment,
-                target: x86_64,
-                builder: builder)
+                boost: boost,
+                generated: generated,
+                hermes: x86Hermes,
+                support: x86Support,
+                builder: builder
+            ).task
         ),
     ]
 
@@ -660,7 +712,7 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
     }
 }
 
-@Test func reactNativeSupportRecipesUseTheIsolatedNativeBuilder() {
+@Test func reactNativeSupportRecipesUseTheIsolatedNativeBuilder() throws {
     let root = FilePath("/workspace/react-native")
     let environment = ["PATH": "/usr/bin"]
     let builder = NativeOCIConfiguration(
@@ -670,11 +722,29 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
         environment: environment)
     let target = NativeLinuxTarget(architecture: .arm64)
-    let support = ReactNativeColliderRecipe.buildSupportLibraries(
+    let boost = try ReactNativeColliderRecipe.provisionBoost(
+        root: root,
+        environment: environment
+    ).active
+    let generated = try ReactNativeColliderRecipe.generate(
+        root: root,
+        environment: environment,
+        builder: builder
+    ).spec
+    let hermes = try ReactNativeColliderRecipe.buildHermes(
         root: root, environment: environment, target: target, builder: builder)
-    let runtime = ReactNativeColliderRecipe.buildCxxRuntime(
+    let support = try ReactNativeColliderRecipe.buildSupportLibraries(
         root: root, environment: environment, target: target, builder: builder)
-    for task in [support, runtime] {
+    let runtime = try ReactNativeColliderRecipe.buildCxxRuntime(
+        root: root,
+        environment: environment,
+        target: target,
+        boost: boost,
+        generated: generated,
+        hermes: hermes,
+        support: support,
+        builder: builder)
+    for task in [support.task, runtime.task] {
         guard case .sequence(let operations) = task.operation else {
             Issue.record("RN native provisioning must be an ordered task sequence")
             continue
@@ -703,7 +773,7 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
             })
     }
     #expect(
-        runtime.dependencies == [
+        Set(runtime.task.dependencies) == [
             TaskID(rawValue: "rn.support.linux-arm64"),
             TaskID(rawValue: "rn.generate"),
             TaskID(rawValue: "rn.boost"),
@@ -711,7 +781,7 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         ])
 }
 
-@Test func hermesRecipeBuildsAndMergesInsideTheARM64Guest() {
+@Test func hermesRecipeBuildsAndMergesInsideTheARM64Guest() throws {
     let root = FilePath("/workspace/react-native")
     let environment = ["PATH": "/usr/bin"]
     let builder = NativeOCIConfiguration(
@@ -720,11 +790,12 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         ccache: FilePath("/cache/ccache/native"),
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
         environment: environment)
-    let task = ReactNativeColliderRecipe.buildHermes(
+    let task = try ReactNativeColliderRecipe.buildHermes(
         root: root,
         environment: environment,
         target: NativeLinuxTarget(architecture: .x86_64),
-        builder: builder)
+        builder: builder
+    ).task
     guard case .sequence(let operations) = task.operation else {
         Issue.record("Hermes provisioning must be an ordered task sequence")
         return
@@ -750,7 +821,7 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         })
 }
 
-@Test func waylandCrossBuildUsesTheNativeARM64ScannerSDK() {
+@Test func waylandCrossBuildUsesTheNativeARM64ScannerSDK() throws {
     let root = FilePath("/workspace/swift-wayland")
     let armSDKRoot = FilePath("/cache/native-sdk/linux-arm64")
     let x86SDKRoot = FilePath("/cache/native-sdk/linux-x86_64")
@@ -761,22 +832,27 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         ccache: FilePath("/cache/ccache/native"),
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
         environment: environment)
-    let arm = WaylandColliderRecipe.buildNativeSDK(
+    let armArtifacts = try WaylandColliderRecipe.buildNativeSDK(
         root: root,
         sdkRoot: armSDKRoot,
         environment: environment,
         target: NativeLinuxTarget(architecture: .arm64),
+        nativeScanner: nil,
         builder: builder)
-    let x86 = WaylandColliderRecipe.buildNativeSDK(
+    let scanner = try #require(armArtifacts.scanner)
+    let x86Artifacts = try WaylandColliderRecipe.buildNativeSDK(
         root: root,
         sdkRoot: x86SDKRoot,
         environment: environment,
         target: NativeLinuxTarget(architecture: .x86_64),
+        nativeScanner: scanner,
         builder: builder)
+    let arm = armArtifacts.task
+    let x86 = x86Artifacts.task
 
     #expect(arm.dependencies == [TaskID(rawValue: "native.builder")])
     #expect(
-        x86.dependencies == [
+        Set(x86.dependencies) == [
             TaskID(rawValue: "native.builder"),
             TaskID(rawValue: "wayland.native-sdk.linux-arm64"),
         ])
@@ -820,17 +896,53 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
             == "/native-wayland/lib/pkgconfig")
 }
 
-@Test func reactNativeSDKPublishesArchitectureMatchedContainerArtifacts() {
+@Test func reactNativeSDKPublishesArchitectureMatchedContainerArtifacts() throws {
     let root = FilePath("/workspace/react-native")
     let sdkRoot = FilePath("/cache/native-sdk/linux-x86_64")
     let target = NativeLinuxTarget(architecture: .x86_64)
-    let native = ReactNativeColliderRecipe.publishNativeSDK(
+    let environment = ["PATH": "/usr/bin"]
+    let builder = NativeOCIConfiguration(
+        context: FilePath("/workspace/core/build-container"),
+        imageID: FilePath("/cache/native/image-id"),
+        ccache: FilePath("/cache/ccache/native"),
+        swiftSDKRoot: FilePath("/cache/swift-sdks"),
+        environment: environment)
+    let boost = try ReactNativeColliderRecipe.provisionBoost(
+        root: root,
+        environment: environment
+    ).active
+    let generated = try ReactNativeColliderRecipe.generate(
+        root: root,
+        environment: environment,
+        builder: builder
+    ).spec
+    let hermes = try ReactNativeColliderRecipe.buildHermes(
+        root: root,
+        environment: environment,
+        target: target,
+        builder: builder)
+    let support = try ReactNativeColliderRecipe.buildSupportLibraries(
+        root: root,
+        environment: environment,
+        target: target,
+        builder: builder)
+    let runtime = try ReactNativeColliderRecipe.buildCxxRuntime(
+        root: root,
+        environment: environment,
+        target: target,
+        boost: boost,
+        generated: generated,
+        hermes: hermes,
+        support: support,
+        builder: builder)
+    let native = try ReactNativeColliderRecipe.publishNativeSDK(
         root: root,
         sdkRoot: sdkRoot,
-        target: target)
+        target: target,
+        runtime: runtime)
 
     #expect(
-        native.dependencies == [
+        Set(native.dependencies) == [
             TaskID(rawValue: "core.native-sdk.linux-x86_64"),
             TaskID(rawValue: "rn.cxx.linux-x86_64"),
         ])

@@ -415,6 +415,7 @@ public struct ActionFileSystem: Sendable {
     private let digestTreeBody: @Sendable (FilePath, Set<String>) throws -> ArtifactDigest
     private let publishGenerationBody: @Sendable (FilePath, FilePath, FilePath) throws -> Void
     private let pruneDirectoriesBody: @Sendable (DirectoryRetentionPlan) throws -> Void
+    private let replaceSymlinkBody: @Sendable (FilePath, String) throws -> Void
     private let setPermissionsBody: @Sendable (FilePath, UInt16) throws -> Void
     private let writeBody: @Sendable ([UInt8], FilePath) throws -> Void
 
@@ -457,6 +458,9 @@ public struct ActionFileSystem: Sendable {
             @escaping @Sendable (DirectoryRetentionPlan) throws -> Void = {
                 _ in throw ActionFileSystemFailure.unavailable("pruneDirectories")
             },
+        replaceSymlink: @escaping @Sendable (FilePath, String) throws -> Void = {
+            _, _ in throw ActionFileSystemFailure.unavailable("replaceSymlink")
+        },
         setPermissions: @escaping @Sendable (FilePath, UInt16) throws -> Void,
         write: @escaping @Sendable ([UInt8], FilePath) throws -> Void
     ) {
@@ -474,6 +478,7 @@ public struct ActionFileSystem: Sendable {
         digestTreeBody = digestTree
         publishGenerationBody = publishGeneration
         pruneDirectoriesBody = pruneDirectories
+        replaceSymlinkBody = replaceSymlink
         setPermissionsBody = setPermissions
         writeBody = write
     }
@@ -546,6 +551,10 @@ public struct ActionFileSystem: Sendable {
         try pruneDirectoriesBody(plan)
     }
 
+    public func replaceSymlink(at path: FilePath, target: String) throws {
+        try replaceSymlinkBody(path, target)
+    }
+
     public func setPermissions(_ permissions: UInt16, for path: FilePath) throws {
         try setPermissionsBody(path, permissions)
     }
@@ -553,15 +562,136 @@ public struct ActionFileSystem: Sendable {
     public func write(_ bytes: [UInt8], to path: FilePath) throws {
         try writeBody(bytes, path)
     }
+
+    package func scoped(to effects: [ActionEffect]) -> ActionFileSystem {
+        let require: @Sendable (ActionEffectAccess, FilePath) throws -> Void = {
+            access, path in
+            guard Self.permits(access, to: path, within: effects) else {
+                throw ActionFileSystemFailure.undeclaredEffect(
+                    access: access,
+                    path: path)
+            }
+        }
+
+        return ActionFileSystem(
+            metadata: { path in
+                try require(.read, path)
+                return try metadataBody(path)
+            },
+            metadataNoFollow: { path in
+                try require(.read, path)
+                return try metadataNoFollowBody(path)
+            },
+            contentsEqual: { first, second in
+                try require(.read, first)
+                try require(.read, second)
+                return try contentsEqualBody(first, second)
+            },
+            createDirectory: { path in
+                try require(.write, path)
+                try createDirectoryBody(path)
+            },
+            copy: { source, destination in
+                try require(.read, source)
+                try require(.write, destination)
+                try copyBody(source, destination)
+            },
+            copyTree: { source, destination in
+                try require(.read, source)
+                try require(.write, destination)
+                try copyTreeBody(source, destination)
+            },
+            read: { path in
+                try require(.read, path)
+                return try readBody(path)
+            },
+            remove: { path in
+                try require(.write, path)
+                try removeBody(path)
+            },
+            move: { source, destination in
+                try require(.write, source)
+                try require(.write, destination)
+                try moveBody(source, destination)
+            },
+            listRecursively: { root in
+                try require(.read, root)
+                return try listRecursivelyBody(root)
+            },
+            digestFile: { path in
+                try require(.read, path)
+                return try digestFileBody(path)
+            },
+            digestTree: { path, exclusions in
+                try require(.read, path)
+                return try digestTreeBody(path, exclusions)
+            },
+            publishGeneration: { candidate, generation, active in
+                try require(.write, candidate)
+                try require(.write, generation)
+                try require(.write, active)
+                try publishGenerationBody(candidate, generation, active)
+            },
+            pruneDirectories: { plan in
+                for rule in plan.rules {
+                    try require(.write, rule.root)
+                    if let current = rule.current {
+                        try require(.read, current)
+                    }
+                }
+                try pruneDirectoriesBody(plan)
+            },
+            replaceSymlink: { path, target in
+                try require(.write, path)
+                try replaceSymlinkBody(path, target)
+            },
+            setPermissions: { path, permissions in
+                try require(.write, path)
+                try setPermissionsBody(path, permissions)
+            },
+            write: { bytes, path in
+                try require(.write, path)
+                try writeBody(bytes, path)
+            })
+    }
+
+    private static func permits(
+        _ requested: ActionEffectAccess,
+        to path: FilePath,
+        within effects: [ActionEffect]
+    ) -> Bool {
+        guard path.isAbsolute else { return false }
+        let path = path.lexicallyNormalized().string
+        return effects.contains { effect in
+            guard effect.access.permits(requested) else { return false }
+            let root = effect.scope.root.lexicallyNormalized().string
+            return path == root || path.hasPrefix(root.hasSuffix("/") ? root : root + "/")
+        }
+    }
+}
+
+extension ActionEffectAccess {
+    fileprivate func permits(_ requested: ActionEffectAccess) -> Bool {
+        switch (self, requested) {
+        case (.readWrite, _), (.read, .read), (.write, .write):
+            true
+        case (.read, .write), (.read, .readWrite), (.write, .read),
+            (.write, .readWrite):
+            false
+        }
+    }
 }
 
 public enum ActionFileSystemFailure: Error, CustomStringConvertible, Sendable {
     case unavailable(String)
+    case undeclaredEffect(access: ActionEffectAccess, path: FilePath)
 
     public var description: String {
         switch self {
         case .unavailable(let capability):
             "action filesystem capability '\(capability)' is unavailable"
+        case .undeclaredEffect(let access, let path):
+            "action attempted an undeclared \(access.rawValue) filesystem effect at '\(path)'"
         }
     }
 }

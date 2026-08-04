@@ -7,6 +7,18 @@ import Testing
 
 private enum FixtureResult: TaskResultValue {}
 
+private func inertActionFileSystem() -> ActionFileSystem {
+    ActionFileSystem(
+        metadata: { _ in nil },
+        contentsEqual: { _, _ in true },
+        createDirectory: { _ in },
+        copy: { _, _ in },
+        move: { _, _ in },
+        replaceSymlink: { _, _ in },
+        setPermissions: { _, _ in },
+        write: { _, _ in })
+}
+
 @Test func actionIdentityEncoderRejectsZeroAndDuplicateTags() {
     var zero = ActionIdentityEncoder()
     zero.append(tag: 0, string: "invalid")
@@ -35,6 +47,63 @@ private enum FixtureResult: TaskResultValue {}
 
     #expect(try forward.encodedBytes() == reverse.encodedBytes())
     #expect(try forward.encodedBytes() != differentType.encodedBytes())
+}
+
+@Test func actionFileSystemRejectsUndeclaredAndEscapingEffects() throws {
+    let files = inertActionFileSystem().scoped(to: [
+        ActionEffect(.read, scope: .input(FilePath("/inputs"))),
+        ActionEffect(.write, scope: .output(FilePath("/outputs"))),
+    ])
+
+    _ = try files.metadata(for: FilePath("/inputs/source"))
+    try files.write([], to: FilePath("/outputs/result"))
+
+    #expect(throws: ActionFileSystemFailure.self) {
+        try files.write([], to: FilePath("/inputs/source"))
+    }
+    #expect(throws: ActionFileSystemFailure.self) {
+        _ = try files.metadata(for: FilePath("/outputs/result"))
+    }
+    #expect(throws: ActionFileSystemFailure.self) {
+        try files.write([], to: FilePath("/outputs/../outside"))
+    }
+    #expect(throws: ActionFileSystemFailure.self) {
+        _ = try files.metadata(for: FilePath("relative-input"))
+    }
+}
+
+@Test func actionFileSystemChecksBothSidesOfCopiesAndMoves() throws {
+    let files = inertActionFileSystem().scoped(to: [
+        ActionEffect(.read, scope: .input(FilePath("/inputs"))),
+        ActionEffect(.readWrite, scope: .scratch(FilePath("/scratch"))),
+        ActionEffect(.write, scope: .output(FilePath("/outputs"))),
+    ])
+
+    try files.copy(
+        from: FilePath("/inputs/source"),
+        to: FilePath("/outputs/result"))
+    try files.move(
+        from: FilePath("/scratch/candidate"),
+        to: FilePath("/outputs/result"))
+    try files.replaceSymlink(
+        at: FilePath("/outputs/current"),
+        target: "generation")
+
+    #expect(throws: ActionFileSystemFailure.self) {
+        try files.copy(
+            from: FilePath("/undeclared/source"),
+            to: FilePath("/outputs/result"))
+    }
+    #expect(throws: ActionFileSystemFailure.self) {
+        try files.move(
+            from: FilePath("/inputs/source"),
+            to: FilePath("/outputs/result"))
+    }
+    #expect(throws: ActionFileSystemFailure.self) {
+        try files.replaceSymlink(
+            at: FilePath("/inputs/current"),
+            target: "generation")
+    }
 }
 
 @Test func taskBuilderCreatesOpaqueTypedArtifactAndResultEdges() throws {

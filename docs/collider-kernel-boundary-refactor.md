@@ -1376,6 +1376,37 @@ component graph is constructed exactly once per planning operation.
 This phase establishes the final declaration and identity vocabulary before any
 new persisted identity becomes active.
 
+**Progress: in progress.** `ActionKind`, action-local canonical identity
+encoding, semantic and operational tool requirements, declared effect scopes,
+the final assessment-policy names, and cancellation, logging, filesystem,
+command, and download capabilities are implemented. `TaskBuilder` now creates
+opaque typed artifact, result, and ordering references; graph validation proves
+their producer slots, paths, and value types, and ordering-only edges are
+excluded from identity. Runtime filesystem capabilities enforce declared
+read/write roots and reject lexical escapes. The first producer-consumer
+migration is underway: AOSP source-lock verification, source provenance,
+signing metadata, validation provenance, and publication provenance now flow
+through typed JSON references instead of raw dependency-output paths. Every
+standalone download now produces a typed file slot: Swift host, Android, and
+Ubuntu packages; the AOSP Repo launcher; GN; and Boost. Swift Linux sysroots
+and runtime installations, the active Boost generation, Skia external sources,
+React Native codegen, and Wayland-generated sources flow as typed directories.
+Skia consumes the exact GN executable, Wayland x86_64 compilation and codegen
+consume the exact native `wayland-scanner`, and render-SDK publication consumes
+the exact architecture-matched Skia build directory. React Native's Hermes and
+support-library archives feed its C++ runtime through typed slots, and native
+SDK publication consumes that typed runtime closure. The Swift SDK generator,
+assembled Linux and Android SDKs, validation executables, activation marker,
+and discovery publications form one typed producer-consumer chain. Chromium's
+depot-tools bootstrap executable, source provenance, builder image, CEF and
+browser publications, retention, tests, and installation also form one typed
+chain. AOSP compilation, signing, image assembly, validation, and publication
+consume typed builder-image, target-files, host-tool, image, signing, and
+provenance slots. Remaining raw cross-component native SDK edges, Android add-on
+and gfxstream artifacts, shared native-builder image edges, operation cases,
+unrestricted command paths, legacy identity activation, and the derived-state
+reset remain open.
+
 Complete the existing action seam with:
 
 - `ActionKind`;
