@@ -2,26 +2,22 @@
 // Typed client descriptor and event dispatch for org_kde_kwin_appmenu.
 
 import WaylandClientC
-
 package enum OrgKdeKwinAppmenuClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_org_kde_kwin_appmenu())
     package nonisolated static let maximumVersion: UInt32 = 2
 }
-extension WaylandProxy where Interface == OrgKdeKwinAppmenuClient {
-    package func setAddress(service_name: String, object_path: String) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == OrgKdeKwinAppmenuClient {
+    func setAddress(service_name: String, object_path: String) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        return try service_name.withCString {
-            (_service_nameCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
-            return try object_path.withCString {
-                (_object_pathCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
-                unsafe swift_wayland_client_request_org_kde_kwin_appmenu_set_address(
-                    _proxy, _service_nameCString, _object_pathCString)
+        return try service_name.withCString { (_service_nameCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+            return try object_path.withCString { (_object_pathCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+                unsafe swift_wayland_client_request_org_kde_kwin_appmenu_set_address(_proxy, _service_nameCString, _object_pathCString)
                 return
             }
         }
     }
-    package func release() throws(WaylandProxyError) {
+    func release() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_org_kde_kwin_appmenu_release(_proxy)

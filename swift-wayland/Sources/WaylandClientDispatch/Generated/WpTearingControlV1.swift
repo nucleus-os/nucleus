@@ -3,22 +3,18 @@
 
 import WaylandClientC
 package import WaylandProtocolTypes
-
 package enum WpTearingControlV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_tearing_control_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == WpTearingControlV1Client {
-    package func setPresentationHint(hint: WpTearingControlV1PresentationHint)
-        throws(WaylandProxyError)
-    {
+package extension WaylandProxy where Interface == WpTearingControlV1Client {
+    func setPresentationHint(hint: WpTearingControlV1PresentationHint) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_wp_tearing_control_v1_set_presentation_hint(
-            _proxy, hint.rawValue)
+        unsafe swift_wayland_client_request_wp_tearing_control_v1_set_presentation_hint(_proxy, hint.rawValue)
         return
     }
-    package func destroy() throws(WaylandProxyError) {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_tearing_control_v1_destroy(_proxy)

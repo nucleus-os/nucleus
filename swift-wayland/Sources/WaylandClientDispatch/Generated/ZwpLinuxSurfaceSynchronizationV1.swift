@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for zwp_linux_surface_synchronization_v1.
 
 import WaylandClientC
-
 package enum ZwpLinuxSurfaceSynchronizationV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_linux_surface_synchronization_v1())
     package nonisolated static let maximumVersion: UInt32 = 2
 }
-extension WaylandProxy where Interface == ZwpLinuxSurfaceSynchronizationV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpLinuxSurfaceSynchronizationV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zwp_linux_surface_synchronization_v1_destroy(_proxy)
@@ -18,28 +17,19 @@ extension WaylandProxy where Interface == ZwpLinuxSurfaceSynchronizationV1Client
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func setAcquireFence(fd: consuming WaylandClientOwnedFileDescriptor)
-        throws(WaylandProxyError)
-    {
+    func setAcquireFence(fd: consuming WaylandClientOwnedFileDescriptor) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _fdDescriptor = fd.take()
         defer {
             WaylandClientOwnedFileDescriptor.closeTransferred(
                 _fdDescriptor)
         }
-        unsafe swift_wayland_client_request_zwp_linux_surface_synchronization_v1_set_acquire_fence(
-            _proxy, _fdDescriptor)
+        unsafe swift_wayland_client_request_zwp_linux_surface_synchronization_v1_set_acquire_fence(_proxy, _fdDescriptor)
         return
     }
-    package func getRelease() throws(WaylandProxyError) -> WaylandProxy<
-        ZwpLinuxBufferReleaseV1Client
-    > {
+    func getRelease() throws(WaylandProxyError) -> WaylandProxy<ZwpLinuxBufferReleaseV1Client> {
         let _proxy = try unsafe requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_zwp_linux_surface_synchronization_v1_get_release(
-                    _proxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_zwp_linux_surface_synchronization_v1_get_release(_proxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for xdg_dialog_v1.
 
 import WaylandClientC
-
 package enum XdgDialogV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_xdg_dialog_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == XdgDialogV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == XdgDialogV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_xdg_dialog_v1_destroy(_proxy)
@@ -18,12 +17,12 @@ extension WaylandProxy where Interface == XdgDialogV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func setModal() throws(WaylandProxyError) {
+    func setModal() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_xdg_dialog_v1_set_modal(_proxy)
         return
     }
-    package func unsetModal() throws(WaylandProxyError) {
+    func unsetModal() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_xdg_dialog_v1_unset_modal(_proxy)
         return

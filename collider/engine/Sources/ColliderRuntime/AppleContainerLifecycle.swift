@@ -183,7 +183,7 @@ func appleContainerFlags(
             nameservers: [],
             options: [],
             searchDomains: []),
-        dnsDisabled: true,
+        dnsDisabled: execution.networkPolicy == .externalDisabled,
         entrypoint: nil,
         initImage: nil,
         kernel: nil,
@@ -191,7 +191,8 @@ func appleContainerFlags(
         labels: ["dev.nucleus.collider.managed=true"],
         mounts: mounts,
         name: name,
-        networks: [OCIBackendContract.appleOfflineNetwork],
+        networks: execution.networkPolicy == .externalDisabled
+            ? [OCIBackendContract.appleOfflineNetwork] : [],
         os: "linux",
         platform: "linux/arm64",
         publishPorts: [],
@@ -295,6 +296,59 @@ actor AppleContainerCleanup {
             name: name,
             reason: lastError.map(String.init(describing:))
                 ?? "container remained registered after forced deletion")
+    }
+}
+
+actor AppleContainerSuspension {
+    private let name: String
+    private let stop: @Sendable () async throws -> Void
+    private let status: @Sendable () async throws -> RuntimeStatus?
+
+    init(client: ContainerClient, name: String) {
+        self.name = name
+        stop = {
+            try await client.stop(id: name)
+        }
+        status = {
+            try await client.list(
+                filters: ContainerListFilters(ids: [name])
+            ).first?.status
+        }
+    }
+
+    init(
+        name: String,
+        stop: @Sendable @escaping () async throws -> Void,
+        status: @Sendable @escaping () async throws -> RuntimeStatus?
+    ) {
+        self.name = name
+        self.stop = stop
+        self.status = status
+    }
+
+    func stopAndVerify() async throws {
+        let deadline = ContinuousClock().now.advanced(by: .seconds(30))
+        var lastError: (any Error)?
+        repeat {
+            do {
+                guard let current = try await status() else { return }
+                switch current {
+                case .stopped:
+                    return
+                case .running, .unknown:
+                    try await stop()
+                case .stopping:
+                    break
+                }
+            } catch {
+                lastError = error
+            }
+            try await ContinuousClock().sleep(for: .milliseconds(100))
+        } while ContinuousClock().now < deadline
+        throw OCIExecutorFailure.containerSuspensionFailed(
+            name: name,
+            reason: lastError.map(String.init(describing:))
+                ?? "container did not reach the stopped state")
     }
 }
 

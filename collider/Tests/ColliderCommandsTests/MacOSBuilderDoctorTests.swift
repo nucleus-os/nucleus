@@ -25,7 +25,7 @@ func macOSBuilderContractSelectsOneImmutableHost() throws {
     #expect(contract.environment.xdgCacheHome == "/Volumes/NucleusCache")
     #expect(
         contract.environment.nativeSDKRoot
-            == "/Volumes/NucleusCache/nucleus/nucleus-native-sdk")
+            == "/Volumes/NucleusCache/nucleus/nucleus-native-sdk/linux-arm64")
     #expect(
         contract.environment.androidSDKRoot
             == "/Volumes/NucleusCache/android-sdk")

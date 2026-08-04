@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for wp_security_context_v1.
 
 import WaylandClientC
-
 package enum WpSecurityContextV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_security_context_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == WpSecurityContextV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpSecurityContextV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_security_context_v1_destroy(_proxy)
@@ -18,34 +17,28 @@ extension WaylandProxy where Interface == WpSecurityContextV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func setSandboxEngine(name: String) throws(WaylandProxyError) {
+    func setSandboxEngine(name: String) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        return try name.withCString {
-            (_nameCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
-            unsafe swift_wayland_client_request_wp_security_context_v1_set_sandbox_engine(
-                _proxy, _nameCString)
+        return try name.withCString { (_nameCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wp_security_context_v1_set_sandbox_engine(_proxy, _nameCString)
             return
         }
     }
-    package func setAppId(app_id: String) throws(WaylandProxyError) {
+    func setAppId(app_id: String) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        return try app_id.withCString {
-            (_app_idCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
-            unsafe swift_wayland_client_request_wp_security_context_v1_set_app_id(
-                _proxy, _app_idCString)
+        return try app_id.withCString { (_app_idCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wp_security_context_v1_set_app_id(_proxy, _app_idCString)
             return
         }
     }
-    package func setInstanceId(instance_id: String) throws(WaylandProxyError) {
+    func setInstanceId(instance_id: String) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        return try instance_id.withCString {
-            (_instance_idCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
-            unsafe swift_wayland_client_request_wp_security_context_v1_set_instance_id(
-                _proxy, _instance_idCString)
+        return try instance_id.withCString { (_instance_idCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_wp_security_context_v1_set_instance_id(_proxy, _instance_idCString)
             return
         }
     }
-    package func commit() throws(WaylandProxyError) {
+    func commit() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_wp_security_context_v1_commit(_proxy)
         return

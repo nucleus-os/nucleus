@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for wp_image_description_reference_v1.
 
 import WaylandClientC
-
 package enum WpImageDescriptionReferenceV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_image_description_reference_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == WpImageDescriptionReferenceV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpImageDescriptionReferenceV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_image_description_reference_v1_destroy(_proxy)

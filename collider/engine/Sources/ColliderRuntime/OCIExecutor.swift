@@ -121,8 +121,7 @@ private func validateExecutionPolicies(
     _ execution: OCIExecution
 ) throws {
     try validateOCIPlatform(execution.executionPlatform)
-    guard execution.networkPolicy == .externalDisabled,
-        execution.capabilityPolicy == .dropAll,
+    guard execution.capabilityPolicy == .dropAll,
         execution.privilegePolicy == .prohibitAcquisition,
         execution.resourceLimits.processCount > 0
     else {
@@ -145,7 +144,9 @@ private func ociPlatformName(_ platform: ExecutionPlatform) -> String {
 }
 
 enum OCIExecutorFailure: Error, CustomStringConvertible {
+    case containerBuilderReleaseFailed(operation: String, cleanup: String)
     case containerCleanupFailed(name: String, reason: String)
+    case containerSuspensionFailed(name: String, reason: String)
     case invalidAppleImageInspection
     case invalidIntelBinaryTranslationContract
     case unsupportedTerminalOutput
@@ -155,8 +156,13 @@ enum OCIExecutorFailure: Error, CustomStringConvertible {
 
     var description: String {
         switch self {
+        case .containerBuilderReleaseFailed(let operation, let cleanup):
+            "Apple container image preparation failed (\(operation)) and the "
+                + "ephemeral builder could not be released (\(cleanup))"
         case .containerCleanupFailed(let name, let reason):
             "Apple container cleanup failed for \(name): \(reason)"
+        case .containerSuspensionFailed(let name, let reason):
+            "Apple container suspension failed for \(name): \(reason)"
         case .invalidAppleImageInspection:
             "Apple container image inspection did not return one OCI digest"
         case .invalidIntelBinaryTranslationContract:

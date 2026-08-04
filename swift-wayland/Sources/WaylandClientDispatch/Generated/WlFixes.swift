@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for wl_fixes.
 
 import WaylandClientC
-
 package enum WlFixesClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_fixes())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == WlFixesClient {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WlFixesClient {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wl_fixes_destroy(_proxy)
@@ -18,8 +17,7 @@ extension WaylandProxy where Interface == WlFixesClient {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func destroyRegistry(registry: WaylandProxy<WlRegistryClient>) throws(WaylandProxyError)
-    {
+    func destroyRegistry(registry: WaylandProxy<WlRegistryClient>) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _registryProxy = try unsafe registry.requireNativeProxy()
         unsafe swift_wayland_client_request_wl_fixes_destroy_registry(_proxy, _registryProxy)

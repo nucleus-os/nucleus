@@ -190,7 +190,5 @@ private func packageTask(
         postconditions: [swiftPM.postcondition],
         locks: [.checkout("compositor-core")],
         cachePolicy: isTest ? .always : .contentAddressed,
-        operation: testRequirement.map {
-            .runSwiftTest(SwiftTestExecution(requirement: $0))
-        } ?? .sequence([]))
+        operation: .sequence([]))
 }

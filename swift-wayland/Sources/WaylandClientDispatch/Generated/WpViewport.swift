@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for wp_viewport.
 
 import WaylandClientC
-
 package enum WpViewportClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_viewport())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == WpViewportClient {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpViewportClient {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_viewport_destroy(_proxy)
@@ -18,16 +17,12 @@ extension WaylandProxy where Interface == WpViewportClient {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func setSource(x: Double, y: Double, width: Double, height: Double)
-        throws(WaylandProxyError)
-    {
+    func setSource(x: Double, y: Double, width: Double, height: Double) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_wp_viewport_set_source(
-            _proxy, swift_wayland_fixed_from_double(x), swift_wayland_fixed_from_double(y),
-            swift_wayland_fixed_from_double(width), swift_wayland_fixed_from_double(height))
+        unsafe swift_wayland_client_request_wp_viewport_set_source(_proxy, swift_wayland_fixed_from_double(x), swift_wayland_fixed_from_double(y), swift_wayland_fixed_from_double(width), swift_wayland_fixed_from_double(height))
         return
     }
-    package func setDestination(width: Int32, height: Int32) throws(WaylandProxyError) {
+    func setDestination(width: Int32, height: Int32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_wp_viewport_set_destination(_proxy, width, height)
         return

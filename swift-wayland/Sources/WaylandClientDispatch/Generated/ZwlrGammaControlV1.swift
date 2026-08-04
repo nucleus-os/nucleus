@@ -2,15 +2,13 @@
 // Typed client descriptor and event dispatch for zwlr_gamma_control_v1.
 
 package import WaylandClientC
-
 package enum ZwlrGammaControlV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwlr_gamma_control_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == ZwlrGammaControlV1Client {
-    package func setGamma(fd: consuming WaylandClientOwnedFileDescriptor) throws(WaylandProxyError)
-    {
+package extension WaylandProxy where Interface == ZwlrGammaControlV1Client {
+    func setGamma(fd: consuming WaylandClientOwnedFileDescriptor) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _fdDescriptor = fd.take()
         defer {
@@ -20,7 +18,7 @@ extension WaylandProxy where Interface == ZwlrGammaControlV1Client {
         unsafe swift_wayland_client_request_zwlr_gamma_control_v1_set_gamma(_proxy, _fdDescriptor)
         return
     }
-    package func destroy() throws(WaylandProxyError) {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zwlr_gamma_control_v1_destroy(_proxy)
@@ -35,61 +33,52 @@ package protocol ZwlrGammaControlV1Events: AnyObject {
     func gammaSize(_ proxy: WaylandBorrowedProxy<ZwlrGammaControlV1Client>, size: UInt32)
     func failed(_ proxy: WaylandBorrowedProxy<ZwlrGammaControlV1Client>)
 }
-extension ZwlrGammaControlV1Client {
-    package nonisolated(unsafe) static let listener:
-        UnsafeMutablePointer<zwlr_gamma_control_v1_listener> = {
-            let p = UnsafeMutablePointer<zwlr_gamma_control_v1_listener>.allocate(capacity: 1)
-            unsafe p.initialize(to: zwlr_gamma_control_v1_listener())
-            unsafe p.pointee.gamma_size = gammaSize_impl
-            unsafe p.pointee.failed = failed_impl
-            return unsafe p
-        }()
-    private static func handler(_ context: WaylandClientListenerContext)
-        -> any ZwlrGammaControlV1Events?
-    {
+package extension ZwlrGammaControlV1Client {
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwlr_gamma_control_v1_listener> = {
+        let p = UnsafeMutablePointer<zwlr_gamma_control_v1_listener>.allocate(capacity: 1)
+        unsafe p.initialize(to: zwlr_gamma_control_v1_listener())
+        unsafe p.pointee.gamma_size = gammaSize_impl
+        unsafe p.pointee.failed = failed_impl
+        return unsafe p
+    }()
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZwlrGammaControlV1Events? {
         context.owner as? any ZwlrGammaControlV1Events
     }
-    private static let gammaSize_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = {
-            data, proxy, size in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.gammaSize(
-                    WaylandBorrowedProxy<ZwlrGammaControlV1Client>(eventProxy), size: size)
-            }
+    private static let gammaSize_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, size in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
-    private static let failed_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.failed(
-                    WaylandBorrowedProxy<ZwlrGammaControlV1Client>(eventProxy))
-            }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
         }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.gammaSize(WaylandBorrowedProxy<ZwlrGammaControlV1Client>(eventProxy), size: size)
+        }
+    }
+    private static let failed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.failed(WaylandBorrowedProxy<ZwlrGammaControlV1Client>(eventProxy))
+        }
+    }
 }
-extension WaylandProxy where Interface == ZwlrGammaControlV1Client {
-    package func installListener(_ owner: any ZwlrGammaControlV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwlrGammaControlV1Client {
+    func installListener(_ owner: any ZwlrGammaControlV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwlr_gamma_control_v1_add_listener(
-                proxy, ZwlrGammaControlV1Client.listener, data)
+            unsafe zwlr_gamma_control_v1_add_listener(proxy, ZwlrGammaControlV1Client.listener, data)
         }
     }
 }

@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for xwayland_shell_v1.
 
 import WaylandClientC
-
 package enum XwaylandShellV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_xwayland_shell_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == XwaylandShellV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == XwaylandShellV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_xwayland_shell_v1_destroy(_proxy)
@@ -18,16 +17,10 @@ extension WaylandProxy where Interface == XwaylandShellV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func getXwaylandSurface(surface: WaylandProxy<WlSurfaceClient>)
-        throws(WaylandProxyError) -> WaylandProxy<XwaylandSurfaceV1Client>
-    {
+    func getXwaylandSurface(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<XwaylandSurfaceV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_xwayland_shell_v1_get_xwayland_surface(
-                    _proxy, _surfaceProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_xwayland_shell_v1_get_xwayland_surface(_proxy, _surfaceProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

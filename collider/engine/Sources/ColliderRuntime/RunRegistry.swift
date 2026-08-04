@@ -151,6 +151,27 @@ public actor RunRegistry {
         }
     }
 
+    public func recordPlanningMetrics(
+        selectedInputHashingDurationNanoseconds: UInt64,
+        swiftPMInvocationCount: Int,
+        in run: RunHandle
+    ) throws {
+        try updateManifest(run) {
+            $0.selectedInputHashingDurationNanoseconds =
+                selectedInputHashingDurationNanoseconds
+            $0.swiftPMInvocationCount = swiftPMInvocationCount
+        }
+    }
+
+    public func recordExecutionDuration(
+        _ nanoseconds: UInt64,
+        in run: RunHandle
+    ) throws {
+        try updateManifest(run) {
+            $0.executionDurationNanoseconds = nanoseconds
+        }
+    }
+
     public func recordActiveArtifact(
         _ digest: ArtifactDigest,
         name: String,

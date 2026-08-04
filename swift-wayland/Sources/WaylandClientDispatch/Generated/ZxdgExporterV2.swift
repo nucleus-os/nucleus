@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for zxdg_exporter_v2.
 
 import WaylandClientC
-
 package enum ZxdgExporterV2Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zxdg_exporter_v2())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == ZxdgExporterV2Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZxdgExporterV2Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zxdg_exporter_v2_destroy(_proxy)
@@ -18,15 +17,10 @@ extension WaylandProxy where Interface == ZxdgExporterV2Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func exportToplevel(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError)
-        -> WaylandProxy<ZxdgExportedV2Client>
-    {
+    func exportToplevel(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<ZxdgExportedV2Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
-        guard
-            let _created = unsafe swift_wayland_client_request_zxdg_exporter_v2_export_toplevel(
-                _proxy, _surfaceProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_zxdg_exporter_v2_export_toplevel(_proxy, _surfaceProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

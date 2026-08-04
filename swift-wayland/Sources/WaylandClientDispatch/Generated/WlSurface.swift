@@ -3,14 +3,13 @@
 
 package import WaylandClientC
 package import WaylandProtocolTypes
-
 package enum WlSurfaceClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_surface())
     package nonisolated static let maximumVersion: UInt32 = 7
 }
-extension WaylandProxy where Interface == WlSurfaceClient {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WlSurfaceClient {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wl_surface_destroy(_proxy)
@@ -19,20 +18,18 @@ extension WaylandProxy where Interface == WlSurfaceClient {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func attach(buffer: WaylandProxy<WlBufferClient>?, x: Int32, y: Int32)
-        throws(WaylandProxyError)
-    {
+    func attach(buffer: WaylandProxy<WlBufferClient>?, x: Int32, y: Int32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _bufferProxy = try unsafe buffer?.requireNativeProxy()
         unsafe swift_wayland_client_request_wl_surface_attach(_proxy, _bufferProxy, x, y)
         return
     }
-    package func damage(x: Int32, y: Int32, width: Int32, height: Int32) throws(WaylandProxyError) {
+    func damage(x: Int32, y: Int32, width: Int32, height: Int32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_wl_surface_damage(_proxy, x, y, width, height)
         return
     }
-    package func frame() throws(WaylandProxyError) -> WaylandProxy<WlCallbackClient> {
+    func frame() throws(WaylandProxyError) -> WaylandProxy<WlCallbackClient> {
         let _proxy = try unsafe requireNativeProxy()
         guard let _created = unsafe swift_wayland_client_request_wl_surface_frame(_proxy) else {
             throw WaylandProxyError.proxyCreationFailed
@@ -40,34 +37,33 @@ extension WaylandProxy where Interface == WlSurfaceClient {
         return unsafe makeOwnedProxy(
             adopting: _created, WlCallbackClient.self)
     }
-    package func setOpaqueRegion(region: WaylandProxy<WlRegionClient>?) throws(WaylandProxyError) {
+    func setOpaqueRegion(region: WaylandProxy<WlRegionClient>?) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _regionProxy = try unsafe region?.requireNativeProxy()
         unsafe swift_wayland_client_request_wl_surface_set_opaque_region(_proxy, _regionProxy)
         return
     }
-    package func setInputRegion(region: WaylandProxy<WlRegionClient>?) throws(WaylandProxyError) {
+    func setInputRegion(region: WaylandProxy<WlRegionClient>?) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _regionProxy = try unsafe region?.requireNativeProxy()
         unsafe swift_wayland_client_request_wl_surface_set_input_region(_proxy, _regionProxy)
         return
     }
-    package func commit() throws(WaylandProxyError) {
+    func commit() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_wl_surface_commit(_proxy)
         return
     }
-    package func setBufferTransform(transform: WlOutputTransform) throws(WaylandProxyError) {
+    func setBufferTransform(transform: WlOutputTransform) throws(WaylandProxyError) {
         guard version >= 2 else {
             throw .unsupportedVersion(
                 required: 2, actual: version)
         }
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_wl_surface_set_buffer_transform(
-            _proxy, Int32(bitPattern: transform.rawValue))
+        unsafe swift_wayland_client_request_wl_surface_set_buffer_transform(_proxy, Int32(bitPattern: transform.rawValue))
         return
     }
-    package func setBufferScale(scale: Int32) throws(WaylandProxyError) {
+    func setBufferScale(scale: Int32) throws(WaylandProxyError) {
         guard version >= 3 else {
             throw .unsupportedVersion(
                 required: 3, actual: version)
@@ -76,9 +72,7 @@ extension WaylandProxy where Interface == WlSurfaceClient {
         unsafe swift_wayland_client_request_wl_surface_set_buffer_scale(_proxy, scale)
         return
     }
-    package func damageBuffer(x: Int32, y: Int32, width: Int32, height: Int32)
-        throws(WaylandProxyError)
-    {
+    func damageBuffer(x: Int32, y: Int32, width: Int32, height: Int32) throws(WaylandProxyError) {
         guard version >= 4 else {
             throw .unsupportedVersion(
                 required: 4, actual: version)
@@ -87,7 +81,7 @@ extension WaylandProxy where Interface == WlSurfaceClient {
         unsafe swift_wayland_client_request_wl_surface_damage_buffer(_proxy, x, y, width, height)
         return
     }
-    package func offset(x: Int32, y: Int32) throws(WaylandProxyError) {
+    func offset(x: Int32, y: Int32) throws(WaylandProxyError) {
         guard version >= 5 else {
             throw .unsupportedVersion(
                 required: 5, actual: version)
@@ -96,14 +90,13 @@ extension WaylandProxy where Interface == WlSurfaceClient {
         unsafe swift_wayland_client_request_wl_surface_offset(_proxy, x, y)
         return
     }
-    package func getRelease() throws(WaylandProxyError) -> WaylandProxy<WlCallbackClient> {
+    func getRelease() throws(WaylandProxyError) -> WaylandProxy<WlCallbackClient> {
         guard version >= 7 else {
             throw .unsupportedVersion(
                 required: 7, actual: version)
         }
         let _proxy = try unsafe requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_wl_surface_get_release(_proxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_wl_surface_get_release(_proxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
@@ -112,18 +105,13 @@ extension WaylandProxy where Interface == WlSurfaceClient {
 }
 @MainActor
 package protocol WlSurfaceEvents: AnyObject {
-    func enter(
-        _ proxy: WaylandBorrowedProxy<WlSurfaceClient>, output: WaylandBorrowedProxy<WlOutputClient>
-    )
-    func leave(
-        _ proxy: WaylandBorrowedProxy<WlSurfaceClient>, output: WaylandBorrowedProxy<WlOutputClient>
-    )
+    func enter(_ proxy: WaylandBorrowedProxy<WlSurfaceClient>, output: WaylandBorrowedProxy<WlOutputClient>)
+    func leave(_ proxy: WaylandBorrowedProxy<WlSurfaceClient>, output: WaylandBorrowedProxy<WlOutputClient>)
     func preferredBufferScale(_ proxy: WaylandBorrowedProxy<WlSurfaceClient>, factor: Int32)
-    func preferredBufferTransform(
-        _ proxy: WaylandBorrowedProxy<WlSurfaceClient>, transform: WlOutputTransform)
+    func preferredBufferTransform(_ proxy: WaylandBorrowedProxy<WlSurfaceClient>, transform: WlOutputTransform)
 }
-extension WlSurfaceClient {
-    package nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_surface_listener> = {
+package extension WlSurfaceClient {
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_surface_listener> = {
         let p = UnsafeMutablePointer<wl_surface_listener>.allocate(capacity: 1)
         unsafe p.initialize(to: wl_surface_listener())
         unsafe p.pointee.enter = enter_impl
@@ -135,86 +123,71 @@ extension WlSurfaceClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any WlSurfaceEvents? {
         context.owner as? any WlSurfaceEvents
     }
-    private static let enter_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = {
-            data, proxy, output in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_output = unsafe output
-            MainActor.assumeIsolated {
-                unsafe eventHandler.enter(
-                    WaylandBorrowedProxy<WlSurfaceClient>(eventProxy),
-                    output: WaylandBorrowedProxy<WlOutputClient>(_event_output!))
-            }
+    private static let enter_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, output in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
-    private static let leave_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = {
-            data, proxy, output in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_output = unsafe output
-            MainActor.assumeIsolated {
-                unsafe eventHandler.leave(
-                    WaylandBorrowedProxy<WlSurfaceClient>(eventProxy),
-                    output: WaylandBorrowedProxy<WlOutputClient>(_event_output!))
-            }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
         }
-    private static let preferredBufferScale_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32) -> Void = {
-            data, proxy, factor in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.preferredBufferScale(
-                    WaylandBorrowedProxy<WlSurfaceClient>(eventProxy), factor: factor)
-            }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_output = unsafe output
+        MainActor.assumeIsolated {
+            unsafe eventHandler.enter(WaylandBorrowedProxy<WlSurfaceClient>(eventProxy), output: WaylandBorrowedProxy<WlOutputClient>(_event_output!))
         }
-    private static let preferredBufferTransform_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = {
-            data, proxy, transform in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.preferredBufferTransform(
-                    WaylandBorrowedProxy<WlSurfaceClient>(eventProxy),
-                    transform: WlOutputTransform(rawValue: transform))
-            }
+    }
+    private static let leave_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, output in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_output = unsafe output
+        MainActor.assumeIsolated {
+            unsafe eventHandler.leave(WaylandBorrowedProxy<WlSurfaceClient>(eventProxy), output: WaylandBorrowedProxy<WlOutputClient>(_event_output!))
+        }
+    }
+    private static let preferredBufferScale_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32) -> Void = { data, proxy, factor in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.preferredBufferScale(WaylandBorrowedProxy<WlSurfaceClient>(eventProxy), factor: factor)
+        }
+    }
+    private static let preferredBufferTransform_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, transform in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.preferredBufferTransform(WaylandBorrowedProxy<WlSurfaceClient>(eventProxy), transform: WlOutputTransform(rawValue: transform))
+        }
+    }
 }
-extension WaylandProxy where Interface == WlSurfaceClient {
-    package func installListener(_ owner: any WlSurfaceEvents) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WlSurfaceClient {
+    func installListener(_ owner: any WlSurfaceEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe wl_surface_add_listener(proxy, WlSurfaceClient.listener, data)
         }

@@ -22,13 +22,16 @@ public final class PseudoTerminalLog: @unchecked Sendable {
     private let state = Mutex(State())
     private let completion = DispatchGroup()
     private let master: Int32
+    private let slave: Int32
     private let output: Int32
 
     public init(output path: FilePath) throws {
         var slavePathBytes = [CChar](repeating: 0, count: 4_096)
+        var slave = Int32(-1)
         let master = unsafe collider_open_raw_pseudo_terminal(
             &slavePathBytes,
-            slavePathBytes.count)
+            slavePathBytes.count,
+            &slave)
         guard master >= 0 else {
             throw PseudoTerminalLogFailure.system(
                 operation: "create raw pseudo-terminal",
@@ -42,6 +45,7 @@ public final class PseudoTerminalLog: @unchecked Sendable {
                 options: [.create, .truncate, .closeOnExec],
                 permissions: .ownerReadWrite)
         } catch {
+            _ = close(slave)
             _ = close(master)
             throw error
         }
@@ -54,6 +58,7 @@ public final class PseudoTerminalLog: @unchecked Sendable {
             },
             as: UTF8.self)
         self.master = master
+        self.slave = slave
         self.output = output.rawValue
         completion.enter()
         DispatchQueue(
@@ -91,6 +96,11 @@ public final class PseudoTerminalLog: @unchecked Sendable {
                     operation: "close pseudo-terminal log",
                     code: errno)
             }
+            if close(slave) != 0 {
+                recordFailure(
+                    operation: "close pseudo-terminal slave",
+                    code: errno)
+            }
             if close(master) != 0 {
                 recordFailure(
                     operation: "close pseudo-terminal master",
@@ -109,6 +119,11 @@ public final class PseudoTerminalLog: @unchecked Sendable {
                     return
                 }
                 continue
+            }
+            if state.withLock({ $0.stopRequested }),
+                count == 0 || (count < 0 && errno == EIO)
+            {
+                return
             }
             if count < 0,
                 errno != EAGAIN,

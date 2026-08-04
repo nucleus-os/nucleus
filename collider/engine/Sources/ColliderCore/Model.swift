@@ -97,6 +97,10 @@ public struct ArtifactDigest: Hashable, Codable, Sendable,
 public struct CommandSpec: Hashable, Sendable {
     public enum Executable: Hashable, Sendable {
         case named(String)
+        /// A host executable whose implementation cannot affect output
+        /// equivalence because the operation independently verifies the exact
+        /// materialized content. Its name is operational, not task identity.
+        case operationalNamed(String)
         case path(FilePath)
         /// An executable built earlier in the same ordered task operation.
         ///

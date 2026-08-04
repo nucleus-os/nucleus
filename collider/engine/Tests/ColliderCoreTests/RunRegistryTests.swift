@@ -98,6 +98,9 @@ import Testing
     manifest.status = .failed
     manifest.failedTask = TaskID(rawValue: "runtime.build")
     manifest.planningDurationNanoseconds = 42
+    manifest.selectedInputHashingDurationNanoseconds = 17
+    manifest.swiftPMInvocationCount = 2
+    manifest.executionDurationNanoseconds = 99
     manifest.taskDurationsNanoseconds = ["runtime.build": 123]
     let digest = ArtifactDigest(bytes: [UInt8](repeating: 7, count: 32))
     manifest.activeArtifacts = ["runtime": digest]
@@ -116,6 +119,13 @@ import Testing
     #expect(
         decoded.planningDurationNanoseconds
             == manifest.planningDurationNanoseconds)
+    #expect(
+        decoded.selectedInputHashingDurationNanoseconds
+            == manifest.selectedInputHashingDurationNanoseconds)
+    #expect(decoded.swiftPMInvocationCount == manifest.swiftPMInvocationCount)
+    #expect(
+        decoded.executionDurationNanoseconds
+            == manifest.executionDurationNanoseconds)
     #expect(
         decoded.taskDurationsNanoseconds
             == manifest.taskDurationsNanoseconds)

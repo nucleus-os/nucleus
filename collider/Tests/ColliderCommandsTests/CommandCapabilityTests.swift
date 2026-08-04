@@ -4,6 +4,10 @@ import Testing
 
 @testable import ColliderCommands
 
+@Test func everyDirectWorkloadHasValidTargetPlacement() {
+    #expect(DirectWorkloadPlacementAudit.invalidIDs.isEmpty)
+}
+
 #if os(Linux)
 import NucleusAndroidRuntimeCore
 #endif
@@ -26,6 +30,8 @@ private let taskControlledLeaves: [[String]] = [
     ["browser", "build"],
     ["browser", "test"],
     ["install", "browser"],
+    ["sanitize"],
+    ["benchmark"],
 ]
 
 private let reportLeaves: [[String]] = [
@@ -44,8 +50,6 @@ private let diagnosticLeaves: [[String]] = [
 
 private let controlFreeLeaves: [[String]] = {
     var leaves = [
-        ["sanitize"],
-        ["benchmark"],
         ["logs", "show"],
         ["logs", "tail"],
     ]

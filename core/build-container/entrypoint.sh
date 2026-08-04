@@ -5,6 +5,24 @@ case "${1:-}" in
   swiftpm)
     shift
     ;;
+  javascript)
+    if [[ ! -f package.json || ! -f yarn.lock ]]; then
+      echo "error: working directory is not the React Native checkout root" >&2
+      exit 64
+    fi
+    shift
+    ;;
+  wayland-generate)
+    if [[ ! -x /native-wayland/bin/wayland-scanner ]]; then
+      echo "error: produced wayland-scanner is not mounted" >&2
+      exit 64
+    fi
+    if [[ ! -d Protocols || ! -d Sources/SwiftWaylandGenerator ]]; then
+      echo "error: working directory is not the swift-wayland source root" >&2
+      exit 64
+    fi
+    shift
+    ;;
   skia-linux | skia-android)
     if [[ ! -d /build || ! -w /build ]]; then
       echo "error: /build is not the writable external native build root" >&2
@@ -74,7 +92,7 @@ case "${1:-}" in
     shift
     ;;
   *)
-    echo "error: expected builder mode: swiftpm, skia-linux, skia-android, react-native, gfxstream, or wayland" >&2
+    echo "error: expected builder mode: swiftpm, javascript, wayland-generate, skia-linux, skia-android, react-native, gfxstream, or wayland" >&2
     exit 64
     ;;
 esac

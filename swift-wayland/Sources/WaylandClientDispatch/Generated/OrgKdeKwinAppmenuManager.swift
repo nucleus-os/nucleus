@@ -2,28 +2,22 @@
 // Typed client descriptor and event dispatch for org_kde_kwin_appmenu_manager.
 
 import WaylandClientC
-
 package enum OrgKdeKwinAppmenuManagerClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_org_kde_kwin_appmenu_manager())
     package nonisolated static let maximumVersion: UInt32 = 2
 }
-extension WaylandProxy where Interface == OrgKdeKwinAppmenuManagerClient {
-    package func create(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError)
-        -> WaylandProxy<OrgKdeKwinAppmenuClient>
-    {
+package extension WaylandProxy where Interface == OrgKdeKwinAppmenuManagerClient {
+    func create(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<OrgKdeKwinAppmenuClient> {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
-        guard
-            let _created = unsafe swift_wayland_client_request_org_kde_kwin_appmenu_manager_create(
-                _proxy, _surfaceProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_org_kde_kwin_appmenu_manager_create(_proxy, _surfaceProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, OrgKdeKwinAppmenuClient.self)
     }
-    package func release() throws(WaylandProxyError) {
+    func release() throws(WaylandProxyError) {
         guard version >= 2 else {
             throw .unsupportedVersion(
                 required: 2, actual: version)

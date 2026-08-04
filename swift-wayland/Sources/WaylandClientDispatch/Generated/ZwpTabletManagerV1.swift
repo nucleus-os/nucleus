@@ -2,29 +2,22 @@
 // Typed client descriptor and event dispatch for zwp_tablet_manager_v1.
 
 import WaylandClientC
-
 package enum ZwpTabletManagerV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_tablet_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == ZwpTabletManagerV1Client {
-    package func getTabletSeat(seat: WaylandProxy<WlSeatClient>) throws(WaylandProxyError)
-        -> WaylandProxy<ZwpTabletSeatV1Client>
-    {
+package extension WaylandProxy where Interface == ZwpTabletManagerV1Client {
+    func getTabletSeat(seat: WaylandProxy<WlSeatClient>) throws(WaylandProxyError) -> WaylandProxy<ZwpTabletSeatV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _seatProxy = try unsafe seat.requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_zwp_tablet_manager_v1_get_tablet_seat(
-                    _proxy, _seatProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_zwp_tablet_manager_v1_get_tablet_seat(_proxy, _seatProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, ZwpTabletSeatV1Client.self)
     }
-    package func destroy() throws(WaylandProxyError) {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zwp_tablet_manager_v1_destroy(_proxy)

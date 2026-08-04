@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for wp_cursor_shape_manager_v1.
 
 import WaylandClientC
-
 package enum WpCursorShapeManagerV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_cursor_shape_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 2
 }
-extension WaylandProxy where Interface == WpCursorShapeManagerV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpCursorShapeManagerV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_cursor_shape_manager_v1_destroy(_proxy)
@@ -18,31 +17,19 @@ extension WaylandProxy where Interface == WpCursorShapeManagerV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func getPointer(pointer: WaylandProxy<WlPointerClient>) throws(WaylandProxyError)
-        -> WaylandProxy<WpCursorShapeDeviceV1Client>
-    {
+    func getPointer(pointer: WaylandProxy<WlPointerClient>) throws(WaylandProxyError) -> WaylandProxy<WpCursorShapeDeviceV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _pointerProxy = try unsafe pointer.requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_wp_cursor_shape_manager_v1_get_pointer(
-                    _proxy, _pointerProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_wp_cursor_shape_manager_v1_get_pointer(_proxy, _pointerProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, WpCursorShapeDeviceV1Client.self)
     }
-    package func getTabletToolV2(tablet_tool: WaylandProxy<ZwpTabletToolV2Client>)
-        throws(WaylandProxyError) -> WaylandProxy<WpCursorShapeDeviceV1Client>
-    {
+    func getTabletToolV2(tablet_tool: WaylandProxy<ZwpTabletToolV2Client>) throws(WaylandProxyError) -> WaylandProxy<WpCursorShapeDeviceV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _tablet_toolProxy = try unsafe tablet_tool.requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_wp_cursor_shape_manager_v1_get_tablet_tool_v2(
-                    _proxy, _tablet_toolProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_wp_cursor_shape_manager_v1_get_tablet_tool_v2(_proxy, _tablet_toolProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

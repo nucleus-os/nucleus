@@ -3,14 +3,13 @@
 
 package import WaylandClientC
 package import WaylandProtocolTypes
-
 package enum ZwpTextInputV3Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_text_input_v3())
     package nonisolated static let maximumVersion: UInt32 = 2
 }
-extension WaylandProxy where Interface == ZwpTextInputV3Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpTextInputV3Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zwp_text_input_v3_destroy(_proxy)
@@ -19,71 +18,55 @@ extension WaylandProxy where Interface == ZwpTextInputV3Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func enable() throws(WaylandProxyError) {
+    func enable() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_zwp_text_input_v3_enable(_proxy)
         return
     }
-    package func disable() throws(WaylandProxyError) {
+    func disable() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_zwp_text_input_v3_disable(_proxy)
         return
     }
-    package func setSurroundingText(text: String, cursor: Int32, anchor: Int32)
-        throws(WaylandProxyError)
-    {
+    func setSurroundingText(text: String, cursor: Int32, anchor: Int32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        return try text.withCString {
-            (_textCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
-            unsafe swift_wayland_client_request_zwp_text_input_v3_set_surrounding_text(
-                _proxy, _textCString, cursor, anchor)
+        return try text.withCString { (_textCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_zwp_text_input_v3_set_surrounding_text(_proxy, _textCString, cursor, anchor)
             return
         }
     }
-    package func setTextChangeCause(cause: ZwpTextInputV3ChangeCause) throws(WaylandProxyError) {
+    func setTextChangeCause(cause: ZwpTextInputV3ChangeCause) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_zwp_text_input_v3_set_text_change_cause(
-            _proxy, cause.rawValue)
+        unsafe swift_wayland_client_request_zwp_text_input_v3_set_text_change_cause(_proxy, cause.rawValue)
         return
     }
-    package func setContentType(
-        hint: ZwpTextInputV3ContentHint, purpose: ZwpTextInputV3ContentPurpose
-    ) throws(WaylandProxyError) {
+    func setContentType(hint: ZwpTextInputV3ContentHint, purpose: ZwpTextInputV3ContentPurpose) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_zwp_text_input_v3_set_content_type(
-            _proxy, hint.rawValue, purpose.rawValue)
+        unsafe swift_wayland_client_request_zwp_text_input_v3_set_content_type(_proxy, hint.rawValue, purpose.rawValue)
         return
     }
-    package func setCursorRectangle(x: Int32, y: Int32, width: Int32, height: Int32)
-        throws(WaylandProxyError)
-    {
+    func setCursorRectangle(x: Int32, y: Int32, width: Int32, height: Int32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_zwp_text_input_v3_set_cursor_rectangle(
-            _proxy, x, y, width, height)
+        unsafe swift_wayland_client_request_zwp_text_input_v3_set_cursor_rectangle(_proxy, x, y, width, height)
         return
     }
-    package func commit() throws(WaylandProxyError) {
+    func commit() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_zwp_text_input_v3_commit(_proxy)
         return
     }
-    package func setAvailableActions(available_actions: WaylandClientArrayArgument)
-        throws(WaylandProxyError)
-    {
+    func setAvailableActions(available_actions: WaylandClientArrayArgument) throws(WaylandProxyError) {
         guard version >= 2 else {
             throw .unsupportedVersion(
                 required: 2, actual: version)
         }
         let _proxy = try unsafe requireNativeProxy()
-        return try unsafe available_actions.withNativeArray {
-            (_available_actionsArray: UnsafeMutablePointer<wl_array>) throws(WaylandProxyError)
-                -> Void in
-            unsafe swift_wayland_client_request_zwp_text_input_v3_set_available_actions(
-                _proxy, _available_actionsArray)
+        return try unsafe available_actions.withNativeArray { (_available_actionsArray: UnsafeMutablePointer<wl_array>) throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_zwp_text_input_v3_set_available_actions(_proxy, _available_actionsArray)
             return
         }
     }
-    package func showInputPanel() throws(WaylandProxyError) {
+    func showInputPanel() throws(WaylandProxyError) {
         guard version >= 2 else {
             throw .unsupportedVersion(
                 required: 2, actual: version)
@@ -92,7 +75,7 @@ extension WaylandProxy where Interface == ZwpTextInputV3Client {
         unsafe swift_wayland_client_request_zwp_text_input_v3_show_input_panel(_proxy)
         return
     }
-    package func hideInputPanel() throws(WaylandProxyError) {
+    func hideInputPanel() throws(WaylandProxyError) {
         guard version >= 2 else {
             throw .unsupportedVersion(
                 required: 2, actual: version)
@@ -104,232 +87,181 @@ extension WaylandProxy where Interface == ZwpTextInputV3Client {
 }
 @MainActor
 package protocol ZwpTextInputV3Events: AnyObject {
-    func enter(
-        _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>,
-        surface: WaylandBorrowedProxy<WlSurfaceClient>)
-    func leave(
-        _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>,
-        surface: WaylandBorrowedProxy<WlSurfaceClient>)
-    func preeditString(
-        _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, text: String?, cursor_begin: Int32,
-        cursor_end: Int32)
+    func enter(_ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, surface: WaylandBorrowedProxy<WlSurfaceClient>)
+    func leave(_ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, surface: WaylandBorrowedProxy<WlSurfaceClient>)
+    func preeditString(_ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, text: String?, cursor_begin: Int32, cursor_end: Int32)
     func commitString(_ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, text: String?)
-    func deleteSurroundingText(
-        _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, before_length: UInt32,
-        after_length: UInt32)
+    func deleteSurroundingText(_ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, before_length: UInt32, after_length: UInt32)
     func done(_ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, serial: UInt32)
-    func action(
-        _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, action: ZwpTextInputV3Action,
-        serial: UInt32)
+    func action(_ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, action: ZwpTextInputV3Action, serial: UInt32)
     func language(_ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, language: String)
-    func preeditHint(
-        _ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, start: UInt32, end: UInt32,
-        hint: ZwpTextInputV3PreeditHint)
+    func preeditHint(_ proxy: WaylandBorrowedProxy<ZwpTextInputV3Client>, start: UInt32, end: UInt32, hint: ZwpTextInputV3PreeditHint)
 }
-extension ZwpTextInputV3Client {
-    package nonisolated(unsafe) static let listener:
-        UnsafeMutablePointer<zwp_text_input_v3_listener> = {
-            let p = UnsafeMutablePointer<zwp_text_input_v3_listener>.allocate(capacity: 1)
-            unsafe p.initialize(to: zwp_text_input_v3_listener())
-            unsafe p.pointee.enter = enter_impl
-            unsafe p.pointee.leave = leave_impl
-            unsafe p.pointee.preedit_string = preeditString_impl
-            unsafe p.pointee.commit_string = commitString_impl
-            unsafe p.pointee.delete_surrounding_text = deleteSurroundingText_impl
-            unsafe p.pointee.done = done_impl
-            unsafe p.pointee.action = action_impl
-            unsafe p.pointee.language = language_impl
-            unsafe p.pointee.preedit_hint = preeditHint_impl
-            return unsafe p
-        }()
-    private static func handler(_ context: WaylandClientListenerContext)
-        -> any ZwpTextInputV3Events?
-    {
+package extension ZwpTextInputV3Client {
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_text_input_v3_listener> = {
+        let p = UnsafeMutablePointer<zwp_text_input_v3_listener>.allocate(capacity: 1)
+        unsafe p.initialize(to: zwp_text_input_v3_listener())
+        unsafe p.pointee.enter = enter_impl
+        unsafe p.pointee.leave = leave_impl
+        unsafe p.pointee.preedit_string = preeditString_impl
+        unsafe p.pointee.commit_string = commitString_impl
+        unsafe p.pointee.delete_surrounding_text = deleteSurroundingText_impl
+        unsafe p.pointee.done = done_impl
+        unsafe p.pointee.action = action_impl
+        unsafe p.pointee.language = language_impl
+        unsafe p.pointee.preedit_hint = preeditHint_impl
+        return unsafe p
+    }()
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZwpTextInputV3Events? {
         context.owner as? any ZwpTextInputV3Events
     }
-    private static let enter_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = {
-            data, proxy, surface in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_surface = unsafe surface
-            MainActor.assumeIsolated {
-                unsafe eventHandler.enter(
-                    WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy),
-                    surface: WaylandBorrowedProxy<WlSurfaceClient>(_event_surface!))
-            }
+    private static let enter_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, surface in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
-    private static let leave_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = {
-            data, proxy, surface in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_surface = unsafe surface
-            MainActor.assumeIsolated {
-                unsafe eventHandler.leave(
-                    WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy),
-                    surface: WaylandBorrowedProxy<WlSurfaceClient>(_event_surface!))
-            }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
         }
-    private static let preeditString_impl:
-        @convention(c) (
-            UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?, Int32, Int32
-        ) -> Void = { data, proxy, text, cursor_begin, cursor_end in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_text = unsafe text
-            MainActor.assumeIsolated {
-                unsafe eventHandler.preeditString(
-                    WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy),
-                    text: _event_text.map {
-                        unsafe String(cString: $0)
-                    }, cursor_begin: cursor_begin, cursor_end: cursor_end)
-            }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_surface = unsafe surface
+        MainActor.assumeIsolated {
+            unsafe eventHandler.enter(WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy), surface: WaylandBorrowedProxy<WlSurfaceClient>(_event_surface!))
         }
-    private static let commitString_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = {
-            data, proxy, text in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_text = unsafe text
-            MainActor.assumeIsolated {
-                unsafe eventHandler.commitString(
-                    WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy),
-                    text: _event_text.map {
-                        unsafe String(cString: $0)
-                    })
-            }
+    }
+    private static let leave_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, surface in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
-    private static let deleteSurroundingText_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = {
-            data, proxy, before_length, after_length in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.deleteSurroundingText(
-                    WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy),
-                    before_length: before_length, after_length: after_length)
-            }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
         }
-    private static let done_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = {
-            data, proxy, serial in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.done(
-                    WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy), serial: serial)
-            }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_surface = unsafe surface
+        MainActor.assumeIsolated {
+            unsafe eventHandler.leave(WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy), surface: WaylandBorrowedProxy<WlSurfaceClient>(_event_surface!))
         }
-    private static let action_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = {
-            data, proxy, action, serial in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.action(
-                    WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy),
-                    action: ZwpTextInputV3Action(rawValue: action), serial: serial)
-            }
+    }
+    private static let preeditString_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?, Int32, Int32) -> Void = { data, proxy, text, cursor_begin, cursor_end in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
-    private static let language_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = {
-            data, proxy, language in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_language = unsafe language
-            MainActor.assumeIsolated {
-                unsafe eventHandler.language(
-                    WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy),
-                    language: unsafe String(cString: _event_language!))
-            }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
         }
-    private static let preeditHint_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void =
-            { data, proxy, start, end, hint in
-                guard let data = unsafe data, let proxy = unsafe proxy else {
-                    return
-                }
-                let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-                guard let h = handler(listenerContext) else {
-                    return
-                }
-                nonisolated(unsafe) let eventHandler = h
-                nonisolated(unsafe) let eventProxy = unsafe proxy
-                nonisolated(unsafe) let eventContext = listenerContext
-                MainActor.assumeIsolated {
-                    unsafe eventHandler.preeditHint(
-                        WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy), start: start,
-                        end: end, hint: ZwpTextInputV3PreeditHint(rawValue: hint))
-                }
-            }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_text = unsafe text
+        MainActor.assumeIsolated {
+            unsafe eventHandler.preeditString(WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy), text: _event_text.map {
+                    unsafe String(cString: $0)
+                }, cursor_begin: cursor_begin, cursor_end: cursor_end)
+        }
+    }
+    private static let commitString_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, text in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_text = unsafe text
+        MainActor.assumeIsolated {
+            unsafe eventHandler.commitString(WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy), text: _event_text.map {
+                    unsafe String(cString: $0)
+                })
+        }
+    }
+    private static let deleteSurroundingText_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = { data, proxy, before_length, after_length in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.deleteSurroundingText(WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy), before_length: before_length, after_length: after_length)
+        }
+    }
+    private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.done(WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy), serial: serial)
+        }
+    }
+    private static let action_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = { data, proxy, action, serial in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.action(WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy), action: ZwpTextInputV3Action(rawValue: action), serial: serial)
+        }
+    }
+    private static let language_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, language in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_language = unsafe language
+        MainActor.assumeIsolated {
+            unsafe eventHandler.language(WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy), language: unsafe String(cString: _event_language!))
+        }
+    }
+    private static let preeditHint_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void = { data, proxy, start, end, hint in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.preeditHint(WaylandBorrowedProxy<ZwpTextInputV3Client>(eventProxy), start: start, end: end, hint: ZwpTextInputV3PreeditHint(rawValue: hint))
+        }
+    }
 }
-extension WaylandProxy where Interface == ZwpTextInputV3Client {
-    package func installListener(_ owner: any ZwpTextInputV3Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpTextInputV3Client {
+    func installListener(_ owner: any ZwpTextInputV3Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe zwp_text_input_v3_add_listener(proxy, ZwpTextInputV3Client.listener, data)
         }

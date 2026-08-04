@@ -78,15 +78,25 @@ public struct TaskExecutionReport: Codable, Sendable {
     public let plan: [TaskPlanEntry]
     public let executed: [TaskID]
     public let planningDurationNanoseconds: UInt64
+    public let selectedInputHashingDurationNanoseconds: UInt64
+    public let swiftPMInvocationCount: Int
+    public let executionDurationNanoseconds: UInt64
 
     public init(
         plan: [TaskPlanEntry],
         executed: [TaskID],
-        planningDurationNanoseconds: UInt64
+        planningDurationNanoseconds: UInt64,
+        selectedInputHashingDurationNanoseconds: UInt64,
+        swiftPMInvocationCount: Int,
+        executionDurationNanoseconds: UInt64
     ) {
         self.plan = plan
         self.executed = executed
         self.planningDurationNanoseconds = planningDurationNanoseconds
+        self.selectedInputHashingDurationNanoseconds =
+            selectedInputHashingDurationNanoseconds
+        self.swiftPMInvocationCount = swiftPMInvocationCount
+        self.executionDurationNanoseconds = executionDurationNanoseconds
     }
 }
 
@@ -153,12 +163,30 @@ private func scheduledResources(
                 memoryBytes: max(accumulated.memoryBytes, next.memoryBytes),
                 exclusive: accumulated.exclusive || next.exclusive)
         }
-    case .prepareOCIImage, .compileAOSPProduct, .buildChromiumProduct:
+    case .prepareOCIImage, .buildChromiumProduct:
         return ScheduledTaskResources(
             cpuCount: budget.cpuCount,
             memoryBytes: budget.memoryBytes,
             exclusive: true)
-    default:
+    case .aospProduct(let stage, _):
+        switch stage {
+        case .compile:
+            return ScheduledTaskResources(
+                cpuCount: budget.cpuCount,
+                memoryBytes: budget.memoryBytes,
+                exclusive: true)
+        case .sign, .assembleImages, .validate, .publish:
+            return .lightweight
+        }
+    case .action, .command, .runSwiftTest, .configureMeson, .createDirectory,
+        .copyFile, .copyMatchingFile, .extractZip, .removePath,
+        .replaceSymlink, .setPermissions, .writeFile, .validateAndroidHost,
+        .sanitizeLinkMetadata, .publishSymlink, .publishDirectory,
+        .pruneDirectories, .verifyAOSPSourceLock, .prepareAOSPSource,
+        .prepareAOSPSigningIdentity, .prepareChromiumDepotTools,
+        .prepareChromiumSource, .assembleBrowserArtifact,
+        .validateBrowserArtifact, .assembleCEFArtifact, .validateCEFArtifact,
+        .installBrowser, .validateAptPackages, .download, .activateGeneration:
         return .lightweight
     }
 }
@@ -182,7 +210,16 @@ private func containsOCIExecution(_ operation: TaskOperation) -> Bool {
         true
     case .sequence(let operations):
         operations.contains(where: containsOCIExecution)
-    default:
+    case .action, .command, .runSwiftTest, .configureMeson, .createDirectory,
+        .copyFile, .copyMatchingFile, .extractZip, .removePath,
+        .replaceSymlink, .setPermissions, .writeFile, .validateAndroidHost,
+        .sanitizeLinkMetadata, .publishSymlink, .publishDirectory,
+        .pruneDirectories, .verifyAOSPSourceLock, .prepareAOSPSource,
+        .prepareOCIImage, .prepareAOSPSigningIdentity, .aospProduct,
+        .prepareChromiumDepotTools, .prepareChromiumSource,
+        .buildChromiumProduct, .assembleBrowserArtifact,
+        .validateBrowserArtifact, .assembleCEFArtifact, .validateCEFArtifact,
+        .installBrowser, .validateAptPackages, .download, .activateGeneration:
         false
     }
 }
@@ -223,15 +260,17 @@ private func canSchedule(
 
 func requiredSwiftBuildsAreCompleted(
     for task: TaskDeclaration,
-    buildByContext: [SwiftBuildContext: TaskID],
+    buildsByContext: [SwiftBuildContext: Set<TaskID>],
     completed: Set<TaskID>
 ) -> Bool {
     let contexts =
         task.swiftProducts.map(\.invocation.context)
         + task.swiftTests.map(\.invocation.context)
     return contexts.allSatisfy { context in
-        guard let build = buildByContext[context] else { return false }
-        return completed.contains(build)
+        guard let builds = buildsByContext[context], !builds.isEmpty else {
+            return false
+        }
+        return builds.isSubset(of: completed)
     }
 }
 
@@ -334,19 +373,29 @@ extension ColliderRuntime {
         }
         let reportedPlan = swiftBuildPlans + plan
         let planningDuration = elapsedNanoseconds(since: planningStart)
+        let selectedInputHashingDuration = digestCache.hashingDurationNanoseconds
+        let swiftPMInvocationCount = swiftBuildPlans.count
         try? digestCache.persist()
         if let eventRun, let eventRegistry {
             try await eventRegistry.recordPlan(reportedPlan, in: eventRun)
             try await eventRegistry.recordPlanningDuration(
                 planningDuration,
                 in: eventRun)
+            try await eventRegistry.recordPlanningMetrics(
+                selectedInputHashingDurationNanoseconds: selectedInputHashingDuration,
+                swiftPMInvocationCount: swiftPMInvocationCount,
+                in: eventRun)
         }
         if options.dryRun {
             return TaskExecutionReport(
                 plan: reportedPlan,
                 executed: [],
-                planningDurationNanoseconds: planningDuration)
+                planningDurationNanoseconds: planningDuration,
+                selectedInputHashingDurationNanoseconds: selectedInputHashingDuration,
+                swiftPMInvocationCount: swiftPMInvocationCount,
+                executionDurationNanoseconds: 0)
         }
+        let executionStart = ContinuousClock().now
         if let eventRun, let eventRegistry {
             for entry in swiftBuildPlans where entry.isClean {
                 try await eventRegistry.record(
@@ -375,10 +424,11 @@ extension ColliderRuntime {
             uniqueKeysWithValues: ordered.map {
                 ($0.id, $0)
             })
-        let buildByContext = Dictionary(
-            uniqueKeysWithValues: swiftBuilds.map {
-                ($0.context, $0.task.id)
-            })
+        let buildsByContext = swiftBuilds.reduce(
+            into: [SwiftBuildContext: Set<TaskID>]()
+        ) { result, build in
+            result[build.context, default: []].insert(build.task.id)
+        }
         let buildPrerequisites = Dictionary(
             uniqueKeysWithValues: swiftBuilds.map {
                 (
@@ -428,7 +478,7 @@ extension ColliderRuntime {
                             }
                             let swiftBuildsReady = requiredSwiftBuildsAreCompleted(
                                 for: task,
-                                buildByContext: buildByContext,
+                                buildsByContext: buildsByContext,
                                 completed: completed)
                             return dependenciesReady && swiftBuildsReady
                                 ? .declared(index) : nil
@@ -543,10 +593,19 @@ extension ColliderRuntime {
                     completedAt: ISO8601DateFormatter().string(from: Date())),
                 stateRoot: stateRoot)
         }
+        let executionDuration = elapsedNanoseconds(since: executionStart)
+        if let eventRun, let eventRegistry {
+            try await eventRegistry.recordExecutionDuration(
+                executionDuration,
+                in: eventRun)
+        }
         return TaskExecutionReport(
             plan: reportedPlan,
             executed: executed,
-            planningDurationNanoseconds: planningDuration)
+            planningDurationNanoseconds: planningDuration,
+            selectedInputHashingDurationNanoseconds: selectedInputHashingDuration,
+            swiftPMInvocationCount: swiftPMInvocationCount,
+            executionDurationNanoseconds: executionDuration)
     }
 
     private func swiftBuildPrerequisites(
@@ -698,43 +757,83 @@ extension ColliderRuntime {
         )
         return try contexts.sorted {
             $0.identityBytes.lexicographicallyPrecedes($1.identityBytes)
-        }.map { context in
+        }.flatMap { context -> [SynthesizedSwiftBuild] in
             let tests = testEntries.filter {
                 $0.requirement.invocation.context == context
-            }
-            if !tests.isEmpty {
-                let requirements = tests.map(\.requirement)
-                let products = productEntries.filter {
-                    $0.requirement.invocation.context == context
-                }
-                let task = try synthesizedSwiftTestBuild(
-                    requirements,
-                    products: products.map(\.requirement))
-                let attribution =
-                    (tests.map {
-                        "\($0.task.component.rawValue):\($0.requirement.qualifiedProduct)"
-                    }
-                    + products.map {
-                        "\($0.task.component.rawValue):\($0.requirement.qualifiedProduct)"
-                    }).sorted().joined(separator: ", ")
-                return SynthesizedSwiftBuild(
-                    task: task,
-                    attribution: attribution,
-                    context: context)
             }
             let products = productEntries.filter {
                 $0.requirement.invocation.context == context
             }
-            let requirements = products.map(\.requirement)
-            let task = try synthesizedSwiftBuild(requirements)
-            let attribution = products.map {
-                "\($0.task.component.rawValue):\($0.requirement.qualifiedProduct)"
-            }.sorted().joined(separator: ", ")
-            return SynthesizedSwiftBuild(
-                task: task,
-                attribution: attribution,
-                context: context)
+            guard !tests.isEmpty else {
+                let task = try synthesizedSwiftBuild(products.map(\.requirement))
+                return [
+                    SynthesizedSwiftBuild(
+                        task: task,
+                        attribution: swiftAttribution(
+                            products.map {
+                                ($0.task, $0.requirement.qualifiedProduct)
+                            }),
+                        context: context)
+                ]
+            }
+
+            let groupedTests = Dictionary(grouping: tests) {
+                $0.requirement.arguments
+            }.sorted {
+                $0.key.lexicographicallyPrecedes($1.key)
+            }
+            let coveredOutputs = Set(tests.flatMap(\.requirement.expectedBuildOutputs))
+            let coveredProducts = products.filter { entry in
+                entry.requirement.expectedOutputs.allSatisfy {
+                    coveredOutputs.contains($0)
+                }
+            }
+            let uncoveredProducts = products.filter { entry in
+                !coveredProducts.contains(where: {
+                    $0.task.id == entry.task.id
+                        && $0.requirement == entry.requirement
+                })
+            }
+            var builds: [SynthesizedSwiftBuild] = []
+            if !uncoveredProducts.isEmpty {
+                builds.append(
+                    SynthesizedSwiftBuild(
+                        task: try synthesizedSwiftBuild(
+                            uncoveredProducts.map(\.requirement)),
+                        attribution: swiftAttribution(
+                            uncoveredProducts.map {
+                                ($0.task, $0.requirement.qualifiedProduct)
+                            }),
+                        context: context))
+            }
+            for (index, grouping) in groupedTests.enumerated() {
+                let group = grouping.value
+                let groupProducts = index == 0 ? coveredProducts : []
+                let testTask = try synthesizedSwiftTestBuild(
+                    group.map(\.requirement),
+                    products: groupProducts.map(\.requirement))
+                builds.append(
+                    SynthesizedSwiftBuild(
+                        task: testTask,
+                        attribution: swiftAttribution(
+                            group.map {
+                                ($0.task, $0.requirement.qualifiedProduct)
+                            }
+                                + groupProducts.map {
+                                    ($0.task, $0.requirement.qualifiedProduct)
+                                }),
+                        context: context))
+            }
+            return builds
         }
+    }
+
+    private func swiftAttribution(
+        _ entries: [(task: TaskDeclaration, product: String)]
+    ) -> String {
+        entries.map {
+            "\($0.task.component.rawValue):\($0.product)"
+        }.sorted().joined(separator: ", ")
     }
 
     private func synthesizedSwiftBuild(
@@ -751,7 +850,6 @@ extension ColliderRuntime {
         }
 
         let products = Array(Set(requirements.map(\.qualifiedProduct))).sorted()
-        let productNames = Array(Set(requirements.map(\.product))).sorted()
         var inputs = [first.invocation.identityInput]
         inputs += first.invocation.context.toolsets.map(ArtifactInput.file)
         if case .oci(let configuration) = first.invocation.context.execution {
@@ -771,7 +869,19 @@ extension ColliderRuntime {
         for product in products {
             identity.append(tag: 2, string: product)
         }
+        let prebuildTargets = Array(
+            Set(requirements.flatMap(\.prebuildTargets))
+        ).sorted()
+        for target in prebuildTargets {
+            identity.append(tag: 3, string: target)
+        }
         let digest = ArtifactHasher.digest(bytes: identity.bytes)
+        let buildArguments: [String]
+        if requirements.count == 1 {
+            buildArguments = ["build", "--product", first.product]
+        } else {
+            buildArguments = ["build"]
+        }
         return TaskDeclaration(
             id: TaskID(rawValue: "swift.package.build.\(digest)"),
             component: ComponentID(rawValue: "swift-package"),
@@ -782,12 +892,17 @@ extension ColliderRuntime {
                 },
             locks: [first.invocation.lock],
             operation: .sequence(
-                productNames.map { product in
+                prebuildTargets.map { target in
                     first.invocation.operation(
-                        arguments: ["build", "--product", product],
+                        arguments: ["build", "--target", target],
                         workingDirectory: first.invocation.context.packageRoot,
                         environment: first.environment)
-                }))
+                } + [
+                    first.invocation.operation(
+                        arguments: buildArguments,
+                        workingDirectory: first.invocation.context.packageRoot,
+                        environment: first.environment)
+                ]))
     }
 
     private func synthesizedSwiftTestBuild(
@@ -845,8 +960,19 @@ extension ColliderRuntime {
         for product in products {
             identity.append(tag: 3, string: product)
         }
+        let prebuildTargets = Array(
+            Set(productRequirements.flatMap(\.prebuildTargets))
+        ).sorted()
+        for target in prebuildTargets {
+            identity.append(tag: 4, string: target)
+        }
         let digest = ArtifactHasher.digest(bytes: identity.bytes)
         let arguments = ["test"] + first.arguments
+        let expectedOutputs =
+            (requirements.flatMap(\.expectedBuildOutputs)
+            + productRequirements.flatMap(\.expectedOutputs)).reduce(into: [PathPostcondition]()) {
+                if !$0.contains($1) { $0.append($1) }
+            }
         return TaskDeclaration(
             id: TaskID(rawValue: "swift.package.test.\(digest)"),
             component: ComponentID(rawValue: "swift-package"),
@@ -854,14 +980,20 @@ extension ColliderRuntime {
             postconditions: [
                 first.invocation.postcondition
             ]
-                + productRequirements.flatMap(\.expectedOutputs).reduce(into: []) {
-                    if !$0.contains($1) { $0.append($1) }
-                },
+                + expectedOutputs,
             locks: [first.invocation.lock],
-            operation: first.invocation.operation(
-                arguments: arguments,
-                workingDirectory: first.invocation.context.packageRoot,
-                environment: buildEnvironment))
+            operation: .sequence(
+                prebuildTargets.map { target in
+                    first.invocation.operation(
+                        arguments: ["build", "--target", target],
+                        workingDirectory: first.invocation.context.packageRoot,
+                        environment: buildEnvironment)
+                } + [
+                    first.invocation.operation(
+                        arguments: arguments,
+                        workingDirectory: first.invocation.context.packageRoot,
+                        environment: buildEnvironment)
+                ]))
     }
 
     private func subsumedOperations(
@@ -869,10 +1001,13 @@ extension ColliderRuntime {
         plan: [TaskPlanEntry]
     ) -> Set<TaskID> {
         let entries = Dictionary(uniqueKeysWithValues: plan.map { ($0.task, $0) })
+        let tasks = Dictionary(uniqueKeysWithValues: ordered.map { ($0.id, $0) })
         var subsumed: Set<TaskID> = []
         for task in ordered where entries[task.id]?.isClean == false {
             for dependency in task.subsumedDependencies
-            where entries[dependency]?.isClean == false {
+            where entries[dependency]?.isClean == false
+                && tasks[dependency].map({ canSubsume($0, with: task) }) == true
+            {
                 subsumed.insert(dependency)
             }
         }
@@ -900,6 +1035,19 @@ extension ColliderRuntime {
         return subsumed
     }
 
+    private func canSubsume(
+        _ dependency: TaskDeclaration,
+        with task: TaskDeclaration
+    ) -> Bool {
+        guard !dependency.swiftProducts.isEmpty, !task.swiftTests.isEmpty else {
+            return true
+        }
+        let coveredOutputs = Set(task.swiftTests.flatMap(\.expectedBuildOutputs))
+        return dependency.swiftProducts
+            .flatMap(\.expectedOutputs)
+            .allSatisfy(coveredOutputs.contains)
+    }
+
     private func identity(
         of task: TaskDeclaration,
         dependencies: [ArtifactDigest],
@@ -922,6 +1070,9 @@ extension ColliderRuntime {
             encoder.append(
                 tag: 222,
                 bytes: requirement.invocation.context.identityBytes)
+            for target in requirement.prebuildTargets {
+                encoder.append(tag: 109, string: target)
+            }
             for output in requirement.expectedOutputs {
                 encoder.append(tag: 223, string: output.path.string)
                 encoder.append(tag: 224, string: output.validation.rawValue)
@@ -936,6 +1087,10 @@ extension ColliderRuntime {
                 bytes: requirement.invocation.context.identityBytes)
             for argument in requirement.arguments {
                 encoder.append(tag: 227, string: argument)
+            }
+            for output in requirement.expectedBuildOutputs {
+                encoder.append(tag: 107, string: output.path.string)
+                encoder.append(tag: 108, string: output.validation.rawValue)
             }
         }
         var identityInputs = task.inputs
@@ -1020,6 +1175,9 @@ extension ColliderRuntime {
             case .taskOutput(let path):
                 encoder.append(tag: 20, string: path.string)
                 encoder.append(tag: 47, string: "task-output")
+            case .operationalNamed(let name):
+                encoder.append(tag: 20, string: name)
+                encoder.append(tag: 47, string: "operational")
             case .named, .path:
                 let tool = try resolvedToolIdentity(
                     command.executable,
@@ -1082,28 +1240,24 @@ extension ColliderRuntime {
             encoder.append(tag: 62, string: copy.childDirectoryPrefix)
             encoder.append(tag: 63, string: copy.fileName)
             encoder.append(tag: 64, string: copy.destination.string)
-        case .mergeStaticArchives(let merge):
-            encoder.append(tag: 54, string: merge.sourceRoot.string)
-            encoder.append(tag: 55, string: merge.output.string)
-            for prefix in merge.excludedFilePrefixes {
-                encoder.append(tag: 56, string: prefix)
-            }
-            for executable in [merge.archiver, merge.indexer] {
-                let tool = try resolvedToolIdentity(
-                    executable,
-                    environment: merge.environment)
-                encoder.append(tag: 57, string: tool.path.string)
-                encoder.append(tag: 58, bytes: tool.digest.bytes)
-            }
-            for (name, value) in artifactEnvironment(merge.environment) {
-                encoder.append(tag: 59, string: name)
-                encoder.append(tag: 60, string: value)
+        case .extractZip(let extraction):
+            encoder.append(tag: 255, string: "extract-zip")
+            encoder.append(tag: 61, string: extraction.archive.string)
+            encoder.append(tag: 62, string: extraction.entry)
+            encoder.append(tag: 63, string: extraction.destination.string)
+            for (name, value) in artifactEnvironment(extraction.environment) {
+                encoder.append(tag: 23, string: name)
+                encoder.append(tag: 24, string: value)
             }
         case .removePath(let path):
             encoder.append(tag: 43, string: path.string)
         case .replaceSymlink(let path, let target):
             encoder.append(tag: 48, string: path.string)
             encoder.append(tag: 49, string: target)
+        case .setPermissions(let update):
+            encoder.append(tag: 255, string: "set-permissions")
+            encoder.append(tag: 61, string: update.path.string)
+            encoder.append(tag: 62, integer: UInt64(update.permissions))
         case .writeFile(let path, let bytes):
             encoder.append(tag: 44, string: path.string)
             encoder.append(tag: 45, bytes: bytes)
@@ -1303,27 +1457,8 @@ extension ColliderRuntime {
                 encoder.append(tag: 195, string: name)
                 encoder.append(tag: 196, string: value)
             }
-        case .compileAOSPProduct(let build),
-            .signAOSPProduct(let build),
-            .assembleAOSPProductImages(let build),
-            .validateAOSPProduct(let build),
-            .publishAOSPProduct(let build):
-            let pipelineStage: String
-            switch operation {
-            case .compileAOSPProduct:
-                pipelineStage = "compile"
-            case .signAOSPProduct:
-                pipelineStage = "sign"
-            case .assembleAOSPProductImages:
-                pipelineStage = "assemble-images"
-            case .validateAOSPProduct:
-                pipelineStage = "validate"
-            case .publishAOSPProduct:
-                pipelineStage = "publish"
-            default:
-                preconditionFailure("unreachable AOSP product operation")
-            }
-            encoder.append(tag: 196, string: pipelineStage)
+        case .aospProduct(let stage, let build):
+            encoder.append(tag: 196, string: stage.rawValue)
             for path in [
                 build.productSource,
                 build.source,
@@ -1356,9 +1491,8 @@ extension ColliderRuntime {
                 encoder.append(tag: 202, string: name)
                 encoder.append(tag: 203, string: value)
             }
-            if pipelineStage == "compile" || pipelineStage == "sign"
-                || pipelineStage == "assemble-images"
-            {
+            switch stage {
+            case .compile, .sign, .assembleImages:
                 let executionPlatform = ExecutionPlatform.linuxAMD64OCI
                 let executor = try OCIExecutorResolver.resolve(
                     executionPlatform: executionPlatform)
@@ -1372,6 +1506,8 @@ extension ColliderRuntime {
                     environment: build.environment)
                 encoder.append(tag: 200, string: tool.path.string)
                 encoder.append(tag: 201, bytes: tool.digest.bytes)
+            case .validate, .publish:
+                break
             }
         case .prepareChromiumDepotTools(let preparation):
             let tool = try resolvedToolIdentity(
@@ -1598,6 +1734,9 @@ extension ColliderRuntime {
         case .taskOutput(let value):
             throw RuntimeFailure.invalidOutput(
                 "task-produced executable cannot be declared as an external tool: \(value)")
+        case .operationalNamed(let name):
+            throw RuntimeFailure.invalidOutput(
+                "operational executable cannot be declared as a semantic tool: \(name)")
         case .named(let name):
             guard let resolved = resolveExecutable(name, path: environment["PATH"]) else {
                 throw RuntimeFailure.toolNotFound(name)
@@ -1722,40 +1861,20 @@ extension ColliderRuntime {
             try DurableFile.copy(
                 from: candidates[0],
                 to: copy.destination)
-        case .mergeStaticArchives(let merge):
-            let archives = try staticArchives(for: merge)
-            guard !archives.isEmpty else {
-                throw RuntimeFailure.invalidOutput(
-                    "no static archives found under \(merge.sourceRoot)")
-            }
-            if FileManager.default.fileExists(atPath: merge.output.string) {
-                try FileManager.default.removeItem(atPath: merge.output.string)
-            }
+        case .extractZip(let extraction):
             try FileManager.default.createDirectory(
-                atPath: merge.output.removingLastComponent().string,
+                atPath: extraction.destination.string,
                 withIntermediateDirectories: true)
-            let mri =
-                (["create \(merge.output.string)"]
-                + archives.map { "addlib \($0.string)" }
-                + ["save", "end", ""]).joined(separator: "\n")
             try await perform(
                 .command(
                     CommandSpec(
-                        executable: merge.archiver,
-                        arguments: ["-M"],
-                        workingDirectory: merge.sourceRoot,
-                        environment: merge.environment,
-                        input: .bytes(Array(mri.utf8)))),
-                outputs: outputs,
-                stage: stage,
-                options: options)
-            try await perform(
-                .command(
-                    CommandSpec(
-                        executable: merge.indexer,
-                        arguments: [merge.output.string],
-                        workingDirectory: merge.sourceRoot,
-                        environment: merge.environment)),
+                        executable: .named("unzip"),
+                        arguments: [
+                            "-o", extraction.archive.string, extraction.entry,
+                            "-d", extraction.destination.string,
+                        ],
+                        workingDirectory: extraction.destination,
+                        environment: extraction.environment)),
                 outputs: outputs,
                 stage: stage,
                 options: options)
@@ -1779,6 +1898,10 @@ extension ColliderRuntime {
             try FileManager.default.createSymbolicLink(
                 atPath: path.string,
                 withDestinationPath: target)
+        case .setPermissions(let update):
+            try FileManager.default.setAttributes(
+                [.posixPermissions: NSNumber(value: update.permissions)],
+                ofItemAtPath: update.path.string)
         case .writeFile(let path, let bytes):
             try DurableFile.write(Data(bytes), to: path)
         case .validateAndroidHost(let validation):
@@ -1807,16 +1930,19 @@ extension ColliderRuntime {
             try await prepareAOSPSigningIdentity(
                 preparation,
                 stage: stage)
-        case .compileAOSPProduct(let build):
-            try await compileAOSPProduct(build, stage: stage)
-        case .signAOSPProduct(let build):
-            try await signAOSPProduct(build, stage: stage)
-        case .assembleAOSPProductImages(let build):
-            try await assembleAOSPProductImages(build, stage: stage)
-        case .validateAOSPProduct(let build):
-            try await validateAOSPProduct(build, stage: stage)
-        case .publishAOSPProduct(let build):
-            try await publishAOSPProduct(build, stage: stage)
+        case .aospProduct(let operationStage, let build):
+            switch operationStage {
+            case .compile:
+                try await compileAOSPProduct(build, stage: stage)
+            case .sign:
+                try await signAOSPProduct(build, stage: stage)
+            case .assembleImages:
+                try await assembleAOSPProductImages(build, stage: stage)
+            case .validate:
+                try await validateAOSPProduct(build, stage: stage)
+            case .publish:
+                try await publishAOSPProduct(build, stage: stage)
+            }
         case .prepareChromiumDepotTools(let preparation):
             try await prepareChromiumDepotTools(preparation, stage: stage)
         case .prepareChromiumSource(let preparation):
@@ -1878,6 +2004,12 @@ extension ColliderRuntime {
             switch path.validation {
             case .exists:
                 _ = try path.path.stat(followTargetSymlink: false)
+            case .symlinkTarget:
+                let metadata = try path.path.stat(followTargetSymlink: false)
+                guard metadata.type == .symbolicLink else {
+                    throw RuntimeFailure.invalidOutput(path.path.string)
+                }
+                _ = try path.path.stat(followTargetSymlink: true)
             case .regularFile, .json:
                 let metadata = try path.path.stat()
                 guard metadata.type == .regular else {
@@ -1930,7 +2062,16 @@ extension ColliderRuntime {
             for operation in operations {
                 try validateArtifactOutputs(operation)
             }
-        default:
+        case .action, .command, .runSwiftTest, .configureMeson, .createDirectory,
+            .copyFile, .copyMatchingFile, .extractZip, .removePath,
+            .replaceSymlink, .setPermissions, .writeFile, .validateAndroidHost,
+            .sanitizeLinkMetadata, .publishSymlink, .publishDirectory,
+            .pruneDirectories, .verifyAOSPSourceLock, .prepareAOSPSource,
+            .prepareOCIImage, .runOCI, .prepareAOSPSigningIdentity,
+            .aospProduct, .prepareChromiumDepotTools, .prepareChromiumSource,
+            .buildChromiumProduct, .assembleBrowserArtifact,
+            .validateBrowserArtifact, .assembleCEFArtifact, .validateCEFArtifact,
+            .installBrowser, .validateAptPackages, .activateGeneration:
             break
         }
     }
@@ -1964,6 +2105,7 @@ private func rendered(_ command: CommandSpec) -> String {
     let executable =
         switch command.executable {
         case .named(let name): name
+        case .operationalNamed(let name): name
         case .path(let path): path.string
         case .taskOutput(let path): path.string
         }
@@ -2011,8 +2153,10 @@ final class PlanningArtifactDigestCache {
     private var files: [String: FileEntry]
     private var trees: [TreeKey: ArtifactDigest] = [:]
     private var persistentStateChanged = false
+    private var measurementDepth = 0
     private(set) var fileMissCount = 0
     private(set) var treeMissCount = 0
+    private(set) var hashingDurationNanoseconds: UInt64 = 0
 
     init(persistentFile: FilePath? = nil) {
         self.persistentFile = persistentFile
@@ -2033,6 +2177,15 @@ final class PlanningArtifactDigestCache {
     func digest(
         file path: FilePath,
         metadata suppliedMetadata: Stat? = nil
+    ) throws -> ArtifactDigest {
+        try measured {
+            try digestFile(path, metadata: suppliedMetadata)
+        }
+    }
+
+    private func digestFile(
+        _ path: FilePath,
+        metadata suppliedMetadata: Stat?
     ) throws -> ArtifactDigest {
         let metadata =
             try suppliedMetadata
@@ -2056,6 +2209,15 @@ final class PlanningArtifactDigestCache {
         tree root: FilePath,
         excluding excludedRelativePaths: Set<String> = []
     ) throws -> ArtifactDigest {
+        try measured {
+            try digestTree(root, excluding: excludedRelativePaths)
+        }
+    }
+
+    private func digestTree(
+        _ root: FilePath,
+        excluding excludedRelativePaths: Set<String>
+    ) throws -> ArtifactDigest {
         let key = TreeKey(
             root: root,
             excludedRelativePaths: excludedRelativePaths.sorted())
@@ -2069,6 +2231,21 @@ final class PlanningArtifactDigestCache {
         trees[key] = digest
         treeMissCount += 1
         return digest
+    }
+
+    private func measured<Result>(
+        _ operation: () throws -> Result
+    ) rethrows -> Result {
+        let recordsDuration = measurementDepth == 0
+        let start = recordsDuration ? ContinuousClock().now : nil
+        measurementDepth += 1
+        defer {
+            measurementDepth -= 1
+            if let start {
+                hashingDurationNanoseconds &+= elapsedNanoseconds(since: start)
+            }
+        }
+        return try operation()
     }
 
     func persist() throws {
@@ -2128,8 +2305,8 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
         execution.environment
     case .configureMeson(let setup):
         setup.environment
-    case .mergeStaticArchives(let merge):
-        merge.environment
+    case .extractZip(let extraction):
+        extraction.environment
     case .validateAndroidHost(let validation):
         validation.environment
     case .sanitizeLinkMetadata:
@@ -2148,11 +2325,7 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
         execution.environment
     case .prepareAOSPSigningIdentity(let preparation):
         preparation.environment
-    case .compileAOSPProduct(let build),
-        .signAOSPProduct(let build),
-        .assembleAOSPProductImages(let build),
-        .validateAOSPProduct(let build),
-        .publishAOSPProduct(let build):
+    case .aospProduct(_, let build):
         build.environment
     case .prepareChromiumDepotTools(let preparation):
         preparation.environment
@@ -2172,7 +2345,8 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
         validation.environment
     case .sequence(let operations):
         operations.lazy.map(operationEnvironment).first(where: { !$0.isEmpty }) ?? [:]
-    default:
+    case .createDirectory, .copyFile, .copyMatchingFile, .removePath,
+        .replaceSymlink, .setPermissions, .writeFile, .download, .activateGeneration:
         [:]
     }
 }
@@ -2200,18 +2374,21 @@ private func executionCoordinates(
             execution: execution.executionPlatform,
             backend: executor.backend,
             artifact: execution.artifactTarget)
-    case .compileAOSPProduct(let build),
-        .signAOSPProduct(let build),
-        .assembleAOSPProductImages(let build):
-        let platform = ExecutionPlatform.linuxAMD64OCI
-        let executor = try OCIExecutorResolver.resolve(
-            runner: runner,
-            executionPlatform: platform)
-        return TaskExecutionCoordinates(
-            runner: runner,
-            execution: platform,
-            backend: executor.backend,
-            artifact: .androidX86_64(apiLevel: build.expectedPlatformSDK))
+    case .aospProduct(let stage, let build):
+        switch stage {
+        case .compile, .sign, .assembleImages:
+            let platform = ExecutionPlatform.linuxAMD64OCI
+            let executor = try OCIExecutorResolver.resolve(
+                runner: runner,
+                executionPlatform: platform)
+            return TaskExecutionCoordinates(
+                runner: runner,
+                execution: platform,
+                backend: executor.backend,
+                artifact: .androidX86_64(apiLevel: build.expectedPlatformSDK))
+        case .validate, .publish:
+            return nil
+        }
     case .sequence(let operations):
         let coordinates = try operations.compactMap {
             try executionCoordinates($0)
@@ -2222,7 +2399,16 @@ private func executionCoordinates(
                 "one task sequence cannot cross execution coordinates")
         }
         return first
-    default:
+    case .action, .command, .runSwiftTest, .configureMeson, .createDirectory,
+        .copyFile, .copyMatchingFile, .extractZip, .removePath,
+        .replaceSymlink, .setPermissions, .writeFile, .validateAndroidHost,
+        .sanitizeLinkMetadata, .publishSymlink, .publishDirectory,
+        .pruneDirectories, .verifyAOSPSourceLock, .prepareAOSPSource,
+        .prepareAOSPSigningIdentity, .prepareChromiumDepotTools,
+        .prepareChromiumSource, .buildChromiumProduct,
+        .assembleBrowserArtifact, .validateBrowserArtifact,
+        .assembleCEFArtifact, .validateCEFArtifact, .installBrowser,
+        .validateAptPackages, .download, .activateGeneration:
         return nil
     }
 }
@@ -2287,35 +2473,6 @@ private func publishSymlink(_ publication: SymlinkPublication) throws {
         }
         throw error
     }
-}
-
-private func staticArchives(
-    for merge: StaticArchiveMerge
-) throws -> [FilePath] {
-    guard
-        let enumerator = FileManager.default.enumerator(
-            at: URL(fileURLWithPath: merge.sourceRoot.string),
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles])
-    else {
-        throw RuntimeFailure.invalidOutput(merge.sourceRoot.string)
-    }
-    var archives: [FilePath] = []
-    for case let url as URL in enumerator {
-        guard url.pathExtension == "a",
-            url.path != merge.output.string,
-            !merge.excludedFilePrefixes.contains(where: {
-                url.lastPathComponent.hasPrefix($0)
-            }),
-            try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true
-        else { continue }
-        guard !url.path.contains("\n") else {
-            throw RuntimeFailure.invalidOutput(
-                "static archive path contains a newline: \(url.path)")
-        }
-        archives.append(FilePath(url.path))
-    }
-    return archives.sorted { $0.string.utf8.lexicographicallyPrecedes($1.string.utf8) }
 }
 
 private func resolveExecutable(_ name: String, path: String?) -> FilePath? {

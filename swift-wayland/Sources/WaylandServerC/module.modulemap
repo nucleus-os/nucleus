@@ -1,5 +1,4 @@
 module WaylandServerC {
     header "WaylandServerC.h"
-    link "wayland-server"
     export *
 }

@@ -18,7 +18,8 @@ int32_t collider_binderfs_add_device(
     uint32_t *minor);
 int32_t collider_open_raw_pseudo_terminal(
     char *slave_path,
-    size_t slave_path_capacity);
+    size_t slave_path_capacity,
+    int32_t *slave_descriptor);
 char *collider_copy_loaded_library_path(const char *symbol);
 
 #endif

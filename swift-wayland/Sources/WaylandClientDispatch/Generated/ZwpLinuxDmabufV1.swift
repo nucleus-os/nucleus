@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for zwp_linux_dmabuf_v1.
 
 package import WaylandClientC
-
 package enum ZwpLinuxDmabufV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_linux_dmabuf_v1())
     package nonisolated static let maximumVersion: UInt32 = 5
 }
-extension WaylandProxy where Interface == ZwpLinuxDmabufV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpLinuxDmabufV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zwp_linux_dmabuf_v1_destroy(_proxy)
@@ -18,50 +17,34 @@ extension WaylandProxy where Interface == ZwpLinuxDmabufV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func createParams() throws(WaylandProxyError) -> WaylandProxy<
-        ZwpLinuxBufferParamsV1Client
-    > {
+    func createParams() throws(WaylandProxyError) -> WaylandProxy<ZwpLinuxBufferParamsV1Client> {
         let _proxy = try unsafe requireNativeProxy()
-        guard
-            let _created = unsafe swift_wayland_client_request_zwp_linux_dmabuf_v1_create_params(
-                _proxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_zwp_linux_dmabuf_v1_create_params(_proxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, ZwpLinuxBufferParamsV1Client.self)
     }
-    package func getDefaultFeedback() throws(WaylandProxyError) -> WaylandProxy<
-        ZwpLinuxDmabufFeedbackV1Client
-    > {
+    func getDefaultFeedback() throws(WaylandProxyError) -> WaylandProxy<ZwpLinuxDmabufFeedbackV1Client> {
         guard version >= 4 else {
             throw .unsupportedVersion(
                 required: 4, actual: version)
         }
         let _proxy = try unsafe requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_zwp_linux_dmabuf_v1_get_default_feedback(_proxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_zwp_linux_dmabuf_v1_get_default_feedback(_proxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, ZwpLinuxDmabufFeedbackV1Client.self)
     }
-    package func getSurfaceFeedback(surface: WaylandProxy<WlSurfaceClient>)
-        throws(WaylandProxyError) -> WaylandProxy<ZwpLinuxDmabufFeedbackV1Client>
-    {
+    func getSurfaceFeedback(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<ZwpLinuxDmabufFeedbackV1Client> {
         guard version >= 4 else {
             throw .unsupportedVersion(
                 required: 4, actual: version)
         }
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_zwp_linux_dmabuf_v1_get_surface_feedback(
-                    _proxy, _surfaceProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_zwp_linux_dmabuf_v1_get_surface_feedback(_proxy, _surfaceProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
@@ -71,64 +54,52 @@ extension WaylandProxy where Interface == ZwpLinuxDmabufV1Client {
 @MainActor
 package protocol ZwpLinuxDmabufV1Events: AnyObject {
     func format(_ proxy: WaylandBorrowedProxy<ZwpLinuxDmabufV1Client>, format: UInt32)
-    func modifier(
-        _ proxy: WaylandBorrowedProxy<ZwpLinuxDmabufV1Client>, format: UInt32, modifier_hi: UInt32,
-        modifier_lo: UInt32)
+    func modifier(_ proxy: WaylandBorrowedProxy<ZwpLinuxDmabufV1Client>, format: UInt32, modifier_hi: UInt32, modifier_lo: UInt32)
 }
-extension ZwpLinuxDmabufV1Client {
-    package nonisolated(unsafe) static let listener:
-        UnsafeMutablePointer<zwp_linux_dmabuf_v1_listener> = {
-            let p = UnsafeMutablePointer<zwp_linux_dmabuf_v1_listener>.allocate(capacity: 1)
-            unsafe p.initialize(to: zwp_linux_dmabuf_v1_listener())
-            unsafe p.pointee.format = format_impl
-            unsafe p.pointee.modifier = modifier_impl
-            return unsafe p
-        }()
-    private static func handler(_ context: WaylandClientListenerContext)
-        -> any ZwpLinuxDmabufV1Events?
-    {
+package extension ZwpLinuxDmabufV1Client {
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_linux_dmabuf_v1_listener> = {
+        let p = UnsafeMutablePointer<zwp_linux_dmabuf_v1_listener>.allocate(capacity: 1)
+        unsafe p.initialize(to: zwp_linux_dmabuf_v1_listener())
+        unsafe p.pointee.format = format_impl
+        unsafe p.pointee.modifier = modifier_impl
+        return unsafe p
+    }()
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZwpLinuxDmabufV1Events? {
         context.owner as? any ZwpLinuxDmabufV1Events
     }
-    private static let format_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = {
-            data, proxy, format in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.format(
-                    WaylandBorrowedProxy<ZwpLinuxDmabufV1Client>(eventProxy), format: format)
-            }
+    private static let format_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, format in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
-    private static let modifier_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void =
-            { data, proxy, format, modifier_hi, modifier_lo in
-                guard let data = unsafe data, let proxy = unsafe proxy else {
-                    return
-                }
-                let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-                guard let h = handler(listenerContext) else {
-                    return
-                }
-                nonisolated(unsafe) let eventHandler = h
-                nonisolated(unsafe) let eventProxy = unsafe proxy
-                nonisolated(unsafe) let eventContext = listenerContext
-                MainActor.assumeIsolated {
-                    unsafe eventHandler.modifier(
-                        WaylandBorrowedProxy<ZwpLinuxDmabufV1Client>(eventProxy), format: format,
-                        modifier_hi: modifier_hi, modifier_lo: modifier_lo)
-                }
-            }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.format(WaylandBorrowedProxy<ZwpLinuxDmabufV1Client>(eventProxy), format: format)
+        }
+    }
+    private static let modifier_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void = { data, proxy, format, modifier_hi, modifier_lo in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.modifier(WaylandBorrowedProxy<ZwpLinuxDmabufV1Client>(eventProxy), format: format, modifier_hi: modifier_hi, modifier_lo: modifier_lo)
+        }
+    }
 }
-extension WaylandProxy where Interface == ZwpLinuxDmabufV1Client {
-    package func installListener(_ owner: any ZwpLinuxDmabufV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpLinuxDmabufV1Client {
+    func installListener(_ owner: any ZwpLinuxDmabufV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe zwp_linux_dmabuf_v1_add_listener(proxy, ZwpLinuxDmabufV1Client.listener, data)
         }

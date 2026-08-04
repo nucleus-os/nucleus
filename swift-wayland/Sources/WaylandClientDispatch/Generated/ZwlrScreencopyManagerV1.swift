@@ -2,45 +2,31 @@
 // Typed client descriptor and event dispatch for zwlr_screencopy_manager_v1.
 
 import WaylandClientC
-
 package enum ZwlrScreencopyManagerV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwlr_screencopy_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 3
 }
-extension WaylandProxy where Interface == ZwlrScreencopyManagerV1Client {
-    package func captureOutput(overlay_cursor: Int32, output: WaylandProxy<WlOutputClient>)
-        throws(WaylandProxyError) -> WaylandProxy<ZwlrScreencopyFrameV1Client>
-    {
+package extension WaylandProxy where Interface == ZwlrScreencopyManagerV1Client {
+    func captureOutput(overlay_cursor: Int32, output: WaylandProxy<WlOutputClient>) throws(WaylandProxyError) -> WaylandProxy<ZwlrScreencopyFrameV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _outputProxy = try unsafe output.requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_zwlr_screencopy_manager_v1_capture_output(
-                    _proxy, overlay_cursor, _outputProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_zwlr_screencopy_manager_v1_capture_output(_proxy, overlay_cursor, _outputProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, ZwlrScreencopyFrameV1Client.self)
     }
-    package func captureOutputRegion(
-        overlay_cursor: Int32, output: WaylandProxy<WlOutputClient>, x: Int32, y: Int32,
-        width: Int32, height: Int32
-    ) throws(WaylandProxyError) -> WaylandProxy<ZwlrScreencopyFrameV1Client> {
+    func captureOutputRegion(overlay_cursor: Int32, output: WaylandProxy<WlOutputClient>, x: Int32, y: Int32, width: Int32, height: Int32) throws(WaylandProxyError) -> WaylandProxy<ZwlrScreencopyFrameV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _outputProxy = try unsafe output.requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_zwlr_screencopy_manager_v1_capture_output_region(
-                    _proxy, overlay_cursor, _outputProxy, x, y, width, height)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_zwlr_screencopy_manager_v1_capture_output_region(_proxy, overlay_cursor, _outputProxy, x, y, width, height) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, ZwlrScreencopyFrameV1Client.self)
     }
-    package func destroy() throws(WaylandProxyError) {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zwlr_screencopy_manager_v1_destroy(_proxy)

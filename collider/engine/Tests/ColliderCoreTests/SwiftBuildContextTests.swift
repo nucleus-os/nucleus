@@ -211,6 +211,28 @@ private let fixturePackageRoot = FilePath("/workspace")
             == scratch.appending("out/Products/Release-android-x86_64"))
 }
 
+@Test func hostProductsUseSwiftPMsUnsuffixedXcodeBuildDirectories() {
+    let scratch = FilePath("/workspace/.nucleus/swiftpm/host")
+    let invocation = SwiftPMInvocation(
+        context: SwiftBuildContext(
+            packageRoot: fixturePackageRoot,
+            configuration: .debug,
+            target: .host(identity: "arm64-macos"),
+            toolchainIdentity: "swiftc@fixture"),
+        scratchPath: scratch)
+
+    #expect(
+        invocation.configurationProducts
+            == scratch.appending("out/Products/Debug"))
+    #expect(
+        invocation.generatedModuleMaps
+            == scratch.appending(
+                "out/Intermediates.noindex/GeneratedModuleMaps"))
+    #expect(
+        invocation.executable("Fixture")
+            == scratch.appending("out/Products/Debug/Fixture"))
+}
+
 @Test func swiftPMOCIExecutionKeepsGuestArchitectureSeparateFromArtifactArchitecture() {
     let imageID = FilePath("/cache/nucleus-linux-build/image-id")
     let execution = SwiftPMOCIExecution(

@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for zwp_tablet_pad_group_v2.
 
 package import WaylandClientC
-
 package enum ZwpTabletPadGroupV2Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_tablet_pad_group_v2())
     package nonisolated static let maximumVersion: UInt32 = 2
 }
-extension WaylandProxy where Interface == ZwpTabletPadGroupV2Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpTabletPadGroupV2Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zwp_tablet_pad_group_v2_destroy(_proxy)
@@ -21,188 +20,144 @@ extension WaylandProxy where Interface == ZwpTabletPadGroupV2Client {
 }
 @MainActor
 package protocol ZwpTabletPadGroupV2Events: AnyObject {
-    func buttons(
-        _ proxy: WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>, buttons: WaylandClientArrayView)
-    func ring(
-        _ proxy: WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>,
-        ring: WaylandProxy<ZwpTabletPadRingV2Client>)
-    func strip(
-        _ proxy: WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>,
-        strip: WaylandProxy<ZwpTabletPadStripV2Client>)
+    func buttons(_ proxy: WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>, buttons: WaylandClientArrayView)
+    func ring(_ proxy: WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>, ring: WaylandProxy<ZwpTabletPadRingV2Client>)
+    func strip(_ proxy: WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>, strip: WaylandProxy<ZwpTabletPadStripV2Client>)
     func modes(_ proxy: WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>, modes: UInt32)
     func done(_ proxy: WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>)
-    func modeSwitch(
-        _ proxy: WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>, time: UInt32, serial: UInt32,
-        mode: UInt32)
-    func dial(
-        _ proxy: WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>,
-        dial: WaylandProxy<ZwpTabletPadDialV2Client>)
+    func modeSwitch(_ proxy: WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>, time: UInt32, serial: UInt32, mode: UInt32)
+    func dial(_ proxy: WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>, dial: WaylandProxy<ZwpTabletPadDialV2Client>)
 }
-extension ZwpTabletPadGroupV2Client {
-    package nonisolated(unsafe) static let listener:
-        UnsafeMutablePointer<zwp_tablet_pad_group_v2_listener> = {
-            let p = UnsafeMutablePointer<zwp_tablet_pad_group_v2_listener>.allocate(capacity: 1)
-            unsafe p.initialize(to: zwp_tablet_pad_group_v2_listener())
-            unsafe p.pointee.buttons = buttons_impl
-            unsafe p.pointee.ring = ring_impl
-            unsafe p.pointee.strip = strip_impl
-            unsafe p.pointee.modes = modes_impl
-            unsafe p.pointee.done = done_impl
-            unsafe p.pointee.mode_switch = modeSwitch_impl
-            unsafe p.pointee.dial = dial_impl
-            return unsafe p
-        }()
-    private static func handler(_ context: WaylandClientListenerContext)
-        -> any ZwpTabletPadGroupV2Events?
-    {
+package extension ZwpTabletPadGroupV2Client {
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_tablet_pad_group_v2_listener> = {
+        let p = UnsafeMutablePointer<zwp_tablet_pad_group_v2_listener>.allocate(capacity: 1)
+        unsafe p.initialize(to: zwp_tablet_pad_group_v2_listener())
+        unsafe p.pointee.buttons = buttons_impl
+        unsafe p.pointee.ring = ring_impl
+        unsafe p.pointee.strip = strip_impl
+        unsafe p.pointee.modes = modes_impl
+        unsafe p.pointee.done = done_impl
+        unsafe p.pointee.mode_switch = modeSwitch_impl
+        unsafe p.pointee.dial = dial_impl
+        return unsafe p
+    }()
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZwpTabletPadGroupV2Events? {
         context.owner as? any ZwpTabletPadGroupV2Events
     }
-    private static let buttons_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_array>?)
-            -> Void = { data, proxy, buttons in
-                guard let data = unsafe data, let proxy = unsafe proxy else {
-                    return
-                }
-                let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-                guard let h = handler(listenerContext) else {
-                    return
-                }
-                nonisolated(unsafe) let eventHandler = h
-                nonisolated(unsafe) let eventProxy = unsafe proxy
-                nonisolated(unsafe) let eventContext = listenerContext
-                nonisolated(unsafe) let _event_buttons = unsafe buttons
-                MainActor.assumeIsolated {
-                    unsafe eventHandler.buttons(
-                        WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>(eventProxy),
-                        buttons: WaylandClientArrayView(_event_buttons!))
-                }
-            }
-    private static let ring_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = {
-            data, proxy, ring in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_ring = unsafe ring
-            MainActor.assumeIsolated {
-                unsafe eventHandler.ring(
-                    WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>(eventProxy),
-                    ring: WaylandProxy<ZwpTabletPadRingV2Client>(
-                        adopting: _event_ring!, connectionLifetime: eventContext.connectionLifetime)
-                )
-            }
+    private static let buttons_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_array>?) -> Void = { data, proxy, buttons in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
-    private static let strip_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = {
-            data, proxy, strip in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_strip = unsafe strip
-            MainActor.assumeIsolated {
-                unsafe eventHandler.strip(
-                    WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>(eventProxy),
-                    strip: WaylandProxy<ZwpTabletPadStripV2Client>(
-                        adopting: _event_strip!, connectionLifetime: eventContext.connectionLifetime
-                    ))
-            }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
         }
-    private static let modes_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = {
-            data, proxy, modes in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.modes(
-                    WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>(eventProxy), modes: modes)
-            }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_buttons = unsafe buttons
+        MainActor.assumeIsolated {
+            unsafe eventHandler.buttons(WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>(eventProxy), buttons: WaylandClientArrayView(_event_buttons!))
         }
-    private static let done_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.done(
-                    WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>(eventProxy))
-            }
+    }
+    private static let ring_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, ring in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
-    private static let modeSwitch_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void =
-            { data, proxy, time, serial, mode in
-                guard let data = unsafe data, let proxy = unsafe proxy else {
-                    return
-                }
-                let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-                guard let h = handler(listenerContext) else {
-                    return
-                }
-                nonisolated(unsafe) let eventHandler = h
-                nonisolated(unsafe) let eventProxy = unsafe proxy
-                nonisolated(unsafe) let eventContext = listenerContext
-                MainActor.assumeIsolated {
-                    unsafe eventHandler.modeSwitch(
-                        WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>(eventProxy), time: time,
-                        serial: serial, mode: mode)
-                }
-            }
-    private static let dial_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = {
-            data, proxy, dial in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_dial = unsafe dial
-            MainActor.assumeIsolated {
-                unsafe eventHandler.dial(
-                    WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>(eventProxy),
-                    dial: WaylandProxy<ZwpTabletPadDialV2Client>(
-                        adopting: _event_dial!, connectionLifetime: eventContext.connectionLifetime)
-                )
-            }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
         }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_ring = unsafe ring
+        MainActor.assumeIsolated {
+            unsafe eventHandler.ring(WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>(eventProxy), ring: WaylandProxy<ZwpTabletPadRingV2Client>(adopting: _event_ring!, connectionLifetime: eventContext.connectionLifetime))
+        }
+    }
+    private static let strip_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, strip in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_strip = unsafe strip
+        MainActor.assumeIsolated {
+            unsafe eventHandler.strip(WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>(eventProxy), strip: WaylandProxy<ZwpTabletPadStripV2Client>(adopting: _event_strip!, connectionLifetime: eventContext.connectionLifetime))
+        }
+    }
+    private static let modes_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, modes in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.modes(WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>(eventProxy), modes: modes)
+        }
+    }
+    private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.done(WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>(eventProxy))
+        }
+    }
+    private static let modeSwitch_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32) -> Void = { data, proxy, time, serial, mode in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.modeSwitch(WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>(eventProxy), time: time, serial: serial, mode: mode)
+        }
+    }
+    private static let dial_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, dial in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_dial = unsafe dial
+        MainActor.assumeIsolated {
+            unsafe eventHandler.dial(WaylandBorrowedProxy<ZwpTabletPadGroupV2Client>(eventProxy), dial: WaylandProxy<ZwpTabletPadDialV2Client>(adopting: _event_dial!, connectionLifetime: eventContext.connectionLifetime))
+        }
+    }
 }
-extension WaylandProxy where Interface == ZwpTabletPadGroupV2Client {
-    package func installListener(_ owner: any ZwpTabletPadGroupV2Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpTabletPadGroupV2Client {
+    func installListener(_ owner: any ZwpTabletPadGroupV2Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_tablet_pad_group_v2_add_listener(
-                proxy, ZwpTabletPadGroupV2Client.listener, data)
+            unsafe zwp_tablet_pad_group_v2_add_listener(proxy, ZwpTabletPadGroupV2Client.listener, data)
         }
     }
 }

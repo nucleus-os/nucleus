@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for zxdg_exported_v2.
 
 package import WaylandClientC
-
 package enum ZxdgExportedV2Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zxdg_exported_v2())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == ZxdgExportedV2Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZxdgExportedV2Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zxdg_exported_v2_destroy(_proxy)
@@ -23,42 +22,35 @@ extension WaylandProxy where Interface == ZxdgExportedV2Client {
 package protocol ZxdgExportedV2Events: AnyObject {
     func handle(_ proxy: WaylandBorrowedProxy<ZxdgExportedV2Client>, handle: String)
 }
-extension ZxdgExportedV2Client {
-    package nonisolated(unsafe) static let listener:
-        UnsafeMutablePointer<zxdg_exported_v2_listener> = {
-            let p = UnsafeMutablePointer<zxdg_exported_v2_listener>.allocate(capacity: 1)
-            unsafe p.initialize(to: zxdg_exported_v2_listener())
-            unsafe p.pointee.handle = handle_impl
-            return unsafe p
-        }()
-    private static func handler(_ context: WaylandClientListenerContext)
-        -> any ZxdgExportedV2Events?
-    {
+package extension ZxdgExportedV2Client {
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zxdg_exported_v2_listener> = {
+        let p = UnsafeMutablePointer<zxdg_exported_v2_listener>.allocate(capacity: 1)
+        unsafe p.initialize(to: zxdg_exported_v2_listener())
+        unsafe p.pointee.handle = handle_impl
+        return unsafe p
+    }()
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZxdgExportedV2Events? {
         context.owner as? any ZxdgExportedV2Events
     }
-    private static let handle_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = {
-            data, proxy, handle in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_handle = unsafe handle
-            MainActor.assumeIsolated {
-                unsafe eventHandler.handle(
-                    WaylandBorrowedProxy<ZxdgExportedV2Client>(eventProxy),
-                    handle: unsafe String(cString: _event_handle!))
-            }
+    private static let handle_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, handle in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_handle = unsafe handle
+        MainActor.assumeIsolated {
+            unsafe eventHandler.handle(WaylandBorrowedProxy<ZxdgExportedV2Client>(eventProxy), handle: unsafe String(cString: _event_handle!))
+        }
+    }
 }
-extension WaylandProxy where Interface == ZxdgExportedV2Client {
-    package func installListener(_ owner: any ZxdgExportedV2Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZxdgExportedV2Client {
+    func installListener(_ owner: any ZxdgExportedV2Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe zxdg_exported_v2_add_listener(proxy, ZxdgExportedV2Client.listener, data)
         }

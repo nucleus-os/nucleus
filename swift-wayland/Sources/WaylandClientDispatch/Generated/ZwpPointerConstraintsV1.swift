@@ -3,14 +3,13 @@
 
 import WaylandClientC
 package import WaylandProtocolTypes
-
 package enum ZwpPointerConstraintsV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_pointer_constraints_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == ZwpPointerConstraintsV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpPointerConstraintsV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zwp_pointer_constraints_v1_destroy(_proxy)
@@ -19,37 +18,23 @@ extension WaylandProxy where Interface == ZwpPointerConstraintsV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func lockPointer(
-        surface: WaylandProxy<WlSurfaceClient>, pointer: WaylandProxy<WlPointerClient>,
-        region: WaylandProxy<WlRegionClient>?, lifetime: ZwpPointerConstraintsV1Lifetime
-    ) throws(WaylandProxyError) -> WaylandProxy<ZwpLockedPointerV1Client> {
+    func lockPointer(surface: WaylandProxy<WlSurfaceClient>, pointer: WaylandProxy<WlPointerClient>, region: WaylandProxy<WlRegionClient>?, lifetime: ZwpPointerConstraintsV1Lifetime) throws(WaylandProxyError) -> WaylandProxy<ZwpLockedPointerV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
         let _pointerProxy = try unsafe pointer.requireNativeProxy()
         let _regionProxy = try unsafe region?.requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_zwp_pointer_constraints_v1_lock_pointer(
-                    _proxy, _surfaceProxy, _pointerProxy, _regionProxy, lifetime.rawValue)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_zwp_pointer_constraints_v1_lock_pointer(_proxy, _surfaceProxy, _pointerProxy, _regionProxy, lifetime.rawValue) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, ZwpLockedPointerV1Client.self)
     }
-    package func confinePointer(
-        surface: WaylandProxy<WlSurfaceClient>, pointer: WaylandProxy<WlPointerClient>,
-        region: WaylandProxy<WlRegionClient>?, lifetime: ZwpPointerConstraintsV1Lifetime
-    ) throws(WaylandProxyError) -> WaylandProxy<ZwpConfinedPointerV1Client> {
+    func confinePointer(surface: WaylandProxy<WlSurfaceClient>, pointer: WaylandProxy<WlPointerClient>, region: WaylandProxy<WlRegionClient>?, lifetime: ZwpPointerConstraintsV1Lifetime) throws(WaylandProxyError) -> WaylandProxy<ZwpConfinedPointerV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
         let _pointerProxy = try unsafe pointer.requireNativeProxy()
         let _regionProxy = try unsafe region?.requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_zwp_pointer_constraints_v1_confine_pointer(
-                    _proxy, _surfaceProxy, _pointerProxy, _regionProxy, lifetime.rawValue)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_zwp_pointer_constraints_v1_confine_pointer(_proxy, _surfaceProxy, _pointerProxy, _regionProxy, lifetime.rawValue) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

@@ -3,6 +3,8 @@
 /Tools/.build/
 /.nucleus/
 /.sourcekit-lsp/
+/collider/.nucleus/
+/collider/.sourcekit-lsp/
 /out/
 /logs/
 **/.build/

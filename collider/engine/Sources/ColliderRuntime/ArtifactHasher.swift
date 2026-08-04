@@ -38,26 +38,16 @@ public enum ArtifactHasher {
         excluding excludedRelativePaths: Set<String> = [],
         digestFile: (FilePath, Stat) throws -> ArtifactDigest
     ) throws -> ArtifactDigest {
-        let rootURL = URL(fileURLWithPath: root.string, isDirectory: true)
-        guard let enumerator = FileManager.default.enumerator(
-            at: rootURL,
-            includingPropertiesForKeys: nil,
-            options: [],
-            errorHandler: { _, _ in false })
-        else {
+        guard let enumerator = FileManager.default.enumerator(atPath: root.string) else {
             throw CocoaError(.fileReadUnknown)
         }
-        let entries = enumerator.compactMap { $0 as? URL }.filter {
-            !excludedRelativePaths.contains(relativePath($0, root: rootURL))
-        }.sorted {
-            relativePath($0, root: rootURL).utf8.lexicographicallyPrecedes(
-                relativePath($1, root: rootURL).utf8)
-        }
+        let entries = enumerator.compactMap { $0 as? String }
+            .filter { !excludedRelativePaths.contains($0) }
+            .sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
         var treeHasher = SHA256()
 
-        for entry in entries {
-            let relative = relativePath(entry, root: rootURL)
-            let path = FilePath(entry.path)
+        for relative in entries {
+            let path = root.appending(relative)
             let metadata = try path.stat(followTargetSymlink: false)
             var framing = CanonicalDigestEncoder()
             framing.append(tag: 1, string: relative)
@@ -74,7 +64,7 @@ public enum ArtifactHasher {
                 framing.append(
                     tag: 4,
                     string: try FileManager.default.destinationOfSymbolicLink(
-                        atPath: entry.path))
+                        atPath: path.string))
             } else {
                 framing.append(tag: 3, string: "other:\(metadata.type.rawValue)")
             }
@@ -82,8 +72,4 @@ public enum ArtifactHasher {
         }
         return ArtifactDigest(bytes: Array(treeHasher.finalize()))
     }
-}
-
-private func relativePath(_ url: URL, root: URL) -> String {
-    String(url.path.dropFirst(root.path.count + (root.path.hasSuffix("/") ? 0 : 1)))
 }

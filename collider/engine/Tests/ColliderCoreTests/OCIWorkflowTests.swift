@@ -140,6 +140,20 @@ import Testing
     #expect(deletedNames == [name, name])
 }
 
+@Test func appleContainerSuspensionStopsAndPreservesTheExactBuilder() async throws {
+    let fixture = AppleContainerSuspensionFixture()
+    let name = "fixture-builder"
+    let suspension = AppleContainerSuspension(
+        name: name,
+        stop: { await fixture.stop(name) },
+        status: { await fixture.isStopped() ? .stopped : .running })
+
+    try await suspension.stopAndVerify()
+
+    #expect(await fixture.stoppedNames == [name])
+    #expect(await fixture.isStopped())
+}
+
 @Test func executorResolutionSeparatesRunnerFromExecutionPlatform() throws {
     let macOS = try OCIExecutorResolver.resolve(
         runner: RunnerPlatform(
@@ -383,5 +397,19 @@ private actor AppleContainerCleanupFixture {
         guard remainingChecks > 0 else { return false }
         remainingChecks -= 1
         return true
+    }
+}
+
+private actor AppleContainerSuspensionFixture {
+    private var stopped = false
+    private(set) var stoppedNames: [String] = []
+
+    func stop(_ name: String) {
+        stoppedNames.append(name)
+        stopped = true
+    }
+
+    func isStopped() -> Bool {
+        stopped
     }
 }

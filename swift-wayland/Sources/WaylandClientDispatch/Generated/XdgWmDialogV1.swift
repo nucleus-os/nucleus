@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for xdg_wm_dialog_v1.
 
 import WaylandClientC
-
 package enum XdgWmDialogV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_xdg_wm_dialog_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == XdgWmDialogV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == XdgWmDialogV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_xdg_wm_dialog_v1_destroy(_proxy)
@@ -18,15 +17,10 @@ extension WaylandProxy where Interface == XdgWmDialogV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func getXdgDialog(toplevel: WaylandProxy<XdgToplevelClient>) throws(WaylandProxyError)
-        -> WaylandProxy<XdgDialogV1Client>
-    {
+    func getXdgDialog(toplevel: WaylandProxy<XdgToplevelClient>) throws(WaylandProxyError) -> WaylandProxy<XdgDialogV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _toplevelProxy = try unsafe toplevel.requireNativeProxy()
-        guard
-            let _created = unsafe swift_wayland_client_request_xdg_wm_dialog_v1_get_xdg_dialog(
-                _proxy, _toplevelProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_xdg_wm_dialog_v1_get_xdg_dialog(_proxy, _toplevelProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

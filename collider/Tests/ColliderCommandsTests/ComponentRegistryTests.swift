@@ -75,6 +75,12 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
     #expect(
         try registry.selectedTestTasks(nil).map(\.rawValue) == [
             "linux.arm64.test", "linux.x86_64.test",
+            "test.release-gate.foundation-publication",
+            "test.release-gate.foundation-lifecycle",
+            "test.release-gate.text-editor",
+            "test.release-gate.collection",
+            "test.release-gate.platform-transport",
+            "test.release-gate.compositor-transition",
         ])
     #expect(
         try registry.selectedTestTasks(.config).map(\.rawValue) == [
@@ -103,6 +109,23 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
     #expect(throws: (any Error).self) {
         try ColliderCommand.parseAsRoot(["test", "unknown"])
     }
+}
+
+@Test func unselectedDRMWorkDoesNotProbeHardware() throws {
+    let root = try #require(
+        discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
+    let registry = ComponentRegistry(
+        context: WorkspaceContext(
+            root: URL(fileURLWithPath: root, isDirectory: true),
+            environment: [:]))
+    var probeCount = 0
+
+    _ = try registry.testTasks(selection: .loader) { _ in
+        probeCount += 1
+        return "/dev/dri/renderD128"
+    }
+
+    #expect(probeCount == 0)
 }
 
 @Test func gfxstreamArchitectureBuildsHaveIndependentLocks() {
@@ -357,11 +380,34 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         task.swiftProducts.map(\.qualifiedProduct) == [
             "react-native:NucleusReactRuntime"
         ])
+    #expect(task.swiftProducts[0].prebuildTargets == ["NucleusReactRuntimeCxx"])
     #expect(
         task.postconditions.contains(
             PathPostcondition(
                 path: swiftPM.generatedSwiftHeader("NucleusReactRuntimeCxx"),
                 validation: .regularFile)))
+}
+
+@Test func releaseGatesDeclareTheLinuxARM64OCIContext() throws {
+    let root = try #require(
+        discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
+    let registry = ComponentRegistry(
+        context: WorkspaceContext(
+            root: URL(fileURLWithPath: root, isDirectory: true),
+            environment: [:]))
+    let releaseTasks = try registry.testTasks(selection: nil).filter {
+        $0.component.rawValue == "release-gate"
+    }
+
+    #expect(releaseTasks.count == 6)
+    #expect(
+        releaseTasks.allSatisfy { task in
+            guard task.swiftTests.count == 1,
+                case .oci(let execution) =
+                    task.swiftTests[0].invocation.context.execution
+            else { return false }
+            return execution.executionPlatform == .linuxARM64OCI
+        })
 }
 
 @Test func drmLaneRejectsAConfiguredNonRenderNode() throws {
@@ -412,16 +458,26 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
 
     let reactNative = ReactNativeColliderRecipe.generate(
         root: root.appending("react-native"),
-        environment: environment)
-    guard case .command(let reactNativeCommand) = reactNative.operation else {
-        Issue.record("React Native generation must be a typed command")
+        environment: environment,
+        builder: NativeOCIConfiguration(
+            context: root.appending("core/build-container"),
+            imageID: FilePath("/cache/native/image-id"),
+            ccache: FilePath("/cache/native/ccache"),
+            swiftSDKRoot: FilePath("/cache/swift-sdks"),
+            environment: environment))
+    guard case .runOCI(let reactNativeCommand) = reactNative.operation else {
+        Issue.record("React Native generation must be a typed OCI command")
         return
     }
-    #expect(reactNativeCommand.executable == .named("node"))
     #expect(
-        reactNativeCommand.arguments == [
-            "/workspace/react-native/tools/generate-rn-spec.js"
+        reactNativeCommand.command == [
+            "javascript",
+            "/opt/node/bin/node",
+            "/workspace/react-native/tools/generate-rn-spec.js",
         ])
+    #expect(
+        reactNativeCommand.workingDirectory
+            == "/workspace/react-native/third-party/react-native")
 }
 
 @Test func waylandGenerationIsOneColliderOwnedCommandSequence() throws {
@@ -442,7 +498,14 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
             scratchPath: FilePath(
                 workspace.appendingPathComponent(
                     ".nucleus/swiftpm/fixture"
-                ).path)))
+                ).path)),
+        builder: NativeOCIConfiguration(
+            context: FilePath(workspace.appendingPathComponent("core/build-container").path),
+            imageID: FilePath("/cache/native/image-id"),
+            ccache: FilePath("/cache/native/ccache"),
+            swiftSDKRoot: FilePath("/cache/swift-sdks"),
+            environment: ["PATH": "/usr/bin"]),
+        scannerSDK: FilePath("/cache/native-sdk/linux-arm64/wayland"))
     guard case .sequence(let operations) = task.operation else {
         Issue.record("Wayland generation must be one ordered task sequence")
         return
@@ -458,8 +521,9 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         if case .taskOutput = $0.executable { return true }
         return false
     }
-    let scannerCommands = commands.filter {
-        $0.executable == .named("wayland-scanner")
+    let scannerContainers = operations.filter {
+        guard case .runOCI(let execution) = $0 else { return false }
+        return execution.hostname == "wayland-source-generation"
     }
     #expect(buildCommands.isEmpty)
     #expect(
@@ -467,7 +531,10 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
             "swift-wayland:SwiftWaylandGen"
         ])
     #expect(generatorCommands.count == 2)
-    #expect(scannerCommands.count == 62 * 3)
+    #expect(scannerContainers.count == 1)
+    if case .runOCI(let scanner) = scannerContainers[0] {
+        #expect(scanner.command.first == "wayland-generate")
+    }
     #expect(
         commands.allSatisfy {
             !$0.arguments.contains("generate-wayland")
@@ -693,7 +760,8 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
 
 @Test func waylandCrossBuildUsesTheNativeARM64ScannerSDK() {
     let root = FilePath("/workspace/swift-wayland")
-    let sdkRoot = FilePath("/cache/native-sdk")
+    let armSDKRoot = FilePath("/cache/native-sdk/linux-arm64")
+    let x86SDKRoot = FilePath("/cache/native-sdk/linux-x86_64")
     let environment = ["PATH": "/usr/bin"]
     let builder = NativeOCIConfiguration(
         context: FilePath("/workspace/core/build-container"),
@@ -703,13 +771,13 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         environment: environment)
     let arm = WaylandColliderRecipe.buildNativeSDK(
         root: root,
-        sdkRoot: sdkRoot,
+        sdkRoot: armSDKRoot,
         environment: environment,
         target: NativeLinuxTarget(architecture: .arm64),
         builder: builder)
     let x86 = WaylandColliderRecipe.buildNativeSDK(
         root: root,
-        sdkRoot: sdkRoot,
+        sdkRoot: x86SDKRoot,
         environment: environment,
         target: NativeLinuxTarget(architecture: .x86_64),
         builder: builder)
@@ -762,7 +830,7 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
 
 @Test func reactNativeSDKPublishesArchitectureMatchedContainerArtifacts() {
     let root = FilePath("/workspace/react-native")
-    let sdkRoot = FilePath("/cache/native-sdk")
+    let sdkRoot = FilePath("/cache/native-sdk/linux-x86_64")
     let target = NativeLinuxTarget(architecture: .x86_64)
     let native = ReactNativeColliderRecipe.publishNativeSDK(
         root: root,
@@ -830,35 +898,35 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         })
     #expect(
         {
-            guard case .compileAOSPProduct = operations[0] else {
+            guard case .aospProduct(.compile, _) = operations[0] else {
                 return false
             }
             return true
         }())
     #expect(
         {
-            guard case .signAOSPProduct = operations[1] else {
+            guard case .aospProduct(.sign, _) = operations[1] else {
                 return false
             }
             return true
         }())
     #expect(
         {
-            guard case .assembleAOSPProductImages = operations[2] else {
+            guard case .aospProduct(.assembleImages, _) = operations[2] else {
                 return false
             }
             return true
         }())
     #expect(
         {
-            guard case .validateAOSPProduct = operations[3] else {
+            guard case .aospProduct(.validate, _) = operations[3] else {
                 return false
             }
             return true
         }())
     #expect(
         {
-            guard case .publishAOSPProduct = operations[4] else {
+            guard case .aospProduct(.publish, _) = operations[4] else {
                 return false
             }
             return true

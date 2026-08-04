@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for wp_linux_drm_syncobj_timeline_v1.
 
 import WaylandClientC
-
 package enum WpLinuxDrmSyncobjTimelineV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_linux_drm_syncobj_timeline_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == WpLinuxDrmSyncobjTimelineV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpLinuxDrmSyncobjTimelineV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_linux_drm_syncobj_timeline_v1_destroy(_proxy)

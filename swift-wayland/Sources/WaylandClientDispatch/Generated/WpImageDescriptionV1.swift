@@ -3,14 +3,13 @@
 
 package import WaylandClientC
 package import WaylandProtocolTypes
-
 package enum WpImageDescriptionV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_image_description_v1())
     package nonisolated static let maximumVersion: UInt32 = 2
 }
-extension WaylandProxy where Interface == WpImageDescriptionV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpImageDescriptionV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_image_description_v1_destroy(_proxy)
@@ -19,14 +18,9 @@ extension WaylandProxy where Interface == WpImageDescriptionV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func getInformation() throws(WaylandProxyError) -> WaylandProxy<
-        WpImageDescriptionInfoV1Client
-    > {
+    func getInformation() throws(WaylandProxyError) -> WaylandProxy<WpImageDescriptionInfoV1Client> {
         let _proxy = try unsafe requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_wp_image_description_v1_get_information(_proxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_wp_image_description_v1_get_information(_proxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
@@ -35,95 +29,73 @@ extension WaylandProxy where Interface == WpImageDescriptionV1Client {
 }
 @MainActor
 package protocol WpImageDescriptionV1Events: AnyObject {
-    func failed(
-        _ proxy: WaylandBorrowedProxy<WpImageDescriptionV1Client>, cause: WpImageDescriptionV1Cause,
-        msg: String)
+    func failed(_ proxy: WaylandBorrowedProxy<WpImageDescriptionV1Client>, cause: WpImageDescriptionV1Cause, msg: String)
     func ready(_ proxy: WaylandBorrowedProxy<WpImageDescriptionV1Client>, identity: UInt32)
-    func ready2(
-        _ proxy: WaylandBorrowedProxy<WpImageDescriptionV1Client>, identity_hi: UInt32,
-        identity_lo: UInt32)
+    func ready2(_ proxy: WaylandBorrowedProxy<WpImageDescriptionV1Client>, identity_hi: UInt32, identity_lo: UInt32)
 }
-extension WpImageDescriptionV1Client {
-    package nonisolated(unsafe) static let listener:
-        UnsafeMutablePointer<wp_image_description_v1_listener> = {
-            let p = UnsafeMutablePointer<wp_image_description_v1_listener>.allocate(capacity: 1)
-            unsafe p.initialize(to: wp_image_description_v1_listener())
-            unsafe p.pointee.failed = failed_impl
-            unsafe p.pointee.ready = ready_impl
-            unsafe p.pointee.ready2 = ready2_impl
-            return unsafe p
-        }()
-    private static func handler(_ context: WaylandClientListenerContext)
-        -> any WpImageDescriptionV1Events?
-    {
+package extension WpImageDescriptionV1Client {
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wp_image_description_v1_listener> = {
+        let p = UnsafeMutablePointer<wp_image_description_v1_listener>.allocate(capacity: 1)
+        unsafe p.initialize(to: wp_image_description_v1_listener())
+        unsafe p.pointee.failed = failed_impl
+        unsafe p.pointee.ready = ready_impl
+        unsafe p.pointee.ready2 = ready2_impl
+        return unsafe p
+    }()
+    private static func handler(_ context: WaylandClientListenerContext) -> any WpImageDescriptionV1Events? {
         context.owner as? any WpImageDescriptionV1Events
     }
-    private static let failed_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UnsafePointer<CChar>?) ->
-            Void = { data, proxy, cause, msg in
-                guard let data = unsafe data, let proxy = unsafe proxy else {
-                    return
-                }
-                let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-                guard let h = handler(listenerContext) else {
-                    return
-                }
-                nonisolated(unsafe) let eventHandler = h
-                nonisolated(unsafe) let eventProxy = unsafe proxy
-                nonisolated(unsafe) let eventContext = listenerContext
-                nonisolated(unsafe) let _event_msg = unsafe msg
-                MainActor.assumeIsolated {
-                    unsafe eventHandler.failed(
-                        WaylandBorrowedProxy<WpImageDescriptionV1Client>(eventProxy),
-                        cause: WpImageDescriptionV1Cause(rawValue: cause),
-                        msg: unsafe String(cString: _event_msg!))
-                }
-            }
-    private static let ready_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = {
-            data, proxy, identity in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.ready(
-                    WaylandBorrowedProxy<WpImageDescriptionV1Client>(eventProxy), identity: identity
-                )
-            }
+    private static let failed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UnsafePointer<CChar>?) -> Void = { data, proxy, cause, msg in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
-    private static let ready2_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = {
-            data, proxy, identity_hi, identity_lo in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.ready2(
-                    WaylandBorrowedProxy<WpImageDescriptionV1Client>(eventProxy),
-                    identity_hi: identity_hi, identity_lo: identity_lo)
-            }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
         }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_msg = unsafe msg
+        MainActor.assumeIsolated {
+            unsafe eventHandler.failed(WaylandBorrowedProxy<WpImageDescriptionV1Client>(eventProxy), cause: WpImageDescriptionV1Cause(rawValue: cause), msg: unsafe String(cString: _event_msg!))
+        }
+    }
+    private static let ready_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, identity in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.ready(WaylandBorrowedProxy<WpImageDescriptionV1Client>(eventProxy), identity: identity)
+        }
+    }
+    private static let ready2_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32) -> Void = { data, proxy, identity_hi, identity_lo in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.ready2(WaylandBorrowedProxy<WpImageDescriptionV1Client>(eventProxy), identity_hi: identity_hi, identity_lo: identity_lo)
+        }
+    }
 }
-extension WaylandProxy where Interface == WpImageDescriptionV1Client {
-    package func installListener(_ owner: any WpImageDescriptionV1Events) throws(WaylandProxyError)
-    {
+package extension WaylandProxy where Interface == WpImageDescriptionV1Client {
+    func installListener(_ owner: any WpImageDescriptionV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wp_image_description_v1_add_listener(
-                proxy, WpImageDescriptionV1Client.listener, data)
+            unsafe wp_image_description_v1_add_listener(proxy, WpImageDescriptionV1Client.listener, data)
         }
     }
 }

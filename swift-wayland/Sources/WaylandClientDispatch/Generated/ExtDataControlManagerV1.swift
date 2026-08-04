@@ -2,43 +2,30 @@
 // Typed client descriptor and event dispatch for ext_data_control_manager_v1.
 
 import WaylandClientC
-
 package enum ExtDataControlManagerV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_ext_data_control_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == ExtDataControlManagerV1Client {
-    package func createDataSource() throws(WaylandProxyError) -> WaylandProxy<
-        ExtDataControlSourceV1Client
-    > {
+package extension WaylandProxy where Interface == ExtDataControlManagerV1Client {
+    func createDataSource() throws(WaylandProxyError) -> WaylandProxy<ExtDataControlSourceV1Client> {
         let _proxy = try unsafe requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_ext_data_control_manager_v1_create_data_source(
-                    _proxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_ext_data_control_manager_v1_create_data_source(_proxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, ExtDataControlSourceV1Client.self)
     }
-    package func getDataDevice(seat: WaylandProxy<WlSeatClient>) throws(WaylandProxyError)
-        -> WaylandProxy<ExtDataControlDeviceV1Client>
-    {
+    func getDataDevice(seat: WaylandProxy<WlSeatClient>) throws(WaylandProxyError) -> WaylandProxy<ExtDataControlDeviceV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _seatProxy = try unsafe seat.requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_ext_data_control_manager_v1_get_data_device(
-                    _proxy, _seatProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_ext_data_control_manager_v1_get_data_device(_proxy, _seatProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, ExtDataControlDeviceV1Client.self)
     }
-    package func destroy() throws(WaylandProxyError) {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_ext_data_control_manager_v1_destroy(_proxy)

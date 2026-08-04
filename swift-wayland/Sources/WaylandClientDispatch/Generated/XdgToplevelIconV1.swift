@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for xdg_toplevel_icon_v1.
 
 import WaylandClientC
-
 package enum XdgToplevelIconV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_xdg_toplevel_icon_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == XdgToplevelIconV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == XdgToplevelIconV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_xdg_toplevel_icon_v1_destroy(_proxy)
@@ -18,22 +17,17 @@ extension WaylandProxy where Interface == XdgToplevelIconV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func setName(icon_name: String) throws(WaylandProxyError) {
+    func setName(icon_name: String) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        return try icon_name.withCString {
-            (_icon_nameCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
-            unsafe swift_wayland_client_request_xdg_toplevel_icon_v1_set_name(
-                _proxy, _icon_nameCString)
+        return try icon_name.withCString { (_icon_nameCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_xdg_toplevel_icon_v1_set_name(_proxy, _icon_nameCString)
             return
         }
     }
-    package func addBuffer(buffer: WaylandProxy<WlBufferClient>, scale: Int32)
-        throws(WaylandProxyError)
-    {
+    func addBuffer(buffer: WaylandProxy<WlBufferClient>, scale: Int32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _bufferProxy = try unsafe buffer.requireNativeProxy()
-        unsafe swift_wayland_client_request_xdg_toplevel_icon_v1_add_buffer(
-            _proxy, _bufferProxy, scale)
+        unsafe swift_wayland_client_request_xdg_toplevel_icon_v1_add_buffer(_proxy, _bufferProxy, scale)
         return
     }
 }

@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for wl_display.
 
 import WaylandClientC
-
 package enum WlDisplayClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_display())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == WlDisplayClient {
-    package func sync() throws(WaylandProxyError) -> WaylandProxy<WlCallbackClient> {
+package extension WaylandProxy where Interface == WlDisplayClient {
+    func sync() throws(WaylandProxyError) -> WaylandProxy<WlCallbackClient> {
         let _proxy = try unsafe requireNativeProxy()
         guard let _created = unsafe swift_wayland_client_request_wl_display_sync(_proxy) else {
             throw WaylandProxyError.proxyCreationFailed
@@ -17,10 +16,9 @@ extension WaylandProxy where Interface == WlDisplayClient {
         return unsafe makeOwnedProxy(
             adopting: _created, WlCallbackClient.self)
     }
-    package func getRegistry() throws(WaylandProxyError) -> WaylandProxy<WlRegistryClient> {
+    func getRegistry() throws(WaylandProxyError) -> WaylandProxy<WlRegistryClient> {
         let _proxy = try unsafe requireNativeProxy()
-        guard let _created = unsafe swift_wayland_client_request_wl_display_get_registry(_proxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_wl_display_get_registry(_proxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

@@ -83,6 +83,7 @@ import Testing
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     let marker = directory.appendingPathComponent("terminated")
+    let ready = directory.appendingPathComponent("ready")
     let cancellation = RuntimeCancellation()
     let runtime = ColliderRuntime(cancellation: cancellation)
     let operation = Task {
@@ -91,8 +92,10 @@ import Testing
                 executable: .named("sh"),
                 arguments: [
                     "-c",
-                    "trap 'printf terminated > \"$1\"; exit 0' TERM; while :; do sleep 0.05; done",
-                    "sh", marker.path,
+                    "trap 'printf terminated > \"$1\"; exit 0' TERM; "
+                        + "printf ready > \"$2\"; "
+                        + "while :; do sleep 0.05; done",
+                    "sh", marker.path, ready.path,
                 ],
                 workingDirectory: FilePath(directory.path),
                 environment: [
@@ -100,12 +103,14 @@ import Testing
                 ],
                 output: .captured(limit: 1_024)))
     }
-    let registrationDeadline = ContinuousClock().now.advanced(by: .seconds(5))
-    while !(await cancellation.hasActiveProcessGroups()),
-        ContinuousClock().now < registrationDeadline
-    {
+    let readinessDeadline = ContinuousClock().now.advanced(by: .seconds(5))
+    while ContinuousClock().now < readinessDeadline {
+        let readyExists = FileManager.default.fileExists(atPath: ready.path)
+        let processGroupIsActive = await cancellation.hasActiveProcessGroups()
+        if readyExists && processGroupIsActive { break }
         try await ContinuousClock().sleep(for: .milliseconds(10))
     }
+    try #require(FileManager.default.fileExists(atPath: ready.path))
     try #require(await cancellation.hasActiveProcessGroups())
     let forwarding = await cancellation.forward(signal: 15)
     #expect(forwarding.attemptedProcessGroups == 1)
@@ -316,7 +321,7 @@ import Testing
         withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     let environment = [
-        "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin",
+        "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
     ]
 
     try await withThrowingTaskGroup(of: Int32.self) { group in
@@ -328,8 +333,9 @@ import Testing
                         arguments: [],
                         workingDirectory: FilePath(directory.path),
                         environment: environment,
-                        output: .captured(limit: 1)))
-                    .status
+                        output: .captured(limit: 1))
+                )
+                .status
             }
         }
         for try await status in group {
@@ -339,7 +345,12 @@ import Testing
 }
 
 private func openDescriptorCount() throws -> Int {
-    try FileManager.default.contentsOfDirectory(
-        atPath: "/proc/self/fd"
+    #if os(Linux)
+    let descriptorDirectory = "/proc/self/fd"
+    #else
+    let descriptorDirectory = "/dev/fd"
+    #endif
+    return try FileManager.default.contentsOfDirectory(
+        atPath: descriptorDirectory
     ).count
 }

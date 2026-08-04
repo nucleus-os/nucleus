@@ -47,6 +47,9 @@ let package = Package(
                     name: "ContainerAPIClient",
                     package: "container"),
                 .product(
+                    name: "ContainerBuild",
+                    package: "container"),
+                .product(
                     name: "ContainerCommands",
                     package: "container"),
                 .product(

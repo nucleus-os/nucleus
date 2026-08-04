@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for zxdg_decoration_manager_v1.
 
 import WaylandClientC
-
 package enum ZxdgDecorationManagerV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zxdg_decoration_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 2
 }
-extension WaylandProxy where Interface == ZxdgDecorationManagerV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZxdgDecorationManagerV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zxdg_decoration_manager_v1_destroy(_proxy)
@@ -18,16 +17,10 @@ extension WaylandProxy where Interface == ZxdgDecorationManagerV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func getToplevelDecoration(toplevel: WaylandProxy<XdgToplevelClient>)
-        throws(WaylandProxyError) -> WaylandProxy<ZxdgToplevelDecorationV1Client>
-    {
+    func getToplevelDecoration(toplevel: WaylandProxy<XdgToplevelClient>) throws(WaylandProxyError) -> WaylandProxy<ZxdgToplevelDecorationV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _toplevelProxy = try unsafe toplevel.requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_zxdg_decoration_manager_v1_get_toplevel_decoration(
-                    _proxy, _toplevelProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_zxdg_decoration_manager_v1_get_toplevel_decoration(_proxy, _toplevelProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

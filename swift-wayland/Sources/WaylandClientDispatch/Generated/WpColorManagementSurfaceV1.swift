@@ -3,14 +3,13 @@
 
 import WaylandClientC
 package import WaylandProtocolTypes
-
 package enum WpColorManagementSurfaceV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_color_management_surface_v1())
     package nonisolated static let maximumVersion: UInt32 = 2
 }
-extension WaylandProxy where Interface == WpColorManagementSurfaceV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpColorManagementSurfaceV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_color_management_surface_v1_destroy(_proxy)
@@ -19,20 +18,15 @@ extension WaylandProxy where Interface == WpColorManagementSurfaceV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func setImageDescription(
-        image_description: WaylandProxy<WpImageDescriptionV1Client>,
-        render_intent: WpColorManagerV1RenderIntent
-    ) throws(WaylandProxyError) {
+    func setImageDescription(image_description: WaylandProxy<WpImageDescriptionV1Client>, render_intent: WpColorManagerV1RenderIntent) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _image_descriptionProxy = try unsafe image_description.requireNativeProxy()
-        unsafe swift_wayland_client_request_wp_color_management_surface_v1_set_image_description(
-            _proxy, _image_descriptionProxy, render_intent.rawValue)
+        unsafe swift_wayland_client_request_wp_color_management_surface_v1_set_image_description(_proxy, _image_descriptionProxy, render_intent.rawValue)
         return
     }
-    package func unsetImageDescription() throws(WaylandProxyError) {
+    func unsetImageDescription() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_wp_color_management_surface_v1_unset_image_description(
-            _proxy)
+        unsafe swift_wayland_client_request_wp_color_management_surface_v1_unset_image_description(_proxy)
         return
     }
 }

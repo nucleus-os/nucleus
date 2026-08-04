@@ -52,6 +52,10 @@ struct TaskControls: Sendable {
             print(
                 "planning  \(planningMicroseconds / 1_000)."
                     + "\(paddedFraction) ms")
+            print(
+                "input hashing  "
+                    + "\(report.selectedInputHashingDurationNanoseconds / 1_000) us")
+            print("SwiftPM invocations  \(report.swiftPMInvocationCount)")
             for entry in report.plan {
                 let state =
                     entry.isClean
@@ -177,6 +181,16 @@ extension WorkspaceContext {
         URL(
             fileURLWithPath: environment["NUCLEUS_NATIVE_SDK_ROOT"]!,
             isDirectory: true)
+    }
+
+    func nativeSDKRoot(for target: NativeLinuxTarget) -> URL {
+        nativeSDKRoot(named: target.identifier)
+    }
+
+    func nativeSDKRoot(named target: String) -> URL {
+        nativeSDKRoot
+            .deletingLastPathComponent()
+            .appendingPathComponent(target, isDirectory: true)
     }
 
     func swiftPMInvocation(

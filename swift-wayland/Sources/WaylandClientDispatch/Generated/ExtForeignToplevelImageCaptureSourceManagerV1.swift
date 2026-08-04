@@ -2,33 +2,25 @@
 // Typed client descriptor and event dispatch for ext_foreign_toplevel_image_capture_source_manager_v1.
 
 import WaylandClientC
-
 package enum ExtForeignToplevelImageCaptureSourceManagerV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_ext_foreign_toplevel_image_capture_source_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == ExtForeignToplevelImageCaptureSourceManagerV1Client {
-    package func createSource(toplevel_handle: WaylandProxy<ExtForeignToplevelHandleV1Client>)
-        throws(WaylandProxyError) -> WaylandProxy<ExtImageCaptureSourceV1Client>
-    {
+package extension WaylandProxy where Interface == ExtForeignToplevelImageCaptureSourceManagerV1Client {
+    func createSource(toplevel_handle: WaylandProxy<ExtForeignToplevelHandleV1Client>) throws(WaylandProxyError) -> WaylandProxy<ExtImageCaptureSourceV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _toplevel_handleProxy = try unsafe toplevel_handle.requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_ext_foreign_toplevel_image_capture_source_manager_v1_create_source(
-                    _proxy, _toplevel_handleProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_ext_foreign_toplevel_image_capture_source_manager_v1_create_source(_proxy, _toplevel_handleProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, ExtImageCaptureSourceV1Client.self)
     }
-    package func destroy() throws(WaylandProxyError) {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
-            unsafe swift_wayland_client_request_ext_foreign_toplevel_image_capture_source_manager_v1_destroy(
-                _proxy)
+            unsafe swift_wayland_client_request_ext_foreign_toplevel_image_capture_source_manager_v1_destroy(_proxy)
             return
         }
         try _send()

@@ -18,6 +18,7 @@ public enum ArtifactInput: Hashable, Sendable {
 
 public enum PathValidation: String, Hashable, Codable, Sendable {
     case exists
+    case symlinkTarget
     case regularFile
     case executableFile
     case nonEmptyDirectory
@@ -44,31 +45,6 @@ public struct PathPostcondition: Hashable, Sendable {
     public init(path: FilePath, validation: PathValidation) {
         self.path = path
         self.validation = validation
-    }
-}
-
-public struct StaticArchiveMerge: Hashable, Sendable {
-    public let sourceRoot: FilePath
-    public let output: FilePath
-    public let excludedFilePrefixes: [String]
-    public let archiver: CommandSpec.Executable
-    public let indexer: CommandSpec.Executable
-    public let environment: [String: String]
-
-    public init(
-        sourceRoot: FilePath,
-        output: FilePath,
-        excludedFilePrefixes: [String] = [],
-        archiver: CommandSpec.Executable = .named("ar"),
-        indexer: CommandSpec.Executable = .named("ranlib"),
-        environment: [String: String]
-    ) {
-        self.sourceRoot = sourceRoot
-        self.output = output
-        self.excludedFilePrefixes = excludedFilePrefixes
-        self.archiver = archiver
-        self.indexer = indexer
-        self.environment = environment
     }
 }
 
@@ -408,6 +384,7 @@ public struct OCIMount: Hashable, Sendable {
 
 public enum OCINetworkPolicy: String, Hashable, Sendable {
     case externalDisabled = "external-disabled"
+    case externalEnabled = "external-enabled"
 }
 
 public struct OCIUserPolicy: Hashable, Sendable {
@@ -938,6 +915,43 @@ public struct AptPackageValidation: Hashable, Sendable {
     }
 }
 
+public struct ZipExtraction: Hashable, Sendable {
+    public let archive: FilePath
+    public let entry: String
+    public let destination: FilePath
+    public let environment: [String: String]
+
+    public init(
+        archive: FilePath,
+        entry: String,
+        destination: FilePath,
+        environment: [String: String]
+    ) {
+        self.archive = archive
+        self.entry = entry
+        self.destination = destination
+        self.environment = environment
+    }
+}
+
+public struct FilePermissionUpdate: Hashable, Sendable {
+    public let path: FilePath
+    public let permissions: UInt16
+
+    public init(path: FilePath, permissions: UInt16) {
+        self.path = path
+        self.permissions = permissions
+    }
+}
+
+public enum AOSPProductOperationStage: String, Hashable, Sendable {
+    case compile
+    case sign
+    case assembleImages = "assemble-images"
+    case validate
+    case publish
+}
+
 public enum TaskOperation: Hashable, Sendable {
     case action(AnyColliderAction)
     case command(CommandSpec)
@@ -946,9 +960,10 @@ public enum TaskOperation: Hashable, Sendable {
     case createDirectory(FilePath)
     case copyFile(source: FilePath, destination: FilePath)
     case copyMatchingFile(MatchingFileCopy)
-    case mergeStaticArchives(StaticArchiveMerge)
+    case extractZip(ZipExtraction)
     case removePath(FilePath)
     case replaceSymlink(path: FilePath, target: String)
+    case setPermissions(FilePermissionUpdate)
     case writeFile(FilePath, bytes: [UInt8])
     case validateAndroidHost(AndroidHostValidation)
     case sanitizeLinkMetadata(LinkMetadataSanitization)
@@ -960,11 +975,7 @@ public enum TaskOperation: Hashable, Sendable {
     case prepareOCIImage(OCIImagePreparation)
     case runOCI(OCIExecution)
     case prepareAOSPSigningIdentity(AOSPSigningIdentityPreparation)
-    case compileAOSPProduct(AOSPProductBuild)
-    case signAOSPProduct(AOSPProductBuild)
-    case assembleAOSPProductImages(AOSPProductBuild)
-    case validateAOSPProduct(AOSPProductBuild)
-    case publishAOSPProduct(AOSPProductBuild)
+    case aospProduct(AOSPProductOperationStage, AOSPProductBuild)
     case prepareChromiumDepotTools(ChromiumDepotToolsPreparation)
     case prepareChromiumSource(ChromiumSourcePreparation)
     case buildChromiumProduct(ChromiumProductBuild)

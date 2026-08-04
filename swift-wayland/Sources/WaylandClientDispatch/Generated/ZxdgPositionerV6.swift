@@ -3,14 +3,13 @@
 
 import WaylandClientC
 package import WaylandProtocolTypes
-
 package enum ZxdgPositionerV6Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zxdg_positioner_v6())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == ZxdgPositionerV6Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZxdgPositionerV6Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zxdg_positioner_v6_destroy(_proxy)
@@ -19,36 +18,32 @@ extension WaylandProxy where Interface == ZxdgPositionerV6Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func setSize(width: Int32, height: Int32) throws(WaylandProxyError) {
+    func setSize(width: Int32, height: Int32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_zxdg_positioner_v6_set_size(_proxy, width, height)
         return
     }
-    package func setAnchorRect(x: Int32, y: Int32, width: Int32, height: Int32)
-        throws(WaylandProxyError)
-    {
+    func setAnchorRect(x: Int32, y: Int32, width: Int32, height: Int32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_zxdg_positioner_v6_set_anchor_rect(
-            _proxy, x, y, width, height)
+        unsafe swift_wayland_client_request_zxdg_positioner_v6_set_anchor_rect(_proxy, x, y, width, height)
         return
     }
-    package func setAnchor(anchor: ZxdgPositionerV6Anchor) throws(WaylandProxyError) {
+    func setAnchor(anchor: ZxdgPositionerV6Anchor) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_zxdg_positioner_v6_set_anchor(_proxy, anchor.rawValue)
         return
     }
-    package func setGravity(gravity: ZxdgPositionerV6Gravity) throws(WaylandProxyError) {
+    func setGravity(gravity: ZxdgPositionerV6Gravity) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_zxdg_positioner_v6_set_gravity(_proxy, gravity.rawValue)
         return
     }
-    package func setConstraintAdjustment(constraint_adjustment: UInt32) throws(WaylandProxyError) {
+    func setConstraintAdjustment(constraint_adjustment: UInt32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_zxdg_positioner_v6_set_constraint_adjustment(
-            _proxy, constraint_adjustment)
+        unsafe swift_wayland_client_request_zxdg_positioner_v6_set_constraint_adjustment(_proxy, constraint_adjustment)
         return
     }
-    package func setOffset(x: Int32, y: Int32) throws(WaylandProxyError) {
+    func setOffset(x: Int32, y: Int32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_zxdg_positioner_v6_set_offset(_proxy, x, y)
         return

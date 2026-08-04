@@ -3,36 +3,25 @@
 
 import WaylandClientC
 package import WaylandProtocolTypes
-
 package enum ZwlrLayerShellV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwlr_layer_shell_v1())
     package nonisolated static let maximumVersion: UInt32 = 5
 }
-extension WaylandProxy where Interface == ZwlrLayerShellV1Client {
-    package func getLayerSurface(
-        surface: WaylandProxy<WlSurfaceClient>, output: WaylandProxy<WlOutputClient>?,
-        layer: ZwlrLayerShellV1Layer, namespace: String
-    ) throws(WaylandProxyError) -> WaylandProxy<ZwlrLayerSurfaceV1Client> {
+package extension WaylandProxy where Interface == ZwlrLayerShellV1Client {
+    func getLayerSurface(surface: WaylandProxy<WlSurfaceClient>, output: WaylandProxy<WlOutputClient>?, layer: ZwlrLayerShellV1Layer, namespace: String) throws(WaylandProxyError) -> WaylandProxy<ZwlrLayerSurfaceV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
         let _outputProxy = try unsafe output?.requireNativeProxy()
-        return try namespace.withCString {
-            (_namespaceCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> WaylandProxy<
-                ZwlrLayerSurfaceV1Client
-            > in
-            guard
-                let _created =
-                    unsafe swift_wayland_client_request_zwlr_layer_shell_v1_get_layer_surface(
-                        _proxy, _surfaceProxy, _outputProxy, layer.rawValue, _namespaceCString)
-            else {
+        return try namespace.withCString { (_namespaceCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> WaylandProxy<ZwlrLayerSurfaceV1Client> in
+            guard let _created = unsafe swift_wayland_client_request_zwlr_layer_shell_v1_get_layer_surface(_proxy, _surfaceProxy, _outputProxy, layer.rawValue, _namespaceCString) else {
                 throw WaylandProxyError.proxyCreationFailed
             }
             return unsafe makeOwnedProxy(
                 adopting: _created, ZwlrLayerSurfaceV1Client.self)
         }
     }
-    package func destroy() throws(WaylandProxyError) {
+    func destroy() throws(WaylandProxyError) {
         guard version >= 3 else {
             throw .unsupportedVersion(
                 required: 3, actual: version)

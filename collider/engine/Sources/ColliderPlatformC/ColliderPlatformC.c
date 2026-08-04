@@ -22,6 +22,8 @@
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/un.h>
+#elif defined(__APPLE__)
+#include <sys/stdio.h>
 #endif
 
 int32_t collider_lock_exclusive(int32_t descriptor, int32_t wait) {
@@ -48,6 +50,9 @@ int32_t collider_exchange(const char *left, const char *right) {
 #if defined(__linux__) && defined(SYS_renameat2)
     return (int32_t)syscall(
         SYS_renameat2, AT_FDCWD, left, AT_FDCWD, right, 1U << 1);
+#elif defined(__APPLE__)
+    return renameatx_np(
+        AT_FDCWD, left, AT_FDCWD, right, RENAME_SWAP);
 #else
     (void)left;
     (void)right;
@@ -62,9 +67,11 @@ int32_t collider_symlink(const char *target, const char *link_path) {
 
 int32_t collider_open_raw_pseudo_terminal(
     char *slave_path,
-    size_t slave_path_capacity) {
-#if defined(__linux__)
-    if (slave_path == NULL || slave_path_capacity == 0U) {
+    size_t slave_path_capacity,
+    int32_t *slave_descriptor) {
+#if defined(__linux__) || defined(__APPLE__)
+    if (slave_path == NULL || slave_path_capacity == 0U
+        || slave_descriptor == NULL) {
         errno = EINVAL;
         return -1;
     }
@@ -110,16 +117,12 @@ int32_t collider_open_raw_pseudo_terminal(
         errno = saved_errno;
         return -1;
     }
-    if (close(slave) != 0) {
-        int saved_errno = errno;
-        (void)close(master);
-        errno = saved_errno;
-        return -1;
-    }
+    *slave_descriptor = slave;
     return master;
 #else
     (void)slave_path;
     (void)slave_path_capacity;
+    (void)slave_descriptor;
     errno = ENOTSUP;
     return -1;
 #endif

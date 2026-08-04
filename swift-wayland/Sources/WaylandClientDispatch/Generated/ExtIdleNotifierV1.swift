@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for ext_idle_notifier_v1.
 
 import WaylandClientC
-
 package enum ExtIdleNotifierV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_ext_idle_notifier_v1())
     package nonisolated static let maximumVersion: UInt32 = 2
 }
-extension WaylandProxy where Interface == ExtIdleNotifierV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ExtIdleNotifierV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_ext_idle_notifier_v1_destroy(_proxy)
@@ -18,35 +17,23 @@ extension WaylandProxy where Interface == ExtIdleNotifierV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func getIdleNotification(timeout: UInt32, seat: WaylandProxy<WlSeatClient>)
-        throws(WaylandProxyError) -> WaylandProxy<ExtIdleNotificationV1Client>
-    {
+    func getIdleNotification(timeout: UInt32, seat: WaylandProxy<WlSeatClient>) throws(WaylandProxyError) -> WaylandProxy<ExtIdleNotificationV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _seatProxy = try unsafe seat.requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_ext_idle_notifier_v1_get_idle_notification(
-                    _proxy, timeout, _seatProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_ext_idle_notifier_v1_get_idle_notification(_proxy, timeout, _seatProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, ExtIdleNotificationV1Client.self)
     }
-    package func getInputIdleNotification(timeout: UInt32, seat: WaylandProxy<WlSeatClient>)
-        throws(WaylandProxyError) -> WaylandProxy<ExtIdleNotificationV1Client>
-    {
+    func getInputIdleNotification(timeout: UInt32, seat: WaylandProxy<WlSeatClient>) throws(WaylandProxyError) -> WaylandProxy<ExtIdleNotificationV1Client> {
         guard version >= 2 else {
             throw .unsupportedVersion(
                 required: 2, actual: version)
         }
         let _proxy = try unsafe requireNativeProxy()
         let _seatProxy = try unsafe seat.requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_ext_idle_notifier_v1_get_input_idle_notification(
-                    _proxy, timeout, _seatProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_ext_idle_notifier_v1_get_input_idle_notification(_proxy, timeout, _seatProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

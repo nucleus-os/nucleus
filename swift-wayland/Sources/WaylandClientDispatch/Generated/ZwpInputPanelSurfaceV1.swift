@@ -2,23 +2,19 @@
 // Typed client descriptor and event dispatch for zwp_input_panel_surface_v1.
 
 import WaylandClientC
-
 package enum ZwpInputPanelSurfaceV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_input_panel_surface_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == ZwpInputPanelSurfaceV1Client {
-    package func setToplevel(output: WaylandProxy<WlOutputClient>, position: UInt32)
-        throws(WaylandProxyError)
-    {
+package extension WaylandProxy where Interface == ZwpInputPanelSurfaceV1Client {
+    func setToplevel(output: WaylandProxy<WlOutputClient>, position: UInt32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _outputProxy = try unsafe output.requireNativeProxy()
-        unsafe swift_wayland_client_request_zwp_input_panel_surface_v1_set_toplevel(
-            _proxy, _outputProxy, position)
+        unsafe swift_wayland_client_request_zwp_input_panel_surface_v1_set_toplevel(_proxy, _outputProxy, position)
         return
     }
-    package func setOverlayPanel() throws(WaylandProxyError) {
+    func setOverlayPanel() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_zwp_input_panel_surface_v1_set_overlay_panel(_proxy)
         return

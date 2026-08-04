@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for wl_region.
 
 import WaylandClientC
-
 package enum WlRegionClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_region())
     package nonisolated static let maximumVersion: UInt32 = 7
 }
-extension WaylandProxy where Interface == WlRegionClient {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WlRegionClient {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wl_region_destroy(_proxy)
@@ -18,13 +17,12 @@ extension WaylandProxy where Interface == WlRegionClient {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func add(x: Int32, y: Int32, width: Int32, height: Int32) throws(WaylandProxyError) {
+    func add(x: Int32, y: Int32, width: Int32, height: Int32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_wl_region_add(_proxy, x, y, width, height)
         return
     }
-    package func subtract(x: Int32, y: Int32, width: Int32, height: Int32) throws(WaylandProxyError)
-    {
+    func subtract(x: Int32, y: Int32, width: Int32, height: Int32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_wl_region_subtract(_proxy, x, y, width, height)
         return

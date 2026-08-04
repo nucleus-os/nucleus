@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for ext_session_lock_manager_v1.
 
 import WaylandClientC
-
 package enum ExtSessionLockManagerV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_ext_session_lock_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == ExtSessionLockManagerV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ExtSessionLockManagerV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_ext_session_lock_manager_v1_destroy(_proxy)
@@ -18,12 +17,9 @@ extension WaylandProxy where Interface == ExtSessionLockManagerV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func lock() throws(WaylandProxyError) -> WaylandProxy<ExtSessionLockV1Client> {
+    func lock() throws(WaylandProxyError) -> WaylandProxy<ExtSessionLockV1Client> {
         let _proxy = try unsafe requireNativeProxy()
-        guard
-            let _created = unsafe swift_wayland_client_request_ext_session_lock_manager_v1_lock(
-                _proxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_ext_session_lock_manager_v1_lock(_proxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

@@ -2,35 +2,27 @@
 // Typed client descriptor and event dispatch for wl_data_device.
 
 package import WaylandClientC
-
 package enum WlDataDeviceClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_data_device())
     package nonisolated static let maximumVersion: UInt32 = 4
 }
-extension WaylandProxy where Interface == WlDataDeviceClient {
-    package func startDrag(
-        source: WaylandProxy<WlDataSourceClient>?, origin: WaylandProxy<WlSurfaceClient>,
-        icon: WaylandProxy<WlSurfaceClient>?, serial: UInt32
-    ) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WlDataDeviceClient {
+    func startDrag(source: WaylandProxy<WlDataSourceClient>?, origin: WaylandProxy<WlSurfaceClient>, icon: WaylandProxy<WlSurfaceClient>?, serial: UInt32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _sourceProxy = try unsafe source?.requireNativeProxy()
         let _originProxy = try unsafe origin.requireNativeProxy()
         let _iconProxy = try unsafe icon?.requireNativeProxy()
-        unsafe swift_wayland_client_request_wl_data_device_start_drag(
-            _proxy, _sourceProxy, _originProxy, _iconProxy, serial)
+        unsafe swift_wayland_client_request_wl_data_device_start_drag(_proxy, _sourceProxy, _originProxy, _iconProxy, serial)
         return
     }
-    package func setSelection(source: WaylandProxy<WlDataSourceClient>?, serial: UInt32)
-        throws(WaylandProxyError)
-    {
+    func setSelection(source: WaylandProxy<WlDataSourceClient>?, serial: UInt32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _sourceProxy = try unsafe source?.requireNativeProxy()
-        unsafe swift_wayland_client_request_wl_data_device_set_selection(
-            _proxy, _sourceProxy, serial)
+        unsafe swift_wayland_client_request_wl_data_device_set_selection(_proxy, _sourceProxy, serial)
         return
     }
-    package func release() throws(WaylandProxyError) {
+    func release() throws(WaylandProxyError) {
         guard version >= 2 else {
             throw .unsupportedVersion(
                 required: 2, actual: version)
@@ -46,159 +38,125 @@ extension WaylandProxy where Interface == WlDataDeviceClient {
 }
 @MainActor
 package protocol WlDataDeviceEvents: AnyObject {
-    func dataOffer(
-        _ proxy: WaylandBorrowedProxy<WlDataDeviceClient>, id: WaylandProxy<WlDataOfferClient>)
-    func enter(
-        _ proxy: WaylandBorrowedProxy<WlDataDeviceClient>, serial: UInt32,
-        surface: WaylandBorrowedProxy<WlSurfaceClient>, x: Double, y: Double,
-        id: WaylandBorrowedProxy<WlDataOfferClient>?)
+    func dataOffer(_ proxy: WaylandBorrowedProxy<WlDataDeviceClient>, id: WaylandProxy<WlDataOfferClient>)
+    func enter(_ proxy: WaylandBorrowedProxy<WlDataDeviceClient>, serial: UInt32, surface: WaylandBorrowedProxy<WlSurfaceClient>, x: Double, y: Double, id: WaylandBorrowedProxy<WlDataOfferClient>?)
     func leave(_ proxy: WaylandBorrowedProxy<WlDataDeviceClient>)
-    func motion(
-        _ proxy: WaylandBorrowedProxy<WlDataDeviceClient>, time: UInt32, x: Double, y: Double)
+    func motion(_ proxy: WaylandBorrowedProxy<WlDataDeviceClient>, time: UInt32, x: Double, y: Double)
     func drop(_ proxy: WaylandBorrowedProxy<WlDataDeviceClient>)
-    func selection(
-        _ proxy: WaylandBorrowedProxy<WlDataDeviceClient>,
-        id: WaylandBorrowedProxy<WlDataOfferClient>?)
+    func selection(_ proxy: WaylandBorrowedProxy<WlDataDeviceClient>, id: WaylandBorrowedProxy<WlDataOfferClient>?)
 }
-extension WlDataDeviceClient {
-    package nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_data_device_listener> =
-        {
-            let p = UnsafeMutablePointer<wl_data_device_listener>.allocate(capacity: 1)
-            unsafe p.initialize(to: wl_data_device_listener())
-            unsafe p.pointee.data_offer = dataOffer_impl
-            unsafe p.pointee.enter = enter_impl
-            unsafe p.pointee.leave = leave_impl
-            unsafe p.pointee.motion = motion_impl
-            unsafe p.pointee.drop = drop_impl
-            unsafe p.pointee.selection = selection_impl
-            return unsafe p
-        }()
-    private static func handler(_ context: WaylandClientListenerContext) -> any WlDataDeviceEvents?
-    {
+package extension WlDataDeviceClient {
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_data_device_listener> = {
+        let p = UnsafeMutablePointer<wl_data_device_listener>.allocate(capacity: 1)
+        unsafe p.initialize(to: wl_data_device_listener())
+        unsafe p.pointee.data_offer = dataOffer_impl
+        unsafe p.pointee.enter = enter_impl
+        unsafe p.pointee.leave = leave_impl
+        unsafe p.pointee.motion = motion_impl
+        unsafe p.pointee.drop = drop_impl
+        unsafe p.pointee.selection = selection_impl
+        return unsafe p
+    }()
+    private static func handler(_ context: WaylandClientListenerContext) -> any WlDataDeviceEvents? {
         context.owner as? any WlDataDeviceEvents
     }
-    private static let dataOffer_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = {
-            data, proxy, id in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_id = unsafe id
-            MainActor.assumeIsolated {
-                unsafe eventHandler.dataOffer(
-                    WaylandBorrowedProxy<WlDataDeviceClient>(eventProxy),
-                    id: WaylandProxy<WlDataOfferClient>(
-                        adopting: _event_id!, connectionLifetime: eventContext.connectionLifetime))
-            }
+    private static let dataOffer_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, id in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
-    private static let enter_impl:
-        @convention(c) (
-            UnsafeMutableRawPointer?, OpaquePointer?, UInt32, OpaquePointer?, wl_fixed_t,
-            wl_fixed_t, OpaquePointer?
-        ) -> Void = { data, proxy, serial, surface, x, y, id in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_surface = unsafe surface
-            nonisolated(unsafe) let _event_id = unsafe id
-            MainActor.assumeIsolated {
-                unsafe eventHandler.enter(
-                    WaylandBorrowedProxy<WlDataDeviceClient>(eventProxy), serial: serial,
-                    surface: WaylandBorrowedProxy<WlSurfaceClient>(_event_surface!),
-                    x: swift_wayland_fixed_to_double(x), y: swift_wayland_fixed_to_double(y),
-                    id: _event_id == nil
-                        ? nil : .some(WaylandBorrowedProxy<WlDataOfferClient>(_event_id!)))
-            }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
         }
-    private static let leave_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.leave(WaylandBorrowedProxy<WlDataDeviceClient>(eventProxy))
-            }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_id = unsafe id
+        MainActor.assumeIsolated {
+            unsafe eventHandler.dataOffer(WaylandBorrowedProxy<WlDataDeviceClient>(eventProxy), id: WaylandProxy<WlDataOfferClient>(adopting: _event_id!, connectionLifetime: eventContext.connectionLifetime))
         }
-    private static let motion_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, wl_fixed_t, wl_fixed_t) ->
-            Void = { data, proxy, time, x, y in
-                guard let data = unsafe data, let proxy = unsafe proxy else {
-                    return
-                }
-                let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-                guard let h = handler(listenerContext) else {
-                    return
-                }
-                nonisolated(unsafe) let eventHandler = h
-                nonisolated(unsafe) let eventProxy = unsafe proxy
-                nonisolated(unsafe) let eventContext = listenerContext
-                MainActor.assumeIsolated {
-                    unsafe eventHandler.motion(
-                        WaylandBorrowedProxy<WlDataDeviceClient>(eventProxy), time: time,
-                        x: swift_wayland_fixed_to_double(x), y: swift_wayland_fixed_to_double(y))
-                }
-            }
-    private static let drop_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.drop(WaylandBorrowedProxy<WlDataDeviceClient>(eventProxy))
-            }
+    }
+    private static let enter_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, OpaquePointer?, wl_fixed_t, wl_fixed_t, OpaquePointer?) -> Void = { data, proxy, serial, surface, x, y, id in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
-    private static let selection_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = {
-            data, proxy, id in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_id = unsafe id
-            MainActor.assumeIsolated {
-                unsafe eventHandler.selection(
-                    WaylandBorrowedProxy<WlDataDeviceClient>(eventProxy),
-                    id: _event_id == nil
-                        ? nil : .some(WaylandBorrowedProxy<WlDataOfferClient>(_event_id!)))
-            }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
         }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_surface = unsafe surface
+        nonisolated(unsafe) let _event_id = unsafe id
+        MainActor.assumeIsolated {
+            unsafe eventHandler.enter(WaylandBorrowedProxy<WlDataDeviceClient>(eventProxy), serial: serial, surface: WaylandBorrowedProxy<WlSurfaceClient>(_event_surface!), x: swift_wayland_fixed_to_double(x), y: swift_wayland_fixed_to_double(y), id: _event_id == nil ? nil : .some(WaylandBorrowedProxy<WlDataOfferClient>(_event_id!)))
+        }
+    }
+    private static let leave_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.leave(WaylandBorrowedProxy<WlDataDeviceClient>(eventProxy))
+        }
+    }
+    private static let motion_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, wl_fixed_t, wl_fixed_t) -> Void = { data, proxy, time, x, y in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.motion(WaylandBorrowedProxy<WlDataDeviceClient>(eventProxy), time: time, x: swift_wayland_fixed_to_double(x), y: swift_wayland_fixed_to_double(y))
+        }
+    }
+    private static let drop_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.drop(WaylandBorrowedProxy<WlDataDeviceClient>(eventProxy))
+        }
+    }
+    private static let selection_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, id in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_id = unsafe id
+        MainActor.assumeIsolated {
+            unsafe eventHandler.selection(WaylandBorrowedProxy<WlDataDeviceClient>(eventProxy), id: _event_id == nil ? nil : .some(WaylandBorrowedProxy<WlDataOfferClient>(_event_id!)))
+        }
+    }
 }
-extension WaylandProxy where Interface == WlDataDeviceClient {
-    package func installListener(_ owner: any WlDataDeviceEvents) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WlDataDeviceClient {
+    func installListener(_ owner: any WlDataDeviceEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe wl_data_device_add_listener(proxy, WlDataDeviceClient.listener, data)
         }

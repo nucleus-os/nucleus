@@ -99,7 +99,5 @@ private func testTask(
         swiftTests: [requirement],
         locks: [.checkout("config")],
         cachePolicy: .always,
-        operation: .runSwiftTest(
-            SwiftTestExecution(
-                requirement: requirement)))
+        operation: .sequence([]))
 }

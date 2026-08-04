@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for xdg_wm_base.
 
 package import WaylandClientC
-
 package enum XdgWmBaseClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_xdg_wm_base())
     package nonisolated static let maximumVersion: UInt32 = 7
 }
-extension WaylandProxy where Interface == XdgWmBaseClient {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == XdgWmBaseClient {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_xdg_wm_base_destroy(_proxy)
@@ -18,31 +17,24 @@ extension WaylandProxy where Interface == XdgWmBaseClient {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func createPositioner() throws(WaylandProxyError) -> WaylandProxy<XdgPositionerClient> {
+    func createPositioner() throws(WaylandProxyError) -> WaylandProxy<XdgPositionerClient> {
         let _proxy = try unsafe requireNativeProxy()
-        guard
-            let _created = unsafe swift_wayland_client_request_xdg_wm_base_create_positioner(_proxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_xdg_wm_base_create_positioner(_proxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, XdgPositionerClient.self)
     }
-    package func getXdgSurface(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError)
-        -> WaylandProxy<XdgSurfaceClient>
-    {
+    func getXdgSurface(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<XdgSurfaceClient> {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
-        guard
-            let _created = unsafe swift_wayland_client_request_xdg_wm_base_get_xdg_surface(
-                _proxy, _surfaceProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_xdg_wm_base_get_xdg_surface(_proxy, _surfaceProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, XdgSurfaceClient.self)
     }
-    package func pong(serial: UInt32) throws(WaylandProxyError) {
+    func pong(serial: UInt32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_xdg_wm_base_pong(_proxy, serial)
         return
@@ -52,8 +44,8 @@ extension WaylandProxy where Interface == XdgWmBaseClient {
 package protocol XdgWmBaseEvents: AnyObject {
     func ping(_ proxy: WaylandBorrowedProxy<XdgWmBaseClient>, serial: UInt32)
 }
-extension XdgWmBaseClient {
-    package nonisolated(unsafe) static let listener: UnsafeMutablePointer<xdg_wm_base_listener> = {
+package extension XdgWmBaseClient {
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<xdg_wm_base_listener> = {
         let p = UnsafeMutablePointer<xdg_wm_base_listener>.allocate(capacity: 1)
         unsafe p.initialize(to: xdg_wm_base_listener())
         unsafe p.pointee.ping = ping_impl
@@ -62,27 +54,24 @@ extension XdgWmBaseClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any XdgWmBaseEvents? {
         context.owner as? any XdgWmBaseEvents
     }
-    private static let ping_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = {
-            data, proxy, serial in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.ping(
-                    WaylandBorrowedProxy<XdgWmBaseClient>(eventProxy), serial: serial)
-            }
+    private static let ping_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.ping(WaylandBorrowedProxy<XdgWmBaseClient>(eventProxy), serial: serial)
+        }
+    }
 }
-extension WaylandProxy where Interface == XdgWmBaseClient {
-    package func installListener(_ owner: any XdgWmBaseEvents) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == XdgWmBaseClient {
+    func installListener(_ owner: any XdgWmBaseEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe xdg_wm_base_add_listener(proxy, XdgWmBaseClient.listener, data)
         }

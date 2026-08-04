@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for wp_presentation.
 
 package import WaylandClientC
-
 package enum WpPresentationClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_presentation())
     package nonisolated static let maximumVersion: UInt32 = 2
 }
-extension WaylandProxy where Interface == WpPresentationClient {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpPresentationClient {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_presentation_destroy(_proxy)
@@ -18,15 +17,10 @@ extension WaylandProxy where Interface == WpPresentationClient {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func feedback(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError)
-        -> WaylandProxy<WpPresentationFeedbackClient>
-    {
+    func feedback(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<WpPresentationFeedbackClient> {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
-        guard
-            let _created = unsafe swift_wayland_client_request_wp_presentation_feedback(
-                _proxy, _surfaceProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_wp_presentation_feedback(_proxy, _surfaceProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
@@ -37,40 +31,34 @@ extension WaylandProxy where Interface == WpPresentationClient {
 package protocol WpPresentationEvents: AnyObject {
     func clockId(_ proxy: WaylandBorrowedProxy<WpPresentationClient>, clk_id: UInt32)
 }
-extension WpPresentationClient {
-    package nonisolated(unsafe) static let listener:
-        UnsafeMutablePointer<wp_presentation_listener> = {
-            let p = UnsafeMutablePointer<wp_presentation_listener>.allocate(capacity: 1)
-            unsafe p.initialize(to: wp_presentation_listener())
-            unsafe p.pointee.clock_id = clockId_impl
-            return unsafe p
-        }()
-    private static func handler(_ context: WaylandClientListenerContext)
-        -> any WpPresentationEvents?
-    {
+package extension WpPresentationClient {
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wp_presentation_listener> = {
+        let p = UnsafeMutablePointer<wp_presentation_listener>.allocate(capacity: 1)
+        unsafe p.initialize(to: wp_presentation_listener())
+        unsafe p.pointee.clock_id = clockId_impl
+        return unsafe p
+    }()
+    private static func handler(_ context: WaylandClientListenerContext) -> any WpPresentationEvents? {
         context.owner as? any WpPresentationEvents
     }
-    private static let clockId_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = {
-            data, proxy, clk_id in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.clockId(
-                    WaylandBorrowedProxy<WpPresentationClient>(eventProxy), clk_id: clk_id)
-            }
+    private static let clockId_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, clk_id in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.clockId(WaylandBorrowedProxy<WpPresentationClient>(eventProxy), clk_id: clk_id)
+        }
+    }
 }
-extension WaylandProxy where Interface == WpPresentationClient {
-    package func installListener(_ owner: any WpPresentationEvents) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpPresentationClient {
+    func installListener(_ owner: any WpPresentationEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe wp_presentation_add_listener(proxy, WpPresentationClient.listener, data)
         }

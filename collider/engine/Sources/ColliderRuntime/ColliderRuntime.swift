@@ -266,6 +266,7 @@ public actor ColliderRuntime {
         let executable: Subprocess.Executable =
             switch command.executable {
             case .named(let name): .name(name)
+            case .operationalNamed(let name): .name(name)
             case .path(let path): .path(.init(path.string))
             case .taskOutput(let path): .path(.init(path.string))
             }
@@ -501,7 +502,10 @@ enum TaskOutputPresentation: Sendable {
             .inherited
         case (.quiet, .inherited):
             .logged
-        default:
+        case (.stream, .inherited), (.stream, .terminal), (.stream, .file),
+            (.stream, .captured), (.stream, .combined), (.quiet, .logged),
+            (.quiet, .terminal), (.quiet, .file), (.quiet, .captured),
+            (.quiet, .combined):
             output
         }
     }

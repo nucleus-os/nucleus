@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for wl_subcompositor.
 
 import WaylandClientC
-
 package enum WlSubcompositorClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_subcompositor())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == WlSubcompositorClient {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WlSubcompositorClient {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wl_subcompositor_destroy(_proxy)
@@ -18,16 +17,11 @@ extension WaylandProxy where Interface == WlSubcompositorClient {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func getSubsurface(
-        surface: WaylandProxy<WlSurfaceClient>, parent: WaylandProxy<WlSurfaceClient>
-    ) throws(WaylandProxyError) -> WaylandProxy<WlSubsurfaceClient> {
+    func getSubsurface(surface: WaylandProxy<WlSurfaceClient>, parent: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) -> WaylandProxy<WlSubsurfaceClient> {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
         let _parentProxy = try unsafe parent.requireNativeProxy()
-        guard
-            let _created = unsafe swift_wayland_client_request_wl_subcompositor_get_subsurface(
-                _proxy, _surfaceProxy, _parentProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_wl_subcompositor_get_subsurface(_proxy, _surfaceProxy, _parentProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

@@ -40,7 +40,7 @@ import Testing
             "HOME": workspace.path,
             "XDG_CACHE_HOME": cache.path,
             "NUCLEUS_NATIVE_SDK_ROOT": cache.appendingPathComponent(
-                "nucleus/nucleus-native-sdk"
+                "nucleus/nucleus-native-sdk/linux-arm64"
             ).path,
             "ANDROID_SDK_ROOT": cache.appendingPathComponent("android-sdk").path,
         ])

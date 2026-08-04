@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for zwp_confined_pointer_v1.
 
 package import WaylandClientC
-
 package enum ZwpConfinedPointerV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_confined_pointer_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == ZwpConfinedPointerV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpConfinedPointerV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zwp_confined_pointer_v1_destroy(_proxy)
@@ -18,7 +17,7 @@ extension WaylandProxy where Interface == ZwpConfinedPointerV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func setRegion(region: WaylandProxy<WlRegionClient>?) throws(WaylandProxyError) {
+    func setRegion(region: WaylandProxy<WlRegionClient>?) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _regionProxy = try unsafe region?.requireNativeProxy()
         unsafe swift_wayland_client_request_zwp_confined_pointer_v1_set_region(_proxy, _regionProxy)
@@ -30,61 +29,52 @@ package protocol ZwpConfinedPointerV1Events: AnyObject {
     func confined(_ proxy: WaylandBorrowedProxy<ZwpConfinedPointerV1Client>)
     func unconfined(_ proxy: WaylandBorrowedProxy<ZwpConfinedPointerV1Client>)
 }
-extension ZwpConfinedPointerV1Client {
-    package nonisolated(unsafe) static let listener:
-        UnsafeMutablePointer<zwp_confined_pointer_v1_listener> = {
-            let p = UnsafeMutablePointer<zwp_confined_pointer_v1_listener>.allocate(capacity: 1)
-            unsafe p.initialize(to: zwp_confined_pointer_v1_listener())
-            unsafe p.pointee.confined = confined_impl
-            unsafe p.pointee.unconfined = unconfined_impl
-            return unsafe p
-        }()
-    private static func handler(_ context: WaylandClientListenerContext)
-        -> any ZwpConfinedPointerV1Events?
-    {
+package extension ZwpConfinedPointerV1Client {
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_confined_pointer_v1_listener> = {
+        let p = UnsafeMutablePointer<zwp_confined_pointer_v1_listener>.allocate(capacity: 1)
+        unsafe p.initialize(to: zwp_confined_pointer_v1_listener())
+        unsafe p.pointee.confined = confined_impl
+        unsafe p.pointee.unconfined = unconfined_impl
+        return unsafe p
+    }()
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZwpConfinedPointerV1Events? {
         context.owner as? any ZwpConfinedPointerV1Events
     }
-    private static let confined_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.confined(
-                    WaylandBorrowedProxy<ZwpConfinedPointerV1Client>(eventProxy))
-            }
+    private static let confined_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
-    private static let unconfined_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.unconfined(
-                    WaylandBorrowedProxy<ZwpConfinedPointerV1Client>(eventProxy))
-            }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
         }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.confined(WaylandBorrowedProxy<ZwpConfinedPointerV1Client>(eventProxy))
+        }
+    }
+    private static let unconfined_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.unconfined(WaylandBorrowedProxy<ZwpConfinedPointerV1Client>(eventProxy))
+        }
+    }
 }
-extension WaylandProxy where Interface == ZwpConfinedPointerV1Client {
-    package func installListener(_ owner: any ZwpConfinedPointerV1Events) throws(WaylandProxyError)
-    {
+package extension WaylandProxy where Interface == ZwpConfinedPointerV1Client {
+    func installListener(_ owner: any ZwpConfinedPointerV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_confined_pointer_v1_add_listener(
-                proxy, ZwpConfinedPointerV1Client.listener, data)
+            unsafe zwp_confined_pointer_v1_add_listener(proxy, ZwpConfinedPointerV1Client.listener, data)
         }
     }
 }

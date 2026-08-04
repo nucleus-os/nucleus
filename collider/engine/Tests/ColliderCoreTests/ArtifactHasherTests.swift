@@ -2,6 +2,7 @@ import ColliderCore
 import Foundation
 import SystemPackage
 import Testing
+
 @testable import ColliderRuntime
 
 @Test func fileDigestStreamsExactContents() throws {
@@ -11,8 +12,9 @@ import Testing
     defer { try? FileManager.default.removeItem(at: directory) }
     let file = directory.appendingPathComponent("value")
     try Data("nucleus".utf8).write(to: file)
-    #expect(try ArtifactHasher.digest(file: FilePath(file.path))
-        == ArtifactHasher.digest(bytes: Data("nucleus".utf8)))
+    #expect(
+        try ArtifactHasher.digest(file: FilePath(file.path))
+            == ArtifactHasher.digest(bytes: Data("nucleus".utf8)))
 }
 
 @Test func fileDigestStreamsLargeFilesWithoutChangingTheirIdentity() throws {
@@ -28,8 +30,9 @@ import Testing
         })
     try contents.write(to: file)
 
-    #expect(try ArtifactHasher.digest(file: FilePath(file.path))
-        == ArtifactHasher.digest(bytes: contents))
+    #expect(
+        try ArtifactHasher.digest(file: FilePath(file.path))
+            == ArtifactHasher.digest(bytes: contents))
 }
 
 @Test func treeDigestIgnoresTimestampsButIncludesPermissionsAndSymlinks() throws {
@@ -82,6 +85,24 @@ import Testing
             == ArtifactHasher.digest(
                 tree: FilePath(staged.path),
                 excluding: [".nucleus-product-stage.json"]))
+}
+
+@Test func treeDigestIsIndependentOfTheRootPath() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-tree-placement-\(UUID().uuidString)")
+    let first = directory.appendingPathComponent("first")
+    let second = directory.appendingPathComponent("second-placement")
+    for root in [first, second] {
+        try FileManager.default.createDirectory(
+            at: root, withIntermediateDirectories: true)
+        try Data("payload".utf8).write(
+            to: root.appendingPathComponent("artifact"))
+    }
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    #expect(
+        try ArtifactHasher.digest(tree: FilePath(first.path))
+            == ArtifactHasher.digest(tree: FilePath(second.path)))
 }
 
 @Test func planningDigestCacheReusesTreesAndOverlappingFileContents() throws {
@@ -170,16 +191,19 @@ import Testing
     let initial = try aospProductDefinitionDigest(
         productSource: FilePath(product.path),
         sourceOverlays: overlays)
-    #expect(try aospProductDefinitionDigest(
-        productSource: FilePath(product.path),
-        sourceOverlays: Array(overlays.reversed())) == initial)
+    #expect(
+        try aospProductDefinitionDigest(
+            productSource: FilePath(product.path),
+            sourceOverlays: Array(overlays.reversed())) == initial)
 
     try Data("changed".utf8).write(
         to: firstOverlay.appendingPathComponent("transport.c"))
-    #expect(try aospProductDefinitionDigest(
-        productSource: FilePath(product.path),
-        sourceOverlays: overlays) != initial)
-    #expect(try aospProductDefinitionDigest(
-        productSource: FilePath(product.path),
-        sourceOverlays: []) != initial)
+    #expect(
+        try aospProductDefinitionDigest(
+            productSource: FilePath(product.path),
+            sourceOverlays: overlays) != initial)
+    #expect(
+        try aospProductDefinitionDigest(
+            productSource: FilePath(product.path),
+            sourceOverlays: []) != initial)
 }

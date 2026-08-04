@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for zxdg_output_manager_v1.
 
 import WaylandClientC
-
 package enum ZxdgOutputManagerV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zxdg_output_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 3
 }
-extension WaylandProxy where Interface == ZxdgOutputManagerV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZxdgOutputManagerV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zxdg_output_manager_v1_destroy(_proxy)
@@ -18,16 +17,10 @@ extension WaylandProxy where Interface == ZxdgOutputManagerV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func getXdgOutput(output: WaylandProxy<WlOutputClient>) throws(WaylandProxyError)
-        -> WaylandProxy<ZxdgOutputV1Client>
-    {
+    func getXdgOutput(output: WaylandProxy<WlOutputClient>) throws(WaylandProxyError) -> WaylandProxy<ZxdgOutputV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _outputProxy = try unsafe output.requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_zxdg_output_manager_v1_get_xdg_output(
-                    _proxy, _outputProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_zxdg_output_manager_v1_get_xdg_output(_proxy, _outputProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

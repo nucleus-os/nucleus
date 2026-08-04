@@ -1,28 +1,22 @@
 import ColliderCore
 import Foundation
+import SystemPackage
 
 struct BenchmarkCommand {
     private struct Suite {
-        var package: String
-        var product: String
-        var outputDirectory: String
+        let package: String
+        let product: String
+        let outputDirectory: String
     }
 
     let context: WorkspaceContext
 
-    func run() async throws {
-        let swiftPM = try context.swiftPMInvocation(configuration: .release)
-        let toolchain = try await context.run(
-            "swift", ["--version"], capture: true
-        )
-        .split(whereSeparator: \Character.isNewline)
-        .joined(separator: " | ")
-        var environment = context.environment
-        environment["NUCLEUS_BENCHMARK_SWIFT_VERSION"] = toolchain
-        let benchmarkContext = WorkspaceContext(
-            root: context.root,
-            environment: environment)
-        let outputRoot = context.layout.benchmarkBuilds
+    func run(controls: TaskControls) async throws {
+        let registry = ComponentRegistry(context: context)
+        let swiftPM = try registry.linuxSwiftPMInvocation(configuration: .release)
+        let environment = context.taskEnvironment.merging([
+            "NUCLEUS_BENCHMARK_SWIFT_VERSION": swiftPM.context.toolchainIdentity
+        ]) { _, configured in configured }
         let suites = [
             Suite(
                 package: "core",
@@ -37,47 +31,50 @@ struct BenchmarkCommand {
                 product: "NucleusReactBenchmarks",
                 outputDirectory: "react-native"),
         ]
-
-        for suite in suites {
-            try await run(
-                suite,
-                outputRoot: outputRoot,
-                context: benchmarkContext,
-                swiftPM: swiftPM)
+        let tasks = try registry.linuxArchitectureTasks()
+        let benchmarkTasks = suites.map { suite in
+            let executable = swiftPM.executable(suite.product)
+            let output = FilePath(context.layout.benchmarkBuilds.path).appending(
+                suite.outputDirectory)
+            return TaskDeclaration(
+                id: TaskID(rawValue: "benchmark.\(suite.outputDirectory)"),
+                component: ComponentID(rawValue: "benchmark"),
+                dependencies: [
+                    TaskID(rawValue: "native.builder"),
+                    TaskID(rawValue: "android-runtime.gfxstream.linux-arm64"),
+                ],
+                swiftProducts: [
+                    swiftPM.product(
+                        package: suite.package,
+                        product: suite.product,
+                        packageRoot: context.layout.rootPath,
+                        environment: environment,
+                        expectedOutputs: [
+                            PathPostcondition(
+                                path: executable,
+                                validation: .executableFile)
+                        ])
+                ],
+                inputs: [swiftPM.identityInput],
+                outputs: [
+                    OutputDeclaration(path: output, validation: .nonEmptyDirectory)
+                ],
+                locks: [.checkout("benchmark-\(suite.outputDirectory)")],
+                cachePolicy: .always,
+                operation: .sequence([
+                    .removePath(output),
+                    swiftPM.operation(
+                        executable: executable,
+                        arguments: [
+                            "--output", output.string, "--iterations", "3",
+                        ],
+                        workingDirectory: context.layout.rootPath,
+                        environment: environment),
+                ]))
         }
-    }
-
-    private func run(
-        _ suite: Suite,
-        outputRoot: URL,
-        context: WorkspaceContext,
-        swiftPM: SwiftPMInvocation
-    ) async throws {
-        let package = context.repository(suite.package)
-        print(
-            "==> benchmark package=\(suite.package) product=\(suite.product) "
-                + "configuration=release schema=nucleus.headless.v3")
-        try await context.run(
-            "swift",
-            swiftPM.commandArguments([
-                "build", "--product", suite.product,
-            ]),
-            directory: package,
-            environmentOverrides: swiftPM.commandEnvironment(
-                context.taskEnvironment))
-        let executable = URL(
-            fileURLWithPath: swiftPM.executable(suite.product).string)
-        guard FileManager.default.isExecutableFile(atPath: executable.path) else {
-            throw WorkspaceFailure.message(
-                "release benchmark product is not executable: \(executable.path)")
-        }
-
-        let output = outputRoot.appendingPathComponent(
-            suite.outputDirectory,
-            isDirectory: true)
-        try await context.run(
-            executable.path,
-            ["--output", output.path, "--iterations", "3"],
-            directory: package)
+        try await context.execute(
+            tasks: tasks + benchmarkTasks,
+            selected: benchmarkTasks.map(\.id),
+            controls: controls)
     }
 }

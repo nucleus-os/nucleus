@@ -88,147 +88,147 @@
     }
     package static let argb8888 = Self(rawValue: 0)
     package static let xrgb8888 = Self(rawValue: 1)
-    package static let c8 = Self(rawValue: 0x2020_3843)
-    package static let rgb332 = Self(rawValue: 0x3842_4752)
-    package static let bgr233 = Self(rawValue: 0x3852_4742)
-    package static let xrgb4444 = Self(rawValue: 0x3231_5258)
-    package static let xbgr4444 = Self(rawValue: 0x3231_4258)
-    package static let rgbx4444 = Self(rawValue: 0x3231_5852)
-    package static let bgrx4444 = Self(rawValue: 0x3231_5842)
-    package static let argb4444 = Self(rawValue: 0x3231_5241)
-    package static let abgr4444 = Self(rawValue: 0x3231_4241)
-    package static let rgba4444 = Self(rawValue: 0x3231_4152)
-    package static let bgra4444 = Self(rawValue: 0x3231_4142)
-    package static let xrgb1555 = Self(rawValue: 0x3531_5258)
-    package static let xbgr1555 = Self(rawValue: 0x3531_4258)
-    package static let rgbx5551 = Self(rawValue: 0x3531_5852)
-    package static let bgrx5551 = Self(rawValue: 0x3531_5842)
-    package static let argb1555 = Self(rawValue: 0x3531_5241)
-    package static let abgr1555 = Self(rawValue: 0x3531_4241)
-    package static let rgba5551 = Self(rawValue: 0x3531_4152)
-    package static let bgra5551 = Self(rawValue: 0x3531_4142)
-    package static let rgb565 = Self(rawValue: 0x3631_4752)
-    package static let bgr565 = Self(rawValue: 0x3631_4742)
-    package static let rgb888 = Self(rawValue: 0x3432_4752)
-    package static let bgr888 = Self(rawValue: 0x3432_4742)
-    package static let xbgr8888 = Self(rawValue: 0x3432_4258)
-    package static let rgbx8888 = Self(rawValue: 0x3432_5852)
-    package static let bgrx8888 = Self(rawValue: 0x3432_5842)
-    package static let abgr8888 = Self(rawValue: 0x3432_4241)
-    package static let rgba8888 = Self(rawValue: 0x3432_4152)
-    package static let bgra8888 = Self(rawValue: 0x3432_4142)
-    package static let xrgb2101010 = Self(rawValue: 0x3033_5258)
-    package static let xbgr2101010 = Self(rawValue: 0x3033_4258)
-    package static let rgbx1010102 = Self(rawValue: 0x3033_5852)
-    package static let bgrx1010102 = Self(rawValue: 0x3033_5842)
-    package static let argb2101010 = Self(rawValue: 0x3033_5241)
-    package static let abgr2101010 = Self(rawValue: 0x3033_4241)
-    package static let rgba1010102 = Self(rawValue: 0x3033_4152)
-    package static let bgra1010102 = Self(rawValue: 0x3033_4142)
-    package static let yuyv = Self(rawValue: 0x5659_5559)
-    package static let yvyu = Self(rawValue: 0x5559_5659)
-    package static let uyvy = Self(rawValue: 0x5956_5955)
-    package static let vyuy = Self(rawValue: 0x5955_5956)
-    package static let ayuv = Self(rawValue: 0x5655_5941)
-    package static let nv12 = Self(rawValue: 0x3231_564e)
-    package static let nv21 = Self(rawValue: 0x3132_564e)
-    package static let nv16 = Self(rawValue: 0x3631_564e)
-    package static let nv61 = Self(rawValue: 0x3136_564e)
-    package static let yuv410 = Self(rawValue: 0x3956_5559)
-    package static let yvu410 = Self(rawValue: 0x3955_5659)
-    package static let yuv411 = Self(rawValue: 0x3131_5559)
-    package static let yvu411 = Self(rawValue: 0x3131_5659)
-    package static let yuv420 = Self(rawValue: 0x3231_5559)
-    package static let yvu420 = Self(rawValue: 0x3231_5659)
-    package static let yuv422 = Self(rawValue: 0x3631_5559)
-    package static let yvu422 = Self(rawValue: 0x3631_5659)
-    package static let yuv444 = Self(rawValue: 0x3432_5559)
-    package static let yvu444 = Self(rawValue: 0x3432_5659)
-    package static let r8 = Self(rawValue: 0x2020_3852)
-    package static let r16 = Self(rawValue: 0x2036_3152)
-    package static let rg88 = Self(rawValue: 0x3838_4752)
-    package static let gr88 = Self(rawValue: 0x3838_5247)
-    package static let rg1616 = Self(rawValue: 0x3233_4752)
-    package static let gr1616 = Self(rawValue: 0x3233_5247)
-    package static let xrgb16161616f = Self(rawValue: 0x4834_5258)
-    package static let xbgr16161616f = Self(rawValue: 0x4834_4258)
-    package static let argb16161616f = Self(rawValue: 0x4834_5241)
-    package static let abgr16161616f = Self(rawValue: 0x4834_4241)
-    package static let xyuv8888 = Self(rawValue: 0x5655_5958)
-    package static let vuy888 = Self(rawValue: 0x3432_5556)
-    package static let vuy101010 = Self(rawValue: 0x3033_5556)
-    package static let y210 = Self(rawValue: 0x3031_3259)
-    package static let y212 = Self(rawValue: 0x3231_3259)
-    package static let y216 = Self(rawValue: 0x3631_3259)
-    package static let y410 = Self(rawValue: 0x3031_3459)
-    package static let y412 = Self(rawValue: 0x3231_3459)
-    package static let y416 = Self(rawValue: 0x3631_3459)
-    package static let xvyu2101010 = Self(rawValue: 0x3033_5658)
-    package static let xvyu1216161616 = Self(rawValue: 0x3633_5658)
-    package static let xvyu16161616 = Self(rawValue: 0x3834_5658)
-    package static let y0l0 = Self(rawValue: 0x304c_3059)
-    package static let x0l0 = Self(rawValue: 0x304c_3058)
-    package static let y0l2 = Self(rawValue: 0x324c_3059)
-    package static let x0l2 = Self(rawValue: 0x324c_3058)
-    package static let yuv4208bit = Self(rawValue: 0x3830_5559)
-    package static let yuv42010bit = Self(rawValue: 0x3031_5559)
-    package static let xrgb8888A8 = Self(rawValue: 0x3841_5258)
-    package static let xbgr8888A8 = Self(rawValue: 0x3841_4258)
-    package static let rgbx8888A8 = Self(rawValue: 0x3841_5852)
-    package static let bgrx8888A8 = Self(rawValue: 0x3841_5842)
-    package static let rgb888A8 = Self(rawValue: 0x3841_3852)
-    package static let bgr888A8 = Self(rawValue: 0x3841_3842)
-    package static let rgb565A8 = Self(rawValue: 0x3841_3552)
-    package static let bgr565A8 = Self(rawValue: 0x3841_3542)
-    package static let nv24 = Self(rawValue: 0x3432_564e)
-    package static let nv42 = Self(rawValue: 0x3234_564e)
-    package static let p210 = Self(rawValue: 0x3031_3250)
-    package static let p010 = Self(rawValue: 0x3031_3050)
-    package static let p012 = Self(rawValue: 0x3231_3050)
-    package static let p016 = Self(rawValue: 0x3631_3050)
-    package static let axbxgxrx106106106106 = Self(rawValue: 0x3031_4241)
-    package static let nv15 = Self(rawValue: 0x3531_564e)
-    package static let q410 = Self(rawValue: 0x3031_3451)
-    package static let q401 = Self(rawValue: 0x3130_3451)
-    package static let xrgb16161616 = Self(rawValue: 0x3834_5258)
-    package static let xbgr16161616 = Self(rawValue: 0x3834_4258)
-    package static let argb16161616 = Self(rawValue: 0x3834_5241)
-    package static let abgr16161616 = Self(rawValue: 0x3834_4241)
-    package static let c1 = Self(rawValue: 0x2020_3143)
-    package static let c2 = Self(rawValue: 0x2020_3243)
-    package static let c4 = Self(rawValue: 0x2020_3443)
-    package static let d1 = Self(rawValue: 0x2020_3144)
-    package static let d2 = Self(rawValue: 0x2020_3244)
-    package static let d4 = Self(rawValue: 0x2020_3444)
-    package static let d8 = Self(rawValue: 0x2020_3844)
-    package static let r1 = Self(rawValue: 0x2020_3152)
-    package static let r2 = Self(rawValue: 0x2020_3252)
-    package static let r4 = Self(rawValue: 0x2020_3452)
-    package static let r10 = Self(rawValue: 0x2030_3152)
-    package static let r12 = Self(rawValue: 0x2032_3152)
-    package static let avuy8888 = Self(rawValue: 0x5955_5641)
-    package static let xvuy8888 = Self(rawValue: 0x5955_5658)
-    package static let p030 = Self(rawValue: 0x3033_3050)
-    package static let rgb161616 = Self(rawValue: 0x3834_4752)
-    package static let bgr161616 = Self(rawValue: 0x3834_4742)
-    package static let r16f = Self(rawValue: 0x4820_2052)
-    package static let gr1616f = Self(rawValue: 0x4820_5247)
-    package static let bgr161616f = Self(rawValue: 0x4852_4742)
-    package static let r32f = Self(rawValue: 0x4620_2052)
-    package static let gr3232f = Self(rawValue: 0x4620_5247)
-    package static let bgr323232f = Self(rawValue: 0x4652_4742)
-    package static let abgr32323232f = Self(rawValue: 0x4638_4241)
-    package static let nv20 = Self(rawValue: 0x3032_564e)
-    package static let nv30 = Self(rawValue: 0x3033_564e)
-    package static let s010 = Self(rawValue: 0x3031_3053)
-    package static let s210 = Self(rawValue: 0x3031_3253)
-    package static let s410 = Self(rawValue: 0x3031_3453)
-    package static let s012 = Self(rawValue: 0x3231_3053)
-    package static let s212 = Self(rawValue: 0x3231_3253)
-    package static let s412 = Self(rawValue: 0x3231_3453)
-    package static let s016 = Self(rawValue: 0x3631_3053)
-    package static let s216 = Self(rawValue: 0x3631_3253)
-    package static let s416 = Self(rawValue: 0x3631_3453)
+    package static let c8 = Self(rawValue: 0x20203843)
+    package static let rgb332 = Self(rawValue: 0x38424752)
+    package static let bgr233 = Self(rawValue: 0x38524742)
+    package static let xrgb4444 = Self(rawValue: 0x32315258)
+    package static let xbgr4444 = Self(rawValue: 0x32314258)
+    package static let rgbx4444 = Self(rawValue: 0x32315852)
+    package static let bgrx4444 = Self(rawValue: 0x32315842)
+    package static let argb4444 = Self(rawValue: 0x32315241)
+    package static let abgr4444 = Self(rawValue: 0x32314241)
+    package static let rgba4444 = Self(rawValue: 0x32314152)
+    package static let bgra4444 = Self(rawValue: 0x32314142)
+    package static let xrgb1555 = Self(rawValue: 0x35315258)
+    package static let xbgr1555 = Self(rawValue: 0x35314258)
+    package static let rgbx5551 = Self(rawValue: 0x35315852)
+    package static let bgrx5551 = Self(rawValue: 0x35315842)
+    package static let argb1555 = Self(rawValue: 0x35315241)
+    package static let abgr1555 = Self(rawValue: 0x35314241)
+    package static let rgba5551 = Self(rawValue: 0x35314152)
+    package static let bgra5551 = Self(rawValue: 0x35314142)
+    package static let rgb565 = Self(rawValue: 0x36314752)
+    package static let bgr565 = Self(rawValue: 0x36314742)
+    package static let rgb888 = Self(rawValue: 0x34324752)
+    package static let bgr888 = Self(rawValue: 0x34324742)
+    package static let xbgr8888 = Self(rawValue: 0x34324258)
+    package static let rgbx8888 = Self(rawValue: 0x34325852)
+    package static let bgrx8888 = Self(rawValue: 0x34325842)
+    package static let abgr8888 = Self(rawValue: 0x34324241)
+    package static let rgba8888 = Self(rawValue: 0x34324152)
+    package static let bgra8888 = Self(rawValue: 0x34324142)
+    package static let xrgb2101010 = Self(rawValue: 0x30335258)
+    package static let xbgr2101010 = Self(rawValue: 0x30334258)
+    package static let rgbx1010102 = Self(rawValue: 0x30335852)
+    package static let bgrx1010102 = Self(rawValue: 0x30335842)
+    package static let argb2101010 = Self(rawValue: 0x30335241)
+    package static let abgr2101010 = Self(rawValue: 0x30334241)
+    package static let rgba1010102 = Self(rawValue: 0x30334152)
+    package static let bgra1010102 = Self(rawValue: 0x30334142)
+    package static let yuyv = Self(rawValue: 0x56595559)
+    package static let yvyu = Self(rawValue: 0x55595659)
+    package static let uyvy = Self(rawValue: 0x59565955)
+    package static let vyuy = Self(rawValue: 0x59555956)
+    package static let ayuv = Self(rawValue: 0x56555941)
+    package static let nv12 = Self(rawValue: 0x3231564e)
+    package static let nv21 = Self(rawValue: 0x3132564e)
+    package static let nv16 = Self(rawValue: 0x3631564e)
+    package static let nv61 = Self(rawValue: 0x3136564e)
+    package static let yuv410 = Self(rawValue: 0x39565559)
+    package static let yvu410 = Self(rawValue: 0x39555659)
+    package static let yuv411 = Self(rawValue: 0x31315559)
+    package static let yvu411 = Self(rawValue: 0x31315659)
+    package static let yuv420 = Self(rawValue: 0x32315559)
+    package static let yvu420 = Self(rawValue: 0x32315659)
+    package static let yuv422 = Self(rawValue: 0x36315559)
+    package static let yvu422 = Self(rawValue: 0x36315659)
+    package static let yuv444 = Self(rawValue: 0x34325559)
+    package static let yvu444 = Self(rawValue: 0x34325659)
+    package static let r8 = Self(rawValue: 0x20203852)
+    package static let r16 = Self(rawValue: 0x20363152)
+    package static let rg88 = Self(rawValue: 0x38384752)
+    package static let gr88 = Self(rawValue: 0x38385247)
+    package static let rg1616 = Self(rawValue: 0x32334752)
+    package static let gr1616 = Self(rawValue: 0x32335247)
+    package static let xrgb16161616f = Self(rawValue: 0x48345258)
+    package static let xbgr16161616f = Self(rawValue: 0x48344258)
+    package static let argb16161616f = Self(rawValue: 0x48345241)
+    package static let abgr16161616f = Self(rawValue: 0x48344241)
+    package static let xyuv8888 = Self(rawValue: 0x56555958)
+    package static let vuy888 = Self(rawValue: 0x34325556)
+    package static let vuy101010 = Self(rawValue: 0x30335556)
+    package static let y210 = Self(rawValue: 0x30313259)
+    package static let y212 = Self(rawValue: 0x32313259)
+    package static let y216 = Self(rawValue: 0x36313259)
+    package static let y410 = Self(rawValue: 0x30313459)
+    package static let y412 = Self(rawValue: 0x32313459)
+    package static let y416 = Self(rawValue: 0x36313459)
+    package static let xvyu2101010 = Self(rawValue: 0x30335658)
+    package static let xvyu1216161616 = Self(rawValue: 0x36335658)
+    package static let xvyu16161616 = Self(rawValue: 0x38345658)
+    package static let y0l0 = Self(rawValue: 0x304c3059)
+    package static let x0l0 = Self(rawValue: 0x304c3058)
+    package static let y0l2 = Self(rawValue: 0x324c3059)
+    package static let x0l2 = Self(rawValue: 0x324c3058)
+    package static let yuv4208bit = Self(rawValue: 0x38305559)
+    package static let yuv42010bit = Self(rawValue: 0x30315559)
+    package static let xrgb8888A8 = Self(rawValue: 0x38415258)
+    package static let xbgr8888A8 = Self(rawValue: 0x38414258)
+    package static let rgbx8888A8 = Self(rawValue: 0x38415852)
+    package static let bgrx8888A8 = Self(rawValue: 0x38415842)
+    package static let rgb888A8 = Self(rawValue: 0x38413852)
+    package static let bgr888A8 = Self(rawValue: 0x38413842)
+    package static let rgb565A8 = Self(rawValue: 0x38413552)
+    package static let bgr565A8 = Self(rawValue: 0x38413542)
+    package static let nv24 = Self(rawValue: 0x3432564e)
+    package static let nv42 = Self(rawValue: 0x3234564e)
+    package static let p210 = Self(rawValue: 0x30313250)
+    package static let p010 = Self(rawValue: 0x30313050)
+    package static let p012 = Self(rawValue: 0x32313050)
+    package static let p016 = Self(rawValue: 0x36313050)
+    package static let axbxgxrx106106106106 = Self(rawValue: 0x30314241)
+    package static let nv15 = Self(rawValue: 0x3531564e)
+    package static let q410 = Self(rawValue: 0x30313451)
+    package static let q401 = Self(rawValue: 0x31303451)
+    package static let xrgb16161616 = Self(rawValue: 0x38345258)
+    package static let xbgr16161616 = Self(rawValue: 0x38344258)
+    package static let argb16161616 = Self(rawValue: 0x38345241)
+    package static let abgr16161616 = Self(rawValue: 0x38344241)
+    package static let c1 = Self(rawValue: 0x20203143)
+    package static let c2 = Self(rawValue: 0x20203243)
+    package static let c4 = Self(rawValue: 0x20203443)
+    package static let d1 = Self(rawValue: 0x20203144)
+    package static let d2 = Self(rawValue: 0x20203244)
+    package static let d4 = Self(rawValue: 0x20203444)
+    package static let d8 = Self(rawValue: 0x20203844)
+    package static let r1 = Self(rawValue: 0x20203152)
+    package static let r2 = Self(rawValue: 0x20203252)
+    package static let r4 = Self(rawValue: 0x20203452)
+    package static let r10 = Self(rawValue: 0x20303152)
+    package static let r12 = Self(rawValue: 0x20323152)
+    package static let avuy8888 = Self(rawValue: 0x59555641)
+    package static let xvuy8888 = Self(rawValue: 0x59555658)
+    package static let p030 = Self(rawValue: 0x30333050)
+    package static let rgb161616 = Self(rawValue: 0x38344752)
+    package static let bgr161616 = Self(rawValue: 0x38344742)
+    package static let r16f = Self(rawValue: 0x48202052)
+    package static let gr1616f = Self(rawValue: 0x48205247)
+    package static let bgr161616f = Self(rawValue: 0x48524742)
+    package static let r32f = Self(rawValue: 0x46202052)
+    package static let gr3232f = Self(rawValue: 0x46205247)
+    package static let bgr323232f = Self(rawValue: 0x46524742)
+    package static let abgr32323232f = Self(rawValue: 0x46384241)
+    package static let nv20 = Self(rawValue: 0x3032564e)
+    package static let nv30 = Self(rawValue: 0x3033564e)
+    package static let s010 = Self(rawValue: 0x30313053)
+    package static let s210 = Self(rawValue: 0x30313253)
+    package static let s410 = Self(rawValue: 0x30313453)
+    package static let s012 = Self(rawValue: 0x32313053)
+    package static let s212 = Self(rawValue: 0x32313253)
+    package static let s412 = Self(rawValue: 0x32313453)
+    package static let s016 = Self(rawValue: 0x36313053)
+    package static let s216 = Self(rawValue: 0x36313253)
+    package static let s416 = Self(rawValue: 0x36313453)
     package var knownName: String? {
         switch self {
         case .argb8888:
@@ -1279,8 +1279,7 @@
     case configure = 0
     case closed = 1
 }
-@frozen package struct ZwlrLayerSurfaceV1KeyboardInteractivity: RawRepresentable, Hashable, Sendable
-{
+@frozen package struct ZwlrLayerSurfaceV1KeyboardInteractivity: RawRepresentable, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -1405,8 +1404,7 @@
     case failed = 1
     case cancelled = 2
 }
-@frozen package struct ZwlrOutputConfigurationV1Error: WaylandProtocolErrorValue, Hashable, Sendable
-{
+@frozen package struct ZwlrOutputConfigurationV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -1435,8 +1433,7 @@
     case setScale = 4
     case setAdaptiveSync = 5
 }
-@frozen
-package struct ZwlrOutputConfigurationHeadV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
+@frozen package struct ZwlrOutputConfigurationHeadV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -2363,8 +2360,7 @@ package struct ZwlrOutputConfigurationHeadV1Error: WaylandProtocolErrorValue, Ha
     case destroy = 0
     case setMultiplier = 1
 }
-@frozen package struct WpAlphaModifierSurfaceV1Error: WaylandProtocolErrorValue, Hashable, Sendable
-{
+@frozen package struct WpAlphaModifierSurfaceV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -2588,8 +2584,7 @@ package struct ZwlrOutputConfigurationHeadV1Error: WaylandProtocolErrorValue, Ha
     case setImageDescription = 1
     case unsetImageDescription = 2
 }
-@frozen
-package struct WpColorManagementSurfaceV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
+@frozen package struct WpColorManagementSurfaceV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -2619,10 +2614,7 @@ package struct WpColorManagementSurfaceV1Error: WaylandProtocolErrorValue, Hasha
     case preferredChanged = 0
     case preferredChanged2 = 1
 }
-@frozen
-package struct WpColorManagementSurfaceFeedbackV1Error: WaylandProtocolErrorValue, Hashable,
-    Sendable
-{
+@frozen package struct WpColorManagementSurfaceFeedbackV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -2644,8 +2636,7 @@ package struct WpColorManagementSurfaceFeedbackV1Error: WaylandProtocolErrorValu
     case create = 0
     case setIccFile = 1
 }
-@frozen
-package struct WpImageDescriptionCreatorIccV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
+@frozen package struct WpImageDescriptionCreatorIccV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -2684,9 +2675,7 @@ package struct WpImageDescriptionCreatorIccV1Error: WaylandProtocolErrorValue, H
     case setMaxCll = 8
     case setMaxFall = 9
 }
-@frozen
-package struct WpImageDescriptionCreatorParamsV1Error: WaylandProtocolErrorValue, Hashable, Sendable
-{
+@frozen package struct WpImageDescriptionCreatorParamsV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -2792,8 +2781,7 @@ package struct WpImageDescriptionCreatorParamsV1Error: WaylandProtocolErrorValue
     case supportedCoefficientsAndRanges = 1
     case done = 2
 }
-@frozen
-package struct WpColorRepresentationManagerV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
+@frozen package struct WpColorRepresentationManagerV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -2814,8 +2802,7 @@ package struct WpColorRepresentationManagerV1Error: WaylandProtocolErrorValue, H
     case setCoefficientsAndRange = 2
     case setChromaLocation = 3
 }
-@frozen
-package struct WpColorRepresentationSurfaceV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
+@frozen package struct WpColorRepresentationSurfaceV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -2842,8 +2829,7 @@ package struct WpColorRepresentationSurfaceV1Error: WaylandProtocolErrorValue, H
         }
     }
 }
-@frozen package struct WpColorRepresentationSurfaceV1AlphaMode: RawRepresentable, Hashable, Sendable
-{
+@frozen package struct WpColorRepresentationSurfaceV1AlphaMode: RawRepresentable, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -2864,8 +2850,7 @@ package struct WpColorRepresentationSurfaceV1Error: WaylandProtocolErrorValue, H
         }
     }
 }
-@frozen
-package struct WpColorRepresentationSurfaceV1Coefficients: RawRepresentable, Hashable, Sendable {
+@frozen package struct WpColorRepresentationSurfaceV1Coefficients: RawRepresentable, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -2919,8 +2904,7 @@ package struct WpColorRepresentationSurfaceV1Coefficients: RawRepresentable, Has
         }
     }
 }
-@frozen
-package struct WpColorRepresentationSurfaceV1ChromaLocation: RawRepresentable, Hashable, Sendable {
+@frozen package struct WpColorRepresentationSurfaceV1ChromaLocation: RawRepresentable, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -3244,8 +3228,7 @@ package struct WpColorRepresentationSurfaceV1ChromaLocation: RawRepresentable, H
 @frozen package enum ExtBackgroundEffectManagerV1EventOpcode: UInt16, WaylandEventOpcode {
     case capabilities = 0
 }
-@frozen
-package struct ExtBackgroundEffectManagerV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
+@frozen package struct ExtBackgroundEffectManagerV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -3271,8 +3254,7 @@ package struct ExtBackgroundEffectManagerV1Error: WaylandProtocolErrorValue, Has
     case destroy = 0
     case setBlurRegion = 1
 }
-@frozen
-package struct ExtBackgroundEffectSurfaceV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
+@frozen package struct ExtBackgroundEffectSurfaceV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -3381,15 +3363,11 @@ package struct ExtBackgroundEffectSurfaceV1Error: WaylandProtocolErrorValue, Has
 @frozen package enum ExtImageCaptureSourceV1RequestOpcode: UInt16, WaylandRequestOpcode {
     case destroy = 0
 }
-@frozen package enum ExtOutputImageCaptureSourceManagerV1RequestOpcode: UInt16, WaylandRequestOpcode
-{
+@frozen package enum ExtOutputImageCaptureSourceManagerV1RequestOpcode: UInt16, WaylandRequestOpcode {
     case createSource = 0
     case destroy = 1
 }
-@frozen
-package enum ExtForeignToplevelImageCaptureSourceManagerV1RequestOpcode: UInt16,
-    WaylandRequestOpcode
-{
+@frozen package enum ExtForeignToplevelImageCaptureSourceManagerV1RequestOpcode: UInt16, WaylandRequestOpcode {
     case createSource = 0
     case destroy = 1
 }
@@ -3398,8 +3376,7 @@ package enum ExtForeignToplevelImageCaptureSourceManagerV1RequestOpcode: UInt16,
     case createPointerCursorSession = 1
     case destroy = 2
 }
-@frozen
-package struct ExtImageCopyCaptureManagerV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
+@frozen package struct ExtImageCopyCaptureManagerV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -3433,8 +3410,7 @@ package struct ExtImageCopyCaptureManagerV1Error: WaylandProtocolErrorValue, Has
     case done = 4
     case stopped = 5
 }
-@frozen
-package struct ExtImageCopyCaptureSessionV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
+@frozen package struct ExtImageCopyCaptureSessionV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -3462,8 +3438,7 @@ package struct ExtImageCopyCaptureSessionV1Error: WaylandProtocolErrorValue, Has
     case ready = 3
     case failed = 4
 }
-@frozen
-package struct ExtImageCopyCaptureFrameV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
+@frozen package struct ExtImageCopyCaptureFrameV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -3484,8 +3459,7 @@ package struct ExtImageCopyCaptureFrameV1Error: WaylandProtocolErrorValue, Hasha
         }
     }
 }
-@frozen package struct ExtImageCopyCaptureFrameV1FailureReason: RawRepresentable, Hashable, Sendable
-{
+@frozen package struct ExtImageCopyCaptureFrameV1FailureReason: RawRepresentable, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -3516,10 +3490,7 @@ package struct ExtImageCopyCaptureFrameV1Error: WaylandProtocolErrorValue, Hasha
     case position = 2
     case hotspot = 3
 }
-@frozen
-package struct ExtImageCopyCaptureCursorSessionV1Error: WaylandProtocolErrorValue, Hashable,
-    Sendable
-{
+@frozen package struct ExtImageCopyCaptureCursorSessionV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -3722,8 +3693,7 @@ package struct ExtImageCopyCaptureCursorSessionV1Error: WaylandProtocolErrorValu
     case destroy = 0
     case getFractionalScale = 1
 }
-@frozen
-package struct WpFractionalScaleManagerV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
+@frozen package struct WpFractionalScaleManagerV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -3749,8 +3719,7 @@ package struct WpFractionalScaleManagerV1Error: WaylandProtocolErrorValue, Hasha
     case getSurface = 1
     case importTimeline = 2
 }
-@frozen
-package struct WpLinuxDrmSyncobjManagerV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
+@frozen package struct WpLinuxDrmSyncobjManagerV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -3776,8 +3745,7 @@ package struct WpLinuxDrmSyncobjManagerV1Error: WaylandProtocolErrorValue, Hasha
     case setAcquirePoint = 1
     case setReleasePoint = 2
 }
-@frozen
-package struct WpLinuxDrmSyncobjSurfaceV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
+@frozen package struct WpLinuxDrmSyncobjSurfaceV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -3815,8 +3783,7 @@ package struct WpLinuxDrmSyncobjSurfaceV1Error: WaylandProtocolErrorValue, Hasha
     case destroy = 0
     case createListener = 1
 }
-@frozen
-package struct WpSecurityContextManagerV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
+@frozen package struct WpSecurityContextManagerV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -3870,8 +3837,7 @@ package struct WpSecurityContextManagerV1Error: WaylandProtocolErrorValue, Hasha
     case destroy = 0
     case getTearingControl = 1
 }
-@frozen package struct WpTearingControlManagerV1Error: WaylandProtocolErrorValue, Hashable, Sendable
-{
+@frozen package struct WpTearingControlManagerV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -4059,8 +4025,7 @@ package struct WpSecurityContextManagerV1Error: WaylandProtocolErrorValue, Hasha
     case destroy = 0
     case getXdgToplevelDrag = 1
 }
-@frozen package struct XdgToplevelDragManagerV1Error: WaylandProtocolErrorValue, Hashable, Sendable
-{
+@frozen package struct XdgToplevelDragManagerV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -4323,15 +4288,11 @@ package struct WpSecurityContextManagerV1Error: WaylandProtocolErrorValue, Hasha
 @frozen package enum ZwpInputTimestampsV1EventOpcode: UInt16, WaylandEventOpcode {
     case timestamp = 0
 }
-@frozen package enum ZwpKeyboardShortcutsInhibitManagerV1RequestOpcode: UInt16, WaylandRequestOpcode
-{
+@frozen package enum ZwpKeyboardShortcutsInhibitManagerV1RequestOpcode: UInt16, WaylandRequestOpcode {
     case destroy = 0
     case inhibitShortcuts = 1
 }
-@frozen
-package struct ZwpKeyboardShortcutsInhibitManagerV1Error: WaylandProtocolErrorValue, Hashable,
-    Sendable
-{
+@frozen package struct ZwpKeyboardShortcutsInhibitManagerV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -4357,9 +4318,7 @@ package struct ZwpKeyboardShortcutsInhibitManagerV1Error: WaylandProtocolErrorVa
     case destroy = 0
     case getSynchronization = 1
 }
-@frozen
-package struct ZwpLinuxExplicitSynchronizationV1Error: WaylandProtocolErrorValue, Hashable, Sendable
-{
+@frozen package struct ZwpLinuxExplicitSynchronizationV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -4379,9 +4338,7 @@ package struct ZwpLinuxExplicitSynchronizationV1Error: WaylandProtocolErrorValue
     case setAcquireFence = 1
     case getRelease = 2
 }
-@frozen
-package struct ZwpLinuxSurfaceSynchronizationV1Error: WaylandProtocolErrorValue, Hashable, Sendable
-{
+@frozen package struct ZwpLinuxSurfaceSynchronizationV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue
@@ -5038,8 +4995,7 @@ package struct ZwpLinuxSurfaceSynchronizationV1Error: WaylandProtocolErrorValue,
 @frozen package enum ZxdgToplevelDecorationV1EventOpcode: UInt16, WaylandEventOpcode {
     case configure = 0
 }
-@frozen package struct ZxdgToplevelDecorationV1Error: WaylandProtocolErrorValue, Hashable, Sendable
-{
+@frozen package struct ZxdgToplevelDecorationV1Error: WaylandProtocolErrorValue, Hashable, Sendable {
     package let rawValue: UInt32
     package init(rawValue: UInt32) {
         self.rawValue = rawValue

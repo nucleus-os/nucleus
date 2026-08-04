@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for zwp_text_input_manager_v3.
 
 import WaylandClientC
-
 package enum ZwpTextInputManagerV3Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_text_input_manager_v3())
     package nonisolated static let maximumVersion: UInt32 = 2
 }
-extension WaylandProxy where Interface == ZwpTextInputManagerV3Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpTextInputManagerV3Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zwp_text_input_manager_v3_destroy(_proxy)
@@ -18,16 +17,10 @@ extension WaylandProxy where Interface == ZwpTextInputManagerV3Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func getTextInput(seat: WaylandProxy<WlSeatClient>) throws(WaylandProxyError)
-        -> WaylandProxy<ZwpTextInputV3Client>
-    {
+    func getTextInput(seat: WaylandProxy<WlSeatClient>) throws(WaylandProxyError) -> WaylandProxy<ZwpTextInputV3Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _seatProxy = try unsafe seat.requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_zwp_text_input_manager_v3_get_text_input(
-                    _proxy, _seatProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_zwp_text_input_manager_v3_get_text_input(_proxy, _seatProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

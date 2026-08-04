@@ -103,7 +103,7 @@ struct WorkspaceContext: Sendable {
             }
             normalizedEnvironment["NUCLEUS_NATIVE_SDK_ROOT"] =
                 cacheRoot.appendingPathComponent(
-                    "nucleus/nucleus-native-sdk",
+                    "nucleus/nucleus-native-sdk/linux-\(RunnerPlatform.current.architecture.rawValue)",
                     isDirectory: true
                 ).path
         }

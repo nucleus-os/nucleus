@@ -10,20 +10,6 @@ nucleus_workspace_root="$(cd "$(dirname "$nucleus_host_env_source")/.." && pwd)"
 
 source "$nucleus_workspace_root/tools/host-platform-env.sh"
 
-if ! command -v fnm >/dev/null 2>&1; then
-  echo "error: fnm is required to activate the Nucleus Node.js toolchain" >&2
-  return 127 2>/dev/null || exit 127
-fi
-nucleus_fnm_environment="$(fnm env --shell bash)" || {
-  echo "error: fnm could not initialize the Nucleus Node.js environment" >&2
-  return 127 2>/dev/null || exit 127
-}
-eval "$nucleus_fnm_environment"
-if ! fnm use --log-level quiet 26; then
-  echo "error: Node.js 26 is not installed under fnm" >&2
-  return 127 2>/dev/null || exit 127
-fi
-
 nucleus_toolchain=""
 if [[ -n "${NUCLEUS_SWIFT_SOURCE_ID:-}" ]]; then
   nucleus_source_id="$NUCLEUS_SWIFT_SOURCE_ID"
@@ -79,7 +65,7 @@ fi
 export PATH="$nucleus_toolchain/bin:$PATH"
 : "${SWIFT_BACKTRACE:=enable=no}"
 export SWIFT_BACKTRACE
-: "${NUCLEUS_NATIVE_SDK_ROOT:=${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/nucleus-native-sdk}"
+: "${NUCLEUS_NATIVE_SDK_ROOT:=${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/nucleus-native-sdk/linux-$(uname -m | sed 's/aarch64/arm64/; s/amd64/x86_64/')}"
 export NUCLEUS_NATIVE_SDK_ROOT
 
 # swift-java exposes this explicit override for workspace integrators. Nucleus

@@ -2,34 +2,26 @@
 // Typed client descriptor and event dispatch for zwp_keyboard_shortcuts_inhibit_manager_v1.
 
 import WaylandClientC
-
 package enum ZwpKeyboardShortcutsInhibitManagerV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_keyboard_shortcuts_inhibit_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == ZwpKeyboardShortcutsInhibitManagerV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpKeyboardShortcutsInhibitManagerV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
-            unsafe swift_wayland_client_request_zwp_keyboard_shortcuts_inhibit_manager_v1_destroy(
-                _proxy)
+            unsafe swift_wayland_client_request_zwp_keyboard_shortcuts_inhibit_manager_v1_destroy(_proxy)
             return
         }
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func inhibitShortcuts(
-        surface: WaylandProxy<WlSurfaceClient>, seat: WaylandProxy<WlSeatClient>
-    ) throws(WaylandProxyError) -> WaylandProxy<ZwpKeyboardShortcutsInhibitorV1Client> {
+    func inhibitShortcuts(surface: WaylandProxy<WlSurfaceClient>, seat: WaylandProxy<WlSeatClient>) throws(WaylandProxyError) -> WaylandProxy<ZwpKeyboardShortcutsInhibitorV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
         let _seatProxy = try unsafe seat.requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_zwp_keyboard_shortcuts_inhibit_manager_v1_inhibit_shortcuts(
-                    _proxy, _surfaceProxy, _seatProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_zwp_keyboard_shortcuts_inhibit_manager_v1_inhibit_shortcuts(_proxy, _surfaceProxy, _seatProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

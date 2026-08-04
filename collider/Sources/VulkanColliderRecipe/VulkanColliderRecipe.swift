@@ -30,9 +30,7 @@ public enum VulkanColliderRecipe {
             swiftTests: [requirement],
             locks: [.checkout("vulkan")],
             cachePolicy: .always,
-            operation: .runSwiftTest(
-                SwiftTestExecution(
-                    requirement: requirement)))
+            operation: .sequence([]))
     }
 
     public static func generate(

@@ -32,8 +32,9 @@ library and overlays, Dispatch, Foundation, XCTest, and Swift Testing. It builds
 those products natively for Linux/arm64 and cross-builds them for Linux/amd64 in
 the same arm64 container, then publishes both architectures in one Swift SDK.
 Collider also installs the matching official Android Swift SDK artifact. Native
-C++ artifacts are provisioned under
-`~/.cache/nucleus/nucleus-native-sdk`, split into `render` and `rn` ownership.
+C++ artifacts are provisioned under per-target roots such as
+`~/.cache/nucleus/nucleus-native-sdk/linux-arm64`, split into `render`, `rn`,
+and `wayland` ownership. Linux/amd64 and Android/arm64 use sibling target roots.
 
 ## Setup and verification
 

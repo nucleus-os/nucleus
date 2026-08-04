@@ -3,23 +3,20 @@
 
 package import WaylandClientC
 package import WaylandProtocolTypes
-
 package enum ExtWorkspaceGroupHandleV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_ext_workspace_group_handle_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == ExtWorkspaceGroupHandleV1Client {
-    package func createWorkspace(workspace: String) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ExtWorkspaceGroupHandleV1Client {
+    func createWorkspace(workspace: String) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        return try workspace.withCString {
-            (_workspaceCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
-            unsafe swift_wayland_client_request_ext_workspace_group_handle_v1_create_workspace(
-                _proxy, _workspaceCString)
+        return try workspace.withCString { (_workspaceCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_ext_workspace_group_handle_v1_create_workspace(_proxy, _workspaceCString)
             return
         }
     }
-    package func destroy() throws(WaylandProxyError) {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_ext_workspace_group_handle_v1_destroy(_proxy)
@@ -31,167 +28,127 @@ extension WaylandProxy where Interface == ExtWorkspaceGroupHandleV1Client {
 }
 @MainActor
 package protocol ExtWorkspaceGroupHandleV1Events: AnyObject {
-    func capabilities(
-        _ proxy: WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>,
-        capabilities: ExtWorkspaceGroupHandleV1GroupCapabilities)
-    func outputEnter(
-        _ proxy: WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>,
-        output: WaylandBorrowedProxy<WlOutputClient>)
-    func outputLeave(
-        _ proxy: WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>,
-        output: WaylandBorrowedProxy<WlOutputClient>)
-    func workspaceEnter(
-        _ proxy: WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>,
-        workspace: WaylandBorrowedProxy<ExtWorkspaceHandleV1Client>)
-    func workspaceLeave(
-        _ proxy: WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>,
-        workspace: WaylandBorrowedProxy<ExtWorkspaceHandleV1Client>)
+    func capabilities(_ proxy: WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>, capabilities: ExtWorkspaceGroupHandleV1GroupCapabilities)
+    func outputEnter(_ proxy: WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>, output: WaylandBorrowedProxy<WlOutputClient>)
+    func outputLeave(_ proxy: WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>, output: WaylandBorrowedProxy<WlOutputClient>)
+    func workspaceEnter(_ proxy: WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>, workspace: WaylandBorrowedProxy<ExtWorkspaceHandleV1Client>)
+    func workspaceLeave(_ proxy: WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>, workspace: WaylandBorrowedProxy<ExtWorkspaceHandleV1Client>)
     func removed(_ proxy: WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>)
 }
-extension ExtWorkspaceGroupHandleV1Client {
-    package nonisolated(unsafe) static let listener:
-        UnsafeMutablePointer<ext_workspace_group_handle_v1_listener> = {
-            let p = UnsafeMutablePointer<ext_workspace_group_handle_v1_listener>.allocate(
-                capacity: 1)
-            unsafe p.initialize(to: ext_workspace_group_handle_v1_listener())
-            unsafe p.pointee.capabilities = capabilities_impl
-            unsafe p.pointee.output_enter = outputEnter_impl
-            unsafe p.pointee.output_leave = outputLeave_impl
-            unsafe p.pointee.workspace_enter = workspaceEnter_impl
-            unsafe p.pointee.workspace_leave = workspaceLeave_impl
-            unsafe p.pointee.removed = removed_impl
-            return unsafe p
-        }()
-    private static func handler(_ context: WaylandClientListenerContext)
-        -> any ExtWorkspaceGroupHandleV1Events?
-    {
+package extension ExtWorkspaceGroupHandleV1Client {
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<ext_workspace_group_handle_v1_listener> = {
+        let p = UnsafeMutablePointer<ext_workspace_group_handle_v1_listener>.allocate(capacity: 1)
+        unsafe p.initialize(to: ext_workspace_group_handle_v1_listener())
+        unsafe p.pointee.capabilities = capabilities_impl
+        unsafe p.pointee.output_enter = outputEnter_impl
+        unsafe p.pointee.output_leave = outputLeave_impl
+        unsafe p.pointee.workspace_enter = workspaceEnter_impl
+        unsafe p.pointee.workspace_leave = workspaceLeave_impl
+        unsafe p.pointee.removed = removed_impl
+        return unsafe p
+    }()
+    private static func handler(_ context: WaylandClientListenerContext) -> any ExtWorkspaceGroupHandleV1Events? {
         context.owner as? any ExtWorkspaceGroupHandleV1Events
     }
-    private static let capabilities_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = {
-            data, proxy, capabilities in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.capabilities(
-                    WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>(eventProxy),
-                    capabilities: ExtWorkspaceGroupHandleV1GroupCapabilities(rawValue: capabilities)
-                )
-            }
+    private static let capabilities_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, capabilities in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
-    private static let outputEnter_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = {
-            data, proxy, output in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_output = unsafe output
-            MainActor.assumeIsolated {
-                unsafe eventHandler.outputEnter(
-                    WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>(eventProxy),
-                    output: WaylandBorrowedProxy<WlOutputClient>(_event_output!))
-            }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
         }
-    private static let outputLeave_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = {
-            data, proxy, output in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_output = unsafe output
-            MainActor.assumeIsolated {
-                unsafe eventHandler.outputLeave(
-                    WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>(eventProxy),
-                    output: WaylandBorrowedProxy<WlOutputClient>(_event_output!))
-            }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.capabilities(WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>(eventProxy), capabilities: ExtWorkspaceGroupHandleV1GroupCapabilities(rawValue: capabilities))
         }
-    private static let workspaceEnter_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = {
-            data, proxy, workspace in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_workspace = unsafe workspace
-            MainActor.assumeIsolated {
-                unsafe eventHandler.workspaceEnter(
-                    WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>(eventProxy),
-                    workspace: WaylandBorrowedProxy<ExtWorkspaceHandleV1Client>(_event_workspace!))
-            }
+    }
+    private static let outputEnter_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, output in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
-    private static let workspaceLeave_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = {
-            data, proxy, workspace in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_workspace = unsafe workspace
-            MainActor.assumeIsolated {
-                unsafe eventHandler.workspaceLeave(
-                    WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>(eventProxy),
-                    workspace: WaylandBorrowedProxy<ExtWorkspaceHandleV1Client>(_event_workspace!))
-            }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
         }
-    private static let removed_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.removed(
-                    WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>(eventProxy))
-            }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_output = unsafe output
+        MainActor.assumeIsolated {
+            unsafe eventHandler.outputEnter(WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>(eventProxy), output: WaylandBorrowedProxy<WlOutputClient>(_event_output!))
         }
+    }
+    private static let outputLeave_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, output in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_output = unsafe output
+        MainActor.assumeIsolated {
+            unsafe eventHandler.outputLeave(WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>(eventProxy), output: WaylandBorrowedProxy<WlOutputClient>(_event_output!))
+        }
+    }
+    private static let workspaceEnter_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, workspace in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_workspace = unsafe workspace
+        MainActor.assumeIsolated {
+            unsafe eventHandler.workspaceEnter(WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>(eventProxy), workspace: WaylandBorrowedProxy<ExtWorkspaceHandleV1Client>(_event_workspace!))
+        }
+    }
+    private static let workspaceLeave_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, workspace in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_workspace = unsafe workspace
+        MainActor.assumeIsolated {
+            unsafe eventHandler.workspaceLeave(WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>(eventProxy), workspace: WaylandBorrowedProxy<ExtWorkspaceHandleV1Client>(_event_workspace!))
+        }
+    }
+    private static let removed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.removed(WaylandBorrowedProxy<ExtWorkspaceGroupHandleV1Client>(eventProxy))
+        }
+    }
 }
-extension WaylandProxy where Interface == ExtWorkspaceGroupHandleV1Client {
-    package func installListener(_ owner: any ExtWorkspaceGroupHandleV1Events)
-        throws(WaylandProxyError)
-    {
+package extension WaylandProxy where Interface == ExtWorkspaceGroupHandleV1Client {
+    func installListener(_ owner: any ExtWorkspaceGroupHandleV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe ext_workspace_group_handle_v1_add_listener(
-                proxy, ExtWorkspaceGroupHandleV1Client.listener, data)
+            unsafe ext_workspace_group_handle_v1_add_listener(proxy, ExtWorkspaceGroupHandleV1Client.listener, data)
         }
     }
 }

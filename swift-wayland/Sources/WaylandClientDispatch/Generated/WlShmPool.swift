@@ -3,27 +3,21 @@
 
 import WaylandClientC
 package import WaylandProtocolTypes
-
 package enum WlShmPoolClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_shm_pool())
     package nonisolated static let maximumVersion: UInt32 = 2
 }
-extension WaylandProxy where Interface == WlShmPoolClient {
-    package func createBuffer(
-        offset: Int32, width: Int32, height: Int32, stride: Int32, format: WlShmFormat
-    ) throws(WaylandProxyError) -> WaylandProxy<WlBufferClient> {
+package extension WaylandProxy where Interface == WlShmPoolClient {
+    func createBuffer(offset: Int32, width: Int32, height: Int32, stride: Int32, format: WlShmFormat) throws(WaylandProxyError) -> WaylandProxy<WlBufferClient> {
         let _proxy = try unsafe requireNativeProxy()
-        guard
-            let _created = unsafe swift_wayland_client_request_wl_shm_pool_create_buffer(
-                _proxy, offset, width, height, stride, format.rawValue)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_wl_shm_pool_create_buffer(_proxy, offset, width, height, stride, format.rawValue) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, WlBufferClient.self)
     }
-    package func destroy() throws(WaylandProxyError) {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wl_shm_pool_destroy(_proxy)
@@ -32,7 +26,7 @@ extension WaylandProxy where Interface == WlShmPoolClient {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func resize(size: Int32) throws(WaylandProxyError) {
+    func resize(size: Int32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_wl_shm_pool_resize(_proxy, size)
         return

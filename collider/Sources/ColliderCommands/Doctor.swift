@@ -153,8 +153,7 @@ struct WorkspaceDoctor {
         [ociExecutor(scope: "runtime")]
             + executables(
                 [
-                    "git", "corepack", "bun", "tar", "python3", "unzip",
-                    "chmod",
+                    "git", "tar", "python3", "unzip",
                 ],
                 scope: "runtime")
             + paths(
@@ -164,16 +163,25 @@ struct WorkspaceDoctor {
                 ],
                 under: context.root,
                 scope: "runtime")
+            + [nativeSDKLayout(scope: "runtime")]
             + paths(
                 [
-                    "linux-arm64/render/include",
-                    "linux-arm64/render/lib/skia-graphite",
-                    "linux-arm64/rn/include", "linux-arm64/rn/lib/rn",
-                    "linux-x86_64/render/include",
-                    "linux-x86_64/render/lib/skia-graphite",
-                    "linux-x86_64/rn/include", "linux-x86_64/rn/lib/rn",
+                    "render/include", "render/lib/skia-graphite",
+                    "rn/include", "rn/lib/rn",
+                    "wayland/bin/wayland-scanner", "wayland/include",
+                    "wayland/lib",
                 ],
-                under: nativeSDKRoot(),
+                under: context.nativeSDKRoot(
+                    for: NativeLinuxTarget(architecture: .arm64)),
+                scope: "runtime")
+            + paths(
+                [
+                    "render/include", "render/lib/skia-graphite",
+                    "rn/include", "rn/lib/rn",
+                    "wayland/include", "wayland/lib",
+                ],
+                under: context.nativeSDKRoot(
+                    for: NativeLinuxTarget(architecture: .x86_64)),
                 scope: "runtime")
             + paths(
                 [
@@ -239,7 +247,8 @@ struct WorkspaceDoctor {
         switch (runner.operatingSystem, runner.architecture) {
         case (.macOS, .arm64):
             backend = ExecutionBackend.appleContainer.rawValue
-        default:
+        case (.macOS, .x86_64), (.linux, .arm64), (.linux, .x86_64),
+            (.android, .arm64), (.android, .x86_64):
             return HostPrerequisite(
                 id: "oci-executor",
                 scope: scope,
@@ -268,6 +277,27 @@ struct WorkspaceDoctor {
             return "\(runner.operatingSystem.rawValue)/"
                 + "\(runner.architecture.rawValue) via \(backend); "
                 + health.apiServerVersion
+        }
+    }
+
+    private func nativeSDKLayout(scope: String) -> HostPrerequisite {
+        let root = context.nativeSDKRoot
+        let base = root.deletingLastPathComponent()
+        return HostPrerequisite(
+            id: "native-sdk:per-target-layout",
+            scope: scope,
+            description: "per-target native SDK ownership",
+            remediation:
+                "run ./collider-setup.sh to reset the obsolete untargeted native SDK slots"
+        ) {
+            let expected = "linux-\(RunnerPlatform.current.architecture.rawValue)"
+            guard root.lastPathComponent == expected,
+                !FileManager.default.fileExists(
+                    atPath: base.appendingPathComponent("render").path),
+                !FileManager.default.fileExists(
+                    atPath: base.appendingPathComponent("rn").path)
+            else { return nil }
+            return "\(root.path); no untargeted render or rn slots"
         }
     }
 
@@ -329,10 +359,6 @@ struct WorkspaceDoctor {
             }
         }
         return nil
-    }
-
-    private func nativeSDKRoot() -> URL {
-        context.nativeSDKRoot
     }
 
     private func runtimeSwiftSDKRoot() -> URL {

@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for zwlr_output_mode_v1.
 
 package import WaylandClientC
-
 package enum ZwlrOutputModeV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwlr_output_mode_v1())
     package nonisolated static let maximumVersion: UInt32 = 3
 }
-extension WaylandProxy where Interface == ZwlrOutputModeV1Client {
-    package func release() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwlrOutputModeV1Client {
+    func release() throws(WaylandProxyError) {
         guard version >= 3 else {
             throw .unsupportedVersion(
                 required: 3, actual: version)
@@ -30,96 +29,82 @@ package protocol ZwlrOutputModeV1Events: AnyObject {
     func preferred(_ proxy: WaylandBorrowedProxy<ZwlrOutputModeV1Client>)
     func finished(_ proxy: WaylandBorrowedProxy<ZwlrOutputModeV1Client>)
 }
-extension ZwlrOutputModeV1Client {
-    package nonisolated(unsafe) static let listener:
-        UnsafeMutablePointer<zwlr_output_mode_v1_listener> = {
-            let p = UnsafeMutablePointer<zwlr_output_mode_v1_listener>.allocate(capacity: 1)
-            unsafe p.initialize(to: zwlr_output_mode_v1_listener())
-            unsafe p.pointee.size = size_impl
-            unsafe p.pointee.refresh = refresh_impl
-            unsafe p.pointee.preferred = preferred_impl
-            unsafe p.pointee.finished = finished_impl
-            return unsafe p
-        }()
-    private static func handler(_ context: WaylandClientListenerContext)
-        -> any ZwlrOutputModeV1Events?
-    {
+package extension ZwlrOutputModeV1Client {
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwlr_output_mode_v1_listener> = {
+        let p = UnsafeMutablePointer<zwlr_output_mode_v1_listener>.allocate(capacity: 1)
+        unsafe p.initialize(to: zwlr_output_mode_v1_listener())
+        unsafe p.pointee.size = size_impl
+        unsafe p.pointee.refresh = refresh_impl
+        unsafe p.pointee.preferred = preferred_impl
+        unsafe p.pointee.finished = finished_impl
+        return unsafe p
+    }()
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZwlrOutputModeV1Events? {
         context.owner as? any ZwlrOutputModeV1Events
     }
-    private static let size_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = {
-            data, proxy, width, height in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.size(
-                    WaylandBorrowedProxy<ZwlrOutputModeV1Client>(eventProxy), width: width,
-                    height: height)
-            }
+    private static let size_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32, Int32) -> Void = { data, proxy, width, height in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
-    private static let refresh_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32) -> Void = {
-            data, proxy, refresh in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.refresh(
-                    WaylandBorrowedProxy<ZwlrOutputModeV1Client>(eventProxy), refresh: refresh)
-            }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
         }
-    private static let preferred_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.preferred(
-                    WaylandBorrowedProxy<ZwlrOutputModeV1Client>(eventProxy))
-            }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.size(WaylandBorrowedProxy<ZwlrOutputModeV1Client>(eventProxy), width: width, height: height)
         }
-    private static let finished_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.finished(
-                    WaylandBorrowedProxy<ZwlrOutputModeV1Client>(eventProxy))
-            }
+    }
+    private static let refresh_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, Int32) -> Void = { data, proxy, refresh in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.refresh(WaylandBorrowedProxy<ZwlrOutputModeV1Client>(eventProxy), refresh: refresh)
+        }
+    }
+    private static let preferred_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.preferred(WaylandBorrowedProxy<ZwlrOutputModeV1Client>(eventProxy))
+        }
+    }
+    private static let finished_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.finished(WaylandBorrowedProxy<ZwlrOutputModeV1Client>(eventProxy))
+        }
+    }
 }
-extension WaylandProxy where Interface == ZwlrOutputModeV1Client {
-    package func installListener(_ owner: any ZwlrOutputModeV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwlrOutputModeV1Client {
+    func installListener(_ owner: any ZwlrOutputModeV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe zwlr_output_mode_v1_add_listener(proxy, ZwlrOutputModeV1Client.listener, data)
         }

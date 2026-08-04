@@ -3,7 +3,6 @@
 
 package import WaylandClientC
 package import WaylandProtocolTypes
-
 package enum WpPresentationFeedbackClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_presentation_feedback())
@@ -11,98 +10,73 @@ package enum WpPresentationFeedbackClient: WaylandClientInterface {
 }
 @MainActor
 package protocol WpPresentationFeedbackEvents: AnyObject {
-    func syncOutput(
-        _ proxy: WaylandBorrowedProxy<WpPresentationFeedbackClient>,
-        output: WaylandBorrowedProxy<WlOutputClient>)
-    func presented(
-        _ proxy: WaylandBorrowedProxy<WpPresentationFeedbackClient>, tv_sec_hi: UInt32,
-        tv_sec_lo: UInt32, tv_nsec: UInt32, refresh: UInt32, seq_hi: UInt32, seq_lo: UInt32,
-        flags: WpPresentationFeedbackKind)
+    func syncOutput(_ proxy: WaylandBorrowedProxy<WpPresentationFeedbackClient>, output: WaylandBorrowedProxy<WlOutputClient>)
+    func presented(_ proxy: WaylandBorrowedProxy<WpPresentationFeedbackClient>, tv_sec_hi: UInt32, tv_sec_lo: UInt32, tv_nsec: UInt32, refresh: UInt32, seq_hi: UInt32, seq_lo: UInt32, flags: WpPresentationFeedbackKind)
     func discarded(_ proxy: WaylandBorrowedProxy<WpPresentationFeedbackClient>)
 }
-extension WpPresentationFeedbackClient {
-    package nonisolated(unsafe) static let listener:
-        UnsafeMutablePointer<wp_presentation_feedback_listener> = {
-            let p = UnsafeMutablePointer<wp_presentation_feedback_listener>.allocate(capacity: 1)
-            unsafe p.initialize(to: wp_presentation_feedback_listener())
-            unsafe p.pointee.sync_output = syncOutput_impl
-            unsafe p.pointee.presented = presented_impl
-            unsafe p.pointee.discarded = discarded_impl
-            return unsafe p
-        }()
-    private static func handler(_ context: WaylandClientListenerContext)
-        -> any WpPresentationFeedbackEvents?
-    {
+package extension WpPresentationFeedbackClient {
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wp_presentation_feedback_listener> = {
+        let p = UnsafeMutablePointer<wp_presentation_feedback_listener>.allocate(capacity: 1)
+        unsafe p.initialize(to: wp_presentation_feedback_listener())
+        unsafe p.pointee.sync_output = syncOutput_impl
+        unsafe p.pointee.presented = presented_impl
+        unsafe p.pointee.discarded = discarded_impl
+        return unsafe p
+    }()
+    private static func handler(_ context: WaylandClientListenerContext) -> any WpPresentationFeedbackEvents? {
         context.owner as? any WpPresentationFeedbackEvents
     }
-    private static let syncOutput_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = {
-            data, proxy, output in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_output = unsafe output
-            MainActor.assumeIsolated {
-                unsafe eventHandler.syncOutput(
-                    WaylandBorrowedProxy<WpPresentationFeedbackClient>(eventProxy),
-                    output: WaylandBorrowedProxy<WlOutputClient>(_event_output!))
-            }
+    private static let syncOutput_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, output in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
-    private static let presented_impl:
-        @convention(c) (
-            UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32, UInt32, UInt32,
-            UInt32, UInt32
-        ) -> Void = { data, proxy, tv_sec_hi, tv_sec_lo, tv_nsec, refresh, seq_hi, seq_lo, flags in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.presented(
-                    WaylandBorrowedProxy<WpPresentationFeedbackClient>(eventProxy),
-                    tv_sec_hi: tv_sec_hi, tv_sec_lo: tv_sec_lo, tv_nsec: tv_nsec, refresh: refresh,
-                    seq_hi: seq_hi, seq_lo: seq_lo,
-                    flags: WpPresentationFeedbackKind(rawValue: flags))
-            }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
         }
-    private static let discarded_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.discarded(
-                    WaylandBorrowedProxy<WpPresentationFeedbackClient>(eventProxy))
-            }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_output = unsafe output
+        MainActor.assumeIsolated {
+            unsafe eventHandler.syncOutput(WaylandBorrowedProxy<WpPresentationFeedbackClient>(eventProxy), output: WaylandBorrowedProxy<WlOutputClient>(_event_output!))
         }
+    }
+    private static let presented_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32) -> Void = { data, proxy, tv_sec_hi, tv_sec_lo, tv_nsec, refresh, seq_hi, seq_lo, flags in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.presented(WaylandBorrowedProxy<WpPresentationFeedbackClient>(eventProxy), tv_sec_hi: tv_sec_hi, tv_sec_lo: tv_sec_lo, tv_nsec: tv_nsec, refresh: refresh, seq_hi: seq_hi, seq_lo: seq_lo, flags: WpPresentationFeedbackKind(rawValue: flags))
+        }
+    }
+    private static let discarded_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.discarded(WaylandBorrowedProxy<WpPresentationFeedbackClient>(eventProxy))
+        }
+    }
 }
-extension WaylandProxy where Interface == WpPresentationFeedbackClient {
-    package func installListener(_ owner: any WpPresentationFeedbackEvents)
-        throws(WaylandProxyError)
-    {
+package extension WaylandProxy where Interface == WpPresentationFeedbackClient {
+    func installListener(_ owner: any WpPresentationFeedbackEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe wp_presentation_feedback_add_listener(
-                proxy, WpPresentationFeedbackClient.listener, data)
+            unsafe wp_presentation_feedback_add_listener(proxy, WpPresentationFeedbackClient.listener, data)
         }
     }
 }

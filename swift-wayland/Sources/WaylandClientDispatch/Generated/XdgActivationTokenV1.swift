@@ -2,44 +2,37 @@
 // Typed client descriptor and event dispatch for xdg_activation_token_v1.
 
 package import WaylandClientC
-
 package enum XdgActivationTokenV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_xdg_activation_token_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == XdgActivationTokenV1Client {
-    package func setSerial(serial: UInt32, seat: WaylandProxy<WlSeatClient>)
-        throws(WaylandProxyError)
-    {
+package extension WaylandProxy where Interface == XdgActivationTokenV1Client {
+    func setSerial(serial: UInt32, seat: WaylandProxy<WlSeatClient>) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _seatProxy = try unsafe seat.requireNativeProxy()
-        unsafe swift_wayland_client_request_xdg_activation_token_v1_set_serial(
-            _proxy, serial, _seatProxy)
+        unsafe swift_wayland_client_request_xdg_activation_token_v1_set_serial(_proxy, serial, _seatProxy)
         return
     }
-    package func setAppId(app_id: String) throws(WaylandProxyError) {
+    func setAppId(app_id: String) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        return try app_id.withCString {
-            (_app_idCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
-            unsafe swift_wayland_client_request_xdg_activation_token_v1_set_app_id(
-                _proxy, _app_idCString)
+        return try app_id.withCString { (_app_idCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_xdg_activation_token_v1_set_app_id(_proxy, _app_idCString)
             return
         }
     }
-    package func setSurface(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) {
+    func setSurface(surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
-        unsafe swift_wayland_client_request_xdg_activation_token_v1_set_surface(
-            _proxy, _surfaceProxy)
+        unsafe swift_wayland_client_request_xdg_activation_token_v1_set_surface(_proxy, _surfaceProxy)
         return
     }
-    package func commit() throws(WaylandProxyError) {
+    func commit() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_xdg_activation_token_v1_commit(_proxy)
         return
     }
-    package func destroy() throws(WaylandProxyError) {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_xdg_activation_token_v1_destroy(_proxy)
@@ -53,46 +46,37 @@ extension WaylandProxy where Interface == XdgActivationTokenV1Client {
 package protocol XdgActivationTokenV1Events: AnyObject {
     func done(_ proxy: WaylandBorrowedProxy<XdgActivationTokenV1Client>, token: String)
 }
-extension XdgActivationTokenV1Client {
-    package nonisolated(unsafe) static let listener:
-        UnsafeMutablePointer<xdg_activation_token_v1_listener> = {
-            let p = UnsafeMutablePointer<xdg_activation_token_v1_listener>.allocate(capacity: 1)
-            unsafe p.initialize(to: xdg_activation_token_v1_listener())
-            unsafe p.pointee.done = done_impl
-            return unsafe p
-        }()
-    private static func handler(_ context: WaylandClientListenerContext)
-        -> any XdgActivationTokenV1Events?
-    {
+package extension XdgActivationTokenV1Client {
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<xdg_activation_token_v1_listener> = {
+        let p = UnsafeMutablePointer<xdg_activation_token_v1_listener>.allocate(capacity: 1)
+        unsafe p.initialize(to: xdg_activation_token_v1_listener())
+        unsafe p.pointee.done = done_impl
+        return unsafe p
+    }()
+    private static func handler(_ context: WaylandClientListenerContext) -> any XdgActivationTokenV1Events? {
         context.owner as? any XdgActivationTokenV1Events
     }
-    private static let done_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = {
-            data, proxy, token in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_token = unsafe token
-            MainActor.assumeIsolated {
-                unsafe eventHandler.done(
-                    WaylandBorrowedProxy<XdgActivationTokenV1Client>(eventProxy),
-                    token: unsafe String(cString: _event_token!))
-            }
+    private static let done_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UnsafePointer<CChar>?) -> Void = { data, proxy, token in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_token = unsafe token
+        MainActor.assumeIsolated {
+            unsafe eventHandler.done(WaylandBorrowedProxy<XdgActivationTokenV1Client>(eventProxy), token: unsafe String(cString: _event_token!))
+        }
+    }
 }
-extension WaylandProxy where Interface == XdgActivationTokenV1Client {
-    package func installListener(_ owner: any XdgActivationTokenV1Events) throws(WaylandProxyError)
-    {
+package extension WaylandProxy where Interface == XdgActivationTokenV1Client {
+    func installListener(_ owner: any XdgActivationTokenV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe xdg_activation_token_v1_add_listener(
-                proxy, XdgActivationTokenV1Client.listener, data)
+            unsafe xdg_activation_token_v1_add_listener(proxy, XdgActivationTokenV1Client.listener, data)
         }
     }
 }

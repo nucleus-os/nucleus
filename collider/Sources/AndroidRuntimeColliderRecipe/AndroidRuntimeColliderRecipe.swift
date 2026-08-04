@@ -356,7 +356,7 @@ public enum AndroidRuntimeColliderRecipe {
                 .checkout("android-runtime-aosp-build"),
                 .checkout("android-runtime-aosp-ccache"),
             ],
-            operation: .compileAOSPProduct(build))
+            operation: .aospProduct(.compile, build))
         let sign = TaskDeclaration(
             id: TaskID(rawValue: "android-runtime.aosp-sign"),
             component: component,
@@ -385,7 +385,7 @@ public enum AndroidRuntimeColliderRecipe {
                 .checkout("android-runtime-aosp-source"),
                 .checkout("android-runtime-aosp-build"),
             ],
-            operation: .signAOSPProduct(build))
+            operation: .aospProduct(.sign, build))
         let assemble = TaskDeclaration(
             id: TaskID(rawValue: "android-runtime.aosp-assemble-images"),
             component: component,
@@ -413,7 +413,7 @@ public enum AndroidRuntimeColliderRecipe {
                 .checkout("android-runtime-aosp-source"),
                 .checkout("android-runtime-aosp-build"),
             ],
-            operation: .assembleAOSPProductImages(build))
+            operation: .aospProduct(.assembleImages, build))
         let validate = TaskDeclaration(
             id: TaskID(rawValue: "android-runtime.aosp-validate"),
             component: component,
@@ -454,7 +454,7 @@ public enum AndroidRuntimeColliderRecipe {
                 .checkout("android-runtime-aosp-source"),
                 .checkout("android-runtime-aosp-build"),
             ],
-            operation: .validateAOSPProduct(build))
+            operation: .aospProduct(.validate, build))
         let publish = TaskDeclaration(
             id: TaskID(rawValue: "android-runtime.aosp-image"),
             component: component,
@@ -485,7 +485,7 @@ public enum AndroidRuntimeColliderRecipe {
                     validation: .regularFile),
                 OutputDeclaration(
                     path: active,
-                    validation: .exists),
+                    validation: .symlinkTarget),
             ]
                 + requiredImages.map {
                     OutputDeclaration(
@@ -493,7 +493,7 @@ public enum AndroidRuntimeColliderRecipe {
                         validation: .regularFile)
                 },
             locks: [.checkout("android-runtime-aosp-build")],
-            operation: .publishAOSPProduct(build))
+            operation: .aospProduct(.publish, build))
         return [compile, sign, assemble, validate, publish]
     }
 

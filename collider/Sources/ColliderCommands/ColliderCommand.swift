@@ -231,7 +231,9 @@ struct Build: TaskControlledCommand {
             try await ChromiumCommand(context: workspace).run(
                 .build,
                 controls: taskOptions.controls)
-        default:
+        case .none, .all, .runtime, .tracy, .vulkan, .wayland, .core, .config, .ipc,
+            .linux, .reactNative, .compositor, .shell, .androidRuntime, .loader,
+            .gpuHeadless, .gpuDRM:
             try await ComponentRegistry(context: workspace).build(
                 selection: component, controls: taskOptions.controls)
         }
@@ -268,11 +270,6 @@ struct Test: TaskControlledCommand {
         try await workspace.withExclusiveVerification {
             try await ComponentRegistry(context: workspace).test(
                 selection: component, controls: taskOptions.controls)
-            if component == nil || component == .all, !taskOptions.dryRun {
-                try await Orchestrator(
-                    context: workspace
-                ).runRepositoryWideTestGates()
-            }
         }
     }
 }
@@ -672,21 +669,26 @@ extension BrowserTaskLeaf {
     }
 }
 
-struct Sanitize: AsyncParsableCommand {
+struct Sanitize: TaskControlledCommand {
     @Argument var selection: SanitizerSelection = .all
     mutating func run() async throws {
         let workspace = try context()
         try await workspace.withExclusiveVerification {
-            try await SanitizerCommand(context: workspace).run(selection)
+            try await SanitizerCommand(context: workspace).run(
+                selection, controls: taskOptions.controls)
         }
     }
+
+    @OptionGroup var taskOptions: TaskControlOptions
 }
 
-struct Benchmark: AsyncParsableCommand {
+struct Benchmark: TaskControlledCommand {
+    @OptionGroup var taskOptions: TaskControlOptions
     mutating func run() async throws {
         let workspace = try context()
         try await workspace.withExclusiveVerification {
-            try await BenchmarkCommand(context: workspace).run()
+            try await BenchmarkCommand(context: workspace).run(
+                controls: taskOptions.controls)
         }
     }
 }

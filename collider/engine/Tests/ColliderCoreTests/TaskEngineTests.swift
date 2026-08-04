@@ -131,18 +131,74 @@ private struct ParallelismProbeAction: ColliderAction {
         operation: .runSwiftTest(
             SwiftTestExecution(requirement: requirement)))
     let build = TaskID(rawValue: "swift.package.test.fixture")
-    let buildByContext = [context: build]
+    let secondBuild = TaskID(rawValue: "swift.package.build.fixture")
+    let buildsByContext = [context: Set([build, secondBuild])]
 
     #expect(
         !requiredSwiftBuildsAreCompleted(
             for: task,
-            buildByContext: buildByContext,
+            buildsByContext: buildsByContext,
             completed: []))
+    #expect(
+        !requiredSwiftBuildsAreCompleted(
+            for: task,
+            buildsByContext: buildsByContext,
+            completed: [build]))
     #expect(
         requiredSwiftBuildsAreCompleted(
             for: task,
-            buildByContext: buildByContext,
-            completed: [build]))
+            buildsByContext: buildsByContext,
+            completed: [build, secondBuild]))
+}
+
+@Test func unselectedToolsAreNotResolvedAndPlanOrderIsDeterministic() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-selected-closure-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let selected = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.selected"),
+        component: ComponentID(rawValue: "fixture"),
+        operation: .createDirectory(root.appending("selected")))
+    let unselected = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.unselected"),
+        component: ComponentID(rawValue: "fixture"),
+        inputs: [.tool(.named("collider-intentionally-missing-tool"))],
+        operation: .command(
+            CommandSpec(
+                executable: .named("collider-intentionally-missing-tool"),
+                arguments: [],
+                workingDirectory: root,
+                environment: [:])))
+    let unselectedContainer = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.unselected-container"),
+        component: ComponentID(rawValue: "fixture"),
+        operation: .prepareOCIImage(
+            OCIImagePreparation(
+                executionPlatform: ExecutionPlatform(
+                    environment: .native,
+                    operatingSystem: .android,
+                    architecture: .arm64),
+                context: root,
+                containerFile: root.appending("missing-Containerfile"),
+                imageID: root.appending("missing-image"),
+                imageName: "unselected-fixture",
+                environment: [:])))
+
+    let first = try await ColliderRuntime().execute(
+        graph: TaskGraph([selected, unselected, unselectedContainer]),
+        selected: [selected.id],
+        stateRoot: root.appending("state"),
+        options: TaskExecutionOptions(dryRun: true))
+    let second = try await ColliderRuntime().execute(
+        graph: TaskGraph([unselectedContainer, unselected, selected]),
+        selected: [selected.id],
+        stateRoot: root.appending("state"),
+        options: TaskExecutionOptions(dryRun: true))
+
+    #expect(first.plan.map(\.task) == [selected.id])
+    #expect(second.plan.map(\.task) == [selected.id])
+    #expect(first.plan.map(\.identity) == second.plan.map(\.identity))
 }
 
 @Test func synthesizedSwiftTestForwardsSelectionArguments() async throws {
@@ -193,8 +249,7 @@ private struct ParallelismProbeAction: ColliderAction {
         id: TaskID(rawValue: "fixture.filtered-test"),
         component: ComponentID(rawValue: "fixture"),
         swiftTests: [requirement],
-        operation: .runSwiftTest(
-            SwiftTestExecution(requirement: requirement)))
+        operation: .sequence([]))
 
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
@@ -204,11 +259,12 @@ private struct ParallelismProbeAction: ColliderAction {
     let received = try String(contentsOf: arguments, encoding: .utf8)
         .split(whereSeparator: \.isNewline)
         .map(String.init)
+    #expect(received.filter { $0 == "test" }.count == 1)
     #expect(received.first == "test")
     #expect(received.suffix(2) == ["--filter", "gpuHeadless_"])
 }
 
-@Test func synthesizedSwiftBuildSelectsEveryDeclaredProduct() async throws {
+@Test func synthesizedSwiftBuildCoalescesProductsIntoOneRootInvocation() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-swift-product-selection-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -250,7 +306,7 @@ private struct ParallelismProbeAction: ColliderAction {
             product: product,
             packageRoot: packageRoot,
             invocation: invocation,
-            inputs: [],
+            inputs: [.file(packageRoot.appending("Package.swift"))],
             environment: ["PATH": "\(tools.path):/usr/bin:/bin"])
         return TaskDeclaration(
             id: TaskID(rawValue: "fixture.\(product)"),
@@ -259,7 +315,7 @@ private struct ParallelismProbeAction: ColliderAction {
             operation: .sequence([]))
     }
 
-    _ = try await ColliderRuntime().execute(
+    let report = try await ColliderRuntime().execute(
         graph: TaskGraph(tasks),
         selected: tasks.map(\.id),
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
@@ -267,12 +323,289 @@ private struct ParallelismProbeAction: ColliderAction {
     let received = try String(contentsOf: arguments, encoding: .utf8)
         .split(whereSeparator: \.isNewline)
         .map { $0.split(whereSeparator: \.isWhitespace).map(String.init) }
-    #expect(received.map(\.first) == ["build", "build"])
-    #expect(
-        received.map { Array($0.suffix(2)) } == [
-            ["--product", "FirstProduct"],
-            ["--product", "SecondProduct"],
-        ])
+    #expect(received.count == 1)
+    #expect(received[0].first == "build")
+    #expect(!received[0].contains("--product"))
+    #expect(report.swiftPMInvocationCount == 1)
+    #expect(report.selectedInputHashingDurationNanoseconds > 0)
+    #expect(report.executionDurationNanoseconds > 0)
+}
+
+@Test func distinctSwiftTestFiltersRemainDistinctInvocations() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-swift-test-filter-groups-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let package = directory.appendingPathComponent("package")
+    let tools = directory.appendingPathComponent("tools")
+    let scratch = directory.appendingPathComponent("scratch")
+    try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: tools, withIntermediateDirectories: true)
+    try Data("// swift-tools-version: 6.4\n".utf8).write(
+        to: package.appendingPathComponent("Package.swift"))
+    let arguments = directory.appendingPathComponent("arguments")
+    let swift = tools.appendingPathComponent("swift")
+    try Data(
+        "#!/bin/sh\nset -eu\nprintf '%s ' \"$@\" >> '\(arguments.path)'\nprintf '\\n' >> '\(arguments.path)'\nmkdir -p '\(scratch.path)'\n"
+            .utf8
+    ).write(to: swift)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755], ofItemAtPath: swift.path)
+
+    let packageRoot = FilePath(package.path)
+    let invocation = SwiftPMInvocation(
+        context: SwiftBuildContext(
+            packageRoot: packageRoot,
+            configuration: .release,
+            target: .host(identity: "arm64-macos"),
+            toolchainIdentity: "fixture-toolchain"),
+        scratchPath: FilePath(scratch.path))
+    let environment = ["PATH": "\(tools.path):/usr/bin:/bin"]
+    let tasks = ["FirstSuite", "SecondSuite"].map { suite in
+        TaskDeclaration(
+            id: TaskID(rawValue: "fixture.\(suite)"),
+            component: ComponentID(rawValue: "fixture"),
+            swiftTests: [
+                SwiftTestRequirement(
+                    package: "fixture",
+                    testProduct: suite,
+                    packageRoot: packageRoot,
+                    invocation: invocation,
+                    inputs: [],
+                    environment: environment,
+                    arguments: ["--filter", suite])
+            ],
+            operation: .sequence([]))
+    }
+
+    let report = try await ColliderRuntime().execute(
+        graph: TaskGraph(tasks),
+        selected: tasks.map(\.id),
+        stateRoot: FilePath(directory.appendingPathComponent("state").path))
+    let commands = try String(contentsOf: arguments, encoding: .utf8)
+        .split(whereSeparator: \.isNewline)
+        .map(String.init)
+
+    #expect(report.swiftPMInvocationCount == 2)
+    #expect(commands.count == 2)
+    #expect(commands.contains { $0.contains("--filter FirstSuite") })
+    #expect(commands.contains { $0.contains("--filter SecondSuite") })
+}
+
+@Test func synthesizedSwiftBuildRunsDeclaredHeaderTargetBeforeTheRootBuild() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-swift-prebuild-target-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let package = directory.appendingPathComponent("package")
+    let tools = directory.appendingPathComponent("tools")
+    let scratch = directory.appendingPathComponent("scratch")
+    try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: tools, withIntermediateDirectories: true)
+    try Data("// swift-tools-version: 6.4\n".utf8).write(
+        to: package.appendingPathComponent("Package.swift"))
+    let arguments = directory.appendingPathComponent("arguments")
+    let swift = tools.appendingPathComponent("swift")
+    try Data(
+        "#!/bin/sh\nset -eu\nprintf '%s ' \"$@\" >> '\(arguments.path)'\nprintf '\\n' >> '\(arguments.path)'\nmkdir -p '\(scratch.path)'\n"
+            .utf8
+    ).write(to: swift)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755], ofItemAtPath: swift.path)
+
+    let packageRoot = FilePath(package.path)
+    let invocation = SwiftPMInvocation(
+        context: SwiftBuildContext(
+            packageRoot: packageRoot,
+            configuration: .debug,
+            target: .host(identity: "arm64-macos"),
+            toolchainIdentity: "fixture-toolchain"),
+        scratchPath: FilePath(scratch.path))
+    let requirement = SwiftProductRequirement(
+        package: "fixture",
+        product: "FixtureProduct",
+        packageRoot: packageRoot,
+        invocation: invocation,
+        inputs: [],
+        environment: ["PATH": "\(tools.path):/usr/bin:/bin"],
+        prebuildTargets: ["GeneratedHeaderTarget"])
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.prebuild"),
+        component: ComponentID(rawValue: "fixture"),
+        swiftProducts: [requirement],
+        operation: .sequence([]))
+
+    _ = try await ColliderRuntime().execute(
+        graph: TaskGraph([task]),
+        selected: [task.id],
+        stateRoot: FilePath(directory.appendingPathComponent("state").path))
+
+    let commands = try String(contentsOf: arguments, encoding: .utf8)
+        .split(whereSeparator: \.isNewline)
+        .map { $0.split(whereSeparator: \.isWhitespace).map(String.init) }
+    #expect(commands.count == 2)
+    #expect(commands[0].first == "build")
+    #expect(commands[0].contains("--target"))
+    #expect(commands[0].contains("GeneratedHeaderTarget"))
+    #expect(commands[1].first == "build")
+    #expect(!commands[1].contains("--target"))
+    #expect(commands[1].contains("--product"))
+    #expect(commands[1].contains("FixtureProduct"))
+}
+
+@Test func swiftTestSubsumesOnlyBuildOutputsItDeclares() async throws {
+    func commands(testCoversOutput: Bool) async throws -> [String] {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "collider-swift-test-coverage-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let package = directory.appendingPathComponent("package")
+        let tools = directory.appendingPathComponent("tools")
+        let scratch = directory.appendingPathComponent("scratch")
+        let executable = directory.appendingPathComponent("FixtureExecutable")
+        let arguments = directory.appendingPathComponent("commands")
+        try FileManager.default.createDirectory(
+            at: package, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: tools, withIntermediateDirectories: true)
+        try Data("// swift-tools-version: 6.4\n".utf8).write(
+            to: package.appendingPathComponent("Package.swift"))
+
+        let swift = tools.appendingPathComponent("swift")
+        let testOutputCommand =
+            testCoversOutput
+            ? "mkdir -p \"\(executable.deletingLastPathComponent().path)\"; "
+                + "printf test > \"\(executable.path)\"; chmod 755 \"\(executable.path)\""
+            : ":"
+        let script = """
+            #!/bin/sh
+            set -eu
+            printf '%s\n' "$1" >> "\(arguments.path)"
+            mkdir -p "\(scratch.path)"
+            if [ "$1" = build ]; then
+              printf build > "\(executable.path)"
+              chmod 755 "\(executable.path)"
+            elif [ "$1" = test ]; then
+              \(testOutputCommand)
+            fi
+            """
+        try Data(script.utf8).write(to: swift)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: swift.path)
+
+        let packageRoot = FilePath(package.path)
+        let invocation = SwiftPMInvocation(
+            context: SwiftBuildContext(
+                packageRoot: packageRoot,
+                configuration: .debug,
+                target: .host(identity: "arm64-macos"),
+                toolchainIdentity: "fixture-toolchain"),
+            scratchPath: FilePath(scratch.path))
+        let output = PathPostcondition(
+            path: FilePath(executable.path),
+            validation: .executableFile)
+        let environment = ["PATH": "\(tools.path):/usr/bin:/bin"]
+        let product = SwiftProductRequirement(
+            package: "fixture",
+            product: "FixtureExecutable",
+            packageRoot: packageRoot,
+            invocation: invocation,
+            inputs: [],
+            environment: environment,
+            expectedOutputs: [output])
+        let test = SwiftTestRequirement(
+            package: "fixture",
+            testProduct: "FixtureTests",
+            packageRoot: packageRoot,
+            invocation: invocation,
+            inputs: [],
+            environment: environment,
+            expectedBuildOutputs: testCoversOutput ? [output] : [])
+        let buildTask = TaskDeclaration(
+            id: TaskID(rawValue: "fixture.build"),
+            component: ComponentID(rawValue: "fixture"),
+            swiftProducts: [product],
+            operation: .sequence([]))
+        let testTask = TaskDeclaration(
+            id: TaskID(rawValue: "fixture.test"),
+            component: ComponentID(rawValue: "fixture"),
+            dependencies: [buildTask.id],
+            subsumedDependencies: [buildTask.id],
+            swiftTests: [test],
+            operation: .sequence([]))
+
+        _ = try await ColliderRuntime().execute(
+            graph: TaskGraph([buildTask, testTask]),
+            selected: [testTask.id],
+            stateRoot: FilePath(directory.appendingPathComponent("state").path))
+        return try String(contentsOf: arguments, encoding: .utf8)
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+    }
+
+    #expect(try await commands(testCoversOutput: false) == ["build", "test"])
+    #expect(try await commands(testCoversOutput: true) == ["test"])
+}
+
+@Test func incompatibleSwiftContextsUseSeparateInvocationsAndScratchPaths()
+    async throws
+{
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-swift-context-separation-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let package = directory.appendingPathComponent("package")
+    let tools = directory.appendingPathComponent("tools")
+    let arguments = directory.appendingPathComponent("commands")
+    try FileManager.default.createDirectory(
+        at: package, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        at: tools, withIntermediateDirectories: true)
+    try Data("// swift-tools-version: 6.4\n".utf8).write(
+        to: package.appendingPathComponent("Package.swift"))
+    let swift = tools.appendingPathComponent("swift")
+    try Data(
+        "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" >> \"\(arguments.path)\"\n".utf8
+    ).write(to: swift)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755], ofItemAtPath: swift.path)
+
+    let packageRoot = FilePath(package.path)
+    let environment = ["PATH": "\(tools.path):/usr/bin:/bin"]
+    let configurations: [SwiftBuildConfiguration] = [.debug, .release]
+    let invocations = configurations.map { configuration in
+        SwiftPMInvocation(
+            context: SwiftBuildContext(
+                packageRoot: packageRoot,
+                configuration: configuration,
+                target: .host(identity: "arm64-macos"),
+                toolchainIdentity: "fixture-toolchain"),
+            scratchPath: FilePath(
+                directory.appendingPathComponent(configuration.rawValue).path))
+    }
+    let tasks = invocations.enumerated().map { index, invocation in
+        TaskDeclaration(
+            id: TaskID(rawValue: "fixture.context.\(index)"),
+            component: ComponentID(rawValue: "fixture"),
+            swiftProducts: [
+                SwiftProductRequirement(
+                    package: "fixture",
+                    product: "FixtureProduct",
+                    packageRoot: packageRoot,
+                    invocation: invocation,
+                    inputs: [],
+                    environment: environment)
+            ],
+            operation: .sequence([]))
+    }
+    _ = try await ColliderRuntime().execute(
+        graph: TaskGraph(tasks),
+        selected: tasks.map(\.id),
+        stateRoot: FilePath(directory.appendingPathComponent("state").path))
+
+    let commands = try String(contentsOf: arguments, encoding: .utf8)
+        .split(whereSeparator: \.isNewline)
+        .map(String.init)
+    #expect(commands.count == 2)
+    for invocation in invocations {
+        #expect(commands.contains { $0.contains(invocation.scratchPath.string) })
+    }
 }
 
 @Test func taskOutputStreamsLoggedCommandsByDefaultAndQuietSuppressesInheritedOutput() {
@@ -381,6 +714,35 @@ private struct ParallelismProbeAction: ColliderAction {
     #expect(first == second)
 }
 
+@Test func operationalCommandIdentityDoesNotContainTheAmbientExecutable() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-operational-tool-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+    func identity(path: String) async throws -> ArtifactDigest {
+        let task = TaskDeclaration(
+            id: TaskID(rawValue: "fixture.operational-tool"),
+            component: ComponentID(rawValue: "fixture"),
+            operation: .command(
+                CommandSpec(
+                    executable: .operationalNamed("materializer"),
+                    arguments: ["--verify-exact-revision"],
+                    workingDirectory: FilePath(directory.path),
+                    environment: ["PATH": path, "LANG": "C"])))
+        return try await ColliderRuntime().execute(
+            graph: TaskGraph([task]),
+            selected: [task.id],
+            stateRoot: FilePath(directory.appendingPathComponent("state").path),
+            options: TaskExecutionOptions(dryRun: true)
+        ).plan[0].identity
+    }
+
+    let first = try await identity(path: "/first/host/bin")
+    let second = try await identity(path: "/second/host/bin")
+    #expect(first == second)
+}
+
 @Test func taskIdentityEncodingRemainsByteStableAcrossWorkflowMoves() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-engine-identity-\(UUID().uuidString)")
@@ -420,7 +782,8 @@ private struct ParallelismProbeAction: ColliderAction {
             inputs: [
                 .value(name: "product", bytes: Array("stable".utf8))
             ],
-            operation: .publishAOSPProduct(
+            operation: .aospProduct(
+                .publish,
                 AOSPProductBuild(
                     productSource: root.appending("product"),
                     source: root.appending("source"),
@@ -789,62 +1152,6 @@ private struct ParallelismProbeAction: ColliderAction {
         try String(
             contentsOf: URL(fileURLWithPath: payload.string),
             encoding: .utf8) == "fresh")
-}
-
-@Test func staticArchiveMergeDiscoversPostBuildArchivesWithoutShellSyntax() async throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-archive-merge-\(UUID().uuidString)")
-    let build = directory.appendingPathComponent("build")
-    try FileManager.default.createDirectory(
-        at: build, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let environment = [
-        "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
-    ]
-    let runtime = ColliderRuntime()
-    for name in ["one", "two", "gtest-fixture"] {
-        let member = build.appendingPathComponent("\(name).member")
-        try Data(name.utf8).write(to: member)
-        let result = try await runtime.execute(
-            CommandSpec(
-                executable: .named("ar"),
-                arguments: [
-                    "rcs",
-                    build.appendingPathComponent("lib\(name).a").path,
-                    member.path,
-                ],
-                workingDirectory: FilePath(build.path),
-                environment: environment))
-        #expect(result.status == 0)
-    }
-    let combined = FilePath(
-        build.appendingPathComponent("libcombined.a").path)
-    let task = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.archive-merge"),
-        component: ComponentID(rawValue: "fixture"),
-        outputs: [
-            OutputDeclaration(path: combined, validation: .regularFile)
-        ],
-        operation: .mergeStaticArchives(
-            StaticArchiveMerge(
-                sourceRoot: FilePath(build.path),
-                output: combined,
-                excludedFilePrefixes: ["libgtest"],
-                environment: environment)))
-    _ = try await runtime.execute(
-        graph: TaskGraph([task]),
-        selected: [task.id],
-        stateRoot: FilePath(directory.appendingPathComponent("state").path))
-    let table = try await runtime.execute(
-        CommandSpec(
-            executable: .named("ar"),
-            arguments: ["t", combined.string],
-            workingDirectory: FilePath(build.path),
-            environment: environment,
-            output: .captured(limit: 1_024)))
-    #expect(table.standardOutput.contains("one.member"))
-    #expect(table.standardOutput.contains("two.member"))
-    #expect(!table.standardOutput.contains("gtest-fixture.member"))
 }
 
 @Test func androidHostValidationChecksELFAndKotlinJNIContracts() async throws {
@@ -1455,122 +1762,6 @@ private struct ParallelismProbeAction: ColliderAction {
             atPath: current.path) == sourceID)
 }
 
-@Test func chromiumProductBuildOwnsGNMetadataAndAutoninjaExecution() async throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-chromium-product-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let source = directory.appendingPathComponent("source")
-    let chromium = source.appendingPathComponent("chromium/src")
-    let output = directory.appendingPathComponent("out/Browser")
-    let depot = directory.appendingPathComponent("depot_tools")
-    let imageID = directory.appendingPathComponent("image-id")
-    let tools = directory.appendingPathComponent("tools")
-    let container = tools.appendingPathComponent("container")
-    let gn = chromium.appendingPathComponent("buildtools/linux64/gn")
-    let clang = chromium.appendingPathComponent(
-        "third_party/llvm-build/Release+Asserts/bin/clang")
-    let autoninja = depot.appendingPathComponent("autoninja")
-    for executable in [gn, clang, autoninja] {
-        try FileManager.default.createDirectory(
-            at: executable.deletingLastPathComponent(),
-            withIntermediateDirectories: true)
-    }
-    try FileManager.default.createDirectory(
-        at: source, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(
-        at: tools, withIntermediateDirectories: true)
-    try Data(
-        ("localhost/nucleus-chromium:latest\nsha256:"
-            + String(repeating: "a", count: 64) + "\n").utf8
-    ).write(to: imageID)
-    try JSONSerialization.data(
-        withJSONObject: ["sourceID": "source-fixture"],
-        options: [.sortedKeys]
-    ).write(
-        to: source.appendingPathComponent(
-            "source-provenance.json"))
-    try Data(
-        """
-        #!/bin/sh
-        mkdir -p "$2"
-        printf 'is_official_build=true\\ntarget_cpu="x64"\\n' > "$2/args.gn"
-        """.utf8
-    ).write(to: gn)
-    try Data(
-        "#!/bin/sh\nprintf 'clang fixture 1.0\\n'\n".utf8
-    ).write(to: clang)
-    try Data("#!/bin/sh\nexit 0\n".utf8).write(to: autoninja)
-    try Data(
-        """
-        #!/bin/sh
-        build=
-        while [ "$#" -gt 0 ]; do
-          case "$1" in
-            --mount)
-              specification="$2"
-              case "$specification" in
-                *,target=/build*)
-                  build="${specification#*source=}"
-                  build="${build%%,target=*}"
-                  ;;
-              esac
-              shift 2
-              ;;
-            localhost/*) shift; break ;;
-            *) shift ;;
-          esac
-        done
-        case "${1:-}" in
-          configure)
-            mkdir -p "$build"
-            printf 'is_official_build=true\ntarget_cpu="x64"\n' > "$build/args.gn"
-            ;;
-          build) ;;
-          *) exit 64 ;;
-        esac
-        """.utf8
-    ).write(to: container)
-    for executable in [gn, clang, autoninja, container] {
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o755],
-            ofItemAtPath: executable.path)
-    }
-    let built = output.appendingPathComponent(
-        ".nucleus-built-build.json")
-    let task = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.build-chromium-product"),
-        component: ComponentID(rawValue: "fixture"),
-        outputs: [
-            OutputDeclaration(
-                path: FilePath(built.path),
-                validation: .json)
-        ],
-        cachePolicy: .always,
-        operation: .buildChromiumProduct(
-            ChromiumProductBuild(
-                product: .browser,
-                sourceRoot: FilePath(source.path),
-                output: FilePath(output.path),
-                depotTools: FilePath(depot.path),
-                containerImageID: FilePath(imageID.path),
-                gnArguments: #"is_official_build=true target_cpu="x64""#,
-                targets: ["chrome", "chrome_sandbox"],
-                jobs: 2,
-                environment: [
-                    "PATH": tools.path + ":"
-                        + (ProcessInfo.processInfo.environment["PATH"]
-                            ?? "/usr/bin:/bin")
-                ])))
-    _ = try await ColliderRuntime().execute(
-        graph: TaskGraph([task]),
-        selected: [task.id],
-        stateRoot: FilePath(directory.appendingPathComponent("state").path))
-    let object =
-        try JSONSerialization.jsonObject(
-            with: Data(contentsOf: built)) as? [String: Any]
-    #expect((object?["buildID"] as? String)?.count == 24)
-}
-
 @Test func browserArtifactAssemblyPublishesAValidatedImmutableGeneration() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-browser-artifact-\(UUID().uuidString)")
@@ -1794,7 +1985,21 @@ private struct ParallelismProbeAction: ColliderAction {
         chmod 755 "$out"
         """.utf8
     ).write(to: cc)
-    for executable in [ldd, cc] {
+    let tar = tools.appendingPathComponent("tar")
+    try Data(
+        """
+        #!/bin/sh
+        while [ "$#" -gt 0 ]; do
+          if [ "$1" = "-cf" ]; then
+            printf 'deterministic archive fixture' > "$2"
+            exit 0
+          fi
+          shift
+        done
+        exit 64
+        """.utf8
+    ).write(to: tar)
+    for executable in [ldd, cc, tar] {
         try FileManager.default.setAttributes(
             [.posixPermissions: 0o755],
             ofItemAtPath: executable.path)

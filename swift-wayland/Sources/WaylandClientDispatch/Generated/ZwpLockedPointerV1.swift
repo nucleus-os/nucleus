@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for zwp_locked_pointer_v1.
 
 package import WaylandClientC
-
 package enum ZwpLockedPointerV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_locked_pointer_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == ZwpLockedPointerV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpLockedPointerV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zwp_locked_pointer_v1_destroy(_proxy)
@@ -18,16 +17,12 @@ extension WaylandProxy where Interface == ZwpLockedPointerV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func setCursorPositionHint(surface_x: Double, surface_y: Double)
-        throws(WaylandProxyError)
-    {
+    func setCursorPositionHint(surface_x: Double, surface_y: Double) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_zwp_locked_pointer_v1_set_cursor_position_hint(
-            _proxy, swift_wayland_fixed_from_double(surface_x),
-            swift_wayland_fixed_from_double(surface_y))
+        unsafe swift_wayland_client_request_zwp_locked_pointer_v1_set_cursor_position_hint(_proxy, swift_wayland_fixed_from_double(surface_x), swift_wayland_fixed_from_double(surface_y))
         return
     }
-    package func setRegion(region: WaylandProxy<WlRegionClient>?) throws(WaylandProxyError) {
+    func setRegion(region: WaylandProxy<WlRegionClient>?) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _regionProxy = try unsafe region?.requireNativeProxy()
         unsafe swift_wayland_client_request_zwp_locked_pointer_v1_set_region(_proxy, _regionProxy)
@@ -39,60 +34,52 @@ package protocol ZwpLockedPointerV1Events: AnyObject {
     func locked(_ proxy: WaylandBorrowedProxy<ZwpLockedPointerV1Client>)
     func unlocked(_ proxy: WaylandBorrowedProxy<ZwpLockedPointerV1Client>)
 }
-extension ZwpLockedPointerV1Client {
-    package nonisolated(unsafe) static let listener:
-        UnsafeMutablePointer<zwp_locked_pointer_v1_listener> = {
-            let p = UnsafeMutablePointer<zwp_locked_pointer_v1_listener>.allocate(capacity: 1)
-            unsafe p.initialize(to: zwp_locked_pointer_v1_listener())
-            unsafe p.pointee.locked = locked_impl
-            unsafe p.pointee.unlocked = unlocked_impl
-            return unsafe p
-        }()
-    private static func handler(_ context: WaylandClientListenerContext)
-        -> any ZwpLockedPointerV1Events?
-    {
+package extension ZwpLockedPointerV1Client {
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_locked_pointer_v1_listener> = {
+        let p = UnsafeMutablePointer<zwp_locked_pointer_v1_listener>.allocate(capacity: 1)
+        unsafe p.initialize(to: zwp_locked_pointer_v1_listener())
+        unsafe p.pointee.locked = locked_impl
+        unsafe p.pointee.unlocked = unlocked_impl
+        return unsafe p
+    }()
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZwpLockedPointerV1Events? {
         context.owner as? any ZwpLockedPointerV1Events
     }
-    private static let locked_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.locked(
-                    WaylandBorrowedProxy<ZwpLockedPointerV1Client>(eventProxy))
-            }
+    private static let locked_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
-    private static let unlocked_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.unlocked(
-                    WaylandBorrowedProxy<ZwpLockedPointerV1Client>(eventProxy))
-            }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
         }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.locked(WaylandBorrowedProxy<ZwpLockedPointerV1Client>(eventProxy))
+        }
+    }
+    private static let unlocked_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.unlocked(WaylandBorrowedProxy<ZwpLockedPointerV1Client>(eventProxy))
+        }
+    }
 }
-extension WaylandProxy where Interface == ZwpLockedPointerV1Client {
-    package func installListener(_ owner: any ZwpLockedPointerV1Events) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpLockedPointerV1Client {
+    func installListener(_ owner: any ZwpLockedPointerV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_locked_pointer_v1_add_listener(
-                proxy, ZwpLockedPointerV1Client.listener, data)
+            unsafe zwp_locked_pointer_v1_add_listener(proxy, ZwpLockedPointerV1Client.listener, data)
         }
     }
 }

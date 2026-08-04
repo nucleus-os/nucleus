@@ -158,7 +158,7 @@ exist in production and are completed rather than introduced:
   `ActionFileSystem`, and `CanonicalDigestEncoder` are implemented in
   `ColliderCore`. `TaskOperation.action` is their only call site. The
   outstanding work is completing the contract and converting the remaining
-  thirty-eight operation cases, not designing the seam.
+  thirty-four operation cases, not designing the seam.
 - **The concurrent scheduler exists but is under-declared.** `TaskEngine`
   already runs a bounded ready queue over `withThrowingTaskGroup` with weighted
   CPU and memory admission, exclusive claims, and lock-disjointness checks. The
@@ -1090,6 +1090,11 @@ equivalence.
 
 ## Phase 1 — Freeze the invariants and close the exhaustiveness escapes
 
+**Progress: complete.** Closed-enum handling is exhaustive, the AOSP product
+stages use one explicit stage payload, symlink publication validates its target,
+SwiftPM subsumption is output-aware, the placement audit and timing metrics are
+in place, and the Phase 1 command and engine regression suite passes.
+
 Delete the `default:` clause from every switch over a closed Collider enum and
 enumerate the remaining cases: `scheduledResources`, `containsOCIExecution`,
 `validateArtifactOutputs`, `operationEnvironment`, and `executionCoordinates`.
@@ -1146,6 +1151,24 @@ phase 2 empties that set.
 This phase repairs live incorrect behavior and establishes the placement rule
 the rest of the architecture depends on.
 
+**Progress: complete.** The native SDK root is per-target, obsolete
+untargeted publications are gone, benchmark/sanitizer/release-gate work is
+planned into Linux arm64 OCI execution, Swift product header prebuilds are
+ordered explicitly, Wayland generation uses the produced arm64 scanner, Node,
+Corepack, and Yarn are pinned in the builder image, target identities no longer
+contain the removed ambient host tools, and Doctor validates the new ownership
+layout. The placement audit is empty and all three affected command dry-runs
+resolve to the intended OCI coordinates. A real RN bootstrap completed the
+arm64 and x86_64 native lanes, SDK publication, JavaScript installation, and RN
+generation. Its clean second run skipped every target-producing task and ran
+only the deliberately always-run `core.sources` bridge that phase 5 deletes.
+Wayland regeneration completed through the produced arm64 scanner. The final
+host verification passes all 125 engine tests, all 63 command tests, the
+Collider build, formatting, and diff checks. The portability corrections found
+by that matrix include native APFS directory exchange, placement-independent
+tree identity, macOS raw pseudo-terminal handling, and deterministic network
+interruption fixtures.
+
 Collapse the native SDK root to one meaning. `NUCLEUS_NATIVE_SDK_ROOT` becomes
 per-target everywhere: `tools/host-env.sh`, `collider-setup.sh`,
 `WorkspaceContext` defaulting, container mounts, `WorkspaceDoctor` path checks,
@@ -1176,16 +1199,18 @@ Move code generation that shapes committed source into the container. The
 `SwiftWaylandGen` and `VulkanGen` remain first-party host Swift tools whose
 binary identities are first-party produced artifacts.
 
-Remove ambient host tools from target task identity. `core.sources` may use host
-`git` and `python3` only as operational tools for exact-revision,
-content-validated source materialization and declares no target artifact. Its
-semantic identity contains the revision, manifest, and materialization logic,
-not the operational binary digest. Its `unzip` and `chmod` steps become engine
-operations so the extracted Linux `gn` never depends on the runner's
-coreutils. `rn.generate` and `rn.javascript-dependencies` resolve `node` and
-`corepack` from the pinned container image, which also makes `node_modules`
-target-shaped rather than runner-shaped. Any materialization step without an
-exact content postcondition uses a pinned semantic tool instead.
+Remove ambient host tools from target task identity. During this phase,
+`core.sources` may use host `git` and `python3` only as operational tools for
+exact-revision, content-validated source materialization and declares no target
+artifact. Its semantic identity contains the revision, manifest, embedded
+verification logic, and resolved checkout result, not the operational binary
+digest. This verifier is an explicit bridge and is deleted by phase 5's exact
+Git materialization action. Its `unzip` and `chmod` steps become engine
+operations so the extracted Linux `gn` never depends on the runner's coreutils.
+`rn.generate` and `rn.javascript-dependencies` resolve `node` and `corepack`
+from the pinned container image, which also makes `node_modules` target-shaped
+rather than runner-shaped. Any materialization step without an exact content
+postcondition uses a pinned semantic tool instead.
 
 Add container capability and per-target native SDK ownership checks to
 `WorkspaceDoctor`, and delete its private `nativeSDKRoot` duplicate in favor of
@@ -1200,11 +1225,12 @@ registration never implies a host fallback.
 ### Verification gate
 
 The complete placement audit returns an empty invalid set. `collider test`,
-`collider benchmark`, and
-`collider sanitize` complete on an arm64 macOS runner and a Linux runner through
-the same pinned execution environments. Their declared output snapshots are
-equivalent; outputs claimed to be reproducible are additionally byte-identical
-under explicit path, timestamp, locale, archive, and random-seed normalization.
+`collider benchmark`, and `collider sanitize` resolve and execute through the
+same pinned Linux environments on the arm64 macOS builder. The pinned OCI
+contract, not a second physical Linux host, is the target-environment boundary.
+Their declared output snapshots are equivalent across architecture lanes;
+outputs claimed to be reproducible are additionally byte-identical under
+explicit path, timestamp, locale, archive, and random-seed normalization.
 No target identity contains an ambient host tool, directly or transitively.
 Planning rejects a selected entrypoint whose prerequisite cannot be resolved.
 `collider doctor` validates only complete-checkout and bootstrap prerequisites.
@@ -1349,7 +1375,7 @@ Convert `TaskOperation` cases in strict order:
 
 1. command and process actions;
 2. create, copy, write, remove, and symlink actions;
-3. download and archive actions;
+3. exact Git materialization, download, and archive actions;
 4. generation activation, retention, and publication actions;
 5. Swift target SDK source, bootstrap compiler, Android SDK, wiring, sanitation,
    and validation actions;
@@ -1364,6 +1390,20 @@ and fixtures. Delete the corresponding enum case, runtime method, payload, and
 switch branches in the same step. Recipe modules import `ColliderCore`, never
 `ColliderRuntime`. There is no sequence action, general legacy action wrapper,
 compatibility encoder, or nested dispatch.
+
+The generic exact Git materialization action accepts a declared set of checkout
+paths, remotes, and exact Git object names. It resolves each object to a commit,
+fetches only when the object is absent, checks out that commit, rejects
+`sync-deps.disable` and every tracked modification, and returns the resolved
+commit set as its typed result. It delegates object resolution, checkout, and
+worktree cleanliness to Git; it does not maintain a second lockfile, source
+snapshot, index, or recursive digest of Git-tracked contents. The Skia recipe
+owns translation from its pinned `DEPS` source into that declaration; the
+kernel never names Skia or interprets component policy. Landing this action
+deletes the `git-sync-deps` execution and the embedded Python verifier together.
+Root Git remains authoritative only for the Skia gitlink; the action is
+authoritative for the nested repositories that the root checkout does not
+track.
 
 After the final conversion:
 
@@ -1494,6 +1534,9 @@ Delete:
 - raw generated-output dependencies;
 - pre-plan and nested execution paths;
 - temporary migration diagnostics and adapters.
+
+This deletion includes the Phase 2 Skia operational-tool bridge: no embedded
+dependency verifier and no Collider invocation of `git-sync-deps` remains.
 
 Run the kernel acceptance matrix:
 

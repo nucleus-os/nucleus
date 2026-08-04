@@ -204,9 +204,7 @@ private func task(
         cachePolicy: testRequirement == nil
             ? .contentAddressed
             : .always,
-        operation: testRequirement.map {
-            .runSwiftTest(SwiftTestExecution(requirement: $0))
-        } ?? .sequence([]))
+        operation: .sequence([]))
 }
 
 private func executableTask(

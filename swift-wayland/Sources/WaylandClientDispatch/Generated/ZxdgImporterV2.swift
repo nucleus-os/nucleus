@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for zxdg_importer_v2.
 
 import WaylandClientC
-
 package enum ZxdgImporterV2Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zxdg_importer_v2())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == ZxdgImporterV2Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZxdgImporterV2Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zxdg_importer_v2_destroy(_proxy)
@@ -18,18 +17,10 @@ extension WaylandProxy where Interface == ZxdgImporterV2Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func importToplevel(handle: String) throws(WaylandProxyError) -> WaylandProxy<
-        ZxdgImportedV2Client
-    > {
+    func importToplevel(handle: String) throws(WaylandProxyError) -> WaylandProxy<ZxdgImportedV2Client> {
         let _proxy = try unsafe requireNativeProxy()
-        return try handle.withCString {
-            (_handleCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> WaylandProxy<
-                ZxdgImportedV2Client
-            > in
-            guard
-                let _created = unsafe swift_wayland_client_request_zxdg_importer_v2_import_toplevel(
-                    _proxy, _handleCString)
-            else {
+        return try handle.withCString { (_handleCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> WaylandProxy<ZxdgImportedV2Client> in
+            guard let _created = unsafe swift_wayland_client_request_zxdg_importer_v2_import_toplevel(_proxy, _handleCString) else {
                 throw WaylandProxyError.proxyCreationFailed
             }
             return unsafe makeOwnedProxy(

@@ -1,6 +1,7 @@
 import ColliderPlatformC
 import Foundation
 import SystemPackage
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Darwin)
@@ -35,8 +36,9 @@ public enum GenerationPublisher {
         }
 
         if FileManager.default.fileExists(atPath: generation.string) {
-            guard try ArtifactHasher.digest(tree: candidate)
-                    == ArtifactHasher.digest(tree: generation)
+            let candidateDigest = try ArtifactHasher.digest(tree: candidate)
+            let generationDigest = try ArtifactHasher.digest(tree: generation)
+            guard candidateDigest == generationDigest
             else {
                 throw GenerationPublicationFailure.generationConflict(generation)
             }
@@ -74,9 +76,9 @@ public enum GenerationPublisher {
         do {
             try boundary(.activeCandidateCreated)
             if FileManager.default.fileExists(atPath: active.string),
-               let activeMetadata = try? active.stat(
-                followTargetSymlink: false),
-               activeMetadata.type != .symbolicLink
+                let activeMetadata = try? active.stat(
+                    followTargetSymlink: false),
+                activeMetadata.type != .symbolicLink
             {
                 try FileManager.default.removeItem(atPath: active.string)
             }
@@ -127,11 +129,12 @@ public enum GenerationPublisher {
 
     private static func relativeTarget(for generation: FilePath, from parent: FilePath) -> String {
         if generation.removingLastComponent() == parent,
-           let component = generation.lastComponent
+            let component = generation.lastComponent
         {
             return component.string
         }
-        let prefix = parent.string.hasSuffix("/")
+        let prefix =
+            parent.string.hasSuffix("/")
             ? parent.string : parent.string + "/"
         if generation.string.hasPrefix(prefix) {
             return String(generation.string.dropFirst(prefix.count))

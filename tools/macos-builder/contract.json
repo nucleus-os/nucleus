@@ -34,7 +34,7 @@
   },
   "environment": {
     "xdgCacheHome": "/Volumes/NucleusCache",
-    "nativeSDKRoot": "/Volumes/NucleusCache/nucleus/nucleus-native-sdk",
+    "nativeSDKRoot": "/Volumes/NucleusCache/nucleus/nucleus-native-sdk/linux-arm64",
     "androidSDKRoot": "/Volumes/NucleusCache/android-sdk"
   },
   "storage": [

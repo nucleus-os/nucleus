@@ -2,29 +2,22 @@
 // Typed client descriptor and event dispatch for zwlr_gamma_control_manager_v1.
 
 import WaylandClientC
-
 package enum ZwlrGammaControlManagerV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwlr_gamma_control_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == ZwlrGammaControlManagerV1Client {
-    package func getGammaControl(output: WaylandProxy<WlOutputClient>) throws(WaylandProxyError)
-        -> WaylandProxy<ZwlrGammaControlV1Client>
-    {
+package extension WaylandProxy where Interface == ZwlrGammaControlManagerV1Client {
+    func getGammaControl(output: WaylandProxy<WlOutputClient>) throws(WaylandProxyError) -> WaylandProxy<ZwlrGammaControlV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _outputProxy = try unsafe output.requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_zwlr_gamma_control_manager_v1_get_gamma_control(
-                    _proxy, _outputProxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_zwlr_gamma_control_manager_v1_get_gamma_control(_proxy, _outputProxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, ZwlrGammaControlV1Client.self)
     }
-    package func destroy() throws(WaylandProxyError) {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zwlr_gamma_control_manager_v1_destroy(_proxy)

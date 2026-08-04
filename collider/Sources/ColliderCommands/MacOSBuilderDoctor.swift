@@ -117,6 +117,8 @@ struct MacOSBuilderContract: Codable, Sendable {
             let cache = storage.first(where: { $0.name == "NucleusCache" }),
             isDescendant(environment.xdgCacheHome, of: cache.mountPath),
             isDescendant(environment.nativeSDKRoot, of: cache.mountPath),
+            URL(fileURLWithPath: environment.nativeSDKRoot).lastPathComponent
+                == "linux-arm64",
             isDescendant(environment.androidSDKRoot, of: cache.mountPath),
             let oci = storage.first(where: { $0.name == "NucleusOCI" }),
             isDescendant(appleContainer.appRoot, of: oci.mountPath),

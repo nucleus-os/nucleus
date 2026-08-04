@@ -3,32 +3,26 @@
 
 package import WaylandClientC
 package import WaylandProtocolTypes
-
 package enum WlShmClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_shm())
     package nonisolated static let maximumVersion: UInt32 = 2
 }
-extension WaylandProxy where Interface == WlShmClient {
-    package func createPool(fd: consuming WaylandClientOwnedFileDescriptor, size: Int32)
-        throws(WaylandProxyError) -> WaylandProxy<WlShmPoolClient>
-    {
+package extension WaylandProxy where Interface == WlShmClient {
+    func createPool(fd: consuming WaylandClientOwnedFileDescriptor, size: Int32) throws(WaylandProxyError) -> WaylandProxy<WlShmPoolClient> {
         let _proxy = try unsafe requireNativeProxy()
         let _fdDescriptor = fd.take()
         defer {
             WaylandClientOwnedFileDescriptor.closeTransferred(
                 _fdDescriptor)
         }
-        guard
-            let _created = unsafe swift_wayland_client_request_wl_shm_create_pool(
-                _proxy, _fdDescriptor, size)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_wl_shm_create_pool(_proxy, _fdDescriptor, size) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, WlShmPoolClient.self)
     }
-    package func release() throws(WaylandProxyError) {
+    func release() throws(WaylandProxyError) {
         guard version >= 2 else {
             throw .unsupportedVersion(
                 required: 2, actual: version)
@@ -46,8 +40,8 @@ extension WaylandProxy where Interface == WlShmClient {
 package protocol WlShmEvents: AnyObject {
     func format(_ proxy: WaylandBorrowedProxy<WlShmClient>, format: WlShmFormat)
 }
-extension WlShmClient {
-    package nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_shm_listener> = {
+package extension WlShmClient {
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_shm_listener> = {
         let p = UnsafeMutablePointer<wl_shm_listener>.allocate(capacity: 1)
         unsafe p.initialize(to: wl_shm_listener())
         unsafe p.pointee.format = format_impl
@@ -56,28 +50,24 @@ extension WlShmClient {
     private static func handler(_ context: WaylandClientListenerContext) -> any WlShmEvents? {
         context.owner as? any WlShmEvents
     }
-    private static let format_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = {
-            data, proxy, format in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.format(
-                    WaylandBorrowedProxy<WlShmClient>(eventProxy),
-                    format: WlShmFormat(rawValue: format))
-            }
+    private static let format_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, format in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.format(WaylandBorrowedProxy<WlShmClient>(eventProxy), format: WlShmFormat(rawValue: format))
+        }
+    }
 }
-extension WaylandProxy where Interface == WlShmClient {
-    package func installListener(_ owner: any WlShmEvents) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WlShmClient {
+    func installListener(_ owner: any WlShmEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe wl_shm_add_listener(proxy, WlShmClient.listener, data)
         }

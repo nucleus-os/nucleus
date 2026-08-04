@@ -3,14 +3,13 @@
 
 package import WaylandClientC
 package import WaylandProtocolTypes
-
 package enum ZwpLinuxBufferParamsV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_linux_buffer_params_v1())
     package nonisolated static let maximumVersion: UInt32 = 5
 }
-extension WaylandProxy where Interface == ZwpLinuxBufferParamsV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == ZwpLinuxBufferParamsV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_zwp_linux_buffer_params_v1_destroy(_proxy)
@@ -19,41 +18,28 @@ extension WaylandProxy where Interface == ZwpLinuxBufferParamsV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func add(
-        fd: consuming WaylandClientOwnedFileDescriptor, plane_idx: UInt32, offset: UInt32,
-        stride: UInt32, modifier_hi: UInt32, modifier_lo: UInt32
-    ) throws(WaylandProxyError) {
+    func add(fd: consuming WaylandClientOwnedFileDescriptor, plane_idx: UInt32, offset: UInt32, stride: UInt32, modifier_hi: UInt32, modifier_lo: UInt32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _fdDescriptor = fd.take()
         defer {
             WaylandClientOwnedFileDescriptor.closeTransferred(
                 _fdDescriptor)
         }
-        unsafe swift_wayland_client_request_zwp_linux_buffer_params_v1_add(
-            _proxy, _fdDescriptor, plane_idx, offset, stride, modifier_hi, modifier_lo)
+        unsafe swift_wayland_client_request_zwp_linux_buffer_params_v1_add(_proxy, _fdDescriptor, plane_idx, offset, stride, modifier_hi, modifier_lo)
         return
     }
-    package func create(
-        width: Int32, height: Int32, format: UInt32, flags: ZwpLinuxBufferParamsV1Flags
-    ) throws(WaylandProxyError) {
+    func create(width: Int32, height: Int32, format: UInt32, flags: ZwpLinuxBufferParamsV1Flags) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        unsafe swift_wayland_client_request_zwp_linux_buffer_params_v1_create(
-            _proxy, width, height, format, flags.rawValue)
+        unsafe swift_wayland_client_request_zwp_linux_buffer_params_v1_create(_proxy, width, height, format, flags.rawValue)
         return
     }
-    package func createImmed(
-        width: Int32, height: Int32, format: UInt32, flags: ZwpLinuxBufferParamsV1Flags
-    ) throws(WaylandProxyError) -> WaylandProxy<WlBufferClient> {
+    func createImmed(width: Int32, height: Int32, format: UInt32, flags: ZwpLinuxBufferParamsV1Flags) throws(WaylandProxyError) -> WaylandProxy<WlBufferClient> {
         guard version >= 2 else {
             throw .unsupportedVersion(
                 required: 2, actual: version)
         }
         let _proxy = try unsafe requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_zwp_linux_buffer_params_v1_create_immed(
-                    _proxy, width, height, format, flags.rawValue)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_zwp_linux_buffer_params_v1_create_immed(_proxy, width, height, format, flags.rawValue) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
@@ -62,72 +48,56 @@ extension WaylandProxy where Interface == ZwpLinuxBufferParamsV1Client {
 }
 @MainActor
 package protocol ZwpLinuxBufferParamsV1Events: AnyObject {
-    func created(
-        _ proxy: WaylandBorrowedProxy<ZwpLinuxBufferParamsV1Client>,
-        buffer: WaylandProxy<WlBufferClient>)
+    func created(_ proxy: WaylandBorrowedProxy<ZwpLinuxBufferParamsV1Client>, buffer: WaylandProxy<WlBufferClient>)
     func failed(_ proxy: WaylandBorrowedProxy<ZwpLinuxBufferParamsV1Client>)
 }
-extension ZwpLinuxBufferParamsV1Client {
-    package nonisolated(unsafe) static let listener:
-        UnsafeMutablePointer<zwp_linux_buffer_params_v1_listener> = {
-            let p = UnsafeMutablePointer<zwp_linux_buffer_params_v1_listener>.allocate(capacity: 1)
-            unsafe p.initialize(to: zwp_linux_buffer_params_v1_listener())
-            unsafe p.pointee.created = created_impl
-            unsafe p.pointee.failed = failed_impl
-            return unsafe p
-        }()
-    private static func handler(_ context: WaylandClientListenerContext)
-        -> any ZwpLinuxBufferParamsV1Events?
-    {
+package extension ZwpLinuxBufferParamsV1Client {
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<zwp_linux_buffer_params_v1_listener> = {
+        let p = UnsafeMutablePointer<zwp_linux_buffer_params_v1_listener>.allocate(capacity: 1)
+        unsafe p.initialize(to: zwp_linux_buffer_params_v1_listener())
+        unsafe p.pointee.created = created_impl
+        unsafe p.pointee.failed = failed_impl
+        return unsafe p
+    }()
+    private static func handler(_ context: WaylandClientListenerContext) -> any ZwpLinuxBufferParamsV1Events? {
         context.owner as? any ZwpLinuxBufferParamsV1Events
     }
-    private static let created_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = {
-            data, proxy, buffer in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            nonisolated(unsafe) let _event_buffer = unsafe buffer
-            MainActor.assumeIsolated {
-                unsafe eventHandler.created(
-                    WaylandBorrowedProxy<ZwpLinuxBufferParamsV1Client>(eventProxy),
-                    buffer: WaylandProxy<WlBufferClient>(
-                        adopting: _event_buffer!,
-                        connectionLifetime: eventContext.connectionLifetime))
-            }
+    private static let created_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, OpaquePointer?) -> Void = { data, proxy, buffer in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
-    private static let failed_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.failed(
-                    WaylandBorrowedProxy<ZwpLinuxBufferParamsV1Client>(eventProxy))
-            }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
         }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        nonisolated(unsafe) let _event_buffer = unsafe buffer
+        MainActor.assumeIsolated {
+            unsafe eventHandler.created(WaylandBorrowedProxy<ZwpLinuxBufferParamsV1Client>(eventProxy), buffer: WaylandProxy<WlBufferClient>(adopting: _event_buffer!, connectionLifetime: eventContext.connectionLifetime))
+        }
+    }
+    private static let failed_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.failed(WaylandBorrowedProxy<ZwpLinuxBufferParamsV1Client>(eventProxy))
+        }
+    }
 }
-extension WaylandProxy where Interface == ZwpLinuxBufferParamsV1Client {
-    package func installListener(_ owner: any ZwpLinuxBufferParamsV1Events)
-        throws(WaylandProxyError)
-    {
+package extension WaylandProxy where Interface == ZwpLinuxBufferParamsV1Client {
+    func installListener(_ owner: any ZwpLinuxBufferParamsV1Events) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
-            unsafe zwp_linux_buffer_params_v1_add_listener(
-                proxy, ZwpLinuxBufferParamsV1Client.listener, data)
+            unsafe zwp_linux_buffer_params_v1_add_listener(proxy, ZwpLinuxBufferParamsV1Client.listener, data)
         }
     }
 }

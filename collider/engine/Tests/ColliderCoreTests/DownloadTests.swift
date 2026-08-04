@@ -1,13 +1,16 @@
-@testable import ColliderDownloads
 import ColliderCore
 import ColliderRuntime
+import Dispatch
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 import Synchronization
 import SystemPackage
 import Testing
+
+@testable import ColliderDownloads
+
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 private struct StubHTTPResponse: Sendable {
     enum Completion: Sendable {
@@ -39,7 +42,7 @@ private struct StubHTTPExchange {
     var requests: [URLRequest] = []
 }
 
-private final class StubURLProtocol: URLProtocol {
+private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
     static let exchange = Mutex(StubHTTPExchange())
 
     override class func canInit(with request: URLRequest) -> Bool { true }
@@ -54,12 +57,12 @@ private final class StubURLProtocol: URLProtocol {
             return exchange.responses.removeFirst()
         }
         guard let response,
-              let url = request.url,
-              let http = HTTPURLResponse(
-                  url: url,
-                  statusCode: response.status,
-                  httpVersion: "HTTP/1.1",
-                  headerFields: response.headers)
+            let url = request.url,
+            let http = HTTPURLResponse(
+                url: url,
+                statusCode: response.status,
+                httpVersion: "HTTP/1.1",
+                headerFields: response.headers)
         else {
             client?.urlProtocol(
                 self,
@@ -67,8 +70,8 @@ private final class StubURLProtocol: URLProtocol {
             return
         }
         if (300...399).contains(response.status),
-           let location = response.headers["Location"],
-           let redirectURL = URL(string: location, relativeTo: url)?.absoluteURL
+            let location = response.headers["Location"],
+            let redirectURL = URL(string: location, relativeTo: url)?.absoluteURL
         {
             client?.urlProtocol(
                 self,
@@ -85,7 +88,12 @@ private final class StubURLProtocol: URLProtocol {
         case .finish:
             client?.urlProtocolDidFinishLoading(self)
         case .fail(let code):
-            client?.urlProtocol(self, didFailWithError: URLError(code))
+            DispatchQueue.global().asyncAfter(
+                deadline: .now() + .milliseconds(10)
+            ) { [weak self] in
+                guard let self else { return }
+                self.client?.urlProtocol(self, didFailWithError: URLError(code))
+            }
         case .pending:
             break
         }
@@ -98,10 +106,11 @@ private final class StubURLProtocol: URLProtocol {
 struct DownloadPolicyTests {
     @Test func acceptsVerifiedBoundedHTTPSResponse() async throws {
         let body = Data("verified download".utf8)
-        let fixture = try fixture(response: StubHTTPResponse(
-            status: 200,
-            headers: headers(for: body),
-            body: body))
+        let fixture = try fixture(
+            response: StubHTTPResponse(
+                status: 200,
+                headers: headers(for: body),
+                body: body))
         defer { fixture.remove() }
 
         try await fixture.download()
@@ -200,8 +209,9 @@ struct DownloadPolicyTests {
         let requests = StubURLProtocol.exchange.withLock { $0.requests }
         #expect(requests.count == 2)
         #expect(requests[1].value(forHTTPHeaderField: "Range") == "bytes=6-")
-        #expect(requests[1].value(forHTTPHeaderField: "If-Range")
-            == "\"fixture-v1\"")
+        #expect(
+            requests[1].value(forHTTPHeaderField: "If-Range")
+                == "\"fixture-v1\"")
     }
 
     @Test func resumesInterruptedLastModifiedTransfer() async throws {
@@ -238,8 +248,9 @@ struct DownloadPolicyTests {
         try await fixture.download()
 
         let requests = StubURLProtocol.exchange.withLock { $0.requests }
-        #expect(requests[1].value(forHTTPHeaderField: "If-Range")
-            == "Wed, 22 Jul 2026 12:00:00 GMT")
+        #expect(
+            requests[1].value(forHTTPHeaderField: "If-Range")
+                == "Wed, 22 Jul 2026 12:00:00 GMT")
     }
 
     @Test func rejectsInvalidRangesAndChangedValidators() async throws {
@@ -286,8 +297,9 @@ struct DownloadPolicyTests {
             } catch let error as DownloadFailure {
                 #expect(error.description.contains("range response"))
             }
-            #expect(!FileManager.default.fileExists(
-                atPath: fixture.candidate.path))
+            #expect(
+                !FileManager.default.fileExists(
+                    atPath: fixture.candidate.path))
         }
     }
 
@@ -323,11 +335,12 @@ struct DownloadPolicyTests {
 
     @Test func cancellationRemovesTheInFlightTransfer() async throws {
         let body = Data("pending".utf8)
-        let fixture = try fixture(response: StubHTTPResponse(
-            status: 200,
-            headers: headers(for: body),
-            body: Data(),
-            completion: .pending))
+        let fixture = try fixture(
+            response: StubHTTPResponse(
+                status: 200,
+                headers: headers(for: body),
+                body: Data(),
+                completion: .pending))
         defer { fixture.remove() }
         let operation = Task { try await fixture.download() }
         try await ContinuousClock().sleep(for: .milliseconds(20))
@@ -335,8 +348,9 @@ struct DownloadPolicyTests {
         await #expect(throws: (any Error).self) {
             try await operation.value
         }
-        #expect(!FileManager.default.fileExists(
-            atPath: fixture.candidate.path))
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: fixture.candidate.path))
         for url in directoryURLs(
             at: fixture.directory.appendingPathComponent("cache"))
         {
@@ -351,8 +365,9 @@ struct DownloadPolicyTests {
                 status: 200,
                 headers: headers(for: body),
                 body: body),
-            url: #require(URL(
-                string: "https://loopback.invalid/artifact?token=manifest-secret")))
+            url: #require(
+                URL(
+                    string: "https://loopback.invalid/artifact?token=manifest-secret")))
         defer { fixture.remove() }
         try await fixture.download()
         let cache = fixture.directory.appendingPathComponent("cache")
@@ -369,41 +384,51 @@ struct DownloadPolicyTests {
     @Test func enforcesRedirectOriginAndHTTPSDowngradePolicy() async throws {
         let body = Data("redirected".utf8)
         let specification = try DownloadSpec(
-            url: #require(URL(
-                string: "https://loopback.invalid/artifact")),
+            url: #require(
+                URL(
+                    string: "https://loopback.invalid/artifact")),
             permittedRedirectOrigins: ["https://allowed.invalid"],
             expectedDigest: ArtifactHasher.digest(bytes: body),
             maximumResponseSize: 1_024,
             acceptedMediaTypes: ["application/octet-stream"],
             maximumRedirects: 1)
-        let allowed = try #require(URL(
-            string: "https://allowed.invalid/final"))
-        let other = try #require(URL(
-            string: "https://other.invalid/final"))
-        let downgrade = try #require(URL(
-            string: "http://allowed.invalid/final"))
-        let credentials = try #require(URL(
-            string: "https://user:secret@allowed.invalid/final"))
-        #expect(DownloadRedirectPolicy.permits(
-            allowed,
-            redirectCount: 1,
-            specification: specification))
-        #expect(!DownloadRedirectPolicy.permits(
-            other,
-            redirectCount: 1,
-            specification: specification))
-        #expect(!DownloadRedirectPolicy.permits(
-            downgrade,
-            redirectCount: 1,
-            specification: specification))
-        #expect(!DownloadRedirectPolicy.permits(
-            credentials,
-            redirectCount: 1,
-            specification: specification))
-        #expect(!DownloadRedirectPolicy.permits(
-            allowed,
-            redirectCount: 2,
-            specification: specification))
+        let allowed = try #require(
+            URL(
+                string: "https://allowed.invalid/final"))
+        let other = try #require(
+            URL(
+                string: "https://other.invalid/final"))
+        let downgrade = try #require(
+            URL(
+                string: "http://allowed.invalid/final"))
+        let credentials = try #require(
+            URL(
+                string: "https://user:secret@allowed.invalid/final"))
+        #expect(
+            DownloadRedirectPolicy.permits(
+                allowed,
+                redirectCount: 1,
+                specification: specification))
+        #expect(
+            !DownloadRedirectPolicy.permits(
+                other,
+                redirectCount: 1,
+                specification: specification))
+        #expect(
+            !DownloadRedirectPolicy.permits(
+                downgrade,
+                redirectCount: 1,
+                specification: specification))
+        #expect(
+            !DownloadRedirectPolicy.permits(
+                credentials,
+                redirectCount: 1,
+                specification: specification))
+        #expect(
+            !DownloadRedirectPolicy.permits(
+                allowed,
+                redirectCount: 2,
+                specification: specification))
     }
 
     @Test func reportsMonotonicByteProgress() async throws {
@@ -426,9 +451,10 @@ struct DownloadPolicyTests {
         #expect(last.receivedBytes == Int64(body.count))
         #expect(last.expectedBytes == Int64(body.count))
         #expect(last.digest == ArtifactHasher.digest(bytes: body))
-        #expect(zip(recorded, recorded.dropFirst()).allSatisfy {
-            $0.receivedBytes <= $1.receivedBytes
-        })
+        #expect(
+            zip(recorded, recorded.dropFirst()).allSatisfy {
+                $0.receivedBytes <= $1.receivedBytes
+            })
     }
 
     @Test func completedDownloaderShutsDownIdempotently() async throws {

@@ -12,8 +12,9 @@ public enum WaylandColliderRecipe {
     ) -> TaskDeclaration {
         let source = root.appending("third-party/wayland")
         let build = root.appending(".wayland-build/\(target.identifier)")
-        let sdk = sdkRoot.appending(target.identifier).appending("wayland")
-        let nativeScannerSDK = sdkRoot.appending("linux-arm64/wayland")
+        let sdk = sdkRoot.appending("wayland")
+        let nativeScannerSDK = sdkRoot.removingLastComponent().appending(
+            "linux-arm64/wayland")
         let targetSDKMount = target.architecture == .arm64 ? "/native-wayland" : "/sdk"
         var dependencies = [TaskID(rawValue: "native.builder")]
         var inputs: [ArtifactInput] = [
@@ -54,10 +55,10 @@ public enum WaylandColliderRecipe {
                     validation: .regularFile),
                 OutputDeclaration(
                     path: sdk.appending("lib/libwayland-server.so"),
-                    validation: .exists),
+                    validation: .symlinkTarget),
                 OutputDeclaration(
                     path: sdk.appending("lib/libwayland-client.so"),
-                    validation: .exists),
+                    validation: .symlinkTarget),
             ]
                 + (target.architecture == .arm64
                     ? [
@@ -133,15 +134,15 @@ public enum WaylandColliderRecipe {
             swiftTests: [requirement],
             locks: [.checkout("wayland")],
             cachePolicy: .always,
-            operation: .runSwiftTest(
-                SwiftTestExecution(
-                    requirement: requirement)))
+            operation: .sequence([]))
     }
 
     public static func generate(
         root: FilePath,
         environment: [String: String],
-        swiftPM: SwiftPMInvocation
+        swiftPM: SwiftPMInvocation,
+        builder: NativeOCIConfiguration,
+        scannerSDK: FilePath
     ) throws -> TaskDeclaration {
         let protocolsRoot = root.appending("Protocols")
         let records = try protocolRecords(under: protocolsRoot)
@@ -168,6 +169,7 @@ public enum WaylandColliderRecipe {
             "--search-dir", protocolsRoot.appending("wayland-protocols").string,
         ]
         let generator = swiftPM.executable("SwiftWaylandGen")
+        var scannerArguments: [String] = []
         var operations: [TaskOperation] = []
         operations += generatedDirectories.map(TaskOperation.removePath)
         operations += generatedDirectories.map(TaskOperation.createDirectory)
@@ -203,30 +205,22 @@ public enum WaylandColliderRecipe {
                     environment: environment)),
         ]
         for record in records {
-            operations += [
-                scanner(
-                    "server-header",
-                    record: record,
-                    output: server.appending(
-                        "\(record.name)-server-protocol.h"),
-                    root: root,
-                    environment: environment),
-                scanner(
-                    "client-header",
-                    record: record,
-                    output: client.appending(
-                        "\(record.name)-client-protocol.h"),
-                    root: root,
-                    environment: environment),
-                scanner(
-                    "public-code",
-                    record: record,
-                    output: protocols.appending(
-                        "\(record.name)-protocol.c"),
-                    root: root,
-                    environment: environment),
+            scannerArguments += [
+                "server-header", record.path.string,
+                server.appending("\(record.name)-server-protocol.h").string,
+                "client-header", record.path.string,
+                client.appending("\(record.name)-client-protocol.h").string,
+                "public-code", record.path.string,
+                protocols.appending("\(record.name)-protocol.c").string,
             ]
         }
+        operations.append(
+            scannerOperation(
+                root: root,
+                scannerSDK: scannerSDK,
+                builder: builder,
+                arguments: scannerArguments,
+                environment: environment))
         operations += [
             .removePath(server.appending("generated-protocols.tsv")),
             .removePath(client.appending("generated-protocols.tsv")),
@@ -234,6 +228,10 @@ public enum WaylandColliderRecipe {
         return TaskDeclaration(
             id: TaskID(rawValue: "wayland.generate"),
             component: ComponentID(rawValue: "wayland"),
+            dependencies: [
+                TaskID(rawValue: "native.builder"),
+                TaskID(rawValue: "wayland.native-sdk.linux-arm64"),
+            ],
             swiftProducts: [
                 swiftPM.product(
                     package: "swift-wayland",
@@ -252,9 +250,9 @@ public enum WaylandColliderRecipe {
                 .tree(root.appending("Sources/WaylandProtocolModel")),
                 .tree(root.appending("Protocols")),
                 .file(waylandXML),
+                .dependencyOutput(builder.imageID),
+                .dependencyOutput(scannerSDK.appending("bin/wayland-scanner")),
                 swiftPM.identityInput,
-                .tool(.named("swift")),
-                .tool(.named("wayland-scanner")),
             ],
             outputs: [
                 server, client, protocols, protocolTypes,
@@ -267,6 +265,47 @@ public enum WaylandColliderRecipe {
             locks: [.checkout("wayland")],
             operation: .sequence(operations))
     }
+}
+
+private func scannerOperation(
+    root: FilePath,
+    scannerSDK: FilePath,
+    builder: NativeOCIConfiguration,
+    arguments: [String],
+    environment: [String: String]
+) -> TaskOperation {
+    .runOCI(
+        OCIExecution(
+            executionPlatform: .linuxARM64OCI,
+            artifactTarget: .linuxARM64,
+            imageID: builder.imageID,
+            hostname: "wayland-source-generation",
+            workingDirectory: root.string,
+            hostWorkingDirectory: root,
+            mounts: [
+                OCIMount(source: root, target: root.string, access: .readWrite),
+                OCIMount(
+                    source: scannerSDK,
+                    target: "/native-wayland",
+                    access: .readOnly),
+            ],
+            networkPolicy: .externalDisabled,
+            userPolicy: .builder,
+            capabilityPolicy: .dropAll,
+            privilegePolicy: .prohibitAcquisition,
+            processFilesystemPolicy: .standard,
+            resourceLimits: .parallelBuild,
+            containerEnvironment: [:],
+            command: [
+                "wayland-generate",
+                "sh", "-eu", "-c",
+                "scanner=/native-wayland/bin/wayland-scanner; "
+                    + "while [ \"$#\" -ne 0 ]; do "
+                    + "\"$scanner\" \"$1\" \"$2\" \"$3\"; shift 3; done",
+                "wayland-scanner",
+            ] + arguments,
+            environment: environment,
+            output: .logged))
 }
 
 private func nativeOperation(
@@ -383,21 +422,6 @@ private func protocolRecords(
                 path: FilePath(url.path)))
     }
     return records.sorted { $0.path.string < $1.path.string }
-}
-
-private func scanner(
-    _ mode: String,
-    record: WaylandProtocolRecord,
-    output: FilePath,
-    root: FilePath,
-    environment: [String: String]
-) -> TaskOperation {
-    .command(
-        CommandSpec(
-            executable: .named("wayland-scanner"),
-            arguments: [mode, record.path.string, output.string],
-            workingDirectory: root,
-            environment: environment))
 }
 
 public enum WaylandRecipeFailure: Error, CustomStringConvertible {

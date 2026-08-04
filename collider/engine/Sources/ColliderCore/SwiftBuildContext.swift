@@ -214,13 +214,24 @@ public struct SwiftPMInvocation: Hashable, Sendable {
     }
 
     public var configurationProducts: FilePath {
-        productsRoot.appending(
-            "\(capitalizedConfiguration)-\(context.target.productsSuffix)")
+        switch context.target {
+        case .host:
+            productsRoot.appending(capitalizedConfiguration)
+        case .triple, .swiftSDK:
+            productsRoot.appending(
+                "\(capitalizedConfiguration)-\(context.target.productsSuffix)")
+        }
     }
 
     public var generatedModuleMaps: FilePath {
-        scratchPath.appending(
-            "out/Intermediates.noindex/GeneratedModuleMaps-\(context.target.productsSuffix)")
+        switch context.target {
+        case .host:
+            scratchPath.appending(
+                "out/Intermediates.noindex/GeneratedModuleMaps")
+        case .triple, .swiftSDK:
+            scratchPath.appending(
+                "out/Intermediates.noindex/GeneratedModuleMaps-\(context.target.productsSuffix)")
+        }
     }
 
     public func executable(_ product: String) -> FilePath {
@@ -232,6 +243,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         product: String,
         packageRoot: FilePath,
         environment: [String: String],
+        prebuildTargets: [String] = [],
         expectedOutputs: [PathPostcondition] = []
     ) -> SwiftProductRequirement {
         SwiftProductRequirement(
@@ -246,6 +258,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
                     fallback: Array("no-sources-directory".utf8)),
             ],
             environment: environment,
+            prebuildTargets: prebuildTargets,
             expectedOutputs: expectedOutputs)
     }
 
@@ -254,7 +267,8 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         testProduct: String,
         packageRoot: FilePath,
         environment: [String: String],
-        arguments: [String] = []
+        arguments: [String] = [],
+        expectedBuildOutputs: [PathPostcondition] = []
     ) -> SwiftTestRequirement {
         SwiftTestRequirement(
             package: package,
@@ -271,7 +285,8 @@ public struct SwiftPMInvocation: Hashable, Sendable {
                     fallback: Array("no-tests-directory".utf8)),
             ],
             environment: environment,
-            arguments: arguments)
+            arguments: arguments,
+            expectedBuildOutputs: expectedBuildOutputs)
     }
 
     public func generatedSwiftHeader(_ module: String) -> FilePath {
@@ -468,6 +483,7 @@ public struct SwiftProductRequirement: Hashable, Sendable {
     public let invocation: SwiftPMInvocation
     public let inputs: [ArtifactInput]
     public let environment: [String: String]
+    public let prebuildTargets: [String]
     public let expectedOutputs: [PathPostcondition]
 
     public init(
@@ -477,6 +493,7 @@ public struct SwiftProductRequirement: Hashable, Sendable {
         invocation: SwiftPMInvocation,
         inputs: [ArtifactInput],
         environment: [String: String],
+        prebuildTargets: [String] = [],
         expectedOutputs: [PathPostcondition] = []
     ) {
         precondition(
@@ -490,6 +507,7 @@ public struct SwiftProductRequirement: Hashable, Sendable {
         self.invocation = invocation
         self.inputs = inputs
         self.environment = environment
+        self.prebuildTargets = prebuildTargets
         self.expectedOutputs = expectedOutputs
     }
 
@@ -508,6 +526,7 @@ public struct SwiftTestRequirement: Hashable, Sendable {
     public let inputs: [ArtifactInput]
     public let environment: [String: String]
     public let arguments: [String]
+    public let expectedBuildOutputs: [PathPostcondition]
 
     public init(
         package: String,
@@ -516,7 +535,8 @@ public struct SwiftTestRequirement: Hashable, Sendable {
         invocation: SwiftPMInvocation,
         inputs: [ArtifactInput],
         environment: [String: String],
-        arguments: [String] = []
+        arguments: [String] = [],
+        expectedBuildOutputs: [PathPostcondition] = []
     ) {
         precondition(
             packageRoot == invocation.context.packageRoot,
@@ -530,6 +550,7 @@ public struct SwiftTestRequirement: Hashable, Sendable {
         self.inputs = inputs
         self.environment = environment
         self.arguments = arguments
+        self.expectedBuildOutputs = expectedBuildOutputs
     }
 
     public var qualifiedProduct: String {

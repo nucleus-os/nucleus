@@ -5,6 +5,28 @@ import Testing
 
 @testable import ColliderRuntime
 
+@Test func symlinkTargetValidationRejectsADanglingPublication() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-dangling-publication-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let link = root.appending("published")
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.dangling-publication"),
+        component: ComponentID(rawValue: "fixture"),
+        outputs: [
+            OutputDeclaration(path: link, validation: .symlinkTarget)
+        ],
+        operation: .replaceSymlink(path: link, target: "missing-target"))
+
+    await #expect(throws: (any Error).self) {
+        _ = try await ColliderRuntime().execute(
+            graph: TaskGraph([task]),
+            selected: [task.id],
+            stateRoot: root.appending("state"))
+    }
+}
+
 @Test func sharedPostconditionParticipatesInIdentityAndCleanliness() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-postcondition-\(UUID().uuidString)",

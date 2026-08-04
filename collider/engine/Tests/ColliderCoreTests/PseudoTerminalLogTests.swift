@@ -25,5 +25,6 @@ func pseudoTerminalLogRetainsRawSlaveWrites() throws {
     capture.stop()
     try capture.checkHealth()
 
-    #expect(try String(contentsOf: output, encoding: .utf8) == message)
+    let contents = try String(contentsOf: output, encoding: .utf8)
+    #expect(contents == message, "captured \(contents.debugDescription)")
 }

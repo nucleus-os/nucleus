@@ -39,9 +39,7 @@ public enum CoreColliderRecipe {
             swiftTests: [requirement],
             locks: [.checkout("core")],
             cachePolicy: .always,
-            operation: .runSwiftTest(
-                SwiftTestExecution(
-                    requirement: requirement)))
+            operation: .sequence([]))
     }
 
     public static func prepareSkiaDependencies(
@@ -50,6 +48,7 @@ public enum CoreColliderRecipe {
     ) throws -> TaskDeclaration {
         let skia = root.appending("third-party/skia")
         let gnArchive = root.appending(".skia-build/downloads/gn-linux-arm64.zip")
+        let dependencyVerifier = root.appending(".skia-build/verify-deps.py")
         guard
             let gnURL = URL(
                 string:
@@ -77,10 +76,6 @@ public enum CoreColliderRecipe {
                 .file(skia.appending("DEPS")),
                 .file(skia.appending("tools/git-sync-deps")),
                 .file(skia.appending("bin/fetch-gn")),
-                .tool(.named("git")),
-                .tool(.named("python3")),
-                .tool(.named("unzip")),
-                .tool(.named("chmod")),
             ],
             outputs: [
                 OutputDeclaration(
@@ -94,31 +89,36 @@ public enum CoreColliderRecipe {
                     validation: .executableFile),
             ],
             locks: [.checkout("core-sources")],
+            cachePolicy: .always,
             operation: .sequence([
                 .command(
                     CommandSpec(
-                        executable: .named("python3"),
+                        executable: .operationalNamed("python3"),
                         arguments: [
                             skia.appending("tools/git-sync-deps").string
                         ],
                         workingDirectory: root,
                         environment: environment)),
+                .writeFile(
+                    dependencyVerifier,
+                    bytes: Array(skiaDependencyVerifier.utf8)),
+                .command(
+                    CommandSpec(
+                        executable: .operationalNamed("python3"),
+                        arguments: [dependencyVerifier.string, skia.appending("DEPS").string],
+                        workingDirectory: skia,
+                        environment: environment)),
                 .download(gnDownload, candidate: gnArchive),
-                .command(
-                    CommandSpec(
-                        executable: .named("unzip"),
-                        arguments: [
-                            "-o", gnArchive.string, "gn", "-d",
-                            skia.appending("bin").string,
-                        ],
-                        workingDirectory: root,
+                .extractZip(
+                    ZipExtraction(
+                        archive: gnArchive,
+                        entry: "gn",
+                        destination: skia.appending("bin"),
                         environment: environment)),
-                .command(
-                    CommandSpec(
-                        executable: .named("chmod"),
-                        arguments: ["0755", skia.appending("bin/gn").string],
-                        workingDirectory: root,
-                        environment: environment)),
+                .setPermissions(
+                    FilePermissionUpdate(
+                        path: skia.appending("bin/gn"),
+                        permissions: 0o755)),
             ]))
     }
 
@@ -171,7 +171,7 @@ public enum CoreColliderRecipe {
         root: FilePath,
         environment: [String: String],
         swiftPM: SwiftPMInvocation,
-        dependencies: [TaskID] = [TaskID(rawValue: "core.native-sdk")]
+        dependencies: [TaskID]
     ) -> TaskDeclaration {
         let package = root.appending("platform-android")
         let product = swiftPM.configurationProducts.appending(
@@ -240,23 +240,19 @@ public enum CoreColliderRecipe {
                     environment: environment)))
     }
 
-    public static func publishRenderSDK(
+    public static func publishAndroidRenderSDK(
         root: FilePath,
         sdkRoot: FilePath,
-        dependencies: [TaskID] = [TaskID(rawValue: "core.skia.host")]
+        dependencies: [TaskID]
     ) -> TaskDeclaration {
         let sdk = sdkRoot.appending("render")
         let links: [(String, FilePath)] = [
             ("include/skia", root.appending("third-party/skia")),
-            ("lib/skia-graphite", root.appending(".skia-build/graphite")),
+            ("lib/skia-graphite", root.appending(".skia-build/android-arm64")),
             ("include/skia-text", root.appending("render-cxx/skia")),
-            (
-                "lib/skia-graphite-android-arm64",
-                root.appending(".skia-build/android-arm64")
-            ),
         ]
         return TaskDeclaration(
-            id: TaskID(rawValue: "core.native-sdk"),
+            id: TaskID(rawValue: "core.native-sdk.android-arm64"),
             component: ComponentID(rawValue: "core"),
             dependencies: dependencies,
             inputs: links.map {
@@ -267,7 +263,7 @@ public enum CoreColliderRecipe {
             outputs: links.map {
                 OutputDeclaration(
                     path: sdk.appending($0.0),
-                    validation: .exists)
+                    validation: .symlinkTarget)
             },
             locks: [
                 .shared(sdkRoot.appending(".render.lock"))
@@ -285,7 +281,7 @@ public enum CoreColliderRecipe {
         sdkRoot: FilePath,
         target: NativeLinuxTarget
     ) -> TaskDeclaration {
-        let sdk = sdkRoot.appending(target.identifier).appending("render")
+        let sdk = sdkRoot.appending("render")
         let links: [(String, FilePath)] = [
             ("include/skia", root.appending("third-party/skia")),
             (
@@ -306,7 +302,7 @@ public enum CoreColliderRecipe {
             outputs: links.map {
                 OutputDeclaration(
                     path: sdk.appending($0.0),
-                    validation: .exists)
+                    validation: .symlinkTarget)
             },
             locks: [.shared(sdkRoot.appending(".render.lock"))],
             operation: .sequence(
@@ -317,6 +313,39 @@ public enum CoreColliderRecipe {
                 }))
     }
 }
+
+private let skiaDependencyVerifier = #"""
+    import os
+    import subprocess
+    import sys
+
+    deps_path = os.path.abspath(sys.argv[1])
+    scope = {}
+    with open(deps_path, encoding="utf-8") as source:
+        exec("def Var(name): return vars[name]\n" + source.read(), scope)
+    for relative, specification in sorted(scope["deps"].items()):
+        if not isinstance(specification, str):
+            continue
+        _, revision = specification.rsplit("@", 1)
+        checkout = os.path.join(os.path.dirname(deps_path), relative)
+        expected = subprocess.check_output(
+            ["git", "rev-parse", f"{revision}^{{commit}}"], cwd=checkout, text=True
+        ).strip()
+        actual = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=checkout, text=True
+        ).strip()
+        if actual != expected:
+            raise SystemExit(
+                f"{relative}: expected {revision} ({expected}), found {actual}"
+            )
+        dirty = subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            cwd=checkout,
+            text=True,
+        )
+        if dirty:
+            raise SystemExit(f"{relative}: tracked source modifications remain")
+    """#
 
 private let ninjaTargets = ["skia", "skshaper", "skparagraph", "skunicode", "svg"]
 private let requiredArchives = [

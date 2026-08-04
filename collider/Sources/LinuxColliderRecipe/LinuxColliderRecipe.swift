@@ -71,8 +71,7 @@ public enum LinuxColliderRecipe {
                     postconditions: [swiftPM.postcondition],
                     locks: [.checkout("linux-\(name)")],
                     cachePolicy: .always,
-                    operation: .runSwiftTest(
-                        SwiftTestExecution(requirement: testRequirement))),
+                    operation: .sequence([])),
                 laneTestTask(
                     id: "linux.\(name).test-loader",
                     buildID: buildID,
@@ -248,8 +247,7 @@ private func laneTestTask(
         postconditions: [requirement.invocation.postcondition],
         locks: [.checkout(lockName)],
         cachePolicy: .always,
-        operation: .runSwiftTest(
-            SwiftTestExecution(requirement: requirement)))
+        operation: .sequence([]))
 }
 
 private func translatedExecutableTask(
@@ -359,7 +357,5 @@ private func task(
         cachePolicy: testRequirement == nil
             ? .contentAddressed
             : .always,
-        operation: testRequirement.map {
-            .runSwiftTest(SwiftTestExecution(requirement: $0))
-        } ?? .sequence([]))
+        operation: .sequence([]))
 }

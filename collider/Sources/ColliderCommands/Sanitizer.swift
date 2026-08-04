@@ -2,38 +2,11 @@ import ArgumentParser
 import ColliderCore
 import Foundation
 
-enum RuntimeSanitizer: String, CaseIterable, Equatable,
-    ExpressibleByArgument
-{
-    case address
-    case undefined
-    case thread
-}
-
-enum SanitizerSelection: String, CaseIterable, ExpressibleByArgument {
-    case all
+enum RuntimeSanitizer: String, CaseIterable, Equatable, ExpressibleByArgument {
     case address
     case undefined
     case thread
 
-    var sanitizers: [RuntimeSanitizer] {
-        switch self {
-        case .all:
-            RuntimeSanitizer.allCases
-        case .address:
-            [.address]
-        case .undefined:
-            [.undefined]
-        case .thread:
-            [.thread]
-        }
-    }
-}
-
-extension RuntimeSanitizer {
-    /// The strict runtime option strings used when `sanitize` drives a suite or
-    /// harness (leak detection on, deterministic aborts). The interactive
-    /// `run` command uses a distinct, more permissive policy.
     var runtimeEnvironment: [String: String] {
         switch self {
         case .address:
@@ -55,20 +28,27 @@ extension RuntimeSanitizer {
     }
 }
 
-struct SanitizerCommand {
-    let context: WorkspaceContext
+enum SanitizerSelection: String, CaseIterable, ExpressibleByArgument {
+    case all
+    case address
+    case undefined
+    case thread
 
+    var sanitizers: [RuntimeSanitizer] {
+        switch self {
+        case .all: RuntimeSanitizer.allCases
+        case .address: [.address]
+        case .undefined: [.undefined]
+        case .thread: [.thread]
+        }
+    }
+}
+
+struct SanitizerCommand {
     private struct Invocation {
         enum Workload {
             case test(suite: String)
             case executable(product: String)
-
-            var label: String {
-                switch self {
-                case .test(let suite): "suite=\(suite)"
-                case .executable(let product): "executable=\(product)"
-                }
-            }
         }
 
         let id: String
@@ -76,15 +56,11 @@ struct SanitizerCommand {
         let prerequisiteTargets: [String]
         let workload: Workload
 
-        init(
-            id: String,
-            package: String,
-            suite: String
-        ) {
+        init(id: String, package: String, suite: String) {
             self.id = id
             self.package = package
-            self.prerequisiteTargets = []
-            self.workload = .test(suite: suite)
+            prerequisiteTargets = []
+            workload = .test(suite: suite)
         }
 
         init(
@@ -96,20 +72,105 @@ struct SanitizerCommand {
             self.id = id
             self.package = package
             self.prerequisiteTargets = prerequisiteTargets
-            self.workload = .executable(product: executable)
+            workload = .executable(product: executable)
         }
     }
 
-    func run(_ selection: SanitizerSelection) async throws {
-        let seed = "0x4e55434c455553"
-        for kind in selection.sanitizers {
-            for invocation in invocations(for: kind) {
-                try await run(
-                    invocation,
-                    sanitizer: kind,
-                    seed: seed)
+    let context: WorkspaceContext
+
+    func run(
+        _ selection: SanitizerSelection,
+        controls: TaskControls
+    ) async throws {
+        let registry = ComponentRegistry(context: context)
+        var tasks = try registry.linuxArchitectureTasks()
+        var selected: [TaskID] = []
+        for sanitizer in selection.sanitizers {
+            let swiftPM = try registry.linuxSwiftPMInvocation(
+                sanitizer: sanitizer.rawValue,
+                linkerFlags: sanitizer == .undefined ? ["-lubsan"] : [])
+            var environment = context.taskEnvironment
+            environment.merge(sanitizer.runtimeEnvironment) { _, configured in configured }
+            if sanitizer == .address {
+                let suppressions = context.layout.tools.appendingPathComponent(
+                    "lsan-suppressions.txt")
+                environment["LSAN_OPTIONS", default: ""] +=
+                    ":suppressions=\(suppressions.path)"
             }
-            try context.pruneSanitizerBuildContexts()
+            environment["NUCLEUS_TEST_SEED"] = "0x4e55434c455553"
+            for invocation in invocations(for: sanitizer) {
+                let task = task(
+                    invocation,
+                    sanitizer: sanitizer,
+                    swiftPM: swiftPM,
+                    environment: environment)
+                tasks.append(task)
+                selected.append(task.id)
+            }
+        }
+        try await context.execute(
+            tasks: tasks,
+            selected: selected,
+            controls: controls)
+    }
+
+    private func task(
+        _ invocation: Invocation,
+        sanitizer: RuntimeSanitizer,
+        swiftPM: SwiftPMInvocation,
+        environment: [String: String]
+    ) -> TaskDeclaration {
+        let id = TaskID(rawValue: "sanitize.\(sanitizer.rawValue).\(invocation.id)")
+        let dependencies = [
+            TaskID(rawValue: "native.builder"),
+            TaskID(rawValue: "android-runtime.gfxstream.linux-arm64"),
+        ]
+        let prerequisiteIdentity = ArtifactInput.value(
+            name: "prerequisite-targets",
+            bytes: Array(invocation.prerequisiteTargets.joined(separator: "\u{0}").utf8))
+        switch invocation.workload {
+        case .test(let suite):
+            let requirement = swiftPM.testProduct(
+                package: invocation.package,
+                testProduct: suite,
+                packageRoot: context.layout.rootPath,
+                environment: environment,
+                arguments: ["--filter", suite])
+            return TaskDeclaration(
+                id: id,
+                component: ComponentID(rawValue: "sanitize"),
+                dependencies: dependencies,
+                swiftTests: [requirement],
+                inputs: [swiftPM.identityInput, prerequisiteIdentity],
+                locks: [.checkout("sanitize-\(sanitizer.rawValue)")],
+                cachePolicy: .always,
+                operation: .sequence([]))
+        case .executable(let product):
+            let executable = swiftPM.executable(product)
+            let requirement = swiftPM.product(
+                package: invocation.package,
+                product: product,
+                packageRoot: context.layout.rootPath,
+                environment: environment,
+                prebuildTargets: invocation.prerequisiteTargets,
+                expectedOutputs: [
+                    PathPostcondition(
+                        path: executable,
+                        validation: .executableFile)
+                ])
+            return TaskDeclaration(
+                id: id,
+                component: ComponentID(rawValue: "sanitize"),
+                dependencies: dependencies,
+                swiftProducts: [requirement],
+                inputs: [swiftPM.identityInput, prerequisiteIdentity],
+                locks: [.checkout("sanitize-\(sanitizer.rawValue)")],
+                cachePolicy: .always,
+                operation: swiftPM.operation(
+                    executable: executable,
+                    arguments: [],
+                    workingDirectory: context.layout.rootPath,
+                    environment: environment))
         }
     }
 
@@ -121,14 +182,12 @@ struct SanitizerCommand {
                     id: "wayland-resource-failure", package: "swift-wayland",
                     suite: "WaylandResourceOwnershipTests"),
                 Invocation(
-                    id: "core-runtime-graph", package: "core",
-                    suite: "NucleusRuntimeGraphTests"),
+                    id: "core-runtime-graph", package: "core", suite: "NucleusRuntimeGraphTests"),
                 Invocation(
                     id: "core-publication-lifetime", package: "core",
                     suite: "ViewPublicationAuthorityTests"),
                 Invocation(
-                    id: "linux-dbus", package: "platform-linux",
-                    suite: "DBusConnectionTests"),
+                    id: "linux-dbus", package: "platform-linux", suite: "DBusConnectionTests"),
                 Invocation(
                     id: "linux-accessibility-wire", package: "platform-linux",
                     suite: "AtSPIWireBoundaryTests"),
@@ -146,20 +205,16 @@ struct SanitizerCommand {
                     package: "integration-tests/window-client-conformance",
                     suite: "NucleusPlatformTransportStressTests"),
                 Invocation(
-                    id: "rn-host-lifecycle", package: "react-native",
-                    suite: "FabricRuntimeTests"),
+                    id: "rn-host-lifecycle", package: "react-native", suite: "FabricRuntimeTests"),
             ]
         case .undefined:
             [
                 Invocation(
-                    id: "core-boundaries", package: "core",
-                    suite: "NucleusVulkanDmaBufTests"),
+                    id: "core-boundaries", package: "core", suite: "NucleusVulkanDmaBufTests"),
                 Invocation(
-                    id: "core-pixel-boundaries", package: "core",
-                    suite: "RawPixelBufferTests"),
+                    id: "core-pixel-boundaries", package: "core", suite: "RawPixelBufferTests"),
                 Invocation(
-                    id: "linux-accessibility-numeric-boundaries",
-                    package: "platform-linux",
+                    id: "linux-accessibility-numeric-boundaries", package: "platform-linux",
                     suite: "AtSPIWireBoundaryTests"),
                 Invocation(
                     id: "compositor-layout-boundaries", package: "compositor",
@@ -180,109 +235,18 @@ struct SanitizerCommand {
                 Invocation(
                     id: "android-runtime-lifetimes", package: "android-runtime",
                     executable: "NucleusAndroidThreadSanitizerHarness"),
-                // One direct executable owns both the cross-thread render-wake
-                // race and real Wayland client/resource teardown. Avoid filtered
-                // Swift Testing here: SwiftPM launches every compositor test
-                // runner, and zero-match runners abort in dispatch_main teardown
-                // under TSan before the selected suite can be evaluated.
                 Invocation(
                     id: "compositor-callbacks", package: "compositor",
-                    executable:
-                        "NucleusRenderServerThreadSanitizerHarness"),
+                    executable: "NucleusRenderServerThreadSanitizerHarness"),
                 Invocation(
                     id: "shell-callbacks", package: "shell",
                     executable: "NucleusShellThreadSanitizerHarness"),
                 Invocation(
-                    id: "rn-runtime-workers", package: "react-native",
+                    id: "rn-runtime-workers",
+                    package: "react-native",
                     prerequisiteTargets: ["NucleusReactRuntimeCxx"],
                     executable: "NucleusReactThreadSanitizerHarness"),
             ]
-        }
-    }
-
-    private func run(
-        _ invocation: Invocation,
-        sanitizer: RuntimeSanitizer,
-        seed: String
-    ) async throws {
-        let packageDirectory = context.root
-        let swiftPM = try context.swiftPMInvocation(
-            sanitizer: sanitizer.rawValue,
-            linkerFlags: sanitizer == .undefined ? ["-lubsan"] : [])
-        let commonArguments: [String] = []
-        // SwiftPM instruments every product in the package graph. Its Linux
-        // UBSan link invocation does not add the runtime for unrelated C++
-        // executable products, so make that runtime explicit for every link.
-
-        var environment = context.environment
-        for (key, value) in sanitizer.runtimeEnvironment {
-            environment[key] = value
-        }
-        if sanitizer == .address {
-            let suppressions = context.layout.tools.appendingPathComponent(
-                "lsan-suppressions.txt")
-            environment["LSAN_OPTIONS", default: ""] +=
-                ":suppressions=\(suppressions.path)"
-        }
-        environment["NUCLEUS_TEST_SEED"] = seed
-        let instrumentedContext = WorkspaceContext(
-            root: context.root,
-            environment: environment)
-        let packageIdentity = invocation.package
-        let options = sanitizer.runtimeEnvironment
-            .map { "\($0.key)=\($0.value)" }.sorted().joined(separator: " ")
-        print(
-            "==> sanitize package=\(packageIdentity) "
-                + "sanitizer=\(sanitizer.rawValue) \(invocation.workload.label) "
-                + "seed=\(seed) scratch=\(swiftPM.scratchPath) \(options)")
-        do {
-            switch invocation.workload {
-            case .test(let suite):
-                try await instrumentedContext.run(
-                    "swift",
-                    swiftPM.commandArguments(
-                        ["test"] + commonArguments + ["--filter", suite]),
-                    directory: packageDirectory,
-                    environmentOverrides: swiftPM.commandEnvironment(environment))
-            case .executable(let product):
-                // Some C++ targets consume a Swift-generated C++ header
-                // textually and therefore cannot declare the producing Swift
-                // target as a module dependency. Materialize those headers in
-                // this exact sanitized build context before compiling consumers.
-                for target in invocation.prerequisiteTargets {
-                    let prerequisiteArguments = swiftPM.commandArguments(
-                        ["build"] + commonArguments + ["--target", target])
-                    try await instrumentedContext.run(
-                        "swift", prerequisiteArguments,
-                        directory: packageDirectory,
-                        environmentOverrides:
-                            swiftPM.commandEnvironment(environment))
-                }
-                let buildArguments = swiftPM.commandArguments(
-                    ["build"] + commonArguments + ["--product", product])
-                try await instrumentedContext.run(
-                    "swift", buildArguments,
-                    directory: packageDirectory,
-                    environmentOverrides: swiftPM.commandEnvironment(environment))
-                let executable = URL(
-                    fileURLWithPath: swiftPM.executable(product).string)
-                guard
-                    FileManager.default.isExecutableFile(
-                        atPath: executable.path)
-                else {
-                    throw WorkspaceFailure.message(
-                        "sanitizer executable is missing: \(executable.path)")
-                }
-                try await instrumentedContext.run(
-                    executable.path, [],
-                    directory: packageDirectory)
-            }
-        } catch {
-            throw WorkspaceFailure.message(
-                "sanitizer failed [package=\(packageIdentity) "
-                    + "sanitizer=\(sanitizer.rawValue) "
-                    + "\(invocation.workload.label) "
-                    + "seed=\(seed)]: \(error)")
         }
     }
 }

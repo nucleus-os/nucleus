@@ -101,9 +101,7 @@ public enum ShellColliderRecipe {
                 swiftTests: [integrationRequirement],
                 locks: [.checkout("shell")],
                 cachePolicy: .always,
-                operation: .runSwiftTest(
-                    SwiftTestExecution(
-                        requirement: integrationRequirement))),
+                operation: .sequence([])),
             TaskDeclaration(
                 id: TaskID(rawValue: "shell.auth-wire.test"),
                 component: ComponentID(rawValue: "shell"),
@@ -113,9 +111,7 @@ public enum ShellColliderRecipe {
                 swiftTests: [authWireRequirement],
                 locks: [.checkout("shell")],
                 cachePolicy: .always,
-                operation: .runSwiftTest(
-                    SwiftTestExecution(
-                        requirement: authWireRequirement))),
+                operation: .sequence([])),
             TaskDeclaration(
                 id: TaskID(rawValue: "shell.test"),
                 component: ComponentID(rawValue: "shell"),
@@ -135,14 +131,9 @@ public enum ShellColliderRecipe {
                 locks: [.checkout("shell")],
                 cachePolicy: .always,
                 operation: .sequence(
-                    [
-                        .runSwiftTest(
-                            SwiftTestExecution(
-                                requirement: shellKitRequirement))
-                    ]
-                        + runtimeFinalizationOperations(
-                            environment: environment,
-                            swiftPM: swiftPM))),
+                    runtimeFinalizationOperations(
+                        environment: environment,
+                        swiftPM: swiftPM))),
         ]
     }
 }
@@ -159,6 +150,6 @@ private func runtimeFinalizationOperations(
                 ValidateRuntimeELFAction(
                     root: swiftPM.configurationProducts,
                     report: manifest,
-                    environment: environment))),
+                    environment: environment)))
     ]
 }

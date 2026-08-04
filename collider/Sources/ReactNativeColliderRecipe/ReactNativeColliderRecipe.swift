@@ -23,7 +23,12 @@ public enum ReactNativeColliderRecipe {
             package: "react-native",
             testProduct: "NucleusReactNativePackageTests",
             packageRoot: root,
-            environment: environment)
+            environment: environment,
+            expectedBuildOutputs: [
+                PathPostcondition(
+                    path: swiftPM.generatedSwiftHeader("NucleusReactRuntimeCxx"),
+                    validation: .regularFile)
+            ])
         return TaskDeclaration(
             id: TaskID(rawValue: "rn.test"),
             component: ComponentID(rawValue: "rn"),
@@ -38,18 +43,18 @@ public enum ReactNativeColliderRecipe {
             ],
             locks: [.checkout("rn")],
             cachePolicy: .always,
-            operation: .runSwiftTest(
-                SwiftTestExecution(
-                    requirement: requirement)))
+            operation: .sequence([]))
     }
 
     public static func installJavaScriptDependencies(
         root: FilePath,
-        environment: [String: String]
+        environment: [String: String],
+        builder: NativeOCIConfiguration
     ) -> TaskDeclaration {
         TaskDeclaration(
             id: TaskID(rawValue: "rn.javascript-dependencies"),
             component: ComponentID(rawValue: "rn"),
+            dependencies: [TaskID(rawValue: "native.builder")],
             inputs: [
                 .file(
                     root.appending(
@@ -57,7 +62,10 @@ public enum ReactNativeColliderRecipe {
                 .file(
                     root.appending(
                         "third-party/react-native/package.json")),
-                .tool(.named("corepack")),
+                .file(
+                    root.appending(
+                        "third-party/react-native/packages/react-native/package.json")),
+                .dependencyOutput(builder.imageID),
             ],
             outputs: [
                 OutputDeclaration(
@@ -66,15 +74,19 @@ public enum ReactNativeColliderRecipe {
                     validation: .nonEmptyDirectory)
             ],
             locks: [.checkout("rn-javascript")],
-            operation: .command(
-                CommandSpec(
-                    executable: .named("corepack"),
-                    arguments: [
-                        "yarn", "--cwd", "third-party/react-native",
-                        "install", "--frozen-lockfile",
-                    ],
-                    workingDirectory: root,
-                    environment: environment)))
+            operation: javascriptOperation(
+                root: root,
+                builder: builder,
+                networkPolicy: .externalEnabled,
+                command: [
+                    // The upstream 0.87 RC pins an exact Hermes compiler newer
+                    // than its committed lock entry. Preserve the source lock
+                    // while resolving that dependency; the package has no
+                    // transitive dependencies and the exact version remains
+                    // part of this task's identity above.
+                    "/opt/node/bin/corepack", "yarn", "install", "--pure-lockfile",
+                ],
+                environment: environment))
     }
 
     public static func provisionBoost(
@@ -119,7 +131,7 @@ public enum ReactNativeColliderRecipe {
                 OutputDeclaration(
                     path: generation.appending("version.hpp"),
                     validation: .regularFile),
-                OutputDeclaration(path: active, validation: .exists),
+                OutputDeclaration(path: active, validation: .symlinkTarget),
             ],
             locks: [.checkout("rn-boost")],
             operation: .sequence([
@@ -147,7 +159,11 @@ public enum ReactNativeColliderRecipe {
             ]))
     }
 
-    public static func generate(root: FilePath, environment: [String: String]) -> TaskDeclaration {
+    public static func generate(
+        root: FilePath,
+        environment: [String: String],
+        builder: NativeOCIConfiguration
+    ) -> TaskDeclaration {
         TaskDeclaration(
             id: TaskID(rawValue: "rn.generate"),
             component: ComponentID(rawValue: "rn"),
@@ -155,7 +171,7 @@ public enum ReactNativeColliderRecipe {
             inputs: [
                 .file(root.appending("tools/generate-rn-spec.js")),
                 .tree(root.appending("third-party/react-native/packages/react-native-codegen")),
-                .tool(.named("node")),
+                .dependencyOutput(builder.imageID),
             ],
             outputs: [
                 OutputDeclaration(
@@ -163,12 +179,15 @@ public enum ReactNativeColliderRecipe {
                     validation: .nonEmptyDirectory)
             ],
             locks: [.checkout("rn")],
-            operation: .command(
-                CommandSpec(
-                    executable: .named("node"),
-                    arguments: [root.appending("tools/generate-rn-spec.js").string],
-                    workingDirectory: root,
-                    environment: environment)))
+            operation: javascriptOperation(
+                root: root,
+                builder: builder,
+                networkPolicy: .externalDisabled,
+                command: [
+                    "/opt/node/bin/node",
+                    root.appending("tools/generate-rn-spec.js").string,
+                ],
+                environment: environment))
     }
 
     public static func buildHermes(
@@ -466,7 +485,7 @@ public enum ReactNativeColliderRecipe {
         target: NativeLinuxTarget
     ) -> TaskDeclaration {
         let buildRoot = root.appending(".rn-build/\(target.identifier)")
-        let sdk = sdkRoot.appending(target.identifier).appending("rn")
+        let sdk = sdkRoot.appending("rn")
         let links: [(String, FilePath)] = [
             ("include/hermes", root.appending("third-party/hermes")),
             ("include/folly", root.appending("third-party/folly")),
@@ -476,7 +495,6 @@ public enum ReactNativeColliderRecipe {
             ),
             ("include/glog", root.appending("third-party/glog")),
             ("include/glog-gen", buildRoot.appending("glog")),
-            ("include/rn-gen", buildRoot.appending("include")),
             ("include/rn-codegen", root.appending(".rn-build/generated")),
             ("include/fmt", root.appending("third-party/fmt")),
             ("include/fast_float", root.appending("third-party/fast_float")),
@@ -515,7 +533,7 @@ public enum ReactNativeColliderRecipe {
             outputs: links.map {
                 OutputDeclaration(
                     path: sdk.appending($0.0),
-                    validation: .exists)
+                    validation: .symlinkTarget)
             },
             locks: [
                 .shared(sdkRoot.appending(".rn.lock"))
@@ -528,6 +546,40 @@ public enum ReactNativeColliderRecipe {
                 }))
     }
 
+}
+
+private func javascriptOperation(
+    root: FilePath,
+    builder: NativeOCIConfiguration,
+    networkPolicy: OCINetworkPolicy,
+    command: [String],
+    environment: [String: String]
+) -> TaskOperation {
+    .runOCI(
+        OCIExecution(
+            executionPlatform: .linuxARM64OCI,
+            artifactTarget: .linuxARM64,
+            imageID: builder.imageID,
+            hostname: "react-native-javascript",
+            workingDirectory: root.appending("third-party/react-native").string,
+            hostWorkingDirectory: root,
+            mounts: [
+                OCIMount(source: root, target: root.string, access: .readWrite)
+            ],
+            networkPolicy: networkPolicy,
+            userPolicy: .builder,
+            capabilityPolicy: .dropAll,
+            privilegePolicy: .prohibitAcquisition,
+            processFilesystemPolicy: .standard,
+            resourceLimits: .parallelBuild,
+            containerEnvironment: [
+                "HOME": "/home/nucleus-build",
+                "PATH":
+                    "/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            ],
+            command: ["javascript"] + command,
+            environment: environment,
+            output: .logged))
 }
 
 private let boostVersion = "1.84.0"
@@ -735,7 +787,13 @@ private func task(
                     package: "react-native",
                     product: "NucleusReactRuntime",
                     packageRoot: root,
-                    environment: environment)
+                    environment: environment,
+                    prebuildTargets: prebuildTargets,
+                    expectedOutputs: prebuildTargets.map {
+                        PathPostcondition(
+                            path: swiftPM.generatedSwiftHeader($0),
+                            validation: .regularFile)
+                    })
             ] : [],
         inputs: [
             .tree(root.appending("Sources")),

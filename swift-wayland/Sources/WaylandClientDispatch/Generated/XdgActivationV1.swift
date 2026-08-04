@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for xdg_activation_v1.
 
 import WaylandClientC
-
 package enum XdgActivationV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_xdg_activation_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == XdgActivationV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == XdgActivationV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_xdg_activation_v1_destroy(_proxy)
@@ -18,28 +17,19 @@ extension WaylandProxy where Interface == XdgActivationV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func getActivationToken() throws(WaylandProxyError) -> WaylandProxy<
-        XdgActivationTokenV1Client
-    > {
+    func getActivationToken() throws(WaylandProxyError) -> WaylandProxy<XdgActivationTokenV1Client> {
         let _proxy = try unsafe requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_xdg_activation_v1_get_activation_token(_proxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_xdg_activation_v1_get_activation_token(_proxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(
             adopting: _created, XdgActivationTokenV1Client.self)
     }
-    package func activate(token: String, surface: WaylandProxy<WlSurfaceClient>)
-        throws(WaylandProxyError)
-    {
+    func activate(token: String, surface: WaylandProxy<WlSurfaceClient>) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface.requireNativeProxy()
-        return try token.withCString {
-            (_tokenCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
-            unsafe swift_wayland_client_request_xdg_activation_v1_activate(
-                _proxy, _tokenCString, _surfaceProxy)
+        return try token.withCString { (_tokenCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+            unsafe swift_wayland_client_request_xdg_activation_v1_activate(_proxy, _tokenCString, _surfaceProxy)
             return
         }
     }

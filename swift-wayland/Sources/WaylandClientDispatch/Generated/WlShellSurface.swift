@@ -3,86 +3,69 @@
 
 package import WaylandClientC
 package import WaylandProtocolTypes
-
 package enum WlShellSurfaceClient: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wl_shell_surface())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == WlShellSurfaceClient {
-    package func pong(serial: UInt32) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WlShellSurfaceClient {
+    func pong(serial: UInt32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_wl_shell_surface_pong(_proxy, serial)
         return
     }
-    package func move(seat: WaylandProxy<WlSeatClient>, serial: UInt32) throws(WaylandProxyError) {
+    func move(seat: WaylandProxy<WlSeatClient>, serial: UInt32) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _seatProxy = try unsafe seat.requireNativeProxy()
         unsafe swift_wayland_client_request_wl_shell_surface_move(_proxy, _seatProxy, serial)
         return
     }
-    package func resize(
-        seat: WaylandProxy<WlSeatClient>, serial: UInt32, edges: WlShellSurfaceResize
-    ) throws(WaylandProxyError) {
+    func resize(seat: WaylandProxy<WlSeatClient>, serial: UInt32, edges: WlShellSurfaceResize) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _seatProxy = try unsafe seat.requireNativeProxy()
-        unsafe swift_wayland_client_request_wl_shell_surface_resize(
-            _proxy, _seatProxy, serial, edges.rawValue)
+        unsafe swift_wayland_client_request_wl_shell_surface_resize(_proxy, _seatProxy, serial, edges.rawValue)
         return
     }
-    package func setToplevel() throws(WaylandProxyError) {
+    func setToplevel() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         unsafe swift_wayland_client_request_wl_shell_surface_set_toplevel(_proxy)
         return
     }
-    package func setTransient(
-        parent: WaylandProxy<WlSurfaceClient>, x: Int32, y: Int32, flags: WlShellSurfaceTransient
-    ) throws(WaylandProxyError) {
+    func setTransient(parent: WaylandProxy<WlSurfaceClient>, x: Int32, y: Int32, flags: WlShellSurfaceTransient) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _parentProxy = try unsafe parent.requireNativeProxy()
-        unsafe swift_wayland_client_request_wl_shell_surface_set_transient(
-            _proxy, _parentProxy, x, y, flags.rawValue)
+        unsafe swift_wayland_client_request_wl_shell_surface_set_transient(_proxy, _parentProxy, x, y, flags.rawValue)
         return
     }
-    package func setFullscreen(
-        method: WlShellSurfaceFullscreenMethod, framerate: UInt32,
-        output: WaylandProxy<WlOutputClient>?
-    ) throws(WaylandProxyError) {
+    func setFullscreen(method: WlShellSurfaceFullscreenMethod, framerate: UInt32, output: WaylandProxy<WlOutputClient>?) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _outputProxy = try unsafe output?.requireNativeProxy()
-        unsafe swift_wayland_client_request_wl_shell_surface_set_fullscreen(
-            _proxy, method.rawValue, framerate, _outputProxy)
+        unsafe swift_wayland_client_request_wl_shell_surface_set_fullscreen(_proxy, method.rawValue, framerate, _outputProxy)
         return
     }
-    package func setPopup(
-        seat: WaylandProxy<WlSeatClient>, serial: UInt32, parent: WaylandProxy<WlSurfaceClient>,
-        x: Int32, y: Int32, flags: WlShellSurfaceTransient
-    ) throws(WaylandProxyError) {
+    func setPopup(seat: WaylandProxy<WlSeatClient>, serial: UInt32, parent: WaylandProxy<WlSurfaceClient>, x: Int32, y: Int32, flags: WlShellSurfaceTransient) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _seatProxy = try unsafe seat.requireNativeProxy()
         let _parentProxy = try unsafe parent.requireNativeProxy()
-        unsafe swift_wayland_client_request_wl_shell_surface_set_popup(
-            _proxy, _seatProxy, serial, _parentProxy, x, y, flags.rawValue)
+        unsafe swift_wayland_client_request_wl_shell_surface_set_popup(_proxy, _seatProxy, serial, _parentProxy, x, y, flags.rawValue)
         return
     }
-    package func setMaximized(output: WaylandProxy<WlOutputClient>?) throws(WaylandProxyError) {
+    func setMaximized(output: WaylandProxy<WlOutputClient>?) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _outputProxy = try unsafe output?.requireNativeProxy()
         unsafe swift_wayland_client_request_wl_shell_surface_set_maximized(_proxy, _outputProxy)
         return
     }
-    package func setTitle(title: String) throws(WaylandProxyError) {
+    func setTitle(title: String) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        return try title.withCString {
-            (_titleCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+        return try title.withCString { (_titleCString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wl_shell_surface_set_title(_proxy, _titleCString)
             return
         }
     }
-    package func setClass(class_: String) throws(WaylandProxyError) {
+    func setClass(class_: String) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
-        return try class_.withCString {
-            (_class_CString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
+        return try class_.withCString { (_class_CString: UnsafePointer<CChar>) throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wl_shell_surface_set_class(_proxy, _class_CString)
             return
         }
@@ -91,83 +74,69 @@ extension WaylandProxy where Interface == WlShellSurfaceClient {
 @MainActor
 package protocol WlShellSurfaceEvents: AnyObject {
     func ping(_ proxy: WaylandBorrowedProxy<WlShellSurfaceClient>, serial: UInt32)
-    func configure(
-        _ proxy: WaylandBorrowedProxy<WlShellSurfaceClient>, edges: WlShellSurfaceResize,
-        width: Int32, height: Int32)
+    func configure(_ proxy: WaylandBorrowedProxy<WlShellSurfaceClient>, edges: WlShellSurfaceResize, width: Int32, height: Int32)
     func popupDone(_ proxy: WaylandBorrowedProxy<WlShellSurfaceClient>)
 }
-extension WlShellSurfaceClient {
-    package nonisolated(unsafe) static let listener:
-        UnsafeMutablePointer<wl_shell_surface_listener> = {
-            let p = UnsafeMutablePointer<wl_shell_surface_listener>.allocate(capacity: 1)
-            unsafe p.initialize(to: wl_shell_surface_listener())
-            unsafe p.pointee.ping = ping_impl
-            unsafe p.pointee.configure = configure_impl
-            unsafe p.pointee.popup_done = popupDone_impl
-            return unsafe p
-        }()
-    private static func handler(_ context: WaylandClientListenerContext)
-        -> any WlShellSurfaceEvents?
-    {
+package extension WlShellSurfaceClient {
+    nonisolated(unsafe) static let listener: UnsafeMutablePointer<wl_shell_surface_listener> = {
+        let p = UnsafeMutablePointer<wl_shell_surface_listener>.allocate(capacity: 1)
+        unsafe p.initialize(to: wl_shell_surface_listener())
+        unsafe p.pointee.ping = ping_impl
+        unsafe p.pointee.configure = configure_impl
+        unsafe p.pointee.popup_done = popupDone_impl
+        return unsafe p
+    }()
+    private static func handler(_ context: WaylandClientListenerContext) -> any WlShellSurfaceEvents? {
         context.owner as? any WlShellSurfaceEvents
     }
-    private static let ping_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = {
-            data, proxy, serial in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.ping(
-                    WaylandBorrowedProxy<WlShellSurfaceClient>(eventProxy), serial: serial)
-            }
+    private static let ping_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32) -> Void = { data, proxy, serial in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
         }
-    private static let configure_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, Int32, Int32) -> Void = {
-            data, proxy, edges, width, height in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.configure(
-                    WaylandBorrowedProxy<WlShellSurfaceClient>(eventProxy),
-                    edges: WlShellSurfaceResize(rawValue: edges), width: width, height: height)
-            }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
         }
-    private static let popupDone_impl:
-        @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
-            guard let data = unsafe data, let proxy = unsafe proxy else {
-                return
-            }
-            let listenerContext = unsafe WaylandClientListenerContext.recover(data)
-            guard let h = handler(listenerContext) else {
-                return
-            }
-            nonisolated(unsafe) let eventHandler = h
-            nonisolated(unsafe) let eventProxy = unsafe proxy
-            nonisolated(unsafe) let eventContext = listenerContext
-            MainActor.assumeIsolated {
-                unsafe eventHandler.popupDone(
-                    WaylandBorrowedProxy<WlShellSurfaceClient>(eventProxy))
-            }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.ping(WaylandBorrowedProxy<WlShellSurfaceClient>(eventProxy), serial: serial)
         }
+    }
+    private static let configure_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?, UInt32, Int32, Int32) -> Void = { data, proxy, edges, width, height in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.configure(WaylandBorrowedProxy<WlShellSurfaceClient>(eventProxy), edges: WlShellSurfaceResize(rawValue: edges), width: width, height: height)
+        }
+    }
+    private static let popupDone_impl: @convention(c) (UnsafeMutableRawPointer?, OpaquePointer?) -> Void = { data, proxy in
+        guard let data = unsafe data, let proxy = unsafe proxy else {
+            return
+        }
+        let listenerContext = unsafe WaylandClientListenerContext.recover(data)
+        guard let h = handler(listenerContext) else {
+            return
+        }
+        nonisolated(unsafe) let eventHandler = h
+        nonisolated(unsafe) let eventProxy = unsafe proxy
+        nonisolated(unsafe) let eventContext = listenerContext
+        MainActor.assumeIsolated {
+            unsafe eventHandler.popupDone(WaylandBorrowedProxy<WlShellSurfaceClient>(eventProxy))
+        }
+    }
 }
-extension WaylandProxy where Interface == WlShellSurfaceClient {
-    package func installListener(_ owner: any WlShellSurfaceEvents) throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WlShellSurfaceClient {
+    func installListener(_ owner: any WlShellSurfaceEvents) throws(WaylandProxyError) {
         try unsafe installListener(owner: owner) { proxy, data in
             unsafe wl_shell_surface_add_listener(proxy, WlShellSurfaceClient.listener, data)
         }

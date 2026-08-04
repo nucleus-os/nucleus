@@ -920,7 +920,9 @@ public enum SwiftTargetSDKColliderRecipe {
                     validation: .regularFile)
             ],
             postconditions: [
-                PathPostcondition(path: configuration.active, validation: .exists)
+                PathPostcondition(
+                    path: configuration.active,
+                    validation: .symlinkTarget)
             ],
             cachePolicy: .always,
             operation: .activateGeneration(
@@ -946,7 +948,7 @@ public enum SwiftTargetSDKColliderRecipe {
                     inputs: [.dependencyOutput(activation.outputs[0].path)],
                     outputs: [],
                     postconditions: [
-                        PathPostcondition(path: link, validation: .exists)
+                        PathPostcondition(path: link, validation: .symlinkTarget)
                     ],
                     cachePolicy: .always,
                     operation: .publishSymlink(

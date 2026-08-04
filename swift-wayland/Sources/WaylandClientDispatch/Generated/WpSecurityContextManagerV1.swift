@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for wp_security_context_manager_v1.
 
 import WaylandClientC
-
 package enum WpSecurityContextManagerV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_wp_security_context_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == WpSecurityContextManagerV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == WpSecurityContextManagerV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_wp_security_context_manager_v1_destroy(_proxy)
@@ -18,10 +17,7 @@ extension WaylandProxy where Interface == WpSecurityContextManagerV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func createListener(
-        listen_fd: consuming WaylandClientOwnedFileDescriptor,
-        close_fd: consuming WaylandClientOwnedFileDescriptor
-    ) throws(WaylandProxyError) -> WaylandProxy<WpSecurityContextV1Client> {
+    func createListener(listen_fd: consuming WaylandClientOwnedFileDescriptor, close_fd: consuming WaylandClientOwnedFileDescriptor) throws(WaylandProxyError) -> WaylandProxy<WpSecurityContextV1Client> {
         let _proxy = try unsafe requireNativeProxy()
         let _listen_fdDescriptor = listen_fd.take()
         defer {
@@ -33,11 +29,7 @@ extension WaylandProxy where Interface == WpSecurityContextManagerV1Client {
             WaylandClientOwnedFileDescriptor.closeTransferred(
                 _close_fdDescriptor)
         }
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_wp_security_context_manager_v1_create_listener(
-                    _proxy, _listen_fdDescriptor, _close_fdDescriptor)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_wp_security_context_manager_v1_create_listener(_proxy, _listen_fdDescriptor, _close_fdDescriptor) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

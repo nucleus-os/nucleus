@@ -1,9 +1,34 @@
 import ColliderCore
+import ContainerAPIClient
+import ContainerBuild
 import Foundation
 import SystemPackage
 
 extension ColliderRuntime {
     func prepareOCIImage(
+        _ preparation: OCIImagePreparation,
+        stage: TaskID
+    ) async throws {
+        let suspension = AppleContainerSuspension(
+            client: ContainerClient(),
+            name: Builder.builderContainerId)
+        do {
+            try await prepareOCIImageKeepingBuilder(preparation, stage: stage)
+        } catch {
+            let preparationError = error
+            do {
+                try await suspension.stopAndVerify()
+            } catch {
+                throw OCIExecutorFailure.containerBuilderReleaseFailed(
+                    operation: String(describing: preparationError),
+                    cleanup: String(describing: error))
+            }
+            throw preparationError
+        }
+        try await suspension.stopAndVerify()
+    }
+
+    private func prepareOCIImageKeepingBuilder(
         _ preparation: OCIImagePreparation,
         stage: TaskID
     ) async throws {

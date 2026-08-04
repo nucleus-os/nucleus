@@ -44,8 +44,6 @@ public enum TracyColliderRecipe {
             swiftTests: [requirement],
             locks: [.checkout("tracy")],
             cachePolicy: .always,
-            operation: .runSwiftTest(
-                SwiftTestExecution(
-                    requirement: requirement)))
+            operation: .sequence([]))
     }
 }

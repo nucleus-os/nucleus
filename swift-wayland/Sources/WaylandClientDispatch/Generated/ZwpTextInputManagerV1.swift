@@ -2,20 +2,15 @@
 // Typed client descriptor and event dispatch for zwp_text_input_manager_v1.
 
 import WaylandClientC
-
 package enum ZwpTextInputManagerV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_zwp_text_input_manager_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == ZwpTextInputManagerV1Client {
-    package func createTextInput() throws(WaylandProxyError) -> WaylandProxy<ZwpTextInputV1Client> {
+package extension WaylandProxy where Interface == ZwpTextInputManagerV1Client {
+    func createTextInput() throws(WaylandProxyError) -> WaylandProxy<ZwpTextInputV1Client> {
         let _proxy = try unsafe requireNativeProxy()
-        guard
-            let _created =
-                unsafe swift_wayland_client_request_zwp_text_input_manager_v1_create_text_input(
-                    _proxy)
-        else {
+        guard let _created = unsafe swift_wayland_client_request_zwp_text_input_manager_v1_create_text_input(_proxy) else {
             throw WaylandProxyError.proxyCreationFailed
         }
         return unsafe makeOwnedProxy(

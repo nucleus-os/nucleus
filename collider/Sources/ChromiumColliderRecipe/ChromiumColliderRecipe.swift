@@ -209,7 +209,7 @@ public enum ChromiumColliderRecipe {
             outputs: [
                 OutputDeclaration(
                     path: cefDistribution.appending("current"),
-                    validation: .exists)
+                    validation: .symlinkTarget)
             ],
             locks: [
                 .shared(cache.appending("locks/cef-output.lock")),
@@ -246,7 +246,7 @@ public enum ChromiumColliderRecipe {
             outputs: [
                 OutputDeclaration(
                     path: browserDistribution.appending("current"),
-                    validation: .exists)
+                    validation: .symlinkTarget)
             ],
             locks: [
                 .shared(cache.appending("locks/browser-output.lock")),

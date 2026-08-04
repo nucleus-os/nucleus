@@ -2,14 +2,13 @@
 // Typed client descriptor and event dispatch for xdg_system_bell_v1.
 
 import WaylandClientC
-
 package enum XdgSystemBellV1Client: WaylandClientInterface {
     package nonisolated static let descriptor = unsafe WaylandClientInterfaceDescriptor(
         nativeInterface: swift_wayland_iface_xdg_system_bell_v1())
     package nonisolated static let maximumVersion: UInt32 = 1
 }
-extension WaylandProxy where Interface == XdgSystemBellV1Client {
-    package func destroy() throws(WaylandProxyError) {
+package extension WaylandProxy where Interface == XdgSystemBellV1Client {
+    func destroy() throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _send = { () throws(WaylandProxyError) -> Void in
             unsafe swift_wayland_client_request_xdg_system_bell_v1_destroy(_proxy)
@@ -18,7 +17,7 @@ extension WaylandProxy where Interface == XdgSystemBellV1Client {
         try _send()
         try unsafe invalidateAfterProtocolDestructor()
     }
-    package func ring(surface: WaylandProxy<WlSurfaceClient>?) throws(WaylandProxyError) {
+    func ring(surface: WaylandProxy<WlSurfaceClient>?) throws(WaylandProxyError) {
         let _proxy = try unsafe requireNativeProxy()
         let _surfaceProxy = try unsafe surface?.requireNativeProxy()
         unsafe swift_wayland_client_request_xdg_system_bell_v1_ring(_proxy, _surfaceProxy)

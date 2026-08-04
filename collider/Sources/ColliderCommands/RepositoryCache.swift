@@ -257,10 +257,12 @@ struct RepositoryCache {
                 id: "native-sdk",
                 owner: "native-sdk-publishers",
                 storageClass: .published,
-                root: FilePath(context.nativeSDKRoot.path),
-                safetyRoot: FilePath(context.nativeSDKRoot.path),
+                root: FilePath(
+                    context.nativeSDKRoot.deletingLastPathComponent().path),
+                safetyRoot: FilePath(
+                    context.nativeSDKRoot.deletingLastPathComponent().path),
                 cleanupPolicy: .protected,
-                retention: "validated active target SDKs remain published"),
+                retention: "validated per-target SDKs remain published"),
             StorageDeclaration(
                 id: "swift-target-sdk-generations",
                 owner: "swift-target-sdk",
