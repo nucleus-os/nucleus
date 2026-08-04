@@ -138,10 +138,11 @@ public enum WaylandColliderRecipe: ColliderComponent {
             locks: [.checkout("wayland-native-\(target.identifier)")],
             assessmentPolicy: .incremental,
             operation: .sequence([
-                .removePath(build),
-                .removePath(sdk),
-                .createDirectory(build),
-                .createDirectory(sdk),
+                .action(
+                    try AnyColliderAction(
+                        PrepareWaylandNativeBuildAction(
+                            build: build,
+                            sdk: sdk))),
                 nativeOperation(
                     root: root,
                     source: source,
@@ -240,10 +241,14 @@ public enum WaylandColliderRecipe: ColliderComponent {
                 builder: builder,
                 arguments: scannerArguments,
                 environment: environment))
-        operations += [
-            .removePath(server.appending("generated-protocols.tsv")),
-            .removePath(client.appending("generated-protocols.tsv")),
-        ]
+        operations.append(
+            .action(
+                try AnyColliderAction(
+                    FinalizeWaylandGenerationAction(
+                        manifests: [
+                            server.appending("generated-protocols.tsv"),
+                            client.appending("generated-protocols.tsv"),
+                        ]))))
         var task = TaskBuilder(
             id: TaskID(rawValue: "wayland.generate"),
             component: ComponentID(rawValue: "wayland"))
@@ -279,6 +284,70 @@ public enum WaylandColliderRecipe: ColliderComponent {
             locks: [.checkout("wayland")],
             operation: .sequence(operations)
         ).addingDependencies([NativeBuilderTaskIDs.prepare])
+    }
+}
+
+private struct PrepareWaylandNativeBuildAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let build: FilePath
+        let sdk: FilePath
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: build.string)
+            encoder.append(tag: 2, string: sdk.string)
+        }
+    }
+
+    static let kind: ActionKind = "wayland.prepare-native-build"
+
+    let build: FilePath
+    let sdk: FilePath
+
+    var identity: Identity { Identity(build: build, sdk: sdk) }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(effects: [
+            ActionEffect(.readWrite, scope: .scratch(build)),
+            ActionEffect(.readWrite, scope: .output(sdk)),
+        ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        try context.files.remove(build)
+        try context.files.remove(sdk)
+        try context.files.createDirectory(build)
+        try context.files.createDirectory(sdk)
+    }
+}
+
+private struct FinalizeWaylandGenerationAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let manifests: [FilePath]
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(
+                tag: 1,
+                string: manifests.map(\.string).joined(separator: "\u{0}"))
+        }
+    }
+
+    static let kind: ActionKind = "wayland.finalize-generation"
+
+    let manifests: [FilePath]
+
+    var identity: Identity { Identity(manifests: manifests) }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            effects: manifests.map {
+                ActionEffect(.write, scope: .output($0))
+            })
+    }
+
+    func execute(in context: ActionContext) async throws {
+        for manifest in manifests {
+            try context.files.remove(manifest)
+        }
     }
 }
 

@@ -117,7 +117,9 @@ private func inertActionFileSystem() -> ActionFileSystem {
         validation: .json)
     let result: TaskResultReference<FixtureResult> = try producer.result("result")
     let producerTask = producer.build(
-        operation: .writeFile(artifact.path, bytes: Array("{}".utf8)))
+        operation: try fixtureWriteOperation(
+            artifact.path,
+            bytes: Array("{}".utf8)))
 
     var consumer = TaskBuilder(
         id: TaskID(rawValue: "fixture.consumer"),
@@ -125,7 +127,7 @@ private func inertActionFileSystem() -> ActionFileSystem {
     consumer.consume(artifact)
     consumer.consume(result)
     let consumerTask = consumer.build(
-        operation: .createDirectory(FilePath("/tmp/fixture/consumer")))
+        operation: try fixtureCreateDirectoryOperation(FilePath("/tmp/fixture/consumer")))
 
     let graph = try TaskGraph([producerTask, consumerTask])
     #expect(
@@ -146,13 +148,13 @@ private func inertActionFileSystem() -> ActionFileSystem {
     let replacementProducer = TaskDeclaration(
         id: declaredProducer.id,
         component: ComponentID(rawValue: "fixture"),
-        operation: .createDirectory(FilePath("/tmp/fixture/replacement")))
+        operation: try fixtureCreateDirectoryOperation(FilePath("/tmp/fixture/replacement")))
     var consumer = TaskBuilder(
         id: TaskID(rawValue: "fixture.consumer"),
         component: ComponentID(rawValue: "fixture"))
     consumer.consume(reference)
     let consumerTask = consumer.build(
-        operation: .createDirectory(FilePath("/tmp/fixture/consumer")))
+        operation: try fixtureCreateDirectoryOperation(FilePath("/tmp/fixture/consumer")))
 
     #expect(throws: TaskGraphFailure.self) {
         _ = try TaskGraph([replacementProducer, consumerTask])
@@ -183,7 +185,7 @@ private func inertActionFileSystem() -> ActionFileSystem {
     let anchor = TaskDeclaration(
         id: anchorID,
         component: component,
-        operation: .createDirectory(root.appending("anchor")))
+        operation: try fixtureCreateDirectoryOperation(root.appending("anchor")))
 
     func consumer(
         after ordering: TaskOrderingReference?,
@@ -193,7 +195,7 @@ private func inertActionFileSystem() -> ActionFileSystem {
         if let ordering { builder.after(ordering) }
         return builder.build(
             assessmentPolicy: policy,
-            operation: .createDirectory(root.appending("consumer")))
+            operation: try fixtureCreateDirectoryOperation(root.appending("consumer")))
     }
 
     func identity(

@@ -17,7 +17,9 @@ import Testing
         outputs: [
             OutputDeclaration(path: link, validation: .symlinkTarget)
         ],
-        operation: .replaceSymlink(path: link, target: "missing-target"))
+        operation: try fixtureReplaceSymlinkOperation(
+            path: link,
+            target: "missing-target"))
 
     await #expect(throws: (any Error).self) {
         _ = try await ColliderRuntime().execute(
@@ -43,8 +45,8 @@ import Testing
                 validation: .nonEmptyDirectory)
         ],
         operation: .sequence([
-            .createDirectory(shared),
-            .writeFile(marker, bytes: Array("ready".utf8)),
+            try fixtureCreateDirectoryOperation(shared),
+            try fixtureWriteOperation(marker, bytes: Array("ready".utf8)),
         ]))
     let runtime = ColliderRuntime()
     let state = FilePath(directory.appendingPathComponent("state").path)

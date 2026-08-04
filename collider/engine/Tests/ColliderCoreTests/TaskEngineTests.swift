@@ -128,8 +128,7 @@ private struct ParallelismProbeAction: ColliderAction {
         id: TaskID(rawValue: "fixture.test"),
         component: ComponentID(rawValue: "fixture"),
         swiftTests: [requirement],
-        operation: .runSwiftTest(
-            SwiftTestExecution(requirement: requirement)))
+        operation: .sequence([]))
     let build = TaskID(rawValue: "swift.package.test.fixture")
     let secondBuild = TaskID(rawValue: "swift.package.build.fixture")
     let buildsByContext = [context: Set([build, secondBuild])]
@@ -159,7 +158,7 @@ private struct ParallelismProbeAction: ColliderAction {
     let selected = TaskDeclaration(
         id: TaskID(rawValue: "fixture.selected"),
         component: ComponentID(rawValue: "fixture"),
-        operation: .createDirectory(root.appending("selected")))
+        operation: try fixtureCreateDirectoryOperation(root.appending("selected")))
     let unselected = TaskDeclaration(
         id: TaskID(rawValue: "fixture.unselected"),
         component: ComponentID(rawValue: "fixture"),
@@ -758,7 +757,7 @@ private struct ParallelismProbeAction: ColliderAction {
         outputs: [
             OutputDeclaration(path: output, validation: .regularFile)
         ],
-        operation: .writeFile(output, bytes: Array("payload\n".utf8)))
+        operation: try fixtureWriteOperation(output, bytes: Array("payload\n".utf8)))
     let report = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],
@@ -876,12 +875,12 @@ private struct ParallelismProbeAction: ColliderAction {
                 path: preparationOutput,
                 validation: .regularFile)
         ],
-        operation: .writeFile(preparationOutput, bytes: Array("ready".utf8)))
+        operation: try fixtureWriteOperation(preparationOutput, bytes: Array("ready".utf8)))
     let build = TaskDeclaration(
         id: TaskID(rawValue: "fixture.build"),
         component: ComponentID(rawValue: "fixture"),
         dependencies: [preparation.id],
-        operation: .writeFile(buildOutput, bytes: Array("redundant".utf8)))
+        operation: try fixtureWriteOperation(buildOutput, bytes: Array("redundant".utf8)))
     let test = TaskDeclaration(
         id: TaskID(rawValue: "fixture.test"),
         component: ComponentID(rawValue: "fixture"),
@@ -890,7 +889,7 @@ private struct ParallelismProbeAction: ColliderAction {
         outputs: [
             OutputDeclaration(path: testOutput, validation: .regularFile)
         ],
-        operation: .writeFile(testOutput, bytes: Array("tested".utf8)))
+        operation: try fixtureWriteOperation(testOutput, bytes: Array("tested".utf8)))
     let graph = try TaskGraph([preparation, build, test])
     let runtime = ColliderRuntime()
     let state = root.appending("state")
@@ -925,18 +924,18 @@ private struct ParallelismProbeAction: ColliderAction {
         outputs: [
             OutputDeclaration(path: buildOutput, validation: .regularFile)
         ],
-        operation: .writeFile(buildOutput, bytes: Array("built".utf8)))
+        operation: try fixtureWriteOperation(buildOutput, bytes: Array("built".utf8)))
     let superset = TaskDeclaration(
         id: TaskID(rawValue: "fixture.superset"),
         component: ComponentID(rawValue: "fixture"),
         dependencies: [build.id],
         subsumedDependencies: [build.id],
-        operation: .createDirectory(root.appending("superset")))
+        operation: try fixtureCreateDirectoryOperation(root.appending("superset")))
     let consumer = TaskDeclaration(
         id: TaskID(rawValue: "fixture.consumer"),
         component: ComponentID(rawValue: "fixture"),
         dependencies: [build.id],
-        operation: .createDirectory(root.appending("consumer")))
+        operation: try fixtureCreateDirectoryOperation(root.appending("consumer")))
 
     let report = try await ColliderRuntime().execute(
         graph: TaskGraph([build, superset, consumer]),
@@ -1135,9 +1134,8 @@ private struct ParallelismProbeAction: ColliderAction {
             OutputDeclaration(path: payload, validation: .regularFile)
         ],
         operation: .sequence([
-            .removePath(candidate),
-            .createDirectory(candidate),
-            .writeFile(payload, bytes: Array("fresh".utf8)),
+            try fixturePrepareDirectoryOperation(candidate),
+            try fixtureWriteOperation(payload, bytes: Array("fresh".utf8)),
         ]))
 
     let report = try await ColliderRuntime().execute(
@@ -1207,285 +1205,6 @@ private struct ParallelismProbeAction: ColliderAction {
     #expect(report.executed == [task.id])
 }
 
-@Test func linkMetadataSanitizationRemovesForbiddenAndroidHostFlags() async throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-link-metadata-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let metadata = directory.appendingPathComponent(
-        "usr/lib/pkgconfig/fixture.pc")
-    try FileManager.default.createDirectory(
-        at: metadata.deletingLastPathComponent(),
-        withIntermediateDirectories: true)
-    try Data(
-        "Libs: -lfixture $<LINK_ONLY:-pthread> -pthread\n".utf8
-    ).write(to: metadata)
-    let task = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.sanitize-link-metadata"),
-        component: ComponentID(rawValue: "fixture"),
-        outputs: [
-            OutputDeclaration(
-                path: FilePath(metadata.path),
-                validation: .regularFile)
-        ],
-        operation: .sanitizeLinkMetadata(
-            LinkMetadataSanitization(
-                root: FilePath(directory.path),
-                removedLinkerOptions: ["-pthread"])))
-    _ = try await ColliderRuntime().execute(
-        graph: TaskGraph([task]),
-        selected: [task.id],
-        stateRoot: FilePath(directory.appendingPathComponent("state").path))
-    let contents = try String(contentsOf: metadata, encoding: .utf8)
-    #expect(contents.contains("-lfixture"))
-    #expect(!contents.contains("-pthread"))
-    #expect(!contents.contains("LINK_ONLY"))
-}
-
-@Test func linkMetadataSanitizationRepairsCachedCMakeDependencyLookups() async throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-cmake-dependency-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let metadata = directory.appendingPathComponent(
-        "usr/lib/cmake/CURL/CURLConfig.cmake")
-    let targets = directory.appendingPathComponent(
-        "usr/lib/cmake/CURL/CURLTargets.cmake")
-    try FileManager.default.createDirectory(
-        at: metadata.deletingLastPathComponent(),
-        withIntermediateDirectories: true)
-    try Data(
-        """
-        include(CMakeFindDependencyMacro)
-        find_dependency(OpenSSL "3")
-        include(CURLTargets.cmake)
-        """.utf8
-    ).write(to: metadata)
-    try Data(
-        "INTERFACE_LINK_LIBRARIES \"\\;OpenSSL::SSL\"\n".utf8
-    ).write(to: targets)
-    let task = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.repair-cmake-dependency"),
-        component: ComponentID(rawValue: "fixture"),
-        outputs: [
-            OutputDeclaration(
-                path: FilePath(metadata.path),
-                validation: .regularFile)
-        ],
-        operation: .sanitizeLinkMetadata(
-            LinkMetadataSanitization(
-                root: FilePath(directory.path),
-                removedLinkerOptions: [],
-                cmakeDependencyRepairs: [
-                    CMakeDependencyRepair(
-                        configurationFileName: "CURLConfig.cmake",
-                        package: "OpenSSL",
-                        version: "3",
-                        configurationOnly: true)
-                ],
-                replacements: [
-                    LinkMetadataReplacement(
-                        fileName: "CURLTargets.cmake",
-                        original: "OpenSSL::SSL",
-                        replacement: "${_IMPORT_PREFIX}/lib/libssl.a"),
-                    LinkMetadataReplacement(
-                        fileName: "CURLTargets.cmake",
-                        original: "INTERFACE_LINK_LIBRARIES \"\\;",
-                        replacement: "INTERFACE_LINK_LIBRARIES \""),
-                ])))
-    _ = try await ColliderRuntime().execute(
-        graph: TaskGraph([task]),
-        selected: [task.id],
-        stateRoot: FilePath(directory.appendingPathComponent("state").path))
-    let contents = try String(contentsOf: metadata, encoding: .utf8)
-    #expect(contents.contains("find_package(OpenSSL 3 REQUIRED CONFIG)"))
-    #expect(!contents.contains("find_dependency(OpenSSL"))
-    #expect(
-        try String(contentsOf: targets, encoding: .utf8)
-            .contains("${_IMPORT_PREFIX}/lib/libssl.a"))
-    #expect(
-        try String(contentsOf: targets, encoding: .utf8)
-            .contains("INTERFACE_LINK_LIBRARIES \"${_IMPORT_PREFIX}"))
-    _ = try await ColliderRuntime().execute(
-        graph: TaskGraph([task]),
-        selected: [task.id],
-        stateRoot: FilePath(
-            directory.appendingPathComponent("retry-state").path))
-    try Data(
-        "find_package(OpenSSL 3 REQUIRED)\n".utf8
-    ).write(to: metadata)
-    _ = try await ColliderRuntime().execute(
-        graph: TaskGraph([task]),
-        selected: [task.id],
-        stateRoot: FilePath(
-            directory.appendingPathComponent("migration-state").path))
-    #expect(
-        try String(contentsOf: metadata, encoding: .utf8)
-            .contains("find_package(OpenSSL 3 REQUIRED CONFIG)"))
-}
-
-@Test func changedCMakeDependencyRepairInvalidatesPriorTaskState() async throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-cmake-repair-identity-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let metadata = directory.appendingPathComponent(
-        "usr/lib/cmake/CURL/CURLConfig.cmake")
-    try FileManager.default.createDirectory(
-        at: metadata.deletingLastPathComponent(),
-        withIntermediateDirectories: true)
-    let state = FilePath(directory.appendingPathComponent("state").path)
-
-    func task(version: String) -> TaskDeclaration {
-        TaskDeclaration(
-            id: TaskID(rawValue: "fixture.cmake-repair-identity"),
-            component: ComponentID(rawValue: "fixture"),
-            outputs: [
-                OutputDeclaration(
-                    path: FilePath(metadata.path),
-                    validation: .regularFile)
-            ],
-            operation: .sanitizeLinkMetadata(
-                LinkMetadataSanitization(
-                    root: FilePath(directory.path),
-                    removedLinkerOptions: [],
-                    cmakeDependencyRepairs: [
-                        CMakeDependencyRepair(
-                            configurationFileName: "CURLConfig.cmake",
-                            package: "OpenSSL",
-                            version: version)
-                    ])))
-    }
-
-    try Data("find_dependency(OpenSSL \"3\")\n".utf8).write(to: metadata)
-    let runtime = ColliderRuntime()
-    _ = try await runtime.execute(
-        graph: TaskGraph([task(version: "3")]),
-        selected: [task(version: "3").id],
-        stateRoot: state)
-    try Data("find_dependency(OpenSSL \"4\")\n".utf8).write(to: metadata)
-    let changed = task(version: "4")
-    let report = try await runtime.execute(
-        graph: TaskGraph([changed]),
-        selected: [changed.id],
-        stateRoot: state)
-    #expect(report.executed == [changed.id])
-    #expect(report.plan[0].explanation.hasPrefix("input identity changed "))
-}
-
-@Test func symlinkPublicationPreservesADisplacedMutableInstallation() async throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-symlink-publication-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let link = directory.appendingPathComponent("active")
-    let displaced = directory.appendingPathComponent("legacy-active")
-    try FileManager.default.createDirectory(
-        at: link, withIntermediateDirectories: true)
-    try Data("legacy".utf8).write(
-        to: link.appendingPathComponent("payload"))
-    let task = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.publish-symlink"),
-        component: ComponentID(rawValue: "fixture"),
-        outputs: [
-            OutputDeclaration(
-                path: FilePath(link.path),
-                validation: .exists)
-        ],
-        operation: .publishSymlink(
-            SymlinkPublication(
-                path: FilePath(link.path),
-                target: "/immutable/generation",
-                displacedItem: FilePath(displaced.path))))
-    _ = try await ColliderRuntime().execute(
-        graph: TaskGraph([task]),
-        selected: [task.id],
-        stateRoot: FilePath(directory.appendingPathComponent("state").path))
-    #expect(
-        try FileManager.default.destinationOfSymbolicLink(
-            atPath: link.path) == "/immutable/generation")
-    #expect(
-        try String(
-            contentsOf: displaced.appendingPathComponent("payload"),
-            encoding: .utf8) == "legacy")
-}
-
-@Test func symlinkPublicationAtomicallyReplacesAnExistingLink() async throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-symlink-replacement-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let previous = directory.appendingPathComponent("previous")
-    let replacement = directory.appendingPathComponent("replacement")
-    let link = directory.appendingPathComponent("active")
-    let displaced = directory.appendingPathComponent("displaced")
-    for path in [previous, replacement] {
-        try FileManager.default.createDirectory(
-            at: path, withIntermediateDirectories: true)
-    }
-    try FileManager.default.createSymbolicLink(
-        atPath: link.path,
-        withDestinationPath: previous.lastPathComponent)
-    let task = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.replace-symlink"),
-        component: ComponentID(rawValue: "fixture"),
-        outputs: [
-            OutputDeclaration(path: FilePath(link.path), validation: .exists)
-        ],
-        assessmentPolicy: .always,
-        operation: .publishSymlink(
-            SymlinkPublication(
-                path: FilePath(link.path),
-                target: replacement.lastPathComponent,
-                displacedItem: FilePath(displaced.path))))
-
-    _ = try await ColliderRuntime().execute(
-        graph: TaskGraph([task]),
-        selected: [task.id],
-        stateRoot: FilePath(directory.appendingPathComponent("state").path))
-
-    #expect(
-        try FileManager.default.destinationOfSymbolicLink(atPath: link.path)
-            == replacement.lastPathComponent)
-    #expect(!FileManager.default.fileExists(atPath: displaced.path))
-    let previousEntries = try FileManager.default.contentsOfDirectory(
-        atPath: previous.path)
-    #expect(previousEntries.isEmpty)
-}
-
-@Test func directoryPublicationAtomicallyReplacesThePreviousGeneration() async throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-directory-publication-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let prepared = directory.appendingPathComponent("prepared")
-    let destination = directory.appendingPathComponent("destination")
-    for path in [prepared, destination] {
-        try FileManager.default.createDirectory(
-            at: path, withIntermediateDirectories: true)
-    }
-    try Data("new".utf8).write(
-        to: prepared.appendingPathComponent("payload"))
-    try Data("old".utf8).write(
-        to: destination.appendingPathComponent("payload"))
-    let task = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.publish-directory"),
-        component: ComponentID(rawValue: "fixture"),
-        outputs: [
-            OutputDeclaration(
-                path: FilePath(destination.path),
-                validation: .nonEmptyDirectory)
-        ],
-        assessmentPolicy: .always,
-        operation: .publishDirectory(
-            DirectoryPublication(
-                prepared: FilePath(prepared.path),
-                destination: FilePath(destination.path))))
-    _ = try await ColliderRuntime().execute(
-        graph: TaskGraph([task]),
-        selected: [task.id],
-        stateRoot: FilePath(directory.appendingPathComponent("state").path))
-    #expect(
-        try String(
-            contentsOf: destination.appendingPathComponent("payload"),
-            encoding: .utf8) == "new")
-    #expect(!FileManager.default.fileExists(atPath: prepared.path))
-}
-
 @Test func directoryRetentionKeepsNewestAndCurrentContentIdentities() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-directory-retention-\(UUID().uuidString)")
@@ -1514,7 +1233,7 @@ private struct ParallelismProbeAction: ColliderAction {
         id: TaskID(rawValue: "fixture.prune-directories"),
         component: ComponentID(rawValue: "fixture"),
         assessmentPolicy: .always,
-        operation: .pruneDirectories(
+        operation: try fixturePruneDirectoriesOperation(
             DirectoryRetentionPlan(
                 safetyRoot: FilePath(directory.path),
                 rules: [
@@ -1558,7 +1277,7 @@ private struct ParallelismProbeAction: ColliderAction {
         id: TaskID(rawValue: "fixture.prune-swift-sdk-candidates"),
         component: ComponentID(rawValue: "fixture"),
         assessmentPolicy: .always,
-        operation: .pruneDirectories(
+        operation: try fixturePruneDirectoriesOperation(
             DirectoryRetentionPlan(
                 safetyRoot: FilePath(directory.path),
                 rules: [
@@ -1845,61 +1564,6 @@ private struct ParallelismProbeAction: ColliderAction {
         try FileManager.default.destinationOfSymbolicLink(
             atPath: distribution.appendingPathComponent("current").path)
             == "generations/\(buildID)")
-}
-
-@Test func aptPackageValidationReportsTheUserOwnedInstallCommand() async throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-apt-validation-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let tools = directory.appendingPathComponent("tools")
-    try FileManager.default.createDirectory(
-        at: tools, withIntermediateDirectories: true)
-    let query = tools.appendingPathComponent("dpkg-query")
-    try Data(
-        """
-        #!/bin/sh
-        case "$3" in
-          installed) printf 'ii ' ;;
-          *) exit 1 ;;
-        esac
-        """.utf8
-    ).write(to: query)
-    try FileManager.default.setAttributes(
-        [.posixPermissions: 0o755], ofItemAtPath: query.path)
-    let packages = directory.appendingPathComponent("apt-deps.txt")
-    try Data(
-        """
-        # Package-list documentation is not a package.
-        installed # Inline comments are also ignored.
-        missing
-        """.utf8
-    ).write(to: packages)
-    let task = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.validate-apt-packages"),
-        component: ComponentID(rawValue: "fixture"),
-        assessmentPolicy: .always,
-        operation: .validateAptPackages(
-            AptPackageValidation(
-                packageList: FilePath(packages.path),
-                environment: ["PATH": tools.path])))
-    do {
-        _ = try await ColliderRuntime().execute(
-            graph: TaskGraph([task]),
-            selected: [task.id],
-            stateRoot: FilePath(directory.appendingPathComponent("state").path))
-        Issue.record("missing apt package unexpectedly passed validation")
-    } catch {
-        let description = String(describing: error)
-        #expect(
-            description.contains(
-                "sudo apt-get install -y missing"))
-        #expect(
-            !description.contains(
-                "sudo apt-get install -y installed"))
-        #expect(
-            !description.contains(
-                "sudo apt-get install -y Package-list"))
-    }
 }
 
 @Test func cefArtifactAssemblyPublishesSDKAndChecksummedArchive() async throws {

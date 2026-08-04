@@ -300,7 +300,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             runtimes: runtimes)
         let validation = try validationTask(configuration, assembly: assembly)
         let activation = try activationTask(configuration, validation: validation)
-        let discoveries = discoveryTasks(configuration, activation: activation)
+        let discoveries = try discoveryTasks(configuration, activation: activation)
 
         let tasks =
             downloads.tasks
@@ -626,10 +626,12 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             locks: [.checkout("swift-linux-\(architecture.rawValue)-runtime")],
             assessmentPolicy: .incremental,
             operation: .sequence([
-                .removePath(target.runtimeInstall),
-                .createDirectory(target.runtimeInstall),
-                .createDirectory(target.runtimeBuildWorkspace),
-                .createDirectory(target.runtimeCompilerCache),
+                .action(
+                    try AnyColliderAction(
+                        PrepareSwiftRuntimeBuildAction(
+                            install: target.runtimeInstall,
+                            workspace: target.runtimeBuildWorkspace,
+                            compilerCache: target.runtimeCompilerCache))),
                 .runOCI(
                     OCIExecution(
                         executionPlatform: .linuxARM64OCI,
@@ -937,8 +939,8 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
     private static func discoveryTasks(
         _ configuration: SwiftTargetSDKGenerationConfiguration,
         activation: ActivationArtifact
-    ) -> [TaskDeclaration] {
-        [configuration.inputs.linuxBundleID, configuration.inputs.androidBundleID]
+    ) throws -> [TaskDeclaration] {
+        try [configuration.inputs.linuxBundleID, configuration.inputs.androidBundleID]
             .map { bundleID in
                 let name = "\(bundleID).artifactbundle"
                 let link = configuration.sdkDiscoveryRoot.appending(name)
@@ -953,11 +955,12 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                         PathPostcondition(path: link, validation: .symlinkTarget)
                     ],
                     assessmentPolicy: .always,
-                    operation: .publishSymlink(
-                        SymlinkPublication(
-                            path: link,
-                            target: target.string,
-                            displacedItem: configuration.displacedRoot.appending(name))))
+                    operation: .action(
+                        try AnyColliderAction(
+                            PublishSwiftSDKDiscoveryAction(
+                                path: link,
+                                target: target.string,
+                                displacedItem: configuration.displacedRoot.appending(name)))))
             }
     }
 
@@ -975,6 +978,114 @@ private struct SwiftSDKAssemblyTarget: Hashable, Sendable {
     let triple: String
     let runtimeInstall: FilePath
     let packages: [FilePath]
+}
+
+private struct PrepareSwiftRuntimeBuildAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let install: FilePath
+        let workspace: FilePath
+        let compilerCache: FilePath
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: install.string)
+            encoder.append(tag: 2, string: workspace.string)
+            encoder.append(tag: 3, string: compilerCache.string)
+        }
+    }
+
+    static let kind: ActionKind = "swift-sdk.prepare-runtime-build"
+
+    let install: FilePath
+    let workspace: FilePath
+    let compilerCache: FilePath
+
+    var identity: Identity {
+        Identity(
+            install: install,
+            workspace: workspace,
+            compilerCache: compilerCache)
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(effects: [
+            ActionEffect(.readWrite, scope: .output(install)),
+            ActionEffect(.write, scope: .scratch(workspace)),
+            ActionEffect(.write, scope: .scratch(compilerCache)),
+        ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        try context.files.remove(install)
+        try context.files.createDirectory(install)
+        try context.files.createDirectory(workspace)
+        try context.files.createDirectory(compilerCache)
+    }
+}
+
+package struct PublishSwiftSDKDiscoveryAction: ColliderAction {
+    package struct Identity: ColliderActionIdentity {
+        let path: FilePath
+        let target: String
+        let displacedItem: FilePath
+
+        package func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: path.string)
+            encoder.append(tag: 2, string: target)
+            encoder.append(tag: 3, string: displacedItem.string)
+        }
+    }
+
+    package static let kind: ActionKind = "swift-sdk.publish-discovery"
+
+    private let path: FilePath
+    private let target: String
+    private let displacedItem: FilePath
+
+    package init(path: FilePath, target: String, displacedItem: FilePath) {
+        self.path = path
+        self.target = target
+        self.displacedItem = displacedItem
+    }
+
+    package var identity: Identity {
+        Identity(path: path, target: target, displacedItem: displacedItem)
+    }
+
+    package var requirements: ActionRequirements {
+        ActionRequirements(effects: [
+            ActionEffect(.readWrite, scope: .publication(path)),
+            ActionEffect(.readWrite, scope: .publication(displacedItem)),
+        ])
+    }
+
+    package func execute(in context: ActionContext) async throws {
+        let existing = try context.files.metadataWithoutFollowingSymlinks(for: path)
+        if existing?.type == .symbolicLink {
+            try context.files.replaceSymlink(at: path, target: target)
+            return
+        }
+        var displaced = false
+        if existing != nil {
+            guard
+                try context.files.metadataWithoutFollowingSymlinks(
+                    for: displacedItem) == nil
+            else {
+                throw SwiftTargetSDKRecipeFailure.invalidInput(
+                    "cannot preserve \(path); displacement already exists at "
+                        + displacedItem.string)
+            }
+            try context.files.move(from: path, to: displacedItem)
+            displaced = true
+        }
+        do {
+            try context.files.replaceSymlink(at: path, target: target)
+        } catch {
+            if displaced {
+                try? context.files.move(from: displacedItem, to: path)
+            }
+            throw error
+        }
+    }
 }
 
 private struct AssembleSwiftTargetSDKsAction: ColliderAction {

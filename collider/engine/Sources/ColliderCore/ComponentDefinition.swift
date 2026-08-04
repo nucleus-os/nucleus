@@ -628,18 +628,16 @@ extension TaskOperation {
             [action]
         case .sequence(let operations):
             operations.flatMap(\.colliderActions)
-        case .command, .runSwiftTest, .configureMeson, .createDirectory,
-            .copyFile, .copyMatchingFile, .extractZip, .removePath,
-            .replaceSymlink, .setPermissions, .writeFile,
-            .validateAndroidHost, .sanitizeLinkMetadata, .publishSymlink,
-            .publishDirectory, .pruneDirectories, .verifyAOSPSourceLock,
+        case .command,
+            .validateAndroidHost,
+            .verifyAOSPSourceLock,
             .prepareAOSPSource, .prepareOCIImage, .runOCI,
             .prepareAOSPSigningIdentity, .aospProduct,
             .prepareChromiumDepotTools, .prepareChromiumSource,
             .buildChromiumProduct, .assembleBrowserArtifact,
             .validateBrowserArtifact, .assembleCEFArtifact,
-            .validateCEFArtifact, .installBrowser, .validateAptPackages,
-            .download, .activateGeneration:
+            .validateCEFArtifact, .installBrowser, .download,
+            .activateGeneration:
             []
         }
     }

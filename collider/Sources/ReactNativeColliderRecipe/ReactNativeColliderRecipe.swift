@@ -614,15 +614,50 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
             locks: [
                 .shared(sdkRoot.appending(".rn.lock"))
             ],
-            operation: .sequence(
-                links.map {
-                    .replaceSymlink(
-                        path: sdk.appending($0.0),
-                        target: $0.1.string)
-                })
+            operation: .action(
+                try AnyColliderAction(
+                    PublishReactNativeSDKAction(sdk: sdk, links: links)))
         ).addingDependencies([CoreTaskIDs.nativeSDK(target)])
     }
 
+}
+
+private struct PublishReactNativeSDKAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let sdk: FilePath
+        let encodedLinks: String
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: sdk.string)
+            encoder.append(tag: 2, string: encodedLinks)
+        }
+    }
+
+    static let kind: ActionKind = "rn.publish-native-sdk"
+
+    let sdk: FilePath
+    let links: [(name: String, target: FilePath)]
+
+    var identity: Identity {
+        Identity(
+            sdk: sdk,
+            encodedLinks: links.map { "\($0.name)\u{0}\($0.target.string)" }
+                .joined(separator: "\u{1}"))
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(effects: [
+            ActionEffect(.write, scope: .publication(sdk))
+        ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        for link in links {
+            try context.files.replaceSymlink(
+                at: sdk.appending(link.name),
+                target: link.target.string)
+        }
+    }
 }
 
 private struct ProvisionBoostAction: ColliderAction {

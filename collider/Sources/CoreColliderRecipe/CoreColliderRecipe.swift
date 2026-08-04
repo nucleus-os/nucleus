@@ -413,12 +413,9 @@ public enum CoreColliderRecipe: ColliderComponent {
             locks: [
                 .shared(sdkRoot.appending(".render.lock"))
             ],
-            operation: .sequence(
-                links.map {
-                    .replaceSymlink(
-                        path: sdk.appending($0.0),
-                        target: $0.1.string)
-                }))
+            operation: .action(
+                try AnyColliderAction(
+                    PublishRenderSDKAction(sdk: sdk, links: links))))
     }
 
     public static func publishLinuxRenderSDK(
@@ -451,12 +448,60 @@ public enum CoreColliderRecipe: ColliderComponent {
                 .value(name: $0.0, bytes: Array($0.1.string.utf8))
             },
             locks: [.shared(sdkRoot.appending(".render.lock"))],
-            operation: .sequence(
-                links.map {
-                    .replaceSymlink(
-                        path: sdk.appending($0.0),
-                        target: $0.1.string)
-                }))
+            operation: .action(
+                try AnyColliderAction(
+                    PublishRenderSDKAction(sdk: sdk, links: links))))
+    }
+}
+
+private struct PublishRenderSDKAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let sdk: FilePath
+        let links: [(name: String, target: FilePath)]
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.sdk == rhs.sdk
+                && lhs.links.elementsEqual(rhs.links) {
+                    $0.name == $1.name && $0.target == $1.target
+                }
+        }
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(sdk)
+            for link in links {
+                hasher.combine(link.name)
+                hasher.combine(link.target)
+            }
+        }
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: sdk.string)
+            encoder.append(
+                tag: 2,
+                string: links.map { "\($0.name)\u{0}\($0.target.string)" }
+                    .joined(separator: "\u{1}"))
+        }
+    }
+
+    static let kind: ActionKind = "core.publish-render-sdk"
+
+    let sdk: FilePath
+    let links: [(name: String, target: FilePath)]
+
+    var identity: Identity { Identity(sdk: sdk, links: links) }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(effects: [
+            ActionEffect(.write, scope: .publication(sdk))
+        ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        for link in links {
+            try context.files.replaceSymlink(
+                at: sdk.appending(link.name),
+                target: link.target.string)
+        }
     }
 }
 

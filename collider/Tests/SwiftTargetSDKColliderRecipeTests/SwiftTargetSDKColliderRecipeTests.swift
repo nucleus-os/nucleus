@@ -1,4 +1,5 @@
 import ColliderCore
+import ColliderRuntime
 import Foundation
 import SwiftTargetSDKColliderRecipe
 import SystemPackage
@@ -203,6 +204,62 @@ import Testing
     }
     #expect(inputs.artifacts.macOSHostPackage.sha256.count == 64)
     #expect(inputs.artifacts.androidSDK.sha256.count == 64)
+}
+
+@Test func discoveryPublicationPreservesADisplacedMutableInstallation() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "swift-sdk-discovery-publication-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let link = directory.appendingPathComponent("active")
+    let displaced = directory.appendingPathComponent("legacy-active")
+    try FileManager.default.createDirectory(
+        at: link,
+        withIntermediateDirectories: true)
+    try Data("legacy".utf8).write(
+        to: link.appendingPathComponent("payload"))
+
+    try await ColliderRuntime().execute(
+        PublishSwiftSDKDiscoveryAction(
+            path: FilePath(link.path),
+            target: "/immutable/generation",
+            displacedItem: FilePath(displaced.path)))
+
+    #expect(
+        try FileManager.default.destinationOfSymbolicLink(atPath: link.path)
+            == "/immutable/generation")
+    #expect(
+        try String(
+            contentsOf: displaced.appendingPathComponent("payload"),
+            encoding: .utf8) == "legacy")
+}
+
+@Test func discoveryPublicationReplacesAnExistingLinkWithoutDisplacement() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "swift-sdk-discovery-replacement-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let previous = directory.appendingPathComponent("previous")
+    let replacement = directory.appendingPathComponent("replacement")
+    let link = directory.appendingPathComponent("active")
+    let displaced = directory.appendingPathComponent("displaced")
+    for path in [previous, replacement] {
+        try FileManager.default.createDirectory(
+            at: path,
+            withIntermediateDirectories: true)
+    }
+    try FileManager.default.createSymbolicLink(
+        atPath: link.path,
+        withDestinationPath: previous.lastPathComponent)
+
+    try await ColliderRuntime().execute(
+        PublishSwiftSDKDiscoveryAction(
+            path: FilePath(link.path),
+            target: replacement.lastPathComponent,
+            displacedItem: FilePath(displaced.path)))
+
+    #expect(
+        try FileManager.default.destinationOfSymbolicLink(atPath: link.path)
+            == replacement.lastPathComponent)
+    #expect(!FileManager.default.fileExists(atPath: displaced.path))
 }
 
 private func ociExecutions(_ operation: TaskOperation) -> [OCIExecution] {

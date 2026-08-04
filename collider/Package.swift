@@ -154,6 +154,7 @@ let package = Package(
             name: "SwiftTargetSDKColliderRecipeTests",
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
+                .product(name: "ColliderRuntime", package: "engine"),
                 "SwiftTargetSDKColliderRecipe",
             ]),
         .testTarget(

@@ -1405,7 +1405,18 @@ consume typed builder-image, target-files, host-tool, image, signing, and
 provenance slots. Remaining raw cross-component native SDK edges, Android add-on
 and gfxstream artifacts, shared native-builder image edges, operation cases,
 unrestricted command paths, legacy identity activation, and the derived-state
-reset remain open.
+reset remain open. The first operation-family deletion is complete: Meson
+setup, direct file copy, matching-file copy, ZIP extraction, raw file write,
+link-metadata sanitation, directory publication, and apt-package validation no
+longer exist as operation cases, payloads, runtime dispatch, or retained
+test-only compatibility surface. The obsolete attributed Swift-test no-op and
+raw permission mutation cases are gone as well. Test fixtures write through
+scoped actions. Every production create/remove/symlink/retention preparation is
+now owned by a semantic recipe action. The create-directory, remove-path,
+replace-symlink, symlink-publication, and directory-retention operation cases,
+their global identity tags, and their runtime dispatch are deleted; engine
+fixtures use scoped actions, and Swift SDK discovery publication retains its
+behavioral coverage beside the owning recipe.
 
 Complete the existing action seam with:
 

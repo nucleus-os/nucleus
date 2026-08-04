@@ -40,51 +40,6 @@ public enum DirectoryLifecycle {
         }
     }
 
-    static func publish(_ publication: DirectoryPublication) throws {
-        let prepared = publication.prepared
-        let destination = publication.destination
-        guard prepared != destination,
-            prepared.removingLastComponent()
-                == destination.removingLastComponent()
-        else {
-            throw RuntimeFailure.invalidOutput(
-                "atomic directory publication requires distinct sibling paths")
-        }
-        let preparedMetadata = try prepared.stat(followTargetSymlink: false)
-        guard preparedMetadata.type == .directory else {
-            throw RuntimeFailure.invalidOutput(
-                "prepared publication is not a real directory: \(prepared)")
-        }
-        let manager = FileManager.default
-        if manager.fileExists(atPath: destination.string) {
-            let destinationMetadata = try destination.stat(
-                followTargetSymlink: false)
-            guard destinationMetadata.type == .directory else {
-                throw RuntimeFailure.invalidOutput(
-                    "publication destination is not a real directory: "
-                        + destination.string)
-            }
-            guard
-                unsafe collider_exchange(
-                    prepared.string, destination.string) == 0
-            else {
-                throw Errno(rawValue: errno)
-            }
-            try DurableFile.synchronizeDirectory(
-                destination.removingLastComponent())
-            try manager.removeItem(atPath: prepared.string)
-        } else {
-            guard
-                unsafe collider_replace(
-                    prepared.string, destination.string) == 0
-            else {
-                throw Errno(rawValue: errno)
-            }
-            try DurableFile.synchronizeDirectory(
-                destination.removingLastComponent())
-        }
-    }
-
     public static func prune(_ plan: DirectoryRetentionPlan) throws {
         let safetyRoot = standardized(plan.safetyRoot)
         guard safetyRoot != "/" else {

@@ -160,7 +160,7 @@ private let fixtureRepositoryRoot = FilePath(
     }
 }
 
-@Test func gfxstreamArchitectureBuildsHaveIndependentLocks() {
+@Test func gfxstreamArchitectureBuildsHaveIndependentLocks() throws {
     let repositoryRoot = FilePath("/workspace")
     let runtimeRoot = repositoryRoot.appending("android-runtime")
     let environment = ["PATH": "/usr/bin"]
@@ -170,13 +170,13 @@ private let fixtureRepositoryRoot = FilePath(
         ccache: repositoryRoot.appending(".nucleus/ccache"),
         swiftSDKRoot: repositoryRoot.appending(".nucleus/swift-sdks"),
         environment: environment)
-    let arm64 = AndroidRuntimeColliderRecipe.buildGfxstream(
+    let arm64 = try AndroidRuntimeColliderRecipe.buildGfxstream(
         root: runtimeRoot,
         repositoryRoot: repositoryRoot,
         environment: environment,
         target: NativeLinuxTarget(architecture: .arm64),
         builder: builder)
-    let x86_64 = AndroidRuntimeColliderRecipe.buildGfxstream(
+    let x86_64 = try AndroidRuntimeColliderRecipe.buildGfxstream(
         root: runtimeRoot,
         repositoryRoot: repositoryRoot,
         environment: environment,
@@ -864,13 +864,21 @@ private let fixtureRepositoryRoot = FilePath(
         })
 
     guard case .sequence(let armOperations) = arm.operation,
-        case .runOCI(let armConfigure) = armOperations[4],
-        case .sequence(let x86Operations) = x86.operation,
-        case .runOCI(let x86Configure) = x86Operations[4]
+        case .sequence(let x86Operations) = x86.operation
     else {
         Issue.record("Wayland SDK builds must configure inside the ARM64 builder")
         return
     }
+    func configureExecution(in operations: [TaskOperation]) -> OCIExecution? {
+        operations.compactMap { operation -> OCIExecution? in
+            guard case .runOCI(let execution) = operation else { return nil }
+            return execution
+        }.first(where: {
+            $0.command.starts(with: ["wayland", "meson", "setup"])
+        })
+    }
+    let armConfigure = try #require(configureExecution(in: armOperations))
+    let x86Configure = try #require(configureExecution(in: x86Operations))
 
     #expect(armConfigure.executionPlatform == .linuxARM64OCI)
     #expect(armConfigure.artifactTarget == .linuxARM64)

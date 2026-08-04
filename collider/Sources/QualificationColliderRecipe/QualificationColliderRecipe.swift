@@ -1,6 +1,7 @@
 import AndroidRuntimeColliderRecipe
 import ColliderCore
 import NativeBuilderColliderRecipe
+import SystemPackage
 
 public enum SanitizerKind: String, CaseIterable, Equatable, Sendable {
     case address
@@ -57,7 +58,7 @@ public enum BenchmarkColliderRecipe: ColliderComponent {
             ("react-native", "NucleusReactBenchmarks", "react-native"),
         ]
         let dependencies = sharedDependencies
-        let tasks = suites.map { package, product, outputDirectory in
+        let tasks = try suites.map { package, product, outputDirectory in
             let executable = swiftPM.executable(product)
             let output = context.repositoryRoot.appending(
                 ".nucleus/benchmarks/\(outputDirectory)")
@@ -84,7 +85,9 @@ public enum BenchmarkColliderRecipe: ColliderComponent {
                 locks: [.checkout("benchmark-\(outputDirectory)")],
                 assessmentPolicy: .always,
                 operation: .sequence([
-                    .removePath(output),
+                    .action(
+                        try AnyColliderAction(
+                            PrepareBenchmarkOutputAction(output: output))),
                     swiftPM.operation(
                         executable: executable,
                         arguments: ["--output", output.string, "--iterations", "3"],
@@ -98,6 +101,32 @@ public enum BenchmarkColliderRecipe: ColliderComponent {
             entrypoints: [
                 ComponentEntrypoint(id: .benchmark, roots: Set(tasks.map(\.id)))
             ])
+    }
+}
+
+private struct PrepareBenchmarkOutputAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let output: FilePath
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: output.string)
+        }
+    }
+
+    static let kind: ActionKind = "benchmark.prepare-output"
+
+    let output: FilePath
+
+    var identity: Identity { Identity(output: output) }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(effects: [
+            ActionEffect(.write, scope: .output(output))
+        ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        try context.files.remove(output)
     }
 }
 

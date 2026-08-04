@@ -26,7 +26,7 @@ private func task(
         outputs: output.map {
             [OutputDeclaration(path: $0, validation: .regularFile)]
         } ?? [],
-        operation: .createDirectory(FilePath("/scratch/\(id.rawValue)")))
+        operation: .sequence([]))
 }
 
 private func component(

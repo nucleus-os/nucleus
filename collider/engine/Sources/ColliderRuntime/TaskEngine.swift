@@ -178,15 +178,13 @@ private func scheduledResources(
         case .sign, .assembleImages, .validate, .publish:
             return .lightweight
         }
-    case .action, .command, .runSwiftTest, .configureMeson, .createDirectory,
-        .copyFile, .copyMatchingFile, .extractZip, .removePath,
-        .replaceSymlink, .setPermissions, .writeFile, .validateAndroidHost,
-        .sanitizeLinkMetadata, .publishSymlink, .publishDirectory,
-        .pruneDirectories, .verifyAOSPSourceLock, .prepareAOSPSource,
+    case .action, .command,
+        .validateAndroidHost,
+        .verifyAOSPSourceLock, .prepareAOSPSource,
         .prepareAOSPSigningIdentity, .prepareChromiumDepotTools,
         .prepareChromiumSource, .assembleBrowserArtifact,
         .validateBrowserArtifact, .assembleCEFArtifact, .validateCEFArtifact,
-        .installBrowser, .validateAptPackages, .download, .activateGeneration:
+        .installBrowser, .download, .activateGeneration:
         return .lightweight
     }
 }
@@ -210,16 +208,14 @@ private func containsOCIExecution(_ operation: TaskOperation) -> Bool {
         true
     case .sequence(let operations):
         operations.contains(where: containsOCIExecution)
-    case .action, .command, .runSwiftTest, .configureMeson, .createDirectory,
-        .copyFile, .copyMatchingFile, .extractZip, .removePath,
-        .replaceSymlink, .setPermissions, .writeFile, .validateAndroidHost,
-        .sanitizeLinkMetadata, .publishSymlink, .publishDirectory,
-        .pruneDirectories, .verifyAOSPSourceLock, .prepareAOSPSource,
+    case .action, .command,
+        .validateAndroidHost,
+        .verifyAOSPSourceLock, .prepareAOSPSource,
         .prepareOCIImage, .prepareAOSPSigningIdentity, .aospProduct,
         .prepareChromiumDepotTools, .prepareChromiumSource,
         .buildChromiumProduct, .assembleBrowserArtifact,
         .validateBrowserArtifact, .assembleCEFArtifact, .validateCEFArtifact,
-        .installBrowser, .validateAptPackages, .download, .activateGeneration:
+        .installBrowser, .download, .activateGeneration:
         false
     }
 }
@@ -1276,66 +1272,6 @@ extension ColliderRuntime {
                 encoder.append(tag: 53, bytes: bytes)
             }
             encoder.append(tag: 25, integer: command.timeoutNanoseconds ?? 0)
-        case .runSwiftTest(let execution):
-            encoder.append(tag: 228, string: execution.package)
-            encoder.append(tag: 229, string: execution.testProduct)
-            encoder.append(tag: 230, string: execution.packageRoot.string)
-            encoder.append(
-                tag: 231,
-                bytes: execution.invocation.context.identityBytes)
-            for argument in execution.arguments {
-                encoder.append(tag: 232, string: argument)
-            }
-            for (name, value) in artifactEnvironment(execution.environment) {
-                encoder.append(tag: 233, string: name)
-                encoder.append(tag: 234, string: value)
-            }
-        case .configureMeson(let setup):
-            let tool = try resolvedToolIdentity(
-                .named("meson"),
-                environment: setup.environment)
-            encoder.append(tag: 75, string: setup.source.string)
-            encoder.append(tag: 76, string: setup.build.string)
-            for argument in setup.arguments {
-                encoder.append(tag: 77, string: argument)
-            }
-            encoder.append(tag: 78, string: tool.path.string)
-            encoder.append(tag: 79, bytes: tool.digest.bytes)
-            for (name, value) in artifactEnvironment(setup.environment) {
-                encoder.append(tag: 80, string: name)
-                encoder.append(tag: 81, string: value)
-            }
-        case .createDirectory(let path):
-            encoder.append(tag: 26, string: path.string)
-        case .copyFile(let source, let destination):
-            encoder.append(tag: 50, string: source.string)
-            encoder.append(tag: 51, string: destination.string)
-        case .copyMatchingFile(let copy):
-            encoder.append(tag: 61, string: copy.searchDirectory.string)
-            encoder.append(tag: 62, string: copy.childDirectoryPrefix)
-            encoder.append(tag: 63, string: copy.fileName)
-            encoder.append(tag: 64, string: copy.destination.string)
-        case .extractZip(let extraction):
-            encoder.append(tag: 255, string: "extract-zip")
-            encoder.append(tag: 61, string: extraction.archive.string)
-            encoder.append(tag: 62, string: extraction.entry)
-            encoder.append(tag: 63, string: extraction.destination.string)
-            for (name, value) in artifactEnvironment(extraction.environment) {
-                encoder.append(tag: 23, string: name)
-                encoder.append(tag: 24, string: value)
-            }
-        case .removePath(let path):
-            encoder.append(tag: 43, string: path.string)
-        case .replaceSymlink(let path, let target):
-            encoder.append(tag: 48, string: path.string)
-            encoder.append(tag: 49, string: target)
-        case .setPermissions(let update):
-            encoder.append(tag: 255, string: "set-permissions")
-            encoder.append(tag: 61, string: update.path.string)
-            encoder.append(tag: 62, integer: UInt64(update.permissions))
-        case .writeFile(let path, let bytes):
-            encoder.append(tag: 44, string: path.string)
-            encoder.append(tag: 45, bytes: bytes)
         case .validateAndroidHost(let validation):
             encoder.append(tag: 138, string: validation.library.string)
             encoder.append(tag: 139, string: validation.kotlinContract.string)
@@ -1346,40 +1282,6 @@ extension ColliderRuntime {
             for (name, value) in artifactEnvironment(validation.environment) {
                 encoder.append(tag: 142, string: name)
                 encoder.append(tag: 143, string: value)
-            }
-        case .sanitizeLinkMetadata(let sanitization):
-            encoder.append(tag: 102, string: sanitization.root.string)
-            for option in sanitization.removedLinkerOptions {
-                encoder.append(tag: 103, string: option)
-            }
-            for repair in sanitization.cmakeDependencyRepairs {
-                encoder.append(
-                    tag: 204, string: repair.configurationFileName)
-                encoder.append(tag: 205, string: repair.package)
-                encoder.append(tag: 206, string: repair.version)
-                encoder.append(
-                    tag: 207,
-                    integer: repair.configurationOnly ? 1 : 0)
-            }
-            for replacement in sanitization.replacements {
-                encoder.append(tag: 208, string: replacement.fileName)
-                encoder.append(tag: 209, string: replacement.original)
-                encoder.append(tag: 210, string: replacement.replacement)
-            }
-        case .publishSymlink(let publication):
-            encoder.append(tag: 104, string: publication.path.string)
-            encoder.append(tag: 105, string: publication.target)
-            encoder.append(tag: 106, string: publication.displacedItem.string)
-        case .publishDirectory(let publication):
-            encoder.append(tag: 144, string: publication.prepared.string)
-            encoder.append(tag: 145, string: publication.destination.string)
-        case .pruneDirectories(let plan):
-            encoder.append(tag: 146, string: plan.safetyRoot.string)
-            for rule in plan.rules {
-                encoder.append(tag: 147, string: rule.root.string)
-                encoder.append(tag: 148, string: rule.current?.string ?? "")
-                encoder.append(tag: 149, integer: UInt64(rule.retain))
-                encoder.append(tag: 150, string: rule.naming.rawValue)
             }
         case .verifyAOSPSourceLock(let verification):
             encode(
@@ -1707,16 +1609,6 @@ extension ColliderRuntime {
                 encoder.append(tag: 177, string: name)
                 encoder.append(tag: 178, string: value)
             }
-        case .validateAptPackages(let validation):
-            encoder.append(
-                tag: 179,
-                string: validation.packageList.string)
-            for (name, value) in artifactEnvironment(
-                validation.environment)
-            {
-                encoder.append(tag: 180, string: name)
-                encoder.append(tag: 181, string: value)
-            }
         case .download(let specification, let candidate):
             encoder.append(tag: 27, string: specification.url.absoluteString)
             encoder.append(tag: 28, bytes: specification.expectedDigest.bytes)
@@ -1887,108 +1779,8 @@ extension ColliderRuntime {
             guard result.status == 0 else {
                 throw RuntimeFailure.commandFailed(status: result.status)
             }
-        case .runSwiftTest(let execution):
-            // The synthesized stock `swift test` invocation already executes
-            // the complete canonical test graph. Component test operations
-            // retain attribution and cache identity without relaunching it.
-            _ = execution
-        case .configureMeson(let setup):
-            let reconfigure = FileManager.default.fileExists(
-                atPath: setup.build.appending("build.ninja").string)
-            try await perform(
-                .command(
-                    CommandSpec(
-                        executable: .named("meson"),
-                        arguments: ["setup"]
-                            + (reconfigure ? ["--reconfigure"] : [])
-                            + [setup.build.string, setup.source.string]
-                            + setup.arguments,
-                        workingDirectory: setup.source,
-                        environment: setup.environment)),
-                outputs: outputs,
-                stage: stage,
-                options: options)
-        case .createDirectory(let path):
-            try FileManager.default.createDirectory(
-                atPath: path.string, withIntermediateDirectories: true)
-        case .copyFile(let source, let destination):
-            try DurableFile.copy(from: source, to: destination)
-        case .copyMatchingFile(let copy):
-            let candidates = try FileManager.default.contentsOfDirectory(
-                atPath: copy.searchDirectory.string
-            )
-            .filter { $0.hasPrefix(copy.childDirectoryPrefix) }
-            .map {
-                copy.searchDirectory.appending($0).appending(copy.fileName)
-            }
-            .filter {
-                FileManager.default.fileExists(atPath: $0.string)
-            }
-            .sorted { $0.string.utf8.lexicographicallyPrecedes($1.string.utf8) }
-            guard candidates.count == 1 else {
-                throw RuntimeFailure.invalidOutput(
-                    "expected one \(copy.fileName) under "
-                        + "\(copy.searchDirectory)/\(copy.childDirectoryPrefix)*; found "
-                        + (candidates.isEmpty
-                            ? "none"
-                            : candidates.map(\.string).joined(separator: ", ")))
-            }
-            try DurableFile.copy(
-                from: candidates[0],
-                to: copy.destination)
-        case .extractZip(let extraction):
-            try FileManager.default.createDirectory(
-                atPath: extraction.destination.string,
-                withIntermediateDirectories: true)
-            try await perform(
-                .command(
-                    CommandSpec(
-                        executable: .named("unzip"),
-                        arguments: [
-                            "-o", extraction.archive.string, extraction.entry,
-                            "-d", extraction.destination.string,
-                        ],
-                        workingDirectory: extraction.destination,
-                        environment: extraction.environment)),
-                outputs: outputs,
-                stage: stage,
-                options: options)
-        case .removePath(let path):
-            if FileManager.default.fileExists(atPath: path.string)
-                || (try? FileManager.default.destinationOfSymbolicLink(
-                    atPath: path.string)) != nil
-            {
-                try FileManager.default.removeItem(atPath: path.string)
-            }
-        case .replaceSymlink(let path, let target):
-            if FileManager.default.fileExists(atPath: path.string)
-                || (try? FileManager.default.destinationOfSymbolicLink(
-                    atPath: path.string)) != nil
-            {
-                try FileManager.default.removeItem(atPath: path.string)
-            }
-            try FileManager.default.createDirectory(
-                atPath: path.removingLastComponent().string,
-                withIntermediateDirectories: true)
-            try FileManager.default.createSymbolicLink(
-                atPath: path.string,
-                withDestinationPath: target)
-        case .setPermissions(let update):
-            try FileManager.default.setAttributes(
-                [.posixPermissions: NSNumber(value: update.permissions)],
-                ofItemAtPath: update.path.string)
-        case .writeFile(let path, let bytes):
-            try DurableFile.write(Data(bytes), to: path)
         case .validateAndroidHost(let validation):
             try await validateAndroidHost(validation, stage: stage)
-        case .sanitizeLinkMetadata(let sanitization):
-            try sanitizeLinkMetadata(sanitization)
-        case .publishSymlink(let publication):
-            try publishSymlink(publication)
-        case .publishDirectory(let publication):
-            try DirectoryLifecycle.publish(publication)
-        case .pruneDirectories(let plan):
-            try DirectoryLifecycle.prune(plan)
         case .verifyAOSPSourceLock(let verification):
             try await verifyAOSPSourceLock(
                 verification,
@@ -2034,8 +1826,6 @@ extension ColliderRuntime {
             try await validateCEFArtifact(assembly, stage: stage)
         case .installBrowser(let installation):
             try await installBrowser(installation, stage: stage)
-        case .validateAptPackages(let validation):
-            try await validateAptPackages(validation, stage: stage)
         case .download(let specification, let candidate):
             try await downloads.download(specification, to: candidate)
         case .activateGeneration(let candidate, let generation, let active):
@@ -2137,16 +1927,14 @@ extension ColliderRuntime {
             for operation in operations {
                 try validateArtifactOutputs(operation)
             }
-        case .action, .command, .runSwiftTest, .configureMeson, .createDirectory,
-            .copyFile, .copyMatchingFile, .extractZip, .removePath,
-            .replaceSymlink, .setPermissions, .writeFile, .validateAndroidHost,
-            .sanitizeLinkMetadata, .publishSymlink, .publishDirectory,
-            .pruneDirectories, .verifyAOSPSourceLock, .prepareAOSPSource,
+        case .action, .command,
+            .validateAndroidHost,
+            .verifyAOSPSourceLock, .prepareAOSPSource,
             .prepareOCIImage, .runOCI, .prepareAOSPSigningIdentity,
             .aospProduct, .prepareChromiumDepotTools, .prepareChromiumSource,
             .buildChromiumProduct, .assembleBrowserArtifact,
             .validateBrowserArtifact, .assembleCEFArtifact, .validateCEFArtifact,
-            .installBrowser, .validateAptPackages, .activateGeneration:
+            .installBrowser, .activateGeneration:
             break
         }
     }
@@ -2383,20 +2171,8 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
         action.environment
     case .command(let command):
         command.environment
-    case .runSwiftTest(let execution):
-        execution.environment
-    case .configureMeson(let setup):
-        setup.environment
-    case .extractZip(let extraction):
-        extraction.environment
     case .validateAndroidHost(let validation):
         validation.environment
-    case .sanitizeLinkMetadata:
-        [:]
-    case .publishSymlink:
-        [:]
-    case .publishDirectory, .pruneDirectories:
-        [:]
     case .verifyAOSPSourceLock(let verification):
         verification.environment
     case .prepareAOSPSource(let preparation):
@@ -2423,12 +2199,9 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
         assembly.environment
     case .installBrowser(let installation):
         installation.environment
-    case .validateAptPackages(let validation):
-        validation.environment
     case .sequence(let operations):
         operations.lazy.map(operationEnvironment).first(where: { !$0.isEmpty }) ?? [:]
-    case .createDirectory, .copyFile, .copyMatchingFile, .removePath,
-        .replaceSymlink, .setPermissions, .writeFile, .download, .activateGeneration:
+    case .download, .activateGeneration:
         [:]
     }
 }
@@ -2481,16 +2254,14 @@ private func executionCoordinates(
                 "one task sequence cannot cross execution coordinates")
         }
         return first
-    case .action, .command, .runSwiftTest, .configureMeson, .createDirectory,
-        .copyFile, .copyMatchingFile, .extractZip, .removePath,
-        .replaceSymlink, .setPermissions, .writeFile, .validateAndroidHost,
-        .sanitizeLinkMetadata, .publishSymlink, .publishDirectory,
-        .pruneDirectories, .verifyAOSPSourceLock, .prepareAOSPSource,
+    case .action, .command,
+        .validateAndroidHost,
+        .verifyAOSPSourceLock, .prepareAOSPSource,
         .prepareAOSPSigningIdentity, .prepareChromiumDepotTools,
         .prepareChromiumSource, .buildChromiumProduct,
         .assembleBrowserArtifact, .validateBrowserArtifact,
         .assembleCEFArtifact, .validateCEFArtifact, .installBrowser,
-        .validateAptPackages, .download, .activateGeneration:
+        .download, .activateGeneration:
         return nil
     }
 }
@@ -2509,51 +2280,6 @@ private func ociOutputIdentity(_ output: CommandSpec.Output) -> String {
         "captured:\(limit)"
     case .combined(let limit):
         "combined:\(limit)"
-    }
-}
-
-private func publishSymlink(_ publication: SymlinkPublication) throws {
-    let fileManager = FileManager.default
-    try fileManager.createDirectory(
-        atPath: publication.path.removingLastComponent().string,
-        withIntermediateDirectories: true)
-    if let existing = try? fileManager.destinationOfSymbolicLink(
-        atPath: publication.path.string)
-    {
-        if existing == publication.target {
-            return
-        }
-        try DirectoryLifecycle.activate(
-            target: publication.target,
-            link: publication.path)
-        return
-    }
-    var displaced = false
-    if fileManager.fileExists(atPath: publication.path.string) {
-        guard
-            !fileManager.fileExists(
-                atPath: publication.displacedItem.string)
-        else {
-            throw RuntimeFailure.invalidOutput(
-                "cannot preserve \(publication.path); displacement already exists "
-                    + "at \(publication.displacedItem)")
-        }
-        try fileManager.moveItem(
-            atPath: publication.path.string,
-            toPath: publication.displacedItem.string)
-        displaced = true
-    }
-    do {
-        try DirectoryLifecycle.activate(
-            target: publication.target,
-            link: publication.path)
-    } catch {
-        if displaced {
-            try? fileManager.moveItem(
-                atPath: publication.displacedItem.string,
-                toPath: publication.path.string)
-        }
-        throw error
     }
 }
 

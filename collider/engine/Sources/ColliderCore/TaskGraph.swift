@@ -48,44 +48,6 @@ public struct PathPostcondition: Hashable, Sendable {
     }
 }
 
-public struct MatchingFileCopy: Hashable, Sendable {
-    public let searchDirectory: FilePath
-    public let childDirectoryPrefix: String
-    public let fileName: String
-    public let destination: FilePath
-
-    public init(
-        searchDirectory: FilePath,
-        childDirectoryPrefix: String,
-        fileName: String,
-        destination: FilePath
-    ) {
-        self.searchDirectory = searchDirectory
-        self.childDirectoryPrefix = childDirectoryPrefix
-        self.fileName = fileName
-        self.destination = destination
-    }
-}
-
-public struct MesonSetup: Hashable, Sendable {
-    public let source: FilePath
-    public let build: FilePath
-    public let arguments: [String]
-    public let environment: [String: String]
-
-    public init(
-        source: FilePath,
-        build: FilePath,
-        arguments: [String],
-        environment: [String: String]
-    ) {
-        self.source = source
-        self.build = build
-        self.arguments = arguments
-        self.environment = environment
-    }
-}
-
 public struct AndroidHostValidation: Hashable, Sendable {
     public let library: FilePath
     public let kotlinContract: FilePath
@@ -105,86 +67,6 @@ public struct AndroidHostValidation: Hashable, Sendable {
         self.ndk = ndk
         self.minimumSwiftJavaThunkCount = minimumSwiftJavaThunkCount
         self.environment = environment
-    }
-}
-
-public struct CMakeDependencyRepair: Hashable, Sendable {
-    public let configurationFileName: String
-    public let package: String
-    public let version: String
-    public let configurationOnly: Bool
-
-    public init(
-        configurationFileName: String,
-        package: String,
-        version: String,
-        configurationOnly: Bool = false
-    ) {
-        self.configurationFileName = configurationFileName
-        self.package = package
-        self.version = version
-        self.configurationOnly = configurationOnly
-    }
-}
-
-public struct LinkMetadataReplacement: Hashable, Sendable {
-    public let fileName: String
-    public let original: String
-    public let replacement: String
-
-    public init(
-        fileName: String,
-        original: String,
-        replacement: String
-    ) {
-        self.fileName = fileName
-        self.original = original
-        self.replacement = replacement
-    }
-}
-
-public struct LinkMetadataSanitization: Hashable, Sendable {
-    public let root: FilePath
-    public let removedLinkerOptions: [String]
-    public let cmakeDependencyRepairs: [CMakeDependencyRepair]
-    public let replacements: [LinkMetadataReplacement]
-
-    public init(
-        root: FilePath,
-        removedLinkerOptions: [String],
-        cmakeDependencyRepairs: [CMakeDependencyRepair] = [],
-        replacements: [LinkMetadataReplacement] = []
-    ) {
-        self.root = root
-        self.removedLinkerOptions = removedLinkerOptions
-        self.cmakeDependencyRepairs = cmakeDependencyRepairs
-        self.replacements = replacements
-    }
-}
-
-public struct SymlinkPublication: Hashable, Sendable {
-    public let path: FilePath
-    public let target: String
-    public let displacedItem: FilePath
-
-    public init(
-        path: FilePath,
-        target: String,
-        displacedItem: FilePath
-    ) {
-        self.path = path
-        self.target = target
-        self.displacedItem = displacedItem
-    }
-}
-
-public struct DirectoryPublication: Hashable, Sendable {
-    public let prepared: FilePath
-    public let destination: FilePath
-
-    public init(prepared: FilePath, destination: FilePath) {
-        self.prepared = prepared
-        self.destination = destination
     }
 }
 
@@ -902,48 +784,6 @@ public struct BrowserInstallation: Hashable, Sendable {
     }
 }
 
-public struct AptPackageValidation: Hashable, Sendable {
-    public let packageList: FilePath
-    public let environment: [String: String]
-
-    public init(
-        packageList: FilePath,
-        environment: [String: String]
-    ) {
-        self.packageList = packageList
-        self.environment = environment
-    }
-}
-
-public struct ZipExtraction: Hashable, Sendable {
-    public let archive: FilePath
-    public let entry: String
-    public let destination: FilePath
-    public let environment: [String: String]
-
-    public init(
-        archive: FilePath,
-        entry: String,
-        destination: FilePath,
-        environment: [String: String]
-    ) {
-        self.archive = archive
-        self.entry = entry
-        self.destination = destination
-        self.environment = environment
-    }
-}
-
-public struct FilePermissionUpdate: Hashable, Sendable {
-    public let path: FilePath
-    public let permissions: UInt16
-
-    public init(path: FilePath, permissions: UInt16) {
-        self.path = path
-        self.permissions = permissions
-    }
-}
-
 public enum AOSPProductOperationStage: String, Hashable, Sendable {
     case compile
     case sign
@@ -955,21 +795,7 @@ public enum AOSPProductOperationStage: String, Hashable, Sendable {
 public enum TaskOperation: Hashable, Sendable {
     case action(AnyColliderAction)
     case command(CommandSpec)
-    case runSwiftTest(SwiftTestExecution)
-    case configureMeson(MesonSetup)
-    case createDirectory(FilePath)
-    case copyFile(source: FilePath, destination: FilePath)
-    case copyMatchingFile(MatchingFileCopy)
-    case extractZip(ZipExtraction)
-    case removePath(FilePath)
-    case replaceSymlink(path: FilePath, target: String)
-    case setPermissions(FilePermissionUpdate)
-    case writeFile(FilePath, bytes: [UInt8])
     case validateAndroidHost(AndroidHostValidation)
-    case sanitizeLinkMetadata(LinkMetadataSanitization)
-    case publishSymlink(SymlinkPublication)
-    case publishDirectory(DirectoryPublication)
-    case pruneDirectories(DirectoryRetentionPlan)
     case verifyAOSPSourceLock(AOSPSourceLockVerification)
     case prepareAOSPSource(AOSPSourcePreparation)
     case prepareOCIImage(OCIImagePreparation)
@@ -984,28 +810,9 @@ public enum TaskOperation: Hashable, Sendable {
     case assembleCEFArtifact(CEFArtifactAssembly)
     case validateCEFArtifact(CEFArtifactAssembly)
     case installBrowser(BrowserInstallation)
-    case validateAptPackages(AptPackageValidation)
     case download(DownloadSpec, candidate: FilePath)
     case activateGeneration(candidate: FilePath, generation: FilePath, active: FilePath)
     indirect case sequence([TaskOperation])
-}
-
-public struct SwiftTestExecution: Hashable, Sendable {
-    public let invocation: SwiftPMInvocation
-    public let package: String
-    public let testProduct: String
-    public let packageRoot: FilePath
-    public let environment: [String: String]
-    public let arguments: [String]
-
-    public init(requirement: SwiftTestRequirement) {
-        invocation = requirement.invocation
-        package = requirement.package
-        testProduct = requirement.testProduct
-        packageRoot = requirement.packageRoot
-        environment = requirement.environment
-        arguments = requirement.arguments
-    }
 }
 
 public enum TaskLock: Hashable, Sendable {

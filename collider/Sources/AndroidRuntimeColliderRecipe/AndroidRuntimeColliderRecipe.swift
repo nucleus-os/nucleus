@@ -77,7 +77,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         var gfxstreamRoots: Set<TaskID> = []
         for architecture in PlatformArchitecture.allCases {
             let target = NativeLinuxTarget(architecture: architecture)
-            let task = buildGfxstream(
+            let task = try buildGfxstream(
                 root: root,
                 repositoryRoot: context.repositoryRoot,
                 environment: context.environment,
@@ -689,7 +689,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         environment: [String: String],
         target: NativeLinuxTarget,
         builder: NativeOCIConfiguration
-    ) -> TaskDeclaration {
+    ) throws -> TaskDeclaration {
         let buildRoot = root.appending(".gfxstream-build/\(target.identifier)")
         let hostSource = repositoryRoot.appending("third-party/gfxstream")
         let guestSource = repositoryRoot.appending("third-party/mesa")
@@ -723,8 +723,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             ],
             assessmentPolicy: .incremental,
             operation: .sequence([
-                .removePath(buildRoot),
-                .createDirectory(buildRoot),
+                .action(
+                    try AnyColliderAction(
+                        PrepareGfxstreamBuildAction(buildRoot: buildRoot))),
                 gfxstreamOperation(
                     root: root,
                     hostSource: hostSource,
@@ -771,6 +772,33 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             ]))
     }
 
+}
+
+private struct PrepareGfxstreamBuildAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let buildRoot: FilePath
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: buildRoot.string)
+        }
+    }
+
+    static let kind: ActionKind = "android-runtime.prepare-gfxstream-build"
+
+    let buildRoot: FilePath
+
+    var identity: Identity { Identity(buildRoot: buildRoot) }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(effects: [
+            ActionEffect(.readWrite, scope: .output(buildRoot))
+        ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        try context.files.remove(buildRoot)
+        try context.files.createDirectory(buildRoot)
+    }
 }
 
 private func gfxstreamOperation(

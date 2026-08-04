@@ -334,31 +334,33 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 .shared(cache.appending("locks/cache-retention.lock"))
             ],
             assessmentPolicy: .always,
-            operation: .pruneDirectories(
-                DirectoryRetentionPlan(
-                    safetyRoot: cache,
-                    rules: [
-                        DirectoryRetentionRule(
-                            root: sources,
-                            current: sources.appending("current"),
-                            retain: 1,
-                            naming: .contentIdentity),
-                        DirectoryRetentionRule(
-                            root: cache.appending("build"),
-                            current: nil,
-                            retain: 1,
-                            naming: .contentIdentity),
-                        DirectoryRetentionRule(
-                            root: cefDistribution.appending("releases"),
-                            current: cefDistribution.appending("current-release"),
-                            retain: 2,
-                            naming: .contentIdentity),
-                        DirectoryRetentionRule(
-                            root: browserDistribution.appending("generations"),
-                            current: browserDistribution.appending("current"),
-                            retain: 2,
-                            naming: .contentIdentity),
-                    ])))
+            operation: .action(
+                try AnyColliderAction(
+                    PruneChromiumCacheAction(
+                        plan: DirectoryRetentionPlan(
+                            safetyRoot: cache,
+                            rules: [
+                                DirectoryRetentionRule(
+                                    root: sources,
+                                    current: sources.appending("current"),
+                                    retain: 1,
+                                    naming: .contentIdentity),
+                                DirectoryRetentionRule(
+                                    root: cache.appending("build"),
+                                    current: nil,
+                                    retain: 1,
+                                    naming: .contentIdentity),
+                                DirectoryRetentionRule(
+                                    root: cefDistribution.appending("releases"),
+                                    current: cefDistribution.appending("current-release"),
+                                    retain: 2,
+                                    naming: .contentIdentity),
+                                DirectoryRetentionRule(
+                                    root: browserDistribution.appending("generations"),
+                                    current: browserDistribution.appending("current"),
+                                    retain: 2,
+                                    naming: .contentIdentity),
+                            ])))))
         var testBuilder = TaskBuilder(
             id: ChromiumTaskIDs.test,
             component: ComponentID(rawValue: "browser"))
@@ -486,6 +488,43 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             && value.utf8.allSatisfy {
                 ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
             }
+    }
+}
+
+private struct PruneChromiumCacheAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let plan: DirectoryRetentionPlan
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: plan.safetyRoot.string)
+            encoder.append(
+                tag: 2,
+                string: plan.rules.map {
+                    [
+                        $0.root.string,
+                        $0.current?.string ?? "",
+                        String($0.retain),
+                        $0.naming.rawValue,
+                    ].joined(separator: "\u{0}")
+                }.joined(separator: "\u{1}"))
+        }
+    }
+
+    static let kind: ActionKind = "browser.prune-cache"
+
+    let plan: DirectoryRetentionPlan
+
+    var identity: Identity { Identity(plan: plan) }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            effects: plan.rules.map {
+                ActionEffect(.readWrite, scope: .scratch($0.root))
+            })
+    }
+
+    func execute(in context: ActionContext) async throws {
+        try context.files.pruneDirectories(plan)
     }
 }
 

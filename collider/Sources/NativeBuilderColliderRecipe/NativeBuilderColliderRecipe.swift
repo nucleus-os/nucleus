@@ -1,4 +1,5 @@
 import ColliderCore
+import SystemPackage
 
 package enum NativeBuilderTaskIDs {
     package static let prepare = TaskID(rawValue: "native.builder")
@@ -13,7 +14,7 @@ public enum NativeBuilderColliderRecipe: ColliderComponent {
     public static func makeComponent(
         in context: RecipeContext
     ) throws -> ComponentDefinition {
-        let task = prepare(context.nativeBuilder)
+        let task = try prepare(context.nativeBuilder)
         return try ComponentDefinition(
             descriptor: descriptor,
             tasks: [task],
@@ -24,7 +25,7 @@ public enum NativeBuilderColliderRecipe: ColliderComponent {
 
     public static func prepare(
         _ configuration: NativeOCIConfiguration
-    ) -> TaskDeclaration {
+    ) throws -> TaskDeclaration {
         return TaskDeclaration(
             id: NativeBuilderTaskIDs.prepare,
             component: ComponentID(rawValue: "native"),
@@ -44,7 +45,10 @@ public enum NativeBuilderColliderRecipe: ColliderComponent {
             locks: [.checkout("native-builder-image")],
             assessmentPolicy: .incremental,
             operation: .sequence([
-                .createDirectory(configuration.ccache),
+                .action(
+                    try AnyColliderAction(
+                        PrepareNativeBuilderCacheAction(
+                            cache: configuration.ccache))),
                 .prepareOCIImage(
                     OCIImagePreparation(
                         executionPlatform: .linuxARM64OCI,
@@ -55,5 +59,31 @@ public enum NativeBuilderColliderRecipe: ColliderComponent {
                         imageName: "localhost/nucleus-linux-build",
                         environment: configuration.environment)),
             ]))
+    }
+}
+
+private struct PrepareNativeBuilderCacheAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let cache: FilePath
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: cache.string)
+        }
+    }
+
+    static let kind: ActionKind = "native.prepare-builder-cache"
+
+    let cache: FilePath
+
+    var identity: Identity { Identity(cache: cache) }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(effects: [
+            ActionEffect(.write, scope: .scratch(cache))
+        ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        try context.files.createDirectory(cache)
     }
 }

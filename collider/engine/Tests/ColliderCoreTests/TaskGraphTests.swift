@@ -6,10 +6,10 @@ import Testing
 @Test func taskGraphOrdersDependenciesOnce() throws {
     let root = TaskDeclaration(
         id: TaskID(rawValue: "root"), component: ComponentID(rawValue: "core"),
-        operation: .createDirectory(FilePath("root")))
+        operation: .sequence([]))
     let leaf = TaskDeclaration(
         id: TaskID(rawValue: "leaf"), component: ComponentID(rawValue: "core"),
-        dependencies: [root.id], operation: .createDirectory(FilePath("leaf")))
+        dependencies: [root.id], operation: .sequence([]))
     let graph = try TaskGraph([leaf, root])
     #expect(try graph.orderedTasks(selecting: [leaf.id]).map(\.id) == [root.id, leaf.id])
 }
@@ -21,10 +21,10 @@ import Testing
         _ = try TaskGraph([
             TaskDeclaration(
                 id: firstID, component: ComponentID(rawValue: "core"),
-                dependencies: [secondID], operation: .createDirectory(FilePath("first"))),
+                dependencies: [secondID], operation: .sequence([])),
             TaskDeclaration(
                 id: secondID, component: ComponentID(rawValue: "core"),
-                dependencies: [firstID], operation: .createDirectory(FilePath("second"))),
+                dependencies: [firstID], operation: .sequence([])),
         ])
     }
 }
@@ -33,12 +33,12 @@ import Testing
     let build = TaskDeclaration(
         id: TaskID(rawValue: "build"),
         component: ComponentID(rawValue: "core"),
-        operation: .createDirectory(FilePath("build")))
+        operation: .sequence([]))
     let test = TaskDeclaration(
         id: TaskID(rawValue: "test"),
         component: ComponentID(rawValue: "core"),
         subsumedDependencies: [build.id],
-        operation: .createDirectory(FilePath("test")))
+        operation: .sequence([]))
 
     #expect(throws: TaskGraphFailure.self) {
         _ = try TaskGraph([build, test])
