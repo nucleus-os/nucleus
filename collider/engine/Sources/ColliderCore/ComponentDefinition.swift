@@ -143,6 +143,7 @@ public struct RecipeContext: Sendable {
     public let repositoryRoot: FilePath
     public let cacheRoot: FilePath
     public let nativeSDKRoot: FilePath
+    public let nativeBuilder: NativeOCIConfiguration
     public let environment: [String: String]
     public let buildContexts: [RecipeBuildContextID: SwiftPMInvocation]
     private let configurations: [ComponentID: any RecipeConfiguration]
@@ -151,6 +152,7 @@ public struct RecipeContext: Sendable {
         repositoryRoot: FilePath,
         cacheRoot: FilePath,
         nativeSDKRoot: FilePath,
+        nativeBuilder: NativeOCIConfiguration,
         environment: [String: String],
         buildContexts: [RecipeBuildContextID: SwiftPMInvocation] = [:],
         configurations: [ComponentID: any RecipeConfiguration] = [:]
@@ -158,6 +160,7 @@ public struct RecipeContext: Sendable {
         self.repositoryRoot = repositoryRoot
         self.cacheRoot = cacheRoot
         self.nativeSDKRoot = nativeSDKRoot
+        self.nativeBuilder = nativeBuilder
         self.environment = environment
         self.buildContexts = buildContexts
         self.configurations = configurations
@@ -165,17 +168,6 @@ public struct RecipeContext: Sendable {
 
     public func componentRoot(_ descriptor: ComponentDescriptor) -> FilePath {
         repositoryRoot.appending(descriptor.directoryName)
-    }
-
-    public var nativeBuilder: NativeOCIConfiguration {
-        let cache = cacheRoot.appending("nucleus")
-        return NativeOCIConfiguration(
-            context: repositoryRoot.appending("core/build-container"),
-            imageID: cache.appending("build-containers/native/image-id"),
-            ccache: cache.appending("ccache/native"),
-            swiftSDKRoot: cache.appending(
-                "swift-target-sdks/current/swift-sdks"),
-            environment: environment)
     }
 
     public func nativeSDK(for target: NativeLinuxTarget) -> FilePath {

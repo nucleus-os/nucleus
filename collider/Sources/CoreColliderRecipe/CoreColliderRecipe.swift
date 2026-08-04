@@ -1,6 +1,5 @@
 import ColliderCore
 import Foundation
-import NativeBuilderColliderRecipe
 import SystemPackage
 
 package enum CoreTaskIDs {
@@ -1022,10 +1021,6 @@ private func skiaTask(
     builder: NativeOCIConfiguration
 ) throws -> CoreColliderRecipe.SkiaBuildArtifacts {
     let skia = root.appending("third-party/skia")
-    let dependencies = [NativeBuilderTaskIDs.prepare]
-    let imageInputs: [ArtifactInput] = [
-        .dependencyOutput(builder.imageID)
-    ]
     let containerBuildDirectory = "/build/\(buildDirectory.lastComponent!)"
     let mounts = [
         OCIMount(
@@ -1045,36 +1040,38 @@ private func skiaTask(
             target: "/swift-sdk",
             access: .readOnly),
     ]
-    func execution(_ command: [String]) -> TaskOperation {
-        .runOCI(
-            OCIExecution(
-                executionPlatform: .linuxARM64OCI,
-                artifactTarget: artifactTarget,
-                imageID: builder.imageID,
-                hostname: "native-\(mode)-build",
-                workingDirectory: "/src",
-                hostWorkingDirectory: skia,
-                mounts: mounts,
-                networkPolicy: .externalDisabled,
-                userPolicy: .builder,
-                capabilityPolicy: .dropAll,
-                privilegePolicy: .prohibitAcquisition,
-                processFilesystemPolicy: .standard,
-                intelBinaryTranslationPolicy: intelBinaryTranslationPolicy,
-                resourceLimits: .parallelBuild,
-                containerEnvironment: containerEnvironment.merging(
-                    ["CCACHE_LOGFILE": "/ccache/ccache.log"],
-                    uniquingKeysWith: { configured, _ in configured }),
-                command: ["skia-\(mode)"] + command,
-                environment: builder.environment,
-                output: .logged))
+    func execution(_ command: [String]) throws -> TaskOperation {
+        let execution = OCIExecution(
+            executionPlatform: .linuxARM64OCI,
+            artifactTarget: artifactTarget,
+            imageID: builder.imageID,
+            hostname: "native-\(mode)-build",
+            workingDirectory: "/src",
+            hostWorkingDirectory: skia,
+            mounts: mounts,
+            networkPolicy: .externalDisabled,
+            userPolicy: .builder,
+            capabilityPolicy: .dropAll,
+            privilegePolicy: .prohibitAcquisition,
+            processFilesystemPolicy: .standard,
+            intelBinaryTranslationPolicy: intelBinaryTranslationPolicy,
+            resourceLimits: .parallelBuild,
+            containerEnvironment: containerEnvironment.merging(
+                ["CCACHE_LOGFILE": "/ccache/ccache.log"],
+                uniquingKeysWith: { configured, _ in configured }),
+            command: ["skia-\(mode)"] + command,
+            environment: builder.environment,
+            output: .logged)
+        return .action(
+            try AnyColliderAction(
+                RunSkiaBuildAction(execution: execution)))
     }
     let operation = TaskOperation.sequence([
-        execution([
+        try execution([
             "/src/bin/gn", "gen", containerBuildDirectory,
             "--args=" + gnArguments.joined(separator: " "),
         ]),
-        execution(
+        try execution(
             ["ninja", "-C", containerBuildDirectory] + ninjaTargets),
     ])
     var task = TaskBuilder(
@@ -1082,6 +1079,7 @@ private func skiaTask(
         component: ComponentID(rawValue: "core"))
     task.consume(externalSources)
     task.consume(gn)
+    task.consume(builder.image)
     let directory: ArtifactReference<DirectoryArtifact> = try task.output(
         "build-directory",
         path: buildDirectory,
@@ -1098,11 +1096,31 @@ private func skiaTask(
             .value(
                 name: "gn-arguments",
                 bytes: Array(gnArguments.joined(separator: "\u{0}").utf8)),
-        ] + imageInputs,
+        ],
         locks: [.checkout(id.rawValue)],
         operation: operation
-    ).addingDependencies(dependencies)
+    )
     return CoreColliderRecipe.SkiaBuildArtifacts(
         task: declaration,
         buildDirectory: directory)
+}
+
+private struct RunSkiaBuildAction: ColliderAction {
+    static let kind: ActionKind = "core.build-skia"
+
+    let execution: OCIExecution
+
+    var identity: OCIExecutionActionIdentity {
+        OCIExecutionActionIdentity(execution)
+    }
+
+    var requirements: ActionRequirements {
+        ociActionRequirements(execution: execution)
+    }
+
+    var environment: [String: String] { execution.environment }
+
+    func execute(in context: ActionContext) async throws {
+        try await context.containers.run(execution)
+    }
 }

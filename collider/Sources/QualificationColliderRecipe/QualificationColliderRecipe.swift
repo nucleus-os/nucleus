@@ -1,6 +1,5 @@
 import AndroidRuntimeColliderRecipe
 import ColliderCore
-import NativeBuilderColliderRecipe
 import SystemPackage
 
 public enum SanitizerKind: String, CaseIterable, Equatable, Sendable {
@@ -344,7 +343,6 @@ public enum SanitizerColliderRecipe: ColliderComponent {
 }
 
 private let sharedDependencies = [
-    NativeBuilderTaskIDs.prepare,
     AndroidRuntimeTaskIDs.gfxstream(
-        NativeLinuxTarget(architecture: .arm64)),
+        NativeLinuxTarget(architecture: .arm64))
 ]

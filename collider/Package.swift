@@ -51,7 +51,6 @@ let package = Package(
             name: "AndroidRuntimeColliderRecipe",
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
-                "NativeBuilderColliderRecipe",
                 "ShellColliderRecipe",
                 .product(
                     name: "NucleusAndroidRuntimeCore",
@@ -67,15 +66,13 @@ let package = Package(
         .target(
             name: "CoreColliderRecipe",
             dependencies: [
-                .product(name: "ColliderCore", package: "engine"),
-                "NativeBuilderColliderRecipe",
+                .product(name: "ColliderCore", package: "engine")
             ]),
         .target(
             name: "LinuxColliderRecipe",
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
                 "AndroidRuntimeColliderRecipe",
-                "NativeBuilderColliderRecipe",
             ]),
         .target(
             name: "NativeBuilderColliderRecipe",
@@ -85,20 +82,18 @@ let package = Package(
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
                 "AndroidRuntimeColliderRecipe",
-                "NativeBuilderColliderRecipe",
             ]),
         .target(
             name: "ReactNativeColliderRecipe",
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
-                "CoreColliderRecipe", "NativeBuilderColliderRecipe",
+                "CoreColliderRecipe",
             ]),
         .target(
             name: "ReleaseGateColliderRecipe",
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
                 "AndroidRuntimeColliderRecipe",
-                "NativeBuilderColliderRecipe",
             ]),
         .target(
             name: "ShellColliderRecipe",
@@ -118,8 +113,7 @@ let package = Package(
         .target(
             name: "WaylandColliderRecipe",
             dependencies: [
-                .product(name: "ColliderCore", package: "engine"),
-                "NativeBuilderColliderRecipe",
+                .product(name: "ColliderCore", package: "engine")
             ]),
         .testTarget(
             name: "ChromiumColliderRecipeTests",

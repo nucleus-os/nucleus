@@ -25,20 +25,33 @@ struct ComponentRegistry {
         androidAddonConfiguration: AndroidAddonPackageConfiguration? = nil
     ) throws -> ComponentCatalog {
         let recipeEnvironment = environmentOverride ?? context.taskEnvironment
+        let nativeBuilderCache = context.cacheRoot.appending("nucleus")
+        let nativeBuilder = try NativeBuilderColliderRecipe.prepare(
+            context: context.layout.core.appending("build-container"),
+            imageID: nativeBuilderCache.appending(
+                "build-containers/native/image-id"),
+            ccache: nativeBuilderCache.appending("ccache/native"),
+            swiftSDKRoot: nativeBuilderCache.appending(
+                "swift-target-sdks/current/swift-sdks"),
+            environment: recipeEnvironment)
         var buildContexts: [RecipeBuildContextID: SwiftPMInvocation] = [
             .hostDebug: try context.swiftPMInvocation()
         ]
         for architecture in PlatformArchitecture.allCases {
             buildContexts[.linux(architecture)] = try linuxSwiftPMInvocation(
-                architecture: architecture)
+                architecture: architecture,
+                builder: nativeBuilder.configuration)
         }
         buildContexts[.linux(.arm64, configuration: .release)] =
-            try linuxSwiftPMInvocation(configuration: .release)
+            try linuxSwiftPMInvocation(
+                configuration: .release,
+                builder: nativeBuilder.configuration)
         for sanitizer in SanitizerKind.allCases {
             buildContexts[.linux(.arm64, sanitizer: sanitizer.rawValue)] =
                 try linuxSwiftPMInvocation(
                     sanitizer: sanitizer.rawValue,
-                    linkerFlags: sanitizer == .undefined ? ["-lubsan"] : [])
+                    linkerFlags: sanitizer == .undefined ? ["-lubsan"] : [],
+                    builder: nativeBuilder.configuration)
         }
         let androidToolchain = try AndroidToolchainVersions.load(
             workspaceRoot: context.root)
@@ -79,11 +92,11 @@ struct ComponentRegistry {
             repositoryRoot: context.root,
             cacheRoot: context.cacheRoot,
             nativeSDKRoot: context.nativeSDKRoot.removingLastComponent(),
+            nativeBuilder: nativeBuilder.configuration,
             environment: recipeEnvironment,
             buildContexts: buildContexts,
             configurations: configurations)
         let componentTypes: [any ColliderComponent.Type] = [
-            NativeBuilderColliderRecipe.self,
             BenchmarkColliderRecipe.self,
             ChromiumColliderRecipe.self,
             SanitizerColliderRecipe.self,
@@ -98,9 +111,11 @@ struct ComponentRegistry {
             CompositorColliderRecipe.self,
             VulkanColliderRecipe.self,
         ]
-        let components = try componentTypes.map {
-            try $0.makeComponent(in: recipeContext)
-        }
+        let components =
+            [nativeBuilder.component]
+            + (try componentTypes.map {
+                try $0.makeComponent(in: recipeContext)
+            })
         let core = CoreColliderRecipe.descriptor.id
         let wayland = WaylandColliderRecipe.descriptor.id
         let reactNative = ReactNativeColliderRecipe.descriptor.id
@@ -602,15 +617,14 @@ struct ComponentRegistry {
         translation: OCIIntelBinaryTranslationPolicy? = nil,
         configuration: SwiftBuildConfiguration = .debug,
         sanitizer: String? = nil,
-        linkerFlags additionalLinkerFlags: [String] = []
+        linkerFlags additionalLinkerFlags: [String] = [],
+        builder: NativeOCIConfiguration
     ) throws -> SwiftPMInvocation {
         let root = context.layout.root
         let target = NativeLinuxTarget(architecture: architecture)
         let resolvedTriple = triple ?? target.targetTriple
         let resolvedArtifactTarget = artifactTarget ?? target.artifactTarget
         let resolvedTranslation = translation ?? target.intelBinaryTranslationPolicy
-        let builder = nativeBuilderConfiguration(
-            coreRoot: context.layout.core)
         let sdkRoot = context.cacheRoot.appending(
             "nucleus/swift-target-sdks/current/swift-sdks")
         let guestSDKRoot = "/home/nucleus-build/.swiftpm/swift-sdks"
@@ -634,7 +648,7 @@ struct ComponentRegistry {
             SwiftPMOCIExecution(
                 executionPlatform: .linuxARM64OCI,
                 artifactTarget: resolvedArtifactTarget,
-                imageID: builder.imageID,
+                image: builder.image,
                 hostname: "nucleus-linux-\(architecture.rawValue)",
                 hostWorkingDirectory: root,
                 mounts: [
@@ -797,19 +811,6 @@ struct ComponentRegistry {
 
     private func nativeSDKRoot(for target: NativeLinuxTarget) -> FilePath {
         context.nativeSDKRoot(for: target)
-    }
-
-    private func nativeBuilderConfiguration(
-        coreRoot: FilePath
-    ) -> NativeOCIConfiguration {
-        let cache = context.cacheRoot.appending("nucleus")
-        return NativeOCIConfiguration(
-            context: coreRoot.appending("build-container"),
-            imageID: cache.appending("build-containers/native/image-id"),
-            ccache: cache.appending("ccache/native"),
-            swiftSDKRoot: cache.appending(
-                "swift-target-sdks/current/swift-sdks"),
-            environment: context.taskEnvironment)
     }
 
 }

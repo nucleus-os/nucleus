@@ -1,6 +1,5 @@
 import AndroidRuntimeColliderRecipe
 import ColliderCore
-import NativeBuilderColliderRecipe
 import SystemPackage
 
 package enum LinuxTaskIDs {
@@ -44,7 +43,6 @@ public enum LinuxColliderRecipe: ColliderComponent {
                 root: context.repositoryRoot,
                 environment: context.environment,
                 swiftPM: try context.swiftPM(.linux(architecture)),
-                imageTask: NativeBuilderTaskIDs.prepare,
                 nativeDependencies: [
                     AndroidRuntimeTaskIDs.gfxstream(target)
                 ],
@@ -73,7 +71,6 @@ public enum LinuxColliderRecipe: ColliderComponent {
         root: FilePath,
         environment: [String: String],
         swiftPM: SwiftPMInvocation,
-        imageTask: TaskID,
         nativeDependencies: [TaskID],
         sdkRoot: FilePath,
         nativeSDKRoot: FilePath
@@ -116,7 +113,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
         let build = TaskDeclaration(
             id: buildID,
             component: ComponentID(rawValue: "linux"),
-            dependencies: [imageTask] + nativeDependencies,
+            dependencies: nativeDependencies,
             swiftProducts: [buildRequirement],
             inputs: sharedInputs,
             postconditions: [swiftPM.postcondition],

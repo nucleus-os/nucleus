@@ -21,7 +21,7 @@ public enum SwiftPMExecution: Hashable, Sendable {
 public struct SwiftPMOCIExecution: Hashable, Sendable {
     public let executionPlatform: ExecutionPlatform
     public let artifactTarget: ArtifactTarget
-    public let imageID: FilePath
+    public let image: ArtifactReference<FileArtifact>
     public let hostname: String
     public let hostWorkingDirectory: FilePath
     public let mounts: [OCIMount]
@@ -35,7 +35,7 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
     public init(
         executionPlatform: ExecutionPlatform,
         artifactTarget: ArtifactTarget,
-        imageID: FilePath,
+        image: ArtifactReference<FileArtifact>,
         hostname: String,
         hostWorkingDirectory: FilePath,
         mounts: [OCIMount],
@@ -49,7 +49,7 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
         precondition(executionPlatform == .linuxARM64OCI)
         self.executionPlatform = executionPlatform
         self.artifactTarget = artifactTarget
-        self.imageID = imageID
+        self.image = image
         self.hostname = hostname
         self.hostWorkingDirectory = hostWorkingDirectory
         self.mounts = mounts
@@ -60,6 +60,8 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
         self.containerEnvironment = containerEnvironment
         self.commandPrefix = commandPrefix
     }
+
+    public var imageID: FilePath { image.path }
 }
 
 /// Every setting that determines whether SwiftPM compilation artifacts may be

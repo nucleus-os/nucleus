@@ -638,25 +638,27 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                             install: target.runtimeInstall,
                             workspace: target.runtimeBuildWorkspace,
                             compilerCache: target.runtimeCompilerCache))),
-                .runOCI(
-                    OCIExecution(
-                        executionPlatform: .linuxARM64OCI,
-                        artifactTarget: architecture.artifactTarget,
-                        imageID: configuration.runtimeBuilderImageID,
-                        hostname: "swift-linux-\(architecture.rawValue)-runtime",
-                        workingDirectory: "/src",
-                        hostWorkingDirectory: configuration.sourceWorkspace,
-                        mounts: mounts,
-                        networkPolicy: .externalDisabled,
-                        userPolicy: .builder,
-                        capabilityPolicy: .dropAll,
-                        privilegePolicy: .prohibitAcquisition,
-                        processFilesystemPolicy: .standard,
-                        resourceLimits: .parallelBuild,
-                        containerEnvironment: containerEnvironment,
-                        command: ["--reconfigure"],
-                        environment: configuration.environment,
-                        output: .logged)),
+                .action(
+                    try AnyColliderAction(
+                        BuildSwiftLinuxRuntimeAction(
+                            execution: OCIExecution(
+                                executionPlatform: .linuxARM64OCI,
+                                artifactTarget: architecture.artifactTarget,
+                                imageID: configuration.runtimeBuilderImageID,
+                                hostname: "swift-linux-\(architecture.rawValue)-runtime",
+                                workingDirectory: "/src",
+                                hostWorkingDirectory: configuration.sourceWorkspace,
+                                mounts: mounts,
+                                networkPolicy: .externalDisabled,
+                                userPolicy: .builder,
+                                capabilityPolicy: .dropAll,
+                                privilegePolicy: .prohibitAcquisition,
+                                processFilesystemPolicy: .standard,
+                                resourceLimits: .parallelBuild,
+                                containerEnvironment: containerEnvironment,
+                                command: ["--reconfigure"],
+                                environment: configuration.environment,
+                                output: .logged)))),
             ])
         )
         .addingDependencies([builder.id])
@@ -999,6 +1001,26 @@ private struct PrepareSwiftRuntimeBuilderImageAction: ColliderAction {
 
     func execute(in context: ActionContext) async throws {
         try await context.containers.prepareImage(identity.preparation)
+    }
+}
+
+private struct BuildSwiftLinuxRuntimeAction: ColliderAction {
+    static let kind: ActionKind = "swift-sdk.build-linux-runtime"
+
+    let execution: OCIExecution
+
+    var identity: OCIExecutionActionIdentity {
+        OCIExecutionActionIdentity(execution)
+    }
+
+    var requirements: ActionRequirements {
+        ociActionRequirements(execution: execution)
+    }
+
+    var environment: [String: String] { execution.environment }
+
+    func execute(in context: ActionContext) async throws {
+        try await context.containers.run(execution)
     }
 }
 

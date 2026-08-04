@@ -377,19 +377,21 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             ],
             assessmentPolicy: .always,
             operation: .sequence([
-                .runOCI(
-                    chromiumBuildExecution(
-                        imageID: builderImageID,
-                        source: source,
-                        depotTools: depotTools,
-                        output: browserOutput,
-                        jobs: layout.jobs,
-                        targets: [
-                            "ui/ozone:ozone_unittests",
-                            "components/viz/service:"
-                                + "output_presenter_ozone_unittests",
-                        ],
-                        environment: childEnvironment)),
+                .action(
+                    try AnyColliderAction(
+                        RunChromiumTestsAction(
+                            execution: chromiumBuildExecution(
+                                imageID: builderImageID,
+                                source: source,
+                                depotTools: depotTools,
+                                output: browserOutput,
+                                jobs: layout.jobs,
+                                targets: [
+                                    "ui/ozone:ozone_unittests",
+                                    "components/viz/service:"
+                                        + "output_presenter_ozone_unittests",
+                                ],
+                                environment: childEnvironment)))),
                 .action(
                     try AnyColliderAction(
                         RunChromiumOzoneTestsAction(
@@ -511,6 +513,26 @@ private struct PrepareChromiumBuilderImageAction: ColliderAction {
 
     func execute(in context: ActionContext) async throws {
         try await context.containers.prepareImage(identity.preparation)
+    }
+}
+
+private struct RunChromiumTestsAction: ColliderAction {
+    static let kind: ActionKind = "browser.run-tests"
+
+    let execution: OCIExecution
+
+    var identity: OCIExecutionActionIdentity {
+        OCIExecutionActionIdentity(execution)
+    }
+
+    var requirements: ActionRequirements {
+        ociActionRequirements(execution: execution)
+    }
+
+    var environment: [String: String] { execution.environment }
+
+    func execute(in context: ActionContext) async throws {
+        try await context.containers.run(execution)
     }
 }
 

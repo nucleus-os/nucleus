@@ -26,7 +26,7 @@ func chromiumCommandHasOneOpinionatedOperationSurface() throws {
 }
 
 @Test
-func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() throws {
+func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() async throws {
     let root = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
@@ -104,8 +104,8 @@ func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() throws {
 
     let test = try #require(
         tasks.first { $0.id == ChromiumTaskIDs.test })
-    guard case .sequence(let testOperations) = test.operation,
-        case .runOCI(let execution) = testOperations.first
+    guard case .sequence = test.operation,
+        let execution = try await ociExecutions(in: test.operation).first
     else {
         Issue.record("Chromium test compilation must use the builder")
         return

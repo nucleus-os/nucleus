@@ -1,6 +1,5 @@
 import AndroidRuntimeColliderRecipe
 import ColliderCore
-import NativeBuilderColliderRecipe
 
 package enum ReleaseGateTaskIDs {
     package static let all: [TaskID] = suites.map {
@@ -37,9 +36,8 @@ public enum ReleaseGateColliderRecipe: ColliderComponent {
         let swiftPM = try context.swiftPM(
             .linux(.arm64, configuration: .release))
         let dependencies = [
-            NativeBuilderTaskIDs.prepare,
             AndroidRuntimeTaskIDs.gfxstream(
-                NativeLinuxTarget(architecture: .arm64)),
+                NativeLinuxTarget(architecture: .arm64))
         ]
         let tasks = ReleaseGateTaskIDs.suites.map { suite in
             let requirement = swiftPM.testProduct(

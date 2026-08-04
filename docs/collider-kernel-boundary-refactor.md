@@ -1403,7 +1403,7 @@ browser publications, retention, tests, and installation also form one typed
 chain. AOSP compilation, signing, image assembly, validation, and publication
 consume typed builder-image, target-files, host-tool, image, signing, and
 provenance slots. Remaining raw cross-component native SDK edges, Android add-on
-and gfxstream artifacts, shared native-builder image edges, operation cases,
+and gfxstream product artifacts, operation cases,
 unrestricted command paths, legacy identity activation, and the derived-state
 reset remain open. The first operation-family deletion is complete: Meson
 setup, direct file copy, matching-file copy, ZIP extraction, raw file write,
@@ -1431,6 +1431,21 @@ recipe action using the declared container capability. Action requirements
 carry execution placement and resource demand, preserving scheduler behavior
 without kernel operation inspection, and the global OCI image-preparation
 operation case and dispatch are deleted.
+All recipe-owned standalone OCI executions are now semantic actions as well:
+Skia, React Native JavaScript and native builds, Wayland generation and native
+SDK builds, gfxstream, Chromium tests, and Swift Linux runtime builds execute
+through the container capability. Their action requirements preserve target
+placement and scheduler resources without treating the Apple-container Swift
+API as an ambient executable tool. Integration tests execute these actions
+against a recording container capability instead of inspecting legacy enum
+payloads. The only remaining raw OCI execution is emitted by the SwiftPM
+lowering that moves to `ColliderSwiftPM` in phase 6.
+The shared native-builder image is now one typed file artifact constructed by
+the native component and injected into recipe configuration. Skia, React
+Native, Wayland, gfxstream, and synthesized Linux SwiftPM tasks consume that
+exact reference; handwritten `native.builder` dependencies and raw image-path
+inputs are deleted. Recipe targets that needed the native-builder module only
+for its task ID no longer depend on it.
 
 Complete the existing action seam with:
 

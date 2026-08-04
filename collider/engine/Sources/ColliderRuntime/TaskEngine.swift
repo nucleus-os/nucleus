@@ -849,9 +849,7 @@ extension ColliderRuntime {
         let products = Array(Set(requirements.map(\.qualifiedProduct))).sorted()
         var inputs = [first.invocation.identityInput]
         inputs += first.invocation.context.toolsets.map(ArtifactInput.file)
-        if case .oci(let configuration) = first.invocation.context.execution {
-            inputs.append(.dependencyOutput(configuration.imageID))
-        } else {
+        if case .host = first.invocation.context.execution {
             inputs.append(ArtifactInput.tool(.named("swift")))
         }
         for requirement in requirements.sorted(by: {
@@ -879,9 +877,13 @@ extension ColliderRuntime {
         } else {
             buildArguments = ["build"]
         }
-        return TaskDeclaration(
+        var builder = TaskBuilder(
             id: TaskID(rawValue: "swift.package.build.\(digest)"),
-            component: ComponentID(rawValue: "swift-package"),
+            component: ComponentID(rawValue: "swift-package"))
+        if case .oci(let configuration) = first.invocation.context.execution {
+            builder.consume(configuration.image)
+        }
+        return builder.build(
             inputs: inputs,
             postconditions: [first.invocation.postcondition]
                 + requirements.flatMap(\.expectedOutputs).reduce(into: []) {
@@ -930,9 +932,7 @@ extension ColliderRuntime {
         ).sorted()
         var inputs = [first.invocation.identityInput]
         inputs += first.invocation.context.toolsets.map(ArtifactInput.file)
-        if case .oci(let configuration) = first.invocation.context.execution {
-            inputs.append(.dependencyOutput(configuration.imageID))
-        } else {
+        if case .host = first.invocation.context.execution {
             inputs.append(ArtifactInput.tool(.named("swift")))
         }
         for requirement in requirements.sorted(by: {
@@ -970,9 +970,13 @@ extension ColliderRuntime {
             + productRequirements.flatMap(\.expectedOutputs)).reduce(into: [PathPostcondition]()) {
                 if !$0.contains($1) { $0.append($1) }
             }
-        return TaskDeclaration(
+        var builder = TaskBuilder(
             id: TaskID(rawValue: "swift.package.test.\(digest)"),
-            component: ComponentID(rawValue: "swift-package"),
+            component: ComponentID(rawValue: "swift-package"))
+        if case .oci(let configuration) = first.invocation.context.execution {
+            builder.consume(configuration.image)
+        }
+        return builder.build(
             inputs: inputs,
             postconditions: [
                 first.invocation.postcondition

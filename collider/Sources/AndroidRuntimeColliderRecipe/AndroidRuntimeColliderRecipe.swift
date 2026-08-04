@@ -1,6 +1,5 @@
 import ColliderCore
 import Foundation
-import NativeBuilderColliderRecipe
 import SystemPackage
 
 package enum AndroidRuntimeTaskIDs {
@@ -705,25 +704,25 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             ? " --cross-file=/build-support/linux-x86_64.ini" : ""
         let hostBuild = "/tmp/nucleus-gfxstream-host"
         let guestBuild = "/tmp/nucleus-gfxstream-guest"
-        return TaskDeclaration(
+        var task = TaskBuilder(
             id: AndroidRuntimeTaskIDs.gfxstream(target),
-            component: component,
-            dependencies: [NativeBuilderTaskIDs.prepare],
+            component: component)
+        task.consume(builder.image)
+        let _: ArtifactReference<FileArtifact> = try task.output(
+            "host-backend",
+            path: buildRoot.appending("host/host/libgfxstream_backend.a"),
+            validation: .regularFile)
+        let _: ArtifactReference<FileArtifact> = try task.output(
+            "guest-vulkan-driver",
+            path: buildRoot.appending(
+                "guest/src/gfxstream/guest/vulkan/libvulkan_gfxstream.so"),
+            validation: .regularFile)
+        return task.build(
             inputs: [
                 .tree(hostSource),
                 .tree(guestSource),
-                .dependencyOutput(builder.imageID),
                 .tree(builder.swiftSDKRoot),
             ] + (target.architecture == .x86_64 ? [.file(crossFile)] : []),
-            outputs: [
-                OutputDeclaration(
-                    path: buildRoot.appending("host/host/libgfxstream_backend.a"),
-                    validation: .regularFile),
-                OutputDeclaration(
-                    path: buildRoot.appending(
-                        "guest/src/gfxstream/guest/vulkan/libvulkan_gfxstream.so"),
-                    validation: .regularFile),
-            ],
             locks: [
                 .checkout("android-runtime-gfxstream-\(target.identifier)")
             ],
@@ -732,7 +731,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .action(
                     try AnyColliderAction(
                         PrepareGfxstreamBuildAction(buildRoot: buildRoot))),
-                gfxstreamOperation(
+                try gfxstreamOperation(
                     root: root,
                     hostSource: hostSource,
                     guestSource: guestSource,
@@ -751,7 +750,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                             + " && cp \(hostBuild)/host/libgfxstream_backend.a"
                             + " /build/host/host/libgfxstream_backend.a",
                     ]),
-                gfxstreamOperation(
+                try gfxstreamOperation(
                     root: root,
                     hostSource: hostSource,
                     guestSource: guestSource,
@@ -864,52 +863,74 @@ private func gfxstreamOperation(
     builder: NativeOCIConfiguration,
     environment: [String: String],
     command: [String]
-) -> TaskOperation {
-    .runOCI(
-        OCIExecution(
-            executionPlatform: .linuxARM64OCI,
-            artifactTarget: target.artifactTarget,
-            imageID: builder.imageID,
-            hostname: "native-gfxstream-\(target.architecture.rawValue)",
-            workingDirectory: "/build",
-            hostWorkingDirectory: root,
-            mounts: [
-                OCIMount(source: hostSource, target: "/gfxstream", access: .readOnly),
-                OCIMount(source: guestSource, target: "/mesa", access: .readOnly),
-                OCIMount(source: buildRoot, target: "/build", access: .readWrite),
-                OCIMount(
-                    source: root.appending("build-support"),
-                    target: "/build-support",
-                    access: .readOnly),
-                OCIMount(
-                    source: builder.ccache,
-                    target: "/ccache",
-                    access: .readWrite),
-                OCIMount(
-                    source: builder.swiftSDKRoot,
-                    target: "/swift-sdk",
-                    access: .readOnly),
-            ],
-            networkPolicy: .externalDisabled,
-            userPolicy: .builder,
-            capabilityPolicy: .dropAll,
-            privilegePolicy: .prohibitAcquisition,
-            processFilesystemPolicy: .standard,
-            intelBinaryTranslationPolicy: target.intelBinaryTranslationPolicy,
-            resourceLimits: .parallelBuild,
-            containerEnvironment: [
-                "CC": "clang",
-                "CCACHE_DIR": "/ccache",
-                "CXX": "clang++",
-                "CXXFLAGS": "-stdlib=libc++",
-                "LDFLAGS": "-stdlib=libc++ -fuse-ld=lld",
-                "LD_LIBRARY_PATH": target.containerRuntimeLibraryPath,
-                "PKG_CONFIG_LIBDIR":
-                    "/usr/lib/\(target.gnuArchitecture)/pkgconfig:/usr/share/pkgconfig",
-            ],
-            command: ["gfxstream"] + command,
-            environment: environment,
-            output: .logged))
+) throws -> TaskOperation {
+    let execution = OCIExecution(
+        executionPlatform: .linuxARM64OCI,
+        artifactTarget: target.artifactTarget,
+        imageID: builder.imageID,
+        hostname: "native-gfxstream-\(target.architecture.rawValue)",
+        workingDirectory: "/build",
+        hostWorkingDirectory: root,
+        mounts: [
+            OCIMount(source: hostSource, target: "/gfxstream", access: .readOnly),
+            OCIMount(source: guestSource, target: "/mesa", access: .readOnly),
+            OCIMount(source: buildRoot, target: "/build", access: .readWrite),
+            OCIMount(
+                source: root.appending("build-support"),
+                target: "/build-support",
+                access: .readOnly),
+            OCIMount(
+                source: builder.ccache,
+                target: "/ccache",
+                access: .readWrite),
+            OCIMount(
+                source: builder.swiftSDKRoot,
+                target: "/swift-sdk",
+                access: .readOnly),
+        ],
+        networkPolicy: .externalDisabled,
+        userPolicy: .builder,
+        capabilityPolicy: .dropAll,
+        privilegePolicy: .prohibitAcquisition,
+        processFilesystemPolicy: .standard,
+        intelBinaryTranslationPolicy: target.intelBinaryTranslationPolicy,
+        resourceLimits: .parallelBuild,
+        containerEnvironment: [
+            "CC": "clang",
+            "CCACHE_DIR": "/ccache",
+            "CXX": "clang++",
+            "CXXFLAGS": "-stdlib=libc++",
+            "LDFLAGS": "-stdlib=libc++ -fuse-ld=lld",
+            "LD_LIBRARY_PATH": target.containerRuntimeLibraryPath,
+            "PKG_CONFIG_LIBDIR":
+                "/usr/lib/\(target.gnuArchitecture)/pkgconfig:/usr/share/pkgconfig",
+        ],
+        command: ["gfxstream"] + command,
+        environment: environment,
+        output: .logged)
+    return .action(
+        try AnyColliderAction(
+            RunGfxstreamBuildAction(execution: execution)))
+}
+
+private struct RunGfxstreamBuildAction: ColliderAction {
+    static let kind: ActionKind = "android-runtime.build-gfxstream"
+
+    let execution: OCIExecution
+
+    var identity: OCIExecutionActionIdentity {
+        OCIExecutionActionIdentity(execution)
+    }
+
+    var requirements: ActionRequirements {
+        ociActionRequirements(execution: execution)
+    }
+
+    var environment: [String: String] { execution.environment }
+
+    func execute(in context: ActionContext) async throws {
+        try await context.containers.run(execution)
+    }
 }
 
 private struct AOSPSourceLock: Decodable {

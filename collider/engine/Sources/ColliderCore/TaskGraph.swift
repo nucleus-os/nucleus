@@ -374,24 +374,26 @@ public struct OCIExecution: Hashable, Sendable {
 /// Shared configuration for the rootless native dependency builder.
 public struct NativeOCIConfiguration: Sendable {
     public let context: FilePath
-    public let imageID: FilePath
+    public let image: ArtifactReference<FileArtifact>
     public let ccache: FilePath
     public let swiftSDKRoot: FilePath
     public let environment: [String: String]
 
     public init(
         context: FilePath,
-        imageID: FilePath,
+        image: ArtifactReference<FileArtifact>,
         ccache: FilePath,
         swiftSDKRoot: FilePath,
         environment: [String: String]
     ) {
         self.context = context
-        self.imageID = imageID
+        self.image = image
         self.ccache = ccache
         self.swiftSDKRoot = swiftSDKRoot
         self.environment = environment
     }
+
+    public var imageID: FilePath { image.path }
 }
 
 /// One Linux artifact lane produced inside the canonical ARM64 builder guest.

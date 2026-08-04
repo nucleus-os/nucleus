@@ -391,12 +391,6 @@ public func ociActionRequirements(
         if !effects.contains(effect) { effects.append(effect) }
     }
     return ActionRequirements(
-        tools: [
-            ActionToolRequirement(
-                "container",
-                executable: .named("container"),
-                role: .semantic)
-        ],
         effects: effects,
         resources: ActionResourceRequest(
             cpuCount: execution.resourceLimits.cpuCount,
@@ -410,12 +404,6 @@ public func ociImagePreparationActionRequirements(
     preparation: OCIImagePreparation
 ) -> ActionRequirements {
     ActionRequirements(
-        tools: [
-            ActionToolRequirement(
-                "container",
-                executable: .named("container"),
-                role: .semantic)
-        ],
         effects: [
             ActionEffect(.read, scope: .input(preparation.context)),
             ActionEffect(.readWrite, scope: .output(preparation.imageID)),

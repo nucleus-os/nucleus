@@ -1,7 +1,6 @@
 import ColliderCore
 import CoreColliderRecipe
 import Foundation
-import NativeBuilderColliderRecipe
 import SystemPackage
 
 package enum ReactNativeTaskIDs {
@@ -47,7 +46,7 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
         in context: RecipeContext
     ) throws -> ComponentDefinition {
         let root = context.componentRoot(descriptor)
-        let javascript = installJavaScriptDependencies(
+        let javascript = try installJavaScriptDependencies(
             root: root,
             environment: context.environment,
             builder: context.nativeBuilder)
@@ -102,11 +101,17 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
         root: FilePath,
         environment: [String: String],
         builder: NativeOCIConfiguration
-    ) -> TaskDeclaration {
-        TaskDeclaration(
+    ) throws -> TaskDeclaration {
+        var task = TaskBuilder(
             id: TaskID(rawValue: "rn.javascript-dependencies"),
-            component: ComponentID(rawValue: "rn"),
-            dependencies: [NativeBuilderTaskIDs.prepare],
+            component: ComponentID(rawValue: "rn"))
+        task.consume(builder.image)
+        let _: ArtifactReference<DirectoryArtifact> = try task.output(
+            "node-modules",
+            path: root.appending(
+                "third-party/react-native/node_modules"),
+            validation: .nonEmptyDirectory)
+        return task.build(
             inputs: [
                 .file(
                     root.appending(
@@ -117,16 +122,9 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                 .file(
                     root.appending(
                         "third-party/react-native/packages/react-native/package.json")),
-                .dependencyOutput(builder.imageID),
-            ],
-            outputs: [
-                OutputDeclaration(
-                    path: root.appending(
-                        "third-party/react-native/node_modules"),
-                    validation: .nonEmptyDirectory)
             ],
             locks: [.checkout("rn-javascript")],
-            operation: javascriptOperation(
+            operation: try javascriptOperation(
                 root: root,
                 builder: builder,
                 networkPolicy: .externalEnabled,
@@ -227,6 +225,7 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
         var taskBuilder = TaskBuilder(
             id: TaskID(rawValue: "rn.generate"),
             component: ComponentID(rawValue: "rn"))
+        taskBuilder.consume(builder.image)
         let spec: ArtifactReference<DirectoryArtifact> = try taskBuilder.output(
             "fb-react-native-spec",
             path: root.appending(".rn-build/generated/FBReactNativeSpec"),
@@ -235,10 +234,9 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
             inputs: [
                 .file(root.appending("tools/generate-rn-spec.js")),
                 .tree(root.appending("third-party/react-native/packages/react-native-codegen")),
-                .dependencyOutput(builder.imageID),
             ],
             locks: [.checkout("rn")],
-            operation: javascriptOperation(
+            operation: try javascriptOperation(
                 root: root,
                 builder: builder,
                 networkPolicy: .externalDisabled,
@@ -268,11 +266,9 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
             "../core/.skia-build/\(target.identifier)")
         let icuLibrary = icuLibraryDirectory.appending("libicu.a")
         let dependencies = [
-            NativeBuilderTaskIDs.prepare,
-            CoreTaskIDs.skia(target),
+            CoreTaskIDs.skia(target)
         ]
         let nativeInputs: [ArtifactInput] = [
-            .dependencyOutput(builder.imageID),
             .dependencyOutput(icuLibrary),
             .tree(icuSource.appending("common")),
             .tree(icuSource.appending("i18n")),
@@ -282,6 +278,7 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
         var taskBuilder = TaskBuilder(
             id: TaskID(rawValue: "rn.hermes.\(target.identifier)"),
             component: ComponentID(rawValue: "rn"))
+        taskBuilder.consume(builder.image)
         let combinedArtifact: ArtifactReference<FileArtifact> = try taskBuilder.output(
             "combined-library",
             path: combined,
@@ -297,7 +294,7 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
             ] + nativeInputs,
             locks: [.checkout("rn-native-\(target.identifier)")],
             operation: .sequence([
-                nativeCMake(
+                try nativeCMake(
                     source: source,
                     containerSource: "/src/third-party/hermes",
                     build: build,
@@ -338,7 +335,7 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                             target: "/icu/lib",
                             access: .readOnly),
                     ]),
-                nativeNinja(
+                try nativeNinja(
                     build: build,
                     containerBuild: "/build/\(target.identifier)/hermes",
                     targets: ["hermesvmlean", "jsi", "hermesc"],
@@ -352,7 +349,7 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                             target: "/icu/lib",
                             access: .readOnly)
                     ]),
-                nativeContainerOperation(
+                try nativeContainerOperation(
                     root: root,
                     builder: builder,
                     command: [
@@ -383,6 +380,7 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
         var taskBuilder = TaskBuilder(
             id: TaskID(rawValue: "rn.support.\(target.identifier)"),
             component: ComponentID(rawValue: "rn"))
+        taskBuilder.consume(builder.image)
         let fmt: ArtifactReference<FileArtifact> = try taskBuilder.output(
             "fmt-library",
             path: fmtBuild.appending("libfmt.a"),
@@ -397,10 +395,11 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                 .tree(
                     root.appending(
                         "third-party/double-conversion")),
-            ] + nativeBuilderInputs(builder),
+                .tree(builder.swiftSDKRoot),
+            ],
             locks: [.checkout("rn-native-\(target.identifier)")],
             operation: .sequence([
-                nativeCMake(
+                try nativeCMake(
                     source: root.appending("third-party/fmt"),
                     containerSource: "/src/third-party/fmt",
                     build: fmtBuild,
@@ -412,14 +411,14 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                     environment: environment,
                     target: target,
                     builder: builder),
-                nativeNinja(
+                try nativeNinja(
                     build: fmtBuild,
                     containerBuild: "/build/\(target.identifier)/fmt",
                     targets: ["fmt"],
                     root: root, environment: environment,
                     target: target,
                     builder: builder),
-                nativeCMake(
+                try nativeCMake(
                     source: root.appending("third-party/double-conversion"),
                     containerSource: "/src/third-party/double-conversion",
                     build: conversionBuild,
@@ -432,7 +431,7 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                     environment: environment,
                     target: target,
                     builder: builder),
-                nativeNinja(
+                try nativeNinja(
                     build: conversionBuild,
                     containerBuild: "/build/\(target.identifier)/double-conversion",
                     targets: ["double-conversion"],
@@ -440,7 +439,7 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                     target: target,
                     builder: builder),
             ])
-        ).addingDependencies(nativeBuilderDependencies)
+        )
         return SupportLibraryArtifacts(
             task: task,
             libraries: [fmt, conversion])
@@ -464,6 +463,7 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
         var taskBuilder = TaskBuilder(
             id: TaskID(rawValue: "rn.cxx.\(target.identifier)"),
             component: ComponentID(rawValue: "rn"))
+        taskBuilder.consume(builder.image)
         taskBuilder.consume(boost)
         taskBuilder.consume(generated)
         for library in hermes.libraries + support.libraries {
@@ -494,10 +494,11 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                 .tree(root.appending("third-party/hermes")),
                 .tree(reactNative.appending("ReactCommon")),
                 .tree(root.appending("../core/swiftpm/cmake/reactnative")),
-            ] + nativeBuilderInputs(builder),
+                .tree(builder.swiftSDKRoot),
+            ],
             locks: [.checkout("rn-native-\(target.identifier)")],
             operation: .sequence([
-                nativeCMake(
+                try nativeCMake(
                     source: root.appending("third-party/glog"),
                     containerSource: "/src/third-party/glog",
                     build: glogBuild,
@@ -512,14 +513,14 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                     environment: environment,
                     target: target,
                     builder: builder),
-                nativeNinja(
+                try nativeNinja(
                     build: glogBuild,
                     containerBuild: "/build/\(target.identifier)/glog",
                     targets: ["glog"],
                     root: root, environment: environment,
                     target: target,
                     builder: builder),
-                nativeCMake(
+                try nativeCMake(
                     source: root.appending("../core/swiftpm/cmake/reactnative"),
                     containerSource: "/core-cmake",
                     build: nativeBuild,
@@ -541,7 +542,7 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                     environment: environment,
                     target: target,
                     builder: builder),
-                nativeNinja(
+                try nativeNinja(
                     build: nativeBuild,
                     containerBuild: "/build/\(target.identifier)/reactnative",
                     targets: [
@@ -777,32 +778,34 @@ private func javascriptOperation(
     networkPolicy: OCINetworkPolicy,
     command: [String],
     environment: [String: String]
-) -> TaskOperation {
-    .runOCI(
-        OCIExecution(
-            executionPlatform: .linuxARM64OCI,
-            artifactTarget: .linuxARM64,
-            imageID: builder.imageID,
-            hostname: "react-native-javascript",
-            workingDirectory: root.appending("third-party/react-native").string,
-            hostWorkingDirectory: root,
-            mounts: [
-                OCIMount(source: root, target: root.string, access: .readWrite)
-            ],
-            networkPolicy: networkPolicy,
-            userPolicy: .builder,
-            capabilityPolicy: .dropAll,
-            privilegePolicy: .prohibitAcquisition,
-            processFilesystemPolicy: .standard,
-            resourceLimits: .parallelBuild,
-            containerEnvironment: [
-                "HOME": "/home/nucleus-build",
-                "PATH":
-                    "/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-            ],
-            command: ["javascript"] + command,
-            environment: environment,
-            output: .logged))
+) throws -> TaskOperation {
+    let execution = OCIExecution(
+        executionPlatform: .linuxARM64OCI,
+        artifactTarget: .linuxARM64,
+        imageID: builder.imageID,
+        hostname: "react-native-javascript",
+        workingDirectory: root.appending("third-party/react-native").string,
+        hostWorkingDirectory: root,
+        mounts: [
+            OCIMount(source: root, target: root.string, access: .readWrite)
+        ],
+        networkPolicy: networkPolicy,
+        userPolicy: .builder,
+        capabilityPolicy: .dropAll,
+        privilegePolicy: .prohibitAcquisition,
+        processFilesystemPolicy: .standard,
+        resourceLimits: .parallelBuild,
+        containerEnvironment: [
+            "HOME": "/home/nucleus-build",
+            "PATH":
+                "/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        ],
+        command: ["javascript"] + command,
+        environment: environment,
+        output: .logged)
+    return .action(
+        try AnyColliderAction(
+            RunReactNativeJavaScriptAction(execution: execution)))
 }
 
 private let boostVersion = "1.84.0"
@@ -857,17 +860,6 @@ private func commonCMakeArguments(
     ]
 }
 
-private let nativeBuilderDependencies = [NativeBuilderTaskIDs.prepare]
-
-private func nativeBuilderInputs(
-    _ builder: NativeOCIConfiguration
-) -> [ArtifactInput] {
-    [
-        .dependencyOutput(builder.imageID),
-        .tree(builder.swiftSDKRoot),
-    ]
-}
-
 private func nativePath(_ host: FilePath, _ container: String) -> String {
     container
 }
@@ -885,10 +877,10 @@ private func nativeCMake(
     compileDefinitions: [String] = [],
     additionalCXXFlags: [String] = [],
     additionalMounts: [OCIMount] = []
-) -> TaskOperation {
+) throws -> TaskOperation {
     _ = source
     _ = build
-    return nativeContainerOperation(
+    return try nativeContainerOperation(
         root: root,
         builder: builder,
         command: [
@@ -914,9 +906,9 @@ private func nativeNinja(
     target: NativeLinuxTarget,
     builder: NativeOCIConfiguration,
     additionalMounts: [OCIMount] = []
-) -> TaskOperation {
+) throws -> TaskOperation {
     _ = build
-    return nativeContainerOperation(
+    return try nativeContainerOperation(
         root: root,
         builder: builder,
         command: ["ninja", "-C", containerBuild] + targets,
@@ -932,58 +924,100 @@ private func nativeContainerOperation(
     environment: [String: String],
     target: NativeLinuxTarget,
     additionalMounts: [OCIMount] = []
-) -> TaskOperation {
-    .runOCI(
-        OCIExecution(
-            executionPlatform: .linuxARM64OCI,
-            artifactTarget: target.artifactTarget,
-            imageID: builder.imageID,
-            hostname: "native-react-build",
-            workingDirectory: "/src",
-            hostWorkingDirectory: root,
-            mounts: [
-                OCIMount(
-                    source: root,
-                    target: "/src",
-                    access: .readOnly),
-                OCIMount(
-                    source: root.appending(".rn-build"),
-                    target: "/build",
-                    access: .readWrite),
-                OCIMount(
-                    source: root.appending("../core/swiftpm/cmake/reactnative"),
-                    target: "/core-cmake",
-                    access: .readOnly),
-                OCIMount(
-                    source: root.appending("../tools"),
-                    target: "/tools",
-                    access: .readOnly),
-                OCIMount(
-                    source: root.appending("third-party/double-conversion/src"),
-                    target: "/dependencies/include/double-conversion",
-                    access: .readOnly),
-                OCIMount(
-                    source: builder.ccache,
-                    target: "/ccache",
-                    access: .readWrite),
-                OCIMount(
-                    source: builder.swiftSDKRoot,
-                    target: "/swift-sdk",
-                    access: .readOnly),
-            ] + additionalMounts,
-            networkPolicy: .externalDisabled,
-            userPolicy: .builder,
-            capabilityPolicy: .dropAll,
-            privilegePolicy: .prohibitAcquisition,
-            processFilesystemPolicy: .standard,
-            intelBinaryTranslationPolicy: target.intelBinaryTranslationPolicy,
-            resourceLimits: .parallelBuild,
-            containerEnvironment: [
-                "PKG_CONFIG_LIBDIR":
-                    "/usr/lib/\(target.gnuArchitecture)/pkgconfig:/usr/share/pkgconfig",
-                "LD_LIBRARY_PATH": target.containerRuntimeLibraryPath,
-            ],
-            command: ["react-native"] + command,
-            environment: environment,
-            output: .logged))
+) throws -> TaskOperation {
+    let execution = OCIExecution(
+        executionPlatform: .linuxARM64OCI,
+        artifactTarget: target.artifactTarget,
+        imageID: builder.imageID,
+        hostname: "native-react-build",
+        workingDirectory: "/src",
+        hostWorkingDirectory: root,
+        mounts: [
+            OCIMount(
+                source: root,
+                target: "/src",
+                access: .readOnly),
+            OCIMount(
+                source: root.appending(".rn-build"),
+                target: "/build",
+                access: .readWrite),
+            OCIMount(
+                source: root.appending("../core/swiftpm/cmake/reactnative"),
+                target: "/core-cmake",
+                access: .readOnly),
+            OCIMount(
+                source: root.appending("../tools"),
+                target: "/tools",
+                access: .readOnly),
+            OCIMount(
+                source: root.appending("third-party/double-conversion/src"),
+                target: "/dependencies/include/double-conversion",
+                access: .readOnly),
+            OCIMount(
+                source: builder.ccache,
+                target: "/ccache",
+                access: .readWrite),
+            OCIMount(
+                source: builder.swiftSDKRoot,
+                target: "/swift-sdk",
+                access: .readOnly),
+        ] + additionalMounts,
+        networkPolicy: .externalDisabled,
+        userPolicy: .builder,
+        capabilityPolicy: .dropAll,
+        privilegePolicy: .prohibitAcquisition,
+        processFilesystemPolicy: .standard,
+        intelBinaryTranslationPolicy: target.intelBinaryTranslationPolicy,
+        resourceLimits: .parallelBuild,
+        containerEnvironment: [
+            "PKG_CONFIG_LIBDIR":
+                "/usr/lib/\(target.gnuArchitecture)/pkgconfig:/usr/share/pkgconfig",
+            "LD_LIBRARY_PATH": target.containerRuntimeLibraryPath,
+        ],
+        command: ["react-native"] + command,
+        environment: environment,
+        output: .logged)
+    return .action(
+        try AnyColliderAction(
+            RunReactNativeNativeBuildAction(execution: execution)))
+}
+
+private struct RunReactNativeJavaScriptAction: ColliderAction {
+    static let kind: ActionKind = "rn.run-javascript"
+
+    let execution: OCIExecution
+
+    var identity: OCIExecutionActionIdentity {
+        OCIExecutionActionIdentity(execution)
+    }
+
+    var requirements: ActionRequirements {
+        ociActionRequirements(execution: execution)
+    }
+
+    var environment: [String: String] { execution.environment }
+
+    func execute(in context: ActionContext) async throws {
+        try await context.containers.run(execution)
+    }
+}
+
+private struct RunReactNativeNativeBuildAction: ColliderAction {
+    static let kind: ActionKind = "rn.run-native-build"
+
+    let execution: OCIExecution
+
+    var identity: OCIExecutionActionIdentity {
+        OCIExecutionActionIdentity(execution)
+    }
+
+    var requirements: ActionRequirements {
+        ociActionRequirements(execution: execution)
+    }
+
+    var environment: [String: String] { execution.environment }
+
+    func execute(in context: ActionContext) async throws {
+        try await context.containers.run(execution)
+    }
 }

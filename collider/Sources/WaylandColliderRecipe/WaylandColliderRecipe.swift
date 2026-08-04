@@ -1,6 +1,5 @@
 import ColliderCore
 import Foundation
-import NativeBuilderColliderRecipe
 import SystemPackage
 
 package enum WaylandTaskIDs {
@@ -76,10 +75,8 @@ public enum WaylandColliderRecipe: ColliderComponent {
             nativeScanner?.path.removingLastComponent()
             .removingLastComponent() ?? sdk
         let targetSDKMount = target.architecture == .arm64 ? "/native-wayland" : "/sdk"
-        let dependencies = [NativeBuilderTaskIDs.prepare]
         var inputs: [ArtifactInput] = [
-            .tree(source),
-            .dependencyOutput(builder.imageID),
+            .tree(source)
         ]
         if target.architecture == .x86_64 {
             guard nativeScanner != nil else {
@@ -105,6 +102,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
         var task = TaskBuilder(
             id: WaylandTaskIDs.nativeSDK(target),
             component: ComponentID(rawValue: "wayland"))
+        task.consume(builder.image)
         if let nativeScanner {
             task.consume(nativeScanner)
         }
@@ -143,7 +141,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
                         PrepareWaylandNativeBuildAction(
                             build: build,
                             sdk: sdk))),
-                nativeOperation(
+                try nativeOperation(
                     root: root,
                     source: source,
                     build: build,
@@ -153,7 +151,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
                     target: target,
                     environment: environment,
                     command: configureArguments),
-                nativeOperation(
+                try nativeOperation(
                     root: root,
                     source: source,
                     build: build,
@@ -163,7 +161,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
                     target: target,
                     environment: environment,
                     command: ["meson", "compile", "-C", "/build"]),
-                nativeOperation(
+                try nativeOperation(
                     root: root,
                     source: source,
                     build: build,
@@ -174,7 +172,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
                     environment: environment,
                     command: ["meson", "install", "-C", "/build", "--no-rebuild"]),
             ])
-        ).addingDependencies(dependencies)
+        )
         return NativeSDKArtifacts(task: declaration, scanner: scanner)
     }
 
@@ -235,7 +233,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
             ]
         }
         operations.append(
-            scannerOperation(
+            try scannerOperation(
                 root: root,
                 scannerSDK: scanner.path.removingLastComponent().removingLastComponent(),
                 builder: builder,
@@ -253,6 +251,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
             id: TaskID(rawValue: "wayland.generate"),
             component: ComponentID(rawValue: "wayland"))
         task.consume(scanner)
+        task.consume(builder.image)
         for (index, directory) in generatedDirectories.enumerated() {
             let _: ArtifactReference<DirectoryArtifact> = try task.output(
                 OutputSlotID(rawValue: "generated-\(index)"),
@@ -278,12 +277,11 @@ public enum WaylandColliderRecipe: ColliderComponent {
                 .tree(root.appending("Sources/WaylandProtocolModel")),
                 .tree(root.appending("Protocols")),
                 .file(waylandXML),
-                .dependencyOutput(builder.imageID),
                 swiftPM.identityInput,
             ],
             locks: [.checkout("wayland")],
             operation: .sequence(operations)
-        ).addingDependencies([NativeBuilderTaskIDs.prepare])
+        )
     }
 }
 
@@ -478,39 +476,41 @@ private func scannerOperation(
     builder: NativeOCIConfiguration,
     arguments: [String],
     environment: [String: String]
-) -> TaskOperation {
-    .runOCI(
-        OCIExecution(
-            executionPlatform: .linuxARM64OCI,
-            artifactTarget: .linuxARM64,
-            imageID: builder.imageID,
-            hostname: "wayland-source-generation",
-            workingDirectory: root.string,
-            hostWorkingDirectory: root,
-            mounts: [
-                OCIMount(source: root, target: root.string, access: .readWrite),
-                OCIMount(
-                    source: scannerSDK,
-                    target: "/native-wayland",
-                    access: .readOnly),
-            ],
-            networkPolicy: .externalDisabled,
-            userPolicy: .builder,
-            capabilityPolicy: .dropAll,
-            privilegePolicy: .prohibitAcquisition,
-            processFilesystemPolicy: .standard,
-            resourceLimits: .parallelBuild,
-            containerEnvironment: [:],
-            command: [
-                "wayland-generate",
-                "sh", "-eu", "-c",
-                "scanner=/native-wayland/bin/wayland-scanner; "
-                    + "while [ \"$#\" -ne 0 ]; do "
-                    + "\"$scanner\" \"$1\" \"$2\" \"$3\"; shift 3; done",
-                "wayland-scanner",
-            ] + arguments,
-            environment: environment,
-            output: .logged))
+) throws -> TaskOperation {
+    let execution = OCIExecution(
+        executionPlatform: .linuxARM64OCI,
+        artifactTarget: .linuxARM64,
+        imageID: builder.imageID,
+        hostname: "wayland-source-generation",
+        workingDirectory: root.string,
+        hostWorkingDirectory: root,
+        mounts: [
+            OCIMount(source: root, target: root.string, access: .readWrite),
+            OCIMount(
+                source: scannerSDK,
+                target: "/native-wayland",
+                access: .readOnly),
+        ],
+        networkPolicy: .externalDisabled,
+        userPolicy: .builder,
+        capabilityPolicy: .dropAll,
+        privilegePolicy: .prohibitAcquisition,
+        processFilesystemPolicy: .standard,
+        resourceLimits: .parallelBuild,
+        containerEnvironment: [:],
+        command: [
+            "wayland-generate",
+            "sh", "-eu", "-c",
+            "scanner=/native-wayland/bin/wayland-scanner; "
+                + "while [ \"$#\" -ne 0 ]; do "
+                + "\"$scanner\" \"$1\" \"$2\" \"$3\"; shift 3; done",
+            "wayland-scanner",
+        ] + arguments,
+        environment: environment,
+        output: .logged)
+    return .action(
+        try AnyColliderAction(
+            RunWaylandSourceGenerationAction(execution: execution)))
 }
 
 private func nativeOperation(
@@ -523,7 +523,7 @@ private func nativeOperation(
     target: NativeLinuxTarget,
     environment: [String: String],
     command: [String]
-) -> TaskOperation {
+) throws -> TaskOperation {
     var mounts = [
         OCIMount(source: source, target: "/src", access: .readOnly),
         OCIMount(source: build, target: "/build", access: .readWrite),
@@ -562,26 +562,68 @@ private func nativeOperation(
         containerEnvironment["PKG_CONFIG_LIBDIR_FOR_BUILD"] =
             "/native-wayland/lib/pkgconfig"
     }
-    return .runOCI(
-        OCIExecution(
-            executionPlatform: .linuxARM64OCI,
-            artifactTarget: target.artifactTarget,
-            imageID: builder.imageID,
-            hostname: "native-wayland-\(target.architecture.rawValue)",
-            workingDirectory: "/src",
-            hostWorkingDirectory: root,
-            mounts: mounts,
-            networkPolicy: .externalDisabled,
-            userPolicy: .builder,
-            capabilityPolicy: .dropAll,
-            privilegePolicy: .prohibitAcquisition,
-            processFilesystemPolicy: .standard,
-            intelBinaryTranslationPolicy: target.intelBinaryTranslationPolicy,
-            resourceLimits: .parallelBuild,
-            containerEnvironment: containerEnvironment,
-            command: ["wayland"] + command,
-            environment: environment,
-            output: .logged))
+    let execution = OCIExecution(
+        executionPlatform: .linuxARM64OCI,
+        artifactTarget: target.artifactTarget,
+        imageID: builder.imageID,
+        hostname: "native-wayland-\(target.architecture.rawValue)",
+        workingDirectory: "/src",
+        hostWorkingDirectory: root,
+        mounts: mounts,
+        networkPolicy: .externalDisabled,
+        userPolicy: .builder,
+        capabilityPolicy: .dropAll,
+        privilegePolicy: .prohibitAcquisition,
+        processFilesystemPolicy: .standard,
+        intelBinaryTranslationPolicy: target.intelBinaryTranslationPolicy,
+        resourceLimits: .parallelBuild,
+        containerEnvironment: containerEnvironment,
+        command: ["wayland"] + command,
+        environment: environment,
+        output: .logged)
+    return .action(
+        try AnyColliderAction(
+            RunWaylandNativeBuildAction(execution: execution)))
+}
+
+private struct RunWaylandSourceGenerationAction: ColliderAction {
+    static let kind: ActionKind = "wayland.generate-sources"
+
+    let execution: OCIExecution
+
+    var identity: OCIExecutionActionIdentity {
+        OCIExecutionActionIdentity(execution)
+    }
+
+    var requirements: ActionRequirements {
+        ociActionRequirements(execution: execution)
+    }
+
+    var environment: [String: String] { execution.environment }
+
+    func execute(in context: ActionContext) async throws {
+        try await context.containers.run(execution)
+    }
+}
+
+private struct RunWaylandNativeBuildAction: ColliderAction {
+    static let kind: ActionKind = "wayland.build-native-sdk"
+
+    let execution: OCIExecution
+
+    var identity: OCIExecutionActionIdentity {
+        OCIExecutionActionIdentity(execution)
+    }
+
+    var requirements: ActionRequirements {
+        ociActionRequirements(execution: execution)
+    }
+
+    var environment: [String: String] { execution.environment }
+
+    func execute(in context: ActionContext) async throws {
+        try await context.containers.run(execution)
+    }
 }
 
 private struct WaylandProtocolRecord {

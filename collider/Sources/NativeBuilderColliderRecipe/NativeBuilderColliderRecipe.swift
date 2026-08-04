@@ -5,41 +5,38 @@ package enum NativeBuilderTaskIDs {
     package static let prepare = TaskID(rawValue: "native.builder")
 }
 
-public enum NativeBuilderColliderRecipe: ColliderComponent {
+public struct NativeBuilderArtifacts: Sendable {
+    public let component: ComponentDefinition
+    public let configuration: NativeOCIConfiguration
+}
+
+public enum NativeBuilderColliderRecipe {
     public static let descriptor = ComponentDescriptor(
         id: ComponentID(rawValue: "native"),
         canonicalName: "native-builder",
         directoryName: "core/build-container")
 
-    public static func makeComponent(
-        in context: RecipeContext
-    ) throws -> ComponentDefinition {
-        let task = try prepare(context.nativeBuilder)
-        return try ComponentDefinition(
-            descriptor: descriptor,
-            tasks: [task],
-            entrypoints: [
-                ComponentEntrypoint(id: .bootstrap, roots: [task.id])
-            ])
-    }
-
     public static func prepare(
-        _ configuration: NativeOCIConfiguration
-    ) throws -> TaskDeclaration {
-        return TaskDeclaration(
+        context: FilePath,
+        imageID: FilePath,
+        ccache: FilePath,
+        swiftSDKRoot: FilePath,
+        environment: [String: String]
+    ) throws -> NativeBuilderArtifacts {
+        var builder = TaskBuilder(
             id: NativeBuilderTaskIDs.prepare,
-            component: ComponentID(rawValue: "native"),
+            component: descriptor.id)
+        let image: ArtifactReference<FileArtifact> = try builder.output(
+            "image-id",
+            path: imageID,
+            validation: .regularFile)
+        let task = builder.build(
             inputs: [
-                .tree(configuration.context)
-            ],
-            outputs: [
-                OutputDeclaration(
-                    path: configuration.imageID,
-                    validation: .regularFile)
+                .tree(context)
             ],
             postconditions: [
                 PathPostcondition(
-                    path: configuration.ccache,
+                    path: ccache,
                     validation: .exists)
             ],
             locks: [.checkout("native-builder-image")],
@@ -48,19 +45,33 @@ public enum NativeBuilderColliderRecipe: ColliderComponent {
                 .action(
                     try AnyColliderAction(
                         PrepareNativeBuilderCacheAction(
-                            cache: configuration.ccache))),
+                            cache: ccache))),
                 .action(
                     try AnyColliderAction(
                         PrepareNativeBuilderImageAction(
                             preparation: OCIImagePreparation(
                                 executionPlatform: .linuxARM64OCI,
-                                context: configuration.context,
-                                containerFile: configuration.context.appending(
+                                context: context,
+                                containerFile: context.appending(
                                     "Containerfile"),
-                                imageID: configuration.imageID,
+                                imageID: imageID,
                                 imageName: "localhost/nucleus-linux-build",
-                                environment: configuration.environment)))),
+                                environment: environment)))),
             ]))
+        let configuration = NativeOCIConfiguration(
+            context: context,
+            image: image,
+            ccache: ccache,
+            swiftSDKRoot: swiftSDKRoot,
+            environment: environment)
+        return NativeBuilderArtifacts(
+            component: try ComponentDefinition(
+                descriptor: descriptor,
+                tasks: [task],
+                entrypoints: [
+                    ComponentEntrypoint(id: .bootstrap, roots: [task.id])
+                ]),
+            configuration: configuration)
     }
 }
 

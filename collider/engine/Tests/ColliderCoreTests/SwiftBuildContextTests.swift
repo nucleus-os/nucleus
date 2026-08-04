@@ -233,12 +233,19 @@ private let fixturePackageRoot = FilePath("/workspace")
             == scratch.appending("out/Products/Debug/Fixture"))
 }
 
-@Test func swiftPMOCIExecutionKeepsGuestArchitectureSeparateFromArtifactArchitecture() {
+@Test func swiftPMOCIExecutionKeepsGuestArchitectureSeparateFromArtifactArchitecture() throws {
     let imageID = FilePath("/cache/nucleus-linux-build/image-id")
+    var producer = TaskBuilder(
+        id: TaskID(rawValue: "native.builder"),
+        component: ComponentID(rawValue: "native"))
+    let image: ArtifactReference<FileArtifact> = try producer.output(
+        "image-id",
+        path: imageID,
+        validation: .regularFile)
     let execution = SwiftPMOCIExecution(
         executionPlatform: .linuxARM64OCI,
         artifactTarget: .linuxX86_64,
-        imageID: imageID,
+        image: image,
         hostname: "nucleus-linux-amd64-test",
         hostWorkingDirectory: fixturePackageRoot,
         mounts: [

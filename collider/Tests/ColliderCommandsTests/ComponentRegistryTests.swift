@@ -19,6 +19,28 @@ private let fixtureRepositoryRoot = FilePath(
         .deletingLastPathComponent()
         .deletingLastPathComponent().path)
 
+private func fixtureNativeBuilder(
+    context: FilePath,
+    imageID: FilePath,
+    ccache: FilePath,
+    swiftSDKRoot: FilePath,
+    environment: [String: String]
+) throws -> NativeOCIConfiguration {
+    var producer = TaskBuilder(
+        id: TaskID(rawValue: "native.builder"),
+        component: ComponentID(rawValue: "native"))
+    let image: ArtifactReference<FileArtifact> = try producer.output(
+        "image-id",
+        path: imageID,
+        validation: .regularFile)
+    return NativeOCIConfiguration(
+        context: context,
+        image: image,
+        ccache: ccache,
+        swiftSDKRoot: swiftSDKRoot,
+        environment: environment)
+}
+
 @Test func androidToolchainCatalogDrivesColliderVersionsAndNDKSelection() throws {
     let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-android-toolchain-\(UUID().uuidString)", isDirectory: true)
@@ -164,7 +186,7 @@ private let fixtureRepositoryRoot = FilePath(
     let repositoryRoot = FilePath("/workspace")
     let runtimeRoot = repositoryRoot.appending("android-runtime")
     let environment = ["PATH": "/usr/bin"]
-    let builder = NativeOCIConfiguration(
+    let builder = try fixtureNativeBuilder(
         context: repositoryRoot.appending("core/build-container"),
         imageID: repositoryRoot.appending(".nucleus/native-builder/image-id"),
         ccache: repositoryRoot.appending(".nucleus/ccache"),
@@ -421,7 +443,7 @@ private let fixtureRepositoryRoot = FilePath(
     }
 }
 
-@Test func migratedGeneratorsInvokeComponentToolsWithoutCommandPlugins() throws {
+@Test func migratedGeneratorsInvokeComponentToolsWithoutCommandPlugins() async throws {
     let root = FilePath("/workspace")
     let environment = ["PATH": "/usr/bin"]
     let swiftPM = SwiftPMInvocation(
@@ -457,14 +479,14 @@ private let fixtureRepositoryRoot = FilePath(
     let reactNative = try ReactNativeColliderRecipe.generate(
         root: root.appending("react-native"),
         environment: environment,
-        builder: NativeOCIConfiguration(
+        builder: try fixtureNativeBuilder(
             context: root.appending("core/build-container"),
             imageID: FilePath("/cache/native/image-id"),
             ccache: FilePath("/cache/native/ccache"),
             swiftSDKRoot: FilePath("/cache/swift-sdks"),
             environment: environment)
     ).task
-    guard case .runOCI(let reactNativeCommand) = reactNative.operation else {
+    guard let reactNativeCommand = try await ociExecutions(in: reactNative.operation).first else {
         Issue.record("React Native generation must be a typed OCI command")
         return
     }
@@ -479,14 +501,14 @@ private let fixtureRepositoryRoot = FilePath(
             == "/workspace/react-native/third-party/react-native")
 }
 
-@Test func waylandGenerationIsOneColliderOwnedCommandSequence() throws {
+@Test func waylandGenerationIsOneColliderOwnedCommandSequence() async throws {
     let workspace = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
     let root = FilePath(workspace.appendingPathComponent("swift-wayland").path)
-    let builder = NativeOCIConfiguration(
+    let builder = try fixtureNativeBuilder(
         context: FilePath(workspace.appendingPathComponent("core/build-container").path),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/native/ccache"),
@@ -523,9 +545,8 @@ private let fixtureRepositoryRoot = FilePath(
         guard case .action(let action) = operation else { return nil }
         return action
     }
-    let scannerContainers = operations.filter {
-        guard case .runOCI(let execution) = $0 else { return false }
-        return execution.hostname == "wayland-source-generation"
+    let scannerContainers = try await ociExecutions(in: task.operation).filter {
+        $0.hostname == "wayland-source-generation"
     }
     #expect(
         task.swiftProducts.map(\.qualifiedProduct) == [
@@ -534,19 +555,18 @@ private let fixtureRepositoryRoot = FilePath(
     #expect(
         actions.map(\.kind).contains(
             ActionKind(rawValue: "wayland.generate-swift-sources")))
+    let scannerExecution = try #require(scannerContainers.first)
     #expect(scannerContainers.count == 1)
-    if case .runOCI(let scanner) = scannerContainers[0] {
-        #expect(scanner.command.first == "wayland-generate")
-    }
+    #expect(scannerExecution.command.first == "wayland-generate")
 }
 
-@Test func skiaRecipesUseTheIsolatedNativeBuilder() throws {
+@Test func skiaRecipesUseTheIsolatedNativeBuilder() async throws {
     let root = fixtureRepositoryRoot.appending("core")
     let environment = [
         "PATH": "/usr/bin",
         "NUCLEUS_ANDROID_NDK_HOME": "/opt/android-ndk",
     ]
-    let builder = NativeOCIConfiguration(
+    let builder = try fixtureNativeBuilder(
         context: root.appending("build-container"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
@@ -586,17 +606,11 @@ private let fixtureRepositoryRoot = FilePath(
             builder: builder
         ).task,
     ] {
-        guard case .sequence(let operations) = task.operation else {
+        guard case .sequence = task.operation else {
             Issue.record("Skia provisioning must be an ordered task sequence")
             continue
         }
-        let executions = operations.compactMap {
-            operation -> OCIExecution? in
-            guard case .runOCI(let execution) = operation else {
-                return nil
-            }
-            return execution
-        }
+        let executions = try await ociExecutions(in: task.operation)
         #expect(executions.count == 2)
         #expect(executions.allSatisfy { $0.imageID == builder.imageID })
         #expect(
@@ -624,7 +638,7 @@ private let fixtureRepositoryRoot = FilePath(
         "PATH": "/usr/bin",
         "NUCLEUS_ANDROID_NDK_HOME": "/opt/android-ndk",
     ]
-    let builder = NativeOCIConfiguration(
+    let builder = try fixtureNativeBuilder(
         context: coreRoot.appending("build-container"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
@@ -712,10 +726,10 @@ private let fixtureRepositoryRoot = FilePath(
     }
 }
 
-@Test func reactNativeSupportRecipesUseTheIsolatedNativeBuilder() throws {
+@Test func reactNativeSupportRecipesUseTheIsolatedNativeBuilder() async throws {
     let root = FilePath("/workspace/react-native")
     let environment = ["PATH": "/usr/bin"]
-    let builder = NativeOCIConfiguration(
+    let builder = try fixtureNativeBuilder(
         context: FilePath("/workspace/core/build-container"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
@@ -745,17 +759,11 @@ private let fixtureRepositoryRoot = FilePath(
         support: support,
         builder: builder)
     for task in [support.task, runtime.task] {
-        guard case .sequence(let operations) = task.operation else {
+        guard case .sequence = task.operation else {
             Issue.record("RN native provisioning must be an ordered task sequence")
             continue
         }
-        let nativeOperations = operations.compactMap {
-            operation -> OCIExecution? in
-            guard case .runOCI(let execution) = operation else {
-                return nil
-            }
-            return execution
-        }
+        let nativeOperations = try await ociExecutions(in: task.operation)
         #expect(!nativeOperations.isEmpty)
         #expect(
             nativeOperations.allSatisfy {
@@ -774,6 +782,7 @@ private let fixtureRepositoryRoot = FilePath(
     }
     #expect(
         Set(runtime.task.dependencies) == [
+            TaskID(rawValue: "native.builder"),
             TaskID(rawValue: "rn.support.linux-arm64"),
             TaskID(rawValue: "rn.generate"),
             TaskID(rawValue: "rn.boost"),
@@ -781,10 +790,10 @@ private let fixtureRepositoryRoot = FilePath(
         ])
 }
 
-@Test func hermesRecipeBuildsAndMergesInsideTheARM64Guest() throws {
+@Test func hermesRecipeBuildsAndMergesInsideTheARM64Guest() async throws {
     let root = FilePath("/workspace/react-native")
     let environment = ["PATH": "/usr/bin"]
-    let builder = NativeOCIConfiguration(
+    let builder = try fixtureNativeBuilder(
         context: FilePath("/workspace/core/build-container"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
@@ -796,23 +805,19 @@ private let fixtureRepositoryRoot = FilePath(
         target: NativeLinuxTarget(architecture: .x86_64),
         builder: builder
     ).task
-    guard case .sequence(let operations) = task.operation else {
+    guard case .sequence = task.operation else {
         Issue.record("Hermes provisioning must be an ordered task sequence")
         return
     }
-    #expect(operations.count == 3)
-    guard case .runOCI(let configure) = operations[0],
-        case .runOCI(let build) = operations[1],
-        case .runOCI(let merge) = operations[2]
-    else {
-        Issue.record("every Hermes operation must use the native builder")
-        return
-    }
+    let executions = try await ociExecutions(in: task.operation)
+    try #require(executions.count == 3)
+    let configure = executions[0]
+    let build = executions[1]
+    let merge = executions[2]
     #expect(configure.command.first == "react-native")
     #expect(configure.command.contains("cmake"))
     #expect(build.command.contains("ninja"))
     #expect(merge.command.contains("/tools/merge-static-archives.sh"))
-    let executions = [configure, build, merge]
     #expect(executions.allSatisfy { $0.executionPlatform == .linuxARM64OCI })
     #expect(executions.allSatisfy { $0.artifactTarget == .linuxX86_64 })
     #expect(
@@ -821,12 +826,12 @@ private let fixtureRepositoryRoot = FilePath(
         })
 }
 
-@Test func waylandCrossBuildUsesTheNativeARM64ScannerSDK() throws {
+@Test func waylandCrossBuildUsesTheNativeARM64ScannerSDK() async throws {
     let root = FilePath("/workspace/swift-wayland")
     let armSDKRoot = FilePath("/cache/native-sdk/linux-arm64")
     let x86SDKRoot = FilePath("/cache/native-sdk/linux-x86_64")
     let environment = ["PATH": "/usr/bin"]
-    let builder = NativeOCIConfiguration(
+    let builder = try fixtureNativeBuilder(
         context: FilePath("/workspace/core/build-container"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
@@ -863,22 +868,20 @@ private let fixtureRepositoryRoot = FilePath(
                     "/cache/native-sdk/linux-arm64/wayland/bin/wayland-scanner")
         })
 
-    guard case .sequence(let armOperations) = arm.operation,
-        case .sequence(let x86Operations) = x86.operation
+    guard case .sequence = arm.operation,
+        case .sequence = x86.operation
     else {
         Issue.record("Wayland SDK builds must configure inside the ARM64 builder")
         return
     }
-    func configureExecution(in operations: [TaskOperation]) -> OCIExecution? {
-        operations.compactMap { operation -> OCIExecution? in
-            guard case .runOCI(let execution) = operation else { return nil }
-            return execution
-        }.first(where: {
+    let armConfigure = try #require(
+        try await ociExecutions(in: arm.operation).first {
             $0.command.starts(with: ["wayland", "meson", "setup"])
         })
-    }
-    let armConfigure = try #require(configureExecution(in: armOperations))
-    let x86Configure = try #require(configureExecution(in: x86Operations))
+    let x86Configure = try #require(
+        try await ociExecutions(in: x86.operation).first {
+            $0.command.starts(with: ["wayland", "meson", "setup"])
+        })
 
     #expect(armConfigure.executionPlatform == .linuxARM64OCI)
     #expect(armConfigure.artifactTarget == .linuxARM64)
@@ -909,7 +912,7 @@ private let fixtureRepositoryRoot = FilePath(
     let sdkRoot = FilePath("/cache/native-sdk/linux-x86_64")
     let target = NativeLinuxTarget(architecture: .x86_64)
     let environment = ["PATH": "/usr/bin"]
-    let builder = NativeOCIConfiguration(
+    let builder = try fixtureNativeBuilder(
         context: FilePath("/workspace/core/build-container"),
         imageID: FilePath("/cache/native/image-id"),
         ccache: FilePath("/cache/ccache/native"),
