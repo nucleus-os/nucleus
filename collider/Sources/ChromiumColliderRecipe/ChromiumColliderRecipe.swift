@@ -177,7 +177,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                     validation: .regularFile)
             ],
             locks: [.shared(cache.appending("locks/depot-tools.lock"))],
-            cachePolicy: .always,
+            assessmentPolicy: .always,
             operation: .prepareChromiumDepotTools(
                 ChromiumDepotToolsPreparation(
                     repository: depotTools,
@@ -329,7 +329,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             locks: [
                 .shared(cache.appending("locks/cache-retention.lock"))
             ],
-            cachePolicy: .always,
+            assessmentPolicy: .always,
             operation: .pruneDirectories(
                 DirectoryRetentionPlan(
                     safetyRoot: cache,
@@ -364,7 +364,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 .shared(cache.appending("locks/cef-output.lock")),
                 .shared(cache.appending("locks/browser-output.lock")),
             ],
-            cachePolicy: .always,
+            assessmentPolicy: .always,
             operation: .sequence([
                 .runOCI(
                     chromiumBuildExecution(
@@ -410,7 +410,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             locks: [
                 .shared(cache.appending("locks/browser-publication.lock"))
             ],
-            cachePolicy: .always,
+            assessmentPolicy: .always,
             operation: .sequence([
                 .validateBrowserArtifact(browserAssembly),
                 .installBrowser(

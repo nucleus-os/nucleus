@@ -472,7 +472,7 @@ extension ColliderRuntime {
                         })
                         ?? pendingTasks.compactMap { index -> ScheduledTask? in
                             let task = ordered[index]
-                            let dependenciesReady = task.dependencies.allSatisfy {
+                            let dependenciesReady = task.executionDependencies.allSatisfy {
                                 completed.contains($0)
                                     || task.subsumedDependencies.contains($0)
                             }
@@ -624,7 +624,7 @@ extension ColliderRuntime {
                     $0.invocation.context == context
                 }))
         {
-            for dependency in task.dependencies {
+            for dependency in task.executionDependencies {
                 collectSwiftBuildPrerequisite(
                     dependency,
                     context: context,
@@ -649,7 +649,7 @@ extension ColliderRuntime {
                 $0.invocation.context == context
             })
         {
-            for dependency in task.dependencies {
+            for dependency in task.executionDependencies {
                 collectSwiftBuildPrerequisite(
                     dependency,
                     context: context,
@@ -1056,13 +1056,59 @@ extension ColliderRuntime {
         var encoder = CanonicalDigestEncoder()
         encoder.append(tag: 1, string: task.id.rawValue)
         encoder.append(tag: 2, string: task.component.rawValue)
-        encoder.append(tag: 89, string: task.cachePolicy.rawValue)
         for dependency in dependencies {
             encoder.append(tag: 3, bytes: dependency.bytes)
         }
         for dependency in task.subsumedDependencies {
             encoder.append(tag: 220, string: dependency.rawValue)
         }
+        var artifactReferenceBytes: [UInt8] = []
+        for reference in task.artifactReferences.sorted(by: {
+            ($0.producer.rawValue, $0.slot.rawValue, $0.path.string)
+                < ($1.producer.rawValue, $1.slot.rawValue, $1.path.string)
+        }) {
+            var referenceEncoder = ActionIdentityEncoder()
+            referenceEncoder.append(tag: 1, string: reference.producer.rawValue)
+            referenceEncoder.append(tag: 2, string: reference.slot.rawValue)
+            referenceEncoder.append(tag: 3, string: reference.path.string)
+            referenceEncoder.append(tag: 4, string: reference.kind.rawValue)
+            let bytes = try referenceEncoder.encodedBytes()
+            artifactReferenceBytes += identityLengthPrefix(bytes.count) + bytes
+        }
+        encoder.append(tag: 245, bytes: artifactReferenceBytes)
+        var resultReferenceBytes: [UInt8] = []
+        for reference in task.resultReferences.sorted(by: {
+            ($0.producer.rawValue, $0.slot.rawValue)
+                < ($1.producer.rawValue, $1.slot.rawValue)
+        }) {
+            var referenceEncoder = ActionIdentityEncoder()
+            referenceEncoder.append(tag: 1, string: reference.producer.rawValue)
+            referenceEncoder.append(tag: 2, string: reference.slot.rawValue)
+            referenceEncoder.append(tag: 3, string: reference.valueType)
+            let bytes = try referenceEncoder.encodedBytes()
+            resultReferenceBytes += identityLengthPrefix(bytes.count) + bytes
+        }
+        encoder.append(tag: 246, bytes: resultReferenceBytes)
+        var outputSlotBytes: [UInt8] = []
+        for slot in task.outputSlots.sorted(by: { $0.id.rawValue < $1.id.rawValue }) {
+            var slotEncoder = ActionIdentityEncoder()
+            slotEncoder.append(tag: 1, string: slot.id.rawValue)
+            slotEncoder.append(tag: 2, string: slot.path.string)
+            slotEncoder.append(tag: 3, string: slot.validation.rawValue)
+            slotEncoder.append(tag: 4, string: slot.kind.rawValue)
+            let bytes = try slotEncoder.encodedBytes()
+            outputSlotBytes += identityLengthPrefix(bytes.count) + bytes
+        }
+        encoder.append(tag: 247, bytes: outputSlotBytes)
+        var resultSlotBytes: [UInt8] = []
+        for slot in task.resultSlots.sorted(by: { $0.id.rawValue < $1.id.rawValue }) {
+            var slotEncoder = ActionIdentityEncoder()
+            slotEncoder.append(tag: 1, string: slot.id.rawValue)
+            slotEncoder.append(tag: 2, string: slot.valueType)
+            let bytes = try slotEncoder.encodedBytes()
+            resultSlotBytes += identityLengthPrefix(bytes.count) + bytes
+        }
+        encoder.append(tag: 248, bytes: resultSlotBytes)
         for requirement in task.swiftProducts.sorted(by: {
             $0.qualifiedProduct < $1.qualifiedProduct
         }) {
@@ -1164,8 +1210,37 @@ extension ColliderRuntime {
     ) throws {
         switch operation {
         case .action(let action):
-            encoder.append(tag: 235, string: action.kind)
+            encoder.append(tag: 235, string: action.kind.rawValue)
             encoder.append(tag: 236, bytes: action.identity)
+            for tool in action.requirements.tools.filter({
+                $0.role == .semantic
+            }).sorted(by: { $0.name < $1.name }) {
+                let identity = try resolvedToolIdentity(
+                    tool.executable,
+                    environment: action.environment)
+                encoder.append(tag: 239, string: tool.name)
+                encoder.append(tag: 240, string: identity.path.string)
+                encoder.append(tag: 241, bytes: identity.digest.bytes)
+            }
+            let effects = action.requirements.effects.sorted {
+                let left = $0.scope.root.string + "\u{0}" + $0.access.rawValue
+                let right = $1.scope.root.string + "\u{0}" + $1.access.rawValue
+                return left.utf8.lexicographicallyPrecedes(right.utf8)
+            }
+            for effect in effects {
+                encoder.append(tag: 242, string: effect.access.rawValue)
+                let scope: String
+                switch effect.scope {
+                case .input: scope = "input"
+                case .checkout: scope = "checkout"
+                case .scratch: scope = "scratch"
+                case .output: scope = "output"
+                case .publication: scope = "publication"
+                case .unrestricted: scope = "unrestricted"
+                }
+                encoder.append(tag: 243, string: scope)
+                encoder.append(tag: 244, string: effect.scope.root.string)
+            }
             for (name, value) in artifactEnvironment(action.environment) {
                 encoder.append(tag: 237, string: name)
                 encoder.append(tag: 238, string: value)
@@ -1755,7 +1830,7 @@ extension ColliderRuntime {
         identity: ArtifactDigest,
         stateRoot: FilePath
     ) -> (clean: Bool, reason: String) {
-        if task.cachePolicy == .always {
+        if task.assessmentPolicy == .always {
             return (false, "task is declared to run every time")
         }
         let path = statePath(task.id, root: stateRoot)
@@ -2267,6 +2342,13 @@ private func elapsedNanoseconds(
     let seconds = UInt64(max(0, components.seconds))
     let nanoseconds = UInt64(max(0, components.attoseconds / 1_000_000_000))
     return seconds &* 1_000_000_000 &+ nanoseconds
+}
+
+private func identityLengthPrefix(_ count: Int) -> [UInt8] {
+    let value = UInt64(count)
+    return (0..<8).reversed().map { shift in
+        UInt8(truncatingIfNeeded: value >> UInt64(shift * 8))
+    }
 }
 
 public enum RuntimeFailure: Error, CustomStringConvertible, Sendable {

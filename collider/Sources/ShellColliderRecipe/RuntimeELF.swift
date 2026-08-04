@@ -26,14 +26,14 @@ public struct StageRuntimeELFAction: ColliderAction {
         public let prefix: FilePath
         public let productSet: RuntimeELFProductSet
 
-        public func encode(into encoder: inout CanonicalDigestEncoder) {
+        public func encode(into encoder: inout ActionIdentityEncoder) {
             encoder.append(tag: 1, string: products.string)
             encoder.append(tag: 2, string: prefix.string)
             encoder.append(tag: 3, string: productSet.rawValue)
         }
     }
 
-    public static let kind = "shell.stage-runtime-elf"
+    public static let kind: ActionKind = "shell.stage-runtime-elf"
 
     public let products: FilePath
     public let prefix: FilePath
@@ -45,6 +45,22 @@ public struct StageRuntimeELFAction: ColliderAction {
             products: products,
             prefix: prefix,
             productSet: productSet)
+    }
+
+    public var requirements: ActionRequirements {
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "ldd", executable: .named("ldd"), role: .semantic),
+                ActionToolRequirement(
+                    "patchelf", executable: .named("patchelf"), role: .semantic),
+                ActionToolRequirement(
+                    "strip", executable: .named("strip"), role: .semantic),
+            ],
+            effects: [
+                ActionEffect(.read, scope: .input(products)),
+                ActionEffect(.write, scope: .output(prefix)),
+            ])
     }
 
     public init(
@@ -172,14 +188,14 @@ public struct ValidateRuntimeELFAction: ColliderAction {
         public let report: FilePath
         public let productSet: RuntimeELFProductSet
 
-        public func encode(into encoder: inout CanonicalDigestEncoder) {
+        public func encode(into encoder: inout ActionIdentityEncoder) {
             encoder.append(tag: 1, string: root.string)
             encoder.append(tag: 2, string: report.string)
             encoder.append(tag: 3, string: productSet.rawValue)
         }
     }
 
-    public static let kind = "shell.validate-runtime-elf"
+    public static let kind: ActionKind = "shell.validate-runtime-elf"
 
     public let root: FilePath
     public let report: FilePath
@@ -191,6 +207,20 @@ public struct ValidateRuntimeELFAction: ColliderAction {
             root: root,
             report: report,
             productSet: productSet)
+    }
+
+    public var requirements: ActionRequirements {
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "readelf", executable: .named("readelf"), role: .semantic),
+                ActionToolRequirement(
+                    "ldd", executable: .named("ldd"), role: .operational),
+            ],
+            effects: [
+                ActionEffect(.read, scope: .input(root)),
+                ActionEffect(.write, scope: .output(report)),
+            ])
     }
 
     public init(
@@ -545,7 +575,7 @@ private func run(
     environment: [String: String],
     context: ActionContext
 ) async throws -> String {
-    let result = try await context.execute(
+    let result = try await context.commands.execute(
         CommandSpec(
             executable: .named(executable),
             arguments: arguments,

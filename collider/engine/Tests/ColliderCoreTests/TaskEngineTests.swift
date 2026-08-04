@@ -8,7 +8,7 @@ import Testing
 private struct ParallelismProbeIdentity: ColliderActionIdentity {
     let name: String
 
-    func encode(into encoder: inout CanonicalDigestEncoder) {
+    func encode(into encoder: inout ActionIdentityEncoder) {
         encoder.append(tag: 1, string: name)
     }
 }
@@ -28,7 +28,7 @@ private actor ParallelismProbe {
 }
 
 private struct ParallelismProbeAction: ColliderAction {
-    static let kind = "test.parallelism-probe"
+    static let kind: ActionKind = "test.parallelism-probe"
 
     let identity: ParallelismProbeIdentity
     let probe: ParallelismProbe
@@ -46,7 +46,7 @@ private struct ParallelismProbeAction: ColliderAction {
     defer { try? FileManager.default.removeItem(at: directory) }
     let root = FilePath(directory.path)
     let probe = ParallelismProbe()
-    let tasks = ["first", "second"].map { name in
+    let tasks = try ["first", "second"].map { name in
         let output = root.appending(name)
         return TaskDeclaration(
             id: TaskID(rawValue: "fixture.concurrent.\(name)"),
@@ -55,7 +55,7 @@ private struct ParallelismProbeAction: ColliderAction {
                 OutputDeclaration(path: output, validation: .regularFile)
             ],
             operation: .action(
-                AnyColliderAction(
+                try AnyColliderAction(
                     ParallelismProbeAction(
                         identity: ParallelismProbeIdentity(name: name),
                         probe: probe,
@@ -80,7 +80,7 @@ private struct ParallelismProbeAction: ColliderAction {
     let root = FilePath(directory.path)
     let probe = ParallelismProbe()
     let lock = TaskLock.checkout("fixture-shared-checkout")
-    let tasks = ["first", "second"].map { name in
+    let tasks = try ["first", "second"].map { name in
         let output = root.appending(name)
         return TaskDeclaration(
             id: TaskID(rawValue: "fixture.locked.\(name)"),
@@ -90,7 +90,7 @@ private struct ParallelismProbeAction: ColliderAction {
             ],
             locks: [lock],
             operation: .action(
-                AnyColliderAction(
+                try AnyColliderAction(
                     ParallelismProbeAction(
                         identity: ParallelismProbeIdentity(name: name),
                         probe: probe,
@@ -767,7 +767,7 @@ private struct ParallelismProbeAction: ColliderAction {
 
     #expect(
         report.plan[0].identity.description
-            == "sha256:1692de34cf5c17d8652b5c6690407f40a23e63b2d8dc31545836d21e00ed5707")
+            == "sha256:fd3b872dcbf773d953d89995404e4e06cbb07f01f81b9bad50c6180e475c6762")
 }
 
 @Test func aospBuildConcurrencyDoesNotChangeArtifactIdentity() async throws {
@@ -1190,7 +1190,7 @@ private struct ParallelismProbeAction: ColliderAction {
     let task = TaskDeclaration(
         id: TaskID(rawValue: "fixture.validate-android-host"),
         component: ComponentID(rawValue: "fixture"),
-        cachePolicy: .always,
+        assessmentPolicy: .always,
         operation: .validateAndroidHost(
             AndroidHostValidation(
                 library: FilePath(library.path),
@@ -1427,7 +1427,7 @@ private struct ParallelismProbeAction: ColliderAction {
         outputs: [
             OutputDeclaration(path: FilePath(link.path), validation: .exists)
         ],
-        cachePolicy: .always,
+        assessmentPolicy: .always,
         operation: .publishSymlink(
             SymlinkPublication(
                 path: FilePath(link.path),
@@ -1470,7 +1470,7 @@ private struct ParallelismProbeAction: ColliderAction {
                 path: FilePath(destination.path),
                 validation: .nonEmptyDirectory)
         ],
-        cachePolicy: .always,
+        assessmentPolicy: .always,
         operation: .publishDirectory(
             DirectoryPublication(
                 prepared: FilePath(prepared.path),
@@ -1513,7 +1513,7 @@ private struct ParallelismProbeAction: ColliderAction {
     let task = TaskDeclaration(
         id: TaskID(rawValue: "fixture.prune-directories"),
         component: ComponentID(rawValue: "fixture"),
-        cachePolicy: .always,
+        assessmentPolicy: .always,
         operation: .pruneDirectories(
             DirectoryRetentionPlan(
                 safetyRoot: FilePath(directory.path),
@@ -1557,7 +1557,7 @@ private struct ParallelismProbeAction: ColliderAction {
     let task = TaskDeclaration(
         id: TaskID(rawValue: "fixture.prune-swift-sdk-candidates"),
         component: ComponentID(rawValue: "fixture"),
-        cachePolicy: .always,
+        assessmentPolicy: .always,
         operation: .pruneDirectories(
             DirectoryRetentionPlan(
                 safetyRoot: FilePath(directory.path),
@@ -1742,7 +1742,7 @@ private struct ParallelismProbeAction: ColliderAction {
                     ).path),
                 validation: .json)
         ],
-        cachePolicy: .always,
+        assessmentPolicy: .always,
         operation: .prepareChromiumSource(
             ChromiumSourcePreparation(
                 sourceID: sourceID,
@@ -1832,7 +1832,7 @@ private struct ParallelismProbeAction: ColliderAction {
                     ).path),
                 validation: .exists)
         ],
-        cachePolicy: .always,
+        assessmentPolicy: .always,
         operation: .sequence([
             .assembleBrowserArtifact(assembly),
             .validateBrowserArtifact(assembly),
@@ -1877,7 +1877,7 @@ private struct ParallelismProbeAction: ColliderAction {
     let task = TaskDeclaration(
         id: TaskID(rawValue: "fixture.validate-apt-packages"),
         component: ComponentID(rawValue: "fixture"),
-        cachePolicy: .always,
+        assessmentPolicy: .always,
         operation: .validateAptPackages(
             AptPackageValidation(
                 packageList: FilePath(packages.path),
@@ -2028,7 +2028,7 @@ private struct ParallelismProbeAction: ColliderAction {
                     ).path),
                 validation: .exists)
         ],
-        cachePolicy: .always,
+        assessmentPolicy: .always,
         operation: .sequence([
             .assembleCEFArtifact(assembly),
             .validateCEFArtifact(assembly),
@@ -2134,7 +2134,7 @@ private struct ParallelismProbeAction: ColliderAction {
                     ).path),
                 validation: .exists)
         ],
-        cachePolicy: .always,
+        assessmentPolicy: .always,
         operation: .installBrowser(
             BrowserInstallation(
                 distributionRoot: FilePath(distribution.path),

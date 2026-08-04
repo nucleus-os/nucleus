@@ -45,23 +45,23 @@ import Testing
     }
 }
 
-@Test func componentActionsHaveStableDistinctIdentity() {
-    let first = AnyColliderAction(
+@Test func componentActionsHaveStableDistinctIdentity() throws {
+    let first = try AnyColliderAction(
         ValidateRuntimeELFAction(
             root: FilePath("/products"),
             report: FilePath("/products/report.json"),
             environment: ["PATH": "/one"]))
-    let sameDeclaration = AnyColliderAction(
+    let sameDeclaration = try AnyColliderAction(
         ValidateRuntimeELFAction(
             root: FilePath("/products"),
             report: FilePath("/products/report.json"),
             environment: ["PATH": "/one"]))
-    let differentOutput = AnyColliderAction(
+    let differentOutput = try AnyColliderAction(
         ValidateRuntimeELFAction(
             root: FilePath("/products"),
             report: FilePath("/elsewhere/report.json"),
             environment: ["PATH": "/one"]))
-    let androidAddon = AnyColliderAction(
+    let androidAddon = try AnyColliderAction(
         ValidateRuntimeELFAction(
             root: FilePath("/products"),
             report: FilePath("/products/report.json"),
@@ -95,7 +95,7 @@ import Testing
         write: { bytes, _ in
             reportBytes.withLock { $0 = bytes }
         })
-    let context = ActionContext(files: files) { command in
+    let context = testActionContext(files: files) { command in
         guard case .named(let executable) = command.executable else {
             return CommandResult(status: 1)
         }
@@ -152,7 +152,7 @@ import Testing
         },
         setPermissions: { _, _ in },
         write: { _, _ in })
-    let context = ActionContext(files: files) { command in
+    let context = testActionContext(files: files) { command in
         guard case .named(let executable) = command.executable else {
             return CommandResult(status: 1)
         }
@@ -201,7 +201,7 @@ import Testing
         copy: { _, _ in },
         setPermissions: { _, _ in },
         write: { _, _ in })
-    let context = ActionContext(files: files) { command in
+    let context = testActionContext(files: files) { command in
         guard case .named("ldd") = command.executable else {
             return CommandResult(status: 0)
         }
@@ -251,4 +251,16 @@ private func validInspections() -> [String: RuntimeELFInspection] {
             needed: ["libpam.so.0"]),
         "nucleus": RuntimeELFInspection(runpath: "$ORIGIN", needed: []),
     ]
+}
+
+private func testActionContext(
+    files: ActionFileSystem,
+    execute: @escaping @Sendable (CommandSpec) async throws -> CommandResult
+) -> ActionContext {
+    ActionContext(
+        files: files,
+        cancellation: ActionCancellation {},
+        logger: ActionLogger { _ in },
+        commands: ActionCommandExecutor(execute: execute),
+        downloads: ActionDownloader { _, _ in })
 }

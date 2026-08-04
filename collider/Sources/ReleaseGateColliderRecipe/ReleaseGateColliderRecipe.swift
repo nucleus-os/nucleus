@@ -55,7 +55,7 @@ public enum ReleaseGateColliderRecipe: ColliderComponent {
                 swiftTests: [requirement],
                 inputs: [swiftPM.identityInput],
                 locks: [.checkout("test-release-gate")],
-                cachePolicy: .always,
+                assessmentPolicy: .always,
                 operation: .sequence([]))
         }
         return try ComponentDefinition(

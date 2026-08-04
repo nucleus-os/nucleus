@@ -55,7 +55,7 @@ public actor ColliderRuntime {
     public func execute<Action: ColliderAction>(
         _ action: Action
     ) async throws {
-        try await execute(AnyColliderAction(action), stage: nil)
+        try await execute(try AnyColliderAction(action), stage: nil)
     }
 
     func execute(
@@ -64,8 +64,21 @@ public actor ColliderRuntime {
     ) async throws {
         let context = ActionContext(
             files: actionFileSystem(),
-            execute: { command in
+            cancellation: ActionCancellation {
+                try Task.checkCancellation()
+            },
+            logger: ActionLogger { message in
+                guard let logging = self.logging, let stage else { return }
+                try await logging.registry.appendLog(
+                    Array((message + "\n").utf8),
+                    stage: stage,
+                    in: logging.run)
+            },
+            commands: ActionCommandExecutor { command in
                 try await self.execute(command, stage: stage)
+            },
+            downloads: ActionDownloader { specification, path in
+                try await self.downloads.download(specification, to: path)
             })
         try await action.execute(in: context)
     }

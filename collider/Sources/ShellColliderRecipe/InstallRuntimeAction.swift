@@ -14,7 +14,7 @@ struct InstallRuntimeAction: ColliderAction {
         let trustKey: FilePath?
         let buildMetadata: String
 
-        func encode(into encoder: inout CanonicalDigestEncoder) {
+        func encode(into encoder: inout ActionIdentityEncoder) {
             encoder.append(tag: 1, string: products.string)
             encoder.append(tag: 2, string: prefix.string)
             encoder.append(tag: 3, string: generationsRoot.string)
@@ -25,7 +25,7 @@ struct InstallRuntimeAction: ColliderAction {
         }
     }
 
-    static let kind = "shell.install-runtime"
+    static let kind: ActionKind = "shell.install-runtime"
 
     let products: FilePath
     let prefix: FilePath
@@ -45,6 +45,39 @@ struct InstallRuntimeAction: ColliderAction {
             kernelContract: kernelContract,
             trustKey: trustKey,
             buildMetadata: buildMetadata)
+    }
+
+    var requirements: ActionRequirements {
+        var effects = [
+            ActionEffect(.read, scope: .input(products)),
+            ActionEffect(.read, scope: .checkout(sessionPackage)),
+            ActionEffect(.read, scope: .checkout(kernelContract)),
+            ActionEffect(.readWrite, scope: .scratch(generationsRoot)),
+            ActionEffect(.write, scope: .publication(prefix)),
+        ]
+        if let trustKey {
+            effects.append(ActionEffect(.read, scope: .input(trustKey)))
+        }
+        return ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "bash", executable: .named("bash"), role: .operational),
+                ActionToolRequirement(
+                    "ldd", executable: .named("ldd"), role: .semantic),
+                ActionToolRequirement(
+                    "openssl", executable: .named("openssl"), role: .operational),
+                ActionToolRequirement(
+                    "patchelf", executable: .named("patchelf"), role: .semantic),
+                ActionToolRequirement(
+                    "readelf", executable: .named("readelf"), role: .semantic),
+                ActionToolRequirement(
+                    "strip", executable: .named("strip"), role: .semantic),
+                ActionToolRequirement(
+                    "systemd-analyze",
+                    executable: .named("systemd-analyze"),
+                    role: .operational),
+            ],
+            effects: effects)
     }
 
     init(configuration: ShellRuntimeInstallConfiguration) {
@@ -265,7 +298,7 @@ struct InstallRuntimeAction: ColliderAction {
         _ command: CommandSpec,
         context: ActionContext
     ) async throws {
-        let result = try await context.execute(command)
+        let result = try await context.commands.execute(command)
         guard result.status == 0 else {
             throw RuntimeInstallFailure(
                 "command failed with status \(result.status): \(result.standardOutput)")

@@ -115,7 +115,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 OutputDeclaration(path: report, validation: .json)
             ],
             locks: [.checkout("android-runtime-aosp-source-lock")],
-            cachePolicy: .always,
+            assessmentPolicy: .always,
             operation: .verifyAOSPSourceLock(
                 AOSPSourceLockVerification(
                     specification: specification,
@@ -634,7 +634,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             locks: [
                 .checkout("android-runtime-gfxstream-\(target.identifier)")
             ],
-            cachePolicy: .contentAddressed,
+            assessmentPolicy: .incremental,
             operation: .sequence([
                 .removePath(buildRoot),
                 .createDirectory(buildRoot),

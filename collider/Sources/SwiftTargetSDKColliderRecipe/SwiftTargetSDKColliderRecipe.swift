@@ -452,7 +452,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                     validation: .regularFile)
             ],
             locks: [.checkout("swift-linux-runtime-builder-image")],
-            cachePolicy: .contentAddressed,
+            assessmentPolicy: .incremental,
             operation: .prepareOCIImage(
                 OCIImagePreparation(
                     executionPlatform: .linuxARM64OCI,
@@ -483,7 +483,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                     path: target.sysroot,
                     validation: .nonEmptyDirectory)
             ],
-            cachePolicy: .contentAddressed,
+            assessmentPolicy: .incremental,
             operation: .sequence([
                 .createDirectory(target.sysroot.removingLastComponent()),
                 .command(
@@ -569,7 +569,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 OutputDeclaration(path: swiftTestingLibrary, validation: .regularFile),
             ],
             locks: [.checkout("swift-linux-\(architecture.rawValue)-runtime")],
-            cachePolicy: .contentAddressed,
+            assessmentPolicy: .incremental,
             operation: .sequence([
                 .removePath(target.runtimeInstall),
                 .createDirectory(target.runtimeInstall),
@@ -983,7 +983,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                     path: configuration.active,
                     validation: .symlinkTarget)
             ],
-            cachePolicy: .always,
+            assessmentPolicy: .always,
             operation: .activateGeneration(
                 candidate: configuration.candidate,
                 generation: configuration.generation,
@@ -1009,7 +1009,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                     postconditions: [
                         PathPostcondition(path: link, validation: .symlinkTarget)
                     ],
-                    cachePolicy: .always,
+                    assessmentPolicy: .always,
                     operation: .publishSymlink(
                         SymlinkPublication(
                             path: link,

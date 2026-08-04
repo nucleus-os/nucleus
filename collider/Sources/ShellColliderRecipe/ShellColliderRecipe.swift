@@ -116,7 +116,7 @@ public enum ShellColliderRecipe: ColliderComponent {
                 .shared(configuration.generationsRoot.appending(".install.lock"))
             ],
             operation: .action(
-                AnyColliderAction(
+                try AnyColliderAction(
                     InstallRuntimeAction(configuration: configuration))))
     }
 

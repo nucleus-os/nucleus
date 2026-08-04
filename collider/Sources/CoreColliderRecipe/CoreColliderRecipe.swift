@@ -152,7 +152,7 @@ public enum CoreColliderRecipe: ColliderComponent {
                     validation: .executableFile),
             ],
             locks: [.checkout("core-sources")],
-            cachePolicy: .always,
+            assessmentPolicy: .always,
             operation: .sequence([
                 .command(
                     CommandSpec(
@@ -294,7 +294,7 @@ public enum CoreColliderRecipe: ColliderComponent {
                 .file(kotlinContract),
                 .tool(.path(androidNDKReadELFPath(ndk))),
             ],
-            cachePolicy: .always,
+            assessmentPolicy: .always,
             operation: .validateAndroidHost(
                 AndroidHostValidation(
                     library: hostLibrary,
@@ -322,7 +322,7 @@ public enum CoreColliderRecipe: ColliderComponent {
                 .tool(.path(android.appending("gradlew"))),
             ],
             locks: [.checkout("core-android-gradle")],
-            cachePolicy: .always,
+            assessmentPolicy: .always,
             operation: .command(
                 CommandSpec(
                     executable: .path(android.appending("gradlew")),

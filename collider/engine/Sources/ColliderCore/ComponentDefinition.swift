@@ -471,10 +471,10 @@ public struct ComponentCatalog: Sendable {
     }
 
     private static func validateActions(_ tasks: [TaskDeclaration]) throws {
-        var implementationsByKind: [String: String] = [:]
+        var implementationsByKind: [ActionKind: String] = [:]
         for task in tasks {
             for action in task.operation.colliderActions {
-                guard action.kind.hasPrefix(task.component.rawValue + ".") else {
+                guard action.kind.rawValue.hasPrefix(task.component.rawValue + ".") else {
                     throw ComponentCatalogFailure.actionNamespaceMismatch(
                         task: task.id,
                         component: task.component,
@@ -576,8 +576,9 @@ public enum ComponentCatalogFailure: Error, CustomStringConvertible, Sendable {
     case nonPublicEntrypoint(ComponentEntrypointRequest)
     case unreachableRoute(ComponentEntrypointRequest)
     case unreachableEntrypoint(ComponentEntrypointReference)
-    case duplicateActionKind(kind: String, first: String, second: String)
-    case actionNamespaceMismatch(task: TaskID, component: ComponentID, kind: String)
+    case duplicateActionKind(kind: ActionKind, first: String, second: String)
+    case actionNamespaceMismatch(
+        task: TaskID, component: ComponentID, kind: ActionKind)
     case overlappingOutput(first: TaskID, second: TaskID, path: FilePath)
 
     public var description: String {

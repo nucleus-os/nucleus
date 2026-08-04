@@ -90,7 +90,7 @@ private func preflightTask(
         ],
         outputs: [],
         locks: [.checkout("compositor-core")],
-        cachePolicy: .always,
+        assessmentPolicy: .always,
         operation: .command(
             CommandSpec(
                 executable: .taskOutput(
@@ -128,6 +128,6 @@ private func testTask(
         ],
         postconditions: [swiftPM.postcondition],
         locks: [.checkout("compositor-core")],
-        cachePolicy: .always,
+        assessmentPolicy: .always,
         operation: .sequence([]))
 }

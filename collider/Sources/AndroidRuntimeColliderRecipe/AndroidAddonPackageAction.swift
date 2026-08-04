@@ -110,7 +110,7 @@ extension AndroidRuntimeColliderRecipe {
                         ".android-addon-package.lock"))
             ],
             operation: .action(
-                AnyColliderAction(
+                try AnyColliderAction(
                     PackageAndroidAddonAction(configuration: configuration))))
     }
 }
@@ -128,7 +128,7 @@ struct PackageAndroidAddonAction: ColliderAction {
         let appArmorPolicy: FilePath
         let seccompPolicy: FilePath
 
-        func encode(into encoder: inout CanonicalDigestEncoder) {
+        func encode(into encoder: inout ActionIdentityEncoder) {
             encoder.append(tag: 1, string: runtimeProducts.string)
             encoder.append(tag: 2, string: runtimeRoot?.string ?? "")
             encoder.append(tag: 3, string: runtimeScratch.string)
@@ -142,7 +142,7 @@ struct PackageAndroidAddonAction: ColliderAction {
         }
     }
 
-    static let kind = "android-runtime.package-addon"
+    static let kind: ActionKind = "android-runtime.package-addon"
 
     let runtimeProducts: FilePath
     let runtimeRoot: FilePath?
@@ -170,6 +170,40 @@ struct PackageAndroidAddonAction: ColliderAction {
             seccompPolicy: seccompPolicy)
     }
 
+    var requirements: ActionRequirements {
+        var effects = [
+            ActionEffect(.read, scope: .input(runtimeProducts)),
+            ActionEffect(.read, scope: .input(aospGeneration)),
+            ActionEffect(.read, scope: .input(compatibility)),
+            ActionEffect(.read, scope: .input(aospSigningKey)),
+            ActionEffect(.read, scope: .input(addonSigningKey)),
+            ActionEffect(.read, scope: .checkout(appArmorPolicy)),
+            ActionEffect(.read, scope: .checkout(seccompPolicy)),
+            ActionEffect(.readWrite, scope: .scratch(runtimeScratch)),
+            ActionEffect(.write, scope: .output(output.removingLastComponent())),
+        ]
+        if let runtimeRoot {
+            effects.append(ActionEffect(.read, scope: .input(runtimeRoot)))
+        }
+        return ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "avbtool",
+                    executable: .path(
+                        aospGeneration.appending("out/host/linux-x86/bin/avbtool")),
+                    role: .semantic),
+                ActionToolRequirement(
+                    "ldd", executable: .named("ldd"), role: .semantic),
+                ActionToolRequirement(
+                    "openssl", executable: .named("openssl"), role: .semantic),
+                ActionToolRequirement(
+                    "patchelf", executable: .named("patchelf"), role: .semantic),
+                ActionToolRequirement(
+                    "strip", executable: .named("strip"), role: .semantic),
+            ],
+            effects: effects)
+    }
+
     init(configuration: AndroidAddonPackageConfiguration) {
         runtimeProducts = configuration.swiftPM.configurationProducts
         runtimeRoot = configuration.runtimeRoot
@@ -192,8 +226,8 @@ struct PackageAndroidAddonAction: ColliderAction {
                 "output already exists: \(output)")
         }
         try context.files.createDirectory(output.removingLastComponent())
-        let candidate = output.removingLastComponent().appending(
-            ".\(output.lastComponent?.string ?? "android-addon").candidate")
+        try context.files.createDirectory(runtimeScratch)
+        let candidate = runtimeScratch.appending("addon-candidate")
         try context.files.remove(candidate)
         try context.files.createDirectory(candidate)
         defer { try? context.files.remove(candidate) }
@@ -209,7 +243,7 @@ struct PackageAndroidAddonAction: ColliderAction {
         }
 
         let generatedRuntime = runtimeRoot == nil
-        let resolvedRuntime = runtimeRoot ?? runtimeScratch
+        let resolvedRuntime = runtimeRoot ?? runtimeScratch.appending("runtime")
         if generatedRuntime {
             try context.files.remove(resolvedRuntime)
             defer { try? context.files.remove(resolvedRuntime) }
@@ -440,7 +474,7 @@ struct PackageAndroidAddonAction: ColliderAction {
         _ command: CommandSpec,
         context: ActionContext
     ) async throws {
-        let result = try await context.execute(command)
+        let result = try await context.commands.execute(command)
         guard result.status == 0 else {
             throw AndroidAddonPackageFailure(
                 "command failed with status \(result.status): \(result.standardOutput)")

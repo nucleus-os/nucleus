@@ -82,7 +82,7 @@ public enum BenchmarkColliderRecipe: ColliderComponent {
                     OutputDeclaration(path: output, validation: .nonEmptyDirectory)
                 ],
                 locks: [.checkout("benchmark-\(outputDirectory)")],
-                cachePolicy: .always,
+                assessmentPolicy: .always,
                 operation: .sequence([
                     .removePath(output),
                     swiftPM.operation(
@@ -201,7 +201,7 @@ public enum SanitizerColliderRecipe: ColliderComponent {
                 swiftTests: [requirement],
                 inputs: [swiftPM.identityInput, prerequisiteIdentity],
                 locks: [.checkout("sanitize-\(sanitizer.rawValue)")],
-                cachePolicy: .always,
+                assessmentPolicy: .always,
                 operation: .sequence([]))
         case .executable(let product):
             let executable = swiftPM.executable(product)
@@ -223,7 +223,7 @@ public enum SanitizerColliderRecipe: ColliderComponent {
                 swiftProducts: [requirement],
                 inputs: [swiftPM.identityInput, prerequisiteIdentity],
                 locks: [.checkout("sanitize-\(sanitizer.rawValue)")],
-                cachePolicy: .always,
+                assessmentPolicy: .always,
                 operation: swiftPM.operation(
                     executable: executable,
                     arguments: [],

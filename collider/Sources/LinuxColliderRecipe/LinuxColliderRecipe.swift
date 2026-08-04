@@ -121,7 +121,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
             inputs: sharedInputs,
             postconditions: [swiftPM.postcondition],
             locks: [.checkout("linux-\(name)")],
-            cachePolicy: .contentAddressed,
+            assessmentPolicy: .incremental,
             operation: .sequence([]))
         switch architecture {
         case .arm64:
@@ -136,7 +136,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                     inputs: sharedInputs,
                     postconditions: [swiftPM.postcondition],
                     locks: [.checkout("linux-\(name)")],
-                    cachePolicy: .always,
+                    assessmentPolicy: .always,
                     operation: .sequence([])),
                 laneTestTask(
                     id: LinuxTaskIDs.testLoader(architecture),
@@ -218,7 +218,7 @@ private func laneTestTask(
         inputs: sharedInputs,
         postconditions: [requirement.invocation.postcondition],
         locks: [.checkout(lockName)],
-        cachePolicy: .always,
+        assessmentPolicy: .always,
         operation: .sequence([]))
 }
 
@@ -242,7 +242,7 @@ private func translatedExecutableTask(
         inputs: inputs,
         postconditions: [swiftPM.postcondition],
         locks: [.checkout("linux-x86_64")],
-        cachePolicy: .always,
+        assessmentPolicy: .always,
         operation: .sequence(
             operations.map { executable, arguments in
                 swiftPM.operation(

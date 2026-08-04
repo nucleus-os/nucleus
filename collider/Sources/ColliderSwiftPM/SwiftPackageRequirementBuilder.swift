@@ -86,7 +86,7 @@ public struct SwiftPackageRequirementBuilder: Sendable {
             inputs: declaredInputs(includeTests: true) + additionalInputs,
             postconditions: [invocation.postcondition] + additionalPostconditions,
             locks: [lock],
-            cachePolicy: .always,
+            assessmentPolicy: .always,
             operation: .sequence([]))
     }
 

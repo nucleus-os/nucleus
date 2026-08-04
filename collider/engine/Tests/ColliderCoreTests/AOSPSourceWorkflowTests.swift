@@ -67,7 +67,7 @@ import Testing
                 path: FilePath(report.path),
                 validation: .json)
         ],
-        cachePolicy: .always,
+        assessmentPolicy: .always,
         operation: .verifyAOSPSourceLock(
             AOSPSourceLockVerification(
                 specification: fixture.specification,
@@ -234,11 +234,13 @@ import Testing
     #expect(
         !FileManager.default.fileExists(
             atPath: source.appendingPathComponent(
-                ".nucleus/base-resolved-manifest.xml").path))
+                ".nucleus/base-resolved-manifest.xml"
+            ).path))
     #expect(
         !FileManager.default.fileExists(
             atPath: source.appendingPathComponent(
-                ".nucleus/patched-resolved-manifest.xml").path))
+                ".nucleus/patched-resolved-manifest.xml"
+            ).path))
 }
 
 private struct AOSPWorkflowFixture {
@@ -310,8 +312,8 @@ private struct AOSPWorkflowFixture {
     }
 }
 
-private extension ArtifactDigest {
-    var sha256Hex: String {
+extension ArtifactDigest {
+    fileprivate var sha256Hex: String {
         String(description.dropFirst("sha256:".count))
     }
 }

@@ -115,7 +115,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
                             validation: .executableFile)
                     ] : []),
             locks: [.checkout("wayland-native-\(target.identifier)")],
-            cachePolicy: .contentAddressed,
+            assessmentPolicy: .incremental,
             operation: .sequence([
                 .removePath(build),
                 .removePath(sdk),

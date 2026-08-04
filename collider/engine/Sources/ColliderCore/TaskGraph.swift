@@ -1013,15 +1013,21 @@ public enum TaskLock: Hashable, Sendable {
     case shared(FilePath)
 }
 
-public enum TaskCachePolicy: String, Hashable, Codable, Sendable {
-    case contentAddressed
+public enum TaskAssessmentPolicy: String, Hashable, Codable, Sendable {
     case always
+    case incremental
+    case portable
 }
 
 public struct TaskDeclaration: Hashable, Sendable {
     public let id: TaskID
     public let component: ComponentID
     public let dependencies: [TaskID]
+    public let orderingDependencies: [TaskOrderingReference]
+    public let artifactReferences: [AnyArtifactReference]
+    public let resultReferences: [AnyTaskResultReference]
+    public let outputSlots: [AnyTaskOutputSlot]
+    public let resultSlots: [AnyTaskResultSlot]
     /// Direct dependency operations that this task's operation performs as a
     /// strict superset. Their identities still participate in this task's
     /// identity, but the runtime may omit their redundant operations when this
@@ -1033,13 +1039,18 @@ public struct TaskDeclaration: Hashable, Sendable {
     public let outputs: [OutputDeclaration]
     public let postconditions: [PathPostcondition]
     public let locks: [TaskLock]
-    public let cachePolicy: TaskCachePolicy
+    public let assessmentPolicy: TaskAssessmentPolicy
     public let operation: TaskOperation
 
     public init(
         id: TaskID,
         component: ComponentID,
         dependencies: [TaskID] = [],
+        orderingDependencies: [TaskOrderingReference] = [],
+        artifactReferences: [AnyArtifactReference] = [],
+        resultReferences: [AnyTaskResultReference] = [],
+        outputSlots: [AnyTaskOutputSlot] = [],
+        resultSlots: [AnyTaskResultSlot] = [],
         subsumedDependencies: [TaskID] = [],
         swiftProducts: [SwiftProductRequirement] = [],
         swiftTests: [SwiftTestRequirement] = [],
@@ -1047,12 +1058,20 @@ public struct TaskDeclaration: Hashable, Sendable {
         outputs: [OutputDeclaration] = [],
         postconditions: [PathPostcondition] = [],
         locks: [TaskLock] = [],
-        cachePolicy: TaskCachePolicy = .contentAddressed,
+        assessmentPolicy: TaskAssessmentPolicy = .incremental,
         operation: TaskOperation
     ) {
         self.id = id
         self.component = component
-        self.dependencies = dependencies
+        self.dependencies = Self.uniqued(
+            dependencies
+                + artifactReferences.map(\.producer)
+                + resultReferences.map(\.producer))
+        self.orderingDependencies = orderingDependencies
+        self.artifactReferences = artifactReferences
+        self.resultReferences = resultReferences
+        self.outputSlots = outputSlots
+        self.resultSlots = resultSlots
         self.subsumedDependencies = subsumedDependencies
         self.swiftProducts = swiftProducts
         self.swiftTests = swiftTests
@@ -1060,8 +1079,17 @@ public struct TaskDeclaration: Hashable, Sendable {
         self.outputs = outputs
         self.postconditions = postconditions
         self.locks = locks
-        self.cachePolicy = cachePolicy
+        self.assessmentPolicy = assessmentPolicy
         self.operation = operation
+    }
+
+    public var executionDependencies: [TaskID] {
+        Self.uniqued(dependencies + orderingDependencies.map(\.producer))
+    }
+
+    private static func uniqued(_ values: [TaskID]) -> [TaskID] {
+        var seen: Set<TaskID> = []
+        return values.filter { seen.insert($0).inserted }
     }
 
     public func addingDependencies(
@@ -1074,6 +1102,11 @@ public struct TaskDeclaration: Hashable, Sendable {
                 + additionalDependencies.filter {
                     !dependencies.contains($0)
                 },
+            orderingDependencies: orderingDependencies,
+            artifactReferences: artifactReferences,
+            resultReferences: resultReferences,
+            outputSlots: outputSlots,
+            resultSlots: resultSlots,
             subsumedDependencies: subsumedDependencies,
             swiftProducts: swiftProducts,
             swiftTests: swiftTests,
@@ -1081,7 +1114,7 @@ public struct TaskDeclaration: Hashable, Sendable {
             outputs: outputs,
             postconditions: postconditions,
             locks: locks,
-            cachePolicy: cachePolicy,
+            assessmentPolicy: assessmentPolicy,
             operation: operation)
     }
 
@@ -1090,6 +1123,11 @@ public struct TaskDeclaration: Hashable, Sendable {
             id: id,
             component: component,
             dependencies: dependencies,
+            orderingDependencies: orderingDependencies,
+            artifactReferences: artifactReferences,
+            resultReferences: resultReferences,
+            outputSlots: outputSlots,
+            resultSlots: resultSlots,
             subsumedDependencies: subsumedDependencies,
             swiftProducts: swiftProducts,
             swiftTests: swiftTests,
@@ -1097,7 +1135,7 @@ public struct TaskDeclaration: Hashable, Sendable {
             outputs: outputs,
             postconditions: postconditions,
             locks: locks + additionalLocks.filter { !locks.contains($0) },
-            cachePolicy: cachePolicy,
+            assessmentPolicy: assessmentPolicy,
             operation: operation)
     }
 }
@@ -1106,6 +1144,22 @@ public enum TaskGraphFailure: Error, CustomStringConvertible, Sendable {
     case duplicate(TaskID)
     case missing(task: TaskID, dependency: TaskID)
     case invalidSubsumption(task: TaskID, dependency: TaskID)
+    case unknownArtifactReference(
+        task: TaskID, producer: TaskID, slot: OutputSlotID)
+    case artifactReferenceMismatch(
+        task: TaskID,
+        producer: TaskID,
+        slot: OutputSlotID,
+        expected: ArtifactValueKind,
+        actual: ArtifactValueKind)
+    case unknownResultReference(
+        task: TaskID, producer: TaskID, slot: OutputSlotID)
+    case resultReferenceMismatch(
+        task: TaskID,
+        producer: TaskID,
+        slot: OutputSlotID,
+        expected: String,
+        actual: String)
     case cycle([TaskID])
 
     public var description: String {
@@ -1115,6 +1169,18 @@ public enum TaskGraphFailure: Error, CustomStringConvertible, Sendable {
             "task '\(task)' has missing dependency '\(dependency)'"
         case .invalidSubsumption(let task, let dependency):
             "task '\(task)' cannot subsume non-dependency '\(dependency)'"
+        case .unknownArtifactReference(let task, let producer, let slot):
+            "task '\(task)' references unknown artifact slot '\(producer).\(slot)'"
+        case .artifactReferenceMismatch(
+            let task, let producer, let slot, let expected, let actual):
+            "task '\(task)' expects '\(expected.rawValue)' from "
+                + "'\(producer).\(slot)', which produces '\(actual.rawValue)'"
+        case .unknownResultReference(let task, let producer, let slot):
+            "task '\(task)' references unknown result slot '\(producer).\(slot)'"
+        case .resultReferenceMismatch(
+            let task, let producer, let slot, let expected, let actual):
+            "task '\(task)' expects result '\(expected)' from "
+                + "'\(producer).\(slot)', which produces '\(actual)'"
         case .cycle(let path):
             "task dependency cycle: " + path.map(\.rawValue).joined(separator: " -> ")
         }
@@ -1132,7 +1198,8 @@ public struct TaskGraph: Sendable {
             }
         }
         for declaration in declarations {
-            for dependency in declaration.dependencies where tasks[dependency] == nil {
+            for dependency in declaration.executionDependencies
+            where tasks[dependency] == nil {
                 throw TaskGraphFailure.missing(task: declaration.id, dependency: dependency)
             }
             for dependency in declaration.subsumedDependencies
@@ -1140,6 +1207,48 @@ public struct TaskGraph: Sendable {
                 throw TaskGraphFailure.invalidSubsumption(
                     task: declaration.id,
                     dependency: dependency)
+            }
+            for reference in declaration.artifactReferences {
+                guard
+                    let producer = tasks[reference.producer],
+                    let slot = producer.outputSlots.first(where: {
+                        $0.id == reference.slot && $0.path == reference.path
+                    })
+                else {
+                    throw TaskGraphFailure.unknownArtifactReference(
+                        task: declaration.id,
+                        producer: reference.producer,
+                        slot: reference.slot)
+                }
+                guard slot.kind == reference.kind else {
+                    throw TaskGraphFailure.artifactReferenceMismatch(
+                        task: declaration.id,
+                        producer: reference.producer,
+                        slot: reference.slot,
+                        expected: reference.kind,
+                        actual: slot.kind)
+                }
+            }
+            for reference in declaration.resultReferences {
+                guard
+                    let producer = tasks[reference.producer],
+                    let slot = producer.resultSlots.first(where: {
+                        $0.id == reference.slot
+                    })
+                else {
+                    throw TaskGraphFailure.unknownResultReference(
+                        task: declaration.id,
+                        producer: reference.producer,
+                        slot: reference.slot)
+                }
+                guard slot.valueType == reference.valueType else {
+                    throw TaskGraphFailure.resultReferenceMismatch(
+                        task: declaration.id,
+                        producer: reference.producer,
+                        slot: reference.slot,
+                        expected: reference.valueType,
+                        actual: slot.valueType)
+                }
             }
         }
         self.tasks = tasks
@@ -1160,7 +1269,7 @@ public struct TaskGraph: Sendable {
                 throw TaskGraphFailure.missing(task: id, dependency: id)
             }
             temporary.append(id)
-            for dependency in task.dependencies { try visit(dependency) }
+            for dependency in task.executionDependencies { try visit(dependency) }
             temporary.removeLast()
             permanent.insert(id)
             result.append(task)

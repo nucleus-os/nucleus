@@ -161,25 +161,25 @@ private func component(
 }
 
 private struct EmptyActionIdentity: ColliderActionIdentity {
-    func encode(into _: inout CanonicalDigestEncoder) {}
+    func encode(into _: inout ActionIdentityEncoder) {}
 }
 
 private struct FirstAction: ColliderAction {
-    static let kind = "core.colliding"
+    static let kind: ActionKind = "core.colliding"
     let identity = EmptyActionIdentity()
 
     func execute(in _: ActionContext) async throws {}
 }
 
 private struct SecondAction: ColliderAction {
-    static let kind = "core.colliding"
+    static let kind: ActionKind = "core.colliding"
     let identity = EmptyActionIdentity()
 
     func execute(in _: ActionContext) async throws {}
 }
 
 private struct ForeignAction: ColliderAction {
-    static let kind = "other.foreign"
+    static let kind: ActionKind = "other.foreign"
     let identity = EmptyActionIdentity()
 
     func execute(in _: ActionContext) async throws {}
@@ -210,9 +210,9 @@ private struct ForeignAction: ColliderAction {
 }
 
 @Test func componentCatalogRejectsActionKindCollisionsAndForeignNamespaces() throws {
-    let first = taskWithAction(FirstAction())
+    let first = try taskWithAction(FirstAction())
     let secondID = TaskID(rawValue: "core.second")
-    let second = taskWithAction(SecondAction(), id: secondID)
+    let second = try taskWithAction(SecondAction(), id: secondID)
     #expect(throws: ComponentCatalogFailure.self) {
         _ = try ComponentCatalog(
             components: [
@@ -228,7 +228,7 @@ private struct ForeignAction: ColliderAction {
     #expect(throws: ComponentCatalogFailure.self) {
         _ = try ComponentCatalog(
             components: [
-                try component(tasks: [taskWithAction(ForeignAction())])
+                try component(tasks: [try taskWithAction(ForeignAction())])
             ],
             publicEntrypoints: [request("core")])
     }
@@ -237,9 +237,9 @@ private struct ForeignAction: ColliderAction {
 private func taskWithAction<Action: ColliderAction>(
     _ action: Action,
     id: TaskID = buildID
-) -> TaskDeclaration {
+) throws -> TaskDeclaration {
     TaskDeclaration(
         id: id,
         component: coreID,
-        operation: .action(AnyColliderAction(action)))
+        operation: .action(try AnyColliderAction(action)))
 }

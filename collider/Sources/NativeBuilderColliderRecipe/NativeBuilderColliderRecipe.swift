@@ -42,7 +42,7 @@ public enum NativeBuilderColliderRecipe: ColliderComponent {
                     validation: .exists)
             ],
             locks: [.checkout("native-builder-image")],
-            cachePolicy: .contentAddressed,
+            assessmentPolicy: .incremental,
             operation: .sequence([
                 .createDirectory(configuration.ccache),
                 .prepareOCIImage(
