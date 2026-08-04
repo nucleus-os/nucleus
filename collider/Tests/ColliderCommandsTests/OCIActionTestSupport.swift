@@ -42,6 +42,7 @@ private func executeContainerActions(
                     prepareImage: { _ in },
                     run: { execution in
                         await recorder.append(execution)
+                        return CommandResult(status: 0)
                     })))
     case .runOCI(let execution):
         await recorder.append(execution)

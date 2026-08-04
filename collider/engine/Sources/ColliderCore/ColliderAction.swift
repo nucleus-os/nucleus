@@ -261,13 +261,13 @@ public struct ActionDownloader: Sendable {
 
 public struct ActionContainerExecutor: Sendable {
     private let prepareImageBody: @Sendable (OCIImagePreparation) async throws -> Void
-    private let runBody: @Sendable (OCIExecution) async throws -> Void
+    private let runBody: @Sendable (OCIExecution) async throws -> CommandResult
 
     public init(
         prepareImage: @escaping @Sendable (OCIImagePreparation) async throws -> Void = {
             _ in throw ActionContainerExecutorFailure.unavailable
         },
-        run: @escaping @Sendable (OCIExecution) async throws -> Void = {
+        run: @escaping @Sendable (OCIExecution) async throws -> CommandResult = {
             _ in throw ActionContainerExecutorFailure.unavailable
         }
     ) {
@@ -279,7 +279,8 @@ public struct ActionContainerExecutor: Sendable {
         try await prepareImageBody(preparation)
     }
 
-    public func run(_ execution: OCIExecution) async throws {
+    @discardableResult
+    public func run(_ execution: OCIExecution) async throws -> CommandResult {
         try await runBody(execution)
     }
 }
@@ -686,6 +687,8 @@ public struct ActionFileSystem: Sendable {
     private let copyBody: @Sendable (FilePath, FilePath) throws -> Void
     private let copyTreeBody: @Sendable (FilePath, FilePath) throws -> Void
     private let readBody: @Sendable (FilePath) throws -> [UInt8]
+    private let readPrefixBody: @Sendable (FilePath, Int) throws -> [UInt8]
+    private let readSymbolicLinkBody: @Sendable (FilePath) throws -> String
     private let removeBody: @Sendable (FilePath) throws -> Void
     private let moveBody: @Sendable (FilePath, FilePath) throws -> Void
     private let listRecursivelyBody: @Sendable (FilePath) throws -> [Entry]
@@ -711,6 +714,12 @@ public struct ActionFileSystem: Sendable {
         },
         read: @escaping @Sendable (FilePath) throws -> [UInt8] = {
             _ in throw ActionFileSystemFailure.unavailable("read")
+        },
+        readPrefix: @escaping @Sendable (FilePath, Int) throws -> [UInt8] = {
+            _, _ in throw ActionFileSystemFailure.unavailable("readPrefix")
+        },
+        readSymbolicLink: @escaping @Sendable (FilePath) throws -> String = {
+            _ in throw ActionFileSystemFailure.unavailable("readSymbolicLink")
         },
         remove: @escaping @Sendable (FilePath) throws -> Void = {
             _ in throw ActionFileSystemFailure.unavailable("remove")
@@ -749,6 +758,8 @@ public struct ActionFileSystem: Sendable {
         copyBody = copy
         copyTreeBody = copyTree
         readBody = read
+        readPrefixBody = readPrefix
+        readSymbolicLinkBody = readSymbolicLink
         removeBody = remove
         moveBody = move
         listRecursivelyBody = listRecursively
@@ -792,6 +803,17 @@ public struct ActionFileSystem: Sendable {
 
     public func read(_ path: FilePath) throws -> [UInt8] {
         try readBody(path)
+    }
+
+    public func readPrefix(_ path: FilePath, count: Int) throws -> [UInt8] {
+        guard count >= 0 else {
+            throw ActionFileSystemFailure.invalidReadCount(count)
+        }
+        return try readPrefixBody(path, count)
+    }
+
+    public func readSymbolicLink(_ path: FilePath) throws -> String {
+        try readSymbolicLinkBody(path)
     }
 
     public func remove(_ path: FilePath) throws {
@@ -883,6 +905,14 @@ public struct ActionFileSystem: Sendable {
                 try require(.read, path)
                 return try readBody(path)
             },
+            readPrefix: { path, count in
+                try require(.read, path)
+                return try readPrefixBody(path, count)
+            },
+            readSymbolicLink: { path in
+                try require(.read, path)
+                return try readSymbolicLinkBody(path)
+            },
             remove: { path in
                 try require(.write, path)
                 try removeBody(path)
@@ -961,11 +991,14 @@ extension ActionEffectAccess {
 }
 
 public enum ActionFileSystemFailure: Error, CustomStringConvertible, Sendable {
+    case invalidReadCount(Int)
     case unavailable(String)
     case undeclaredEffect(access: ActionEffectAccess, path: FilePath)
 
     public var description: String {
         switch self {
+        case .invalidReadCount(let count):
+            "action filesystem prefix-read count must be nonnegative; received \(count)"
         case .unavailable(let capability):
             "action filesystem capability '\(capability)' is unavailable"
         case .undeclaredEffect(let access, let path):

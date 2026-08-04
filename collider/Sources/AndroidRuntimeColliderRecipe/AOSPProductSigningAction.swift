@@ -1,0 +1,158 @@
+import ColliderCore
+import SystemPackage
+
+struct SignAOSPProductAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let source: FilePath
+        let buildRoot: FilePath
+        let containerImageID: FilePath
+        let signingIdentity: FilePath
+        let product: String
+        let variant: String
+        let expectedPlatformSDK: UInt32
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: source.string)
+            encoder.append(tag: 2, string: buildRoot.string)
+            encoder.append(tag: 3, string: containerImageID.string)
+            encoder.append(tag: 4, string: signingIdentity.string)
+            encoder.append(tag: 5, string: product)
+            encoder.append(tag: 6, string: variant)
+            encoder.append(tag: 7, integer: UInt64(expectedPlatformSDK))
+        }
+    }
+
+    static let kind: ActionKind = "android-runtime.sign-aosp-product"
+
+    let build: AOSPProductBuild
+
+    var identity: Identity {
+        Identity(
+            source: build.source,
+            buildRoot: build.buildRoot,
+            containerImageID: build.containerImageID,
+            signingIdentity: build.signingIdentity,
+            product: build.product,
+            variant: build.variant,
+            expectedPlatformSDK: build.expectedPlatformSDK)
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "openssl",
+                    executable: .named("openssl"),
+                    role: .semantic)
+            ],
+            effects: [
+                ActionEffect(.read, scope: .input(build.source)),
+                ActionEffect(.read, scope: .input(build.containerImageID)),
+                ActionEffect(.read, scope: .input(build.signingIdentity)),
+                ActionEffect(.readWrite, scope: .scratch(build.buildRoot)),
+            ],
+            resources: .lightweight,
+            executionPlatform: .linuxAMD64OCI,
+            artifactTarget: .androidX86_64(
+                apiLevel: build.expectedPlatformSDK))
+    }
+
+    var environment: [String: String] { build.environment }
+
+    func execute(in context: ActionContext) async throws {
+        _ = try await AOSPSigningIdentityWorkflow(context: context).validate(
+            at: build.signingIdentity,
+            environment: build.environment)
+        let output = build.buildRoot.appending("out")
+        let unsigned = build.buildRoot.appending("unsigned")
+        let staged = build.buildRoot.appending("staged")
+        try context.files.createDirectory(staged)
+        let signingTool = output.appending(
+            "host/linux-x86/bin/sign_target_files_apks")
+        guard let metadata = try context.files.metadata(for: signingTool),
+            metadata.type == .regular,
+            metadata.ownerExecutable
+        else {
+            throw AOSPProductSigningFailure.missingExecutable(signingTool)
+        }
+        let unsignedTarget = unsigned.appending(
+            "\(build.product)-target_files.zip")
+        guard try context.files.metadata(for: unsignedTarget)?.type == .regular else {
+            throw AOSPProductSigningFailure.missingInput(unsignedTarget)
+        }
+
+        let candidate = staged.appending(
+            ".\(build.product)-target_files.candidate.zip")
+        try context.files.remove(candidate)
+        defer { try? context.files.remove(candidate) }
+        var arguments = [
+            "-o",
+            "-d", "/keys",
+            "--override_apk_keys", aospContainerReleaseKey,
+            "--override_apex_keys", aospContainerReleasePEM,
+            "--avb_vbmeta_key", aospContainerReleasePEM,
+            "--avb_vbmeta_algorithm", "SHA256_RSA4096",
+            "--avb_vbmeta_system_key", aospContainerReleasePEM,
+            "--avb_vbmeta_system_algorithm", "SHA256_RSA4096",
+            "--avb_system_key", aospContainerReleasePEM,
+            "--avb_system_algorithm", "SHA256_RSA4096",
+            "--avb_vendor_key", aospContainerReleasePEM,
+            "--avb_vendor_algorithm", "SHA256_RSA4096",
+        ]
+        for partition in ["product", "system_ext"] {
+            arguments += [
+                "--avb_extra_custom_image_key",
+                "\(partition)=\(aospContainerReleasePEM)",
+                "--avb_extra_custom_image_algorithm",
+                "\(partition)=SHA256_RSA4096",
+            ]
+        }
+        if build.variant != "user" {
+            arguments.append("--allow_gsi_debug_sepolicy")
+        }
+        arguments += [
+            "/unsigned/\(build.product)-target_files.zip",
+            "/staged/\(candidate.lastComponent?.string ?? "")",
+        ]
+        try await context.containers.run(
+            aospProductOCIExecution(
+                build: build,
+                writableMounts: [(staged, "/staged")],
+                readOnlyMounts: [
+                    (build.source, "/src"),
+                    (output, "/src/out/nucleus"),
+                    (unsigned, "/unsigned"),
+                    (build.signingIdentity, "/keys"),
+                ],
+                command: [
+                    "/src/out/nucleus/host/linux-x86/bin/sign_target_files_apks"
+                ] + arguments))
+        guard try context.files.metadata(for: candidate)?.type == .regular else {
+            throw AOSPProductSigningFailure.missingOutput(candidate)
+        }
+        let destination = staged.appending(
+            "\(build.product)-target_files.zip")
+        try context.files.remove(destination)
+        try context.files.move(from: candidate, to: destination)
+    }
+}
+
+let aospContainerReleaseKey = "/keys/releasekey"
+let aospContainerReleasePEM = "\(aospContainerReleaseKey).pem"
+
+private enum AOSPProductSigningFailure: Error, CustomStringConvertible {
+    case missingExecutable(FilePath)
+    case missingInput(FilePath)
+    case missingOutput(FilePath)
+
+    var description: String {
+        switch self {
+        case .missingExecutable(let path):
+            "AOSP host signing executable is missing: \(path)"
+        case .missingInput(let path):
+            "AOSP unsigned target-files archive is missing: \(path)"
+        case .missingOutput(let path):
+            "AOSP signing did not produce its candidate archive: \(path)"
+        }
+    }
+}

@@ -1,3 +1,4 @@
+import Crypto
 import Foundation
 import SystemPackage
 
@@ -48,6 +49,10 @@ public struct ArtifactDigest: Hashable, Codable, Sendable,
             index = end
         }
         self.init(bytes: bytes)
+    }
+
+    public static func sha256(_ bytes: some DataProtocol) -> ArtifactDigest {
+        ArtifactDigest(bytes: Array(SHA256.hash(data: bytes)))
     }
 
     public var hexadecimal: String {

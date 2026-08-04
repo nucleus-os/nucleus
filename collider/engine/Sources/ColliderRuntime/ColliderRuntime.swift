@@ -85,7 +85,7 @@ public actor ColliderRuntime {
                     try await self.prepareOCIImage(preparation, stage: stage)
                 },
                 run: { execution in
-                    try await self.runOCI(execution, stage: stage)
+                    try await self.executeOCI(execution, stage: stage)
                 })
         )
         try await action.execute(in: context)
@@ -219,6 +219,16 @@ public actor ColliderRuntime {
             },
             read: { path in
                 Array(try Data(contentsOf: URL(fileURLWithPath: path.string)))
+            },
+            readPrefix: { path, count in
+                let handle = try FileHandle(
+                    forReadingFrom: URL(fileURLWithPath: path.string))
+                defer { try? handle.close() }
+                return Array(try handle.read(upToCount: count) ?? Data())
+            },
+            readSymbolicLink: { path in
+                try FileManager.default.destinationOfSymbolicLink(
+                    atPath: path.string)
             },
             remove: { path in
                 guard (try? path.stat(followTargetSymlink: false)) != nil else {

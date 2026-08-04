@@ -20,7 +20,8 @@ let package = Package(
         .target(
             name: "ColliderCore",
             dependencies: [
-                .product(name: "SystemPackage", package: "swift-system")
+                .product(name: "Crypto", package: "swift-crypto"),
+                .product(name: "SystemPackage", package: "swift-system"),
             ]),
         .target(
             name: "ColliderDownloads",

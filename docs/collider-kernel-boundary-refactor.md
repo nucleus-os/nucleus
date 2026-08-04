@@ -1476,6 +1476,33 @@ applies bounded retention through scoped filesystem capabilities. The publish
 stage, engine workflow method, hard-link publication helpers, and its runtime
 dispatch branch are deleted; behavioral coverage proves commit-marker ordering,
 generation activation, and image publication.
+AOSP image assembly now lives beside that publication action. It declares its
+Linux/amd64 execution coordinate, Android artifact target, container mounts,
+and host unzip tool; validates the generated host tools and staged target-files;
+normalizes sparse images; and commits the archive and image directory through
+scoped capabilities. A bounded prefix-read filesystem capability replaces the
+engine's direct `FileHandle` access, so sparse-image detection never loads an
+entire image. The assembly stage and engine implementation are deleted, and a
+behavioral fixture proves container isolation policy, sparse normalization, and
+the complete staged image set.
+AOSP product signing is recipe-owned as well. It reuses the signing-identity
+validator and the exact OCI execution declaration, exposes OpenSSL as its only
+semantic host tool, mounts key material read-only, and stages the signed archive
+through scoped filesystem effects. The signing stage, duplicated engine key
+validation, runtime dispatch, and legacy identity branch are deleted;
+behavioral coverage proves key-pair validation, release AVB arguments,
+fail-closed networking, and production-variant policy.
+The AOSP compile and validation stages complete the family conversion. Compile
+now owns exact Repo cleanliness/provenance checks, product-tree synchronization,
+ccache and source mountpoints, nsjail negative-boundary probes, fail-closed Soong
+execution, and target-files publication through action capabilities. Container
+execution returns its `CommandResult`, allowing policy-sensitive actions to
+inspect captured output without invoking runtime internals. Validation owns AVB,
+APK/APEX certificate, payload, SDK/vendor-level, fingerprint, font, image, and
+provenance checks. The AOSP build model and all behavioral fixtures moved into
+the Android-runtime recipe; `TaskOperation.aospProduct`, its global identity and
+coordinate branches, every runtime dispatch branch, and the complete engine
+`AOSPProductWorkflow.swift` are deleted.
 
 Complete the existing action seam with:
 

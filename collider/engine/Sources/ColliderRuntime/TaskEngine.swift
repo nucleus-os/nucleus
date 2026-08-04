@@ -168,16 +168,6 @@ private func scheduledResources(
             cpuCount: budget.cpuCount,
             memoryBytes: budget.memoryBytes,
             exclusive: true)
-    case .aospProduct(let stage, _):
-        switch stage {
-        case .compile:
-            return ScheduledTaskResources(
-                cpuCount: budget.cpuCount,
-                memoryBytes: budget.memoryBytes,
-                exclusive: true)
-        case .sign, .assembleImages, .validate:
-            return .lightweight
-        }
     case .action(let action):
         return ScheduledTaskResources(
             cpuCount: action.requirements.resources.cpuCount ?? budget.cpuCount,
@@ -213,7 +203,6 @@ private func containsOCIExecution(_ operation: TaskOperation) -> Bool {
     case .action(let action):
         action.requirements.executionPlatform?.environment == .oci
     case .command,
-        .aospProduct,
         .prepareChromiumSource, .buildChromiumProduct, .assembleBrowserArtifact,
         .validateBrowserArtifact, .assembleCEFArtifact, .validateCEFArtifact,
         .installBrowser:
@@ -1348,58 +1337,6 @@ extension ColliderRuntime {
                 environment: execution.environment)
             encoder.append(tag: 253, string: tool.path.string)
             encoder.append(tag: 254, bytes: tool.digest.bytes)
-        case .aospProduct(let stage, let build):
-            encoder.append(tag: 196, string: stage.rawValue)
-            for path in [
-                build.productSource,
-                build.source,
-                build.repoLauncher,
-                build.sourceProvenance,
-                build.buildRoot,
-                build.ccacheDirectory,
-                build.containerImageID,
-                build.signingIdentity,
-            ] {
-                encoder.append(tag: 197, string: path.string)
-            }
-            for value in [
-                build.product,
-                build.release,
-                build.variant,
-                build.buildNumber,
-            ] {
-                encoder.append(tag: 198, string: value)
-            }
-            // Build concurrency affects scheduling, not product contents.
-            for value in [
-                build.buildTimestamp,
-                UInt64(build.expectedPlatformSDK),
-                UInt64(build.expectedVendorAPILevel),
-            ] {
-                encoder.append(tag: 199, integer: value)
-            }
-            for (name, value) in artifactEnvironment(build.environment) {
-                encoder.append(tag: 202, string: name)
-                encoder.append(tag: 203, string: value)
-            }
-            switch stage {
-            case .compile, .sign, .assembleImages:
-                let executionPlatform = ExecutionPlatform.linuxAMD64OCI
-                let executor = try OCIExecutorResolver.resolve(
-                    executionPlatform: executionPlatform)
-                encode(
-                    runner: .current,
-                    execution: executionPlatform,
-                    backend: executor.backend,
-                    into: &encoder)
-                let tool = try resolvedToolIdentity(
-                    executor.executable,
-                    environment: build.environment)
-                encoder.append(tag: 200, string: tool.path.string)
-                encoder.append(tag: 201, bytes: tool.digest.bytes)
-            case .validate:
-                break
-            }
         case .prepareChromiumSource(let preparation):
             for path in [
                 preparation.sourceRoot,
@@ -1629,17 +1566,6 @@ extension ColliderRuntime {
             }
         case .runOCI(let execution):
             try await runOCI(execution, stage: stage)
-        case .aospProduct(let operationStage, let build):
-            switch operationStage {
-            case .compile:
-                try await compileAOSPProduct(build, stage: stage)
-            case .sign:
-                try await signAOSPProduct(build, stage: stage)
-            case .assembleImages:
-                try await assembleAOSPProductImages(build, stage: stage)
-            case .validate:
-                try await validateAOSPProduct(build, stage: stage)
-            }
         case .prepareChromiumSource(let preparation):
             try await prepareChromiumSource(preparation, stage: stage)
         case .buildChromiumProduct(let build):
@@ -1727,7 +1653,7 @@ extension ColliderRuntime {
                 try validateActionOutputs(operation)
             }
         case .command, .runOCI,
-            .aospProduct, .prepareChromiumSource,
+            .prepareChromiumSource,
             .buildChromiumProduct, .assembleBrowserArtifact,
             .validateBrowserArtifact, .assembleCEFArtifact, .validateCEFArtifact,
             .installBrowser:
@@ -1969,8 +1895,6 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
         command.environment
     case .runOCI(let execution):
         execution.environment
-    case .aospProduct(_, let build):
-        build.environment
     case .prepareChromiumSource(let preparation):
         preparation.environment
     case .buildChromiumProduct(let build):
@@ -2014,21 +1938,6 @@ private func executionCoordinates(
             execution: execution.executionPlatform,
             backend: executor.backend,
             artifact: execution.artifactTarget)
-    case .aospProduct(let stage, let build):
-        switch stage {
-        case .compile, .sign, .assembleImages:
-            let platform = ExecutionPlatform.linuxAMD64OCI
-            let executor = try OCIExecutorResolver.resolve(
-                runner: runner,
-                executionPlatform: platform)
-            return TaskExecutionCoordinates(
-                runner: runner,
-                execution: platform,
-                backend: executor.backend,
-                artifact: .androidX86_64(apiLevel: build.expectedPlatformSDK))
-        case .validate:
-            return nil
-        }
     case .sequence(let operations):
         let coordinates = try operations.compactMap {
             try executionCoordinates($0)

@@ -636,7 +636,7 @@ extension TaskOperation {
         case .sequence(let operations):
             operations.flatMap(\.colliderActions)
         case .command, .runOCI,
-            .aospProduct, .prepareChromiumSource,
+            .prepareChromiumSource,
             .buildChromiumProduct, .assembleBrowserArtifact,
             .validateBrowserArtifact, .assembleCEFArtifact,
             .validateCEFArtifact, .installBrowser:

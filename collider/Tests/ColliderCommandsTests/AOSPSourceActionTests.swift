@@ -1,10 +1,11 @@
 import ColliderCore
-import ColliderRuntime
 import Foundation
+import Synchronization
 import SystemPackage
 import Testing
 
 @testable import AndroidRuntimeColliderRecipe
+@testable import ColliderRuntime
 
 @Test func aospSourceLockVerificationChecksPinnedUpstreamsAndLauncher() async throws {
     let fixture = try AOSPWorkflowFixture(name: "source-lock")
@@ -325,6 +326,256 @@ import Testing
             atPath: destination.appendingPathComponent("\(alias).pem").path)
         #expect((attributes[.posixPermissions] as? NSNumber)?.uint16Value == 0o600)
     }
+}
+
+@Test func aospCompileConcurrencyDoesNotChangeArtifactIdentity() throws {
+    let root = FilePath("/fixture")
+    func action(jobs: UInt32) throws -> AnyColliderAction {
+        try AnyColliderAction(
+            CompileAOSPProductAction(
+                build: AOSPProductBuild(
+                    productSource: root.appending("product"),
+                    source: root.appending("source"),
+                    repoLauncher: root.appending("repo"),
+                    sourceProvenance: root.appending("source-provenance.json"),
+                    buildRoot: root.appending("build"),
+                    ccacheDirectory: root.appending("ccache"),
+                    containerImageID: root.appending("container-image-id"),
+                    signingIdentity: root.appending("signing-identity"),
+                    product: "nucleus_x86_64",
+                    release: "cp2a",
+                    variant: "user",
+                    buildNumber: "nucleus",
+                    buildTimestamp: 1,
+                    buildJobs: jobs,
+                    expectedPlatformSDK: 37,
+                    expectedVendorAPILevel: 202604,
+                    environment: [:])))
+    }
+
+    #expect(try action(jobs: 12).identity == action(jobs: 24).identity)
+}
+
+@Test func aospProductAssemblyNormalizesSparseImagesAndStagesOutputs() async throws {
+    let fixture = try AOSPWorkflowFixture(name: "assembly")
+    defer { fixture.remove() }
+    let buildRoot = fixture.root.appendingPathComponent("build")
+    let source = fixture.root.appendingPathComponent("source")
+    let hostTools = buildRoot.appendingPathComponent("out/host/linux-x86/bin")
+    let staged = buildRoot.appendingPathComponent("staged")
+    try FileManager.default.createDirectory(
+        at: hostTools,
+        withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        at: staged,
+        withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        at: source,
+        withIntermediateDirectories: true)
+    for tool in ["img_from_target_files", "simg2img"] {
+        let path = hostTools.appendingPathComponent(tool)
+        try Data().write(to: path)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: path.path)
+    }
+    let product = "nucleus_x86_64"
+    try Data("signed-target-files".utf8).write(
+        to: staged.appendingPathComponent("\(product)-target_files.zip"))
+    let imageID = fixture.root.appendingPathComponent("image-id")
+    try Data("fixture-image".utf8).write(to: imageID)
+    let build = AOSPProductBuild(
+        productSource: FilePath(fixture.root.path),
+        source: FilePath(source.path),
+        repoLauncher: FilePath(fixture.launcher.path),
+        sourceProvenance: FilePath(
+            fixture.root.appendingPathComponent("source.json").path),
+        buildRoot: FilePath(buildRoot.path),
+        ccacheDirectory: FilePath(
+            fixture.root.appendingPathComponent("ccache").path),
+        containerImageID: FilePath(imageID.path),
+        signingIdentity: FilePath(
+            fixture.root.appendingPathComponent("signing").path),
+        product: product,
+        release: "fixture",
+        variant: "user",
+        buildNumber: "1",
+        buildTimestamp: 1,
+        buildJobs: 1,
+        expectedPlatformSDK: 37,
+        expectedVendorAPILevel: 37,
+        environment: fixture.environment)
+    let executions = Mutex<[OCIExecution]>([])
+    let imageCandidate = buildRoot.appendingPathComponent(".images-candidate")
+    let archiveCandidate = staged.appendingPathComponent(
+        ".\(product)-images.candidate.zip")
+    let action = AssembleAOSPProductImagesAction(build: build)
+
+    try await action.execute(
+        in: ActionContext(
+            files: ColliderRuntime().actionFileSystem(),
+            cancellation: ActionCancellation {},
+            logger: ActionLogger { _ in },
+            commands: ActionCommandExecutor { command in
+                #expect(command.executable == .named("unzip"))
+                for name in aospRequiredProductImages {
+                    let bytes: [UInt8] =
+                        name == "system.img"
+                        ? [0x3a, 0xff, 0x26, 0xed]
+                        : Array("raw-image".utf8)
+                    try Data(bytes).write(
+                        to: imageCandidate.appendingPathComponent(name))
+                }
+                return CommandResult(status: 0)
+            },
+            downloads: ActionDownloader { _, _ in },
+            containers: ActionContainerExecutor(run: { execution in
+                executions.withLock { $0.append(execution) }
+                if execution.command.first?.hasSuffix("simg2img") == true {
+                    try Data("normalized-image".utf8).write(
+                        to: imageCandidate.appendingPathComponent("system.img.raw"))
+                } else {
+                    try Data("images-archive".utf8).write(
+                        to: archiveCandidate)
+                }
+                return CommandResult(status: 0)
+            })))
+
+    #expect(
+        try String(
+            contentsOf: staged.appendingPathComponent("\(product)-images.zip"),
+            encoding: .utf8) == "images-archive")
+    #expect(
+        try String(
+            contentsOf: staged.appendingPathComponent("images/system.img"),
+            encoding: .utf8) == "normalized-image")
+    for name in aospRequiredProductImages where name != "system.img" {
+        #expect(
+            FileManager.default.fileExists(
+                atPath: staged.appendingPathComponent("images/\(name)").path))
+    }
+    let recorded = executions.withLock { $0 }
+    #expect(recorded.count == 2)
+    #expect(recorded.allSatisfy { $0.executionPlatform == .linuxAMD64OCI })
+    #expect(
+        recorded.allSatisfy {
+            $0.artifactTarget == .androidX86_64(apiLevel: 37)
+                && $0.networkPolicy == .externalDisabled
+        })
+}
+
+@Test func aospProductSigningValidatesKeysAndUsesReleaseAVBArguments() async throws {
+    let fixture = try AOSPWorkflowFixture(name: "product-signing")
+    defer { fixture.remove() }
+    let buildRoot = fixture.root.appendingPathComponent("build")
+    let source = fixture.root.appendingPathComponent("source")
+    let signing = fixture.root.appendingPathComponent("signing")
+    let hostTools = buildRoot.appendingPathComponent("out/host/linux-x86/bin")
+    let unsigned = buildRoot.appendingPathComponent("unsigned")
+    try FileManager.default.createDirectory(
+        at: hostTools,
+        withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        at: unsigned,
+        withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        at: source,
+        withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        at: signing,
+        withIntermediateDirectories: true)
+    let signingTool = hostTools.appendingPathComponent("sign_target_files_apks")
+    try Data().write(to: signingTool)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755],
+        ofItemAtPath: signingTool.path)
+    let certificateBytes = Data("certificate".utf8)
+    let certificateDigest = ArtifactHasher.digest(
+        bytes: certificateBytes
+    ).hexadecimal
+    for alias in aospSigningAliases {
+        try Data("private".utf8).write(
+            to: signing.appendingPathComponent("\(alias).pem"))
+        try certificateBytes.write(
+            to: signing.appendingPathComponent("\(alias).x509.pem"))
+        try Data("pkcs8".utf8).write(
+            to: signing.appendingPathComponent("\(alias).pk8"))
+    }
+    let identity = AOSPSigningIdentity(
+        purpose: "local-development",
+        subject: "/O=Nucleus/CN=Fixture",
+        certificates: aospSigningAliases.map {
+            AOSPSigningIdentity.Certificate(
+                alias: $0,
+                x509SHA256: certificateDigest)
+        })
+    try JSONEncoder().encode(identity).write(
+        to: signing.appendingPathComponent("signing-identity.json"))
+    let product = "nucleus_x86_64"
+    try Data("unsigned-target-files".utf8).write(
+        to: unsigned.appendingPathComponent("\(product)-target_files.zip"))
+    let imageID = fixture.root.appendingPathComponent("image-id")
+    try Data("fixture-image".utf8).write(to: imageID)
+    let build = AOSPProductBuild(
+        productSource: FilePath(fixture.root.path),
+        source: FilePath(source.path),
+        repoLauncher: FilePath(fixture.launcher.path),
+        sourceProvenance: FilePath(
+            fixture.root.appendingPathComponent("source.json").path),
+        buildRoot: FilePath(buildRoot.path),
+        ccacheDirectory: FilePath(
+            fixture.root.appendingPathComponent("ccache").path),
+        containerImageID: FilePath(imageID.path),
+        signingIdentity: FilePath(signing.path),
+        product: product,
+        release: "fixture",
+        variant: "user",
+        buildNumber: "1",
+        buildTimestamp: 1,
+        buildJobs: 1,
+        expectedPlatformSDK: 37,
+        expectedVendorAPILevel: 37,
+        environment: fixture.environment)
+    let execution = Mutex<OCIExecution?>(nil)
+    let candidate = buildRoot.appendingPathComponent(
+        "staged/.\(product)-target_files.candidate.zip")
+
+    try await SignAOSPProductAction(build: build).execute(
+        in: ActionContext(
+            files: ColliderRuntime().actionFileSystem(),
+            cancellation: ActionCancellation {},
+            logger: ActionLogger { _ in },
+            commands: ActionCommandExecutor { command in
+                let outputIndex = try #require(
+                    command.arguments.firstIndex(of: "-out"))
+                let output = command.arguments[outputIndex + 1]
+                try Data("public-key".utf8).write(
+                    to: URL(fileURLWithPath: output))
+                return CommandResult(status: 0)
+            },
+            downloads: ActionDownloader { _, _ in },
+            containers: ActionContainerExecutor(run: { value in
+                execution.withLock { $0 = value }
+                try Data("signed-target-files".utf8).write(to: candidate)
+                return CommandResult(status: 0)
+            })))
+
+    #expect(
+        try String(
+            contentsOf: buildRoot.appendingPathComponent(
+                "staged/\(product)-target_files.zip"),
+            encoding: .utf8) == "signed-target-files")
+    let recorded = try #require(execution.withLock { $0 })
+    #expect(recorded.command.contains("--avb_vbmeta_key"))
+    #expect(recorded.command.contains("/keys/releasekey.pem"))
+    #expect(!recorded.command.contains("--allow_gsi_debug_sepolicy"))
+    #expect(recorded.networkPolicy == .externalDisabled)
+    #expect(
+        recorded.mounts.contains {
+            $0.source == FilePath(signing.path)
+                && $0.target == "/keys"
+                && $0.access == .readOnly
+        })
 }
 
 @Test func aospProductPublicationCommitsOutputsThenActivatesTheGeneration() async throws {

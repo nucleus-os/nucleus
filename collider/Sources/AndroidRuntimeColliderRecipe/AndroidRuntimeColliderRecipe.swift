@@ -154,7 +154,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 activeAOSPGeneration: aosp.activeGeneration))
     }
 
-    public static func aospProductSourceOverlays(
+    private static func aospProductSourceOverlays(
         root: FilePath
     ) -> [AOSPProductSourceOverlay] {
         [
@@ -517,14 +517,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             expectedVendorAPILevel: lock.vendorAPILevel,
             environment: environment,
             sourceOverlays: aospProductSourceOverlays(root: root))
-        let requiredImages = [
-            "system.img",
-            "system_ext.img",
-            "product.img",
-            "vendor.img",
-            "vbmeta.img",
-            "vbmeta_system.img",
-        ]
+        let requiredImages = aospRequiredProductImages
         var compileBuilder = TaskBuilder(
             id: TaskID(rawValue: "android-runtime.aosp-compile"),
             component: component)
@@ -565,7 +558,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .checkout("android-runtime-aosp-build"),
                 .checkout("android-runtime-aosp-ccache"),
             ],
-            operation: .aospProduct(.compile, build)
+            operation: .action(
+                try AnyColliderAction(
+                    CompileAOSPProductAction(build: build)))
         )
         let compile = CompileArtifacts(
             task: compileTask,
@@ -595,7 +590,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .checkout("android-runtime-aosp-source"),
                 .checkout("android-runtime-aosp-build"),
             ],
-            operation: .aospProduct(.sign, build)
+            operation: .action(
+                try AnyColliderAction(
+                    SignAOSPProductAction(build: build)))
         )
         var assembleBuilder = TaskBuilder(
             id: TaskID(rawValue: "android-runtime.aosp-assemble-images"),
@@ -626,7 +623,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .checkout("android-runtime-aosp-source"),
                 .checkout("android-runtime-aosp-build"),
             ],
-            operation: .aospProduct(.assembleImages, build))
+            operation: .action(
+                try AnyColliderAction(
+                    AssembleAOSPProductImagesAction(build: build))))
         let assemble = AssembleArtifacts(
             task: assembleTask,
             targetFiles: stagedTargetFilesReference,
@@ -666,7 +665,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .checkout("android-runtime-aosp-source"),
                 .checkout("android-runtime-aosp-build"),
             ],
-            operation: .aospProduct(.validate, build)
+            operation: .action(
+                try AnyColliderAction(
+                    ValidateAOSPProductAction(build: build)))
         )
         var publishBuilder = TaskBuilder(
             id: AndroidRuntimeTaskIDs.aospImage,

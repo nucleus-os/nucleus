@@ -1069,31 +1069,31 @@ private func fixtureReactNativeNodeModules(
         })
     #expect(
         {
-            guard case .aospProduct(.compile, _) = operations[0] else {
+            guard case .action(let action) = operations[0] else {
                 return false
             }
-            return true
+            return action.kind == "android-runtime.compile-aosp-product"
         }())
     #expect(
         {
-            guard case .aospProduct(.sign, _) = operations[1] else {
+            guard case .action(let action) = operations[1] else {
                 return false
             }
-            return true
+            return action.kind == "android-runtime.sign-aosp-product"
         }())
     #expect(
         {
-            guard case .aospProduct(.assembleImages, _) = operations[2] else {
+            guard case .action(let action) = operations[2] else {
                 return false
             }
-            return true
+            return action.kind == "android-runtime.assemble-aosp-product-images"
         }())
     #expect(
         {
-            guard case .aospProduct(.validate, _) = operations[3] else {
+            guard case .action(let action) = operations[3] else {
                 return false
             }
-            return true
+            return action.kind == "android-runtime.validate-aosp-product"
         }())
     #expect(
         {

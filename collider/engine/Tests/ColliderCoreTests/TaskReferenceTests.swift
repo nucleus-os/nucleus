@@ -13,6 +13,8 @@ private func inertActionFileSystem() -> ActionFileSystem {
         contentsEqual: { _, _ in true },
         createDirectory: { _ in },
         copy: { _, _ in },
+        readPrefix: { _, count in Array(repeating: 0, count: count) },
+        readSymbolicLink: { _ in "target" },
         move: { _, _ in },
         replaceSymlink: { _, _ in },
         setPermissions: { _, _ in },
@@ -56,6 +58,8 @@ private func inertActionFileSystem() -> ActionFileSystem {
     ])
 
     _ = try files.metadata(for: FilePath("/inputs/source"))
+    _ = try files.readPrefix(FilePath("/inputs/source"), count: 4)
+    _ = try files.readSymbolicLink(FilePath("/inputs/source"))
     try files.write([], to: FilePath("/outputs/result"))
 
     #expect(throws: ActionFileSystemFailure.self) {
@@ -63,6 +67,15 @@ private func inertActionFileSystem() -> ActionFileSystem {
     }
     #expect(throws: ActionFileSystemFailure.self) {
         _ = try files.metadata(for: FilePath("/outputs/result"))
+    }
+    #expect(throws: ActionFileSystemFailure.self) {
+        _ = try files.readPrefix(FilePath("/outputs/result"), count: 4)
+    }
+    #expect(throws: ActionFileSystemFailure.self) {
+        _ = try files.readSymbolicLink(FilePath("/outputs/result"))
+    }
+    #expect(throws: ActionFileSystemFailure.self) {
+        _ = try files.readPrefix(FilePath("/inputs/source"), count: -1)
     }
     #expect(throws: ActionFileSystemFailure.self) {
         try files.write([], to: FilePath("/outputs/../outside"))

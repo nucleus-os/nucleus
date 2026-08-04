@@ -339,77 +339,6 @@ public struct NativeLinuxTarget: Hashable, Sendable {
     }
 }
 
-public struct AOSPProductSourceOverlay: Hashable, Sendable {
-    public let source: FilePath
-    public let relativeDestination: String
-
-    public init(source: FilePath, relativeDestination: String) {
-        self.source = source
-        self.relativeDestination = relativeDestination
-    }
-}
-
-public struct AOSPProductBuild: Hashable, Sendable {
-    public let productSource: FilePath
-    public let source: FilePath
-    public let repoLauncher: FilePath
-    public let sourceProvenance: FilePath
-    public let buildRoot: FilePath
-    public let ccacheDirectory: FilePath
-    public let containerImageID: FilePath
-    public let signingIdentity: FilePath
-    public let product: String
-    public let release: String
-    public let variant: String
-    public let buildNumber: String
-    public let buildTimestamp: UInt64
-    public let buildJobs: UInt32
-    public let expectedPlatformSDK: UInt32
-    public let expectedVendorAPILevel: UInt32
-    public let environment: [String: String]
-    public let sourceOverlays: [AOSPProductSourceOverlay]
-
-    public init(
-        productSource: FilePath,
-        source: FilePath,
-        repoLauncher: FilePath,
-        sourceProvenance: FilePath,
-        buildRoot: FilePath,
-        ccacheDirectory: FilePath,
-        containerImageID: FilePath,
-        signingIdentity: FilePath,
-        product: String,
-        release: String,
-        variant: String,
-        buildNumber: String,
-        buildTimestamp: UInt64,
-        buildJobs: UInt32,
-        expectedPlatformSDK: UInt32,
-        expectedVendorAPILevel: UInt32,
-        environment: [String: String],
-        sourceOverlays: [AOSPProductSourceOverlay] = []
-    ) {
-        self.productSource = productSource
-        self.source = source
-        self.repoLauncher = repoLauncher
-        self.sourceProvenance = sourceProvenance
-        self.buildRoot = buildRoot
-        self.ccacheDirectory = ccacheDirectory
-        self.containerImageID = containerImageID
-        self.signingIdentity = signingIdentity
-        self.product = product
-        self.release = release
-        self.variant = variant
-        self.buildNumber = buildNumber
-        self.buildTimestamp = buildTimestamp
-        self.buildJobs = buildJobs
-        self.expectedPlatformSDK = expectedPlatformSDK
-        self.expectedVendorAPILevel = expectedVendorAPILevel
-        self.environment = environment
-        self.sourceOverlays = sourceOverlays
-    }
-}
-
 public struct ChromiumSourceRepository: Codable, Hashable, Sendable {
     public let name: String
     public let checkoutPath: String
@@ -616,18 +545,10 @@ public struct BrowserInstallation: Hashable, Sendable {
     }
 }
 
-public enum AOSPProductOperationStage: String, Hashable, Sendable {
-    case compile
-    case sign
-    case assembleImages = "assemble-images"
-    case validate
-}
-
 public enum TaskOperation: Hashable, Sendable {
     case action(AnyColliderAction)
     case command(CommandSpec)
     case runOCI(OCIExecution)
-    case aospProduct(AOSPProductOperationStage, AOSPProductBuild)
     case prepareChromiumSource(ChromiumSourcePreparation)
     case buildChromiumProduct(ChromiumProductBuild)
     case assembleBrowserArtifact(BrowserArtifactAssembly)

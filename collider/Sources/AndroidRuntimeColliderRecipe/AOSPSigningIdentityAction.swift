@@ -122,30 +122,41 @@ struct PrepareAOSPSigningIdentityAction: ColliderAction {
     }
 }
 
-private struct AOSPSigningIdentityWorkflow {
+struct AOSPSigningIdentityWorkflow {
     let context: ActionContext
 
     func validate(
         _ preparation: AOSPSigningIdentityPreparation
     ) async throws -> AOSPSigningIdentity {
-        let identityPath = preparation.destination.appending(
+        try await validate(
+            at: preparation.destination,
+            expectedSubject: preparation.subject,
+            environment: preparation.environment)
+    }
+
+    func validate(
+        at destination: FilePath,
+        expectedSubject: String? = nil,
+        environment: [String: String]
+    ) async throws -> AOSPSigningIdentity {
+        let identityPath = destination.appending(
             "signing-identity.json")
         let identity = try JSONDecoder().decode(
             AOSPSigningIdentity.self,
             from: Data(try context.files.read(identityPath)))
         guard identity.purpose == "local-development",
-            identity.subject == preparation.subject,
+            expectedSubject.map({ identity.subject == $0 }) ?? true,
             identity.certificates.map(\.alias) == aospSigningAliases
         else {
             throw AOSPSigningIdentityFailure.invalidMetadata
         }
 
-        let validation = preparation.destination.appending(".validation")
+        let validation = destination.appending(".validation")
         try context.files.remove(validation)
         try context.files.createDirectory(validation)
         defer { try? context.files.remove(validation) }
         for item in identity.certificates {
-            let base = preparation.destination.appending(item.alias)
+            let base = destination.appending(item.alias)
             let privateKey = FilePath(base.string + ".pem")
             let certificate = FilePath(base.string + ".x509.pem")
             let pkcs8 = FilePath(base.string + ".pk8")
@@ -172,22 +183,22 @@ private struct AOSPSigningIdentityWorkflow {
                     "x509", "-in", certificate.string,
                     "-pubkey", "-noout", "-out", certificatePEM.string,
                 ],
-                in: preparation.destination,
-                environment: preparation.environment)
+                in: destination,
+                environment: environment)
             try await run(
                 [
                     "pkey", "-pubin", "-in", certificatePEM.string,
                     "-outform", "DER", "-out", certificateDER.string,
                 ],
-                in: preparation.destination,
-                environment: preparation.environment)
+                in: destination,
+                environment: environment)
             try await run(
                 [
                     "pkey", "-in", privateKey.string, "-pubout",
                     "-outform", "DER", "-out", privateDER.string,
                 ],
-                in: preparation.destination,
-                environment: preparation.environment)
+                in: destination,
+                environment: environment)
             guard try context.files.contentsEqual(at: certificateDER, and: privateDER)
             else {
                 throw AOSPSigningIdentityFailure.keyMismatch(item.alias)
@@ -218,7 +229,7 @@ private struct AOSPSigningIdentityWorkflow {
     }
 }
 
-private let aospSigningAliases = [
+let aospSigningAliases = [
     "releasekey",
     "platform",
     "shared",
@@ -226,7 +237,7 @@ private let aospSigningAliases = [
     "networkstack",
 ]
 
-private struct AOSPSigningIdentity: Codable {
+struct AOSPSigningIdentity: Codable {
     struct Certificate: Codable {
         let alias: String
         let x509SHA256: String

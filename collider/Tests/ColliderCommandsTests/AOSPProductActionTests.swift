@@ -3,7 +3,59 @@ import Foundation
 import SystemPackage
 import Testing
 
+@testable import AndroidRuntimeColliderRecipe
 @testable import ColliderRuntime
+
+@Test func aospProductDefinitionDigestIncludesEveryOverlayCanonically() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-aosp-product-hash-\(UUID().uuidString)")
+    let product = directory.appendingPathComponent("product")
+    let firstOverlay = directory.appendingPathComponent("first-overlay")
+    let secondOverlay = directory.appendingPathComponent("second-overlay")
+    for path in [product, firstOverlay, secondOverlay] {
+        try FileManager.default.createDirectory(
+            at: path, withIntermediateDirectories: true)
+    }
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try Data("product".utf8).write(
+        to: product.appendingPathComponent("device.mk"))
+    try Data("first".utf8).write(
+        to: firstOverlay.appendingPathComponent("transport.c"))
+    try Data("second".utf8).write(
+        to: secondOverlay.appendingPathComponent("policy.c"))
+
+    let overlays = [
+        AOSPProductSourceOverlay(
+            source: FilePath(firstOverlay.path),
+            relativeDestination: "native/transport"),
+        AOSPProductSourceOverlay(
+            source: FilePath(secondOverlay.path),
+            relativeDestination: "native/policy"),
+    ]
+    let files = ColliderRuntime().actionFileSystem()
+    let initial = try aospProductDefinitionDigest(
+        productSource: FilePath(product.path),
+        sourceOverlays: overlays,
+        files: files)
+    #expect(
+        try aospProductDefinitionDigest(
+            productSource: FilePath(product.path),
+            sourceOverlays: Array(overlays.reversed()),
+            files: files) == initial)
+
+    try Data("changed".utf8).write(
+        to: firstOverlay.appendingPathComponent("transport.c"))
+    #expect(
+        try aospProductDefinitionDigest(
+            productSource: FilePath(product.path),
+            sourceOverlays: overlays,
+            files: files) != initial)
+    #expect(
+        try aospProductDefinitionDigest(
+            productSource: FilePath(product.path),
+            sourceOverlays: [],
+            files: files) != initial)
+}
 
 @Test func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -39,15 +91,15 @@ import Testing
         expectedVendorAPILevel: 202604,
         environment: [:])
 
-    let execution = aospOCIExecution(
+    let execution = aospProductOCIExecution(
         build: build,
         writableMounts: [
             (path("output"), "/output"),
             (path("ccache"), "/src/out/nucleus/.ccache"),
         ],
         readOnlyMounts: [(path("source"), "/src")],
-        environment: ["TZ": "UTC"],
-        command: ["/bin/true"])
+        command: ["/bin/true"],
+        containerEnvironment: ["TZ": "UTC"])
     let executor = AppleContainerExecutor()
     let flags = appleContainerFlags(
         execution,
@@ -79,12 +131,12 @@ import Testing
 }
 
 @Test func aospSandboxDegradationIsFatal() throws {
-    #expect(throws: RuntimeFailure.self) {
+    #expect(throws: (any Error).self) {
         try rejectAOSPSandboxDegradation(
             "Build sandboxing disabled due to nsjail error.",
             status: 0)
     }
-    #expect(throws: RuntimeFailure.self) {
+    #expect(throws: (any Error).self) {
         try rejectAOSPSandboxDegradation("", status: 1)
     }
     try rejectAOSPSandboxDegradation("sandbox active", status: 0)
@@ -97,12 +149,12 @@ import Testing
         NUCLEUS_NSJAIL_ISOLATION_OK
         """
     try validateAOSPSandboxIsolation(valid, status: 0)
-    #expect(throws: RuntimeFailure.self) {
+    #expect(throws: (any Error).self) {
         try validateAOSPSandboxIsolation(
             "NUCLEUS_NSJAIL_FILE_HIDDEN",
             status: 0)
     }
-    #expect(throws: RuntimeFailure.self) {
+    #expect(throws: (any Error).self) {
         try validateAOSPSandboxIsolation(valid, status: 1)
     }
 }
@@ -111,12 +163,12 @@ import Testing
     try validateAOSPBrokenSandboxBehavior(
         "nsjail sandbox probe failed with exit status 1",
         status: 2)
-    #expect(throws: RuntimeFailure.self) {
+    #expect(throws: (any Error).self) {
         try validateAOSPBrokenSandboxBehavior(
             "Build sandboxing disabled due to nsjail error.",
             status: 0)
     }
-    #expect(throws: RuntimeFailure.self) {
+    #expect(throws: (any Error).self) {
         try validateAOSPBrokenSandboxBehavior(
             "TARGET_PRODUCT='nucleus_x86_64'",
             status: 0)
@@ -124,7 +176,7 @@ import Testing
 }
 
 @Test func aospContainerToolsUseThePinnedJDK() {
-    let environment = aospContainerToolEnvironment()
+    let environment = aospProductContainerToolEnvironment()
     let javaHome = "/src/prebuilts/jdk/jdk21/linux-x86"
     #expect(environment["JAVA_HOME"] == javaHome)
     #expect(environment["ANDROID_JAVA_HOME"] == javaHome)
@@ -169,6 +221,7 @@ import Testing
     try validateAOSPFontContract(
         archiveEntries: Array(configurations.keys) + [
             "SYSTEM/fonts/Roboto-Regular.ttf",
+            "SYSTEM/fonts/NotoColorEmojiLegacy.ttf",
             "SYSTEM/fonts/NotoColorEmoji.ttf",
             "PRODUCT/fonts/DisplaySerif.ttf",
         ],
@@ -183,7 +236,7 @@ import Testing
           </family>
         </familyset>
         """
-    #expect(throws: RuntimeFailure.self) {
+    #expect(throws: (any Error).self) {
         try validateAOSPFontContract(
             archiveEntries: [
                 "SYSTEM/etc/fonts.xml",
@@ -192,7 +245,7 @@ import Testing
             configurations: ["SYSTEM/etc/fonts.xml": fontsXML])
     }
 
-    #expect(throws: RuntimeFailure.self) {
+    #expect(throws: (any Error).self) {
         try validateAOSPFontContract(
             archiveEntries: [
                 "SYSTEM/etc/fonts.xml",
@@ -241,7 +294,8 @@ import Testing
     try synchronizeAOSPProductTree(
         from: FilePath(source.path),
         to: FilePath(destination.path),
-        preservingAtRoot: [".nucleus-product-stage.json"])
+        preservingAtRoot: [".nucleus-product-stage.json"],
+        files: ColliderRuntime().actionFileSystem())
     #expect(
         FileManager.default.fileExists(
             atPath: destination.appendingPathComponent(
@@ -257,7 +311,8 @@ import Testing
     try synchronizeAOSPProductTree(
         from: FilePath(source.path),
         to: FilePath(destination.path),
-        preservingAtRoot: [".nucleus-product-stage.json"])
+        preservingAtRoot: [".nucleus-product-stage.json"],
+        files: ColliderRuntime().actionFileSystem())
     #expect(
         try FileManager.default.attributesOfItem(atPath: unchanged.path)[
             .systemFileNumber
