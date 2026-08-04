@@ -1,18 +1,18 @@
 import ArgumentParser
 
 enum AndroidOperation: Equatable, ExpressibleByArgument {
-    case build(gradleArguments: [String])
+    case build
     case native
-    case verify(library: String?)
+    case verify
 
     init?(argument: String) {
         switch argument {
         case "build":
-            self = .build(gradleArguments: [])
+            self = .build
         case "native":
             self = .native
         case "verify":
-            self = .verify(library: nil)
+            self = .verify
         default:
             return nil
         }
@@ -36,16 +36,12 @@ struct AndroidCommand {
     ) async throws {
         let registry = ComponentRegistry(context: context)
         switch operation {
-        case .build(let gradleArguments):
-            try await registry.buildAndroidHost(
-                gradleArguments: gradleArguments,
-                controls: controls)
+        case .build:
+            try await registry.runAndroid(.androidBuild, controls: controls)
         case .native:
-            try await registry.buildAndroidNative(controls: controls)
-        case .verify(let library):
-            try await registry.validateAndroidHost(
-                library: library,
-                controls: controls)
+            try await registry.runAndroid(.androidNative, controls: controls)
+        case .verify:
+            try await registry.runAndroid(.androidVerify, controls: controls)
         }
     }
 }

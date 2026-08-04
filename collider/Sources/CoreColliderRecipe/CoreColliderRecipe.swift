@@ -7,8 +7,10 @@ package enum CoreTaskIDs {
     package static let sources = TaskID(rawValue: "core.sources")
     package static let androidNativeSDK = TaskID(rawValue: "core.native-sdk.android-arm64")
     package static let androidSkia = TaskID(rawValue: "core.skia.android-arm64")
+    package static let androidHostBuild = TaskID(rawValue: "core.android-host.build")
     package static let validateAndroidHost = TaskID(
         rawValue: "core.android-host.validate")
+    package static let androidBuild = TaskID(rawValue: "core.android.build")
 
     package static func skia(_ target: NativeLinuxTarget) -> TaskID {
         TaskID(rawValue: "core.skia.\(target.identifier)")
@@ -48,11 +50,58 @@ public enum CoreColliderRecipe: ColliderComponent {
             tasks += [skia, sdk]
             roots.insert(sdk.id)
         }
+        let androidToolchain = try AndroidToolchainVersions.load(
+            workspaceRoot: context.repositoryRoot)
+        let ndk = try androidToolchain.ndkRoot(
+            environment: context.environment,
+            validate: false,
+            fallbackHome: context.cacheRoot.appending("nucleus/unconfigured-home"))
+        let androidSDKRoot = context.nativeSDKRoot.appending("android-arm64")
+        var androidEnvironment = context.environment
+        androidEnvironment["NUCLEUS_NATIVE_SDK_ROOT"] = androidSDKRoot.string
+        let androidSkia = buildSkiaAndroid(
+            root: root,
+            minimumAndroidAPI: androidToolchain.minimumSDK,
+            environment: androidEnvironment,
+            builder: context.nativeBuilder)
+        let androidNativeSDK = publishAndroidRenderSDK(
+            root: root,
+            sdkRoot: androidSDKRoot,
+            dependencies: [androidSkia.id])
+        let androidSwiftPM = try context.swiftPM(
+            .androidARM64(apiLevel: androidToolchain.minimumSDK))
+        let androidHost = buildAndroidHost(
+            root: root,
+            environment: androidEnvironment,
+            swiftPM: androidSwiftPM,
+            dependencies: [androidNativeSDK.id])
+        let androidValidation = validateAndroidHost(
+            root: root,
+            library: androidSwiftPM.configurationProducts.appending(
+                "libnucleus-android.so"),
+            ndk: ndk,
+            environment: androidEnvironment,
+            dependencies: [androidHost.id])
+        let androidBuild = buildAndroidProject(
+            root: root,
+            environment: androidEnvironment,
+            dependency: androidValidation.id)
+        tasks += [
+            androidSkia, androidNativeSDK, androidHost, androidValidation,
+            androidBuild,
+        ]
         return try ComponentDefinition(
             descriptor: descriptor,
             tasks: tasks,
             entrypoints: [
-                ComponentEntrypoint(id: .bootstrap, roots: roots)
+                ComponentEntrypoint(id: .bootstrap, roots: roots),
+                ComponentEntrypoint(id: .androidBuild, roots: [androidBuild.id]),
+                ComponentEntrypoint(
+                    id: .androidNative,
+                    roots: [androidValidation.id]),
+                ComponentEntrypoint(
+                    id: .androidVerify,
+                    roots: [androidValidation.id]),
             ])
     }
 
@@ -191,7 +240,7 @@ public enum CoreColliderRecipe: ColliderComponent {
         let product = swiftPM.configurationProducts.appending(
             "libnucleus-android.so")
         return TaskDeclaration(
-            id: TaskID(rawValue: "core.android-host.build"),
+            id: CoreTaskIDs.androidHostBuild,
             component: ComponentID(rawValue: "core"),
             dependencies: dependencies,
             swiftProducts: [
@@ -251,6 +300,34 @@ public enum CoreColliderRecipe: ColliderComponent {
                     library: hostLibrary,
                     kotlinContract: kotlinContract,
                     ndk: ndk,
+                    environment: environment)))
+    }
+
+    public static func buildAndroidProject(
+        root: FilePath,
+        environment: [String: String],
+        dependency: TaskID
+    ) -> TaskDeclaration {
+        let android = root.appending("android")
+        return TaskDeclaration(
+            id: CoreTaskIDs.androidBuild,
+            component: descriptor.id,
+            dependencies: [dependency],
+            inputs: [
+                .file(android.appending("settings.gradle.kts")),
+                .file(android.appending("build.gradle.kts")),
+                .file(android.appending("gradle/libs.versions.toml")),
+                .tree(android.appending("nucleus/src")),
+                .tree(android.appending("smoke-app/src")),
+                .tool(.path(android.appending("gradlew"))),
+            ],
+            locks: [.checkout("core-android-gradle")],
+            cachePolicy: .always,
+            operation: .command(
+                CommandSpec(
+                    executable: .path(android.appending("gradlew")),
+                    arguments: ["verifyDebug"],
+                    workingDirectory: android,
                     environment: environment)))
     }
 

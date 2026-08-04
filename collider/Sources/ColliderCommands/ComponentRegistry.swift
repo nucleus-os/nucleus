@@ -1,5 +1,4 @@
 import AndroidRuntimeColliderRecipe
-import ArgumentParser
 import ChromiumColliderRecipe
 import ColliderCore
 import ColliderRuntime
@@ -12,44 +11,13 @@ import QualificationColliderRecipe
 import ReactNativeColliderRecipe
 import ReleaseGateColliderRecipe
 import ShellColliderRecipe
+import SwiftTargetSDKColliderRecipe
 import SystemPackage
 import VulkanColliderRecipe
 import WaylandColliderRecipe
 
-enum ComponentSelection: String, CaseIterable, ExpressibleByArgument {
-    case all
-    case runtime
-    case swiftSDK = "swift-sdk"
-    case android
-    case browser
-    case tracy
-    case vulkan
-    case wayland
-    case core
-    case config
-    case ipc
-    case linux
-    case reactNative = "rn"
-    case compositor
-    case shell
-    case androidRuntime = "android-runtime"
-    case loader
-    case gpuHeadless = "gpu-headless"
-    case gpuDRM = "gpu-drm"
-}
-
-enum GeneratorComponent {
-    case reactNative
-    case vulkan
-    case wayland
-}
-
 struct ComponentRegistry {
     let context: WorkspaceContext
-
-    private func buildTasks() throws -> [TaskDeclaration] {
-        try componentCatalog().tasks
-    }
 
     func componentCatalog(
         environment environmentOverride: [String: String]? = nil
@@ -70,12 +38,33 @@ struct ComponentRegistry {
                     sanitizer: sanitizer.rawValue,
                     linkerFlags: sanitizer == .undefined ? ["-lubsan"] : [])
         }
+        let androidToolchain = try AndroidToolchainVersions.load(
+            workspaceRoot: context.root)
+        let targetSDKInputs = try SwiftTargetSDKInputs.load(
+            from: context.layout.swiftSDK.appending("target-sdk-inputs.json"))
+        buildContexts[
+            .androidARM64(apiLevel: androidToolchain.minimumSDK)
+        ] = try context.swiftPMInvocation(
+            configuration: .release,
+            staticSwiftStandardLibrary: true,
+            target: .swiftSDK(
+                name: targetSDKInputs.androidBundleID,
+                targetTriple:
+                    "aarch64-unknown-linux-android\(androidToolchain.minimumSDK)"),
+            toolchainIdentity: "target-sdk-\(targetSDKInputs.snapshot)-android")
+        let swiftSDKConfiguration = try swiftTargetSDKGenerationConfiguration(
+            environment: recipeEnvironment,
+            android: androidToolchain,
+            inputs: targetSDKInputs)
         let recipeContext = RecipeContext(
             repositoryRoot: context.root,
             cacheRoot: context.cacheRoot,
             nativeSDKRoot: context.nativeSDKRoot.removingLastComponent(),
             environment: recipeEnvironment,
-            buildContexts: buildContexts)
+            buildContexts: buildContexts,
+            configurations: [
+                SwiftTargetSDKColliderRecipe.descriptor.id: swiftSDKConfiguration
+            ])
         let componentTypes: [any ColliderComponent.Type] = [
             NativeBuilderColliderRecipe.self,
             BenchmarkColliderRecipe.self,
@@ -85,6 +74,7 @@ struct ComponentRegistry {
             CoreColliderRecipe.self,
             ReactNativeColliderRecipe.self,
             ReleaseGateColliderRecipe.self,
+            SwiftTargetSDKColliderRecipe.self,
             WaylandColliderRecipe.self,
             LinuxColliderRecipe.self,
             CompositorColliderRecipe.self,
@@ -131,6 +121,72 @@ struct ComponentRegistry {
         }
         routes += [
             ComponentEntrypointRoute(
+                spelling: "linux",
+                requestedEntrypoint: .bootstrap,
+                destinations: [
+                    ComponentEntrypointReference(
+                        component: core,
+                        entrypoint: .bootstrap),
+                    ComponentEntrypointReference(
+                        component: wayland,
+                        entrypoint: .bootstrap),
+                ]),
+            ComponentEntrypointRoute(
+                spelling: "android-runtime",
+                requestedEntrypoint: .bootstrap,
+                destinations: [
+                    ComponentEntrypointReference(
+                        component: core,
+                        entrypoint: .bootstrap),
+                    ComponentEntrypointReference(
+                        component: wayland,
+                        entrypoint: .bootstrap),
+                ]),
+            ComponentEntrypointRoute(
+                spelling: "compositor",
+                requestedEntrypoint: .bootstrap,
+                destinations: [
+                    ComponentEntrypointReference(
+                        component: core,
+                        entrypoint: .bootstrap),
+                    ComponentEntrypointReference(
+                        component: wayland,
+                        entrypoint: .bootstrap),
+                    ComponentEntrypointReference(
+                        component: reactNative,
+                        entrypoint: .bootstrap),
+                ]),
+            ComponentEntrypointRoute(
+                spelling: "shell",
+                requestedEntrypoint: .bootstrap,
+                destinations: [
+                    ComponentEntrypointReference(
+                        component: core,
+                        entrypoint: .bootstrap),
+                    ComponentEntrypointReference(
+                        component: wayland,
+                        entrypoint: .bootstrap),
+                    ComponentEntrypointReference(
+                        component: reactNative,
+                        entrypoint: .bootstrap),
+                ]),
+            ComponentEntrypointRoute(
+                spelling: "android",
+                requestedEntrypoint: .build,
+                destinations: [
+                    ComponentEntrypointReference(
+                        component: core,
+                        entrypoint: .androidBuild)
+                ]),
+            ComponentEntrypointRoute(
+                spelling: "android",
+                requestedEntrypoint: .testDefault,
+                destinations: [
+                    ComponentEntrypointReference(
+                        component: core,
+                        entrypoint: .androidBuild)
+                ]),
+            ComponentEntrypointRoute(
                 spelling: "gpu-headless",
                 requestedEntrypoint: .testDefault,
                 destinations: [
@@ -160,96 +216,59 @@ struct ComponentRegistry {
             groups: [
                 ComponentSelectionGroup(name: "all", components: runtime),
                 ComponentSelectionGroup(name: "runtime", components: runtime),
-                ComponentSelectionGroup(
-                    name: "linux-runtime",
-                    components: [core, wayland]),
-                ComponentSelectionGroup(
-                    name: "desktop-runtime",
-                    components: [core, wayland, reactNative]),
             ],
             routes: routes)
     }
 
-    func testTasks(
-        selection: ComponentSelection?
-    ) throws -> [TaskDeclaration] {
-        _ = selection
-        return try buildTasks()
-    }
-
     func build(
-        selection: ComponentSelection?,
+        selection: String?,
         controls: TaskControls
     ) async throws {
+        let catalog = try componentCatalog()
         try await context.execute(
-            tasks: try buildTasks(),
-            selected: try selectedBuildTasks(selection),
+            tasks: catalog.tasks,
+            selected: try catalog.roots(
+                named: .build,
+                selection: selection),
             controls: controls)
     }
 
     func bootstrap(
-        selection: ComponentSelection?,
+        selection: String?,
         controls: TaskControls
     ) async throws {
-        let selection = selection ?? .all
-        guard
-            ![
-                .swiftSDK, .android, .loader, .gpuHeadless, .gpuDRM,
-            ].contains(selection)
-        else {
-            throw WorkspaceFailure.message(
-                "\(selection.rawValue) is not a runtime bootstrap component")
-        }
         let catalog = try componentCatalog()
-        let catalogSelection: String
-        switch selection {
-        case .all, .runtime:
-            catalogSelection = selection.rawValue
-        case .core, .wayland, .reactNative:
-            catalogSelection = selection.rawValue
-        case .browser:
-            catalogSelection = ChromiumColliderRecipe.descriptor.canonicalName
-        case .linux, .androidRuntime:
-            catalogSelection = "linux-runtime"
-        case .compositor, .shell:
-            catalogSelection = "desktop-runtime"
-        case .tracy, .vulkan, .config, .ipc:
-            throw WorkspaceFailure.message(
-                "\(selection.rawValue) has no bootstrap entrypoint")
-        case .swiftSDK, .android, .loader, .gpuHeadless, .gpuDRM:
-            preconditionFailure("non-runtime bootstrap selection escaped validation")
-        }
         try await context.execute(
             tasks: catalog.tasks,
             selected: try catalog.roots(
                 named: .bootstrap,
-                selection: catalogSelection),
+                selection: selection),
             controls: controls)
     }
 
     func test(
-        selection: ComponentSelection?,
+        selection: String?,
         controls: TaskControls
     ) async throws {
+        let catalog = try componentCatalog()
+        var selected = try catalog.roots(
+            named: .testDefault,
+            selection: selection)
+        if selection == nil || selection == "all" {
+            selected += try catalog.roots(
+                named: .testReleaseGate,
+                selection: ReleaseGateColliderRecipe.descriptor.canonicalName)
+        }
         try await context.execute(
-            tasks: try testTasks(selection: selection),
-            selected: try selectedTestTasks(selection),
+            tasks: catalog.tasks,
+            selected: selected,
             controls: controls)
     }
 
     func generate(
-        _ component: GeneratorComponent,
+        _ selection: String,
         controls: TaskControls
     ) async throws {
-        let selection: String
-        switch component {
-        case .reactNative:
-            selection = ReactNativeColliderRecipe.descriptor.canonicalName
-        case .vulkan:
-            selection = VulkanColliderRecipe.descriptor.canonicalName
-        case .wayland:
-            selection = WaylandColliderRecipe.descriptor.canonicalName
-        }
         let catalog = try componentCatalog()
         try await context.execute(
             tasks: catalog.tasks,
@@ -259,81 +278,16 @@ struct ComponentRegistry {
             controls: controls)
     }
 
-    func buildAndroidHost(
-        gradleArguments: [String],
+    func runAndroid(
+        _ entrypoint: ComponentEntrypointID,
         controls: TaskControls
     ) async throws {
-        let tasks = try await androidHostTasks()
-        let android = context.layout.core.appending("android")
-        let gradle = TaskDeclaration(
-            id: TaskID(rawValue: "core.android.build"),
-            component: ComponentID(rawValue: "core"),
-            dependencies: [CoreTaskIDs.validateAndroidHost],
-            inputs: [
-                .file(android.appending("settings.gradle.kts")),
-                .file(android.appending("build.gradle.kts")),
-                .file(android.appending("gradle/libs.versions.toml")),
-                .tree(android.appending("nucleus/src")),
-                .tree(android.appending("smoke-app/src")),
-                .tool(.path(android.appending("gradlew"))),
-                .value(
-                    name: "gradle-arguments",
-                    bytes: Array(gradleArguments.joined(separator: "\u{0}").utf8)),
-            ],
-            locks: [.checkout("core-android-gradle")],
-            cachePolicy: .always,
-            operation: .command(
-                CommandSpec(
-                    executable: .path(android.appending("gradlew")),
-                    arguments: gradleArguments.isEmpty
-                        ? ["verifyDebug"] : gradleArguments,
-                    workingDirectory: android,
-                    environment: context.taskEnvironment)))
+        let catalog = try componentCatalog()
         try await context.execute(
-            tasks: tasks + [gradle],
-            selected: [gradle.id],
-            controls: controls)
-    }
-
-    func buildAndroidNative(controls: TaskControls) async throws {
-        let tasks = try await androidHostTasks()
-        let selected = CoreTaskIDs.validateAndroidHost
-        try await context.execute(
-            tasks: tasks,
-            selected: [selected],
-            controls: controls)
-    }
-
-    func validateAndroidHost(
-        library: String?,
-        controls: TaskControls
-    ) async throws {
-        let core = context.layout.core
-        let toolchain = try AndroidToolchainVersions.load(
-            workspaceRoot: context.root)
-        let ndk = try toolchain.ndkRoot(environment: context.environment)
-        let supplied = library.map {
-            resolveWorkspacePath($0, relativeTo: context.root)
-        }
-        let sourceID = try requiredSwiftSourceID(context.taskEnvironment)
-        let swiftPM = try context.swiftPMInvocation(
-            configuration: .release,
-            staticSwiftStandardLibrary: true,
-            target: .swiftSDK(
-                name: "swift-\(sourceID)_android",
-                targetTriple:
-                    "aarch64-unknown-linux-android\(toolchain.minimumSDK)"))
-        let task = CoreColliderRecipe.validateAndroidHost(
-            root: core,
-            library: supplied
-                ?? swiftPM.configurationProducts.appending(
-                    "libnucleus-android.so"),
-            ndk: ndk,
-            environment: context.taskEnvironment,
-            dependencies: [])
-        try await context.execute(
-            tasks: [task],
-            selected: [task.id],
+            tasks: catalog.tasks,
+            selected: try catalog.roots(
+                named: entrypoint,
+                selection: CoreColliderRecipe.descriptor.canonicalName),
             controls: controls)
     }
 
@@ -374,9 +328,9 @@ struct ComponentRegistry {
     }
 
     func buildAndroidRuntimeHost() async throws {
-        let tasks = try buildTasks()
+        let catalog = try componentCatalog()
         try await context.execute(
-            tasks: tasks,
+            tasks: catalog.tasks,
             selected: [
                 LinuxTaskIDs.build(.arm64),
                 LinuxTaskIDs.build(.x86_64),
@@ -385,54 +339,26 @@ struct ComponentRegistry {
     }
 
     func selectedBuildTasks(
-        _ selection: ComponentSelection?
+        _ selection: String?
     ) throws -> [TaskID] {
-        let selection = selection ?? .all
-        switch selection {
-        case .all, .runtime, .tracy, .vulkan, .wayland, .core, .config,
-            .ipc, .linux, .reactNative, .compositor, .shell, .androidRuntime:
-            return try componentCatalog().roots(
-                named: .build,
-                selection: selection.rawValue)
-        case .browser:
-            return try componentCatalog().roots(
-                named: .build,
-                selection: ChromiumColliderRecipe.descriptor.canonicalName)
-        case .swiftSDK, .android, .loader, .gpuHeadless, .gpuDRM:
-            throw WorkspaceFailure.message(
-                "\(selection.rawValue) is not a runtime build component")
-        }
+        return try componentCatalog().roots(
+            named: .build,
+            selection: selection)
     }
 
     func selectedTestTasks(
-        _ selection: ComponentSelection?
+        _ selection: String?
     ) throws -> [TaskID] {
-        let selection = selection ?? .all
-        switch selection {
-        case .all, .runtime, .tracy, .vulkan, .wayland, .core, .config,
-            .ipc, .linux, .reactNative, .compositor, .shell, .androidRuntime:
-            let catalog = try componentCatalog()
-            var selected = try catalog.roots(
-                named: .testDefault,
-                selection: selection.rawValue)
-            if selection == .all {
-                selected += try catalog.roots(
-                    named: .testReleaseGate,
-                    selection: ReleaseGateColliderRecipe.descriptor.canonicalName)
-            }
-            return selected
-        case .loader, .gpuHeadless, .gpuDRM:
-            return try componentCatalog().roots(
-                named: .testDefault,
-                selection: selection.rawValue)
-        case .browser:
-            return try componentCatalog().roots(
-                named: .testDefault,
-                selection: ChromiumColliderRecipe.descriptor.canonicalName)
-        case .swiftSDK, .android:
-            throw WorkspaceFailure.message(
-                "\(selection.rawValue) is not a runtime test component")
+        let catalog = try componentCatalog()
+        var selected = try catalog.roots(
+            named: .testDefault,
+            selection: selection)
+        if selection == nil || selection == "all" {
+            selected += try catalog.roots(
+                named: .testReleaseGate,
+                selection: ReleaseGateColliderRecipe.descriptor.canonicalName)
         }
+        return selected
     }
 
     func linuxSwiftPMInvocation(
@@ -540,49 +466,95 @@ struct ComponentRegistry {
             toolchainIdentity: toolchainIdentity)
     }
 
-    private func androidHostTasks() async throws -> [TaskDeclaration] {
-        let root = context.layout.core
-        let environment = context.taskEnvironment
-        let toolchain = try AndroidToolchainVersions.load(
-            workspaceRoot: context.root)
-        let ndk = try toolchain.ndkRoot(environment: context.environment)
-        let nativeBuilder = nativeBuilderConfiguration(coreRoot: root)
-        let source = try CoreColliderRecipe.prepareSkiaDependencies(
-            root: root, environment: environment)
-        let builder = NativeBuilderColliderRecipe.prepare(nativeBuilder)
-        let skia = CoreColliderRecipe.buildSkiaAndroid(
-            root: root,
-            minimumAndroidAPI: toolchain.minimumSDK,
+    private func swiftTargetSDKGenerationConfiguration(
+        environment: [String: String],
+        android: AndroidToolchainVersions,
+        inputs: SwiftTargetSDKInputs
+    ) throws -> SwiftTargetSDKGenerationConfiguration {
+        let recipeRoot = context.layout.swiftSDK
+        let inputsFile = recipeRoot.appending("target-sdk-inputs.json")
+        let sourceID =
+            environment["NUCLEUS_SWIFT_SOURCE_ID"].flatMap {
+                $0.isEmpty ? nil : $0
+            } ?? "swift-6.4-source"
+        let generatorSource = recipeRoot.appending("source/swift-sdk-generator")
+        let ndkRoot = try android.ndkRoot(
             environment: environment,
-            builder: nativeBuilder)
-        let androidNativeSDKRoot = context.nativeSDKRoot(named: "android-arm64")
-        var androidEnvironment = environment
-        androidEnvironment["NUCLEUS_NATIVE_SDK_ROOT"] = androidNativeSDKRoot.string
-        let sdk = CoreColliderRecipe.publishAndroidRenderSDK(
-            root: root,
-            sdkRoot: androidNativeSDKRoot,
-            dependencies: [skia.id])
-        let sourceID = try requiredSwiftSourceID(environment)
-        let swiftPM = try context.swiftPMInvocation(
-            configuration: .release,
-            staticSwiftStandardLibrary: true,
-            target: .swiftSDK(
-                name: "swift-\(sourceID)_android",
-                targetTriple:
-                    "aarch64-unknown-linux-android\(toolchain.minimumSDK)"))
-        let build = CoreColliderRecipe.buildAndroidHost(
-            root: root,
-            environment: androidEnvironment,
-            swiftPM: swiftPM,
-            dependencies: [sdk.id])
-        let validate = CoreColliderRecipe.validateAndroidHost(
-            root: root,
-            library: swiftPM.configurationProducts.appending(
-                "libnucleus-android.so"),
-            ndk: ndk,
-            environment: androidEnvironment,
-            dependencies: [build.id])
-        return [source, builder, skia, sdk, build, validate]
+            validate: false,
+            fallbackHome: context.cacheRoot.appending("nucleus/unconfigured-home"))
+        let paths = SwiftTargetSDKStoragePaths(cacheRoot: context.cacheRoot)
+        let fixture = context.root.appending(
+            "collider/engine/Sources/ColliderRuntime/Resources/"
+                + "ToolchainValidationFixtures/AndroidSDKConsumer")
+        let validator = recipeRoot.appending("validate-target-sdk-artifacts.sh")
+        let runtimeBuilderContext = recipeRoot.appending("runtime-build-container")
+        let runtimePreset = recipeRoot.appending(
+            "nucleus-target-runtime-presets.ini")
+        let sysrootPreparer = recipeRoot.appending("prepare-linux-sysroot.sh")
+        let swiftExecutable = FilePath(
+            environment["SWIFT"] ?? "/usr/bin/swift")
+        let artifactID = try swiftTargetSDKArtifactID(
+            inputsFile: inputsFile,
+            validationFixture: fixture,
+            validator: validator,
+            ndkIdentity: android.ndk,
+            xcodeIdentity: try ArtifactHasher.digest(file: swiftExecutable).description,
+            sourceID: sourceID,
+            runtimeBuilderContext: runtimeBuilderContext,
+            runtimePreset: runtimePreset,
+            sysrootPreparer: sysrootPreparer,
+            generatorSourceID: sourceID)
+        let linuxTargets = try inputs.linuxTargets.map { target in
+            let buildID = try swiftTargetRuntimeBuildID(
+                inputs: inputs,
+                target: target,
+                sourceID: sourceID,
+                runtimeBuilderContext: runtimeBuilderContext,
+                runtimePreset: runtimePreset,
+                sysrootPreparer: sysrootPreparer)
+            let root = paths.runtimeBuildRoot.appending(
+                "\(target.architecture.rawValue)/\(buildID)")
+            return SwiftLinuxTargetBuildConfiguration(
+                target: target,
+                runtimeBuildWorkspace: root.appending("build"),
+                runtimeCompilerCache: paths.runtimeCompilerCache.appending(
+                    target.architecture.rawValue),
+                runtimeInstall: root.appending("install"),
+                sysroot: root.appending("sysroot"))
+        }
+        let generation = paths.artifactRoot.appending("generations/\(artifactID)")
+        let home =
+            environment["HOME"].flatMap {
+                $0.isEmpty ? nil : FilePath($0)
+            }
+            ?? FilePath(FileManager.default.homeDirectoryForCurrentUser.path)
+        return SwiftTargetSDKGenerationConfiguration(
+            inputs: inputs,
+            inputsFile: inputsFile,
+            androidAPILevel: android.minimumSDK,
+            downloadRoot: paths.downloadRoot,
+            generatorSource: generatorSource,
+            generatorScratch: paths.generatorScratch,
+            sourceWorkspace: recipeRoot.appending("source"),
+            sourceID: sourceID,
+            runtimeBuilderContext: runtimeBuilderContext,
+            runtimeBuilderImageID: paths.runtimeBuilderImageID,
+            linuxTargets: linuxTargets,
+            sysrootPreparer: sysrootPreparer,
+            candidate: paths.artifactRoot.appending(
+                "generations/.candidate-\(artifactID)"),
+            generation: generation,
+            active: paths.artifactRoot.appending("current"),
+            ndkRoot: ndkRoot,
+            validationFixture: fixture,
+            validator: validator,
+            swiftExecutable: swiftExecutable,
+            sdkDiscoveryRoot: home.appending(".swiftpm/swift-sdks"),
+            displacedRoot: paths.artifactRoot.appending("displaced/\(artifactID)"),
+            rebuildLock: paths.rebuildLock,
+            environment: swiftTargetSDKTaskEnvironment(
+                environment,
+                runtimeSourceID: sourceID))
     }
 
     private var nativeSDKRoot: FilePath {
@@ -604,35 +576,6 @@ struct ComponentRegistry {
             swiftSDKRoot: cache.appending(
                 "swift-target-sdks/current/swift-sdks"),
             environment: context.taskEnvironment)
-    }
-
-    private func requiredSwiftSourceID(
-        _ environment: [String: String]
-    ) throws -> String {
-        guard let sourceID = environment["NUCLEUS_SWIFT_SOURCE_ID"],
-            !sourceID.isEmpty
-        else {
-            throw WorkspaceFailure.message(
-                "NUCLEUS_SWIFT_SOURCE_ID is missing; source tools/host-env.sh")
-        }
-        return sourceID
-    }
-
-    private var linuxNativeTargets: [NativeLinuxTarget] {
-        [
-            NativeLinuxTarget(architecture: .arm64),
-            NativeLinuxTarget(architecture: .x86_64),
-        ]
-    }
-
-    private func addingDependency(
-        _ dependency: TaskID,
-        to task: TaskID,
-        in tasks: [TaskDeclaration]
-    ) -> [TaskDeclaration] {
-        tasks.map {
-            $0.id == task ? $0.addingDependencies([dependency]) : $0
-        }
     }
 
 }

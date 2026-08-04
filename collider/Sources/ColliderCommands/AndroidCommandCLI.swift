@@ -10,11 +10,7 @@ struct Android: AsyncParsableCommand {
 
     struct Build: TaskControlledCommand {
         @OptionGroup var taskOptions: TaskControlOptions
-        @Argument(parsing: .postTerminator) var arguments: [String] = []
-
-        var operation: AndroidOperation {
-            .build(gradleArguments: arguments)
-        }
+        var operation: AndroidOperation { .build }
 
         mutating func run() async throws {
             try await AndroidCommand(context: context()).run(
@@ -35,11 +31,7 @@ struct Android: AsyncParsableCommand {
     }
     struct Verify: TaskControlledCommand {
         @OptionGroup var taskOptions: TaskControlOptions
-        @Argument var library: String?
-
-        var operation: AndroidOperation {
-            .verify(library: library)
-        }
+        var operation: AndroidOperation { .verify }
 
         mutating func run() async throws {
             try await AndroidCommand(context: context()).run(

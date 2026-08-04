@@ -1084,6 +1084,22 @@ public struct TaskDeclaration: Hashable, Sendable {
             cachePolicy: cachePolicy,
             operation: operation)
     }
+
+    public func addingLocks(_ additionalLocks: [TaskLock]) -> TaskDeclaration {
+        TaskDeclaration(
+            id: id,
+            component: component,
+            dependencies: dependencies,
+            subsumedDependencies: subsumedDependencies,
+            swiftProducts: swiftProducts,
+            swiftTests: swiftTests,
+            inputs: inputs,
+            outputs: outputs,
+            postconditions: postconditions,
+            locks: locks + additionalLocks.filter { !locks.contains($0) },
+            cachePolicy: cachePolicy,
+            operation: operation)
+    }
 }
 
 public enum TaskGraphFailure: Error, CustomStringConvertible, Sendable {

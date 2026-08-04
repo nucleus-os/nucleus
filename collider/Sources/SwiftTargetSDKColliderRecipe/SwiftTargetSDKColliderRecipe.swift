@@ -2,6 +2,38 @@ import ColliderCore
 import Foundation
 import SystemPackage
 
+public struct SwiftTargetSDKStoragePaths: Equatable, Sendable {
+    public let cacheRoot: FilePath
+    public let artifactRoot: FilePath
+    public let downloadRoot: FilePath
+    public let generatorScratch: FilePath
+    public let runtimeBuilderImageID: FilePath
+    public let runtimeCompilerCache: FilePath
+    public let runtimeBuildRoot: FilePath
+    public let rebuildLock: FilePath
+
+    public init(cacheRoot: FilePath) {
+        self.cacheRoot = cacheRoot
+        artifactRoot = cacheRoot.appending("nucleus/swift-target-sdks")
+        downloadRoot = cacheRoot.appending("nucleus/downloads/swift-target-sdks")
+        generatorScratch = cacheRoot.appending("nucleus/build/swift-sdk-generator")
+        runtimeBuilderImageID = cacheRoot.appending(
+            "nucleus/build-containers/swift-runtime/image-id")
+        runtimeCompilerCache = cacheRoot.appending("nucleus/ccache/swift-runtime")
+        runtimeBuildRoot = cacheRoot.appending("nucleus/build/swift-target-runtime")
+        rebuildLock = artifactRoot.appending("rebuild.lock")
+    }
+}
+
+public func swiftTargetSDKTaskEnvironment(
+    _ environment: [String: String],
+    runtimeSourceID: String
+) -> [String: String] {
+    var environment = environment
+    environment["NUCLEUS_SWIFT_SOURCE_ID"] = runtimeSourceID
+    return environment
+}
+
 public struct SwiftTargetSDKInputs: Codable, Equatable, Sendable {
     public enum LinuxArchitecture: String, Codable, CaseIterable, Hashable, Sendable {
         case arm64
@@ -114,7 +146,7 @@ public struct SwiftLinuxTargetBuildConfiguration: Sendable {
     }
 }
 
-public struct SwiftTargetSDKGenerationConfiguration: Sendable {
+public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
     public let inputs: SwiftTargetSDKInputs
     public let inputsFile: FilePath
     public let androidAPILevel: UInt32
@@ -136,6 +168,7 @@ public struct SwiftTargetSDKGenerationConfiguration: Sendable {
     public let swiftExecutable: FilePath
     public let sdkDiscoveryRoot: FilePath
     public let displacedRoot: FilePath
+    public let rebuildLock: FilePath
     public let environment: [String: String]
 
     public init(
@@ -160,6 +193,7 @@ public struct SwiftTargetSDKGenerationConfiguration: Sendable {
         swiftExecutable: FilePath,
         sdkDiscoveryRoot: FilePath,
         displacedRoot: FilePath,
+        rebuildLock: FilePath,
         environment: [String: String]
     ) {
         self.inputs = inputs
@@ -183,6 +217,7 @@ public struct SwiftTargetSDKGenerationConfiguration: Sendable {
         self.swiftExecutable = swiftExecutable
         self.sdkDiscoveryRoot = sdkDiscoveryRoot
         self.displacedRoot = displacedRoot
+        self.rebuildLock = rebuildLock
         self.environment = environment
     }
 }
@@ -202,8 +237,28 @@ public enum SwiftTargetSDKRecipeFailure: Error, CustomStringConvertible, Sendabl
     }
 }
 
-public enum SwiftTargetSDKColliderRecipe {
-    private static let component = ComponentID(rawValue: "swift-sdk")
+public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
+    public static let descriptor = ComponentDescriptor(
+        id: ComponentID(rawValue: "swift-sdk"),
+        canonicalName: "swift-sdk",
+        directoryName: "swift-sdk")
+    private static let component = descriptor.id
+
+    public static func makeComponent(
+        in context: RecipeContext
+    ) throws -> ComponentDefinition {
+        let configuration: SwiftTargetSDKGenerationConfiguration =
+            try context.configuration(for: descriptor.id)
+        let taskSet = try generation(configuration)
+        return try ComponentDefinition(
+            descriptor: descriptor,
+            tasks: taskSet.tasks,
+            entrypoints: [
+                ComponentEntrypoint(
+                    id: .build,
+                    roots: Set(taskSet.selected))
+            ])
+    }
 
     public static func generation(
         _ configuration: SwiftTargetSDKGenerationConfiguration
@@ -247,11 +302,15 @@ public enum SwiftTargetSDKColliderRecipe {
         let activation = activationTask(configuration, validation: validation)
         let discoveries = discoveryTasks(configuration, activation: activation)
 
+        let tasks =
+            downloads.tasks
+            + [runtimeBuilder] + sysroots + runtimes
+            + [generator, assembly, validation, activation]
+            + discoveries
         return SwiftTargetSDKTaskSet(
-            tasks: downloads.tasks
-                + [runtimeBuilder] + sysroots + runtimes
-                + [generator, assembly, validation, activation]
-                + discoveries,
+            tasks: tasks.map {
+                $0.addingLocks([.shared(configuration.rebuildLock)])
+            },
             selected: discoveries.map(\.id))
     }
 

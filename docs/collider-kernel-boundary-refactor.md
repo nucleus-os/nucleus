@@ -1309,10 +1309,20 @@ into one catalog. Bootstrap, generation, browser, benchmark, sanitizer, AOSP,
 runtime build, and runtime test paths select those definitions rather than
 reconstructing task arrays. This exposed and repaired the missing
 gfxstream-to-builder edge, duplicate Chromium source producers, and quadratic
-output-ownership validation. The remaining Phase 4 work is integrating Swift
-target SDK and Android-host declarations, replacing the last command-owned
-task construction, and deleting `ComponentSelection` after every public
-spelling is represented solely by catalog routes.
+output-ownership validation. Android-host Skia, native-SDK publication, Swift
+cross-build, ABI validation, and the opinionated Gradle verification now live
+in the Core component, and the Android SDK bundle name comes from the pinned
+target-SDK input catalog rather than the unrelated Swift source digest. Swift
+target-SDK generation is also one configured component definition; both
+`build swift-sdk` and `swift-sdk rebuild` select that graph, and its
+cross-process lifecycle lock is declared by every task rather than supplied by
+one command path. `ComponentSelection` and `GeneratorComponent` are deleted.
+Build, test, bootstrap, and generation commands pass registry spellings
+directly, and each execution constructs one catalog and selects roots from it.
+The remaining Phase 4 work is moving the Linux runtime installer and Android
+add-on packager off direct command/runtime execution, publishing their tasks
+through the Shell and Android-runtime components, then completing
+reachability/action-kind validation for the frozen public entrypoint table.
 
 Add `ColliderComponent`, `ComponentDescriptor`, `ComponentDefinition`,
 `ComponentEntrypoint`, `RecipeContext`, and immutable task builders to

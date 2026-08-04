@@ -54,6 +54,7 @@ import Testing
         swiftExecutable: FilePath("/usr/bin/swift"),
         sdkDiscoveryRoot: temporary.appending("swift-sdks"),
         displacedRoot: temporary.appending("displaced"),
+        rebuildLock: temporary.appending("rebuild.lock"),
         environment: [:])
 
     let result = try SwiftTargetSDKColliderRecipe.generation(configuration)
@@ -118,12 +119,13 @@ import Testing
         })
     let generatorLock = TaskLock.shared(
         configuration.generatorScratch.appending(".collider.lock"))
-    #expect(generator.locks == [generatorLock])
+    let rebuildLock = TaskLock.shared(configuration.rebuildLock)
+    #expect(generator.locks == [generatorLock, rebuildLock])
 
     let assembly = try #require(
         result.tasks.first { $0.id.rawValue == "swift-sdk.assemble-target-sdks" })
     let assemblyCommands = commands(assembly.operation)
-    #expect(assembly.locks == [generatorLock])
+    #expect(assembly.locks == [generatorLock, rebuildLock])
     for target in linuxTargets {
         #expect(
             assemblyCommands.contains {

@@ -7,7 +7,7 @@ import SystemPackage
 struct Bootstrap: TaskControlledCommand {
     @OptionGroup var taskOptions: TaskControlOptions
     @Argument(help: "all, runtime, browser, or a component name.")
-    var component: ComponentSelection?
+    var component: String?
 
     mutating func run() async throws {
         let workspace = try context()

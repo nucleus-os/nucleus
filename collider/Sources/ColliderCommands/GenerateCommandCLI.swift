@@ -11,25 +11,25 @@ struct Generate: AsyncParsableCommand {
     struct RNSpec: TaskControlledCommand {
         @OptionGroup var taskOptions: TaskControlOptions
         mutating func run() async throws {
-            try await runGenerator(.reactNative, taskOptions: taskOptions)
+            try await runGenerator("rn", taskOptions: taskOptions)
         }
     }
     struct Vulkan: TaskControlledCommand {
         @OptionGroup var taskOptions: TaskControlOptions
         mutating func run() async throws {
-            try await runGenerator(.vulkan, taskOptions: taskOptions)
+            try await runGenerator("vulkan", taskOptions: taskOptions)
         }
     }
     struct Wayland: TaskControlledCommand {
         @OptionGroup var taskOptions: TaskControlOptions
         mutating func run() async throws {
-            try await runGenerator(.wayland, taskOptions: taskOptions)
+            try await runGenerator("wayland", taskOptions: taskOptions)
         }
     }
 }
 
 private func runGenerator(
-    _ component: GeneratorComponent,
+    _ component: String,
     taskOptions: TaskControlOptions
 ) async throws {
     try await ComponentRegistry(context: context()).generate(

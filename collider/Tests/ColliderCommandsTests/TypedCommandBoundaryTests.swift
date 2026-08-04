@@ -5,33 +5,22 @@ import Testing
 @testable import ColliderCommands
 
 @Test
-func androidLeavesConstructTypedOperationsAndPreserveGradlePassthrough() throws {
-    let build = try Android.Build.parse([
-        "--dry-run",
-        "--",
-        "--stacktrace",
-        "-Pfixture=value",
-    ])
-    #expect(
-        build.operation
-            == .build(gradleArguments: [
-                "--stacktrace",
-                "-Pfixture=value",
-            ]))
+func androidLeavesConstructOneOpinionatedOperationPerEntrypoint() throws {
+    let build = try Android.Build.parse(["--dry-run"])
+    #expect(build.operation == .build)
     #expect(build.taskOptions.dryRun)
 
     let native = try Android.Native.parse([])
     #expect(native.operation == .native)
 
-    let verify = try Android.Verify.parse([
-        "/tmp/libNucleusAndroid.so"
-    ])
-    #expect(
-        verify.operation
-            == .verify(library: "/tmp/libNucleusAndroid.so"))
+    let verify = try Android.Verify.parse([])
+    #expect(verify.operation == .verify)
 
     #expect(throws: (any Error).self) {
-        try Android.Build.parse(["--stacktrace"])
+        try Android.Build.parse(["--", "--stacktrace"])
+    }
+    #expect(throws: (any Error).self) {
+        try Android.Verify.parse(["/tmp/libNucleusAndroid.so"])
     }
 }
 

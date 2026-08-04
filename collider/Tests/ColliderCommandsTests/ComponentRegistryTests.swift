@@ -86,31 +86,31 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
             "test.release-gate.text-editor",
         ])
     #expect(
-        try registry.selectedTestTasks(.config).map(\.rawValue) == [
+        try registry.selectedTestTasks("config").map(\.rawValue) == [
             "linux.arm64.test", "linux.x86_64.test",
         ])
     #expect(
-        try registry.selectedTestTasks(.ipc).map(\.rawValue) == [
+        try registry.selectedTestTasks("ipc").map(\.rawValue) == [
             "linux.arm64.test", "linux.x86_64.test",
         ])
     #expect(
-        try registry.selectedTestTasks(.compositor).map(\.rawValue) == [
+        try registry.selectedTestTasks("compositor").map(\.rawValue) == [
             "linux.arm64.test", "linux.x86_64.test",
         ])
     #expect(
-        try registry.selectedTestTasks(.loader).map(\.rawValue) == [
+        try registry.selectedTestTasks("loader").map(\.rawValue) == [
             "linux.arm64.test-loader", "linux.x86_64.test-loader",
         ])
     #expect(
-        try registry.selectedTestTasks(.gpuHeadless).map(\.rawValue) == [
+        try registry.selectedTestTasks("gpu-headless").map(\.rawValue) == [
             "linux.arm64.test-gpu-headless", "linux.x86_64.test-gpu-headless",
         ])
     #expect(
-        try registry.selectedTestTasks(.gpuDRM).map(\.rawValue) == [
+        try registry.selectedTestTasks("gpu-drm").map(\.rawValue) == [
             "compositor-core.test-gpu-drm"
         ])
     #expect(throws: (any Error).self) {
-        try ColliderCommand.parseAsRoot(["test", "unknown"])
+        try registry.selectedTestTasks("unknown")
     }
 }
 
@@ -121,46 +121,35 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         context: WorkspaceContext(
             root: root,
             environment: ["SWIFTC": "/definitely/unavailable/swiftc"]))
-    let tasks = try registry.testTasks(selection: .loader)
-    let declared = Set(tasks.map(\.id))
-    for selection in ComponentSelection.allCases {
-        switch selection {
-        case .runtime, .tracy, .vulkan, .wayland, .core, .config,
-            .ipc, .linux, .reactNative, .compositor, .shell, .androidRuntime,
-            .browser, .loader, .gpuHeadless:
-            #expect(
-                declared.isSuperset(
-                    of: try registry.selectedTestTasks(selection)))
-        case .all, .gpuDRM, .swiftSDK, .android:
-            break
-        }
-    }
+    let catalog = try registry.componentCatalog()
+    let declared = Set(catalog.tasks.map(\.id))
     for selection in [
-        ComponentSelection.swiftSDK, .android,
+        "runtime", "tracy", "vulkan", "wayland", "core", "config", "ipc",
+        "linux", "rn", "compositor", "shell", "android-runtime", "browser",
+        "android", "loader", "gpu-headless",
     ] {
-        #expect(throws: WorkspaceFailure.self) {
-            try registry.selectedTestTasks(selection)
-        }
+        #expect(
+            declared.isSuperset(
+                of: try catalog.roots(
+                    named: .testDefault,
+                    selection: selection)))
+    }
+    #expect(throws: (any Error).self) {
+        try catalog.roots(named: .testDefault, selection: "swift-sdk")
     }
 
-    for selection in ComponentSelection.allCases {
-        switch selection {
-        case .all, .runtime, .tracy, .vulkan, .wayland, .core, .config,
-            .ipc, .linux, .reactNative, .compositor, .shell, .androidRuntime,
-            .browser:
-            #expect(
-                declared.isSuperset(
-                    of: try registry.selectedBuildTasks(selection)))
-        case .swiftSDK, .android, .loader, .gpuHeadless, .gpuDRM:
-            break
-        }
-    }
     for selection in [
-        ComponentSelection.swiftSDK, .android, .loader, .gpuHeadless,
-        .gpuDRM,
+        "all", "runtime", "tracy", "vulkan", "wayland", "core", "config",
+        "ipc", "linux", "rn", "compositor", "shell", "android-runtime",
+        "browser", "swift-sdk", "android",
     ] {
-        #expect(throws: WorkspaceFailure.self) {
-            try registry.selectedBuildTasks(selection)
+        #expect(
+            declared.isSuperset(
+                of: try catalog.roots(named: .build, selection: selection)))
+    }
+    for selection in ["loader", "gpu-headless", "gpu-drm"] {
+        #expect(throws: (any Error).self) {
+            try catalog.roots(named: .build, selection: selection)
         }
     }
 }
@@ -368,14 +357,18 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         context: WorkspaceContext(
             root: root,
             environment: [:]))
-    let allTasks = try registry.testTasks(selection: nil)
+    let catalog = try registry.componentCatalog()
+    let allTasks = catalog.tasks
     let releaseTasks = allTasks.filter {
         $0.component.rawValue == "release-gate"
     }
 
     #expect(
         Set(allTasks.map(\.id)).isSuperset(
-            of: try registry.selectedTestTasks(.all)))
+            of: try catalog.roots(named: .testDefault, selection: "all")
+                + catalog.roots(
+                    named: .testReleaseGate,
+                    selection: "release-gate")))
     #expect(releaseTasks.count == 6)
     #expect(
         releaseTasks.allSatisfy { task in
@@ -406,7 +399,7 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         context: WorkspaceContext(root: repositoryRoot, environment: [:]))
 
     #expect(task.id == CompositorTaskIDs.testGPUDRM)
-    #expect(try registry.selectedTestTasks(.gpuDRM) == [task.id])
+    #expect(try registry.selectedTestTasks("gpu-drm") == [task.id])
 }
 
 @Test func drmLaneRejectsAConfiguredNonRenderNode() throws {

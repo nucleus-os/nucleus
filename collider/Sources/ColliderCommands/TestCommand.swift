@@ -11,18 +11,10 @@ struct Test: TaskControlledCommand {
             all, runtime, android, browser, loader, gpu-headless, gpu-drm, \
             or a component name.
             """)
-    var component: ComponentSelection?
+    var component: String?
 
     mutating func run() async throws {
         let workspace = try context()
-        if component == .android {
-            try await workspace.withExclusiveVerification {
-                try await AndroidCommand(context: workspace).run(
-                    .build(gradleArguments: []),
-                    controls: taskOptions.controls)
-            }
-            return
-        }
         try await workspace.withExclusiveVerification {
             try await ComponentRegistry(context: workspace).test(
                 selection: component, controls: taskOptions.controls)

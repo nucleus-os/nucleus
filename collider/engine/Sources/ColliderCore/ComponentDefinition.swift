@@ -18,6 +18,9 @@ public struct ComponentEntrypointID: RawRepresentable, Hashable, Codable, Sendab
     public static let testGPUHeadless = Self(rawValue: "test.gpu-headless")
     public static let testGPUDRM = Self(rawValue: "test.gpu-drm")
     public static let testReleaseGate = Self(rawValue: "test.release-gate")
+    public static let androidBuild = Self(rawValue: "android.build")
+    public static let androidNative = Self(rawValue: "android.native")
+    public static let androidVerify = Self(rawValue: "android.verify")
     public static let sanitizeAddress = Self(rawValue: "sanitize.address")
     public static let sanitizeUndefined = Self(rawValue: "sanitize.undefined")
     public static let sanitizeThread = Self(rawValue: "sanitize.thread")
@@ -106,6 +109,8 @@ public protocol ColliderComponent: Sendable {
     ) throws -> ComponentDefinition
 }
 
+public protocol RecipeConfiguration: Sendable {}
+
 public struct RecipeBuildContextID: RawRepresentable, Hashable, Codable, Sendable,
     CustomStringConvertible
 {
@@ -139,19 +144,22 @@ public struct RecipeContext: Sendable {
     public let nativeSDKRoot: FilePath
     public let environment: [String: String]
     public let buildContexts: [RecipeBuildContextID: SwiftPMInvocation]
+    private let configurations: [ComponentID: any RecipeConfiguration]
 
     public init(
         repositoryRoot: FilePath,
         cacheRoot: FilePath,
         nativeSDKRoot: FilePath,
         environment: [String: String],
-        buildContexts: [RecipeBuildContextID: SwiftPMInvocation] = [:]
+        buildContexts: [RecipeBuildContextID: SwiftPMInvocation] = [:],
+        configurations: [ComponentID: any RecipeConfiguration] = [:]
     ) {
         self.repositoryRoot = repositoryRoot
         self.cacheRoot = cacheRoot
         self.nativeSDKRoot = nativeSDKRoot
         self.environment = environment
         self.buildContexts = buildContexts
+        self.configurations = configurations
     }
 
     public func componentRoot(_ descriptor: ComponentDescriptor) -> FilePath {
@@ -181,15 +189,34 @@ public struct RecipeContext: Sendable {
         }
         return invocation
     }
+
+    public func configuration<Value: RecipeConfiguration>(
+        _ type: Value.Type = Value.self,
+        for component: ComponentID
+    ) throws -> Value {
+        guard let value = configurations[component] else {
+            throw RecipeContextFailure.missingConfiguration(component)
+        }
+        guard let typed = value as? Value else {
+            throw RecipeContextFailure.invalidConfigurationType(component)
+        }
+        return typed
+    }
 }
 
 public enum RecipeContextFailure: Error, CustomStringConvertible, Sendable {
     case missingBuildContext(RecipeBuildContextID)
+    case missingConfiguration(ComponentID)
+    case invalidConfigurationType(ComponentID)
 
     public var description: String {
         switch self {
         case .missingBuildContext(let id):
             "recipe build context '\(id)' is not declared"
+        case .missingConfiguration(let component):
+            "recipe configuration for component '\(component)' is not declared"
+        case .invalidConfigurationType(let component):
+            "recipe configuration for component '\(component)' has the wrong type"
         }
     }
 }
