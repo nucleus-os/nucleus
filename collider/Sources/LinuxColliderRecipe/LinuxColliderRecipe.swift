@@ -1,4 +1,6 @@
+import AndroidRuntimeColliderRecipe
 import ColliderCore
+import NativeBuilderColliderRecipe
 import SystemPackage
 
 package enum LinuxTaskIDs {
@@ -19,7 +21,53 @@ package enum LinuxTaskIDs {
     }
 }
 
-public enum LinuxColliderRecipe {
+public enum LinuxColliderRecipe: ColliderComponent {
+    public static let descriptor = ComponentDescriptor(
+        id: ComponentID(rawValue: "linux"),
+        canonicalName: "linux",
+        directoryName: ".")
+
+    public static func makeComponent(
+        in context: RecipeContext
+    ) throws -> ComponentDefinition {
+        let sdkRoot = context.cacheRoot.appending(
+            "nucleus/swift-target-sdks/current/swift-sdks")
+        var tasks: [TaskDeclaration] = []
+        var buildRoots: Set<TaskID> = []
+        var testRoots: Set<TaskID> = []
+        var loaderRoots: Set<TaskID> = []
+        var headlessRoots: Set<TaskID> = []
+        for architecture in PlatformArchitecture.allCases {
+            let target = NativeLinuxTarget(architecture: architecture)
+            tasks += architectureLane(
+                architecture: architecture,
+                root: context.repositoryRoot,
+                environment: context.environment,
+                swiftPM: try context.swiftPM(.linux(architecture)),
+                imageTask: NativeBuilderTaskIDs.prepare,
+                nativeDependencies: [
+                    AndroidRuntimeTaskIDs.gfxstream(target)
+                ],
+                sdkRoot: sdkRoot,
+                nativeSDKRoot: context.nativeSDK(for: target))
+            buildRoots.insert(LinuxTaskIDs.build(architecture))
+            testRoots.insert(LinuxTaskIDs.test(architecture))
+            loaderRoots.insert(LinuxTaskIDs.testLoader(architecture))
+            headlessRoots.insert(LinuxTaskIDs.testGPUHeadless(architecture))
+        }
+        return try ComponentDefinition(
+            descriptor: descriptor,
+            tasks: tasks,
+            entrypoints: [
+                ComponentEntrypoint(id: .build, roots: buildRoots),
+                ComponentEntrypoint(id: .testDefault, roots: testRoots),
+                ComponentEntrypoint(id: .testGPUHeadless, roots: headlessRoots),
+                ComponentEntrypoint(
+                    id: ComponentEntrypointID(rawValue: "test.loader"),
+                    roots: loaderRoots),
+            ])
+    }
+
     public static func architectureLane(
         architecture: PlatformArchitecture,
         root: FilePath,

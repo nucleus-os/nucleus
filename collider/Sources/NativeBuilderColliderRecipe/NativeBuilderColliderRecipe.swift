@@ -4,7 +4,24 @@ package enum NativeBuilderTaskIDs {
     package static let prepare = TaskID(rawValue: "native.builder")
 }
 
-public enum NativeBuilderColliderRecipe {
+public enum NativeBuilderColliderRecipe: ColliderComponent {
+    public static let descriptor = ComponentDescriptor(
+        id: ComponentID(rawValue: "native"),
+        canonicalName: "native-builder",
+        directoryName: "core/build-container")
+
+    public static func makeComponent(
+        in context: RecipeContext
+    ) throws -> ComponentDefinition {
+        let task = prepare(context.nativeBuilder)
+        return try ComponentDefinition(
+            descriptor: descriptor,
+            tasks: [task],
+            entrypoints: [
+                ComponentEntrypoint(id: .bootstrap, roots: [task.id])
+            ])
+    }
+
     public static func prepare(
         _ configuration: NativeOCIConfiguration
     ) -> TaskDeclaration {

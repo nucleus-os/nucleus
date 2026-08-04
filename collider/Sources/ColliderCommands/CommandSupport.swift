@@ -1,6 +1,7 @@
 import ColliderCore
 import ColliderRuntime
 import Foundation
+import QualificationColliderRecipe
 import SystemPackage
 
 extension WorkspaceContext {
@@ -9,7 +10,7 @@ extension WorkspaceContext {
         try DirectoryLifecycle.prune(
             DirectoryRetentionPlan(
                 safetyRoot: layout.state,
-                rules: RuntimeSanitizer.allCases.map {
+                rules: SanitizerKind.allCases.map {
                     DirectoryRetentionRule(
                         root: swiftPM.appending($0.rawValue),
                         retain: 2,
@@ -79,10 +80,9 @@ extension WorkspaceContext {
         if let toolchainIdentity {
             resolvedToolchainIdentity = toolchainIdentity
         } else {
-            let compiler = try swiftCompilerPath()
-            let compilerIdentity = try ArtifactHasher.digest(file: compiler)
-                .description
-            resolvedToolchainIdentity = "\(compiler.string)@\(compilerIdentity)"
+            let sourceID = environment["NUCLEUS_SWIFT_SOURCE_ID"] ?? "xcode"
+            resolvedToolchainIdentity =
+                "host-swift-\(sourceID)-\(hostSwiftTarget)"
         }
         let context = SwiftBuildContext(
             packageRoot: packageRoot,
@@ -115,9 +115,8 @@ extension WorkspaceContext {
             && execution == .host
         if isDefaultContext {
             // Publishing the editor's view of the package build directory is
-            // part of resolving it. A stale pointer would send the language
-            // server off to build its own copy, so this republishes whenever the
-            // default context resolves somewhere new.
+            // independent of compiler discovery. The selected synthesized
+            // SwiftPM task resolves and hashes the semantic compiler tool.
             try publishLanguageServerConfiguration(invocation)
         }
         return invocation

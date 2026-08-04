@@ -4,7 +4,7 @@ public enum PlatformOperatingSystem: String, Codable, Hashable, Sendable {
     case macOS = "macos"
 }
 
-public enum PlatformArchitecture: String, Codable, Hashable, Sendable {
+public enum PlatformArchitecture: String, CaseIterable, Codable, Hashable, Sendable {
     case arm64
     case x86_64
 }

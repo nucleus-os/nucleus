@@ -36,15 +36,23 @@ let package = Package(
                 "CoreColliderRecipe",
                 "LinuxColliderRecipe",
                 "NativeBuilderColliderRecipe",
+                "QualificationColliderRecipe",
                 "ReactNativeColliderRecipe",
+                "ReleaseGateColliderRecipe",
                 "ShellColliderRecipe",
                 "SwiftTargetSDKColliderRecipe",
                 "VulkanColliderRecipe",
                 "WaylandColliderRecipe",
             ]),
         .target(
-            name: "AndroidRuntimeColliderRecipe",
+            name: "ColliderSwiftPM",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
+        .target(
+            name: "AndroidRuntimeColliderRecipe",
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                "NativeBuilderColliderRecipe",
+            ]),
         .target(
             name: "ChromiumColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
@@ -59,15 +67,33 @@ let package = Package(
             ]),
         .target(
             name: "LinuxColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                "AndroidRuntimeColliderRecipe",
+                "NativeBuilderColliderRecipe",
+            ]),
         .target(
             name: "NativeBuilderColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
+        .target(
+            name: "QualificationColliderRecipe",
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                "AndroidRuntimeColliderRecipe",
+                "NativeBuilderColliderRecipe",
+            ]),
         .target(
             name: "ReactNativeColliderRecipe",
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
                 "CoreColliderRecipe", "NativeBuilderColliderRecipe",
+            ]),
+        .target(
+            name: "ReleaseGateColliderRecipe",
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                "AndroidRuntimeColliderRecipe",
+                "NativeBuilderColliderRecipe",
             ]),
         .target(
             name: "ShellColliderRecipe",
@@ -106,6 +132,12 @@ let package = Package(
                 "SwiftTargetSDKColliderRecipe",
                 "VulkanColliderRecipe",
                 "WaylandColliderRecipe",
+            ]),
+        .testTarget(
+            name: "ColliderSwiftPMTests",
+            dependencies: [
+                "ColliderSwiftPM",
+                .product(name: "ColliderCore", package: "engine"),
             ]),
         .testTarget(
             name: "SwiftTargetSDKColliderRecipeTests",

@@ -10,7 +10,63 @@ package enum ReactNativeTaskIDs {
     }
 }
 
-public enum ReactNativeColliderRecipe {
+public enum ReactNativeColliderRecipe: ColliderComponent {
+    public static let descriptor = ComponentDescriptor(
+        id: ComponentID(rawValue: "rn"),
+        canonicalName: "react-native",
+        directoryName: "react-native",
+        aliases: ["rn"])
+
+    public static func makeComponent(
+        in context: RecipeContext
+    ) throws -> ComponentDefinition {
+        let root = context.componentRoot(descriptor)
+        let javascript = installJavaScriptDependencies(
+            root: root,
+            environment: context.environment,
+            builder: context.nativeBuilder)
+        let generation = generate(
+            root: root,
+            environment: context.environment,
+            builder: context.nativeBuilder)
+        let boost = try provisionBoost(
+            root: root,
+            environment: context.environment)
+        var tasks = [javascript, generation, boost]
+        var bootstrapRoots: Set<TaskID> = []
+        for architecture in PlatformArchitecture.allCases {
+            let target = NativeLinuxTarget(architecture: architecture)
+            let hermes = buildHermes(
+                root: root,
+                environment: context.environment,
+                target: target,
+                builder: context.nativeBuilder)
+            let support = buildSupportLibraries(
+                root: root,
+                environment: context.environment,
+                target: target,
+                builder: context.nativeBuilder)
+            let cxx = buildCxxRuntime(
+                root: root,
+                environment: context.environment,
+                target: target,
+                builder: context.nativeBuilder)
+            let sdk = publishNativeSDK(
+                root: root,
+                sdkRoot: context.nativeSDK(for: target),
+                target: target)
+            tasks += [hermes, support, cxx, sdk]
+            bootstrapRoots.insert(sdk.id)
+        }
+        return try ComponentDefinition(
+            descriptor: descriptor,
+            tasks: tasks,
+            entrypoints: [
+                ComponentEntrypoint(id: .bootstrap, roots: bootstrapRoots),
+                ComponentEntrypoint(id: .generate, roots: [generation.id]),
+            ])
+    }
+
     public static func installJavaScriptDependencies(
         root: FilePath,
         environment: [String: String],
@@ -728,56 +784,4 @@ private func nativeContainerOperation(
             command: ["react-native"] + command,
             environment: environment,
             output: .logged))
-}
-
-private func task(
-    _ id: String,
-    _ root: FilePath,
-    _ environment: [String: String],
-    _ arguments: [String],
-    _ dependencies: [TaskID],
-    _ swiftPM: SwiftPMInvocation,
-    subsumedDependencies: [TaskID] = [],
-    prebuildTargets: [String] = []
-) -> TaskDeclaration {
-    let isBuild = arguments == ["build"]
-    return TaskDeclaration(
-        id: TaskID(rawValue: id),
-        component: ComponentID(rawValue: "rn"),
-        dependencies: dependencies,
-        subsumedDependencies: subsumedDependencies,
-        swiftProducts: isBuild
-            ? [
-                swiftPM.product(
-                    package: "react-native",
-                    product: "NucleusReactRuntime",
-                    packageRoot: root,
-                    environment: environment,
-                    prebuildTargets: prebuildTargets,
-                    expectedOutputs: prebuildTargets.map {
-                        PathPostcondition(
-                            path: swiftPM.generatedSwiftHeader($0),
-                            validation: .regularFile)
-                    })
-            ] : [],
-        inputs: [
-            .tree(root.appending("Sources")),
-            .tree(root.appending("swift")),
-            swiftPM.identityInput,
-            .tool(.named("swift")),
-        ],
-        postconditions: [swiftPM.postcondition]
-            + prebuildTargets.map {
-                PathPostcondition(
-                    path: swiftPM.generatedSwiftHeader($0),
-                    validation: .regularFile)
-            },
-        locks: [.checkout("rn")] + (isBuild ? [] : [swiftPM.lock]),
-        operation: isBuild
-            ? .sequence([])
-            : .command(
-                swiftPM.command(
-                    arguments: arguments,
-                    workingDirectory: root,
-                    environment: environment)))
 }

@@ -26,21 +26,6 @@ func chromiumCommandHasOneOpinionatedOperationSurface() throws {
 }
 
 @Test
-func chromiumSourceIdentityMatchesThePinnedMetadataContract() throws {
-    let root = URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-    let command = ChromiumCommand(
-        context: WorkspaceContext(
-            root: FilePath(root.path),
-            environment: ProcessInfo.processInfo.environment))
-    let sourceIdentifier = try command.sourceIdentifier()
-    #expect(sourceIdentifier == "65a9fbae8acff64ce6f7cfd6")
-}
-
-@Test
 func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() throws {
     let root = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
@@ -59,7 +44,7 @@ func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() throws {
     let graph = try TaskGraph(tasks)
     #expect(
         Set(tasks.map(\.id)).isSuperset(of: [
-            ChromiumTaskIDs.bootstrapSource,
+            ChromiumTaskIDs.source,
             ChromiumTaskIDs.retention,
             ChromiumTaskIDs.test,
             ChromiumTaskIDs.install,

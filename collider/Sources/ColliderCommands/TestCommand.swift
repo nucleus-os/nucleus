@@ -23,14 +23,6 @@ struct Test: TaskControlledCommand {
             }
             return
         }
-        if component == .browser {
-            try await workspace.withExclusiveVerification {
-                try await ChromiumCommand(context: workspace).run(
-                    .test,
-                    controls: taskOptions.controls)
-            }
-            return
-        }
         try await workspace.withExclusiveVerification {
             try await ComponentRegistry(context: workspace).test(
                 selection: component, controls: taskOptions.controls)

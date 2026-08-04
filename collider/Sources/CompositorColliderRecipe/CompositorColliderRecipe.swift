@@ -7,7 +7,33 @@ package enum CompositorTaskIDs {
         rawValue: "compositor-core.preflight-gpu-drm")
 }
 
-public enum CompositorColliderRecipe {
+public enum CompositorColliderRecipe: ColliderComponent {
+    public static let descriptor = ComponentDescriptor(
+        id: ComponentID(rawValue: "compositor"),
+        canonicalName: "compositor",
+        directoryName: "compositor/compositor-core")
+
+    public static func makeComponent(
+        in context: RecipeContext
+    ) throws -> ComponentDefinition {
+        let root = context.componentRoot(descriptor)
+        let swiftPM = try context.swiftPM(.hostDebug)
+        let preflight = preflightDRMGPU(
+            root: root,
+            environment: context.environment,
+            swiftPM: swiftPM)
+        let test = testDRMGPU(
+            root: root,
+            environment: context.environment,
+            swiftPM: swiftPM)
+        return try ComponentDefinition(
+            descriptor: descriptor,
+            tasks: [preflight, test],
+            entrypoints: [
+                ComponentEntrypoint(id: .testGPUDRM, roots: [test.id])
+            ])
+    }
+
     public static func testDRMGPU(
         root: FilePath,
         environment: [String: String],

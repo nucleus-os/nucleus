@@ -9,7 +9,46 @@ package enum WaylandTaskIDs {
     }
 }
 
-public enum WaylandColliderRecipe {
+public enum WaylandColliderRecipe: ColliderComponent {
+    public static let descriptor = ComponentDescriptor(
+        id: ComponentID(rawValue: "wayland"),
+        canonicalName: "wayland",
+        directoryName: "swift-wayland")
+
+    public static func makeComponent(
+        in context: RecipeContext
+    ) throws -> ComponentDefinition {
+        let root = context.componentRoot(descriptor)
+        var tasks: [TaskDeclaration] = []
+        var bootstrapRoots: Set<TaskID> = []
+        for architecture in PlatformArchitecture.allCases {
+            let target = NativeLinuxTarget(architecture: architecture)
+            let sdk = buildNativeSDK(
+                root: root,
+                sdkRoot: context.nativeSDK(for: target),
+                environment: context.environment,
+                target: target,
+                builder: context.nativeBuilder)
+            tasks.append(sdk)
+            bootstrapRoots.insert(sdk.id)
+        }
+        let scannerTarget = NativeLinuxTarget(architecture: .arm64)
+        let generation = try generate(
+            root: root,
+            environment: context.environment,
+            swiftPM: context.swiftPM(.linux(.arm64)),
+            builder: context.nativeBuilder,
+            scannerSDK: context.nativeSDK(for: scannerTarget).appending("wayland"))
+        tasks.append(generation)
+        return try ComponentDefinition(
+            descriptor: descriptor,
+            tasks: tasks,
+            entrypoints: [
+                ComponentEntrypoint(id: .bootstrap, roots: bootstrapRoots),
+                ComponentEntrypoint(id: .generate, roots: [generation.id]),
+            ])
+    }
+
     public static func buildNativeSDK(
         root: FilePath,
         sdkRoot: FilePath,
@@ -412,50 +451,4 @@ public enum WaylandRecipeFailure: Error, CustomStringConvertible {
             "cannot enumerate vendored Wayland protocols at \(path)"
         }
     }
-}
-
-private func task(
-    _ id: String,
-    _ root: FilePath,
-    _ environment: [String: String],
-    _ arguments: [String],
-    _ dependencies: [TaskID] = [],
-    subsumedDependencies: [TaskID] = [],
-    includesTests: Bool = false,
-    swiftPM: SwiftPMInvocation
-) -> TaskDeclaration {
-    let isBuild = arguments == ["build"]
-    return TaskDeclaration(
-        id: TaskID(rawValue: id),
-        component: ComponentID(rawValue: "wayland"),
-        dependencies: dependencies,
-        subsumedDependencies: subsumedDependencies,
-        swiftProducts: isBuild
-            ? [
-                swiftPM.product(
-                    package: "swift-wayland",
-                    product: "WaylandServer",
-                    packageRoot: root,
-                    environment: environment),
-                swiftPM.product(
-                    package: "swift-wayland",
-                    product: "WaylandClient",
-                    packageRoot: root,
-                    environment: environment),
-            ] : [],
-        inputs: [
-            .tree(root.appending("Sources"))
-        ] + (includesTests ? [.tree(root.appending("Tests"))] : []) + [
-            swiftPM.identityInput,
-            .tool(.named("swift")),
-        ],
-        postconditions: [swiftPM.postcondition],
-        locks: [.checkout("wayland")] + (isBuild ? [] : [swiftPM.lock]),
-        operation: isBuild
-            ? .sequence([])
-            : .command(
-                swiftPM.command(
-                    arguments: arguments,
-                    workingDirectory: root,
-                    environment: environment)))
 }

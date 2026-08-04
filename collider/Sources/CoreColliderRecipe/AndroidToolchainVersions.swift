@@ -1,18 +1,18 @@
 import Foundation
 import SystemPackage
 
-struct AndroidToolchainVersions: Equatable, Sendable {
-    let androidGradlePlugin: String
-    let gradle: String
-    let compileSDKAPI: UInt32
-    let compileSDKMinor: UInt32
-    let minimumSDK: UInt32
-    let targetSDKAPI: UInt32
-    let buildTools: String
-    let ndk: String
-    let java: UInt32
+public struct AndroidToolchainVersions: Equatable, Sendable {
+    public let androidGradlePlugin: String
+    public let gradle: String
+    public let compileSDKAPI: UInt32
+    public let compileSDKMinor: UInt32
+    public let minimumSDK: UInt32
+    public let targetSDKAPI: UInt32
+    public let buildTools: String
+    public let ndk: String
+    public let java: UInt32
 
-    static func load(workspaceRoot: FilePath) throws -> Self {
+    public static func load(workspaceRoot: FilePath) throws -> Self {
         let catalogPath = workspaceRoot.appending(
             "core/android/gradle/libs.versions.toml")
         let catalog = URL(fileURLWithPath: catalogPath.string)
@@ -20,7 +20,7 @@ struct AndroidToolchainVersions: Equatable, Sendable {
         do {
             contents = try String(contentsOf: catalog, encoding: .utf8)
         } catch {
-            throw WorkspaceFailure.message(
+            throw AndroidToolchainCatalogFailure.message(
                 "Android toolchain version catalog is unreadable: "
                     + "\(catalog.path): \(error)")
         }
@@ -41,7 +41,11 @@ struct AndroidToolchainVersions: Equatable, Sendable {
             java: unsigned("jvm", in: versions, catalog: catalog))
     }
 
-    func ndkRoot(environment: [String: String]) throws -> FilePath {
+    public func ndkRoot(
+        environment: [String: String],
+        validate: Bool = true,
+        fallbackHome: FilePath? = nil
+    ) throws -> FilePath {
         let root: FilePath
         if let explicit = environment["NUCLEUS_ANDROID_NDK_HOME"]
             ?? environment["ANDROID_NDK_HOME"],
@@ -56,19 +60,25 @@ struct AndroidToolchainVersions: Equatable, Sendable {
             {
                 sdk = FilePath(explicit)
             } else {
-                guard let home = environment["HOME"], !home.isEmpty else {
-                    throw WorkspaceFailure.message(
+                let home =
+                    environment["HOME"].flatMap {
+                        $0.isEmpty ? nil : FilePath($0)
+                    } ?? fallbackHome
+                guard let home else {
+                    throw AndroidToolchainCatalogFailure.message(
                         "HOME or an Android SDK/NDK location is required")
                 }
                 #if os(macOS)
-                sdk = FilePath(home).appending("Library/Android/sdk")
+                sdk = home.appending("Library/Android/sdk")
                 #else
-                sdk = FilePath(home).appending("Android/Sdk")
+                sdk = home.appending("Android/Sdk")
                 #endif
             }
             root = sdk.appending("ndk/\(ndk)")
         }
-        try validateNDK(at: root)
+        if validate {
+            try validateNDK(at: root)
+        }
         return root
     }
 
@@ -79,7 +89,7 @@ struct AndroidToolchainVersions: Equatable, Sendable {
             let contents = try? String(
                 contentsOf: sourceProperties, encoding: .utf8)
         else {
-            throw WorkspaceFailure.message(
+            throw AndroidToolchainCatalogFailure.message(
                 "Android NDK metadata is missing: \(sourceProperties.path)")
         }
         let properties = Dictionary(
@@ -100,7 +110,7 @@ struct AndroidToolchainVersions: Equatable, Sendable {
             properties["Pkg.BaseRevision"]
             ?? properties["Pkg.Revision"]?.split(separator: "-").first.map(String.init)
         guard installed == ndk else {
-            throw WorkspaceFailure.message(
+            throw AndroidToolchainCatalogFailure.message(
                 "Android NDK at \(root.string) is \(installed ?? "unversioned"); "
                     + "the version catalog requires \(ndk)")
         }
@@ -142,7 +152,7 @@ struct AndroidToolchainVersions: Equatable, Sendable {
         catalog: URL
     ) throws -> String {
         guard let value = versions[key], !value.isEmpty else {
-            throw WorkspaceFailure.message(
+            throw AndroidToolchainCatalogFailure.message(
                 "Android toolchain version '\(key)' is missing from "
                     + catalog.path)
         }
@@ -156,10 +166,20 @@ struct AndroidToolchainVersions: Equatable, Sendable {
     ) throws -> UInt32 {
         let value = try required(key, in: versions, catalog: catalog)
         guard let result = UInt32(value) else {
-            throw WorkspaceFailure.message(
+            throw AndroidToolchainCatalogFailure.message(
                 "Android toolchain version '\(key)' is not an integer in "
                     + catalog.path)
         }
         return result
+    }
+}
+
+public enum AndroidToolchainCatalogFailure: Error, CustomStringConvertible, Sendable {
+    case message(String)
+
+    public var description: String {
+        switch self {
+        case .message(let message): message
+        }
     }
 }

@@ -1295,6 +1295,25 @@ component resolves no tool the selection does not require.
 
 ## Phase 4 — Unify components and command entrypoints
 
+**Progress: in progress.** The engine now owns immutable component descriptors,
+entrypoints, definitions, recipe context, typed entrypoint references, selection
+groups, and a validated component catalog. Catalog construction validates the
+complete task graph, component and directory identity, selection spellings,
+entrypoint roots, cross-component dependencies, and overlapping output trees.
+The outer `ColliderSwiftPM` target now owns the single build/test requirement
+builder, and the four dead per-recipe argument-sentinel helpers are deleted. The
+native builder, AOSP/gfxstream, Core native SDK, React Native native SDK,
+Wayland, Linux lanes, compositor DRM, Vulkan generation, Chromium, benchmark,
+sanitizer, and release-gate recipes now publish immutable component definitions
+into one catalog. Bootstrap, generation, browser, benchmark, sanitizer, AOSP,
+runtime build, and runtime test paths select those definitions rather than
+reconstructing task arrays. This exposed and repaired the missing
+gfxstream-to-builder edge, duplicate Chromium source producers, and quadratic
+output-ownership validation. The remaining Phase 4 work is integrating Swift
+target SDK and Android-host declarations, replacing the last command-owned
+task construction, and deleting `ComponentSelection` after every public
+spelling is represented solely by catalog routes.
+
 Add `ColliderComponent`, `ComponentDescriptor`, `ComponentDefinition`,
 `ComponentEntrypoint`, `RecipeContext`, and immutable task builders to
 `ColliderCore`.

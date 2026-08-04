@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import QualificationColliderRecipe
 import SystemPackage
 
 #if os(Linux)
@@ -34,7 +35,7 @@ struct RunOptions: ParsableArguments {
     @Option(name: .customLong("optimize")) var optimization: OptimizationMode?
     @Flag var tracy = false
     @Flag var valgrind = false
-    @Option(name: .customLong("sanitize")) var sanitizer: RuntimeSanitizer?
+    @Option(name: .customLong("sanitize")) var sanitizer: SanitizerKind?
     @Argument(parsing: .postTerminator) var compositorArguments: [String] = []
     var xwaylandExecutablePath: String?
 

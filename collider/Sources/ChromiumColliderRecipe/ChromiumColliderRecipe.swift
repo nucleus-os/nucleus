@@ -3,7 +3,7 @@ import Foundation
 import SystemPackage
 
 package enum ChromiumTaskIDs {
-    package static let bootstrapSource = TaskID(rawValue: "browser.bootstrap-source")
+    package static let source = TaskID(rawValue: "browser.source")
     package static let retention = TaskID(rawValue: "browser.retention")
     package static let test = TaskID(rawValue: "browser.test")
     package static let install = TaskID(rawValue: "browser.install")
@@ -28,14 +28,61 @@ public struct ChromiumRecipeLayout: Hashable, Sendable {
     }
 }
 
-public enum ChromiumColliderRecipe {
+public enum ChromiumColliderRecipe: ColliderComponent {
+    public static let descriptor = ComponentDescriptor(
+        id: ComponentID(rawValue: "browser"),
+        canonicalName: "browser",
+        directoryName: "chromium",
+        aliases: ["chromium"])
+
+    public static func makeComponent(
+        in context: RecipeContext
+    ) throws -> ComponentDefinition {
+        let lock = try JSONDecoder().decode(
+            ChromiumSourceLock.self,
+            from: Data(
+                contentsOf: URL(
+                    fileURLWithPath: context.repositoryRoot.appending(
+                        "chromium/source.lock.json"
+                    ).string)))
+        try validateSourceLock(lock)
+        let sourceID =
+            ([lock.depotTools.commit]
+            + lock.repositories.sorted(by: { $0.name < $1.name }).map(\.commit))
+            .map { String($0.prefix(32)) }
+            .joined(separator: "-")
+        let prefix =
+            context.environment["PREFIX"]
+            ?? context.environment["HOME"].map { FilePath($0).appending(".local").string }
+            ?? "/tmp/nucleus-browser"
+        let tasks = try tasks(
+            workspaceRoot: context.repositoryRoot,
+            environment: context.environment,
+            layout: ChromiumRecipeLayout(
+                sourceID: sourceID,
+                cacheRoot: context.cacheRoot.appending("nucleus/cef"),
+                installPrefix: FilePath(prefix),
+                jobs: Int(context.environment["NUCLEUS_CHROMIUM_JOBS"] ?? "")
+                    ?? 16))
+        return try ComponentDefinition(
+            descriptor: descriptor,
+            tasks: tasks,
+            entrypoints: [
+                ComponentEntrypoint(
+                    id: .bootstrap,
+                    roots: [ChromiumTaskIDs.source]),
+                ComponentEntrypoint(id: .build, roots: [ChromiumTaskIDs.retention]),
+                ComponentEntrypoint(id: .testDefault, roots: [ChromiumTaskIDs.test]),
+                ComponentEntrypoint(id: .install, roots: [ChromiumTaskIDs.install]),
+            ])
+    }
+
     public static func tasks(
         workspaceRoot: FilePath,
         environment: [String: String],
         layout: ChromiumRecipeLayout
     ) throws -> [TaskDeclaration] {
         let chromium = workspaceRoot.appending("chromium")
-        let cef = workspaceRoot.appending("cef")
         let sourceLockFile = chromium.appending("source.lock.json")
         let sourceLock = try JSONDecoder().decode(
             ChromiumSourceLock.self,
@@ -167,7 +214,7 @@ public enum ChromiumColliderRecipe {
             sourceLock: sourceLock,
             environment: childEnvironment)
         let sourceTask = TaskDeclaration(
-            id: TaskID(rawValue: "browser.source"),
+            id: ChromiumTaskIDs.source,
             component: ComponentID(rawValue: "browser"),
             dependencies: [depotBootstrap.id],
             inputs: commonInputs,
@@ -308,29 +355,6 @@ public enum ChromiumColliderRecipe {
                             retain: 2,
                             naming: .contentIdentity),
                     ])))
-        let bootstrapPackages = TaskDeclaration(
-            id: TaskID(rawValue: "browser.bootstrap-packages"),
-            component: ComponentID(rawValue: "browser"),
-            inputs: [
-                .file(cef.appending("apt-deps.txt")),
-                .tool(.named("dpkg-query")),
-            ],
-            cachePolicy: .always,
-            operation: .validateAptPackages(
-                AptPackageValidation(
-                    packageList: cef.appending("apt-deps.txt"),
-                    environment: childEnvironment)))
-        let bootstrapSource = TaskDeclaration(
-            id: ChromiumTaskIDs.bootstrapSource,
-            component: ComponentID(rawValue: "browser"),
-            dependencies: [
-                bootstrapPackages.id,
-                depotBootstrap.id,
-            ],
-            inputs: sourceTask.inputs,
-            outputs: sourceTask.outputs,
-            locks: sourceTask.locks,
-            operation: .prepareChromiumSource(sourcePreparation))
         let test = TaskDeclaration(
             id: ChromiumTaskIDs.test,
             component: ComponentID(rawValue: "browser"),
@@ -398,7 +422,7 @@ public enum ChromiumColliderRecipe {
         return [
             depotToolsTask, depotBootstrap,
             sourceTask, builderTask, cefTask, browserTask, retention,
-            bootstrapPackages, bootstrapSource, test, install,
+            test, install,
         ]
     }
 

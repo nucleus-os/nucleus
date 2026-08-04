@@ -1,6 +1,7 @@
 import ArgumentParser
 import ColliderCore
 import ColliderRuntime
+import CoreColliderRecipe
 import Foundation
 import SwiftTargetSDKColliderRecipe
 import SystemPackage

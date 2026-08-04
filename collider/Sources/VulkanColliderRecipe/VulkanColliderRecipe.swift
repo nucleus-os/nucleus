@@ -1,7 +1,27 @@
 import ColliderCore
 import SystemPackage
 
-public enum VulkanColliderRecipe {
+public enum VulkanColliderRecipe: ColliderComponent {
+    public static let descriptor = ComponentDescriptor(
+        id: ComponentID(rawValue: "vulkan"),
+        canonicalName: "vulkan",
+        directoryName: "swift-vulkan")
+
+    public static func makeComponent(
+        in context: RecipeContext
+    ) throws -> ComponentDefinition {
+        let task = generate(
+            root: context.componentRoot(descriptor),
+            environment: context.environment,
+            swiftPM: try context.swiftPM(.hostDebug))
+        return try ComponentDefinition(
+            descriptor: descriptor,
+            tasks: [task],
+            entrypoints: [
+                ComponentEntrypoint(id: .generate, roots: [task.id])
+            ])
+    }
+
     public static func generate(
         root: FilePath,
         environment: [String: String],
@@ -45,45 +65,4 @@ public enum VulkanColliderRecipe {
                     workingDirectory: root,
                     environment: environment)))
     }
-}
-
-private func task(
-    _ id: String,
-    _ root: FilePath,
-    _ environment: [String: String],
-    _ arguments: [String],
-    _ dependencies: [TaskID] = [],
-    subsumedDependencies: [TaskID] = [],
-    includesTests: Bool = false,
-    swiftPM: SwiftPMInvocation
-) -> TaskDeclaration {
-    let isBuild = arguments == ["build"]
-    return TaskDeclaration(
-        id: TaskID(rawValue: id),
-        component: ComponentID(rawValue: "vulkan"),
-        dependencies: dependencies,
-        subsumedDependencies: subsumedDependencies,
-        swiftProducts: isBuild
-            ? [
-                swiftPM.product(
-                    package: "swift-vulkan",
-                    product: "SwiftVulkan",
-                    packageRoot: root,
-                    environment: environment)
-            ] : [],
-        inputs: [
-            .tree(root.appending("Sources"))
-        ] + (includesTests ? [.tree(root.appending("Tests"))] : []) + [
-            swiftPM.identityInput,
-            .tool(.named("swift")),
-        ],
-        postconditions: [swiftPM.postcondition],
-        locks: [.checkout("vulkan")] + (isBuild ? [] : [swiftPM.lock]),
-        operation: isBuild
-            ? .sequence([])
-            : .command(
-                swiftPM.command(
-                    arguments: arguments,
-                    workingDirectory: root,
-                    environment: environment)))
 }

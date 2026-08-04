@@ -19,7 +19,43 @@ package enum CoreTaskIDs {
     }
 }
 
-public enum CoreColliderRecipe {
+public enum CoreColliderRecipe: ColliderComponent {
+    public static let descriptor = ComponentDescriptor(
+        id: ComponentID(rawValue: "core"),
+        canonicalName: "core",
+        directoryName: "core")
+
+    public static func makeComponent(
+        in context: RecipeContext
+    ) throws -> ComponentDefinition {
+        let root = context.componentRoot(descriptor)
+        let source = try prepareSkiaDependencies(
+            root: root,
+            environment: context.environment)
+        var tasks = [source]
+        var roots: Set<TaskID> = []
+        for architecture in PlatformArchitecture.allCases {
+            let target = NativeLinuxTarget(architecture: architecture)
+            let skia = buildSkiaLinux(
+                root: root,
+                environment: context.environment,
+                target: target,
+                builder: context.nativeBuilder)
+            let sdk = publishLinuxRenderSDK(
+                root: root,
+                sdkRoot: context.nativeSDK(for: target),
+                target: target)
+            tasks += [skia, sdk]
+            roots.insert(sdk.id)
+        }
+        return try ComponentDefinition(
+            descriptor: descriptor,
+            tasks: tasks,
+            entrypoints: [
+                ComponentEntrypoint(id: .bootstrap, roots: roots)
+            ])
+    }
+
     public static func prepareSkiaDependencies(
         root: FilePath,
         environment: [String: String]
@@ -477,44 +513,4 @@ private func skiaTask(
         },
         locks: [.checkout(id.rawValue)],
         operation: operation)
-}
-
-private func task(
-    _ id: String,
-    _ root: FilePath,
-    _ environment: [String: String],
-    _ arguments: [String],
-    _ dependencies: [TaskID],
-    subsumedDependencies: [TaskID] = [],
-    _ swiftPM: SwiftPMInvocation
-) -> TaskDeclaration {
-    let isBuild = arguments == ["build"]
-    return TaskDeclaration(
-        id: TaskID(rawValue: id),
-        component: ComponentID(rawValue: "core"),
-        dependencies: dependencies,
-        subsumedDependencies: subsumedDependencies,
-        swiftProducts: isBuild
-            ? [
-                swiftPM.product(
-                    package: "core",
-                    product: "Nucleus",
-                    packageRoot: root,
-                    environment: environment)
-            ] : [],
-        inputs: [
-            .tree(root.appending("swift")),
-            .tree(root.appending("render-cxx")),
-            swiftPM.identityInput,
-            .tool(.named("swift")),
-        ],
-        postconditions: [swiftPM.postcondition],
-        locks: [.checkout("core")] + (isBuild ? [] : [swiftPM.lock]),
-        operation: isBuild
-            ? .sequence([])
-            : .command(
-                swiftPM.command(
-                    arguments: arguments,
-                    workingDirectory: root,
-                    environment: environment)))
 }

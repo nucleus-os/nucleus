@@ -19,11 +19,8 @@ struct Build: TaskControlledCommand {
             try await AndroidCommand(context: workspace).run(
                 .build(gradleArguments: []),
                 controls: taskOptions.controls)
-        case .browser:
-            try await ChromiumCommand(context: workspace).run(
-                .build,
-                controls: taskOptions.controls)
-        case .none, .all, .runtime, .tracy, .vulkan, .wayland, .core, .config, .ipc,
+        case .none, .all, .runtime, .browser, .tracy, .vulkan, .wayland, .core,
+            .config, .ipc,
             .linux, .reactNative, .compositor, .shell, .androidRuntime, .loader,
             .gpuHeadless, .gpuDRM:
             try await ComponentRegistry(context: workspace).build(

@@ -1,5 +1,6 @@
 import ColliderCore
 import Foundation
+import NativeBuilderColliderRecipe
 import SystemPackage
 
 package enum AndroidRuntimeTaskIDs {
@@ -13,8 +14,49 @@ package enum AndroidRuntimeTaskIDs {
     }
 }
 
-public enum AndroidRuntimeColliderRecipe {
+public enum AndroidRuntimeColliderRecipe: ColliderComponent {
+    public static let descriptor = ComponentDescriptor(
+        id: ComponentID(rawValue: "android-runtime"),
+        canonicalName: "android-runtime",
+        directoryName: "android-runtime")
+
     private static let component = ComponentID(rawValue: "android-runtime")
+
+    public static func makeComponent(
+        in context: RecipeContext
+    ) throws -> ComponentDefinition {
+        let root = context.componentRoot(descriptor)
+        var tasks = try aospImageTasks(
+            root: root,
+            environment: context.environment)
+        var gfxstreamRoots: Set<TaskID> = []
+        for architecture in PlatformArchitecture.allCases {
+            let target = NativeLinuxTarget(architecture: architecture)
+            let task = buildGfxstream(
+                root: root,
+                repositoryRoot: context.repositoryRoot,
+                environment: context.environment,
+                target: target,
+                builder: context.nativeBuilder)
+            tasks.append(task)
+            gfxstreamRoots.insert(task.id)
+        }
+        return try ComponentDefinition(
+            descriptor: descriptor,
+            tasks: tasks,
+            entrypoints: [
+                ComponentEntrypoint(id: .bootstrap, roots: gfxstreamRoots),
+                ComponentEntrypoint(
+                    id: ComponentEntrypointID(rawValue: "aosp.source-lock"),
+                    roots: [AndroidRuntimeTaskIDs.aospSourceLock]),
+                ComponentEntrypoint(
+                    id: ComponentEntrypointID(rawValue: "aosp.source"),
+                    roots: [AndroidRuntimeTaskIDs.aospSource]),
+                ComponentEntrypoint(
+                    id: ComponentEntrypointID(rawValue: "aosp.image"),
+                    roots: [AndroidRuntimeTaskIDs.aospImage]),
+            ])
+    }
 
     public static func aospProductSourceOverlays(
         root: FilePath
@@ -557,6 +599,7 @@ public enum AndroidRuntimeColliderRecipe {
         return TaskDeclaration(
             id: AndroidRuntimeTaskIDs.gfxstream(target),
             component: component,
+            dependencies: [NativeBuilderTaskIDs.prepare],
             inputs: [
                 .tree(hostSource),
                 .tree(guestSource),

@@ -1,0 +1,70 @@
+import AndroidRuntimeColliderRecipe
+import ColliderCore
+import NativeBuilderColliderRecipe
+
+package enum ReleaseGateTaskIDs {
+    package static let all: [TaskID] = suites.map {
+        TaskID(rawValue: "test.release-gate.\($0.id)")
+    }
+
+    fileprivate static let suites: [(id: String, package: String, suite: String)] = [
+        ("foundation-publication", "core", "NucleusFoundationPublicationStressTests"),
+        ("foundation-lifecycle", "core", "NucleusFoundationLifecycleStressTests"),
+        ("text-editor", "core", "NucleusTextEditorStressTests"),
+        ("collection", "core", "NucleusCollectionStressTests"),
+        (
+            "platform-transport",
+            "integration-tests/window-client-conformance",
+            "NucleusPlatformTransportStressTests"
+        ),
+        (
+            "compositor-transition",
+            "compositor",
+            "NucleusCompositorTransitionStressTests"
+        ),
+    ]
+}
+
+public enum ReleaseGateColliderRecipe: ColliderComponent {
+    public static let descriptor = ComponentDescriptor(
+        id: ComponentID(rawValue: "release-gate"),
+        canonicalName: "release-gate",
+        directoryName: "integration-tests")
+
+    public static func makeComponent(
+        in context: RecipeContext
+    ) throws -> ComponentDefinition {
+        let swiftPM = try context.swiftPM(
+            .linux(.arm64, configuration: .release))
+        let dependencies = [
+            NativeBuilderTaskIDs.prepare,
+            AndroidRuntimeTaskIDs.gfxstream(
+                NativeLinuxTarget(architecture: .arm64)),
+        ]
+        let tasks = ReleaseGateTaskIDs.suites.map { suite in
+            let requirement = swiftPM.testProduct(
+                package: suite.package,
+                testProduct: suite.suite,
+                packageRoot: context.repositoryRoot.appending(suite.package),
+                environment: context.environment,
+                arguments: ["--filter", suite.suite])
+            return TaskDeclaration(
+                id: TaskID(rawValue: "test.release-gate.\(suite.id)"),
+                component: descriptor.id,
+                dependencies: dependencies,
+                swiftTests: [requirement],
+                inputs: [swiftPM.identityInput],
+                locks: [.checkout("test-release-gate")],
+                cachePolicy: .always,
+                operation: .sequence([]))
+        }
+        return try ComponentDefinition(
+            descriptor: descriptor,
+            tasks: tasks,
+            entrypoints: [
+                ComponentEntrypoint(
+                    id: .testReleaseGate,
+                    roots: Set(tasks.map(\.id)))
+            ])
+    }
+}

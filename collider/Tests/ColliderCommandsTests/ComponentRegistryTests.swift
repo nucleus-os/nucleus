@@ -67,20 +67,23 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
 }
 
 @Test func runtimeTestSelectionsUseBothLinuxArchitectureLanes() throws {
+    let root = try #require(
+        discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
     let registry = ComponentRegistry(
         context: WorkspaceContext(
-            root: FilePath(FileManager.default.currentDirectoryPath),
+            root: root,
             environment: [:]))
+    let all = try registry.selectedTestTasks(nil).map(\.rawValue)
 
     #expect(
-        try registry.selectedTestTasks(nil).map(\.rawValue) == [
+        all == [
             "linux.arm64.test", "linux.x86_64.test",
-            "test.release-gate.foundation-publication",
-            "test.release-gate.foundation-lifecycle",
-            "test.release-gate.text-editor",
             "test.release-gate.collection",
-            "test.release-gate.platform-transport",
             "test.release-gate.compositor-transition",
+            "test.release-gate.foundation-lifecycle",
+            "test.release-gate.foundation-publication",
+            "test.release-gate.platform-transport",
+            "test.release-gate.text-editor",
         ])
     #expect(
         try registry.selectedTestTasks(.config).map(\.rawValue) == [
@@ -118,29 +121,22 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         context: WorkspaceContext(
             root: root,
             environment: ["SWIFTC": "/definitely/unavailable/swiftc"]))
-    var probeCount = 0
-
-    let tasks = try registry.testTasks(selection: .loader) { _ in
-        probeCount += 1
-        return "/dev/dri/renderD128"
-    }
-
-    #expect(probeCount == 0)
+    let tasks = try registry.testTasks(selection: .loader)
     let declared = Set(tasks.map(\.id))
     for selection in ComponentSelection.allCases {
         switch selection {
         case .runtime, .tracy, .vulkan, .wayland, .core, .config,
             .ipc, .linux, .reactNative, .compositor, .shell, .androidRuntime,
-            .loader, .gpuHeadless:
+            .browser, .loader, .gpuHeadless:
             #expect(
                 declared.isSuperset(
                     of: try registry.selectedTestTasks(selection)))
-        case .all, .gpuDRM, .swiftSDK, .android, .browser:
+        case .all, .gpuDRM, .swiftSDK, .android:
             break
         }
     }
     for selection in [
-        ComponentSelection.swiftSDK, .android, .browser,
+        ComponentSelection.swiftSDK, .android,
     ] {
         #expect(throws: WorkspaceFailure.self) {
             try registry.selectedTestTasks(selection)
@@ -150,16 +146,17 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
     for selection in ComponentSelection.allCases {
         switch selection {
         case .all, .runtime, .tracy, .vulkan, .wayland, .core, .config,
-            .ipc, .linux, .reactNative, .compositor, .shell, .androidRuntime:
+            .ipc, .linux, .reactNative, .compositor, .shell, .androidRuntime,
+            .browser:
             #expect(
                 declared.isSuperset(
                     of: try registry.selectedBuildTasks(selection)))
-        case .swiftSDK, .android, .browser, .loader, .gpuHeadless, .gpuDRM:
+        case .swiftSDK, .android, .loader, .gpuHeadless, .gpuDRM:
             break
         }
     }
     for selection in [
-        ComponentSelection.swiftSDK, .android, .browser, .loader, .gpuHeadless,
+        ComponentSelection.swiftSDK, .android, .loader, .gpuHeadless,
         .gpuDRM,
     ] {
         #expect(throws: WorkspaceFailure.self) {
@@ -391,7 +388,9 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
 }
 
 @Test func drmSelectionResolvesTheRecipeOwnedTask() throws {
-    let root = FilePath("/workspace/compositor/compositor-core")
+    let repositoryRoot = try #require(
+        discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
+    let root = repositoryRoot.appending("compositor/compositor-core")
     let swiftPM = SwiftPMInvocation(
         context: SwiftBuildContext(
             packageRoot: fixtureSwiftPackageRoot,
@@ -404,7 +403,7 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         environment: [:],
         swiftPM: swiftPM)
     let registry = ComponentRegistry(
-        context: WorkspaceContext(root: FilePath("/workspace"), environment: [:]))
+        context: WorkspaceContext(root: repositoryRoot, environment: [:]))
 
     #expect(task.id == CompositorTaskIDs.testGPUDRM)
     #expect(try registry.selectedTestTasks(.gpuDRM) == [task.id])

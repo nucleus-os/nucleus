@@ -1,7 +1,9 @@
+import QualificationColliderRecipe
+
 struct RuntimeBuildOptions: Equatable {
     var optimization: OptimizationMode = .debug
     var tracy = false
-    var sanitizer: RuntimeSanitizer?
+    var sanitizer: SanitizerKind?
 
     var identity: String {
         [
