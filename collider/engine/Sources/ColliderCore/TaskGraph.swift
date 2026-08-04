@@ -48,28 +48,6 @@ public struct PathPostcondition: Hashable, Sendable {
     }
 }
 
-public struct AndroidHostValidation: Hashable, Sendable {
-    public let library: FilePath
-    public let kotlinContract: FilePath
-    public let ndk: FilePath
-    public let minimumSwiftJavaThunkCount: UInt32
-    public let environment: [String: String]
-
-    public init(
-        library: FilePath,
-        kotlinContract: FilePath,
-        ndk: FilePath,
-        minimumSwiftJavaThunkCount: UInt32 = 20,
-        environment: [String: String]
-    ) {
-        self.library = library
-        self.kotlinContract = kotlinContract
-        self.ndk = ndk
-        self.minimumSwiftJavaThunkCount = minimumSwiftJavaThunkCount
-        self.environment = environment
-    }
-}
-
 public struct DirectoryRetentionRule: Hashable, Sendable {
     public enum Naming: String, Hashable, Sendable {
         case contentIdentity
@@ -616,25 +594,6 @@ public struct ChromiumSourceLock: Codable, Hashable, Sendable {
     }
 }
 
-public struct ChromiumDepotToolsPreparation: Hashable, Sendable {
-    public let repository: FilePath
-    public let remote: String
-    public let commit: String
-    public let environment: [String: String]
-
-    public init(
-        repository: FilePath,
-        remote: String,
-        commit: String,
-        environment: [String: String]
-    ) {
-        self.repository = repository
-        self.remote = remote
-        self.commit = commit
-        self.environment = environment
-    }
-}
-
 public struct ChromiumSourcePreparation: Hashable, Sendable {
     public let sourceID: String
     public let sourceRoot: FilePath
@@ -795,14 +754,11 @@ public enum AOSPProductOperationStage: String, Hashable, Sendable {
 public enum TaskOperation: Hashable, Sendable {
     case action(AnyColliderAction)
     case command(CommandSpec)
-    case validateAndroidHost(AndroidHostValidation)
     case verifyAOSPSourceLock(AOSPSourceLockVerification)
     case prepareAOSPSource(AOSPSourcePreparation)
-    case prepareOCIImage(OCIImagePreparation)
     case runOCI(OCIExecution)
     case prepareAOSPSigningIdentity(AOSPSigningIdentityPreparation)
     case aospProduct(AOSPProductOperationStage, AOSPProductBuild)
-    case prepareChromiumDepotTools(ChromiumDepotToolsPreparation)
     case prepareChromiumSource(ChromiumSourcePreparation)
     case buildChromiumProduct(ChromiumProductBuild)
     case assembleBrowserArtifact(BrowserArtifactAssembly)
@@ -810,8 +766,6 @@ public enum TaskOperation: Hashable, Sendable {
     case assembleCEFArtifact(CEFArtifactAssembly)
     case validateCEFArtifact(CEFArtifactAssembly)
     case installBrowser(BrowserInstallation)
-    case download(DownloadSpec, candidate: FilePath)
-    case activateGeneration(candidate: FilePath, generation: FilePath, active: FilePath)
     indirect case sequence([TaskOperation])
 }
 
@@ -847,6 +801,7 @@ public struct TaskDeclaration: Hashable, Sendable {
     public let postconditions: [PathPostcondition]
     public let locks: [TaskLock]
     public let assessmentPolicy: TaskAssessmentPolicy
+    public let recordsActiveArtifact: Bool
     public let operation: TaskOperation
 
     public init(
@@ -866,6 +821,7 @@ public struct TaskDeclaration: Hashable, Sendable {
         postconditions: [PathPostcondition] = [],
         locks: [TaskLock] = [],
         assessmentPolicy: TaskAssessmentPolicy = .incremental,
+        recordsActiveArtifact: Bool = false,
         operation: TaskOperation
     ) {
         self.id = id
@@ -887,6 +843,7 @@ public struct TaskDeclaration: Hashable, Sendable {
         self.postconditions = postconditions
         self.locks = locks
         self.assessmentPolicy = assessmentPolicy
+        self.recordsActiveArtifact = recordsActiveArtifact
         self.operation = operation
     }
 
@@ -922,6 +879,7 @@ public struct TaskDeclaration: Hashable, Sendable {
             postconditions: postconditions,
             locks: locks,
             assessmentPolicy: assessmentPolicy,
+            recordsActiveArtifact: recordsActiveArtifact,
             operation: operation)
     }
 
@@ -943,6 +901,7 @@ public struct TaskDeclaration: Hashable, Sendable {
             postconditions: postconditions,
             locks: locks + additionalLocks.filter { !locks.contains($0) },
             assessmentPolicy: assessmentPolicy,
+            recordsActiveArtifact: recordsActiveArtifact,
             operation: operation)
     }
 }

@@ -1416,7 +1416,21 @@ now owned by a semantic recipe action. The create-directory, remove-path,
 replace-symlink, symlink-publication, and directory-retention operation cases,
 their global identity tags, and their runtime dispatch are deleted; engine
 fixtures use scoped actions, and Swift SDK discovery publication retains its
-behavioral coverage beside the owning recipe.
+behavioral coverage beside the owning recipe. Generation activation and every
+standalone download are now namespaced recipe actions, so their operation cases
+and global identity tags are deleted as well. Download policy has one canonical
+action identity value, and action-owned output validation rechecks the expected
+digest during clean-state assessment. Active-generation reporting is explicit
+task reporting metadata rather than a kernel test for a Swift SDK operation.
+Android host ELF/JNI validation now lives in the core recipe with its behavioral
+test; its payload, operation case, and `ColliderRuntime` workflow file are
+deleted. Chromium depot-tools materialization is likewise a recipe-owned exact
+checkout action that rejects tracked modifications; the generic managed-source
+workflow is deleted. Every OCI builder-image preparation is now a namespaced
+recipe action using the declared container capability. Action requirements
+carry execution placement and resource demand, preserving scheduler behavior
+without kernel operation inspection, and the global OCI image-preparation
+operation case and dispatch are deleted.
 
 Complete the existing action seam with:
 

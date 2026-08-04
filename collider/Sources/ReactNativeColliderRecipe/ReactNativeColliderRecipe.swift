@@ -179,7 +179,11 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
             validation: .regularFile)
         let downloadTask = downloadBuilder.build(
             locks: [.checkout("rn-boost")],
-            operation: .download(download, candidate: archive))
+            operation: .action(
+                try AnyColliderAction(
+                    DownloadBoostAction(
+                        specification: download,
+                        destination: archive))))
 
         var boostBuilder = TaskBuilder(
             id: TaskID(rawValue: "rn.boost"),
@@ -620,6 +624,34 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
         ).addingDependencies([CoreTaskIDs.nativeSDK(target)])
     }
 
+}
+
+private struct DownloadBoostAction: ColliderAction {
+    static let kind: ActionKind = "rn.download-boost"
+
+    let identity: DownloadActionIdentity
+
+    init(specification: DownloadSpec, destination: FilePath) {
+        identity = DownloadActionIdentity(
+            specification: specification,
+            destination: destination)
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(effects: [
+            ActionEffect(.readWrite, scope: .output(identity.destination))
+        ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        try await context.downloads.download(
+            identity.specification,
+            to: identity.destination)
+    }
+
+    func validateOutputs(using files: ActionFileSystem) throws {
+        try identity.validateOutput(using: files)
+    }
 }
 
 private struct PublishReactNativeSDKAction: ColliderAction {

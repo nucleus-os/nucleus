@@ -273,7 +273,11 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .file(root.appending("aosp.lock.json"))
             ],
             locks: [.checkout("android-runtime-aosp-downloads")],
-            operation: .download(specification, candidate: launcher))
+            operation: .action(
+                try AnyColliderAction(
+                    DownloadAOSPRepoLauncherAction(
+                        specification: specification,
+                        destination: launcher))))
         return RepoLauncherArtifacts(task: task, executable: executable)
     }
 
@@ -374,14 +378,16 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .tree(context)
             ],
             locks: [.checkout("android-runtime-aosp-builder-image")],
-            operation: .prepareOCIImage(
-                OCIImagePreparation(
-                    executionPlatform: .linuxAMD64OCI,
-                    context: context,
-                    containerFile: containerFile,
-                    imageID: imageID,
-                    imageName: "localhost/nucleus-aosp-build",
-                    environment: environment)))
+            operation: .action(
+                try AnyColliderAction(
+                    PrepareAOSPBuilderImageAction(
+                        preparation: OCIImagePreparation(
+                            executionPlatform: .linuxAMD64OCI,
+                            context: context,
+                            containerFile: containerFile,
+                            imageID: imageID,
+                            imageName: "localhost/nucleus-aosp-build",
+                            environment: environment)))))
         return BuilderImageArtifacts(task: task, imageID: artifact)
     }
 
@@ -772,6 +778,54 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             ]))
     }
 
+}
+
+private struct PrepareAOSPBuilderImageAction: ColliderAction {
+    static let kind: ActionKind = "android-runtime.prepare-aosp-builder-image"
+
+    let identity: OCIImagePreparationActionIdentity
+
+    init(preparation: OCIImagePreparation) {
+        identity = OCIImagePreparationActionIdentity(preparation)
+    }
+
+    var requirements: ActionRequirements {
+        ociImagePreparationActionRequirements(preparation: identity.preparation)
+    }
+
+    var environment: [String: String] { identity.preparation.environment }
+
+    func execute(in context: ActionContext) async throws {
+        try await context.containers.prepareImage(identity.preparation)
+    }
+}
+
+private struct DownloadAOSPRepoLauncherAction: ColliderAction {
+    static let kind: ActionKind = "android-runtime.download-aosp-repo-launcher"
+
+    let identity: DownloadActionIdentity
+
+    init(specification: DownloadSpec, destination: FilePath) {
+        identity = DownloadActionIdentity(
+            specification: specification,
+            destination: destination)
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(effects: [
+            ActionEffect(.readWrite, scope: .output(identity.destination))
+        ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        try await context.downloads.download(
+            identity.specification,
+            to: identity.destination)
+    }
+
+    func validateOutputs(using files: ActionFileSystem) throws {
+        try identity.validateOutput(using: files)
+    }
 }
 
 private struct PrepareGfxstreamBuildAction: ColliderAction {

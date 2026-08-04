@@ -90,7 +90,7 @@ public enum CoreColliderRecipe: ColliderComponent {
             environment: androidEnvironment,
             swiftPM: androidSwiftPM,
             dependencies: [androidNativeSDK.id])
-        let androidValidation = validateAndroidHost(
+        let androidValidation = try validateAndroidHost(
             root: root,
             library: androidSwiftPM.configurationProducts.appending(
                 "libnucleus-android.so"),
@@ -156,7 +156,11 @@ public enum CoreColliderRecipe: ColliderComponent {
             validation: .regularFile)
         let download = downloadBuilder.build(
             locks: [.checkout("core-sources")],
-            operation: .download(gnDownload, candidate: gnArchive))
+            operation: .action(
+                try AnyColliderAction(
+                    DownloadSkiaGNAction(
+                        specification: gnDownload,
+                        destination: gnArchive))))
 
         var sourceBuilder = TaskBuilder(
             id: CoreTaskIDs.sources,
@@ -331,11 +335,12 @@ public enum CoreColliderRecipe: ColliderComponent {
         ndk: FilePath,
         environment: [String: String],
         dependencies: [TaskID] = [TaskID(rawValue: "core.android-host.build")]
-    ) -> TaskDeclaration {
+    ) throws -> TaskDeclaration {
         let hostLibrary = library
         let kotlinContract = root.appending(
             "android/nucleus/src/main/kotlin/dev/nucleus/android/"
                 + "NucleusNative.kt")
+        let readelf = androidNDKReadELFPath(ndk)
         return TaskDeclaration(
             id: CoreTaskIDs.validateAndroidHost,
             component: ComponentID(rawValue: "core"),
@@ -345,15 +350,16 @@ public enum CoreColliderRecipe: ColliderComponent {
                     ? .file(hostLibrary)
                     : .dependencyOutput(hostLibrary),
                 .file(kotlinContract),
-                .tool(.path(androidNDKReadELFPath(ndk))),
             ],
             assessmentPolicy: .always,
-            operation: .validateAndroidHost(
-                AndroidHostValidation(
-                    library: hostLibrary,
-                    kotlinContract: kotlinContract,
-                    ndk: ndk,
-                    environment: environment)))
+            operation: .action(
+                try AnyColliderAction(
+                    ValidateAndroidHostAction(
+                        library: hostLibrary,
+                        kotlinContract: kotlinContract,
+                        readelf: readelf,
+                        minimumSwiftJavaThunkCount: 20,
+                        environment: environment))))
     }
 
     public static func buildAndroidProject(
@@ -451,6 +457,165 @@ public enum CoreColliderRecipe: ColliderComponent {
             operation: .action(
                 try AnyColliderAction(
                     PublishRenderSDKAction(sdk: sdk, links: links))))
+    }
+}
+
+private struct ValidateAndroidHostAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let library: FilePath
+        let kotlinContract: FilePath
+        let readelf: FilePath
+        let minimumSwiftJavaThunkCount: UInt32
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: library.string)
+            encoder.append(tag: 2, string: kotlinContract.string)
+            encoder.append(tag: 3, string: readelf.string)
+            encoder.append(tag: 4, integer: UInt64(minimumSwiftJavaThunkCount))
+        }
+    }
+
+    static let kind: ActionKind = "core.validate-android-host"
+
+    let library: FilePath
+    let kotlinContract: FilePath
+    let readelf: FilePath
+    let minimumSwiftJavaThunkCount: UInt32
+    let environment: [String: String]
+
+    var identity: Identity {
+        Identity(
+            library: library,
+            kotlinContract: kotlinContract,
+            readelf: readelf,
+            minimumSwiftJavaThunkCount: minimumSwiftJavaThunkCount)
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "llvm-readelf",
+                    executable: .path(readelf),
+                    role: .semantic)
+            ],
+            effects: [
+                ActionEffect(.read, scope: .input(library)),
+                ActionEffect(.read, scope: .input(kotlinContract)),
+            ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        guard try context.files.metadata(for: library)?.type == .regular else {
+            throw AndroidHostValidationFailure.invalidOutput(
+                "Android host library is missing: \(library)")
+        }
+        guard try context.files.metadata(for: kotlinContract)?.type == .regular else {
+            throw AndroidHostValidationFailure.invalidOutput(
+                "Android Kotlin JNI contract is missing: \(kotlinContract)")
+        }
+
+        func inspect(_ arguments: [String]) async throws -> String {
+            let result = try await context.commands.execute(
+                CommandSpec(
+                    executable: .path(readelf),
+                    arguments: arguments + [library.string],
+                    workingDirectory: library.removingLastComponent(),
+                    environment: environment,
+                    output: .captured(limit: 64 * 1_024 * 1_024)))
+            guard result.status == 0 else {
+                throw AndroidHostValidationFailure.commandFailed(result.status)
+            }
+            return result.standardOutput
+        }
+
+        let header = try await inspect(["-h"])
+        let dynamic = try await inspect(["-d"])
+        let symbols = try await inspect(["-Ws"])
+        var failures: [String] = []
+        func require(_ condition: Bool, _ description: String) {
+            if !condition { failures.append(description) }
+        }
+        require(
+            header.contains("Machine:") && header.contains("AArch64"),
+            "ELF machine is not AArch64")
+        for dependency in ["libandroid.so", "libvulkan.so", "libSwiftJava.so"] {
+            require(
+                dynamic.contains("[\(dependency)]"),
+                "missing dynamic dependency \(dependency)")
+        }
+        require(!dynamic.contains("[libswiftCore.so]"), "must not link libswiftCore.so")
+        require(symbols.contains("JNI_OnLoad"), "missing JNI_OnLoad export")
+        require(
+            symbols.range(
+                of: #"\sFUNC\s+LOCAL\s+PROTECTED\s+\d+\s+swift_retain(?:\s|$)"#,
+                options: .regularExpression) != nil,
+            "missing static Swift runtime")
+
+        let sourceBytes = try context.files.read(kotlinContract)
+        guard let source = String(bytes: sourceBytes, encoding: .utf8) else {
+            throw AndroidHostValidationFailure.invalidOutput(
+                "Android Kotlin JNI contract is not UTF-8")
+        }
+        let expression = try NSRegularExpression(
+            pattern: #"external\s+fun\s+([A-Za-z0-9_]+)"#)
+        let range = NSRange(source.startIndex..., in: source)
+        let functions = expression.matches(in: source, range: range).compactMap {
+            match -> String? in
+            guard let value = Range(match.range(at: 1), in: source) else { return nil }
+            return String(source[value])
+        }
+        require(!functions.isEmpty, "Kotlin contract declares no external functions")
+        for function in functions {
+            require(
+                symbols.contains("Java_dev_nucleus_android_NucleusNative_\(function)"),
+                "missing JNI export for NucleusNative.\(function)")
+        }
+        let thunkCount =
+            symbols.components(separatedBy: "Java_dev_nucleus_android_AndroidHost__")
+            .count - 1
+        require(
+            thunkCount >= Int(minimumSwiftJavaThunkCount),
+            "found \(thunkCount) swift-java AndroidHost thunks; expected at least "
+                + "\(minimumSwiftJavaThunkCount)")
+        guard failures.isEmpty else {
+            throw AndroidHostValidationFailure.invalidOutput(
+                "Android host validation failed:\n  "
+                    + failures.joined(separator: "\n  "))
+        }
+    }
+}
+
+private enum AndroidHostValidationFailure: Error {
+    case commandFailed(Int32)
+    case invalidOutput(String)
+}
+
+private struct DownloadSkiaGNAction: ColliderAction {
+    static let kind: ActionKind = "core.download-skia-gn"
+
+    let identity: DownloadActionIdentity
+
+    init(specification: DownloadSpec, destination: FilePath) {
+        identity = DownloadActionIdentity(
+            specification: specification,
+            destination: destination)
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(effects: [
+            ActionEffect(.readWrite, scope: .output(identity.destination))
+        ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        try await context.downloads.download(
+            identity.specification,
+            to: identity.destination)
+    }
+
+    func validateOutputs(using files: ActionFileSystem) throws {
+        try identity.validateOutput(using: files)
     }
 }
 

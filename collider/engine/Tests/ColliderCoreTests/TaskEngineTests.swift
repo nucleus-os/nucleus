@@ -172,7 +172,7 @@ private struct ParallelismProbeAction: ColliderAction {
     let unselectedContainer = TaskDeclaration(
         id: TaskID(rawValue: "fixture.unselected-container"),
         component: ComponentID(rawValue: "fixture"),
-        operation: .prepareOCIImage(
+        operation: try fixturePrepareOCIImageOperation(
             OCIImagePreparation(
                 executionPlatform: ExecutionPlatform(
                     environment: .native,
@@ -1152,59 +1152,6 @@ private struct ParallelismProbeAction: ColliderAction {
             encoding: .utf8) == "fresh")
 }
 
-@Test func androidHostValidationChecksELFAndKotlinJNIContracts() async throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-android-host-validation-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: directory) }
-    try FileManager.default.createDirectory(
-        at: directory, withIntermediateDirectories: true)
-    let library = directory.appendingPathComponent("libnucleus-android.so")
-    try Data("fixture".utf8).write(to: library)
-    let kotlin = directory.appendingPathComponent("NucleusNative.kt")
-    try Data(
-        "object NucleusNative { external fun frame() }\n".utf8
-    ).write(to: kotlin)
-    let readelf = directory.appendingPathComponent(
-        "ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf")
-    try FileManager.default.createDirectory(
-        at: readelf.deletingLastPathComponent(),
-        withIntermediateDirectories: true)
-    let thunks = (0..<20).map {
-        "1: 0 FUNC GLOBAL DEFAULT 1 "
-            + "Java_dev_nucleus_android_AndroidHost__thunk\($0)"
-    }.joined(separator: "\\n")
-    try Data(
-        """
-        #!/bin/sh
-        case "$1" in
-          -h) printf '  Machine: AArch64\\n' ;;
-          -d) printf 'NEEDED [libandroid.so]\\nNEEDED [libvulkan.so]\\nNEEDED [libSwiftJava.so]\\n' ;;
-          -Ws) printf '  FUNC GLOBAL DEFAULT JNI_OnLoad\\n  FUNC LOCAL PROTECTED 1 swift_retain\\n  FUNC GLOBAL DEFAULT Java_dev_nucleus_android_NucleusNative_frame\\n\(thunks)\\n' ;;
-        esac
-        """.utf8
-    ).write(to: readelf)
-    try FileManager.default.setAttributes(
-        [.posixPermissions: 0o755], ofItemAtPath: readelf.path)
-    let task = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.validate-android-host"),
-        component: ComponentID(rawValue: "fixture"),
-        assessmentPolicy: .always,
-        operation: .validateAndroidHost(
-            AndroidHostValidation(
-                library: FilePath(library.path),
-                kotlinContract: FilePath(kotlin.path),
-                ndk: FilePath(directory.appendingPathComponent("ndk").path),
-                environment: [
-                    "PATH": ProcessInfo.processInfo.environment["PATH"]
-                        ?? "/usr/bin:/bin"
-                ])))
-    let report = try await ColliderRuntime().execute(
-        graph: TaskGraph([task]),
-        selected: [task.id],
-        stateRoot: FilePath(directory.appendingPathComponent("state").path))
-    #expect(report.executed == [task.id])
-}
-
 @Test func directoryRetentionKeepsNewestAndCurrentContentIdentities() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-directory-retention-\(UUID().uuidString)")
@@ -1844,7 +1791,7 @@ private struct ParallelismProbeAction: ColliderAction {
                 validation: .nonEmptyDirectory),
             OutputDeclaration(path: FilePath(active.path), validation: .exists),
         ],
-        operation: .activateGeneration(
+        operation: try fixtureActivateGenerationOperation(
             candidate: FilePath(candidate.path),
             generation: FilePath(generation.path),
             active: FilePath(active.path)))
@@ -1882,7 +1829,7 @@ private struct ParallelismProbeAction: ColliderAction {
                 validation: .nonEmptyDirectory),
             OutputDeclaration(path: FilePath(active.path), validation: .exists),
         ],
-        operation: .activateGeneration(
+        operation: try fixtureActivateGenerationOperation(
             candidate: FilePath(candidate.path),
             generation: FilePath(generation.path),
             active: FilePath(active.path)))

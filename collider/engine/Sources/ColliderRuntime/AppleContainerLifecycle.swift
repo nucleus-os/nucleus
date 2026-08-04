@@ -47,7 +47,7 @@ struct AppleContainerLifecycle: Sendable {
         temporaryDirectory: FilePath?,
         output: CommandSpec.Output,
         logging: CommandLogging?,
-        stage: TaskID
+        stage: TaskID?
     ) async throws -> CommandResult {
         let cleanup = AppleContainerCleanup(client: client, name: name)
         return try await withTaskCancellationHandler {
@@ -86,7 +86,7 @@ struct AppleContainerLifecycle: Sendable {
         temporaryDirectory: FilePath?,
         output: CommandSpec.Output,
         logging: CommandLogging?,
-        stage: TaskID
+        stage: TaskID?
     ) async throws -> CommandResult {
         let flags = appleContainerFlags(
             execution,
@@ -367,7 +367,7 @@ private final class AppleContainerOutputSession: @unchecked Sendable {
     init(
         output: CommandSpec.Output,
         logging: CommandLogging?,
-        stage: TaskID
+        stage: TaskID?
     ) throws {
         guard output != .terminal else {
             throw OCIExecutorFailure.unsupportedTerminalOutput

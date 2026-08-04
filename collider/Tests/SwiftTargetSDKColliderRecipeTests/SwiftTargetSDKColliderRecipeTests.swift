@@ -66,17 +66,13 @@ import Testing
             == 2 + inputs.linuxTargets.flatMap(\.allUbuntuPackages).count)
     #expect(
         !result.tasks.contains { $0.id.rawValue == "swift-sdk.download-linux-target" })
-    let ubuntuDownloads = result.tasks.compactMap { task -> DownloadSpec? in
+    let ubuntuDownloads = result.tasks.filter { task in
         guard task.id.rawValue.hasPrefix("swift-sdk.download-ubuntu-"),
-            case .download(let specification, _) = task.operation
-        else { return nil }
-        return specification
+            case .action(let action) = task.operation
+        else { return false }
+        return action.kind == "swift-sdk.download-input"
     }
     #expect(ubuntuDownloads.count == inputs.linuxTargets.flatMap(\.allUbuntuPackages).count)
-    #expect(
-        ubuntuDownloads.allSatisfy {
-            $0.acceptedMediaTypes.contains("application/vnd.debian.binary-package")
-        })
     #expect(result.tasks.contains { $0.id.rawValue == "swift-sdk.build-sdk-generator" })
     #expect(
         result.tasks.contains { $0.id.rawValue == "swift-sdk.build-linux-arm64-runtime" })

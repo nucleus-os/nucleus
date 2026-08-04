@@ -11,7 +11,7 @@ import ContainerBuild
 extension ColliderRuntime {
     func prepareOCIImage(
         _ preparation: OCIImagePreparation,
-        stage: TaskID
+        stage: TaskID?
     ) async throws {
         let suspension = AppleContainerSuspension(
             client: ContainerClient(),
@@ -34,7 +34,7 @@ extension ColliderRuntime {
 
     private func prepareOCIImageKeepingBuilder(
         _ preparation: OCIImagePreparation,
-        stage: TaskID
+        stage: TaskID?
     ) async throws {
         let executor = try OCIExecutorResolver.resolve(
             executionPlatform: preparation.executionPlatform)
@@ -100,7 +100,7 @@ extension ColliderRuntime {
 
     func runOCI(
         _ execution: OCIExecution,
-        stage: TaskID
+        stage: TaskID?
     ) async throws {
         let result = try await executeOCI(execution, stage: stage)
         guard result.status == 0 else {
@@ -110,7 +110,7 @@ extension ColliderRuntime {
 
     func executeOCI(
         _ execution: OCIExecution,
-        stage: TaskID
+        stage: TaskID?
     ) async throws -> CommandResult {
         let executor = try OCIExecutorResolver.resolve(
             executionPlatform: execution.executionPlatform)
@@ -188,21 +188,21 @@ extension ColliderRuntime {
 extension ColliderRuntime {
     func prepareOCIImage(
         _ preparation: OCIImagePreparation,
-        stage: TaskID
+        stage: TaskID?
     ) async throws {
         throw OCIExecutorFailure.unsupportedRunner(.current)
     }
 
     func runOCI(
         _ execution: OCIExecution,
-        stage: TaskID
+        stage: TaskID?
     ) async throws {
         throw OCIExecutorFailure.unsupportedRunner(.current)
     }
 
     func executeOCI(
         _ execution: OCIExecution,
-        stage: TaskID
+        stage: TaskID?
     ) async throws -> CommandResult {
         throw OCIExecutorFailure.unsupportedRunner(.current)
     }

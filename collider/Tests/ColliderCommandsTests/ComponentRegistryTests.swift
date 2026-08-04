@@ -998,10 +998,10 @@ private let fixtureRepositoryRoot = FilePath(
         })
     #expect(
         {
-            guard case .prepareOCIImage = builderImage.operation else {
+            guard case .action(let action) = builderImage.operation else {
                 return false
             }
-            return true
+            return action.kind == "android-runtime.prepare-aosp-builder-image"
         }())
     let operations = Array(tasks.suffix(5)).map(\.operation)
     let publication = try #require(tasks.last)

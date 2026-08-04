@@ -251,6 +251,7 @@ public struct TaskBuilder: Sendable {
         postconditions: [PathPostcondition] = [],
         locks: [TaskLock] = [],
         assessmentPolicy: TaskAssessmentPolicy = .incremental,
+        recordsActiveArtifact: Bool = false,
         operation: TaskOperation
     ) -> TaskDeclaration {
         TaskDeclaration(
@@ -272,6 +273,7 @@ public struct TaskBuilder: Sendable {
             postconditions: postconditions,
             locks: locks,
             assessmentPolicy: assessmentPolicy,
+            recordsActiveArtifact: recordsActiveArtifact,
             operation: operation)
     }
 }

@@ -103,6 +103,66 @@ public protocol ColliderActionIdentity: Hashable, Sendable {
     func encode(into encoder: inout ActionIdentityEncoder)
 }
 
+public struct DownloadActionIdentity: ColliderActionIdentity {
+    public let specification: DownloadSpec
+    public let destination: FilePath
+
+    public init(specification: DownloadSpec, destination: FilePath) {
+        self.specification = specification
+        self.destination = destination
+    }
+
+    public func encode(into encoder: inout ActionIdentityEncoder) {
+        encoder.append(tag: 1, string: specification.url.absoluteString)
+        encoder.append(tag: 2, bytes: specification.expectedDigest.bytes)
+        encoder.append(tag: 3, string: destination.string)
+
+        var redirectOrigins = CanonicalDigestEncoder()
+        for origin in specification.permittedRedirectOrigins.sorted() {
+            redirectOrigins.append(tag: 1, string: origin)
+        }
+        encoder.append(tag: 4, bytes: redirectOrigins.bytes)
+        encoder.append(
+            tag: 5,
+            integer: UInt64(specification.maximumResponseSize))
+
+        var mediaTypes = CanonicalDigestEncoder()
+        for mediaType in specification.acceptedMediaTypes.map({ $0.lowercased() }).sorted() {
+            mediaTypes.append(tag: 1, string: mediaType)
+        }
+        encoder.append(tag: 6, bytes: mediaTypes.bytes)
+        encoder.append(tag: 7, integer: specification.requestTimeoutSeconds)
+        encoder.append(tag: 8, integer: specification.inactivityTimeoutSeconds)
+        encoder.append(tag: 9, integer: UInt64(specification.maximumRedirects))
+        encoder.append(tag: 10, integer: UInt64(specification.maximumRetries))
+        encoder.append(tag: 11, string: specification.resumption.rawValue)
+    }
+
+    public func validateOutput(using files: ActionFileSystem) throws {
+        let actual = try files.digest(file: destination)
+        guard actual == specification.expectedDigest else {
+            throw DownloadActionValidationFailure.digestMismatch(
+                path: destination,
+                expected: specification.expectedDigest,
+                actual: actual)
+        }
+    }
+}
+
+public enum DownloadActionValidationFailure: Error, CustomStringConvertible, Sendable {
+    case digestMismatch(
+        path: FilePath,
+        expected: ArtifactDigest,
+        actual: ArtifactDigest)
+
+    public var description: String {
+        switch self {
+        case .digestMismatch(let path, let expected, let actual):
+            "download digest mismatch for \(path): expected \(expected), got \(actual)"
+        }
+    }
+}
+
 public enum ActionToolRole: String, Hashable, Sendable {
     case semantic
     case operational
@@ -199,6 +259,188 @@ public struct ActionDownloader: Sendable {
     }
 }
 
+public struct ActionContainerExecutor: Sendable {
+    private let prepareImageBody: @Sendable (OCIImagePreparation) async throws -> Void
+    private let runBody: @Sendable (OCIExecution) async throws -> Void
+
+    public init(
+        prepareImage: @escaping @Sendable (OCIImagePreparation) async throws -> Void = {
+            _ in throw ActionContainerExecutorFailure.unavailable
+        },
+        run: @escaping @Sendable (OCIExecution) async throws -> Void = {
+            _ in throw ActionContainerExecutorFailure.unavailable
+        }
+    ) {
+        prepareImageBody = prepareImage
+        runBody = run
+    }
+
+    public func prepareImage(_ preparation: OCIImagePreparation) async throws {
+        try await prepareImageBody(preparation)
+    }
+
+    public func run(_ execution: OCIExecution) async throws {
+        try await runBody(execution)
+    }
+}
+
+public enum ActionContainerExecutorFailure: Error, Sendable {
+    case unavailable
+}
+
+public struct OCIImagePreparationActionIdentity: ColliderActionIdentity {
+    public let preparation: OCIImagePreparation
+
+    public init(_ preparation: OCIImagePreparation) {
+        self.preparation = preparation
+    }
+
+    public func encode(into encoder: inout ActionIdentityEncoder) {
+        encoder.append(
+            tag: 1,
+            string: preparation.executionPlatform.environment.rawValue)
+        encoder.append(
+            tag: 2,
+            string: preparation.executionPlatform.operatingSystem.rawValue)
+        encoder.append(
+            tag: 3,
+            string: preparation.executionPlatform.architecture.rawValue)
+        encoder.append(tag: 4, string: preparation.context.string)
+        encoder.append(tag: 5, string: preparation.containerFile.string)
+        encoder.append(tag: 6, string: preparation.imageID.string)
+        encoder.append(tag: 7, string: preparation.imageName)
+    }
+}
+
+public struct OCIExecutionActionIdentity: ColliderActionIdentity {
+    public let execution: OCIExecution
+
+    public init(_ execution: OCIExecution) {
+        self.execution = execution
+    }
+
+    public func encode(into encoder: inout ActionIdentityEncoder) {
+        encoder.append(tag: 1, string: execution.executionPlatform.environment.rawValue)
+        encoder.append(tag: 2, string: execution.executionPlatform.operatingSystem.rawValue)
+        encoder.append(tag: 3, string: execution.executionPlatform.architecture.rawValue)
+        encoder.append(tag: 4, string: execution.artifactTarget.operatingSystem.rawValue)
+        encoder.append(tag: 5, string: execution.artifactTarget.architecture.rawValue)
+        encoder.append(tag: 6, string: execution.artifactTarget.abi ?? "")
+        encoder.append(
+            tag: 7,
+            integer: UInt64(execution.artifactTarget.androidAPILevel ?? 0))
+        encoder.append(tag: 8, string: execution.imageID.string)
+        encoder.append(tag: 9, string: execution.hostname)
+        encoder.append(tag: 10, string: execution.workingDirectory)
+        encoder.append(tag: 11, string: execution.hostWorkingDirectory.string)
+
+        var mounts = CanonicalDigestEncoder()
+        for mount in execution.mounts {
+            mounts.append(tag: 1, string: mount.source.string)
+            mounts.append(tag: 2, string: mount.target)
+            mounts.append(tag: 3, string: mount.access.rawValue)
+        }
+        encoder.append(tag: 12, bytes: mounts.bytes)
+        encoder.append(tag: 13, string: execution.temporaryDirectory?.string ?? "")
+        encoder.append(tag: 14, string: execution.networkPolicy.rawValue)
+        encoder.append(tag: 15, integer: UInt64(execution.userPolicy.userID))
+        encoder.append(tag: 16, integer: UInt64(execution.userPolicy.groupID))
+        encoder.append(tag: 17, string: execution.capabilityPolicy.rawValue)
+        encoder.append(tag: 18, string: execution.privilegePolicy.rawValue)
+        encoder.append(tag: 19, string: execution.processFilesystemPolicy.rawValue)
+        encoder.append(tag: 20, string: execution.intelBinaryTranslationPolicy.rawValue)
+        encoder.append(tag: 21, integer: UInt64(execution.resourceLimits.cpuCount ?? 0))
+        encoder.append(tag: 22, integer: execution.resourceLimits.memoryBytes ?? 0)
+        encoder.append(tag: 23, integer: UInt64(execution.resourceLimits.processCount))
+
+        var containerEnvironment = CanonicalDigestEncoder()
+        for (name, value) in execution.containerEnvironment.sorted(by: {
+            $0.key < $1.key
+        }) {
+            containerEnvironment.append(tag: 1, string: name)
+            containerEnvironment.append(tag: 2, string: value)
+        }
+        encoder.append(tag: 24, bytes: containerEnvironment.bytes)
+
+        var command = CanonicalDigestEncoder()
+        for argument in execution.command {
+            command.append(tag: 1, string: argument)
+        }
+        encoder.append(tag: 25, bytes: command.bytes)
+        encoder.append(tag: 26, string: ociActionOutputIdentity(execution.output))
+    }
+}
+
+public func ociActionRequirements(
+    execution: OCIExecution
+) -> ActionRequirements {
+    var effects = [
+        ActionEffect(.read, scope: .input(execution.imageID))
+    ]
+    for mount in execution.mounts {
+        let effect = ActionEffect(
+            mount.access == .readOnly ? .read : .readWrite,
+            scope: mount.access == .readOnly
+                ? .input(mount.source) : .scratch(mount.source))
+        if !effects.contains(effect) { effects.append(effect) }
+    }
+    if let temporaryDirectory = execution.temporaryDirectory {
+        let effect = ActionEffect(
+            .readWrite,
+            scope: .scratch(temporaryDirectory))
+        if !effects.contains(effect) { effects.append(effect) }
+    }
+    return ActionRequirements(
+        tools: [
+            ActionToolRequirement(
+                "container",
+                executable: .named("container"),
+                role: .semantic)
+        ],
+        effects: effects,
+        resources: ActionResourceRequest(
+            cpuCount: execution.resourceLimits.cpuCount,
+            memoryBytes: execution.resourceLimits.memoryBytes,
+            exclusive: false),
+        executionPlatform: execution.executionPlatform,
+        artifactTarget: execution.artifactTarget)
+}
+
+public func ociImagePreparationActionRequirements(
+    preparation: OCIImagePreparation
+) -> ActionRequirements {
+    ActionRequirements(
+        tools: [
+            ActionToolRequirement(
+                "container",
+                executable: .named("container"),
+                role: .semantic)
+        ],
+        effects: [
+            ActionEffect(.read, scope: .input(preparation.context)),
+            ActionEffect(.readWrite, scope: .output(preparation.imageID)),
+        ],
+        resources: .fullHostExclusive,
+        executionPlatform: preparation.executionPlatform)
+}
+
+private func ociActionOutputIdentity(_ output: CommandSpec.Output) -> String {
+    switch output {
+    case .inherited:
+        "inherited"
+    case .logged:
+        "logged"
+    case .terminal:
+        "terminal"
+    case .file(let path):
+        "file:\(path)"
+    case .captured(let limit):
+        "captured:\(limit)"
+    case .combined(let limit):
+        "combined:\(limit)"
+    }
+}
+
 public struct ActionEffect: Hashable, Sendable {
     public let access: ActionEffectAccess
     public let scope: ActionEffectScope
@@ -212,14 +454,49 @@ public struct ActionEffect: Hashable, Sendable {
 public struct ActionRequirements: Hashable, Sendable {
     public let tools: [ActionToolRequirement]
     public let effects: [ActionEffect]
+    public let resources: ActionResourceRequest
+    public let executionPlatform: ExecutionPlatform?
+    public let artifactTarget: ArtifactTarget?
 
     public init(
         tools: [ActionToolRequirement] = [],
-        effects: [ActionEffect] = []
+        effects: [ActionEffect] = [],
+        resources: ActionResourceRequest = .lightweight,
+        executionPlatform: ExecutionPlatform? = nil,
+        artifactTarget: ArtifactTarget? = nil
     ) {
         self.tools = tools
         self.effects = effects
+        self.resources = resources
+        self.executionPlatform = executionPlatform
+        self.artifactTarget = artifactTarget
     }
+}
+
+public struct ActionResourceRequest: Hashable, Sendable {
+    public let cpuCount: UInt32?
+    public let memoryBytes: UInt64?
+    public let exclusive: Bool
+
+    public init(
+        cpuCount: UInt32?,
+        memoryBytes: UInt64?,
+        exclusive: Bool
+    ) {
+        self.cpuCount = cpuCount
+        self.memoryBytes = memoryBytes
+        self.exclusive = exclusive
+    }
+
+    public static let lightweight = ActionResourceRequest(
+        cpuCount: 1,
+        memoryBytes: 512 * 1_024 * 1_024,
+        exclusive: false)
+
+    public static let fullHostExclusive = ActionResourceRequest(
+        cpuCount: nil,
+        memoryBytes: nil,
+        exclusive: true)
 }
 
 public enum ActionDeclarationFailure: Error, CustomStringConvertible, Sendable {
@@ -255,11 +532,13 @@ public protocol ColliderAction: Sendable {
     var environment: [String: String] { get }
 
     func execute(in context: ActionContext) async throws
+    func validateOutputs(using files: ActionFileSystem) throws
 }
 
 extension ColliderAction {
     public var requirements: ActionRequirements { ActionRequirements() }
     public var environment: [String: String] { [:] }
+    public func validateOutputs(using _: ActionFileSystem) throws {}
 }
 
 public struct AnyColliderAction: Hashable, Sendable {
@@ -270,6 +549,7 @@ public struct AnyColliderAction: Hashable, Sendable {
     public let environment: [String: String]
 
     private let body: @Sendable (ActionContext) async throws -> Void
+    private let validationBody: @Sendable (ActionFileSystem) throws -> Void
 
     public init<Action: ColliderAction>(_ action: Action) throws {
         try Self.validate(kind: Action.kind, requirements: action.requirements)
@@ -282,6 +562,9 @@ public struct AnyColliderAction: Hashable, Sendable {
         environment = action.environment
         body = { context in
             try await action.execute(in: context)
+        }
+        validationBody = { files in
+            try action.validateOutputs(using: files)
         }
     }
 
@@ -318,6 +601,10 @@ public struct AnyColliderAction: Hashable, Sendable {
         try await body(context)
     }
 
+    public func validateOutputs(using files: ActionFileSystem) throws {
+        try validationBody(files)
+    }
+
     public static func == (
         lhs: AnyColliderAction,
         rhs: AnyColliderAction
@@ -342,19 +629,22 @@ public struct ActionContext: Sendable {
     public let logger: ActionLogger
     public let commands: ActionCommandExecutor
     public let downloads: ActionDownloader
+    public let containers: ActionContainerExecutor
 
     public init(
         files: ActionFileSystem,
         cancellation: ActionCancellation,
         logger: ActionLogger,
         commands: ActionCommandExecutor,
-        downloads: ActionDownloader
+        downloads: ActionDownloader,
+        containers: ActionContainerExecutor = ActionContainerExecutor()
     ) {
         self.files = files
         self.cancellation = cancellation
         self.logger = logger
         self.commands = commands
         self.downloads = downloads
+        self.containers = containers
     }
 }
 

@@ -1,0 +1,64 @@
+import ColliderCore
+import ColliderRuntime
+import CoreColliderRecipe
+import Foundation
+import SystemPackage
+import Testing
+
+@Test func androidHostValidationChecksELFAndKotlinJNIContracts() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-android-host-validation-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let library = directory.appendingPathComponent("libnucleus-android.so")
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true)
+    try Data("fixture".utf8).write(to: library)
+
+    let kotlin = directory.appendingPathComponent(
+        "android/nucleus/src/main/kotlin/dev/nucleus/android/NucleusNative.kt")
+    try FileManager.default.createDirectory(
+        at: kotlin.deletingLastPathComponent(),
+        withIntermediateDirectories: true)
+    try Data(
+        "object NucleusNative { external fun frame() }\n".utf8
+    ).write(to: kotlin)
+
+    let readelf = directory.appendingPathComponent(
+        "ndk/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-readelf")
+    try FileManager.default.createDirectory(
+        at: readelf.deletingLastPathComponent(),
+        withIntermediateDirectories: true)
+    let thunks = (0..<20).map {
+        "1: 0 FUNC GLOBAL DEFAULT 1 "
+            + "Java_dev_nucleus_android_AndroidHost__thunk\($0)"
+    }.joined(separator: "\\n")
+    try Data(
+        """
+        #!/bin/sh
+        case "$1" in
+          -h) printf '  Machine: AArch64\\n' ;;
+          -d) printf 'NEEDED [libandroid.so]\\nNEEDED [libvulkan.so]\\nNEEDED [libSwiftJava.so]\\n' ;;
+          -Ws) printf '  FUNC GLOBAL DEFAULT JNI_OnLoad\\n  FUNC LOCAL PROTECTED 1 swift_retain\\n  FUNC GLOBAL DEFAULT Java_dev_nucleus_android_NucleusNative_frame\\n\(thunks)\\n' ;;
+        esac
+        """.utf8
+    ).write(to: readelf)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755],
+        ofItemAtPath: readelf.path)
+
+    let task = try CoreColliderRecipe.validateAndroidHost(
+        root: FilePath(directory.path),
+        library: FilePath(library.path),
+        ndk: FilePath(directory.appendingPathComponent("ndk").path),
+        environment: [
+            "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
+        ],
+        dependencies: [])
+    let report = try await ColliderRuntime().execute(
+        graph: TaskGraph([task]),
+        selected: [task.id],
+        stateRoot: FilePath(directory.appendingPathComponent("state").path))
+    #expect(report.executed == [task.id])
+}

@@ -122,6 +122,13 @@ let package = Package(
                 "NativeBuilderColliderRecipe",
             ]),
         .testTarget(
+            name: "ChromiumColliderRecipeTests",
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                .product(name: "ColliderRuntime", package: "engine"),
+                "ChromiumColliderRecipe",
+            ]),
+        .testTarget(
             name: "ColliderCommandsTests",
             dependencies: [
                 "ColliderCommands",
@@ -143,6 +150,13 @@ let package = Package(
                 "SwiftTargetSDKColliderRecipe",
                 "VulkanColliderRecipe",
                 "WaylandColliderRecipe",
+            ]),
+        .testTarget(
+            name: "CoreColliderRecipeTests",
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                .product(name: "ColliderRuntime", package: "engine"),
+                "CoreColliderRecipe",
             ]),
         .testTarget(
             name: "ColliderSwiftPMTests",

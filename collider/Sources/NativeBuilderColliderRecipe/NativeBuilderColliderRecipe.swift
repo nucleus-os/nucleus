@@ -49,16 +49,38 @@ public enum NativeBuilderColliderRecipe: ColliderComponent {
                     try AnyColliderAction(
                         PrepareNativeBuilderCacheAction(
                             cache: configuration.ccache))),
-                .prepareOCIImage(
-                    OCIImagePreparation(
-                        executionPlatform: .linuxARM64OCI,
-                        context: configuration.context,
-                        containerFile: configuration.context.appending(
-                            "Containerfile"),
-                        imageID: configuration.imageID,
-                        imageName: "localhost/nucleus-linux-build",
-                        environment: configuration.environment)),
+                .action(
+                    try AnyColliderAction(
+                        PrepareNativeBuilderImageAction(
+                            preparation: OCIImagePreparation(
+                                executionPlatform: .linuxARM64OCI,
+                                context: configuration.context,
+                                containerFile: configuration.context.appending(
+                                    "Containerfile"),
+                                imageID: configuration.imageID,
+                                imageName: "localhost/nucleus-linux-build",
+                                environment: configuration.environment)))),
             ]))
+    }
+}
+
+private struct PrepareNativeBuilderImageAction: ColliderAction {
+    static let kind: ActionKind = "native.prepare-builder-image"
+
+    let identity: OCIImagePreparationActionIdentity
+
+    init(preparation: OCIImagePreparation) {
+        identity = OCIImagePreparationActionIdentity(preparation)
+    }
+
+    var requirements: ActionRequirements {
+        ociImagePreparationActionRequirements(preparation: identity.preparation)
+    }
+
+    var environment: [String: String] { identity.preparation.environment }
+
+    func execute(in context: ActionContext) async throws {
+        try await context.containers.prepareImage(identity.preparation)
     }
 }
 

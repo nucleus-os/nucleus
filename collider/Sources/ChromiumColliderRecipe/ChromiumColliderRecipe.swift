@@ -183,12 +183,13 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             ],
             locks: [.shared(cache.appending("locks/depot-tools.lock"))],
             assessmentPolicy: .always,
-            operation: .prepareChromiumDepotTools(
-                ChromiumDepotToolsPreparation(
-                    repository: depotTools,
-                    remote: sourceLock.depotTools.remote,
-                    commit: sourceLock.depotTools.commit,
-                    environment: childEnvironment)))
+            operation: .action(
+                try AnyColliderAction(
+                    PrepareChromiumDepotToolsAction(
+                        repository: depotTools,
+                        remote: sourceLock.depotTools.remote,
+                        commit: sourceLock.depotTools.commit,
+                        environment: childEnvironment))))
         var bootstrapBuilder = TaskBuilder(
             id: TaskID(rawValue: "browser.depot-tools-bootstrap"),
             component: ComponentID(rawValue: "browser"))
@@ -240,14 +241,16 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 .tree(builderContext)
             ],
             locks: [.shared(cache.appending("locks/builder.lock"))],
-            operation: .prepareOCIImage(
-                OCIImagePreparation(
-                    executionPlatform: .linuxAMD64OCI,
-                    context: builderContext,
-                    containerFile: builderContext.appending("Containerfile"),
-                    imageID: builderImageID,
-                    imageName: "localhost/nucleus-chromium-build",
-                    environment: childEnvironment)))
+            operation: .action(
+                try AnyColliderAction(
+                    PrepareChromiumBuilderImageAction(
+                        preparation: OCIImagePreparation(
+                            executionPlatform: .linuxAMD64OCI,
+                            context: builderContext,
+                            containerFile: builderContext.appending("Containerfile"),
+                            imageID: builderImageID,
+                            imageName: "localhost/nucleus-chromium-build",
+                            environment: childEnvironment)))))
         let cefAssembly = CEFArtifactAssembly(
             chromiumSource: chromiumSource,
             buildOutput: cefOutput,
@@ -489,6 +492,177 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
             }
     }
+}
+
+private struct PrepareChromiumBuilderImageAction: ColliderAction {
+    static let kind: ActionKind = "browser.prepare-builder-image"
+
+    let identity: OCIImagePreparationActionIdentity
+
+    init(preparation: OCIImagePreparation) {
+        identity = OCIImagePreparationActionIdentity(preparation)
+    }
+
+    var requirements: ActionRequirements {
+        ociImagePreparationActionRequirements(preparation: identity.preparation)
+    }
+
+    var environment: [String: String] { identity.preparation.environment }
+
+    func execute(in context: ActionContext) async throws {
+        try await context.containers.prepareImage(identity.preparation)
+    }
+}
+
+package struct PrepareChromiumDepotToolsAction: ColliderAction {
+    package struct Identity: ColliderActionIdentity {
+        let repository: FilePath
+        let remote: String
+        let commit: String
+
+        package func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: repository.string)
+            encoder.append(tag: 2, string: remote)
+            encoder.append(tag: 3, string: commit)
+        }
+    }
+
+    package static let kind: ActionKind = "browser.prepare-depot-tools"
+
+    let repository: FilePath
+    let remote: String
+    let commit: String
+    package let environment: [String: String]
+
+    package init(
+        repository: FilePath,
+        remote: String,
+        commit: String,
+        environment: [String: String]
+    ) {
+        self.repository = repository
+        self.remote = remote
+        self.commit = commit
+        self.environment = environment
+    }
+
+    package var identity: Identity {
+        Identity(repository: repository, remote: remote, commit: commit)
+    }
+
+    package var requirements: ActionRequirements {
+        ActionRequirements(
+            tools: [
+                ActionToolRequirement(
+                    "git",
+                    executable: .named("git"),
+                    role: .operational)
+            ],
+            effects: [
+                ActionEffect(
+                    .readWrite,
+                    scope: .checkout(repository.removingLastComponent()))
+            ])
+    }
+
+    package func execute(in context: ActionContext) async throws {
+        let gitMetadata = repository.appending(".git")
+        if try context.files.metadata(for: gitMetadata) == nil {
+            guard try context.files.metadata(for: repository) == nil else {
+                throw ChromiumDepotToolsFailure.nonGitCheckout(repository)
+            }
+            try context.files.createDirectory(repository.removingLastComponent())
+            try await requireSuccess(
+                ["init", repository.string],
+                workingDirectory: repository.removingLastComponent(),
+                context: context)
+            try await requireSuccess(
+                ["-C", repository.string, "remote", "add", "origin", remote],
+                workingDirectory: repository,
+                context: context)
+        } else {
+            try await requireTrackedCheckoutIsClean(context)
+            try await requireSuccess(
+                ["-C", repository.string, "remote", "set-url", "origin", remote],
+                workingDirectory: repository,
+                context: context)
+        }
+
+        let object = try await git(
+            ["-C", repository.string, "cat-file", "-e", "\(commit)^{commit}"],
+            workingDirectory: repository,
+            context: context)
+        if object.status != 0 {
+            try await requireSuccess(
+                ["-C", repository.string, "fetch", "--no-tags", "--depth=1", "origin", commit],
+                workingDirectory: repository,
+                context: context)
+        }
+        try await requireSuccess(
+            ["-C", repository.string, "checkout", "--detach", "--force", commit],
+            workingDirectory: repository,
+            context: context)
+        let resolved = try await git(
+            ["-C", repository.string, "rev-parse", "HEAD^{commit}"],
+            workingDirectory: repository,
+            context: context)
+        guard resolved.status == 0,
+            resolved.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+                == commit
+        else {
+            throw ChromiumDepotToolsFailure.wrongCommit(
+                expected: commit,
+                actual: resolved.standardOutput)
+        }
+        try await requireTrackedCheckoutIsClean(context)
+    }
+
+    private func requireTrackedCheckoutIsClean(
+        _ context: ActionContext
+    ) async throws {
+        let status = try await git(
+            ["-C", repository.string, "status", "--porcelain", "--untracked-files=no"],
+            workingDirectory: repository,
+            context: context)
+        guard status.status == 0, status.standardOutput.isEmpty else {
+            throw ChromiumDepotToolsFailure.trackedModifications(repository)
+        }
+    }
+
+    private func requireSuccess(
+        _ arguments: [String],
+        workingDirectory: FilePath,
+        context: ActionContext
+    ) async throws {
+        let result = try await git(
+            arguments,
+            workingDirectory: workingDirectory,
+            context: context)
+        guard result.status == 0 else {
+            throw ChromiumDepotToolsFailure.gitFailed(arguments, result.status)
+        }
+    }
+
+    private func git(
+        _ arguments: [String],
+        workingDirectory: FilePath,
+        context: ActionContext
+    ) async throws -> CommandResult {
+        try await context.commands.execute(
+            CommandSpec(
+                executable: .named("git"),
+                arguments: arguments,
+                workingDirectory: workingDirectory,
+                environment: environment,
+                output: .captured(limit: 4 * 1_024 * 1_024)))
+    }
+}
+
+private enum ChromiumDepotToolsFailure: Error {
+    case gitFailed([String], Int32)
+    case nonGitCheckout(FilePath)
+    case trackedModifications(FilePath)
+    case wrongCommit(expected: String, actual: String)
 }
 
 private struct PruneChromiumCacheAction: ColliderAction {

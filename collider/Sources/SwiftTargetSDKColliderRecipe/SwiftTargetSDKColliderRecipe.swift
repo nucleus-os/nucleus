@@ -276,7 +276,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         }
 
         let downloads = try downloadTasks(configuration)
-        let runtimeBuilder = runtimeBuilderTask(configuration)
+        let runtimeBuilder = try runtimeBuilderTask(configuration)
         let sysroots = try configuration.linuxTargets.map { target in
             try linuxSysrootTask(
                 configuration,
@@ -482,13 +482,17 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             validation: .regularFile)
         let task = builder.build(
             locks: [.checkout("swift-target-sdk-downloads")],
-            operation: .download(specification, candidate: destination))
+            operation: .action(
+                try AnyColliderAction(
+                    DownloadSwiftTargetSDKInputAction(
+                        specification: specification,
+                        destination: destination))))
         return DownloadArtifact(task: task, artifact: artifact)
     }
 
     private static func runtimeBuilderTask(
         _ configuration: SwiftTargetSDKGenerationConfiguration
-    ) -> TaskDeclaration {
+    ) throws -> TaskDeclaration {
         return TaskDeclaration(
             id: TaskID(rawValue: "swift-sdk.prepare-linux-runtime-builder"),
             component: component,
@@ -500,15 +504,17 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             ],
             locks: [.checkout("swift-linux-runtime-builder-image")],
             assessmentPolicy: .incremental,
-            operation: .prepareOCIImage(
-                OCIImagePreparation(
-                    executionPlatform: .linuxARM64OCI,
-                    context: configuration.runtimeBuilderContext,
-                    containerFile: configuration.runtimeBuilderContext.appending(
-                        "Containerfile"),
-                    imageID: configuration.runtimeBuilderImageID,
-                    imageName: "localhost/nucleus-swift-runtime-build",
-                    environment: configuration.environment)))
+            operation: .action(
+                try AnyColliderAction(
+                    PrepareSwiftRuntimeBuilderImageAction(
+                        preparation: OCIImagePreparation(
+                            executionPlatform: .linuxARM64OCI,
+                            context: configuration.runtimeBuilderContext,
+                            containerFile: configuration.runtimeBuilderContext.appending(
+                                "Containerfile"),
+                            imageID: configuration.runtimeBuilderImageID,
+                            imageName: "localhost/nucleus-swift-runtime-build",
+                            environment: configuration.environment)))))
     }
 
     private static func linuxSysrootTask(
@@ -929,10 +935,13 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                     validation: .symlinkTarget)
             ],
             assessmentPolicy: .always,
-            operation: .activateGeneration(
-                candidate: configuration.candidate,
-                generation: configuration.generation,
-                active: configuration.active))
+            recordsActiveArtifact: true,
+            operation: .action(
+                try AnyColliderAction(
+                    ActivateSwiftSDKGenerationAction(
+                        candidate: configuration.candidate,
+                        generation: configuration.generation,
+                        active: configuration.active))))
         return ActivationArtifact(task: task, generationMarker: marker)
     }
 
@@ -970,6 +979,98 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 "download URL has no file name: \(value)")
         }
         return url.lastPathComponent
+    }
+}
+
+private struct PrepareSwiftRuntimeBuilderImageAction: ColliderAction {
+    static let kind: ActionKind = "swift-sdk.prepare-runtime-builder-image"
+
+    let identity: OCIImagePreparationActionIdentity
+
+    init(preparation: OCIImagePreparation) {
+        identity = OCIImagePreparationActionIdentity(preparation)
+    }
+
+    var requirements: ActionRequirements {
+        ociImagePreparationActionRequirements(preparation: identity.preparation)
+    }
+
+    var environment: [String: String] { identity.preparation.environment }
+
+    func execute(in context: ActionContext) async throws {
+        try await context.containers.prepareImage(identity.preparation)
+    }
+}
+
+private struct DownloadSwiftTargetSDKInputAction: ColliderAction {
+    static let kind: ActionKind = "swift-sdk.download-input"
+
+    let identity: DownloadActionIdentity
+
+    init(specification: DownloadSpec, destination: FilePath) {
+        identity = DownloadActionIdentity(
+            specification: specification,
+            destination: destination)
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(effects: [
+            ActionEffect(.readWrite, scope: .output(identity.destination))
+        ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        try await context.downloads.download(
+            identity.specification,
+            to: identity.destination)
+    }
+
+    func validateOutputs(using files: ActionFileSystem) throws {
+        try identity.validateOutput(using: files)
+    }
+}
+
+private struct ActivateSwiftSDKGenerationAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let candidate: FilePath
+        let generation: FilePath
+        let active: FilePath
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: candidate.string)
+            encoder.append(tag: 2, string: generation.string)
+            encoder.append(tag: 3, string: active.string)
+        }
+    }
+
+    static let kind: ActionKind = "swift-sdk.activate-generation"
+
+    let candidate: FilePath
+    let generation: FilePath
+    let active: FilePath
+
+    var identity: Identity {
+        Identity(candidate: candidate, generation: generation, active: active)
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(effects: [
+            ActionEffect(.readWrite, scope: .output(candidate)),
+            ActionEffect(.write, scope: .output(generation)),
+            ActionEffect(.write, scope: .publication(active)),
+        ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        let marker = candidate.appending(".nucleus-target-sdk-generation")
+        guard try context.files.metadata(for: marker)?.type == .regular else {
+            throw SwiftTargetSDKRecipeFailure.invalidInput(
+                "target SDK candidate has no generation marker at \(marker)")
+        }
+        try context.files.publishGeneration(
+            candidate: candidate,
+            generation: generation,
+            active: active)
     }
 }
 

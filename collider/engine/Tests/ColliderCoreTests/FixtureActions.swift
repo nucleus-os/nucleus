@@ -177,3 +177,93 @@ func fixturePruneDirectoriesOperation(
 ) throws -> TaskOperation {
     .action(try AnyColliderAction(FixturePruneDirectoriesAction(plan: plan)))
 }
+
+struct FixtureActivateGenerationAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let candidate: FilePath
+        let generation: FilePath
+        let active: FilePath
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: candidate.string)
+            encoder.append(tag: 2, string: generation.string)
+            encoder.append(tag: 3, string: active.string)
+        }
+    }
+
+    static let kind = ActionKind(rawValue: "fixture.activate-generation")
+
+    let candidate: FilePath
+    let generation: FilePath
+    let active: FilePath
+
+    var identity: Identity {
+        Identity(candidate: candidate, generation: generation, active: active)
+    }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(effects: [
+            ActionEffect(.readWrite, scope: .output(candidate)),
+            ActionEffect(.write, scope: .output(generation)),
+            ActionEffect(.write, scope: .publication(active)),
+        ])
+    }
+
+    func execute(in context: ActionContext) async throws {
+        guard
+            try context.files.metadata(for: candidate)?.type == .directory,
+            !(try context.files.listRecursively(candidate)).isEmpty
+        else {
+            throw FixtureActionFailure.invalidGenerationCandidate(candidate)
+        }
+        try context.files.publishGeneration(
+            candidate: candidate,
+            generation: generation,
+            active: active)
+    }
+}
+
+func fixtureActivateGenerationOperation(
+    candidate: FilePath,
+    generation: FilePath,
+    active: FilePath
+) throws -> TaskOperation {
+    .action(
+        try AnyColliderAction(
+            FixtureActivateGenerationAction(
+                candidate: candidate,
+                generation: generation,
+                active: active)))
+}
+
+enum FixtureActionFailure: Error {
+    case invalidGenerationCandidate(FilePath)
+}
+
+struct FixturePrepareOCIImageAction: ColliderAction {
+    static let kind = ActionKind(rawValue: "fixture.prepare-oci-image")
+
+    let identity: OCIImagePreparationActionIdentity
+
+    init(preparation: OCIImagePreparation) {
+        identity = OCIImagePreparationActionIdentity(preparation)
+    }
+
+    var requirements: ActionRequirements {
+        ociImagePreparationActionRequirements(preparation: identity.preparation)
+    }
+
+    var environment: [String: String] { identity.preparation.environment }
+
+    func execute(in context: ActionContext) async throws {
+        try await context.containers.prepareImage(identity.preparation)
+    }
+}
+
+func fixturePrepareOCIImageOperation(
+    _ preparation: OCIImagePreparation
+) throws -> TaskOperation {
+    .action(
+        try AnyColliderAction(
+            FixturePrepareOCIImageAction(preparation: preparation)))
+}

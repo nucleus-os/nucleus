@@ -1,11 +1,11 @@
+import ChromiumColliderRecipe
 import ColliderCore
+import ColliderRuntime
 import Foundation
 import SystemPackage
 import Testing
 
-@testable import ColliderRuntime
-
-@Test func chromiumDepotToolsMaterializesItsDeclaredCommit() async throws {
+@Test func depotToolsMaterializesItsDeclaredCommitAndRejectsTrackedChanges() async throws {
     let fixture = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-managed-source-\(UUID().uuidString)")
     let remote = fixture.appendingPathComponent("remote")
@@ -31,34 +31,43 @@ import Testing
         "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
     ]
     let depotTask = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.depot-tools"),
-        component: ComponentID(rawValue: "fixture"),
+        id: TaskID(rawValue: "browser.depot-tools-fixture"),
+        component: ComponentID(rawValue: "browser"),
         inputs: [.value(name: "commit", bytes: Array(first.utf8))],
         outputs: [
             OutputDeclaration(
-                path: FilePath(
-                    depotCheckout.appendingPathComponent("marker.txt").path),
+                path: FilePath(depotCheckout.appendingPathComponent("marker.txt").path),
                 validation: .regularFile)
         ],
-        operation: .prepareChromiumDepotTools(
-            ChromiumDepotToolsPreparation(
-                repository: FilePath(depotCheckout.path),
-                remote: remote.path,
-                commit: first,
-                environment: environment)))
+        assessmentPolicy: .always,
+        operation: .action(
+            try AnyColliderAction(
+                PrepareChromiumDepotToolsAction(
+                    repository: FilePath(depotCheckout.path),
+                    remote: remote.path,
+                    commit: first,
+                    environment: environment))))
 
     let runtime = ColliderRuntime()
     _ = try await runtime.execute(
         graph: TaskGraph([depotTask]),
         selected: [depotTask.id],
-        stateRoot: FilePath(
-            fixture.appendingPathComponent("state").path),
+        stateRoot: FilePath(fixture.appendingPathComponent("state").path),
         options: TaskExecutionOptions(quiet: true))
-
     #expect(
         try String(
             contentsOf: depotCheckout.appendingPathComponent("marker.txt"),
             encoding: .utf8) == "first\n")
+
+    try Data("modified\n".utf8).write(
+        to: depotCheckout.appendingPathComponent("marker.txt"))
+    await #expect(throws: (any Error).self) {
+        try await runtime.execute(
+            graph: TaskGraph([depotTask]),
+            selected: [depotTask.id],
+            stateRoot: FilePath(fixture.appendingPathComponent("state").path),
+            options: TaskExecutionOptions(quiet: true))
+    }
 }
 
 private func fixtureCommit(_ message: String, in repository: URL) async throws {
@@ -67,7 +76,8 @@ private func fixtureCommit(_ message: String, in repository: URL) async throws {
             "-c", "user.name=Collider Tests",
             "-c", "user.email=collider@example.invalid",
             "commit", "--quiet", "-m", message,
-        ], in: repository)
+        ],
+        in: repository)
 }
 
 @discardableResult
@@ -88,6 +98,5 @@ private func fixtureGit(
     guard result.status == 0 else {
         throw RuntimeFailure.commandFailed(status: result.status)
     }
-    return result.standardOutput
-        .trimmingCharacters(in: .whitespacesAndNewlines)
+    return result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
 }

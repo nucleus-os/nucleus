@@ -79,7 +79,15 @@ public actor ColliderRuntime {
             },
             downloads: ActionDownloader { specification, path in
                 try await self.downloads.download(specification, to: path)
-            })
+            },
+            containers: ActionContainerExecutor(
+                prepareImage: { preparation in
+                    try await self.prepareOCIImage(preparation, stage: stage)
+                },
+                run: { execution in
+                    try await self.runOCI(execution, stage: stage)
+                })
+        )
         try await action.execute(in: context)
     }
 
@@ -141,7 +149,7 @@ public actor ColliderRuntime {
         }
     }
 
-    private nonisolated func actionFileSystem() -> ActionFileSystem {
+    nonisolated func actionFileSystem() -> ActionFileSystem {
         let inspect:
             @Sendable (
                 FilePath, Bool

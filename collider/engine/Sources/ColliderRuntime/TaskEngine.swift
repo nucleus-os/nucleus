@@ -163,7 +163,7 @@ private func scheduledResources(
                 memoryBytes: max(accumulated.memoryBytes, next.memoryBytes),
                 exclusive: accumulated.exclusive || next.exclusive)
         }
-    case .prepareOCIImage, .buildChromiumProduct:
+    case .buildChromiumProduct:
         return ScheduledTaskResources(
             cpuCount: budget.cpuCount,
             memoryBytes: budget.memoryBytes,
@@ -178,13 +178,16 @@ private func scheduledResources(
         case .sign, .assembleImages, .validate, .publish:
             return .lightweight
         }
-    case .action, .command,
-        .validateAndroidHost,
+    case .action(let action):
+        return ScheduledTaskResources(
+            cpuCount: action.requirements.resources.cpuCount ?? budget.cpuCount,
+            memoryBytes: action.requirements.resources.memoryBytes ?? budget.memoryBytes,
+            exclusive: action.requirements.resources.exclusive)
+    case .command,
         .verifyAOSPSourceLock, .prepareAOSPSource,
-        .prepareAOSPSigningIdentity, .prepareChromiumDepotTools,
-        .prepareChromiumSource, .assembleBrowserArtifact,
+        .prepareAOSPSigningIdentity, .prepareChromiumSource, .assembleBrowserArtifact,
         .validateBrowserArtifact, .assembleCEFArtifact, .validateCEFArtifact,
-        .installBrowser, .download, .activateGeneration:
+        .installBrowser:
         return .lightweight
     }
 }
@@ -208,14 +211,14 @@ private func containsOCIExecution(_ operation: TaskOperation) -> Bool {
         true
     case .sequence(let operations):
         operations.contains(where: containsOCIExecution)
-    case .action, .command,
-        .validateAndroidHost,
+    case .action(let action):
+        action.requirements.executionPlatform?.environment == .oci
+    case .command,
         .verifyAOSPSourceLock, .prepareAOSPSource,
-        .prepareOCIImage, .prepareAOSPSigningIdentity, .aospProduct,
-        .prepareChromiumDepotTools, .prepareChromiumSource,
-        .buildChromiumProduct, .assembleBrowserArtifact,
+        .prepareAOSPSigningIdentity, .aospProduct,
+        .prepareChromiumSource, .buildChromiumProduct, .assembleBrowserArtifact,
         .validateBrowserArtifact, .assembleCEFArtifact, .validateCEFArtifact,
-        .installBrowser, .download, .activateGeneration:
+        .installBrowser:
         false
     }
 }
@@ -695,9 +698,7 @@ extension ColliderRuntime {
                     elapsedNanoseconds(since: taskStart),
                     task: task.id,
                     in: eventRun)
-                if recordsActiveArtifact,
-                    case .activateGeneration = task.operation
-                {
+                if recordsActiveArtifact, task.recordsActiveArtifact {
                     try await eventRegistry.recordActiveArtifact(
                         plan.identity,
                         name: task.component.rawValue,
@@ -1272,17 +1273,6 @@ extension ColliderRuntime {
                 encoder.append(tag: 53, bytes: bytes)
             }
             encoder.append(tag: 25, integer: command.timeoutNanoseconds ?? 0)
-        case .validateAndroidHost(let validation):
-            encoder.append(tag: 138, string: validation.library.string)
-            encoder.append(tag: 139, string: validation.kotlinContract.string)
-            encoder.append(tag: 140, string: validation.ndk.string)
-            encoder.append(
-                tag: 141,
-                integer: UInt64(validation.minimumSwiftJavaThunkCount))
-            for (name, value) in artifactEnvironment(validation.environment) {
-                encoder.append(tag: 142, string: name)
-                encoder.append(tag: 143, string: value)
-            }
         case .verifyAOSPSourceLock(let verification):
             encode(
                 aospSource: verification.specification,
@@ -1326,27 +1316,6 @@ extension ColliderRuntime {
                 encoder.append(tag: 189, string: name)
                 encoder.append(tag: 190, string: value)
             }
-        case .prepareOCIImage(let preparation):
-            let executor = try OCIExecutorResolver.resolve(
-                executionPlatform: preparation.executionPlatform)
-            for path in [
-                preparation.context,
-                preparation.containerFile,
-                preparation.imageID,
-            ] {
-                encoder.append(tag: 239, string: path.string)
-            }
-            encoder.append(tag: 240, string: preparation.imageName)
-            encode(
-                runner: .current,
-                execution: preparation.executionPlatform,
-                backend: executor.backend,
-                into: &encoder)
-            let tool = try resolvedToolIdentity(
-                executor.executable,
-                environment: preparation.environment)
-            encoder.append(tag: 241, string: tool.path.string)
-            encoder.append(tag: 242, bytes: tool.digest.bytes)
         case .runOCI(let execution):
             let executor = try OCIExecutorResolver.resolve(
                 executionPlatform: execution.executionPlatform)
@@ -1486,19 +1455,6 @@ extension ColliderRuntime {
             case .validate, .publish:
                 break
             }
-        case .prepareChromiumDepotTools(let preparation):
-            let tool = try resolvedToolIdentity(
-                .named("git"),
-                environment: preparation.environment)
-            encoder.append(tag: 211, string: preparation.repository.string)
-            encoder.append(tag: 212, string: preparation.remote)
-            encoder.append(tag: 213, string: preparation.commit)
-            encoder.append(tag: 214, string: tool.path.string)
-            encoder.append(tag: 215, bytes: tool.digest.bytes)
-            for (name, value) in artifactEnvironment(preparation.environment) {
-                encoder.append(tag: 216, string: name)
-                encoder.append(tag: 217, string: value)
-            }
         case .prepareChromiumSource(let preparation):
             for path in [
                 preparation.sourceRoot,
@@ -1608,26 +1564,6 @@ extension ColliderRuntime {
             {
                 encoder.append(tag: 177, string: name)
                 encoder.append(tag: 178, string: value)
-            }
-        case .download(let specification, let candidate):
-            encoder.append(tag: 27, string: specification.url.absoluteString)
-            encoder.append(tag: 28, bytes: specification.expectedDigest.bytes)
-            encoder.append(tag: 29, string: candidate.string)
-            for origin in specification.permittedRedirectOrigins.sorted() {
-                encoder.append(tag: 31, string: origin)
-            }
-            encoder.append(tag: 32, integer: UInt64(specification.maximumResponseSize))
-            for mediaType in specification.acceptedMediaTypes.sorted() {
-                encoder.append(tag: 33, string: mediaType.lowercased())
-            }
-            encoder.append(tag: 34, integer: specification.requestTimeoutSeconds)
-            encoder.append(tag: 35, integer: specification.inactivityTimeoutSeconds)
-            encoder.append(tag: 36, integer: UInt64(specification.maximumRedirects))
-            encoder.append(tag: 37, integer: UInt64(specification.maximumRetries))
-            encoder.append(tag: 38, string: specification.resumption.rawValue)
-        case .activateGeneration(let candidate, let generation, let active):
-            for path in [candidate, generation, active] {
-                encoder.append(tag: 30, string: path.string)
             }
         case .sequence(let operations):
             encoder.append(tag: 46, integer: UInt64(operations.count))
@@ -1779,8 +1715,6 @@ extension ColliderRuntime {
             guard result.status == 0 else {
                 throw RuntimeFailure.commandFailed(status: result.status)
             }
-        case .validateAndroidHost(let validation):
-            try await validateAndroidHost(validation, stage: stage)
         case .verifyAOSPSourceLock(let verification):
             try await verifyAOSPSourceLock(
                 verification,
@@ -1789,8 +1723,6 @@ extension ColliderRuntime {
             try await prepareAOSPSource(
                 preparation,
                 stage: stage)
-        case .prepareOCIImage(let preparation):
-            try await prepareOCIImage(preparation, stage: stage)
         case .runOCI(let execution):
             try await runOCI(execution, stage: stage)
         case .prepareAOSPSigningIdentity(let preparation):
@@ -1810,8 +1742,6 @@ extension ColliderRuntime {
             case .publish:
                 try await publishAOSPProduct(build, stage: stage)
             }
-        case .prepareChromiumDepotTools(let preparation):
-            try await prepareChromiumDepotTools(preparation, stage: stage)
         case .prepareChromiumSource(let preparation):
             try await prepareChromiumSource(preparation, stage: stage)
         case .buildChromiumProduct(let build):
@@ -1826,31 +1756,6 @@ extension ColliderRuntime {
             try await validateCEFArtifact(assembly, stage: stage)
         case .installBrowser(let installation):
             try await installBrowser(installation, stage: stage)
-        case .download(let specification, let candidate):
-            try await downloads.download(specification, to: candidate)
-        case .activateGeneration(let candidate, let generation, let active):
-            let candidateOutputs = outputs.compactMap { output -> OutputDeclaration? in
-                let generationPrefix =
-                    generation.string.hasSuffix("/")
-                    ? generation.string : generation.string + "/"
-                if output.path == generation {
-                    return OutputDeclaration(path: candidate, validation: output.validation)
-                }
-                guard output.path.string.hasPrefix(generationPrefix) else { return nil }
-                let suffix = String(output.path.string.dropFirst(generationPrefix.count))
-                return OutputDeclaration(
-                    path: candidate.appending(suffix),
-                    validation: output.validation)
-            }
-            guard !candidateOutputs.isEmpty else {
-                throw RuntimeFailure.invalidOutput(
-                    "generation task declares no candidate validation under \(generation)")
-            }
-            try validate(candidateOutputs)
-            try GenerationPublisher.publish(
-                candidate: candidate,
-                generation: generation,
-                active: active)
         case .sequence(let operations):
             for operation in operations {
                 try await perform(
@@ -1911,30 +1816,25 @@ extension ColliderRuntime {
         try validate(task.outputs)
         try validate(task.postconditions)
         try validate(task.swiftProducts.flatMap(\.expectedOutputs))
-        try validateArtifactOutputs(task.operation)
+        try validateActionOutputs(task.operation)
     }
 
-    private func validateArtifactOutputs(_ operation: TaskOperation) throws {
+    private func validateActionOutputs(_ operation: TaskOperation) throws {
         switch operation {
-        case .download(let specification, let candidate):
-            let actual = try ArtifactHasher.digest(file: candidate)
-            guard actual == specification.expectedDigest else {
-                throw RuntimeFailure.invalidOutput(
-                    "download digest mismatch for \(candidate): expected "
-                        + "\(specification.expectedDigest), got \(actual)")
-            }
+        case .action(let action):
+            try action.validateOutputs(
+                using: actionFileSystem().scoped(to: action.requirements.effects))
         case .sequence(let operations):
             for operation in operations {
-                try validateArtifactOutputs(operation)
+                try validateActionOutputs(operation)
             }
-        case .action, .command,
-            .validateAndroidHost,
+        case .command,
             .verifyAOSPSourceLock, .prepareAOSPSource,
-            .prepareOCIImage, .runOCI, .prepareAOSPSigningIdentity,
-            .aospProduct, .prepareChromiumDepotTools, .prepareChromiumSource,
+            .runOCI, .prepareAOSPSigningIdentity,
+            .aospProduct, .prepareChromiumSource,
             .buildChromiumProduct, .assembleBrowserArtifact,
             .validateBrowserArtifact, .assembleCEFArtifact, .validateCEFArtifact,
-            .installBrowser, .activateGeneration:
+            .installBrowser:
             break
         }
     }
@@ -2171,13 +2071,9 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
         action.environment
     case .command(let command):
         command.environment
-    case .validateAndroidHost(let validation):
-        validation.environment
     case .verifyAOSPSourceLock(let verification):
         verification.environment
     case .prepareAOSPSource(let preparation):
-        preparation.environment
-    case .prepareOCIImage(let preparation):
         preparation.environment
     case .runOCI(let execution):
         execution.environment
@@ -2185,8 +2081,6 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
         preparation.environment
     case .aospProduct(_, let build):
         build.environment
-    case .prepareChromiumDepotTools(let preparation):
-        preparation.environment
     case .prepareChromiumSource(let preparation):
         preparation.environment
     case .buildChromiumProduct(let build):
@@ -2201,8 +2095,6 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
         installation.environment
     case .sequence(let operations):
         operations.lazy.map(operationEnvironment).first(where: { !$0.isEmpty }) ?? [:]
-    case .download, .activateGeneration:
-        [:]
     }
 }
 
@@ -2211,15 +2103,18 @@ private func executionCoordinates(
 ) throws -> TaskExecutionCoordinates? {
     let runner = RunnerPlatform.current
     switch operation {
-    case .prepareOCIImage(let preparation):
+    case .action(let action):
+        guard let executionPlatform = action.requirements.executionPlatform else {
+            return nil
+        }
         let executor = try OCIExecutorResolver.resolve(
             runner: runner,
-            executionPlatform: preparation.executionPlatform)
+            executionPlatform: executionPlatform)
         return TaskExecutionCoordinates(
             runner: runner,
-            execution: preparation.executionPlatform,
+            execution: executionPlatform,
             backend: executor.backend,
-            artifact: nil)
+            artifact: action.requirements.artifactTarget)
     case .runOCI(let execution):
         let executor = try OCIExecutorResolver.resolve(
             runner: runner,
@@ -2254,14 +2149,11 @@ private func executionCoordinates(
                 "one task sequence cannot cross execution coordinates")
         }
         return first
-    case .action, .command,
-        .validateAndroidHost,
+    case .command,
         .verifyAOSPSourceLock, .prepareAOSPSource,
-        .prepareAOSPSigningIdentity, .prepareChromiumDepotTools,
-        .prepareChromiumSource, .buildChromiumProduct,
+        .prepareAOSPSigningIdentity, .prepareChromiumSource, .buildChromiumProduct,
         .assembleBrowserArtifact, .validateBrowserArtifact,
-        .assembleCEFArtifact, .validateCEFArtifact, .installBrowser,
-        .download, .activateGeneration:
+        .assembleCEFArtifact, .validateCEFArtifact, .installBrowser:
         return nil
     }
 }
