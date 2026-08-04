@@ -225,6 +225,7 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
 public struct SwiftTargetSDKTaskSet: Sendable {
     public let tasks: [TaskDeclaration]
     public let selected: [TaskID]
+    public let activeSDK: ArtifactReference<PathArtifact>
 }
 
 public enum SwiftTargetSDKRecipeFailure: Error, CustomStringConvertible, Sendable {
@@ -238,6 +239,11 @@ public enum SwiftTargetSDKRecipeFailure: Error, CustomStringConvertible, Sendabl
 }
 
 public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
+    package struct PreparedComponent: Sendable {
+        package let component: ComponentDefinition
+        package let activeSDK: ArtifactReference<PathArtifact>
+    }
+
     public static let descriptor = ComponentDescriptor(
         id: ComponentID(rawValue: "swift-sdk"),
         canonicalName: "swift-sdk",
@@ -247,10 +253,16 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
     public static func makeComponent(
         in context: RecipeContext
     ) throws -> ComponentDefinition {
+        try prepare(in: context).component
+    }
+
+    package static func prepare(
+        in context: RecipeContext
+    ) throws -> PreparedComponent {
         let configuration: SwiftTargetSDKGenerationConfiguration =
             try context.configuration(for: descriptor.id)
         let taskSet = try generation(configuration)
-        return try ComponentDefinition(
+        let component = try ComponentDefinition(
             descriptor: descriptor,
             tasks: taskSet.tasks,
             entrypoints: [
@@ -258,6 +270,9 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                     id: .build,
                     roots: Set(taskSet.selected))
             ])
+        return PreparedComponent(
+            component: component,
+            activeSDK: taskSet.activeSDK)
     }
 
     public static func generation(
@@ -304,14 +319,15 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
 
         let tasks =
             downloads.tasks
-            + [runtimeBuilder] + sysroots.map(\.task) + runtimes.map(\.task)
+            + [runtimeBuilder.task] + sysroots.map(\.task) + runtimes.map(\.task)
             + [generator.task, assembly.task, validation.task, activation.task]
-            + discoveries
+            + discoveries.map(\.task)
         return SwiftTargetSDKTaskSet(
             tasks: tasks.map {
                 $0.addingLocks([.shared(configuration.rebuildLock)])
             },
-            selected: discoveries.map(\.id))
+            selected: discoveries.map(\.task.id),
+            activeSDK: activation.activeSDK)
     }
 
     private struct Downloads {
@@ -343,6 +359,11 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         let install: ArtifactReference<DirectoryArtifact>
     }
 
+    private struct RuntimeBuilderArtifact {
+        let task: TaskDeclaration
+        let image: ArtifactReference<FileArtifact>
+    }
+
     private struct GeneratorArtifact {
         let task: TaskDeclaration
         let executable: ArtifactReference<ExecutableArtifact>
@@ -363,6 +384,12 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
     private struct ActivationArtifact {
         let task: TaskDeclaration
         let generationMarker: ArtifactReference<FileArtifact>
+        let activeSDK: ArtifactReference<PathArtifact>
+    }
+
+    private struct DiscoveryArtifact {
+        let task: TaskDeclaration
+        let link: ArtifactReference<PathArtifact>
     }
 
     private struct LinuxDownloads {
@@ -492,16 +519,16 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
 
     private static func runtimeBuilderTask(
         _ configuration: SwiftTargetSDKGenerationConfiguration
-    ) throws -> TaskDeclaration {
-        return TaskDeclaration(
+    ) throws -> RuntimeBuilderArtifact {
+        var builder = TaskBuilder(
             id: TaskID(rawValue: "swift-sdk.prepare-linux-runtime-builder"),
-            component: component,
+            component: component)
+        let image: ArtifactReference<FileArtifact> = try builder.output(
+            "image-id",
+            path: configuration.runtimeBuilderImageID,
+            validation: .regularFile)
+        let task = builder.build(
             inputs: [.tree(configuration.runtimeBuilderContext)],
-            outputs: [
-                OutputDeclaration(
-                    path: configuration.runtimeBuilderImageID,
-                    validation: .regularFile)
-            ],
             locks: [.checkout("swift-linux-runtime-builder-image")],
             assessmentPolicy: .incremental,
             operation: .action(
@@ -515,6 +542,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                             imageID: configuration.runtimeBuilderImageID,
                             imageName: "localhost/nucleus-swift-runtime-build",
                             environment: configuration.environment)))))
+        return RuntimeBuilderArtifact(task: task, image: image)
     }
 
     private static func linuxSysrootTask(
@@ -552,7 +580,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
     private static func linuxRuntimeTask(
         _ configuration: SwiftTargetSDKGenerationConfiguration,
         target: SwiftLinuxTargetBuildConfiguration,
-        builder: TaskDeclaration,
+        builder: RuntimeBuilderArtifact,
         sysroot: ArtifactReference<DirectoryArtifact>
     ) throws -> RuntimeArtifact {
         let architecture = target.target.architecture
@@ -605,6 +633,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 rawValue: "swift-sdk.build-linux-\(architecture.rawValue)-runtime"),
             component: component)
         taskBuilder.consume(sysroot)
+        taskBuilder.consume(builder.image)
         let install: ArtifactReference<DirectoryArtifact> = try taskBuilder.output(
             "runtime-install",
             path: target.runtimeInstall,
@@ -623,7 +652,6 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             validation: .regularFile)
         let task = taskBuilder.build(
             inputs: [
-                .dependencyOutput(configuration.runtimeBuilderImageID),
                 .file(
                     configuration.inputsFile.removingLastComponent().appending(
                         "nucleus-target-runtime-presets.ini")),
@@ -644,7 +672,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                             execution: OCIExecution(
                                 executionPlatform: .linuxARM64OCI,
                                 artifactTarget: architecture.artifactTarget,
-                                imageID: configuration.runtimeBuilderImageID,
+                                imageID: builder.image.path,
                                 hostname: "swift-linux-\(architecture.rawValue)-runtime",
                                 workingDirectory: "/src",
                                 hostWorkingDirectory: configuration.sourceWorkspace,
@@ -661,7 +689,6 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                                 output: .logged)))),
             ])
         )
-        .addingDependencies([builder.id])
         return RuntimeArtifact(task: task, install: install)
     }
 
@@ -930,6 +957,10 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             path: configuration.generation.appending(
                 ".nucleus-target-sdk-generation"),
             validation: .regularFile)
+        let activeSDK: ArtifactReference<PathArtifact> = try builder.output(
+            "active-sdk",
+            path: configuration.active,
+            validation: .symlinkTarget)
         let task = builder.build(
             postconditions: [
                 PathPostcondition(
@@ -944,13 +975,16 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                         candidate: configuration.candidate,
                         generation: configuration.generation,
                         active: configuration.active))))
-        return ActivationArtifact(task: task, generationMarker: marker)
+        return ActivationArtifact(
+            task: task,
+            generationMarker: marker,
+            activeSDK: activeSDK)
     }
 
     private static func discoveryTasks(
         _ configuration: SwiftTargetSDKGenerationConfiguration,
         activation: ActivationArtifact
-    ) throws -> [TaskDeclaration] {
+    ) throws -> [DiscoveryArtifact] {
         try [configuration.inputs.linuxBundleID, configuration.inputs.androidBundleID]
             .map { bundleID in
                 let name = "\(bundleID).artifactbundle"
@@ -961,7 +995,11 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                     id: TaskID(rawValue: "swift-sdk.discover-\(bundleID)"),
                     component: component)
                 builder.consume(activation.generationMarker)
-                return builder.build(
+                let artifact: ArtifactReference<PathArtifact> = try builder.output(
+                    "discovery-link",
+                    path: link,
+                    validation: .symlinkTarget)
+                let task = builder.build(
                     postconditions: [
                         PathPostcondition(path: link, validation: .symlinkTarget)
                     ],
@@ -972,6 +1010,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                                 path: link,
                                 target: target.string,
                                 displacedItem: configuration.displacedRoot.appending(name)))))
+                return DiscoveryArtifact(task: task, link: artifact)
             }
     }
 

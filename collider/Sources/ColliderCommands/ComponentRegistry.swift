@@ -88,7 +88,7 @@ struct ComponentRegistry {
                     options: RuntimeBuildOptions())
             }
         #endif
-        let recipeContext = RecipeContext(
+        let baseRecipeContext = RecipeContext(
             repositoryRoot: context.root,
             cacheRoot: context.cacheRoot,
             nativeSDKRoot: context.nativeSDKRoot.removingLastComponent(),
@@ -96,23 +96,62 @@ struct ComponentRegistry {
             environment: recipeEnvironment,
             buildContexts: buildContexts,
             configurations: configurations)
+        let coreArtifacts = try CoreColliderRecipe.prepare(in: baseRecipeContext)
+        let androidRuntime = try AndroidRuntimeColliderRecipe.prepare(
+            in: baseRecipeContext)
+        let waylandArtifacts = try WaylandColliderRecipe.prepare(
+            in: baseRecipeContext)
+        let reactNativeArtifacts = try ReactNativeColliderRecipe.prepare(
+            in: baseRecipeContext,
+            icuLibraries: coreArtifacts.linuxICULibraries)
+        let swiftTargetSDK = try SwiftTargetSDKColliderRecipe.prepare(
+            in: baseRecipeContext)
+        var targetArtifacts: [NativeLinuxTarget: ArtifactReferenceSet] = [:]
+        func merge(_ artifacts: [NativeLinuxTarget: ArtifactReferenceSet]) {
+            for (target, references) in artifacts {
+                targetArtifacts[target, default: ArtifactReferenceSet()]
+                    .append(contentsOf: references)
+            }
+        }
+        for (target, gfxstream) in androidRuntime.artifacts.gfxstream {
+            var artifacts = ArtifactReferenceSet(gfxstream.hostBackend)
+            artifacts.append(gfxstream.guestVulkanDriver)
+            targetArtifacts[target, default: ArtifactReferenceSet()]
+                .append(contentsOf: artifacts)
+        }
+        merge(coreArtifacts.nativeSDKs)
+        merge(reactNativeArtifacts.artifacts.nativeSDKs)
+        merge(waylandArtifacts.nativeSDKs)
+        for architecture in PlatformArchitecture.allCases {
+            let target = NativeLinuxTarget(architecture: architecture)
+            targetArtifacts[target, default: ArtifactReferenceSet()]
+                .append(swiftTargetSDK.activeSDK)
+        }
+        let recipeContext = RecipeContext(
+            repositoryRoot: context.root,
+            cacheRoot: context.cacheRoot,
+            nativeSDKRoot: context.nativeSDKRoot.removingLastComponent(),
+            nativeBuilder: nativeBuilder.configuration,
+            environment: recipeEnvironment,
+            buildContexts: buildContexts,
+            configurations: configurations,
+            targetArtifacts: targetArtifacts)
         let componentTypes: [any ColliderComponent.Type] = [
             BenchmarkColliderRecipe.self,
             ChromiumColliderRecipe.self,
             SanitizerColliderRecipe.self,
-            AndroidRuntimeColliderRecipe.self,
-            CoreColliderRecipe.self,
-            ReactNativeColliderRecipe.self,
             ReleaseGateColliderRecipe.self,
             ShellColliderRecipe.self,
-            SwiftTargetSDKColliderRecipe.self,
-            WaylandColliderRecipe.self,
             LinuxColliderRecipe.self,
             CompositorColliderRecipe.self,
             VulkanColliderRecipe.self,
         ]
         let components =
-            [nativeBuilder.component]
+            [
+                nativeBuilder.component, coreArtifacts.component,
+                androidRuntime.component, reactNativeArtifacts.component,
+                waylandArtifacts.component, swiftTargetSDK.component,
+            ]
             + (try componentTypes.map {
                 try $0.makeComponent(in: recipeContext)
             })

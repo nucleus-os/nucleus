@@ -41,6 +41,31 @@ private func fixtureNativeBuilder(
         environment: environment)
 }
 
+private func fixtureICULibrary(
+    _ target: NativeLinuxTarget,
+    root: FilePath = FilePath("/workspace/core")
+) throws -> ArtifactReference<FileArtifact> {
+    var producer = TaskBuilder(
+        id: TaskID(rawValue: "core.skia.\(target.identifier)"),
+        component: ComponentID(rawValue: "core"))
+    return try producer.output(
+        "libicu.a",
+        path: root.appending(".skia-build/\(target.identifier)/libicu.a"),
+        validation: .regularFile)
+}
+
+private func fixtureReactNativeNodeModules(
+    root: FilePath
+) throws -> ArtifactReference<DirectoryArtifact> {
+    var producer = TaskBuilder(
+        id: TaskID(rawValue: "rn.javascript-dependencies"),
+        component: ComponentID(rawValue: "rn"))
+    return try producer.output(
+        "node-modules",
+        path: root.appending("third-party/react-native/node_modules"),
+        validation: .nonEmptyDirectory)
+}
+
 @Test func androidToolchainCatalogDrivesColliderVersionsAndNDKSelection() throws {
     let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-android-toolchain-\(UUID().uuidString)", isDirectory: true)
@@ -197,21 +222,23 @@ private func fixtureNativeBuilder(
         repositoryRoot: repositoryRoot,
         environment: environment,
         target: NativeLinuxTarget(architecture: .arm64),
-        builder: builder)
-    let x86_64 = try AndroidRuntimeColliderRecipe.buildGfxstream(
+        builder: builder
+    ).task
+    let x8664 = try AndroidRuntimeColliderRecipe.buildGfxstream(
         root: runtimeRoot,
         repositoryRoot: repositoryRoot,
         environment: environment,
         target: NativeLinuxTarget(architecture: .x86_64),
-        builder: builder)
+        builder: builder
+    ).task
 
-    #expect(Set(arm64.locks).isDisjoint(with: Set(x86_64.locks)))
+    #expect(Set(arm64.locks).isDisjoint(with: Set(x8664.locks)))
     #expect(
         arm64.locks == [
             .checkout("android-runtime-gfxstream-linux-arm64")
         ])
     #expect(
-        x86_64.locks == [
+        x8664.locks == [
             .checkout("android-runtime-gfxstream-linux-x86_64")
         ])
 }
@@ -479,6 +506,8 @@ private func fixtureNativeBuilder(
     let reactNative = try ReactNativeColliderRecipe.generate(
         root: root.appending("react-native"),
         environment: environment,
+        dependencies: fixtureReactNativeNodeModules(
+            root: root.appending("react-native")),
         builder: try fixtureNativeBuilder(
             context: root.appending("core/build-container"),
             imageID: FilePath("/cache/native/image-id"),
@@ -645,7 +674,7 @@ private func fixtureNativeBuilder(
         swiftSDKRoot: FilePath("/cache/swift-sdks"),
         environment: environment)
     let arm64 = NativeLinuxTarget(architecture: .arm64)
-    let x86_64 = NativeLinuxTarget(architecture: .x86_64)
+    let x8664 = NativeLinuxTarget(architecture: .x86_64)
     let skiaSources = try CoreColliderRecipe.prepareSkiaDependencies(
         root: coreRoot,
         environment: environment)
@@ -656,17 +685,20 @@ private func fixtureNativeBuilder(
     let generated = try ReactNativeColliderRecipe.generate(
         root: reactNativeRoot,
         environment: environment,
+        dependencies: fixtureReactNativeNodeModules(root: reactNativeRoot),
         builder: builder
     ).spec
     let armHermes = try ReactNativeColliderRecipe.buildHermes(
         root: reactNativeRoot,
         environment: environment,
         target: arm64,
+        icuLibrary: fixtureICULibrary(arm64, root: coreRoot),
         builder: builder)
     let x86Hermes = try ReactNativeColliderRecipe.buildHermes(
         root: reactNativeRoot,
         environment: environment,
-        target: x86_64,
+        target: x8664,
+        icuLibrary: fixtureICULibrary(x8664, root: coreRoot),
         builder: builder)
     let armSupport = try ReactNativeColliderRecipe.buildSupportLibraries(
         root: reactNativeRoot,
@@ -676,7 +708,7 @@ private func fixtureNativeBuilder(
     let x86Support = try ReactNativeColliderRecipe.buildSupportLibraries(
         root: reactNativeRoot,
         environment: environment,
-        target: x86_64,
+        target: x8664,
         builder: builder)
     let architecturePairs = [
         (
@@ -690,7 +722,7 @@ private func fixtureNativeBuilder(
             try CoreColliderRecipe.buildSkiaLinux(
                 root: coreRoot,
                 environment: environment,
-                target: x86_64,
+                target: x8664,
                 sources: skiaSources,
                 builder: builder
             ).task
@@ -711,7 +743,7 @@ private func fixtureNativeBuilder(
             try ReactNativeColliderRecipe.buildCxxRuntime(
                 root: reactNativeRoot,
                 environment: environment,
-                target: x86_64,
+                target: x8664,
                 boost: boost,
                 generated: generated,
                 hermes: x86Hermes,
@@ -743,10 +775,15 @@ private func fixtureNativeBuilder(
     let generated = try ReactNativeColliderRecipe.generate(
         root: root,
         environment: environment,
+        dependencies: fixtureReactNativeNodeModules(root: root),
         builder: builder
     ).spec
     let hermes = try ReactNativeColliderRecipe.buildHermes(
-        root: root, environment: environment, target: target, builder: builder)
+        root: root,
+        environment: environment,
+        target: target,
+        icuLibrary: fixtureICULibrary(target),
+        builder: builder)
     let support = try ReactNativeColliderRecipe.buildSupportLibraries(
         root: root, environment: environment, target: target, builder: builder)
     let runtime = try ReactNativeColliderRecipe.buildCxxRuntime(
@@ -803,6 +840,8 @@ private func fixtureNativeBuilder(
         root: root,
         environment: environment,
         target: NativeLinuxTarget(architecture: .x86_64),
+        icuLibrary: fixtureICULibrary(
+            NativeLinuxTarget(architecture: .x86_64)),
         builder: builder
     ).task
     guard case .sequence = task.operation else {
@@ -820,6 +859,14 @@ private func fixtureNativeBuilder(
     #expect(merge.command.contains("/tools/merge-static-archives.sh"))
     #expect(executions.allSatisfy { $0.executionPlatform == .linuxARM64OCI })
     #expect(executions.allSatisfy { $0.artifactTarget == .linuxX86_64 })
+    #expect(
+        task.dependencies.contains(
+            TaskID(rawValue: "core.skia.linux-x86_64")))
+    #expect(
+        !task.inputs.contains(
+            .dependencyOutput(
+                FilePath(
+                    "/workspace/core/.skia-build/linux-x86_64/libicu.a"))))
     #expect(
         executions.allSatisfy {
             $0.intelBinaryTranslationPolicy == .required
@@ -925,12 +972,14 @@ private func fixtureNativeBuilder(
     let generated = try ReactNativeColliderRecipe.generate(
         root: root,
         environment: environment,
+        dependencies: fixtureReactNativeNodeModules(root: root),
         builder: builder
     ).spec
     let hermes = try ReactNativeColliderRecipe.buildHermes(
         root: root,
         environment: environment,
         target: target,
+        icuLibrary: fixtureICULibrary(target),
         builder: builder)
     let support = try ReactNativeColliderRecipe.buildSupportLibraries(
         root: root,
@@ -946,16 +995,16 @@ private func fixtureNativeBuilder(
         hermes: hermes,
         support: support,
         builder: builder)
-    let native = try ReactNativeColliderRecipe.publishNativeSDK(
+    let nativeArtifacts = try ReactNativeColliderRecipe.publishNativeSDK(
         root: root,
         sdkRoot: sdkRoot,
         target: target,
         runtime: runtime)
+    let native = nativeArtifacts.task
 
     #expect(
         Set(native.dependencies) == [
-            TaskID(rawValue: "core.native-sdk.linux-x86_64"),
-            TaskID(rawValue: "rn.cxx.linux-x86_64"),
+            TaskID(rawValue: "rn.cxx.linux-x86_64")
         ])
     #expect(
         native.outputs.allSatisfy {
@@ -974,7 +1023,8 @@ private func fixtureNativeBuilder(
             workspace.appendingPathComponent(
                 "android-runtime"
             ).path),
-        environment: ["PATH": "/usr/bin"])
+        environment: ["PATH": "/usr/bin"]
+    ).tasks
     let pipelineIDs = tasks.map(\.id.rawValue).filter {
         $0.hasPrefix("android-runtime.aosp-")
     }

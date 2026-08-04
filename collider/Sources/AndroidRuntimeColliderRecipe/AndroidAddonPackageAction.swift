@@ -52,8 +52,9 @@ import ShellColliderRecipe
 extension AndroidRuntimeColliderRecipe {
     static func addonPackageTask(
         configuration: AndroidAddonPackageConfiguration,
-        repositoryRoot: FilePath
-    ) -> TaskDeclaration {
+        repositoryRoot: FilePath,
+        managedAOSPGeneration: ArtifactReference<PathArtifact>
+    ) throws -> TaskDeclaration {
         let productNames = [
             "nucleus-android-runtime",
             "nucleus-android-runtime-privileged",
@@ -74,7 +75,6 @@ extension AndroidRuntimeColliderRecipe {
                             validation: .executableFile)
                     ])
             } : []
-        var dependencies: [TaskID] = []
         var inputs: [ArtifactInput] = [
             .file(configuration.compatibility),
             .file(configuration.aospSigningKey),
@@ -82,10 +82,7 @@ extension AndroidRuntimeColliderRecipe {
             .file(configuration.appArmorPolicy),
             .file(configuration.seccompPolicy),
         ]
-        if configuration.usesManagedAOSPGeneration {
-            dependencies.append(AndroidRuntimeTaskIDs.aospImage)
-            inputs.append(.dependencyOutput(configuration.aospGeneration))
-        } else {
+        if !configuration.usesManagedAOSPGeneration {
             inputs.append(.tree(configuration.aospGeneration))
         }
         if let runtimeRoot = configuration.runtimeRoot {
@@ -93,17 +90,19 @@ extension AndroidRuntimeColliderRecipe {
         } else {
             inputs.append(configuration.swiftPM.identityInput)
         }
-        return TaskDeclaration(
+        var builder = TaskBuilder(
             id: TaskID(rawValue: "android-runtime.package-addon"),
-            component: descriptor.id,
-            dependencies: dependencies,
+            component: descriptor.id)
+        if configuration.usesManagedAOSPGeneration {
+            builder.consume(managedAOSPGeneration)
+        }
+        let _: ArtifactReference<DirectoryArtifact> = try builder.output(
+            "addon",
+            path: configuration.output,
+            validation: .nonEmptyDirectory)
+        return builder.build(
             swiftProducts: products,
             inputs: inputs,
-            outputs: [
-                OutputDeclaration(
-                    path: configuration.output,
-                    validation: .nonEmptyDirectory)
-            ],
             locks: [
                 .shared(
                     configuration.output.removingLastComponent().appending(

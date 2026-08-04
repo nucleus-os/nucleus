@@ -1402,10 +1402,18 @@ depot-tools bootstrap executable, source provenance, builder image, CEF and
 browser publications, retention, tests, and installation also form one typed
 chain. AOSP compilation, signing, image assembly, validation, and publication
 consume typed builder-image, target-files, host-tool, image, signing, and
-provenance slots. Remaining raw cross-component native SDK edges, Android add-on
-and gfxstream product artifacts, operation cases,
-unrestricted command paths, legacy identity activation, and the derived-state
-reset remain open. The first operation-family deletion is complete: Meson
+provenance slots. The composition root now merges each architecture's active
+Swift target SDK, Core, React Native, and Wayland SDK publications, and
+gfxstream products into one typed target-artifact closure. Linux builds,
+benchmarks, sanitizers, and release gates consume that closure; raw SDK-tree
+inputs and handwritten cross-recipe task-ID edges are deleted. The managed
+Android add-on consumes the exact active AOSP generation. The Swift runtime
+builder image, React Native JavaScript dependency tree, and Core Android host
+build and validation chain are typed producer-consumer relationships as well.
+Swift SDK activation and discovery links are declared output slots rather than
+postcondition-only paths. Remaining operation cases, unrestricted command
+paths, legacy identity activation, and the derived-state reset remain open. The
+first operation-family deletion is complete: Meson
 setup, direct file copy, matching-file copy, ZIP extraction, raw file write,
 link-metadata sanitation, directory publication, and apt-package validation no
 longer exist as operation cases, payloads, runtime dispatch, or retained
@@ -1446,6 +1454,11 @@ Native, Wayland, gfxstream, and synthesized Linux SwiftPM tasks consume that
 exact reference; handwritten `native.builder` dependencies and raw image-path
 inputs are deleted. Recipe targets that needed the native-builder module only
 for its task ID no longer depend on it.
+Core exports each architecture's exact Skia ICU archive to the composition root,
+which injects it into React Native's Hermes build. The raw generated ICU path,
+handwritten Core task dependency, and React Native recipe dependency on the Core
+recipe module are deleted. React Native SDK publication likewise no longer
+carries an unrelated ordering dependency on Core SDK publication.
 
 Complete the existing action seam with:
 

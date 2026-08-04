@@ -48,17 +48,24 @@ import Testing
         [.posixPermissions: 0o755],
         ofItemAtPath: readelf.path)
 
-    let task = try CoreColliderRecipe.validateAndroidHost(
+    var producerBuilder = TaskBuilder(
+        id: TaskID(rawValue: "core.android-host.build"),
+        component: ComponentID(rawValue: "core"))
+    let libraryArtifact: ArtifactReference<FileArtifact> = try producerBuilder.output(
+        "android-library",
+        path: FilePath(library.path),
+        validation: .regularFile)
+    let producer = producerBuilder.build(operation: .sequence([]))
+    let validation = try CoreColliderRecipe.validateAndroidHost(
         root: FilePath(directory.path),
-        library: FilePath(library.path),
+        library: libraryArtifact,
         ndk: FilePath(directory.appendingPathComponent("ndk").path),
         environment: [
             "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
-        ],
-        dependencies: [])
+        ])
     let report = try await ColliderRuntime().execute(
-        graph: TaskGraph([task]),
-        selected: [task.id],
+        graph: TaskGraph([producer, validation.task]),
+        selected: [validation.task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
-    #expect(report.executed == [task.id])
+    #expect(report.executed == [producer.id, validation.task.id])
 }

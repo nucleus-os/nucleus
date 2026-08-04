@@ -1,4 +1,3 @@
-import AndroidRuntimeColliderRecipe
 import ColliderCore
 import SystemPackage
 
@@ -29,8 +28,6 @@ public enum LinuxColliderRecipe: ColliderComponent {
     public static func makeComponent(
         in context: RecipeContext
     ) throws -> ComponentDefinition {
-        let sdkRoot = context.cacheRoot.appending(
-            "nucleus/swift-target-sdks/current/swift-sdks")
         var tasks: [TaskDeclaration] = []
         var buildRoots: Set<TaskID> = []
         var testRoots: Set<TaskID> = []
@@ -43,11 +40,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                 root: context.repositoryRoot,
                 environment: context.environment,
                 swiftPM: try context.swiftPM(.linux(architecture)),
-                nativeDependencies: [
-                    AndroidRuntimeTaskIDs.gfxstream(target)
-                ],
-                sdkRoot: sdkRoot,
-                nativeSDKRoot: context.nativeSDK(for: target))
+                targetArtifacts: try context.targetArtifacts(for: target))
             buildRoots.insert(LinuxTaskIDs.build(architecture))
             testRoots.insert(LinuxTaskIDs.test(architecture))
             loaderRoots.insert(LinuxTaskIDs.testLoader(architecture))
@@ -66,14 +59,12 @@ public enum LinuxColliderRecipe: ColliderComponent {
             ])
     }
 
-    public static func architectureLane(
+    package static func architectureLane(
         architecture: PlatformArchitecture,
         root: FilePath,
         environment: [String: String],
         swiftPM: SwiftPMInvocation,
-        nativeDependencies: [TaskID],
-        sdkRoot: FilePath,
-        nativeSDKRoot: FilePath
+        targetArtifacts: ArtifactReferenceSet
     ) -> [TaskDeclaration] {
         let name = architecture.rawValue
         let buildID = LinuxTaskIDs.build(architecture)
@@ -104,16 +95,13 @@ public enum LinuxColliderRecipe: ColliderComponent {
             environment: environment,
             arguments: ["--filter", "gpuHeadless_"])
         let sharedInputs: [ArtifactInput] = [
-            .tree(sdkRoot),
-            .optionalTree(
-                nativeSDKRoot,
-                fallback: Array("native-sdk-not-provisioned".utf8)),
-            swiftPM.identityInput,
+            swiftPM.identityInput
         ]
-        let build = TaskDeclaration(
+        var buildBuilder = TaskBuilder(
             id: buildID,
-            component: ComponentID(rawValue: "linux"),
-            dependencies: nativeDependencies,
+            component: ComponentID(rawValue: "linux"))
+        buildBuilder.consume(targetArtifacts)
+        let build = buildBuilder.build(
             swiftProducts: [buildRequirement],
             inputs: sharedInputs,
             postconditions: [swiftPM.postcondition],

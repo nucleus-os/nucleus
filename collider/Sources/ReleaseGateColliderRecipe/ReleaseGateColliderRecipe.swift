@@ -1,4 +1,3 @@
-import AndroidRuntimeColliderRecipe
 import ColliderCore
 
 package enum ReleaseGateTaskIDs {
@@ -35,10 +34,8 @@ public enum ReleaseGateColliderRecipe: ColliderComponent {
     ) throws -> ComponentDefinition {
         let swiftPM = try context.swiftPM(
             .linux(.arm64, configuration: .release))
-        let dependencies = [
-            AndroidRuntimeTaskIDs.gfxstream(
-                NativeLinuxTarget(architecture: .arm64))
-        ]
+        let targetArtifacts = try context.targetArtifacts(
+            for: NativeLinuxTarget(architecture: .arm64))
         let tasks = ReleaseGateTaskIDs.suites.map { suite in
             let requirement = swiftPM.testProduct(
                 package: suite.package,
@@ -46,10 +43,11 @@ public enum ReleaseGateColliderRecipe: ColliderComponent {
                 packageRoot: context.repositoryRoot.appending(suite.package),
                 environment: context.environment,
                 arguments: ["--filter", suite.suite])
-            return TaskDeclaration(
+            var builder = TaskBuilder(
                 id: TaskID(rawValue: "test.release-gate.\(suite.id)"),
-                component: descriptor.id,
-                dependencies: dependencies,
+                component: descriptor.id)
+            builder.consume(targetArtifacts)
+            return builder.build(
                 swiftTests: [requirement],
                 inputs: [swiftPM.identityInput],
                 locks: [.checkout("test-release-gate")],

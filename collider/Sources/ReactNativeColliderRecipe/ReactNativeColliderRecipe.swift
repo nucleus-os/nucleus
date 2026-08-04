@@ -1,5 +1,4 @@
 import ColliderCore
-import CoreColliderRecipe
 import Foundation
 import SystemPackage
 
@@ -19,6 +18,11 @@ package struct GeneratedReactNativeSources: Sendable {
     package let spec: ArtifactReference<DirectoryArtifact>
 }
 
+package struct JavaScriptDependencyArtifacts: Sendable {
+    package let task: TaskDeclaration
+    package let nodeModules: ArtifactReference<DirectoryArtifact>
+}
+
 package struct HermesArtifacts: Sendable {
     package let task: TaskDeclaration
     package let libraries: [ArtifactReference<FileArtifact>]
@@ -35,16 +39,31 @@ package struct CxxRuntimeArtifacts: Sendable {
     package let outputs: [ArtifactReference<FileArtifact>]
 }
 
-public enum ReactNativeColliderRecipe: ColliderComponent {
+public enum ReactNativeColliderRecipe {
+    package struct Artifacts: Sendable {
+        package let nativeSDKs: [NativeLinuxTarget: ArtifactReferenceSet]
+    }
+
+    package struct PreparedComponent: Sendable {
+        package let component: ComponentDefinition
+        package let artifacts: Artifacts
+    }
+
+    package struct NativeSDKArtifacts: Sendable {
+        package let task: TaskDeclaration
+        package let outputs: ArtifactReferenceSet
+    }
+
     public static let descriptor = ComponentDescriptor(
         id: ComponentID(rawValue: "rn"),
         canonicalName: "react-native",
         directoryName: "react-native",
         aliases: ["rn"])
 
-    public static func makeComponent(
-        in context: RecipeContext
-    ) throws -> ComponentDefinition {
+    package static func prepare(
+        in context: RecipeContext,
+        icuLibraries: [NativeLinuxTarget: ArtifactReference<FileArtifact>]
+    ) throws -> PreparedComponent {
         let root = context.componentRoot(descriptor)
         let javascript = try installJavaScriptDependencies(
             root: root,
@@ -53,18 +72,24 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
         let generation = try generate(
             root: root,
             environment: context.environment,
+            dependencies: javascript.nodeModules,
             builder: context.nativeBuilder)
         let boost = try provisionBoost(
             root: root,
             environment: context.environment)
-        var tasks = [javascript, generation.task] + boost.tasks
+        var tasks = [javascript.task, generation.task] + boost.tasks
         var bootstrapRoots: Set<TaskID> = []
+        var nativeSDKs: [NativeLinuxTarget: ArtifactReferenceSet] = [:]
         for architecture in PlatformArchitecture.allCases {
             let target = NativeLinuxTarget(architecture: architecture)
+            guard let icuLibrary = icuLibraries[target] else {
+                throw ReactNativeRecipeFailure.missingICULibrary(target)
+            }
             let hermes = try buildHermes(
                 root: root,
                 environment: context.environment,
                 target: target,
+                icuLibrary: icuLibrary,
                 builder: context.nativeBuilder)
             let support = try buildSupportLibraries(
                 root: root,
@@ -85,33 +110,37 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                 sdkRoot: context.nativeSDK(for: target),
                 target: target,
                 runtime: cxx)
-            tasks += [hermes.task, support.task, cxx.task, sdk]
-            bootstrapRoots.insert(sdk.id)
+            tasks += [hermes.task, support.task, cxx.task, sdk.task]
+            bootstrapRoots.insert(sdk.task.id)
+            nativeSDKs[target] = sdk.outputs
         }
-        return try ComponentDefinition(
+        let component = try ComponentDefinition(
             descriptor: descriptor,
             tasks: tasks,
             entrypoints: [
                 ComponentEntrypoint(id: .bootstrap, roots: bootstrapRoots),
                 ComponentEntrypoint(id: .generate, roots: [generation.task.id]),
             ])
+        return PreparedComponent(
+            component: component,
+            artifacts: Artifacts(nativeSDKs: nativeSDKs))
     }
 
-    public static func installJavaScriptDependencies(
+    package static func installJavaScriptDependencies(
         root: FilePath,
         environment: [String: String],
         builder: NativeOCIConfiguration
-    ) throws -> TaskDeclaration {
+    ) throws -> JavaScriptDependencyArtifacts {
         var task = TaskBuilder(
             id: TaskID(rawValue: "rn.javascript-dependencies"),
             component: ComponentID(rawValue: "rn"))
         task.consume(builder.image)
-        let _: ArtifactReference<DirectoryArtifact> = try task.output(
+        let nodeModules: ArtifactReference<DirectoryArtifact> = try task.output(
             "node-modules",
             path: root.appending(
                 "third-party/react-native/node_modules"),
             validation: .nonEmptyDirectory)
-        return task.build(
+        let declaration = task.build(
             inputs: [
                 .file(
                     root.appending(
@@ -137,6 +166,9 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                     "/opt/node/bin/corepack", "yarn", "install", "--pure-lockfile",
                 ],
                 environment: environment))
+        return JavaScriptDependencyArtifacts(
+            task: declaration,
+            nodeModules: nodeModules)
     }
 
     package static func provisionBoost(
@@ -220,12 +252,14 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
     package static func generate(
         root: FilePath,
         environment: [String: String],
+        dependencies: ArtifactReference<DirectoryArtifact>,
         builder: NativeOCIConfiguration
     ) throws -> GeneratedReactNativeSources {
         var taskBuilder = TaskBuilder(
             id: TaskID(rawValue: "rn.generate"),
             component: ComponentID(rawValue: "rn"))
         taskBuilder.consume(builder.image)
+        taskBuilder.consume(dependencies)
         let spec: ArtifactReference<DirectoryArtifact> = try taskBuilder.output(
             "fb-react-native-spec",
             path: root.appending(".rn-build/generated/FBReactNativeSpec"),
@@ -246,7 +280,6 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                 ],
                 environment: environment)
         )
-        .addingDependencies([TaskID(rawValue: "rn.javascript-dependencies")])
         return GeneratedReactNativeSources(task: task, spec: spec)
     }
 
@@ -254,6 +287,7 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
         root: FilePath,
         environment: [String: String],
         target: NativeLinuxTarget,
+        icuLibrary: ArtifactReference<FileArtifact>,
         builder: NativeOCIConfiguration
     ) throws -> HermesArtifacts {
         let source = root.appending("third-party/hermes")
@@ -262,14 +296,8 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
         let hermesc = build.appending("bin/hermesc")
         let icuSource = root.appending(
             "../core/third-party/skia/third_party/externals/icu/source")
-        let icuLibraryDirectory = root.appending(
-            "../core/.skia-build/\(target.identifier)")
-        let icuLibrary = icuLibraryDirectory.appending("libicu.a")
-        let dependencies = [
-            CoreTaskIDs.skia(target)
-        ]
+        let icuLibraryDirectory = icuLibrary.path.removingLastComponent()
         let nativeInputs: [ArtifactInput] = [
-            .dependencyOutput(icuLibrary),
             .tree(icuSource.appending("common")),
             .tree(icuSource.appending("i18n")),
         ]
@@ -279,6 +307,7 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
             id: TaskID(rawValue: "rn.hermes.\(target.identifier)"),
             component: ComponentID(rawValue: "rn"))
         taskBuilder.consume(builder.image)
+        taskBuilder.consume(icuLibrary)
         let combinedArtifact: ArtifactReference<FileArtifact> = try taskBuilder.output(
             "combined-library",
             path: combined,
@@ -361,7 +390,7 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
                     environment: environment,
                     target: target),
             ])
-        ).addingDependencies(dependencies)
+        )
         return HermesArtifacts(
             task: task,
             libraries: [combinedArtifact],
@@ -563,7 +592,7 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
         sdkRoot: FilePath,
         target: NativeLinuxTarget,
         runtime: CxxRuntimeArtifacts
-    ) throws -> TaskDeclaration {
+    ) throws -> NativeSDKArtifacts {
         let buildRoot = root.appending(".rn-build/\(target.identifier)")
         let sdk = sdkRoot.appending("rn")
         let links: [(String, FilePath)] = [
@@ -604,13 +633,15 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
         for output in runtime.outputs {
             builder.consume(output)
         }
+        var outputs = ArtifactReferenceSet()
         for (name, _) in links {
-            let _: ArtifactReference<PathArtifact> = try builder.output(
+            let output: ArtifactReference<PathArtifact> = try builder.output(
                 OutputSlotID(rawValue: name),
                 path: sdk.appending(name),
                 validation: .symlinkTarget)
+            outputs.append(output)
         }
-        return builder.build(
+        let task = builder.build(
             inputs: links.map {
                 .value(
                     name: $0.0,
@@ -622,7 +653,8 @@ public enum ReactNativeColliderRecipe: ColliderComponent {
             operation: .action(
                 try AnyColliderAction(
                     PublishReactNativeSDKAction(sdk: sdk, links: links)))
-        ).addingDependencies([CoreTaskIDs.nativeSDK(target)])
+        )
+        return NativeSDKArtifacts(task: task, outputs: outputs)
     }
 
 }
@@ -815,11 +847,14 @@ private let boostArchiveSHA256 =
 
 public enum ReactNativeRecipeFailure: Error, CustomStringConvertible {
     case invalidBoostSpecification
+    case missingICULibrary(NativeLinuxTarget)
 
     public var description: String {
         switch self {
         case .invalidBoostSpecification:
             "the pinned Boost download specification is invalid"
+        case .missingICULibrary(let target):
+            "React Native is missing Core's ICU artifact for \(target.identifier)"
         }
     }
 }

@@ -84,6 +84,35 @@ public struct AnyArtifactReference: Hashable, Sendable {
     }
 }
 
+public struct ArtifactReferenceSet: Hashable, Sendable {
+    fileprivate var references: [AnyArtifactReference]
+
+    public init() {
+        references = []
+    }
+
+    public init<Value>(_ reference: ArtifactReference<Value>) {
+        references = [AnyArtifactReference(reference)]
+    }
+
+    public init<Value>(_ references: [ArtifactReference<Value>]) {
+        self.references = references.map(AnyArtifactReference.init)
+    }
+
+    public mutating func append<Value>(_ reference: ArtifactReference<Value>) {
+        let reference = AnyArtifactReference(reference)
+        if !references.contains(reference) {
+            references.append(reference)
+        }
+    }
+
+    public mutating func append(contentsOf other: ArtifactReferenceSet) {
+        for reference in other.references where !references.contains(reference) {
+            references.append(reference)
+        }
+    }
+}
+
 public struct AnyTaskOutputSlot: Hashable, Sendable {
     public let id: OutputSlotID
     public let path: FilePath
@@ -226,6 +255,12 @@ public struct TaskBuilder: Sendable {
     public mutating func consume<Value>(_ reference: ArtifactReference<Value>) {
         let reference = AnyArtifactReference(reference)
         if !artifactReferences.contains(reference) {
+            artifactReferences.append(reference)
+        }
+    }
+
+    public mutating func consume(_ references: ArtifactReferenceSet) {
+        for reference in references.references where !artifactReferences.contains(reference) {
             artifactReferences.append(reference)
         }
     }

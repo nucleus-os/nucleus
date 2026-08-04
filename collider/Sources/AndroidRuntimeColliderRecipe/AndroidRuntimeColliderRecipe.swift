@@ -14,6 +14,22 @@ package enum AndroidRuntimeTaskIDs {
 }
 
 public enum AndroidRuntimeColliderRecipe: ColliderComponent {
+    package struct GfxstreamArtifacts: Sendable {
+        package let task: TaskDeclaration
+        package let hostBackend: ArtifactReference<FileArtifact>
+        package let guestVulkanDriver: ArtifactReference<FileArtifact>
+    }
+
+    package struct Artifacts: Sendable {
+        package let gfxstream: [NativeLinuxTarget: GfxstreamArtifacts]
+        package let activeAOSPGeneration: ArtifactReference<PathArtifact>
+    }
+
+    package struct PreparedComponent: Sendable {
+        package let component: ComponentDefinition
+        package let artifacts: Artifacts
+    }
+
     public static let descriptor = ComponentDescriptor(
         id: ComponentID(rawValue: "android-runtime"),
         canonicalName: "android-runtime",
@@ -66,24 +82,38 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         let images: [ArtifactReference<FileArtifact>]
     }
 
+    package struct AOSPImageArtifacts: Sendable {
+        package let tasks: [TaskDeclaration]
+        package let activeGeneration: ArtifactReference<PathArtifact>
+    }
+
     public static func makeComponent(
         in context: RecipeContext
     ) throws -> ComponentDefinition {
+        try prepare(in: context).component
+    }
+
+    package static func prepare(
+        in context: RecipeContext
+    ) throws -> PreparedComponent {
         let root = context.componentRoot(descriptor)
-        var tasks = try aospImageTasks(
+        let aosp = try aospImageTasks(
             root: root,
             environment: context.environment)
+        var tasks = aosp.tasks
         var gfxstreamRoots: Set<TaskID> = []
+        var gfxstreamArtifacts: [NativeLinuxTarget: GfxstreamArtifacts] = [:]
         for architecture in PlatformArchitecture.allCases {
             let target = NativeLinuxTarget(architecture: architecture)
-            let task = try buildGfxstream(
+            let artifacts = try buildGfxstream(
                 root: root,
                 repositoryRoot: context.repositoryRoot,
                 environment: context.environment,
                 target: target,
                 builder: context.nativeBuilder)
-            tasks.append(task)
-            gfxstreamRoots.insert(task.id)
+            tasks.append(artifacts.task)
+            gfxstreamRoots.insert(artifacts.task.id)
+            gfxstreamArtifacts[target] = artifacts
         }
         var entrypoints = [
             ComponentEntrypoint(id: .bootstrap, roots: gfxstreamRoots),
@@ -102,9 +132,10 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             AndroidAddonPackageConfiguration.self,
             for: descriptor.id)
         {
-            let package = addonPackageTask(
+            let package = try addonPackageTask(
                 configuration: configuration,
-                repositoryRoot: context.repositoryRoot)
+                repositoryRoot: context.repositoryRoot,
+                managedAOSPGeneration: aosp.activeGeneration)
             tasks.append(package)
             entrypoints.append(
                 ComponentEntrypoint(
@@ -112,10 +143,15 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                     roots: [package.id]))
         }
         #endif
-        return try ComponentDefinition(
+        let component = try ComponentDefinition(
             descriptor: descriptor,
             tasks: tasks,
             entrypoints: entrypoints)
+        return PreparedComponent(
+            component: component,
+            artifacts: Artifacts(
+                gfxstream: gfxstreamArtifacts,
+                activeAOSPGeneration: aosp.activeGeneration))
     }
 
     public static func aospProductSourceOverlays(
@@ -215,10 +251,10 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             provenance: source.provenance)
     }
 
-    public static func aospImageTasks(
+    package static func aospImageTasks(
         root: FilePath,
         environment: [String: String]
-    ) throws -> [TaskDeclaration] {
+    ) throws -> AOSPImageArtifacts {
         let source = try aospSourceArtifacts(
             root: root,
             environment: environment)
@@ -235,7 +271,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             sourceProvenance: source.provenance,
             signing: signing,
             builderImage: builderImage)
-        return source.tasks + [builderImage.task, signing.task] + product
+        return AOSPImageArtifacts(
+            tasks: source.tasks + [builderImage.task, signing.task] + product.tasks,
+            activeGeneration: product.activeGeneration)
     }
 
     private static func aospRepoLauncher(
@@ -390,6 +428,11 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         return BuilderImageArtifacts(task: task, imageID: artifact)
     }
 
+    private struct PublishedAOSPArtifacts {
+        let tasks: [TaskDeclaration]
+        let activeGeneration: ArtifactReference<PathArtifact>
+    }
+
     private static func aospProductImageTasks(
         root: FilePath,
         environment: [String: String],
@@ -397,7 +440,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         sourceProvenance: ArtifactReference<JSONArtifact>,
         signing: SigningArtifacts,
         builderImage: BuilderImageArtifacts
-    ) throws -> [TaskDeclaration] {
+    ) throws -> PublishedAOSPArtifacts {
         let lockPath = root.appending("aosp-product.lock.json")
         let lock = try JSONDecoder().decode(
             AOSPProductLock.self,
@@ -640,7 +683,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             "image-archive",
             path: signed.appending("\(lock.product)-images.zip"),
             validation: .regularFile)
-        let _: ArtifactReference<PathArtifact> = try publishBuilder.output(
+        let activeGeneration: ArtifactReference<PathArtifact> = try publishBuilder.output(
             "active-generation",
             path: active,
             validation: .symlinkTarget)
@@ -655,7 +698,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             locks: [.checkout("android-runtime-aosp-build")],
             operation: .aospProduct(.publish, build)
         )
-        return [compile.task, sign, assemble.task, validate, publish]
+        return PublishedAOSPArtifacts(
+            tasks: [compile.task, sign, assemble.task, validate, publish],
+            activeGeneration: activeGeneration)
     }
 
     private static func aospCCacheDirectory(
@@ -688,13 +733,13 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             ".aosp-tools/repo-\(lock.repo.launcherVersion)")
     }
 
-    public static func buildGfxstream(
+    package static func buildGfxstream(
         root: FilePath,
         repositoryRoot: FilePath,
         environment: [String: String],
         target: NativeLinuxTarget,
         builder: NativeOCIConfiguration
-    ) throws -> TaskDeclaration {
+    ) throws -> GfxstreamArtifacts {
         let buildRoot = root.appending(".gfxstream-build/\(target.identifier)")
         let hostSource = repositoryRoot.appending("third-party/gfxstream")
         let guestSource = repositoryRoot.appending("third-party/mesa")
@@ -708,16 +753,16 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             id: AndroidRuntimeTaskIDs.gfxstream(target),
             component: component)
         task.consume(builder.image)
-        let _: ArtifactReference<FileArtifact> = try task.output(
+        let hostBackend: ArtifactReference<FileArtifact> = try task.output(
             "host-backend",
             path: buildRoot.appending("host/host/libgfxstream_backend.a"),
             validation: .regularFile)
-        let _: ArtifactReference<FileArtifact> = try task.output(
+        let guestVulkanDriver: ArtifactReference<FileArtifact> = try task.output(
             "guest-vulkan-driver",
             path: buildRoot.appending(
                 "guest/src/gfxstream/guest/vulkan/libvulkan_gfxstream.so"),
             validation: .regularFile)
-        return task.build(
+        let declaration = task.build(
             inputs: [
                 .tree(hostSource),
                 .tree(guestSource),
@@ -775,6 +820,10 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                             + " && cp -a \(guestBuild)/. /build/guest/",
                     ]),
             ]))
+        return GfxstreamArtifacts(
+            task: declaration,
+            hostBackend: hostBackend,
+            guestVulkanDriver: guestVulkanDriver)
     }
 
 }

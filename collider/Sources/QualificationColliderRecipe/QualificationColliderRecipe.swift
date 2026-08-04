@@ -1,4 +1,3 @@
-import AndroidRuntimeColliderRecipe
 import ColliderCore
 import SystemPackage
 
@@ -46,6 +45,8 @@ public enum BenchmarkColliderRecipe: ColliderComponent {
     public static func makeComponent(
         in context: RecipeContext
     ) throws -> ComponentDefinition {
+        let targetArtifacts = try context.targetArtifacts(
+            for: NativeLinuxTarget(architecture: .arm64))
         let swiftPM = try context.swiftPM(
             .linux(.arm64, configuration: .release))
         let environment = context.environment.merging([
@@ -56,15 +57,19 @@ public enum BenchmarkColliderRecipe: ColliderComponent {
             ("platform-linux/desktop", "NucleusLinuxBenchmarks", "linux"),
             ("react-native", "NucleusReactBenchmarks", "react-native"),
         ]
-        let dependencies = sharedDependencies
         let tasks = try suites.map { package, product, outputDirectory in
             let executable = swiftPM.executable(product)
             let output = context.repositoryRoot.appending(
                 ".nucleus/benchmarks/\(outputDirectory)")
-            return TaskDeclaration(
+            var builder = TaskBuilder(
                 id: TaskID(rawValue: "benchmark.\(outputDirectory)"),
-                component: descriptor.id,
-                dependencies: dependencies,
+                component: descriptor.id)
+            builder.consume(targetArtifacts)
+            let _: ArtifactReference<DirectoryArtifact> = try builder.output(
+                "results",
+                path: output,
+                validation: .nonEmptyDirectory)
+            return builder.build(
                 swiftProducts: [
                     swiftPM.product(
                         package: package,
@@ -78,9 +83,6 @@ public enum BenchmarkColliderRecipe: ColliderComponent {
                         ])
                 ],
                 inputs: [swiftPM.identityInput],
-                outputs: [
-                    OutputDeclaration(path: output, validation: .nonEmptyDirectory)
-                ],
                 locks: [.checkout("benchmark-\(outputDirectory)")],
                 assessmentPolicy: .always,
                 operation: .sequence([
@@ -138,6 +140,8 @@ public enum SanitizerColliderRecipe: ColliderComponent {
     public static func makeComponent(
         in context: RecipeContext
     ) throws -> ComponentDefinition {
+        let targetArtifacts = try context.targetArtifacts(
+            for: NativeLinuxTarget(architecture: .arm64))
         var tasks: [TaskDeclaration] = []
         var entrypoints: [ComponentEntrypoint] = []
         for sanitizer in SanitizerKind.allCases {
@@ -158,7 +162,8 @@ public enum SanitizerColliderRecipe: ColliderComponent {
                     sanitizer: sanitizer,
                     swiftPM: swiftPM,
                     environment: environment,
-                    context: context)
+                    context: context,
+                    targetArtifacts: targetArtifacts)
             }
             tasks += sanitizerTasks
             entrypoints.append(
@@ -208,7 +213,8 @@ public enum SanitizerColliderRecipe: ColliderComponent {
         sanitizer: SanitizerKind,
         swiftPM: SwiftPMInvocation,
         environment: [String: String],
-        context: RecipeContext
+        context: RecipeContext,
+        targetArtifacts: ArtifactReferenceSet
     ) -> TaskDeclaration {
         let id = TaskID(rawValue: "sanitize.\(sanitizer.rawValue).\(invocation.id)")
         let prerequisiteIdentity = ArtifactInput.value(
@@ -222,10 +228,11 @@ public enum SanitizerColliderRecipe: ColliderComponent {
                 packageRoot: context.repositoryRoot.appending(invocation.package),
                 environment: environment,
                 arguments: ["--filter", suite])
-            return TaskDeclaration(
+            var builder = TaskBuilder(
                 id: id,
-                component: descriptor.id,
-                dependencies: sharedDependencies,
+                component: descriptor.id)
+            builder.consume(targetArtifacts)
+            return builder.build(
                 swiftTests: [requirement],
                 inputs: [swiftPM.identityInput, prerequisiteIdentity],
                 locks: [.checkout("sanitize-\(sanitizer.rawValue)")],
@@ -244,10 +251,11 @@ public enum SanitizerColliderRecipe: ColliderComponent {
                         path: executable,
                         validation: .executableFile)
                 ])
-            return TaskDeclaration(
+            var builder = TaskBuilder(
                 id: id,
-                component: descriptor.id,
-                dependencies: sharedDependencies,
+                component: descriptor.id)
+            builder.consume(targetArtifacts)
+            return builder.build(
                 swiftProducts: [requirement],
                 inputs: [swiftPM.identityInput, prerequisiteIdentity],
                 locks: [.checkout("sanitize-\(sanitizer.rawValue)")],
@@ -341,8 +349,3 @@ public enum SanitizerColliderRecipe: ColliderComponent {
         }
     }
 }
-
-private let sharedDependencies = [
-    AndroidRuntimeTaskIDs.gfxstream(
-        NativeLinuxTarget(architecture: .arm64))
-]

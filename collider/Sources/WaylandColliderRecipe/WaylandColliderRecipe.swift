@@ -12,6 +12,12 @@ public enum WaylandColliderRecipe: ColliderComponent {
     package struct NativeSDKArtifacts: Sendable {
         package let task: TaskDeclaration
         package let scanner: ArtifactReference<ExecutableArtifact>?
+        package let outputs: ArtifactReferenceSet
+    }
+
+    package struct ComponentArtifacts: Sendable {
+        package let component: ComponentDefinition
+        package let nativeSDKs: [NativeLinuxTarget: ArtifactReferenceSet]
     }
 
     public static let descriptor = ComponentDescriptor(
@@ -22,6 +28,12 @@ public enum WaylandColliderRecipe: ColliderComponent {
     public static func makeComponent(
         in context: RecipeContext
     ) throws -> ComponentDefinition {
+        try prepare(in: context).component
+    }
+
+    package static func prepare(
+        in context: RecipeContext
+    ) throws -> ComponentArtifacts {
         let root = context.componentRoot(descriptor)
         let armTarget = NativeLinuxTarget(architecture: .arm64)
         let armSDK = try buildNativeSDK(
@@ -51,12 +63,18 @@ public enum WaylandColliderRecipe: ColliderComponent {
             builder: context.nativeBuilder,
             scanner: scanner)
         tasks.append(generation)
-        return try ComponentDefinition(
+        let component = try ComponentDefinition(
             descriptor: descriptor,
             tasks: tasks,
             entrypoints: [
                 ComponentEntrypoint(id: .bootstrap, roots: bootstrapRoots),
                 ComponentEntrypoint(id: .generate, roots: [generation.id]),
+            ])
+        return ComponentArtifacts(
+            component: component,
+            nativeSDKs: [
+                armTarget: armSDK.outputs,
+                x86Target: x86SDK.outputs,
             ])
     }
 
@@ -106,19 +124,23 @@ public enum WaylandColliderRecipe: ColliderComponent {
         if let nativeScanner {
             task.consume(nativeScanner)
         }
-        let _: ArtifactReference<FileArtifact> = try task.output(
+        var outputs = ArtifactReferenceSet()
+        let serverHeader: ArtifactReference<FileArtifact> = try task.output(
             "server-header",
             path: sdk.appending("include/wayland-server.h"),
             validation: .regularFile)
-        let _: ArtifactReference<FileArtifact> = try task.output(
+        outputs.append(serverHeader)
+        let serverProtocolHeader: ArtifactReference<FileArtifact> = try task.output(
             "server-protocol-header",
             path: sdk.appending("include/wayland-server-protocol.h"),
             validation: .regularFile)
-        let _: ArtifactReference<PathArtifact> = try task.output(
+        outputs.append(serverProtocolHeader)
+        let serverLibrary: ArtifactReference<PathArtifact> = try task.output(
             "server-library",
             path: sdk.appending("lib/libwayland-server.so"),
             validation: .symlinkTarget)
-        let _: ArtifactReference<PathArtifact> = try task.output(
+        outputs.append(serverLibrary)
+        let clientLibrary: ArtifactReference<PathArtifact> = try task.output(
             "client-library",
             path: sdk.appending("lib/libwayland-client.so"),
             validation: .symlinkTarget)
@@ -131,6 +153,10 @@ public enum WaylandColliderRecipe: ColliderComponent {
             } else {
                 nil
             }
+        outputs.append(clientLibrary)
+        if let scanner {
+            outputs.append(scanner)
+        }
         let declaration = task.build(
             inputs: inputs,
             locks: [.checkout("wayland-native-\(target.identifier)")],
@@ -173,7 +199,10 @@ public enum WaylandColliderRecipe: ColliderComponent {
                     command: ["meson", "install", "-C", "/build", "--no-rebuild"]),
             ])
         )
-        return NativeSDKArtifacts(task: declaration, scanner: scanner)
+        return NativeSDKArtifacts(
+            task: declaration,
+            scanner: scanner,
+            outputs: outputs)
     }
 
     public static func generate(
