@@ -1,4 +1,5 @@
 import Foundation
+import SystemPackage
 import Testing
 
 @testable import ColliderCommands
@@ -8,7 +9,7 @@ func macOSBuilderContractSelectsOneImmutableHost() throws {
     let root = try #require(
         discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
     let contract = try MacOSBuilderContract.load(
-        root: URL(fileURLWithPath: root, isDirectory: true))
+        root: root)
 
     #expect(contract.operatingSystem.productVersion == "27.0")
     #expect(contract.operatingSystem.buildVersion == "26A5388g")
@@ -137,7 +138,7 @@ func macOSBuilderDoctorRejectsDriftedContainerEvidence() throws {
 @Test
 func persistentServiceTemplateCarriesTheDeclaredIdentity() throws {
     let root = try workspaceRootForMacOSBuilderTests()
-    let contract = try MacOSBuilderContract.load(root: root)
+    let contract = try MacOSBuilderContract.load(root: FilePath(root.path))
     let template = try String(
         contentsOf: root.appendingPathComponent(
             "tools/macos-builder/com.nucleus.container-system-start.plist.in"),
@@ -160,7 +161,7 @@ func ciMacOSBuilderDoctorScopeDryRunsWithoutHostMutation() async throws {
 
     try await WorkspaceDoctor(
         context: WorkspaceContext(
-            root: root,
+            root: FilePath(root.path),
             environment: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin"])
     ).run(
         scope: .ciMacOSBuilder,
@@ -170,11 +171,12 @@ func ciMacOSBuilderDoctorScopeDryRunsWithoutHostMutation() async throws {
 }
 
 private func loadMacOSBuilderContract() throws -> MacOSBuilderContract {
-    try MacOSBuilderContract.load(root: workspaceRootForMacOSBuilderTests())
+    try MacOSBuilderContract.load(
+        root: FilePath(workspaceRootForMacOSBuilderTests().path))
 }
 
 private func workspaceRootForMacOSBuilderTests() throws -> URL {
     let path = try #require(
         discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
-    return URL(fileURLWithPath: path, isDirectory: true)
+    return URL(path, isDirectory: true)
 }

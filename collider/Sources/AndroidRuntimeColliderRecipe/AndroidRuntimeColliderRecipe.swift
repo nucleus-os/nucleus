@@ -2,6 +2,17 @@ import ColliderCore
 import Foundation
 import SystemPackage
 
+package enum AndroidRuntimeTaskIDs {
+    package static let aospSourceLock = TaskID(
+        rawValue: "android-runtime.aosp-source-lock")
+    package static let aospSource = TaskID(rawValue: "android-runtime.aosp-source")
+    package static let aospImage = TaskID(rawValue: "android-runtime.aosp-image")
+
+    package static func gfxstream(_ target: NativeLinuxTarget) -> TaskID {
+        TaskID(rawValue: "android-runtime.gfxstream.\(target.identifier)")
+    }
+}
+
 public enum AndroidRuntimeColliderRecipe {
     private static let component = ComponentID(rawValue: "android-runtime")
 
@@ -32,7 +43,7 @@ public enum AndroidRuntimeColliderRecipe {
         let lock = try loadAOSPSourceLock(root: root)
         let specification = try lock.specification()
         return TaskDeclaration(
-            id: TaskID(rawValue: "android-runtime.aosp-source-lock"),
+            id: AndroidRuntimeTaskIDs.aospSourceLock,
             component: component,
             dependencies: [
                 TaskID(rawValue: "android-runtime.aosp-repo-launcher")
@@ -137,7 +148,7 @@ public enum AndroidRuntimeColliderRecipe {
             ".aosp-tools/source-lock-verification.json")
         let source = root.appending(".aosp-source")
         return TaskDeclaration(
-            id: TaskID(rawValue: "android-runtime.aosp-source"),
+            id: AndroidRuntimeTaskIDs.aospSource,
             component: component,
             dependencies: [
                 TaskID(rawValue: "android-runtime.aosp-repo-launcher"),
@@ -456,7 +467,7 @@ public enum AndroidRuntimeColliderRecipe {
             ],
             operation: .aospProduct(.validate, build))
         let publish = TaskDeclaration(
-            id: TaskID(rawValue: "android-runtime.aosp-image"),
+            id: AndroidRuntimeTaskIDs.aospImage,
             component: component,
             dependencies: [
                 validate.id,
@@ -544,7 +555,7 @@ public enum AndroidRuntimeColliderRecipe {
         let hostBuild = "/tmp/nucleus-gfxstream-host"
         let guestBuild = "/tmp/nucleus-gfxstream-guest"
         return TaskDeclaration(
-            id: TaskID(rawValue: "android-runtime.gfxstream.\(target.identifier)"),
+            id: AndroidRuntimeTaskIDs.gfxstream(target),
             component: component,
             inputs: [
                 .tree(hostSource),

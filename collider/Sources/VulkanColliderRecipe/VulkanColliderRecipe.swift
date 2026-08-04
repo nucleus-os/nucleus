@@ -2,37 +2,6 @@ import ColliderCore
 import SystemPackage
 
 public enum VulkanColliderRecipe {
-    public static func build(
-        root: FilePath,
-        environment: [String: String],
-        swiftPM: SwiftPMInvocation
-    ) -> TaskDeclaration {
-        task(
-            "vulkan.build", root, environment, ["build"],
-            swiftPM: swiftPM)
-    }
-
-    public static func test(
-        root: FilePath,
-        environment: [String: String],
-        swiftPM: SwiftPMInvocation
-    ) -> TaskDeclaration {
-        let requirement = swiftPM.testProduct(
-            package: "swift-vulkan",
-            testProduct: "swift-vulkanPackageTests",
-            packageRoot: root,
-            environment: environment)
-        return TaskDeclaration(
-            id: TaskID(rawValue: "vulkan.test"),
-            component: ComponentID(rawValue: "vulkan"),
-            dependencies: [TaskID(rawValue: "vulkan.build")],
-            subsumedDependencies: [TaskID(rawValue: "vulkan.build")],
-            swiftTests: [requirement],
-            locks: [.checkout("vulkan")],
-            cachePolicy: .always,
-            operation: .sequence([]))
-    }
-
     public static func generate(
         root: FilePath,
         environment: [String: String],

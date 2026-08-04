@@ -1,6 +1,24 @@
 import ColliderCore
 import SystemPackage
 
+package enum LinuxTaskIDs {
+    package static func build(_ architecture: PlatformArchitecture) -> TaskID {
+        TaskID(rawValue: "linux.\(architecture.rawValue).build")
+    }
+
+    package static func test(_ architecture: PlatformArchitecture) -> TaskID {
+        TaskID(rawValue: "linux.\(architecture.rawValue).test")
+    }
+
+    package static func testLoader(_ architecture: PlatformArchitecture) -> TaskID {
+        TaskID(rawValue: "linux.\(architecture.rawValue).test-loader")
+    }
+
+    package static func testGPUHeadless(_ architecture: PlatformArchitecture) -> TaskID {
+        TaskID(rawValue: "linux.\(architecture.rawValue).test-gpu-headless")
+    }
+}
+
 public enum LinuxColliderRecipe {
     public static func architectureLane(
         architecture: PlatformArchitecture,
@@ -13,7 +31,7 @@ public enum LinuxColliderRecipe {
         nativeSDKRoot: FilePath
     ) -> [TaskDeclaration] {
         let name = architecture.rawValue
-        let buildID = TaskID(rawValue: "linux.\(name).build")
+        let buildID = LinuxTaskIDs.build(architecture)
         let buildRequirement = swiftPM.product(
             package: "nucleus",
             product: "NucleusSessionSupervisor",
@@ -62,7 +80,7 @@ public enum LinuxColliderRecipe {
             return [
                 build,
                 TaskDeclaration(
-                    id: TaskID(rawValue: "linux.\(name).test"),
+                    id: LinuxTaskIDs.test(architecture),
                     component: ComponentID(rawValue: "linux"),
                     dependencies: [buildID],
                     subsumedDependencies: [buildID],
@@ -73,13 +91,13 @@ public enum LinuxColliderRecipe {
                     cachePolicy: .always,
                     operation: .sequence([])),
                 laneTestTask(
-                    id: "linux.\(name).test-loader",
+                    id: LinuxTaskIDs.testLoader(architecture),
                     buildID: buildID,
                     requirement: loaderRequirement,
                     sharedInputs: sharedInputs,
                     lockName: "linux-\(name)"),
                 laneTestTask(
-                    id: "linux.\(name).test-gpu-headless",
+                    id: LinuxTaskIDs.testGPUHeadless(architecture),
                     buildID: buildID,
                     requirement: headlessRequirement,
                     sharedInputs: sharedInputs,
@@ -99,7 +117,7 @@ public enum LinuxColliderRecipe {
             return [
                 build,
                 translatedExecutableTask(
-                    id: "linux.\(name).test",
+                    id: LinuxTaskIDs.test(architecture),
                     buildID: buildID,
                     requirements: [buildRequirement, probeRequirement],
                     inputs: sharedInputs,
@@ -111,7 +129,7 @@ public enum LinuxColliderRecipe {
                         (swiftPM.executable("NucleusSessionSupervisor"), ["--help"]),
                     ]),
                 translatedExecutableTask(
-                    id: "linux.\(name).test-loader",
+                    id: LinuxTaskIDs.testLoader(architecture),
                     buildID: buildID,
                     requirements: [probeRequirement],
                     inputs: sharedInputs,
@@ -121,7 +139,7 @@ public enum LinuxColliderRecipe {
                         (swiftPM.executable("NucleusVulkanLaneProbe"), ["loader"])
                     ]),
                 translatedExecutableTask(
-                    id: "linux.\(name).test-gpu-headless",
+                    id: LinuxTaskIDs.testGPUHeadless(architecture),
                     buildID: buildID,
                     requirements: [probeRequirement],
                     inputs: sharedInputs,
@@ -134,111 +152,17 @@ public enum LinuxColliderRecipe {
         }
     }
 
-    public static func builds(
-        root: FilePath,
-        environment: [String: String],
-        swiftPM: SwiftPMInvocation
-    ) -> [TaskDeclaration] {
-        let desktop = root.appending("desktop")
-        let protocolRoot = root.removingLastComponent()
-            .appending("session/protocol")
-        let session = root.appending("session")
-        return [
-            task(
-                "linux.base.build", root: root, environment: environment,
-                arguments: ["build"],
-                dependencies: [TaskID(rawValue: "core.build")],
-                swiftPM: swiftPM),
-            task(
-                "linux.desktop.build", root: desktop, environment: environment,
-                arguments: ["build"],
-                dependencies: [TaskID(rawValue: "linux.base.build")],
-                swiftPM: swiftPM),
-            task(
-                "session-protocol.build", root: protocolRoot,
-                environment: environment, arguments: ["build"],
-                dependencies: [
-                    TaskID(rawValue: "config.build"),
-                    TaskID(rawValue: "ipc.build"),
-                    TaskID(rawValue: "linux.desktop.build"),
-                ],
-                swiftPM: swiftPM),
-            task(
-                "linux.build", root: session, environment: environment,
-                arguments: ["build"],
-                dependencies: [TaskID(rawValue: "session-protocol.build")],
-                swiftPM: swiftPM),
-        ]
-    }
-
-    public static func tests(
-        root: FilePath,
-        environment: [String: String],
-        swiftPM: SwiftPMInvocation
-    ) -> [TaskDeclaration] {
-        let desktop = root.appending("desktop")
-        let protocolRoot = root.removingLastComponent()
-            .appending("session/protocol")
-        let session = root.appending("session")
-        return [
-            task(
-                "linux.base.test", root: root, environment: environment,
-                arguments: ["test"],
-                dependencies: [TaskID(rawValue: "linux.base.build")],
-                subsumedDependencies: [
-                    TaskID(rawValue: "linux.base.build")
-                ],
-                includesTests: true,
-                swiftPM: swiftPM),
-            task(
-                "linux.desktop.test", root: desktop, environment: environment,
-                arguments: ["test"],
-                dependencies: [
-                    TaskID(rawValue: "linux.base.test"),
-                    TaskID(rawValue: "linux.desktop.build"),
-                ],
-                subsumedDependencies: [
-                    TaskID(rawValue: "linux.desktop.build")
-                ],
-                includesTests: true,
-                swiftPM: swiftPM),
-            task(
-                "session-protocol.test", root: protocolRoot,
-                environment: environment, arguments: ["test"],
-                dependencies: [
-                    TaskID(rawValue: "linux.desktop.test"),
-                    TaskID(rawValue: "session-protocol.build"),
-                ],
-                subsumedDependencies: [
-                    TaskID(rawValue: "session-protocol.build")
-                ],
-                includesTests: true,
-                swiftPM: swiftPM),
-            task(
-                "linux.test", root: session, environment: environment,
-                arguments: ["test"],
-                dependencies: [
-                    TaskID(rawValue: "session-protocol.test"),
-                    TaskID(rawValue: "linux.build"),
-                ],
-                subsumedDependencies: [
-                    TaskID(rawValue: "linux.build")
-                ],
-                includesTests: true,
-                swiftPM: swiftPM),
-        ]
-    }
 }
 
 private func laneTestTask(
-    id: String,
+    id: TaskID,
     buildID: TaskID,
     requirement: SwiftTestRequirement,
     sharedInputs: [ArtifactInput],
     lockName: String
 ) -> TaskDeclaration {
     TaskDeclaration(
-        id: TaskID(rawValue: id),
+        id: id,
         component: ComponentID(rawValue: "linux"),
         dependencies: [buildID],
         subsumedDependencies: [buildID],
@@ -251,7 +175,7 @@ private func laneTestTask(
 }
 
 private func translatedExecutableTask(
-    id: String,
+    id: TaskID,
     buildID: TaskID,
     requirements: [SwiftProductRequirement],
     inputs: [ArtifactInput],
@@ -260,7 +184,7 @@ private func translatedExecutableTask(
     operations: [(FilePath, [String])]
 ) -> TaskDeclaration {
     TaskDeclaration(
-        id: TaskID(rawValue: id),
+        id: id,
         component: ComponentID(rawValue: "linux"),
         dependencies: [buildID],
         subsumedDependencies: requirements.contains(where: {
@@ -279,83 +203,4 @@ private func translatedExecutableTask(
                     workingDirectory: swiftPM.context.packageRoot,
                     environment: environment)
             }))
-}
-
-private func task(
-    _ id: String,
-    root: FilePath,
-    environment: [String: String],
-    arguments: [String],
-    dependencies: [TaskID],
-    subsumedDependencies: [TaskID] = [],
-    includesTests: Bool = false,
-    swiftPM: SwiftPMInvocation
-) -> TaskDeclaration {
-    let buildProduct: (String, String)? =
-        switch id {
-        case "linux.base.build":
-            ("platform-linux", "NucleusLinux")
-        case "linux.desktop.build":
-            ("desktop", "NucleusLinuxDesktop")
-        case "session-protocol.build":
-            ("protocol", "NucleusSessionProtocol")
-        case "linux.build":
-            ("session", "NucleusSessionSupervisor")
-        default:
-            nil
-        }
-    let testProduct: (String, String)? =
-        switch id {
-        case "linux.base.test":
-            ("platform-linux", "NucleusLinuxPlatformPackageTests")
-        case "linux.desktop.test":
-            ("desktop", "NucleusLinuxDesktopPackagePackageTests")
-        case "session-protocol.test":
-            ("protocol", "NucleusSessionProtocolPackagePackageTests")
-        case "linux.test":
-            ("session", "NucleusLinuxSessionPackagePackageTests")
-        default:
-            nil
-        }
-    let testRequirement = testProduct.map {
-        swiftPM.testProduct(
-            package: $0.0,
-            testProduct: $0.1,
-            packageRoot: root,
-            environment: environment)
-    }
-    return TaskDeclaration(
-        id: TaskID(rawValue: id),
-        component: ComponentID(rawValue: "linux"),
-        dependencies: dependencies,
-        subsumedDependencies: subsumedDependencies,
-        swiftProducts: buildProduct.map { value in
-            [
-                swiftPM.product(
-                    package: value.0,
-                    product: value.1,
-                    packageRoot: root,
-                    environment: environment,
-                    expectedOutputs: value.1 == "NucleusSessionSupervisor"
-                        ? [
-                            PathPostcondition(
-                                path: swiftPM.executable(value.1),
-                                validation: .executableFile)
-                        ]
-                        : [])
-            ]
-        } ?? [],
-        swiftTests: testRequirement.map { [$0] } ?? [],
-        inputs: [
-            .tree(root.appending("Sources"))
-        ] + (includesTests ? [.tree(root.appending("Tests"))] : []) + [
-            swiftPM.identityInput,
-            .tool(.named("swift")),
-        ],
-        postconditions: [swiftPM.postcondition],
-        locks: [.checkout("linux")],
-        cachePolicy: testRequirement == nil
-            ? .contentAddressed
-            : .always,
-        operation: .sequence([]))
 }

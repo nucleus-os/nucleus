@@ -1,0 +1,27 @@
+import ArgumentParser
+import ColliderCore
+import ColliderRuntime
+import Foundation
+import SystemPackage
+
+#if os(Linux)
+struct Run: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "Build, install, and launch a compositor session.")
+    @OptionGroup var options: RunOptions
+
+    mutating func validate() throws {
+        do {
+            _ = try options.validated()
+        } catch {
+            throw ValidationError(String(describing: error))
+        }
+    }
+
+    mutating func run() async throws {
+        try await RunCommand(context: context()).run(
+            try options.validated())
+    }
+
+}
+#endif

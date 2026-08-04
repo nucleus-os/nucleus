@@ -1,11 +1,11 @@
 import AndroidRuntimeColliderRecipe
 import ColliderCore
+import CompositorColliderRecipe
 import CoreColliderRecipe
 import Foundation
 import ReactNativeColliderRecipe
 import SystemPackage
 import Testing
-import TracyColliderRecipe
 import VulkanColliderRecipe
 import WaylandColliderRecipe
 
@@ -49,7 +49,7 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         """.utf8
     ).write(to: ndk.appendingPathComponent("source.properties"))
 
-    let versions = try AndroidToolchainVersions.load(workspaceRoot: workspace)
+    let versions = try AndroidToolchainVersions.load(workspaceRoot: FilePath(workspace.path))
 
     #expect(versions.androidGradlePlugin == "9.3.1")
     #expect(versions.gradle == "9.5.0")
@@ -63,13 +63,13 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
     #expect(
         try versions.ndkRoot(environment: [
             "NUCLEUS_ANDROID_NDK_HOME": ndk.path
-        ]).standardizedFileURL.path == ndk.standardizedFileURL.path)
+        ]) == FilePath(ndk.path))
 }
 
 @Test func runtimeTestSelectionsUseBothLinuxArchitectureLanes() throws {
     let registry = ComponentRegistry(
         context: WorkspaceContext(
-            root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+            root: FilePath(FileManager.default.currentDirectoryPath),
             environment: [:]))
 
     #expect(
@@ -116,16 +116,56 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
     let registry = ComponentRegistry(
         context: WorkspaceContext(
-            root: URL(fileURLWithPath: root, isDirectory: true),
-            environment: [:]))
+            root: root,
+            environment: ["SWIFTC": "/definitely/unavailable/swiftc"]))
     var probeCount = 0
 
-    _ = try registry.testTasks(selection: .loader) { _ in
+    let tasks = try registry.testTasks(selection: .loader) { _ in
         probeCount += 1
         return "/dev/dri/renderD128"
     }
 
     #expect(probeCount == 0)
+    let declared = Set(tasks.map(\.id))
+    for selection in ComponentSelection.allCases {
+        switch selection {
+        case .runtime, .tracy, .vulkan, .wayland, .core, .config,
+            .ipc, .linux, .reactNative, .compositor, .shell, .androidRuntime,
+            .loader, .gpuHeadless:
+            #expect(
+                declared.isSuperset(
+                    of: try registry.selectedTestTasks(selection)))
+        case .all, .gpuDRM, .swiftSDK, .android, .browser:
+            break
+        }
+    }
+    for selection in [
+        ComponentSelection.swiftSDK, .android, .browser,
+    ] {
+        #expect(throws: WorkspaceFailure.self) {
+            try registry.selectedTestTasks(selection)
+        }
+    }
+
+    for selection in ComponentSelection.allCases {
+        switch selection {
+        case .all, .runtime, .tracy, .vulkan, .wayland, .core, .config,
+            .ipc, .linux, .reactNative, .compositor, .shell, .androidRuntime:
+            #expect(
+                declared.isSuperset(
+                    of: try registry.selectedBuildTasks(selection)))
+        case .swiftSDK, .android, .browser, .loader, .gpuHeadless, .gpuDRM:
+            break
+        }
+    }
+    for selection in [
+        ComponentSelection.swiftSDK, .android, .browser, .loader, .gpuHeadless,
+        .gpuDRM,
+    ] {
+        #expect(throws: WorkspaceFailure.self) {
+            try registry.selectedBuildTasks(selection)
+        }
+    }
 }
 
 @Test func gfxstreamArchitectureBuildsHaveIndependentLocks() {
@@ -162,43 +202,8 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
         ])
 }
 
-@Test func compatibleSwiftTasksShareOneDeclaredBuildContext() {
-    let root = FilePath("/workspace")
-    let environment = ["PATH": "/toolchain/bin"]
-    let context = SwiftBuildContext(
-        packageRoot: fixtureSwiftPackageRoot,
-        configuration: .debug,
-        target: .host(identity: "x86_64-linux"),
-        toolchainIdentity: "/toolchain/bin/swiftc@fixture")
-    let scratch = root.appending(".nucleus/swiftpm/fixture")
-    let swiftPM = SwiftPMInvocation(
-        context: context,
-        scratchPath: scratch)
-
-    let tasks = [
-        TracyColliderRecipe.build(
-            root: root.appending("swift-tracy"),
-            environment: environment,
-            swiftPM: swiftPM),
-        CoreColliderRecipe.build(
-            root: root.appending("core"),
-            environment: environment,
-            swiftPM: swiftPM),
-    ]
-
-    for task in tasks {
-        #expect(task.inputs.contains(swiftPM.identityInput))
-        #expect(task.outputs.isEmpty)
-        #expect(task.postconditions == [swiftPM.postcondition])
-        #expect(!task.locks.contains(swiftPM.lock))
-        #expect(task.swiftProducts.count == 1)
-        #expect(task.swiftProducts[0].invocation == swiftPM)
-        #expect(task.operation == .sequence([]))
-    }
-}
-
 @Test func incompatibleSwiftBuildContextsUseDifferentScratchPaths() {
-    let layout = WorkspaceLayout(root: URL(fileURLWithPath: "/workspace"))
+    let layout = WorkspaceLayout(root: FilePath("/workspace"))
     let debug = SwiftBuildContext(
         packageRoot: fixtureSwiftPackageRoot,
         configuration: .debug,
@@ -224,7 +229,7 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
 
 @Test func workspaceEnvironmentDefinesOneReviewedHostCCachePolicy() {
     let context = WorkspaceContext(
-        root: URL(fileURLWithPath: "/workspace"),
+        root: FilePath("/workspace"),
         environment: [
             "HOME": "/home/fixture",
             "XDG_CACHE_HOME": "/cache",
@@ -243,7 +248,7 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
 
 @Test func workspaceEnvironmentRetainsEveryPackageBuildDescription() {
     let context = WorkspaceContext(
-        root: URL(fileURLWithPath: "/workspace"),
+        root: FilePath("/workspace"),
         environment: ["HOME": "/home/fixture"])
 
     // Every workspace package plans one Swift Build description for `build` and
@@ -267,7 +272,7 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
     try FileManager.default.createDirectory(
         at: workspace, withIntermediateDirectories: true)
     let context = WorkspaceContext(
-        root: workspace,
+        root: FilePath(workspace.path),
         environment: ["HOME": "/home/fixture"])
     func invocation(_ digest: String) -> SwiftPMInvocation {
         return SwiftPMInvocation(
@@ -349,7 +354,7 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
     try manager.createDirectory(at: unrelated, withIntermediateDirectories: true)
 
     let context = WorkspaceContext(
-        root: workspace,
+        root: FilePath(workspace.path),
         environment: ["HOME": "/home/fixture"])
     try context.reclaimSwiftBuildContexts()
 
@@ -359,46 +364,21 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
     #expect(manager.fileExists(atPath: unrelated.path))
 }
 
-@Test func reactNativeBuildProducesTheSwiftHeaderBeforeCompilingTheHost() {
-    let root = FilePath("/workspace/react-native")
-    let scratch = FilePath("/workspace/.nucleus/swiftpm/fixture")
-    let swiftPM = SwiftPMInvocation(
-        context: SwiftBuildContext(
-            packageRoot: fixtureSwiftPackageRoot,
-            configuration: .debug,
-            target: .host(identity: "x86_64-linux"),
-            toolchainIdentity: "swiftc@fixture"),
-        scratchPath: scratch)
-
-    let task = ReactNativeColliderRecipe.build(
-        root: root,
-        environment: ["PATH": "/usr/bin"],
-        swiftPM: swiftPM)
-
-    #expect(task.operation == .sequence([]))
-    #expect(
-        task.swiftProducts.map(\.qualifiedProduct) == [
-            "react-native:NucleusReactRuntime"
-        ])
-    #expect(task.swiftProducts[0].prebuildTargets == ["NucleusReactRuntimeCxx"])
-    #expect(
-        task.postconditions.contains(
-            PathPostcondition(
-                path: swiftPM.generatedSwiftHeader("NucleusReactRuntimeCxx"),
-                validation: .regularFile)))
-}
-
 @Test func releaseGatesDeclareTheLinuxARM64OCIContext() throws {
     let root = try #require(
         discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
     let registry = ComponentRegistry(
         context: WorkspaceContext(
-            root: URL(fileURLWithPath: root, isDirectory: true),
+            root: root,
             environment: [:]))
-    let releaseTasks = try registry.testTasks(selection: nil).filter {
+    let allTasks = try registry.testTasks(selection: nil)
+    let releaseTasks = allTasks.filter {
         $0.component.rawValue == "release-gate"
     }
 
+    #expect(
+        Set(allTasks.map(\.id)).isSuperset(
+            of: try registry.selectedTestTasks(.all)))
     #expect(releaseTasks.count == 6)
     #expect(
         releaseTasks.allSatisfy { task in
@@ -408,6 +388,26 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
             else { return false }
             return execution.executionPlatform == .linuxARM64OCI
         })
+}
+
+@Test func drmSelectionResolvesTheRecipeOwnedTask() throws {
+    let root = FilePath("/workspace/compositor/compositor-core")
+    let swiftPM = SwiftPMInvocation(
+        context: SwiftBuildContext(
+            packageRoot: fixtureSwiftPackageRoot,
+            configuration: .debug,
+            target: .host(identity: "fixture-linux"),
+            toolchainIdentity: "swiftc@fixture"),
+        scratchPath: FilePath("/workspace/.nucleus/swiftpm/fixture"))
+    let task = CompositorColliderRecipe.testDRMGPU(
+        root: root,
+        environment: [:],
+        swiftPM: swiftPM)
+    let registry = ComponentRegistry(
+        context: WorkspaceContext(root: FilePath("/workspace"), environment: [:]))
+
+    #expect(task.id == CompositorTaskIDs.testGPUDRM)
+    #expect(try registry.selectedTestTasks(.gpuDRM) == [task.id])
 }
 
 @Test func drmLaneRejectsAConfiguredNonRenderNode() throws {
@@ -863,6 +863,12 @@ private let fixtureSwiftPackageRoot = FilePath("/workspace")
     let pipelineIDs = tasks.map(\.id.rawValue).filter {
         $0.hasPrefix("android-runtime.aosp-")
     }
+    #expect(
+        Set(tasks.map(\.id)).isSuperset(of: [
+            AndroidRuntimeTaskIDs.aospSourceLock,
+            AndroidRuntimeTaskIDs.aospSource,
+            AndroidRuntimeTaskIDs.aospImage,
+        ]))
     #expect(
         pipelineIDs.contains(
             "android-runtime.aosp-builder-image"))

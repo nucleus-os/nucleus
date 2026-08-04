@@ -19,7 +19,7 @@ final class ColliderAndroidKernelLog:
     var slavePath: String { log.slavePath }
 
     init(output: URL) throws {
-        log = try PseudoTerminalLog(output: FilePath(output.path))
+        log = try PseudoTerminalLog(output: FilePath(output))
     }
 
     func checkHealth() throws {
@@ -67,7 +67,7 @@ extension WorkspaceContext: AndroidRuntimeHost {
         name: String
     ) throws -> AndroidRuntimeBinderDeviceNumber {
         let number = try BinderFS.addDevice(
-            control: FilePath(control.path),
+            control: FilePath(control),
             name: name)
         return AndroidRuntimeBinderDeviceNumber(
             major: number.major,
@@ -81,7 +81,7 @@ extension WorkspaceContext: AndroidRuntimeHost {
         case .inherited:
             .inherited
         case .file(let path):
-            .file(FilePath(path.path))
+            .file(FilePath(path))
         }
     }
 }

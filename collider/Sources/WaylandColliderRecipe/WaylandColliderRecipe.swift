@@ -1,6 +1,13 @@
 import ColliderCore
 import Foundation
+import NativeBuilderColliderRecipe
 import SystemPackage
+
+package enum WaylandTaskIDs {
+    package static func nativeSDK(_ target: NativeLinuxTarget) -> TaskID {
+        TaskID(rawValue: "wayland.native-sdk.\(target.identifier)")
+    }
+}
 
 public enum WaylandColliderRecipe {
     public static func buildNativeSDK(
@@ -16,13 +23,15 @@ public enum WaylandColliderRecipe {
         let nativeScannerSDK = sdkRoot.removingLastComponent().appending(
             "linux-arm64/wayland")
         let targetSDKMount = target.architecture == .arm64 ? "/native-wayland" : "/sdk"
-        var dependencies = [TaskID(rawValue: "native.builder")]
+        var dependencies = [NativeBuilderTaskIDs.prepare]
         var inputs: [ArtifactInput] = [
             .tree(source),
             .dependencyOutput(builder.imageID),
         ]
         if target.architecture == .x86_64 {
-            dependencies.append(TaskID(rawValue: "wayland.native-sdk.linux-arm64"))
+            dependencies.append(
+                WaylandTaskIDs.nativeSDK(
+                    NativeLinuxTarget(architecture: .arm64)))
             inputs += [
                 .file(root.appending("build-support/linux-x86_64.ini")),
                 .dependencyOutput(nativeScannerSDK),
@@ -42,7 +51,7 @@ public enum WaylandColliderRecipe {
                 ? ["--cross-file=/build-support/linux-x86_64.ini"] : [])
 
         return TaskDeclaration(
-            id: TaskID(rawValue: "wayland.native-sdk.\(target.identifier)"),
+            id: WaylandTaskIDs.nativeSDK(target),
             component: ComponentID(rawValue: "wayland"),
             dependencies: dependencies,
             inputs: inputs,
@@ -104,37 +113,6 @@ public enum WaylandColliderRecipe {
                     environment: environment,
                     command: ["meson", "install", "-C", "/build", "--no-rebuild"]),
             ]))
-    }
-
-    public static func build(
-        root: FilePath,
-        environment: [String: String],
-        swiftPM: SwiftPMInvocation
-    ) -> TaskDeclaration {
-        task(
-            "wayland.build", root, environment, ["build"],
-            swiftPM: swiftPM)
-    }
-
-    public static func test(
-        root: FilePath,
-        environment: [String: String],
-        swiftPM: SwiftPMInvocation
-    ) -> TaskDeclaration {
-        let requirement = swiftPM.testProduct(
-            package: "swift-wayland",
-            testProduct: "swift-waylandPackageTests",
-            packageRoot: root,
-            environment: environment)
-        return TaskDeclaration(
-            id: TaskID(rawValue: "wayland.test"),
-            component: ComponentID(rawValue: "wayland"),
-            dependencies: [TaskID(rawValue: "wayland.build")],
-            subsumedDependencies: [TaskID(rawValue: "wayland.build")],
-            swiftTests: [requirement],
-            locks: [.checkout("wayland")],
-            cachePolicy: .always,
-            operation: .sequence([]))
     }
 
     public static func generate(
@@ -229,8 +207,9 @@ public enum WaylandColliderRecipe {
             id: TaskID(rawValue: "wayland.generate"),
             component: ComponentID(rawValue: "wayland"),
             dependencies: [
-                TaskID(rawValue: "native.builder"),
-                TaskID(rawValue: "wayland.native-sdk.linux-arm64"),
+                NativeBuilderTaskIDs.prepare,
+                WaylandTaskIDs.nativeSDK(
+                    NativeLinuxTarget(architecture: .arm64)),
             ],
             swiftProducts: [
                 swiftPM.product(
@@ -419,7 +398,7 @@ private func protocolRecords(
         records.append(
             WaylandProtocolRecord(
                 name: String(source[nameRange]),
-                path: FilePath(url.path)))
+                path: FilePath(url.path(percentEncoded: false))))
     }
     return records.sorted { $0.path.string < $1.path.string }
 }

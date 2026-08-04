@@ -1,5 +1,6 @@
 import ColliderCore
 import Foundation
+import SystemPackage
 
 struct MacOSBuilderContract: Codable, Sendable {
     struct OperatingSystem: Codable, Sendable {
@@ -75,8 +76,8 @@ struct MacOSBuilderContract: Codable, Sendable {
 
     static let relativePath = "tools/macos-builder/contract.json"
 
-    static func load(root: URL) throws -> MacOSBuilderContract {
-        let url = root.appendingPathComponent(relativePath)
+    static func load(root: FilePath) throws -> MacOSBuilderContract {
+        let url = URL(fileURLWithPath: root.appending(relativePath).string)
         let contract = try JSONDecoder().decode(
             MacOSBuilderContract.self,
             from: Data(contentsOf: url))

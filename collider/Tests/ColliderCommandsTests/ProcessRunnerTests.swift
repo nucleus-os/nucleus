@@ -1,6 +1,7 @@
 import ColliderCore
 import ColliderRuntime
 import Foundation
+import SystemPackage
 import Testing
 
 @testable import ColliderCommands
@@ -39,7 +40,7 @@ func commandFailuresPreserveRunFinalizationSemantics() {
 @Test
 func capturedCommandsKeepDiagnosticsOutOfMachineReadableOutput() async throws {
     let context = WorkspaceContext(
-        root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        root: FilePath(FileManager.default.currentDirectoryPath),
         environment: ProcessInfo.processInfo.environment)
 
     let output = try await context.run(
@@ -54,7 +55,7 @@ func capturedCommandsKeepDiagnosticsOutOfMachineReadableOutput() async throws {
 @Test
 func commandEnvironmentPreservesExplicitWaylandDisplay() async throws {
     let context = WorkspaceContext(
-        root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        root: FilePath(FileManager.default.currentDirectoryPath),
         environment: ProcessInfo.processInfo.environment)
 
     let output = try await context.run(
@@ -70,7 +71,7 @@ func commandEnvironmentPreservesExplicitWaylandDisplay() async throws {
 @Test
 func commandRunnerCanAcceptInteractiveSIGINTTermination() async throws {
     let context = WorkspaceContext(
-        root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        root: FilePath(FileManager.default.currentDirectoryPath),
         environment: ProcessInfo.processInfo.environment)
 
     try await context.run(
@@ -277,7 +278,7 @@ private struct RunningCommandFixture: Sendable {
 
     func context() -> WorkspaceContext {
         WorkspaceContext(
-            root: directory,
+            root: FilePath(directory.path),
             environment: [
                 "PATH": ProcessInfo.processInfo.environment["PATH"]
                     ?? "/usr/bin:/bin"

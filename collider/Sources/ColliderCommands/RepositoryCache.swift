@@ -138,13 +138,13 @@ struct RepositoryCache {
                 nil
             } else {
                 try ColliderFileLock(
-                    path: FilePath(context.layout.locks.path).appending(
+                    path: context.layout.locks.appending(
                         "cache-prune.lock"),
                     purpose: "Collider-owned storage pruning",
                     waitForExistingOwner: false)
             }
         defer { withExtendedLifetime(pruneLock) {} }
-        let registry = RunRegistry(root: FilePath(context.layout.state.path))
+        let registry = RunRegistry(root: context.layout.state)
         let reclaimableRuns = await registry.reclaimableRuns(keeping: keepCount)
         let runBytes = try reclaimableRuns.reduce(into: UInt64(0)) { total, run in
             total &+= try allocatedSize(URL(fileURLWithPath: run.directory.string))
@@ -157,7 +157,7 @@ struct RepositoryCache {
         if !dryRun {
             let paths = SwiftTargetSDKStoragePaths(cacheRoot: context.cacheRoot)
             let sdkLock = try ColliderFileLock(
-                path: FilePath(paths.rebuildLock.path),
+                path: paths.rebuildLock,
                 purpose: "Swift target SDK candidate pruning",
                 waitForExistingOwner: false)
             try withExtendedLifetime(sdkLock) {
@@ -166,22 +166,15 @@ struct RepositoryCache {
                 sdkReclaimableBytes = try allocatedSize(of: sdkCandidates + sdkGenerations)
                 try DirectoryLifecycle.prune(
                     DirectoryRetentionPlan(
-                        safetyRoot: FilePath(paths.artifactRoot.path),
+                        safetyRoot: paths.artifactRoot,
                         rules: [
                             DirectoryRetentionRule(
-                                root: FilePath(
-                                    paths.artifactRoot.appendingPathComponent(
-                                        "generations", isDirectory: true
-                                    ).path),
+                                root: paths.artifactRoot.appending("generations"),
                                 retain: 0,
                                 naming: .swiftSDKCandidate),
                             DirectoryRetentionRule(
-                                root: FilePath(
-                                    paths.artifactRoot.appendingPathComponent(
-                                        "generations", isDirectory: true
-                                    ).path),
-                                current: FilePath(
-                                    paths.artifactRoot.appendingPathComponent("current").path),
+                                root: paths.artifactRoot.appending("generations"),
+                                current: paths.artifactRoot.appending("current"),
                                 retain: 0,
                                 naming: .contentIdentity),
                         ]))
@@ -220,10 +213,9 @@ struct RepositoryCache {
     }
 
     private func storageDeclarations() throws -> [StorageDeclaration] {
-        let root = FilePath(context.root.path)
-        let state = FilePath(context.layout.state.path)
-        let cache = FilePath(
-            context.cacheRoot.appendingPathComponent("nucleus", isDirectory: true).path)
+        let root = context.root
+        let state = context.layout.state
+        let cache = context.cacheRoot.appending("nucleus")
         let sdkPaths = SwiftTargetSDKStoragePaths(cacheRoot: context.cacheRoot)
         let declarations = [
             StorageDeclaration(
@@ -238,10 +230,10 @@ struct RepositoryCache {
                 id: "run-records",
                 owner: "collider-runtime",
                 storageClass: .runRecord,
-                root: FilePath(context.layout.runs.path),
+                root: context.layout.runs,
                 safetyRoot: state,
                 cleanupPolicy: .explicitPrune,
-                workflowLock: FilePath(context.layout.locks.path).appending(
+                workflowLock: context.layout.locks.appending(
                     "cache-prune.lock"),
                 retention: "the most recent successful and active run records are retained"),
             StorageDeclaration(
@@ -257,25 +249,19 @@ struct RepositoryCache {
                 id: "native-sdk",
                 owner: "native-sdk-publishers",
                 storageClass: .published,
-                root: FilePath(
-                    context.nativeSDKRoot.deletingLastPathComponent().path),
-                safetyRoot: FilePath(
-                    context.nativeSDKRoot.deletingLastPathComponent().path),
+                root: context.nativeSDKRoot.removingLastComponent(),
+                safetyRoot: context.nativeSDKRoot.removingLastComponent(),
                 cleanupPolicy: .protected,
                 retention: "validated per-target SDKs remain published"),
             StorageDeclaration(
                 id: "swift-target-sdk-generations",
                 owner: "swift-target-sdk",
                 storageClass: .generation,
-                root: FilePath(
-                    sdkPaths.artifactRoot.appendingPathComponent(
-                        "generations", isDirectory: true
-                    ).path),
-                safetyRoot: FilePath(sdkPaths.artifactRoot.path),
+                root: sdkPaths.artifactRoot.appending("generations"),
+                safetyRoot: sdkPaths.artifactRoot,
                 cleanupPolicy: .explicitPrune,
-                workflowLock: FilePath(sdkPaths.rebuildLock.path),
-                activeGenerationLink: FilePath(
-                    sdkPaths.artifactRoot.appendingPathComponent("current").path),
+                workflowLock: sdkPaths.rebuildLock,
+                activeGenerationLink: sdkPaths.artifactRoot.appending("current"),
                 retention:
                     "the active immutable generation is protected; abandoned candidates and inactive generations are prunable"
             ),
@@ -294,7 +280,7 @@ struct RepositoryCache {
                 root: cache.appending("swift-build-workspaces"),
                 safetyRoot: cache,
                 cleanupPolicy: .explicitClean,
-                workflowLock: FilePath(context.layout.locks.path).appending(
+                workflowLock: context.layout.locks.appending(
                     "swift-build-workspaces.lock"),
                 retention:
                     "architecture-specific runtime build trees remain reusable until explicit clean"
@@ -306,7 +292,7 @@ struct RepositoryCache {
                 root: cache.appending("build-containers"),
                 safetyRoot: cache,
                 cleanupPolicy: .explicitClean,
-                workflowLock: FilePath(context.layout.locks.path).appending(
+                workflowLock: context.layout.locks.appending(
                     "builder-metadata.lock"),
                 retention: "builder image identities remain reusable until explicit clean"),
             StorageDeclaration(
@@ -316,7 +302,7 @@ struct RepositoryCache {
                 root: cache.appending("build"),
                 safetyRoot: cache,
                 cleanupPolicy: .explicitClean,
-                workflowLock: FilePath(context.layout.locks.path).appending(
+                workflowLock: context.layout.locks.appending(
                     "incremental-builds.lock"),
                 retention: "reused until an explicit component clean"),
             StorageDeclaration(
@@ -326,7 +312,7 @@ struct RepositoryCache {
                 root: cache.appending("ccache"),
                 safetyRoot: cache,
                 cleanupPolicy: .explicitClean,
-                workflowLock: FilePath(context.layout.locks.path).appending(
+                workflowLock: context.layout.locks.appending(
                     "compiler-caches.lock"),
                 retention: "reused until an explicit component clean"),
             StorageDeclaration(
@@ -336,7 +322,7 @@ struct RepositoryCache {
                 root: cache.appending("host-ccache"),
                 safetyRoot: cache,
                 cleanupPolicy: .explicitClean,
-                workflowLock: FilePath(context.layout.locks.path).appending(
+                workflowLock: context.layout.locks.appending(
                     "host-compiler-cache.lock"),
                 retention: "host compiler results remain reusable until explicit clean"),
             StorageDeclaration(
@@ -345,10 +331,10 @@ struct RepositoryCache {
                 storageClass: .published,
                 root: FilePath(
                     context.environment["ANDROID_SDK_ROOT"]
-                        ?? context.cacheRoot.appendingPathComponent("android-sdk").path),
+                        ?? context.cacheRoot.appending("android-sdk").string),
                 safetyRoot: FilePath(
                     context.environment["ANDROID_SDK_ROOT"]
-                        ?? context.cacheRoot.appendingPathComponent("android-sdk").path),
+                        ?? context.cacheRoot.appending("android-sdk").string),
                 cleanupPolicy: .protected,
                 retention: "the pinned Android SDK remains provisioned"),
         ]
@@ -356,18 +342,17 @@ struct RepositoryCache {
             declarations,
             forbiddenRemovalRoots: [
                 FilePath("/"), root, cache,
-                FilePath(FileManager.default.homeDirectoryForCurrentUser.path),
+                FilePath(FileManager.default.homeDirectoryForCurrentUser),
             ])
         return declarations
     }
 
     private func swiftSDKCandidates() throws -> [URL] {
         let paths = SwiftTargetSDKStoragePaths(cacheRoot: context.cacheRoot)
-        let generations = paths.artifactRoot.appendingPathComponent(
-            "generations", isDirectory: true)
-        guard FileManager.default.fileExists(atPath: generations.path) else { return [] }
+        let generations = paths.artifactRoot.appending("generations")
+        guard FileManager.default.fileExists(atPath: generations.string) else { return [] }
         return try FileManager.default.contentsOfDirectory(
-            at: generations,
+            at: URL(fileURLWithPath: generations.string, isDirectory: true),
             includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]
         )
         .filter { url in
@@ -382,13 +367,12 @@ struct RepositoryCache {
 
     private func inactiveSwiftSDKGenerations() throws -> [URL] {
         let paths = SwiftTargetSDKStoragePaths(cacheRoot: context.cacheRoot)
-        let generations = paths.artifactRoot.appendingPathComponent(
-            "generations", isDirectory: true)
-        guard FileManager.default.fileExists(atPath: generations.path) else { return [] }
+        let generations = paths.artifactRoot.appending("generations")
+        guard FileManager.default.fileExists(atPath: generations.string) else { return [] }
         let activeName = try activeSwiftSDKGenerationName(paths: paths)
         let pattern = try NSRegularExpression(pattern: #"^[0-9a-f]{24}$"#)
         return try FileManager.default.contentsOfDirectory(
-            at: generations,
+            at: URL(fileURLWithPath: generations.string, isDirectory: true),
             includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]
         )
         .filter { url in
@@ -407,21 +391,23 @@ struct RepositoryCache {
     private func activeSwiftSDKGenerationName(
         paths: SwiftTargetSDKStoragePaths
     ) throws -> String? {
-        let current = paths.artifactRoot.appendingPathComponent("current")
-        guard let values = try? current.resourceValues(forKeys: [.isSymbolicLinkKey]),
+        let current = paths.artifactRoot.appending("current")
+        let currentURL = URL(fileURLWithPath: current.string)
+        guard let values = try? currentURL.resourceValues(forKeys: [.isSymbolicLinkKey]),
             values.isSymbolicLink == true
         else { return nil }
-        let destination = try FileManager.default.destinationOfSymbolicLink(atPath: current.path)
+        let destination = try FileManager.default.destinationOfSymbolicLink(
+            atPath: current.string)
         return URL(
             fileURLWithPath: destination,
-            relativeTo: current.deletingLastPathComponent()
+            relativeTo: currentURL.deletingLastPathComponent()
         ).standardizedFileURL.lastPathComponent
     }
 
     private func runReclamation(keeping count: Int) async -> (
         runs: [RecordedRun], bytes: UInt64
     ) {
-        let registry = RunRegistry(root: FilePath(context.layout.state.path))
+        let registry = RunRegistry(root: context.layout.state)
         let runs = await registry.reclaimableRuns(keeping: count)
         let bytes =
             (try? allocatedSize(

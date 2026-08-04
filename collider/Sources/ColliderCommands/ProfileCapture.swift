@@ -52,7 +52,7 @@ struct ProfileCapture {
         environment configuredEnvironment: [String: String],
         sessionLog: URL?
     ) async throws {
-        let compositor = context.layout.compositor
+        let compositor = URL(context.layout.compositor)
         let receiver = compositor.appendingPathComponent(".tracy-build/tracy-capture")
         let exporter = compositor.appendingPathComponent(".tracy-build/tracy-csvexport")
         guard FileManager.default.isExecutableFile(atPath: receiver.path),
@@ -61,10 +61,10 @@ struct ProfileCapture {
             throw WorkspaceFailure.message(
                 "Tracy receivers are missing; rerun without --no-build")
         }
-        let port = try await availablePort(startingAt: options.port)
+        let port = try await availablePort(startingAt: options.capturePort)
 
-        let runDirectory = URL(fileURLWithPath: options.output, relativeTo: compositor)
-            .standardizedFileURL.appendingPathComponent(options.name)
+        let runDirectory = URL(fileURLWithPath: options.captureOutput, relativeTo: compositor)
+            .standardizedFileURL.appendingPathComponent(options.captureName)
         try FileManager.default.createDirectory(at: runDirectory, withIntermediateDirectories: true)
         let capture = runDirectory.appendingPathComponent("capture.tracy")
         let captureLog = runDirectory.appendingPathComponent("tracy-capture.log")
@@ -186,7 +186,7 @@ struct ProfileCapture {
     }
 
     private func captureArguments(_ options: RunOptions, port: Int, capture: URL) -> [String] {
-        var value = ["-o", capture.path, "-a", options.host, "-p", String(port)]
+        var value = ["-o", capture.path, "-a", options.captureHost, "-p", String(port)]
         if let seconds = options.seconds { value += ["-s", String(seconds)] }
         return value
     }
@@ -272,7 +272,7 @@ struct ProfileCapture {
     ) throws {
         let values = [
             "created_at=\(ISO8601DateFormatter().string(from: Date()))",
-            "host=\(options.host)", "port=\(port)",
+            "host=\(options.captureHost)", "port=\(port)",
             "seconds=\(options.seconds.map(String.init) ?? "until-client-exit")",
             "optimize=\(options.effectiveOptimization.rawValue)",
             "tracy=true", "launch=true",

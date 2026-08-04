@@ -18,30 +18,25 @@ struct RebuildOptions {
 }
 
 struct SwiftTargetSDKStoragePaths: Equatable {
-    let cacheRoot: URL
-    let artifactRoot: URL
-    let downloadRoot: URL
-    let generatorScratch: URL
-    let runtimeBuilderImageID: URL
-    let runtimeCompilerCache: URL
-    let runtimeBuildRoot: URL
-    let rebuildLock: URL
+    let cacheRoot: FilePath
+    let artifactRoot: FilePath
+    let downloadRoot: FilePath
+    let generatorScratch: FilePath
+    let runtimeBuilderImageID: FilePath
+    let runtimeCompilerCache: FilePath
+    let runtimeBuildRoot: FilePath
+    let rebuildLock: FilePath
 
-    init(cacheRoot: URL) {
-        self.cacheRoot = cacheRoot.standardizedFileURL
-        artifactRoot = self.cacheRoot.appendingPathComponent(
-            "nucleus/swift-target-sdks", isDirectory: true)
-        downloadRoot = self.cacheRoot.appendingPathComponent(
-            "nucleus/downloads/swift-target-sdks", isDirectory: true)
-        generatorScratch = self.cacheRoot.appendingPathComponent(
-            "nucleus/build/swift-sdk-generator", isDirectory: true)
-        runtimeBuilderImageID = self.cacheRoot.appendingPathComponent(
+    init(cacheRoot: FilePath) {
+        self.cacheRoot = cacheRoot
+        artifactRoot = cacheRoot.appending("nucleus/swift-target-sdks")
+        downloadRoot = cacheRoot.appending("nucleus/downloads/swift-target-sdks")
+        generatorScratch = cacheRoot.appending("nucleus/build/swift-sdk-generator")
+        runtimeBuilderImageID = cacheRoot.appending(
             "nucleus/build-containers/swift-runtime/image-id")
-        runtimeCompilerCache = self.cacheRoot.appendingPathComponent(
-            "nucleus/ccache/swift-runtime", isDirectory: true)
-        runtimeBuildRoot = self.cacheRoot.appendingPathComponent(
-            "nucleus/build/swift-target-runtime", isDirectory: true)
-        rebuildLock = artifactRoot.appendingPathComponent("rebuild.lock")
+        runtimeCompilerCache = cacheRoot.appending("nucleus/ccache/swift-runtime")
+        runtimeBuildRoot = cacheRoot.appending("nucleus/build/swift-target-runtime")
+        rebuildLock = artifactRoot.appending("rebuild.lock")
     }
 }
 
@@ -137,38 +132,37 @@ struct SwiftSDKStatus {
 
     func run(json: Bool) throws {
         let paths = SwiftTargetSDKStoragePaths(cacheRoot: context.cacheRoot)
-        let activeLink = paths.artifactRoot.appendingPathComponent("current")
+        let activeLink = paths.artifactRoot.appending("current")
         let active = resolvedSymlink(activeLink)
-        let hostSwift = active?.appendingPathComponent("toolchain/usr/bin/swift")
-        let sdkRoot = active?.appendingPathComponent("swift-sdks")
+        let hostSwift = active?.appending("toolchain/usr/bin/swift")
+        let sdkRoot = active?.appending("swift-sdks")
         let sdkNames: [String] =
             try sdkRoot.map { root in
-                guard FileManager.default.fileExists(atPath: root.path) else {
+                guard FileManager.default.fileExists(atPath: root.string) else {
                     return [String]()
                 }
-                return try FileManager.default.contentsOfDirectory(atPath: root.path)
+                return try FileManager.default.contentsOfDirectory(atPath: root.string)
                     .filter { $0.hasSuffix(".artifactbundle") }
                     .sorted()
             } ?? []
-        let generationsRoot = paths.artifactRoot.appendingPathComponent(
-            "generations", isDirectory: true)
+        let generationsRoot = paths.artifactRoot.appending("generations")
         let generations =
-            try FileManager.default.fileExists(atPath: generationsRoot.path)
-            ? FileManager.default.contentsOfDirectory(atPath: generationsRoot.path)
+            try FileManager.default.fileExists(atPath: generationsRoot.string)
+            ? FileManager.default.contentsOfDirectory(atPath: generationsRoot.string)
                 .filter { !$0.hasPrefix(".candidate-") }
                 .sorted()
             : []
         let executable =
             hostSwift.flatMap {
-                FileManager.default.isExecutableFile(atPath: $0.path) ? $0 : nil
+                FileManager.default.isExecutableFile(atPath: $0.string) ? $0 : nil
             }
         let record = SwiftSDKStatusRecord(
-            cacheRoot: paths.cacheRoot.path,
-            artifactRoot: paths.artifactRoot.path,
+            cacheRoot: paths.cacheRoot.string,
+            artifactRoot: paths.artifactRoot.string,
             xcodeIdentity: try selectedXcodeIdentity(environment: context.environment),
-            activeGeneration: active?.lastPathComponent,
-            activeGenerationPath: active?.path,
-            hostSwiftExecutable: executable?.path,
+            activeGeneration: active?.lastComponent?.string,
+            activeGenerationPath: active?.string,
+            hostSwiftExecutable: executable?.string,
             hostSwiftVersion: executable.flatMap {
                 try? commandOutput(
                     executable: $0,
@@ -212,8 +206,8 @@ struct SwiftSDKCommand {
             "Swift target SDK generation requires native macOS arm64")
         #endif
         let recipeRoot = context.layout.swiftSDK
-        let inputsFile = recipeRoot.appendingPathComponent("target-sdk-inputs.json")
-        let inputs = try SwiftTargetSDKInputs.load(from: FilePath(inputsFile.path))
+        let inputsFile = recipeRoot.appending("target-sdk-inputs.json")
+        let inputs = try SwiftTargetSDKInputs.load(from: inputsFile)
         let sourceID = try swiftTargetRuntimeSourceIdentity(
             root: context.root,
             environment: context.environment)
@@ -221,8 +215,7 @@ struct SwiftSDKCommand {
             root: context.root,
             path: "swift-sdk/source/swift-sdk-generator",
             environment: context.environment)
-        let generatorSource = recipeRoot.appendingPathComponent(
-            "source/swift-sdk-generator", isDirectory: true)
+        let generatorSource = recipeRoot.appending("source/swift-sdk-generator")
 
         let android = try AndroidToolchainVersions.load(workspaceRoot: context.root)
         let ndkRoot = try android.ndkRoot(environment: context.environment)
@@ -231,71 +224,56 @@ struct SwiftSDKCommand {
             environment: context.environment)
         let xcodeSwift = try xcrunTool(
             "swift", environment: context.environment)
-        let fixture = context.root.appendingPathComponent(
+        let fixture = context.root.appending(
             "collider/engine/Sources/ColliderRuntime/Resources/"
-                + "ToolchainValidationFixtures/AndroidSDKConsumer",
-            isDirectory: true)
-        let validator = recipeRoot.appendingPathComponent(
+                + "ToolchainValidationFixtures/AndroidSDKConsumer")
+        let validator = recipeRoot.appending(
             "validate-target-sdk-artifacts.sh")
-        let runtimeBuilderContext = recipeRoot.appendingPathComponent(
-            "runtime-build-container", isDirectory: true)
-        let runtimePreset = recipeRoot.appendingPathComponent(
+        let runtimeBuilderContext = recipeRoot.appending("runtime-build-container")
+        let runtimePreset = recipeRoot.appending(
             "nucleus-target-runtime-presets.ini")
-        let sysrootPreparer = recipeRoot.appendingPathComponent(
+        let sysrootPreparer = recipeRoot.appending(
             "prepare-linux-sysroot.sh")
-        let sourceWorkspace = recipeRoot.appendingPathComponent(
-            "source", isDirectory: true)
+        let sourceWorkspace = recipeRoot.appending("source")
         guard
             FileManager.default.isExecutableFile(
-                atPath: sourceWorkspace.appendingPathComponent(
-                    "swift/utils/build-script"
-                ).path)
+                atPath: sourceWorkspace.appending("swift/utils/build-script").string)
         else {
             throw WorkspaceFailure.message(
                 "the Swift target-runtime source closure is not initialized")
         }
         let artifactID = try swiftTargetSDKArtifactID(
-            inputsFile: FilePath(inputsFile.path),
-            validationFixture: FilePath(fixture.path),
-            validator: FilePath(validator.path),
-            ndkProperties: FilePath(
-                ndkRoot.appendingPathComponent("source.properties").path),
+            inputsFile: inputsFile,
+            validationFixture: fixture,
+            validator: validator,
+            ndkProperties: ndkRoot.appending("source.properties"),
             xcodeIdentity: xcodeIdentity,
             sourceID: sourceID,
-            runtimeBuilderContext: FilePath(runtimeBuilderContext.path),
-            runtimePreset: FilePath(runtimePreset.path),
-            sysrootPreparer: FilePath(sysrootPreparer.path),
+            runtimeBuilderContext: runtimeBuilderContext,
+            runtimePreset: runtimePreset,
+            sysrootPreparer: sysrootPreparer,
             generatorSourceID: generatorSourceID)
         let linuxTargets = try inputs.linuxTargets.map { target in
             let buildID = try swiftTargetRuntimeBuildID(
                 inputs: inputs,
                 target: target,
                 sourceID: sourceID,
-                runtimeBuilderContext: FilePath(runtimeBuilderContext.path),
-                runtimePreset: FilePath(runtimePreset.path),
-                sysrootPreparer: FilePath(sysrootPreparer.path))
-            let root = paths.runtimeBuildRoot.appendingPathComponent(
-                "\(target.architecture.rawValue)/\(buildID)",
-                isDirectory: true)
+                runtimeBuilderContext: runtimeBuilderContext,
+                runtimePreset: runtimePreset,
+                sysrootPreparer: sysrootPreparer)
+            let root = paths.runtimeBuildRoot.appending(
+                "\(target.architecture.rawValue)/\(buildID)")
             return SwiftLinuxTargetBuildConfiguration(
                 target: target,
-                runtimeBuildWorkspace: FilePath(
-                    root.appendingPathComponent("build", isDirectory: true).path),
-                runtimeCompilerCache: FilePath(
-                    paths.runtimeCompilerCache.appendingPathComponent(
-                        target.architecture.rawValue,
-                        isDirectory: true
-                    ).path),
-                runtimeInstall: FilePath(
-                    root.appendingPathComponent("install", isDirectory: true).path),
-                sysroot: FilePath(
-                    root.appendingPathComponent("sysroot", isDirectory: true).path))
+                runtimeBuildWorkspace: root.appending("build"),
+                runtimeCompilerCache: paths.runtimeCompilerCache.appending(
+                    target.architecture.rawValue),
+                runtimeInstall: root.appending("install"),
+                sysroot: root.appending("sysroot"))
         }
-        let generation = paths.artifactRoot.appendingPathComponent(
-            "generations/\(artifactID)", isDirectory: true)
-        let active = paths.artifactRoot.appendingPathComponent("current")
-        let discoveryRoot = homeDirectory.appendingPathComponent(
-            ".swiftpm/swift-sdks", isDirectory: true)
+        let generation = paths.artifactRoot.appending("generations/\(artifactID)")
+        let active = paths.artifactRoot.appending("current")
+        let discoveryRoot = homeDirectory.appending(".swiftpm/swift-sdks")
         if reusableGeneration(
             generation: generation,
             active: active,
@@ -306,7 +284,7 @@ struct SwiftSDKCommand {
             if options.controls.json {
                 let result = [
                     "artifactID": artifactID,
-                    "generation": generation.path,
+                    "generation": generation.string,
                     "status": "clean",
                 ]
                 print(
@@ -318,47 +296,43 @@ struct SwiftSDKCommand {
                     "clean  swift-sdk.target-sdks  immutable generation "
                         + "\(artifactID) is active and validated")
             } else if !options.controls.quiet {
-                print("==> Swift target SDK generation is clean: \(generation.path)")
+                print("==> Swift target SDK generation is clean: \(generation.string)")
             }
             return
         }
 
         let runID = currentRunID
-        let candidate = paths.artifactRoot.appendingPathComponent(
-            "generations/.candidate-\(artifactID)-\(runID)",
-            isDirectory: true)
+        let candidate = paths.artifactRoot.appending(
+            "generations/.candidate-\(artifactID)-\(runID)")
         let taskEnvironment = swiftTargetSDKTaskEnvironment(
             context.taskEnvironment,
             runtimeSourceID: sourceID)
         let configuration = SwiftTargetSDKGenerationConfiguration(
             inputs: inputs,
-            inputsFile: FilePath(inputsFile.path),
+            inputsFile: inputsFile,
             androidAPILevel: android.minimumSDK,
-            downloadRoot: FilePath(paths.downloadRoot.path),
-            generatorSource: FilePath(generatorSource.path),
-            generatorScratch: FilePath(paths.generatorScratch.path),
-            sourceWorkspace: FilePath(sourceWorkspace.path),
+            downloadRoot: paths.downloadRoot,
+            generatorSource: generatorSource,
+            generatorScratch: paths.generatorScratch,
+            sourceWorkspace: sourceWorkspace,
             sourceID: sourceID,
-            runtimeBuilderContext: FilePath(runtimeBuilderContext.path),
-            runtimeBuilderImageID: FilePath(paths.runtimeBuilderImageID.path),
+            runtimeBuilderContext: runtimeBuilderContext,
+            runtimeBuilderImageID: paths.runtimeBuilderImageID,
             linuxTargets: linuxTargets,
-            sysrootPreparer: FilePath(sysrootPreparer.path),
-            candidate: FilePath(candidate.path),
-            generation: FilePath(generation.path),
-            active: FilePath(active.path),
-            ndkRoot: FilePath(ndkRoot.path),
-            validationFixture: FilePath(fixture.path),
-            validator: FilePath(validator.path),
-            swiftExecutable: FilePath(xcodeSwift.path),
-            sdkDiscoveryRoot: FilePath(discoveryRoot.path),
-            displacedRoot: FilePath(
-                paths.artifactRoot.appendingPathComponent(
-                    "displaced/\(runID)", isDirectory: true
-                ).path),
+            sysrootPreparer: sysrootPreparer,
+            candidate: candidate,
+            generation: generation,
+            active: active,
+            ndkRoot: ndkRoot,
+            validationFixture: fixture,
+            validator: validator,
+            swiftExecutable: xcodeSwift,
+            sdkDiscoveryRoot: discoveryRoot,
+            displacedRoot: paths.artifactRoot.appending("displaced/\(runID)"),
             environment: taskEnvironment)
         let taskSet = try SwiftTargetSDKColliderRecipe.generation(configuration)
         if !options.controls.json {
-            print("==> Swift target SDK root: \(paths.artifactRoot.path)")
+            print("==> Swift target SDK root: \(paths.artifactRoot.string)")
             for target in linuxTargets {
                 print(
                     "==> \(target.target.architecture.rawValue) Linux runtime: "
@@ -374,10 +348,10 @@ struct SwiftSDKCommand {
             tasks: taskSet.tasks,
             selected: taskSet.selected,
             controls: options.controls,
-            workflowLocks: [.shared(FilePath(paths.rebuildLock.path))])
+            workflowLocks: [.shared(paths.rebuildLock)])
         guard !options.controls.dryRun, !options.controls.explain else { return }
         if !options.controls.json {
-            print("==> active Swift target SDK generation: \(generation.path)")
+            print("==> active Swift target SDK generation: \(generation.string)")
         }
         #endif
     }
@@ -392,58 +366,58 @@ struct SwiftSDKCommand {
             .replacing(":", with: "-") + "-\(getpid())"
     }
 
-    private var homeDirectory: URL {
+    private var homeDirectory: FilePath {
         if let home = context.environment["HOME"], !home.isEmpty {
-            return URL(fileURLWithPath: home, isDirectory: true)
+            return FilePath(home)
         }
-        return FileManager.default.homeDirectoryForCurrentUser
+        return FilePath(FileManager.default.homeDirectoryForCurrentUser)
     }
 }
 
 private func reusableGeneration(
-    generation: URL,
-    active: URL,
-    discoveryRoot: URL,
+    generation: FilePath,
+    active: FilePath,
+    discoveryRoot: FilePath,
     inputs: SwiftTargetSDKInputs,
     artifactID: String
 ) -> Bool {
-    let marker = generation.appendingPathComponent(
-        ".nucleus-target-sdk-generation")
+    let marker = URL(
+        fileURLWithPath: generation.appending(
+            ".nucleus-target-sdk-generation"
+        ).string)
     guard
         (try? String(contentsOf: marker, encoding: .utf8))
             == inputs.snapshot,
         FileManager.default.isExecutableFile(
-            atPath: generation.appendingPathComponent(
-                "toolchain/usr/bin/swift"
-            ).path),
+            atPath: generation.appending("toolchain/usr/bin/swift").string),
         resolvedSymlink(active)
-            == generation.standardizedFileURL.resolvingSymlinksInPath()
+            == resolvedPath(generation)
     else {
         return false
     }
     for bundleID in [inputs.linuxBundleID, inputs.androidBundleID] {
         let name = "\(bundleID).artifactbundle"
-        let bundle = generation.appendingPathComponent("swift-sdks/\(name)")
-        let discovery = discoveryRoot.appendingPathComponent(name)
-        guard FileManager.default.fileExists(atPath: bundle.path),
+        let bundle = generation.appending("swift-sdks/\(name)")
+        let discovery = discoveryRoot.appending(name)
+        guard FileManager.default.fileExists(atPath: bundle.string),
             resolvedSymlink(discovery)
-                == bundle.standardizedFileURL.resolvingSymlinksInPath()
+                == resolvedPath(bundle)
         else {
             return false
         }
     }
-    return generation.lastPathComponent == artifactID
+    return generation.lastComponent?.string == artifactID
 }
 
 private func swiftTargetRuntimeSourceIdentity(
-    root: URL,
+    root: FilePath,
     environment: [String: String]
 ) throws -> String {
     let prefix = "swift-sdk/source/"
     let declarations = try commandOutput(
-        executable: URL(fileURLWithPath: "/usr/bin/git"),
+        executable: FilePath("/usr/bin/git"),
         arguments: [
-            "-C", root.path,
+            "-C", root.string,
             "config", "-f", ".gitmodules", "--get-regexp",
             #"^submodule\..*\.path$"#,
         ],
@@ -484,13 +458,13 @@ private func swiftTargetRuntimeSourceIdentity(
 }
 
 private func validatedSwiftGitlinkCommit(
-    root: URL,
+    root: FilePath,
     path: String,
     environment: [String: String]
 ) throws -> String {
     let entry = try commandOutput(
-        executable: URL(fileURLWithPath: "/usr/bin/git"),
-        arguments: ["-C", root.path, "ls-files", "--stage", "--", path],
+        executable: FilePath("/usr/bin/git"),
+        arguments: ["-C", root.string, "ls-files", "--stage", "--", path],
         environment: environment)
     let fields = entry.split(
         maxSplits: 3,
@@ -500,10 +474,10 @@ private func validatedSwiftGitlinkCommit(
             "Swift source path is not a pinned gitlink: \(path)")
     }
     let expectedCommit = String(fields[1])
-    let repository = root.appendingPathComponent(path, isDirectory: true)
+    let repository = root.appending(path)
     let actualCommit = try commandOutput(
-        executable: URL(fileURLWithPath: "/usr/bin/git"),
-        arguments: ["-C", repository.path, "rev-parse", "HEAD"],
+        executable: FilePath("/usr/bin/git"),
+        arguments: ["-C", repository.string, "rev-parse", "HEAD"],
         environment: environment)
     guard actualCommit == expectedCommit else {
         throw WorkspaceFailure.message(
@@ -511,9 +485,9 @@ private func validatedSwiftGitlinkCommit(
         )
     }
     let status = try commandOutput(
-        executable: URL(fileURLWithPath: "/usr/bin/git"),
+        executable: FilePath("/usr/bin/git"),
         arguments: [
-            "-C", repository.path, "status", "--porcelain",
+            "-C", repository.string, "status", "--porcelain",
             "--untracked-files=all",
         ],
         environment: environment)
@@ -528,7 +502,7 @@ private func selectedXcodeIdentity(
     environment: [String: String]
 ) throws -> String {
     try commandOutput(
-        executable: URL(fileURLWithPath: "/usr/bin/xcodebuild"),
+        executable: FilePath("/usr/bin/xcodebuild"),
         arguments: ["-version"],
         environment: environment
     )
@@ -538,9 +512,9 @@ private func selectedXcodeIdentity(
 private func xcrunTool(
     _ name: String,
     environment: [String: String]
-) throws -> URL {
+) throws -> FilePath {
     let output = try commandOutput(
-        executable: URL(fileURLWithPath: "/usr/bin/xcrun"),
+        executable: FilePath("/usr/bin/xcrun"),
         arguments: ["--find", name],
         environment: environment)
     let tool = URL(fileURLWithPath: output).standardizedFileURL
@@ -548,16 +522,16 @@ private func xcrunTool(
         throw WorkspaceFailure.message(
             "Xcode tool is not executable: \(tool.path)")
     }
-    return tool
+    return FilePath(tool)
 }
 
 private func commandOutput(
-    executable: URL,
+    executable: FilePath,
     arguments: [String],
     environment: [String: String]
 ) throws -> String {
     let process = Process()
-    process.executableURL = executable
+    process.executableURL = URL(fileURLWithPath: executable.string)
     process.arguments = arguments
     process.environment = environment
     let output = Pipe()
@@ -570,20 +544,27 @@ private func commandOutput(
         .trimmingCharacters(in: .whitespacesAndNewlines)
     guard process.terminationStatus == 0 else {
         throw WorkspaceFailure.message(
-            "\(executable.lastPathComponent) failed: \(text)")
+            "\(executable.lastComponent?.string ?? executable.string) failed: \(text)")
     }
     return text
 }
 
-private func resolvedSymlink(_ link: URL) -> URL? {
+private func resolvedSymlink(_ link: FilePath) -> FilePath? {
     guard
         let target = try? FileManager.default.destinationOfSymbolicLink(
-            atPath: link.path)
+            atPath: link.string)
     else {
         return nil
     }
-    return URL(
-        fileURLWithPath: target,
-        relativeTo: link.deletingLastPathComponent()
-    ).standardizedFileURL.resolvingSymlinksInPath()
+    return FilePath(
+        URL(
+            fileURLWithPath: target,
+            relativeTo: URL(
+                fileURLWithPath: link.removingLastComponent().string,
+                isDirectory: true)
+        ).standardizedFileURL.resolvingSymlinksInPath().path)
+}
+
+private func resolvedPath(_ path: FilePath) -> FilePath {
+    FilePath(URL(fileURLWithPath: path.string).resolvingSymlinksInPath())
 }

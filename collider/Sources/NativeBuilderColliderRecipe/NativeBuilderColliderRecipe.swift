@@ -1,11 +1,15 @@
 import ColliderCore
 
+package enum NativeBuilderTaskIDs {
+    package static let prepare = TaskID(rawValue: "native.builder")
+}
+
 public enum NativeBuilderColliderRecipe {
     public static func prepare(
         _ configuration: NativeOCIConfiguration
     ) -> TaskDeclaration {
         return TaskDeclaration(
-            id: TaskID(rawValue: "native.builder"),
+            id: NativeBuilderTaskIDs.prepare,
             component: ComponentID(rawValue: "native"),
             inputs: [
                 .tree(configuration.context)

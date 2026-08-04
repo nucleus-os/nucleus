@@ -2,6 +2,13 @@ import ColliderCore
 import Foundation
 import SystemPackage
 
+package enum ChromiumTaskIDs {
+    package static let bootstrapSource = TaskID(rawValue: "browser.bootstrap-source")
+    package static let retention = TaskID(rawValue: "browser.retention")
+    package static let test = TaskID(rawValue: "browser.test")
+    package static let install = TaskID(rawValue: "browser.install")
+}
+
 public struct ChromiumRecipeLayout: Hashable, Sendable {
     public let sourceID: String
     public let cacheRoot: FilePath
@@ -268,7 +275,7 @@ public enum ChromiumColliderRecipe {
                 .validateBrowserArtifact(browserAssembly),
             ]))
         let retention = TaskDeclaration(
-            id: TaskID(rawValue: "browser.retention"),
+            id: ChromiumTaskIDs.retention,
             component: ComponentID(rawValue: "browser"),
             dependencies: [browserTask.id],
             inputs: commonInputs,
@@ -314,7 +321,7 @@ public enum ChromiumColliderRecipe {
                     packageList: cef.appending("apt-deps.txt"),
                     environment: childEnvironment)))
         let bootstrapSource = TaskDeclaration(
-            id: TaskID(rawValue: "browser.bootstrap-source"),
+            id: ChromiumTaskIDs.bootstrapSource,
             component: ComponentID(rawValue: "browser"),
             dependencies: [
                 bootstrapPackages.id,
@@ -325,7 +332,7 @@ public enum ChromiumColliderRecipe {
             locks: sourceTask.locks,
             operation: .prepareChromiumSource(sourcePreparation))
         let test = TaskDeclaration(
-            id: TaskID(rawValue: "browser.test"),
+            id: ChromiumTaskIDs.test,
             component: ComponentID(rawValue: "browser"),
             dependencies: [browserTask.id],
             inputs: commonInputs,
@@ -372,7 +379,7 @@ public enum ChromiumColliderRecipe {
                 .validateBrowserArtifact(browserAssembly),
             ]))
         let install = TaskDeclaration(
-            id: TaskID(rawValue: "browser.install"),
+            id: ChromiumTaskIDs.install,
             component: ComponentID(rawValue: "browser"),
             dependencies: [browserTask.id],
             inputs: commonInputs,

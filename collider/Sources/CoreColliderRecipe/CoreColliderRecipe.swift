@@ -1,47 +1,25 @@
 import ColliderCore
 import Foundation
+import NativeBuilderColliderRecipe
 import SystemPackage
 
+package enum CoreTaskIDs {
+    package static let sources = TaskID(rawValue: "core.sources")
+    package static let androidNativeSDK = TaskID(rawValue: "core.native-sdk.android-arm64")
+    package static let androidSkia = TaskID(rawValue: "core.skia.android-arm64")
+    package static let validateAndroidHost = TaskID(
+        rawValue: "core.android-host.validate")
+
+    package static func skia(_ target: NativeLinuxTarget) -> TaskID {
+        TaskID(rawValue: "core.skia.\(target.identifier)")
+    }
+
+    package static func nativeSDK(_ target: NativeLinuxTarget) -> TaskID {
+        TaskID(rawValue: "core.native-sdk.\(target.identifier)")
+    }
+}
+
 public enum CoreColliderRecipe {
-    public static func build(
-        root: FilePath,
-        environment: [String: String],
-        swiftPM: SwiftPMInvocation
-    ) -> TaskDeclaration {
-        task(
-            "core.build",
-            root,
-            environment,
-            ["build"],
-            [
-                TaskID(rawValue: "tracy.build"),
-                TaskID(rawValue: "vulkan.build"),
-                TaskID(rawValue: "wayland.build"),
-            ],
-            swiftPM)
-    }
-
-    public static func test(
-        root: FilePath,
-        environment: [String: String],
-        swiftPM: SwiftPMInvocation
-    ) -> TaskDeclaration {
-        let requirement = swiftPM.testProduct(
-            package: "core",
-            testProduct: "NucleusPackageTests",
-            packageRoot: root,
-            environment: environment)
-        return TaskDeclaration(
-            id: TaskID(rawValue: "core.test"),
-            component: ComponentID(rawValue: "core"),
-            dependencies: [TaskID(rawValue: "core.build")],
-            subsumedDependencies: [TaskID(rawValue: "core.build")],
-            swiftTests: [requirement],
-            locks: [.checkout("core")],
-            cachePolicy: .always,
-            operation: .sequence([]))
-    }
-
     public static func prepareSkiaDependencies(
         root: FilePath,
         environment: [String: String]
@@ -70,7 +48,7 @@ public enum CoreColliderRecipe {
             maximumResponseSize: 16 * 1_024 * 1_024,
             acceptedMediaTypes: ["application/octet-stream"])
         return TaskDeclaration(
-            id: TaskID(rawValue: "core.sources"),
+            id: CoreTaskIDs.sources,
             component: ComponentID(rawValue: "core"),
             inputs: [
                 .file(skia.appending("DEPS")),
@@ -129,7 +107,7 @@ public enum CoreColliderRecipe {
         builder: NativeOCIConfiguration
     ) -> TaskDeclaration {
         skiaTask(
-            id: "core.skia.\(target.identifier)",
+            id: CoreTaskIDs.skia(target),
             root: root,
             environment: environment,
             buildDirectory: root.appending(".skia-build/\(target.identifier)"),
@@ -149,7 +127,7 @@ public enum CoreColliderRecipe {
     ) -> TaskDeclaration {
         let ndk = "/opt/android-ndk-r30-beta2"
         return skiaTask(
-            id: "core.skia.android-arm64",
+            id: CoreTaskIDs.androidSkia,
             root: root,
             environment: environment,
             buildDirectory: root.appending(".skia-build/android-arm64"),
@@ -221,7 +199,7 @@ public enum CoreColliderRecipe {
             "android/nucleus/src/main/kotlin/dev/nucleus/android/"
                 + "NucleusNative.kt")
         return TaskDeclaration(
-            id: TaskID(rawValue: "core.android-host.validate"),
+            id: CoreTaskIDs.validateAndroidHost,
             component: ComponentID(rawValue: "core"),
             dependencies: dependencies,
             inputs: [
@@ -252,7 +230,7 @@ public enum CoreColliderRecipe {
             ("include/skia-text", root.appending("render-cxx/skia")),
         ]
         return TaskDeclaration(
-            id: TaskID(rawValue: "core.native-sdk.android-arm64"),
+            id: CoreTaskIDs.androidNativeSDK,
             component: ComponentID(rawValue: "core"),
             dependencies: dependencies,
             inputs: links.map {
@@ -291,10 +269,10 @@ public enum CoreColliderRecipe {
             ("include/skia-text", root.appending("render-cxx/skia")),
         ]
         return TaskDeclaration(
-            id: TaskID(rawValue: "core.native-sdk.\(target.identifier)"),
+            id: CoreTaskIDs.nativeSDK(target),
             component: ComponentID(rawValue: "core"),
             dependencies: [
-                TaskID(rawValue: "core.skia.\(target.identifier)")
+                CoreTaskIDs.skia(target)
             ],
             inputs: links.map {
                 .value(name: $0.0, bytes: Array($0.1.string.utf8))
@@ -411,7 +389,7 @@ private func androidNDKReadELFPath(_ ndk: FilePath) -> FilePath {
 }
 
 private func skiaTask(
-    id: String,
+    id: TaskID,
     root: FilePath,
     environment: [String: String],
     buildDirectory: FilePath,
@@ -424,8 +402,8 @@ private func skiaTask(
 ) -> TaskDeclaration {
     let skia = root.appending("third-party/skia")
     let dependencies = [
-        TaskID(rawValue: "core.sources"),
-        TaskID(rawValue: "native.builder"),
+        CoreTaskIDs.sources,
+        NativeBuilderTaskIDs.prepare,
     ]
     let imageInputs: [ArtifactInput] = [
         .dependencyOutput(builder.imageID)
@@ -482,7 +460,7 @@ private func skiaTask(
             ["ninja", "-C", containerBuildDirectory] + ninjaTargets),
     ])
     return TaskDeclaration(
-        id: TaskID(rawValue: id),
+        id: id,
         component: ComponentID(rawValue: "core"),
         dependencies: dependencies,
         inputs: [
@@ -497,7 +475,7 @@ private func skiaTask(
                 path: buildDirectory.appending($0),
                 validation: .regularFile)
         },
-        locks: [.checkout(id)],
+        locks: [.checkout(id.rawValue)],
         operation: operation)
 }
 

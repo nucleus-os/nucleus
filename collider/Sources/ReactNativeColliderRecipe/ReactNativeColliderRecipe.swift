@@ -1,51 +1,16 @@
 import ColliderCore
+import CoreColliderRecipe
 import Foundation
+import NativeBuilderColliderRecipe
 import SystemPackage
 
+package enum ReactNativeTaskIDs {
+    package static func nativeSDK(_ target: NativeLinuxTarget) -> TaskID {
+        TaskID(rawValue: "rn.native-sdk.\(target.identifier)")
+    }
+}
+
 public enum ReactNativeColliderRecipe {
-    public static func build(
-        root: FilePath,
-        environment: [String: String],
-        swiftPM: SwiftPMInvocation
-    ) -> TaskDeclaration {
-        task(
-            "rn.build", root, environment, ["build"],
-            [TaskID(rawValue: "linux.build")], swiftPM,
-            prebuildTargets: ["NucleusReactRuntimeCxx"])
-    }
-
-    public static func test(
-        root: FilePath,
-        environment: [String: String],
-        swiftPM: SwiftPMInvocation
-    ) -> TaskDeclaration {
-        let requirement = swiftPM.testProduct(
-            package: "react-native",
-            testProduct: "NucleusReactNativePackageTests",
-            packageRoot: root,
-            environment: environment,
-            expectedBuildOutputs: [
-                PathPostcondition(
-                    path: swiftPM.generatedSwiftHeader("NucleusReactRuntimeCxx"),
-                    validation: .regularFile)
-            ])
-        return TaskDeclaration(
-            id: TaskID(rawValue: "rn.test"),
-            component: ComponentID(rawValue: "rn"),
-            dependencies: [TaskID(rawValue: "rn.build")],
-            subsumedDependencies: [TaskID(rawValue: "rn.build")],
-            swiftTests: [requirement],
-            postconditions: [
-                PathPostcondition(
-                    path: swiftPM.generatedSwiftHeader(
-                        "NucleusReactRuntimeCxx"),
-                    validation: .regularFile)
-            ],
-            locks: [.checkout("rn")],
-            cachePolicy: .always,
-            operation: .sequence([]))
-    }
-
     public static func installJavaScriptDependencies(
         root: FilePath,
         environment: [String: String],
@@ -54,7 +19,7 @@ public enum ReactNativeColliderRecipe {
         TaskDeclaration(
             id: TaskID(rawValue: "rn.javascript-dependencies"),
             component: ComponentID(rawValue: "rn"),
-            dependencies: [TaskID(rawValue: "native.builder")],
+            dependencies: [NativeBuilderTaskIDs.prepare],
             inputs: [
                 .file(
                     root.appending(
@@ -206,8 +171,8 @@ public enum ReactNativeColliderRecipe {
             "../core/.skia-build/\(target.identifier)")
         let icuLibrary = icuLibraryDirectory.appending("libicu.a")
         let dependencies = [
-            TaskID(rawValue: "native.builder"),
-            TaskID(rawValue: "core.skia.\(target.identifier)"),
+            NativeBuilderTaskIDs.prepare,
+            CoreTaskIDs.skia(target),
         ]
         let nativeInputs: [ArtifactInput] = [
             .dependencyOutput(builder.imageID),
@@ -522,7 +487,7 @@ public enum ReactNativeColliderRecipe {
             id: TaskID(rawValue: "rn.native-sdk.\(target.identifier)"),
             component: ComponentID(rawValue: "rn"),
             dependencies: [
-                TaskID(rawValue: "core.native-sdk.\(target.identifier)"),
+                CoreTaskIDs.nativeSDK(target),
                 TaskID(rawValue: "rn.cxx.\(target.identifier)"),
             ],
             inputs: links.map {
@@ -634,7 +599,7 @@ private func commonCMakeArguments(
     ]
 }
 
-private let nativeBuilderDependencies = [TaskID(rawValue: "native.builder")]
+private let nativeBuilderDependencies = [NativeBuilderTaskIDs.prepare]
 
 private func nativeBuilderInputs(
     _ builder: NativeOCIConfiguration

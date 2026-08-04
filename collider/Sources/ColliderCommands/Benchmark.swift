@@ -1,5 +1,7 @@
+import AndroidRuntimeColliderRecipe
 import ColliderCore
 import Foundation
+import NativeBuilderColliderRecipe
 import SystemPackage
 
 struct BenchmarkCommand {
@@ -34,20 +36,21 @@ struct BenchmarkCommand {
         let tasks = try registry.linuxArchitectureTasks()
         let benchmarkTasks = suites.map { suite in
             let executable = swiftPM.executable(suite.product)
-            let output = FilePath(context.layout.benchmarkBuilds.path).appending(
+            let output = context.layout.benchmarkBuilds.appending(
                 suite.outputDirectory)
             return TaskDeclaration(
                 id: TaskID(rawValue: "benchmark.\(suite.outputDirectory)"),
                 component: ComponentID(rawValue: "benchmark"),
                 dependencies: [
-                    TaskID(rawValue: "native.builder"),
-                    TaskID(rawValue: "android-runtime.gfxstream.linux-arm64"),
+                    NativeBuilderTaskIDs.prepare,
+                    AndroidRuntimeTaskIDs.gfxstream(
+                        NativeLinuxTarget(architecture: .arm64)),
                 ],
                 swiftProducts: [
                     swiftPM.product(
                         package: suite.package,
                         product: suite.product,
-                        packageRoot: context.layout.rootPath,
+                        packageRoot: context.layout.root,
                         environment: environment,
                         expectedOutputs: [
                             PathPostcondition(
@@ -68,7 +71,7 @@ struct BenchmarkCommand {
                         arguments: [
                             "--output", output.string, "--iterations", "3",
                         ],
-                        workingDirectory: context.layout.rootPath,
+                        workingDirectory: context.layout.root,
                         environment: environment),
                 ]))
         }

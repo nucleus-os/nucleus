@@ -3,129 +3,15 @@ import ColliderRuntime
 import Foundation
 import SystemPackage
 
-extension JSONEncoder {
-    /// The single stable machine-readable encoding used by every `--json` path.
-    static var sorted: JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return encoder
-    }
-}
-
-/// The task-graph presentation controls shared by every workflow that drives
-/// the Collider task runtime.
-struct TaskControls: Sendable {
-    var dryRun = false
-    var rebuild = false
-    var explain = false
-    var verbose = false
-    var quiet = false
-    var json = false
-
-    var executionOptions: TaskExecutionOptions {
-        TaskExecutionOptions(
-            dryRun: dryRun,
-            rebuildSelected: rebuild,
-            explain: explain,
-            verbose: verbose,
-            quiet: quiet,
-            machineReadable: json)
-    }
-
-    /// Emit the machine-readable report or the clean/dirty plan. Callers add
-    /// their own success line for the plain (non-plan, non-JSON) case.
-    func render(_ report: TaskExecutionReport) throws {
-        if json {
-            print(
-                String(
-                    decoding: try JSONEncoder.sorted.encode(report),
-                    as: UTF8.self))
-        } else if dryRun || explain {
-            let planningMicroseconds =
-                report.planningDurationNanoseconds / 1_000
-            let fractionalMilliseconds = String(planningMicroseconds % 1_000)
-            let paddedFraction =
-                String(
-                    repeating: "0",
-                    count: 3 - fractionalMilliseconds.count)
-                + fractionalMilliseconds
-            print(
-                "planning  \(planningMicroseconds / 1_000)."
-                    + "\(paddedFraction) ms")
-            print(
-                "input hashing  "
-                    + "\(report.selectedInputHashingDurationNanoseconds / 1_000) us")
-            print("SwiftPM invocations  \(report.swiftPMInvocationCount)")
-            for entry in report.plan {
-                let state =
-                    entry.isClean
-                    ? "clean"
-                    : entry.isSubsumed
-                        ? "subsumed"
-                        : "dirty"
-                print(
-                    "\(state)  "
-                        + "\(entry.task.rawValue)"
-                        + executionCoordinateSummary(entry.coordinates)
-                        + "  \(entry.explanation)")
-            }
-        }
-    }
-}
-
-private func executionCoordinateSummary(
-    _ coordinates: TaskExecutionCoordinates?
-) -> String {
-    guard let coordinates else { return "" }
-    var values = [
-        "runner=\(coordinates.runner.operatingSystem.rawValue)/"
-            + coordinates.runner.architecture.rawValue,
-        "executor=\(coordinates.backend.rawValue):"
-            + "\(coordinates.execution.operatingSystem.rawValue)/"
-            + coordinates.execution.architecture.rawValue,
-    ]
-    if let artifact = coordinates.artifact {
-        var value =
-            "artifact=\(artifact.operatingSystem.rawValue)/"
-            + artifact.architecture.rawValue
-        if let abi = artifact.abi {
-            value += "/\(abi)"
-        }
-        if let apiLevel = artifact.androidAPILevel {
-            value += "@api\(apiLevel)"
-        }
-        values.append(value)
-    }
-    return "  [\(values.joined(separator: " "))]"
-}
-
-/// The subset of the sourcekit-lsp configuration the package owns. Every other
-/// language server setting stays the editor's to choose.
-private struct LanguageServerConfiguration: Codable {
-    struct SwiftPM: Codable {
-        let configuration: String
-        let scratchPath: String
-    }
-
-    let backgroundPreparationMode: String
-    let swiftPM: SwiftPM
-}
-
 extension WorkspaceContext {
     func pruneSanitizerBuildContexts() throws {
-        let swiftPM = layout.state.appendingPathComponent(
-            "swiftpm",
-            isDirectory: true)
+        let swiftPM = layout.state.appending("swiftpm")
         try DirectoryLifecycle.prune(
             DirectoryRetentionPlan(
-                safetyRoot: FilePath(layout.state.path),
+                safetyRoot: layout.state,
                 rules: RuntimeSanitizer.allCases.map {
                     DirectoryRetentionRule(
-                        root: FilePath(
-                            swiftPM.appendingPathComponent(
-                                $0.rawValue,
-                                isDirectory: true
-                            ).path),
+                        root: swiftPM.appending($0.rawValue),
                         retain: 2,
                         naming: .swiftBuildContext)
                 }))
@@ -136,16 +22,14 @@ extension WorkspaceContext {
     /// Reclaim them with the rebuild that superseded them rather than leaving a
     /// multi-gigabyte build directory behind per retired toolchain.
     func reclaimSwiftBuildContexts() throws {
-        let swiftPM = layout.state.appendingPathComponent(
-            "swiftpm",
-            isDirectory: true)
+        let swiftPM = layout.state.appending("swiftpm")
         let contents =
             (try? FileManager.default.contentsOfDirectory(
-                at: swiftPM,
+                at: URL(fileURLWithPath: swiftPM.string, isDirectory: true),
                 includingPropertiesForKeys: [.isDirectoryKey])) ?? []
         try DirectoryLifecycle.prune(
             DirectoryRetentionPlan(
-                safetyRoot: FilePath(layout.state.path),
+                safetyRoot: layout.state,
                 rules:
                     contents
                     .filter {
@@ -154,43 +38,20 @@ extension WorkspaceContext {
                     }
                     .map {
                         DirectoryRetentionRule(
-                            root: FilePath($0.path),
+                            root: FilePath($0),
                             retain: 0,
                             naming: .swiftBuildContext)
                     }))
     }
 
-    /// The user cache root: `$XDG_CACHE_HOME`, else `$HOME/.cache`, else the
-    /// process home directory's `.cache`.
-    var cacheRoot: URL {
-        if let value = environment["XDG_CACHE_HOME"], !value.isEmpty {
-            return URL(fileURLWithPath: value, isDirectory: true)
-        }
-        if let home = environment["HOME"], !home.isEmpty {
-            return URL(fileURLWithPath: home, isDirectory: true)
-                .appendingPathComponent(".cache", isDirectory: true)
-        }
-        return FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".cache", isDirectory: true)
-    }
-
-    /// The single native SDK location passed to every build and publication
-    /// task. Workspace initialization always establishes this environment
-    /// contract before SwiftPM evaluates a first-party manifest.
-    var nativeSDKRoot: URL {
-        URL(
-            fileURLWithPath: environment["NUCLEUS_NATIVE_SDK_ROOT"]!,
-            isDirectory: true)
-    }
-
-    func nativeSDKRoot(for target: NativeLinuxTarget) -> URL {
+    func nativeSDKRoot(for target: NativeLinuxTarget) -> FilePath {
         nativeSDKRoot(named: target.identifier)
     }
 
-    func nativeSDKRoot(named target: String) -> URL {
+    func nativeSDKRoot(named target: String) -> FilePath {
         nativeSDKRoot
-            .deletingLastPathComponent()
-            .appendingPathComponent(target, isDirectory: true)
+            .removingLastComponent()
+            .appending(target)
     }
 
     func swiftPMInvocation(
@@ -207,7 +68,7 @@ extension WorkspaceContext {
         execution: SwiftPMExecution = .host,
         toolchainIdentity: String? = nil
     ) throws -> SwiftPMInvocation {
-        let packageRoot = layout.rootPath
+        let packageRoot = layout.root
         let manifest = packageRoot.appending("Package.swift")
         guard FileManager.default.fileExists(atPath: manifest.string) else {
             throw WorkspaceFailure.message(
@@ -239,7 +100,7 @@ extension WorkspaceContext {
             execution: execution)
         let invocation = SwiftPMInvocation(
             context: context,
-            scratchPath: FilePath(layout.swiftScratch(for: context).path))
+            scratchPath: layout.swiftScratch(for: context))
         let isDefaultContext =
             configuration == .debug
             && sanitizer == nil
@@ -262,57 +123,6 @@ extension WorkspaceContext {
         return invocation
     }
 
-    /// Point the language server at the build directory the package already
-    /// maintains. Without it sourcekit-lsp builds and indexes every package into
-    /// a second directory, duplicating the complete package build.
-    /// The directory is content addressed, so this configuration is generated
-    /// rather than checked in.
-    func publishLanguageServerConfiguration(
-        _ invocation: SwiftPMInvocation
-    ) throws {
-        let configuration = LanguageServerConfiguration(
-            // Preparing a target the way the package builds it keeps one set
-            // of compiled modules. The lazily type-checked default writes
-            // modules that the next package build has to replace.
-            backgroundPreparationMode: "build",
-            swiftPM: LanguageServerConfiguration.SwiftPM(
-                configuration: invocation.context.configuration.rawValue,
-                // The language server resolves a relative build directory
-                // against the package. Name it absolutely.
-                scratchPath: invocation.scratchPath.string))
-        var bytes = try JSONEncoder.sorted.encode(configuration)
-        bytes.append(UInt8(ascii: "\n"))
-        try publish(
-            bytes,
-            to: root.appendingPathComponent(".sourcekit-lsp", isDirectory: true)
-                .appendingPathComponent("config.json"))
-
-        // A manifest that needs SwiftPM's generated header directory reads it
-        // from the environment, and a language server build has to name the same
-        // directory as a package build or the two recompile each other. The
-        // host environment carries these to every tool started from a Nucleus
-        // shell, the language server included.
-        let shell = """
-            # Generated by Collider. The package build directory the language
-            # server and every other Nucleus entry point share.
-            export NUCLEUS_SWIFTPM_SCRATCH_PATH='\(invocation.scratchPath.string)'
-            export NUCLEUS_SWIFTPM_GENERATED_MODULE_MAPS_PATH='\(invocation.generatedModuleMaps.string)'
-            """
-        try publish(
-            Data(shell.utf8),
-            to: layout.state
-                .appendingPathComponent("swiftpm", isDirectory: true)
-                .appendingPathComponent("environment.sh"))
-    }
-
-    private func publish(_ bytes: Data, to path: URL) throws {
-        guard (try? Data(contentsOf: path)) != bytes else { return }
-        try FileManager.default.createDirectory(
-            at: path.deletingLastPathComponent(),
-            withIntermediateDirectories: true)
-        try bytes.write(to: path, options: .atomic)
-    }
-
     /// Build the task graph, execute the selected tasks against the repository
     /// task-state root, render the report, and return it.
     @discardableResult
@@ -323,7 +133,7 @@ extension WorkspaceContext {
         workflowLocks: [TaskLock] = []
     ) async throws -> TaskExecutionReport {
         let graph = try TaskGraph(tasks)
-        let stateRoot = FilePath(layout.tasks.path)
+        let stateRoot = layout.tasks
         let report = try await runtime.execute(
             graph: graph,
             selected: selected,
@@ -339,14 +149,13 @@ extension WorkspaceContext {
     fileprivate func swiftCompilerPath() throws -> FilePath {
         if let value = environment["SWIFTC"], !value.isEmpty {
             return FilePath(
-                URL(fileURLWithPath: value).resolvingSymlinksInPath().path)
+                URL(fileURLWithPath: value).resolvingSymlinksInPath())
         }
         if let toolchain = environment["SWIFT_TOOLCHAIN"], !toolchain.isEmpty {
             return FilePath(
                 URL(fileURLWithPath: toolchain)
                     .appendingPathComponent("bin/swiftc")
-                    .resolvingSymlinksInPath()
-                    .path)
+                    .resolvingSymlinksInPath())
         }
         let searchPath =
             environment["PATH"]
@@ -356,7 +165,7 @@ extension WorkspaceContext {
             let candidate = URL(fileURLWithPath: String(directory))
                 .appendingPathComponent("swiftc")
             if FileManager.default.isExecutableFile(atPath: candidate.path) {
-                return FilePath(candidate.resolvingSymlinksInPath().path)
+                return FilePath(candidate.resolvingSymlinksInPath())
             }
         }
         throw WorkspaceFailure.message(

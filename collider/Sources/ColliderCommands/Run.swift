@@ -1,10 +1,11 @@
-#if os(Linux)
 import ArgumentParser
 import Foundation
-import NucleusSessionProtocol
 import SystemPackage
 
+#if os(Linux)
 import Glibc
+import NucleusSessionProtocol
+#endif
 
 enum OptimizationMode: String, Equatable, ExpressibleByArgument {
     case debug
@@ -14,37 +15,34 @@ enum OptimizationMode: String, Equatable, ExpressibleByArgument {
 enum PresentMode: String, Equatable, ExpressibleByArgument {
     case vsync
     case mailboxLatestWins = "mailbox_latest_wins"
-
-    var sessionValue: SessionPresentMode {
-        switch self {
-        case .vsync: .vsync
-        case .mailboxLatestWins: .mailboxLatestWins
-        }
-    }
 }
 
-struct RunOptions: Equatable {
-    var output = "profiles"
-    var name = runtimeTimestamp()
-    var host = "127.0.0.1"
-    var port = 8086
-    var seconds: Int?
-    var scale: Double?
-    var presentMode: PresentMode?
-    var drmDevice: String?
-    var wallpaper: String?
-    var build = true
-    var android = false
-    var validation = false
-    var diagnostics = false
-    var optimization: OptimizationMode?
-    var tracy = false
-    var valgrind = false
-    var sanitizer: RuntimeSanitizer?
-    var compositorArguments: [String] = []
+struct RunOptions: ParsableArguments {
+    @Option var output: String?
+    @Option var name: String?
+    @Option var host: String?
+    @Option var port: Int?
+    @Option var seconds: Int?
+    @Option var scale: Double?
+    @Option(name: .customLong("present-mode")) var presentMode: PresentMode?
+    @Option(name: .customLong("drm-device")) var drmDevice: String?
+    @Option var wallpaper: String?
+    @Flag(name: .customLong("no-build")) var noBuild = false
+    @Flag var android = false
+    @Flag(name: .customLong("vk-validation")) var validation = false
+    @Flag(name: .customLong("trace-diagnostics")) var diagnostics = false
+    @Option(name: .customLong("optimize")) var optimization: OptimizationMode?
+    @Flag var tracy = false
+    @Flag var valgrind = false
+    @Option(name: .customLong("sanitize")) var sanitizer: RuntimeSanitizer?
+    @Argument(parsing: .postTerminator) var compositorArguments: [String] = []
     var xwaylandExecutablePath: String?
-    var outputOptionWasSpecified = false
-    var tracyOnlyOptionWasSpecified = false
+
+    var captureOutput: String { output ?? "profiles" }
+    var captureName: String { name ?? runtimeTimestamp() }
+    var captureHost: String { host ?? "127.0.0.1" }
+    var capturePort: Int { port ?? 8086 }
+    var build: Bool { !noBuild }
 
     var buildOptions: RuntimeBuildOptions {
         RuntimeBuildOptions(
@@ -57,6 +55,55 @@ struct RunOptions: Equatable {
         optimization ?? (tracy ? .release : .debug)
     }
 
+    func validated() throws -> RunOptions {
+        if !(1...65_535).contains(capturePort) {
+            throw WorkspaceFailure.message("invalid Tracy port")
+        }
+        if let seconds, seconds <= 0 {
+            throw WorkspaceFailure.message("--seconds must be positive")
+        }
+        if let scale, !scale.isFinite || scale <= 0 {
+            throw WorkspaceFailure.message(
+                "--scale must be a positive finite number")
+        }
+        if (output != nil || name != nil) && !tracy && !valgrind {
+            throw WorkspaceFailure.message(
+                "capture options require --tracy (or --valgrind for --output/--name)")
+        }
+        if (host != nil || port != nil) && !tracy {
+            throw WorkspaceFailure.message(
+                "Tracy capture options require --tracy")
+        }
+        if valgrind && tracy {
+            throw WorkspaceFailure.message("--valgrind and --tracy cannot be combined")
+        }
+        if valgrind && sanitizer != nil {
+            throw WorkspaceFailure.message("--valgrind and --sanitize cannot be combined")
+        }
+        #if os(Linux)
+        try validateSessionConfiguration()
+        #endif
+        return self
+    }
+}
+
+func runtimeTimestamp() -> String {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withYear, .withMonth, .withDay, .withTime]
+    return formatter.string(from: Date())
+}
+
+#if os(Linux)
+extension PresentMode {
+    var sessionValue: SessionPresentMode {
+        switch self {
+        case .vsync: .vsync
+        case .mailboxLatestWins: .mailboxLatestWins
+        }
+    }
+}
+
+extension RunOptions {
     var sessionConfiguration: SessionConfiguration {
         get throws {
             try SessionConfiguration(
@@ -71,37 +118,12 @@ struct RunOptions: Equatable {
         }
     }
 
-    func validated() throws -> RunOptions {
-        if !(1...65_535).contains(port) {
-            throw WorkspaceFailure.message("invalid Tracy port")
-        }
-        if let seconds, seconds <= 0 {
-            throw WorkspaceFailure.message("--seconds must be positive")
-        }
-        if let scale, !scale.isFinite || scale <= 0 {
-            throw WorkspaceFailure.message(
-                "--scale must be a positive finite number")
-        }
-        if outputOptionWasSpecified && !tracy && !valgrind {
-            throw WorkspaceFailure.message(
-                "capture options require --tracy (or --valgrind for --output/--name)")
-        }
-        if tracyOnlyOptionWasSpecified && !tracy {
-            throw WorkspaceFailure.message(
-                "Tracy capture options require --tracy")
-        }
-        if valgrind && tracy {
-            throw WorkspaceFailure.message("--valgrind and --tracy cannot be combined")
-        }
-        if valgrind && sanitizer != nil {
-            throw WorkspaceFailure.message("--valgrind and --sanitize cannot be combined")
-        }
+    private func validateSessionConfiguration() throws {
         do {
             _ = try sessionConfiguration
         } catch {
             throw WorkspaceFailure.message("invalid session configuration: \(error)")
         }
-        return self
     }
 }
 
@@ -114,7 +136,7 @@ struct RunCommand {
             environment: context.environment)
         try requireLaunchableSeatEnvironment()
 
-        let prefix = context.layout.installPrefix
+        let prefix = URL(context.layout.installPrefix)
         let installer = RuntimeInstaller(context: context)
         let installation =
             if options.build {
@@ -133,7 +155,7 @@ struct RunCommand {
             try requireInstalledAndroidCapability()
             environment["NUCLEUS_SESSION_CAPABILITY_ROOT"] =
                 context.layout.androidAddonStore
-                .appendingPathComponent("session-capabilities", isDirectory: true).path
+                .appending("session-capabilities").string
         }
 
         if options.tracy {
@@ -200,16 +222,16 @@ struct RunCommand {
 
     private func requireInstalledAndroidCapability() throws {
         let store = context.layout.androidAddonStore
-        let manifest = store.appendingPathComponent(
+        let manifest = store.appending(
             "session-capabilities/android.json")
-        let executable = store.appendingPathComponent(
+        let executable = store.appending(
             "current/libexec/nucleus-android-runtime")
-        let values = try? manifest.resourceValues(
+        let values = try? URL(manifest).resourceValues(
             forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
         guard values?.isRegularFile == true,
             values?.isSymbolicLink != true,
             FileManager.default.isExecutableFile(
-                atPath: executable.path)
+                atPath: executable.string)
         else {
             throw WorkspaceFailure.message(
                 "the Android add-on is not installed; install a signed "
@@ -254,10 +276,10 @@ struct RunCommand {
     private func createOutputDirectory(_ options: RunOptions) throws -> URL {
         let compositor = context.layout.compositor
         let root = URL(
-            fileURLWithPath: options.output,
-            relativeTo: compositor
+            fileURLWithPath: options.captureOutput,
+            relativeTo: URL(compositor, isDirectory: true)
         ).standardizedFileURL
-        let directory = root.appendingPathComponent(options.name)
+        let directory = root.appendingPathComponent(options.captureName)
         try FileManager.default.createDirectory(
             at: directory,
             withIntermediateDirectories: true)
@@ -320,7 +342,7 @@ struct RunCommand {
                     "XDG_RUNTIME_DIR": runtimeDirectory.path,
                     "WAYLAND_DISPLAY": "wayland-0",
                 ],
-                output: .file(FilePath(kittyLog.path))
+                output: .file(FilePath(kittyLog))
             ) { kitty in
                 try await kitty.waitUntilReady()
                 let result = try await session.wait()
@@ -374,11 +396,5 @@ struct RunCommand {
             "Nucleus Wayland socket was not published before the log-window "
                 + "deadline")
     }
-}
-
-func runtimeTimestamp() -> String {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withYear, .withMonth, .withDay, .withTime]
-    return formatter.string(from: Date())
 }
 #endif

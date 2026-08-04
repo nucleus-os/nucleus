@@ -35,8 +35,8 @@ struct ChromiumCommand {
                 json: false,
                 quiet: true)
         }
-        let root = context.layout.rootPath
-        let cache = context.cacheRoot.path
+        let root = context.layout.root
+        let cache = context.cacheRoot.string
         let prefix =
             installPrefix
             ?? context.environment["PREFIX"]
@@ -50,26 +50,23 @@ struct ChromiumCommand {
                 cacheRoot: FilePath(cache).appending("nucleus/cef"),
                 installPrefix: FilePath(prefix),
                 jobs: min(ProcessInfo.processInfo.activeProcessorCount, 16)))
-        let selectedName =
+        let selected =
             switch operation {
             case .doctor: preconditionFailure("doctor handled by capability registry")
-            case .bootstrap: "browser.bootstrap-source"
-            case .build: "browser.retention"
-            case .test: "browser.test"
-            case .install: "browser.install"
+            case .bootstrap: ChromiumTaskIDs.bootstrapSource
+            case .build: ChromiumTaskIDs.retention
+            case .test: ChromiumTaskIDs.test
+            case .install: ChromiumTaskIDs.install
             }
         try await context.execute(
             tasks: tasks,
-            selected: [TaskID(rawValue: selectedName)],
+            selected: [selected],
             controls: controls)
     }
 
     func sourceIdentifier() throws -> String {
         let digest = try ArtifactHasher.digest(
-            file: FilePath(
-                context.root.appendingPathComponent(
-                    "chromium/source.lock.json"
-                ).path))
+            file: context.root.appending("chromium/source.lock.json"))
         return String(digest.hexadecimal.prefix(24))
     }
 }

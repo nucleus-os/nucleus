@@ -32,17 +32,13 @@ let package = Package(
                     condition: .when(platforms: [.linux])),
                 "AndroidRuntimeColliderRecipe",
                 "ChromiumColliderRecipe",
-                "CompositorAppColliderRecipe",
                 "CompositorColliderRecipe",
-                "ConfigColliderRecipe",
                 "CoreColliderRecipe",
-                "IPCColliderRecipe",
                 "LinuxColliderRecipe",
                 "NativeBuilderColliderRecipe",
                 "ReactNativeColliderRecipe",
                 "ShellColliderRecipe",
                 "SwiftTargetSDKColliderRecipe",
-                "TracyColliderRecipe",
                 "VulkanColliderRecipe",
                 "WaylandColliderRecipe",
             ]),
@@ -53,20 +49,14 @@ let package = Package(
             name: "ChromiumColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
         .target(
-            name: "CompositorAppColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "engine")]),
-        .target(
             name: "CompositorColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
         .target(
-            name: "ConfigColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "engine")]),
-        .target(
             name: "CoreColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "engine")]),
-        .target(
-            name: "IPCColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                "NativeBuilderColliderRecipe",
+            ]),
         .target(
             name: "LinuxColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
@@ -75,7 +65,10 @@ let package = Package(
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
         .target(
             name: "ReactNativeColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                "CoreColliderRecipe", "NativeBuilderColliderRecipe",
+            ]),
         .target(
             name: "ShellColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
@@ -83,20 +76,21 @@ let package = Package(
             name: "SwiftTargetSDKColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
         .target(
-            name: "TracyColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "engine")]),
-        .target(
             name: "VulkanColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
         .target(
             name: "WaylandColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                "NativeBuilderColliderRecipe",
+            ]),
         .testTarget(
             name: "ColliderCommandsTests",
             dependencies: [
                 "ColliderCommands",
                 "AndroidRuntimeColliderRecipe",
                 "ChromiumColliderRecipe",
+                "CompositorColliderRecipe",
                 .product(name: "ColliderCore", package: "engine"),
                 "CoreColliderRecipe",
                 "NativeBuilderColliderRecipe",
@@ -110,17 +104,9 @@ let package = Package(
                     condition: .when(platforms: [.linux])),
                 "ReactNativeColliderRecipe",
                 "SwiftTargetSDKColliderRecipe",
-                "TracyColliderRecipe",
                 "VulkanColliderRecipe",
                 "WaylandColliderRecipe",
             ]),
-        .testTarget(
-            name: "ColliderCoreTests",
-            dependencies: [
-                .product(name: "ColliderCore", package: "engine"),
-                .product(name: "ColliderRuntime", package: "engine"),
-            ],
-            path: "engine/Tests/ColliderCoreTests"),
         .testTarget(
             name: "SwiftTargetSDKColliderRecipeTests",
             dependencies: [

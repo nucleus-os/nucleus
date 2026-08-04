@@ -13,7 +13,7 @@ struct RepositoryState {
     let context: WorkspaceContext
 
     private var runsDirectory: URL {
-        context.layout.runs
+        URL(fileURLWithPath: context.layout.runs.string, isDirectory: true)
     }
 
     func runs(kind: String? = nil) throws -> [(URL, RepositoryRun)] {

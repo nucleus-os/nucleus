@@ -1,4 +1,5 @@
 import Foundation
+import SystemPackage
 import Testing
 
 @testable import ColliderCommands
@@ -76,7 +77,7 @@ func compositorPassthroughRequiresTheTerminatorAndRemainsOpaque() throws {
         "--run-id", "owned-by-compositor",
         "--fixture-output", "DP-1",
     ])
-    let options = try command.resolvedOptions().validated()
+    let options = try command.options.validated()
     #expect(options.scale == 1.5)
     #expect(
         options.compositorArguments == [
@@ -91,10 +92,9 @@ func compositorPassthroughRequiresTheTerminatorAndRemainsOpaque() throws {
 
 @Test
 func runtimeInstallationNormalizesTheTypedLeafPrefix() throws {
-    let root = URL(fileURLWithPath: "/workspace", isDirectory: true)
     let command = InstallCommand(
         context: WorkspaceContext(
-            root: root,
+            root: FilePath("/workspace"),
             environment: [:]))
 
     #expect(

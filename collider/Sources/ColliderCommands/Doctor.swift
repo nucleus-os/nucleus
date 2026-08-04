@@ -2,6 +2,7 @@ import ArgumentParser
 import ColliderCore
 import ColliderRuntime
 import Foundation
+import SystemPackage
 
 enum DoctorScope: String, CaseIterable, ExpressibleByArgument {
     case all
@@ -282,7 +283,7 @@ struct WorkspaceDoctor {
 
     private func nativeSDKLayout(scope: String) -> HostPrerequisite {
         let root = context.nativeSDKRoot
-        let base = root.deletingLastPathComponent()
+        let base = root.removingLastComponent()
         return HostPrerequisite(
             id: "native-sdk:per-target-layout",
             scope: scope,
@@ -291,13 +292,13 @@ struct WorkspaceDoctor {
                 "run ./collider-setup.sh to reset the obsolete untargeted native SDK slots"
         ) {
             let expected = "linux-\(RunnerPlatform.current.architecture.rawValue)"
-            guard root.lastPathComponent == expected,
+            guard root.lastComponent?.string == expected,
                 !FileManager.default.fileExists(
-                    atPath: base.appendingPathComponent("render").path),
+                    atPath: base.appending("render").string),
                 !FileManager.default.fileExists(
-                    atPath: base.appendingPathComponent("rn").path)
+                    atPath: base.appending("rn").string)
             else { return nil }
-            return "\(root.path); no untargeted render or rn slots"
+            return "\(root.string); no untargeted render or rn slots"
         }
     }
 
@@ -332,11 +333,11 @@ struct WorkspaceDoctor {
 
     private func paths(
         _ relativePaths: [String],
-        under root: URL,
+        under root: FilePath,
         scope: String
     ) -> [HostPrerequisite] {
         relativePaths.map { relativePath in
-            let path = root.appendingPathComponent(relativePath).path
+            let path = root.appending(relativePath).string
             return HostPrerequisite(
                 id: "path:\(path)",
                 scope: scope,
@@ -361,8 +362,8 @@ struct WorkspaceDoctor {
         return nil
     }
 
-    private func runtimeSwiftSDKRoot() -> URL {
-        context.cacheRoot
-            .appendingPathComponent("nucleus/swift-target-sdks/current/swift-sdks")
+    private func runtimeSwiftSDKRoot() -> FilePath {
+        context.cacheRoot.appending(
+            "nucleus/swift-target-sdks/current/swift-sdks")
     }
 }

@@ -1,8 +1,11 @@
-#if os(Linux)
 import Foundation
-import NucleusSessionProtocol
 import Testing
+
 @testable import ColliderCommands
+
+#if os(Linux)
+import NucleusSessionProtocol
+#endif
 
 @Test
 func plainRunBuildsTheDebugSessionWithoutInstrumentation() throws {
@@ -43,6 +46,7 @@ func runParsesAUnifiedInstrumentedCapture() throws {
     #expect(options.buildOptions.identity == "release-tracy-address")
 }
 
+#if os(Linux)
 @Test
 func androidRuntimeLogWindowFollowsTheProductionDiagnostics() {
     let invocation = AndroidRuntimeLogWindowInvocation(
@@ -63,7 +67,9 @@ func androidRuntimeLogWindowFollowsTheProductionDiagnostics() {
             "/runs/current/android-runtime/android-progress.jsonl",
         ])
 }
+#endif
 
+#if os(Linux)
 @Test
 func runProducesOneTypedConfigurationForBothSessionChildren() throws {
     let options = try parsedRunOptions([
@@ -91,6 +97,7 @@ func runProducesOneTypedConfigurationForBothSessionChildren() throws {
         try SessionConfiguration(encoded: configuration.encoded)
             == configuration)
 }
+#endif
 
 @Test
 func scaleIsAvailableInEveryRunModeAndRejectsInvalidValues() throws {
@@ -105,14 +112,14 @@ func scaleIsAvailableInEveryRunModeAndRejectsInvalidValues() throws {
         ]).scale == 1.25)
 
     for invalid in [0.0, -1.0, .nan, .infinity] {
-        var options = RunOptions()
+        var options = try RunOptions.parse([])
         options.scale = invalid
         #expect(throws: WorkspaceFailure.self) {
             try options.validated()
         }
     }
     #expect(throws: (any Error).self) {
-        try Run.parse(["--scale", "not-a-number"])
+        try RunOptions.parse(["--scale", "not-a-number"])
     }
 }
 
@@ -140,7 +147,7 @@ func durationIsAvailableWithoutTracy() throws {
             "--valgrind", "--seconds", "5",
         ]).seconds == 5)
 
-    var invalid = RunOptions()
+    var invalid = try RunOptions.parse([])
     invalid.seconds = 0
     #expect(throws: WorkspaceFailure.self) {
         try invalid.validated()
@@ -148,10 +155,9 @@ func durationIsAvailableWithoutTracy() throws {
 }
 
 @Test
-func tracyCaptureOptionsRequireTracy() {
-    var options = RunOptions()
+func tracyCaptureOptionsRequireTracy() throws {
+    var options = try RunOptions.parse([])
     options.host = "192.0.2.10"
-    options.tracyOnlyOptionWasSpecified = true
     options.valgrind = true
     #expect(throws: WorkspaceFailure.self) {
         try options.validated()
@@ -159,15 +165,15 @@ func tracyCaptureOptionsRequireTracy() {
 }
 
 @Test
-func valgrindRejectsCompilerSanitizersAndTracy() {
-    var sanitizer = RunOptions()
+func valgrindRejectsCompilerSanitizersAndTracy() throws {
+    var sanitizer = try RunOptions.parse([])
     sanitizer.valgrind = true
     sanitizer.sanitizer = .thread
     #expect(throws: WorkspaceFailure.self) {
         try sanitizer.validated()
     }
 
-    var tracy = RunOptions()
+    var tracy = try RunOptions.parse([])
     tracy.valgrind = true
     tracy.tracy = true
     #expect(throws: WorkspaceFailure.self) {
@@ -186,7 +192,5 @@ func runtimeBuildMetadataDistinguishesInstrumentedArtifacts() {
 }
 
 private func parsedRunOptions(_ arguments: [String]) throws -> RunOptions {
-    let command = try Run.parse(arguments)
-    return try command.resolvedOptions().validated()
+    try RunOptions.parse(arguments).validated()
 }
-#endif

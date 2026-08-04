@@ -2,18 +2,14 @@ import AndroidRuntimeColliderRecipe
 import ArgumentParser
 import ColliderCore
 import ColliderRuntime
-import CompositorAppColliderRecipe
 import CompositorColliderRecipe
-import ConfigColliderRecipe
 import CoreColliderRecipe
 import Foundation
-import IPCColliderRecipe
 import LinuxColliderRecipe
 import NativeBuilderColliderRecipe
 import ReactNativeColliderRecipe
 import ShellColliderRecipe
 import SystemPackage
-import TracyColliderRecipe
 import VulkanColliderRecipe
 import WaylandColliderRecipe
 
@@ -49,59 +45,7 @@ struct ComponentRegistry {
     let context: WorkspaceContext
 
     private func buildTasks() throws -> [TaskDeclaration] {
-        let layout = context.layout
-        let environment = context.taskEnvironment
-        let swiftPM = try context.swiftPMInvocation()
-        let linuxLanes = try linuxArchitectureTasks()
-        return [
-            TracyColliderRecipe.build(
-                root: FilePath(layout.swiftTracy.path),
-                environment: environment,
-                swiftPM: swiftPM),
-            VulkanColliderRecipe.build(
-                root: FilePath(layout.swiftVulkan.path),
-                environment: environment,
-                swiftPM: swiftPM),
-            WaylandColliderRecipe.build(
-                root: FilePath(layout.swiftWayland.path),
-                environment: environment,
-                swiftPM: swiftPM),
-            CoreColliderRecipe.build(
-                root: FilePath(layout.core.path),
-                environment: environment,
-                swiftPM: swiftPM),
-            ConfigColliderRecipe.build(
-                root: FilePath(layout.config.path),
-                environment: environment,
-                swiftPM: swiftPM),
-            ReactNativeColliderRecipe.build(
-                root: FilePath(layout.reactNative.path),
-                environment: environment,
-                swiftPM: swiftPM),
-            CompositorColliderRecipe.build(
-                root: FilePath(layout.compositorCore.path),
-                environment: environment,
-                swiftPM: swiftPM),
-            CompositorAppColliderRecipe.build(
-                root: FilePath(layout.compositorApp.path),
-                environment: environment,
-                swiftPM: swiftPM),
-            ShellColliderRecipe.build(
-                root: FilePath(layout.shell.path),
-                environment: environment,
-                swiftPM: swiftPM),
-        ]
-            + IPCColliderRecipe.builds(
-                root: FilePath(layout.ipc.path),
-                environment: environment,
-                swiftPM: swiftPM
-            )
-            + LinuxColliderRecipe.builds(
-                root: FilePath(layout.platformLinux.path),
-                environment: environment,
-                swiftPM: swiftPM
-            )
-            + linuxLanes
+        try linuxArchitectureTasks()
     }
 
     func testTasks(
@@ -109,86 +53,22 @@ struct ComponentRegistry {
         drmRenderNodeResolver: ([String: String]) throws -> String =
             requiredDRMRenderNode
     ) throws -> [TaskDeclaration] {
-        let layout = context.layout
         let environment = context.taskEnvironment
-        let swiftPM = try context.swiftPMInvocation()
-        var tasks =
-            try buildTasks() + [
-                TracyColliderRecipe.test(
-                    root: FilePath(layout.swiftTracy.path),
-                    environment: environment,
-                    swiftPM: swiftPM),
-                VulkanColliderRecipe.test(
-                    root: FilePath(layout.swiftVulkan.path),
-                    environment: environment,
-                    swiftPM: swiftPM),
-                WaylandColliderRecipe.test(
-                    root: FilePath(layout.swiftWayland.path),
-                    environment: environment,
-                    swiftPM: swiftPM),
-                CoreColliderRecipe.test(
-                    root: FilePath(layout.core.path),
-                    environment: environment,
-                    swiftPM: swiftPM),
-                ReactNativeColliderRecipe.test(
-                    root: FilePath(layout.reactNative.path),
-                    environment: environment,
-                    swiftPM: swiftPM),
-                CompositorColliderRecipe.test(
-                    root: FilePath(layout.compositorCore.path),
-                    environment: environment,
-                    swiftPM: swiftPM),
-                CompositorAppColliderRecipe.test(
-                    root: FilePath(layout.compositorApp.path),
-                    environment: environment,
-                    swiftPM: swiftPM),
-            ]
-            + ConfigColliderRecipe.tests(
-                root: FilePath(layout.config.path),
-                environment: environment,
-                swiftPM: swiftPM
-            )
-            + ShellColliderRecipe.tests(
-                root: FilePath(layout.shell.path),
-                environment: environment,
-                swiftPM: swiftPM
-            )
-            + IPCColliderRecipe.tests(
-                root: FilePath(layout.ipc.path),
-                environment: environment,
-                swiftPM: swiftPM
-            )
-            + LinuxColliderRecipe.tests(
-                root: FilePath(layout.platformLinux.path),
-                environment: environment,
-                swiftPM: swiftPM)
+        var tasks = try buildTasks()
         let effectiveSelection = selection ?? .all
-        if [.all, .runtime, .compositor].contains(
-            effectiveSelection)
-        {
-            tasks += [
-                CompositorColliderRecipe.preflightVulkanLoader(
-                    root: FilePath(layout.compositorCore.path),
-                    environment: environment,
-                    swiftPM: swiftPM),
-                CompositorColliderRecipe.testVulkanLoader(
-                    root: FilePath(layout.compositorCore.path),
-                    environment: environment,
-                    swiftPM: swiftPM),
-            ]
-        }
         if effectiveSelection == .gpuDRM {
+            let swiftPM = try context.swiftPMInvocation()
             var drmEnvironment = environment
             drmEnvironment["NUCLEUS_TEST_DRM_RENDER_NODE"] =
                 try drmRenderNodeResolver(environment)
             tasks.append(
                 CompositorColliderRecipe.preflightDRMGPU(
-                    root: FilePath(layout.compositorCore.path),
+                    root: context.layout.compositorCore,
                     environment: drmEnvironment,
                     swiftPM: swiftPM))
             tasks.append(
                 CompositorColliderRecipe.testDRMGPU(
-                    root: FilePath(layout.compositorCore.path),
+                    root: context.layout.compositorCore,
                     environment: drmEnvironment,
                     swiftPM: swiftPM))
         }
@@ -239,9 +119,9 @@ struct ComponentRegistry {
         var selected: [TaskID] = []
 
         if needsWayland {
-            let waylandRoot = FilePath(layout.swiftWayland.path)
+            let waylandRoot = layout.swiftWayland
             let nativeBuilder = nativeBuilderConfiguration(
-                coreRoot: FilePath(layout.core.path))
+                coreRoot: layout.core)
             for target in linuxNativeTargets {
                 let sdk = WaylandColliderRecipe.buildNativeSDK(
                     root: waylandRoot,
@@ -255,7 +135,7 @@ struct ComponentRegistry {
         }
 
         if needsCore {
-            let coreRoot = FilePath(layout.core.path)
+            let coreRoot = layout.core
             let nativeBuilder = nativeBuilderConfiguration(coreRoot: coreRoot)
             let source = try CoreColliderRecipe.prepareSkiaDependencies(
                 root: coreRoot, environment: environment)
@@ -276,9 +156,9 @@ struct ComponentRegistry {
         }
 
         if needsRN {
-            let rnRoot = FilePath(layout.reactNative.path)
+            let rnRoot = layout.reactNative
             let nativeBuilder = nativeBuilderConfiguration(
-                coreRoot: FilePath(layout.core.path))
+                coreRoot: layout.core)
             let javascript =
                 ReactNativeColliderRecipe.installJavaScriptDependencies(
                     root: rnRoot,
@@ -340,14 +220,13 @@ struct ComponentRegistry {
     ) async throws {
         let layout = context.layout
         let environment = context.taskEnvironment
-        let swiftPM = try context.swiftPMInvocation()
         let task: TaskDeclaration
         var tasks: [TaskDeclaration]
         switch component {
         case .reactNative:
-            let root = FilePath(layout.reactNative.path)
+            let root = layout.reactNative
             let builder = nativeBuilderConfiguration(
-                coreRoot: FilePath(layout.core.path))
+                coreRoot: layout.core)
             let image = NativeBuilderColliderRecipe.prepare(builder)
             let dependencies =
                 ReactNativeColliderRecipe.installJavaScriptDependencies(
@@ -360,15 +239,17 @@ struct ComponentRegistry {
                 builder: builder)
             tasks = [image, dependencies, task]
         case .vulkan:
+            let swiftPM = try context.swiftPMInvocation()
             task = VulkanColliderRecipe.generate(
-                root: FilePath(layout.swiftVulkan.path),
+                root: layout.swiftVulkan,
                 environment: environment,
                 swiftPM: swiftPM)
             tasks = [task]
         case .wayland:
-            let root = FilePath(layout.swiftWayland.path)
+            let swiftPM = try linuxSwiftPMInvocation()
+            let root = layout.swiftWayland
             let builder = nativeBuilderConfiguration(
-                coreRoot: FilePath(layout.core.path))
+                coreRoot: layout.core)
             let image = NativeBuilderColliderRecipe.prepare(builder)
             let target = NativeLinuxTarget(architecture: .arm64)
             let scannerSDKRoot = nativeSDKRoot(for: target)
@@ -397,11 +278,11 @@ struct ComponentRegistry {
         controls: TaskControls
     ) async throws {
         let tasks = try await androidHostTasks()
-        let android = FilePath(context.layout.core.path).appending("android")
+        let android = context.layout.core.appending("android")
         let gradle = TaskDeclaration(
             id: TaskID(rawValue: "core.android.build"),
             component: ComponentID(rawValue: "core"),
-            dependencies: [TaskID(rawValue: "core.android-host.validate")],
+            dependencies: [CoreTaskIDs.validateAndroidHost],
             inputs: [
                 .file(android.appending("settings.gradle.kts")),
                 .file(android.appending("build.gradle.kts")),
@@ -430,7 +311,7 @@ struct ComponentRegistry {
 
     func buildAndroidNative(controls: TaskControls) async throws {
         let tasks = try await androidHostTasks()
-        let selected = TaskID(rawValue: "core.android-host.validate")
+        let selected = CoreTaskIDs.validateAndroidHost
         try await context.execute(
             tasks: tasks,
             selected: [selected],
@@ -441,16 +322,12 @@ struct ComponentRegistry {
         library: String?,
         controls: TaskControls
     ) async throws {
-        let core = FilePath(context.layout.core.path)
+        let core = context.layout.core
         let toolchain = try AndroidToolchainVersions.load(
             workspaceRoot: context.root)
         let ndk = try toolchain.ndkRoot(environment: context.environment)
         let supplied = library.map {
-            FilePath(
-                URL(
-                    fileURLWithPath: $0,
-                    relativeTo: context.root
-                ).standardizedFileURL.path)
+            resolveWorkspacePath($0, relativeTo: context.root)
         }
         let sourceID = try requiredSwiftSourceID(context.taskEnvironment)
         let swiftPM = try context.swiftPMInvocation(
@@ -465,7 +342,7 @@ struct ComponentRegistry {
             library: supplied
                 ?? swiftPM.configurationProducts.appending(
                     "libnucleus-android.so"),
-            ndk: FilePath(ndk.path),
+            ndk: ndk,
             environment: context.taskEnvironment,
             dependencies: [])
         try await context.execute(
@@ -477,14 +354,13 @@ struct ComponentRegistry {
     func verifyAndroidRuntimeSourceLock(
         controls: TaskControls
     ) async throws {
-        let root = FilePath(context.layout.androidRuntime.path)
+        let root = context.layout.androidRuntime
         let tasks = try AndroidRuntimeColliderRecipe.aospSourceTasks(
             root: root,
             environment: context.taskEnvironment)
-        let selected = TaskID(rawValue: "android-runtime.aosp-source-lock")
         try await context.execute(
             tasks: tasks,
-            selected: [selected],
+            selected: [AndroidRuntimeTaskIDs.aospSourceLock],
             controls: controls)
     }
 
@@ -492,12 +368,11 @@ struct ComponentRegistry {
         controls: TaskControls
     ) async throws {
         let tasks = try AndroidRuntimeColliderRecipe.aospSourceTasks(
-            root: FilePath(context.layout.androidRuntime.path),
+            root: context.layout.androidRuntime,
             environment: context.taskEnvironment)
-        let selected = TaskID(rawValue: "android-runtime.aosp-source")
         try await context.execute(
             tasks: tasks,
-            selected: [selected],
+            selected: [AndroidRuntimeTaskIDs.aospSource],
             controls: controls)
     }
 
@@ -505,12 +380,11 @@ struct ComponentRegistry {
         controls: TaskControls
     ) async throws {
         let tasks = try AndroidRuntimeColliderRecipe.aospImageTasks(
-            root: FilePath(context.layout.androidRuntime.path),
+            root: context.layout.androidRuntime,
             environment: context.taskEnvironment)
-        let selected = TaskID(rawValue: "android-runtime.aosp-image")
         try await context.execute(
             tasks: tasks,
-            selected: [selected],
+            selected: [AndroidRuntimeTaskIDs.aospImage],
             controls: controls)
     }
 
@@ -519,70 +393,60 @@ struct ComponentRegistry {
         try await context.execute(
             tasks: tasks,
             selected: [
-                TaskID(rawValue: "linux.arm64.build"),
-                TaskID(rawValue: "linux.x86_64.build"),
+                LinuxTaskIDs.build(.arm64),
+                LinuxTaskIDs.build(.x86_64),
             ],
             controls: TaskControls())
     }
 
-    private func selectedBuildTasks(
+    func selectedBuildTasks(
         _ selection: ComponentSelection?
     ) throws -> [TaskID] {
         let selection = selection ?? .all
-        if runtimeLinuxSelections.contains(selection) {
+        switch selection {
+        case .all, .runtime, .tracy, .vulkan, .wayland, .core, .config,
+            .ipc, .linux, .reactNative, .compositor, .shell, .androidRuntime:
             return [
-                TaskID(rawValue: "linux.arm64.build"),
-                TaskID(rawValue: "linux.x86_64.build"),
+                LinuxTaskIDs.build(.arm64),
+                LinuxTaskIDs.build(.x86_64),
             ]
-        }
-        guard
-            ![
-                .swiftSDK, .android, .browser, .loader, .gpuHeadless, .gpuDRM,
-            ].contains(selection)
-        else {
+        case .swiftSDK, .android, .browser, .loader, .gpuHeadless, .gpuDRM:
             throw WorkspaceFailure.message(
                 "\(selection.rawValue) is not a runtime build component")
         }
-        return [TaskID(rawValue: selection.rawValue + ".build")]
     }
 
     func selectedTestTasks(
         _ selection: ComponentSelection?
     ) throws -> [TaskID] {
         let selection = selection ?? .all
-        if runtimeLinuxSelections.contains(selection) {
-            var selected = ["linux.arm64.test", "linux.x86_64.test"]
+        switch selection {
+        case .all, .runtime, .tracy, .vulkan, .wayland, .core, .config,
+            .ipc, .linux, .reactNative, .compositor, .shell, .androidRuntime:
+            var selected = [
+                LinuxTaskIDs.test(.arm64),
+                LinuxTaskIDs.test(.x86_64),
+            ]
             if selection == .all {
-                selected += Self.releaseGateIDs
+                selected += Self.releaseGateIDs.map(TaskID.init(rawValue:))
             }
-            return selected.map {
-                TaskID(rawValue: $0)
-            }
-        }
-        let taskNames: [ComponentSelection: [String]] = [
-            .tracy: ["tracy.test"],
-            .vulkan: ["vulkan.test"],
-            .wayland: ["wayland.test"],
-            .core: ["core.test"],
-            .config: ["config.test"],
-            .ipc: ["ipc.test"],
-            .linux: ["linux.arm64.test", "linux.x86_64.test"],
-            .reactNative: ["rn.test"],
-            .compositor: ["linux.arm64.test", "linux.x86_64.test"],
-            .shell: ["linux.arm64.test", "linux.x86_64.test"],
-            .androidRuntime: ["linux.arm64.test", "linux.x86_64.test"],
-            .loader: ["linux.arm64.test-loader", "linux.x86_64.test-loader"],
-            .gpuHeadless: [
-                "linux.arm64.test-gpu-headless",
-                "linux.x86_64.test-gpu-headless",
-            ],
-            .gpuDRM: ["compositor-core.test-gpu-drm"],
-        ]
-        guard let selected = taskNames[selection] else {
+            return selected
+        case .loader:
+            return [
+                LinuxTaskIDs.testLoader(.arm64),
+                LinuxTaskIDs.testLoader(.x86_64),
+            ]
+        case .gpuHeadless:
+            return [
+                LinuxTaskIDs.testGPUHeadless(.arm64),
+                LinuxTaskIDs.testGPUHeadless(.x86_64),
+            ]
+        case .gpuDRM:
+            return [CompositorTaskIDs.testGPUDRM]
+        case .swiftSDK, .android, .browser:
             throw WorkspaceFailure.message(
                 "\(selection.rawValue) is not a runtime test component")
         }
-        return selected.map { TaskID(rawValue: $0) }
     }
 
     private static let releaseGateSuites: [(id: String, package: String, suite: String)] = [
@@ -613,15 +477,16 @@ struct ComponentRegistry {
             let requirement = swiftPM.testProduct(
                 package: suite.package,
                 testProduct: suite.suite,
-                packageRoot: context.layout.rootPath,
+                packageRoot: context.layout.root,
                 environment: environment,
                 arguments: ["--filter", suite.suite])
             return TaskDeclaration(
                 id: TaskID(rawValue: "test.release-gate.\(suite.id)"),
                 component: ComponentID(rawValue: "release-gate"),
                 dependencies: [
-                    TaskID(rawValue: "native.builder"),
-                    TaskID(rawValue: "android-runtime.gfxstream.linux-arm64"),
+                    NativeBuilderTaskIDs.prepare,
+                    AndroidRuntimeTaskIDs.gfxstream(
+                        NativeLinuxTarget(architecture: .arm64)),
                 ],
                 swiftTests: [requirement],
                 inputs: [swiftPM.identityInput],
@@ -632,11 +497,11 @@ struct ComponentRegistry {
     }
 
     func linuxArchitectureTasks() throws -> [TaskDeclaration] {
-        let root = context.layout.rootPath
+        let root = context.layout.root
         let builder = nativeBuilderConfiguration(
-            coreRoot: FilePath(context.layout.core.path))
+            coreRoot: context.layout.core)
         let image = NativeBuilderColliderRecipe.prepare(builder)
-        let sdkRoot = FilePath(context.cacheRoot.path).appending(
+        let sdkRoot = context.cacheRoot.appending(
             "nucleus/swift-target-sdks/current/swift-sdks")
         let environment = context.taskEnvironment
 
@@ -693,14 +558,14 @@ struct ComponentRegistry {
         sanitizer: String? = nil,
         linkerFlags additionalLinkerFlags: [String] = []
     ) throws -> SwiftPMInvocation {
-        let root = context.layout.rootPath
+        let root = context.layout.root
         let target = NativeLinuxTarget(architecture: architecture)
         let resolvedTriple = triple ?? target.targetTriple
         let resolvedArtifactTarget = artifactTarget ?? target.artifactTarget
         let resolvedTranslation = translation ?? target.intelBinaryTranslationPolicy
         let builder = nativeBuilderConfiguration(
-            coreRoot: FilePath(context.layout.core.path))
-        let sdkRoot = FilePath(context.cacheRoot.path).appending(
+            coreRoot: context.layout.core)
+        let sdkRoot = context.cacheRoot.appending(
             "nucleus/swift-target-sdks/current/swift-sdks")
         let guestSDKRoot = "/home/nucleus-build/.swiftpm/swift-sdks"
         let imageIdentity = try ArtifactHasher.digest(tree: builder.context).description
@@ -788,12 +653,11 @@ struct ComponentRegistry {
     }
 
     private func androidHostTasks() async throws -> [TaskDeclaration] {
-        let root = FilePath(context.layout.core.path)
+        let root = context.layout.core
         let environment = context.taskEnvironment
         let toolchain = try AndroidToolchainVersions.load(
             workspaceRoot: context.root)
-        let ndk = FilePath(
-            try toolchain.ndkRoot(environment: context.environment).path)
+        let ndk = try toolchain.ndkRoot(environment: context.environment)
         let nativeBuilder = nativeBuilderConfiguration(coreRoot: root)
         let source = try CoreColliderRecipe.prepareSkiaDependencies(
             root: root, environment: environment)
@@ -803,8 +667,7 @@ struct ComponentRegistry {
             minimumAndroidAPI: toolchain.minimumSDK,
             environment: environment,
             builder: nativeBuilder)
-        let androidNativeSDKRoot = FilePath(
-            context.nativeSDKRoot(named: "android-arm64").path)
+        let androidNativeSDKRoot = context.nativeSDKRoot(named: "android-arm64")
         var androidEnvironment = environment
         androidEnvironment["NUCLEUS_NATIVE_SDK_ROOT"] = androidNativeSDKRoot.string
         let sdk = CoreColliderRecipe.publishAndroidRenderSDK(
@@ -835,17 +698,17 @@ struct ComponentRegistry {
     }
 
     private var nativeSDKRoot: FilePath {
-        FilePath(context.nativeSDKRoot.path)
+        context.nativeSDKRoot
     }
 
     private func nativeSDKRoot(for target: NativeLinuxTarget) -> FilePath {
-        FilePath(context.nativeSDKRoot(for: target).path)
+        context.nativeSDKRoot(for: target)
     }
 
     private func nativeBuilderConfiguration(
         coreRoot: FilePath
     ) -> NativeOCIConfiguration {
-        let cache = FilePath(context.cacheRoot.path).appending("nucleus")
+        let cache = context.cacheRoot.appending("nucleus")
         return NativeOCIConfiguration(
             context: coreRoot.appending("build-container"),
             imageID: cache.appending("build-containers/native/image-id"),
@@ -871,13 +734,6 @@ struct ComponentRegistry {
         [
             NativeLinuxTarget(architecture: .arm64),
             NativeLinuxTarget(architecture: .x86_64),
-        ]
-    }
-
-    private var runtimeLinuxSelections: Set<ComponentSelection> {
-        [
-            .all, .runtime, .tracy, .vulkan, .wayland, .core, .config,
-            .ipc, .linux, .reactNative, .compositor, .shell, .androidRuntime,
         ]
     }
 

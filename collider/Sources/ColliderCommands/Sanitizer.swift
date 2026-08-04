@@ -1,6 +1,8 @@
+import AndroidRuntimeColliderRecipe
 import ArgumentParser
 import ColliderCore
 import Foundation
+import NativeBuilderColliderRecipe
 
 enum RuntimeSanitizer: String, CaseIterable, Equatable, ExpressibleByArgument {
     case address
@@ -92,10 +94,10 @@ struct SanitizerCommand {
             var environment = context.taskEnvironment
             environment.merge(sanitizer.runtimeEnvironment) { _, configured in configured }
             if sanitizer == .address {
-                let suppressions = context.layout.tools.appendingPathComponent(
+                let suppressions = context.layout.tools.appending(
                     "lsan-suppressions.txt")
                 environment["LSAN_OPTIONS", default: ""] +=
-                    ":suppressions=\(suppressions.path)"
+                    ":suppressions=\(suppressions.string)"
             }
             environment["NUCLEUS_TEST_SEED"] = "0x4e55434c455553"
             for invocation in invocations(for: sanitizer) {
@@ -122,8 +124,9 @@ struct SanitizerCommand {
     ) -> TaskDeclaration {
         let id = TaskID(rawValue: "sanitize.\(sanitizer.rawValue).\(invocation.id)")
         let dependencies = [
-            TaskID(rawValue: "native.builder"),
-            TaskID(rawValue: "android-runtime.gfxstream.linux-arm64"),
+            NativeBuilderTaskIDs.prepare,
+            AndroidRuntimeTaskIDs.gfxstream(
+                NativeLinuxTarget(architecture: .arm64)),
         ]
         let prerequisiteIdentity = ArtifactInput.value(
             name: "prerequisite-targets",
@@ -133,7 +136,7 @@ struct SanitizerCommand {
             let requirement = swiftPM.testProduct(
                 package: invocation.package,
                 testProduct: suite,
-                packageRoot: context.layout.rootPath,
+                packageRoot: context.layout.root,
                 environment: environment,
                 arguments: ["--filter", suite])
             return TaskDeclaration(
@@ -150,7 +153,7 @@ struct SanitizerCommand {
             let requirement = swiftPM.product(
                 package: invocation.package,
                 product: product,
-                packageRoot: context.layout.rootPath,
+                packageRoot: context.layout.root,
                 environment: environment,
                 prebuildTargets: invocation.prerequisiteTargets,
                 expectedOutputs: [
@@ -169,7 +172,7 @@ struct SanitizerCommand {
                 operation: swiftPM.operation(
                     executable: executable,
                     arguments: [],
-                    workingDirectory: context.layout.rootPath,
+                    workingDirectory: context.layout.root,
                     environment: environment))
         }
     }

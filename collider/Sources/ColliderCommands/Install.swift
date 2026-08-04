@@ -7,28 +7,6 @@ import NucleusAndroidRuntimeCore
 import ShellColliderRecipe
 import SystemPackage
 
-struct RuntimeBuildOptions: Equatable {
-    var optimization: OptimizationMode = .debug
-    var tracy = false
-    var sanitizer: RuntimeSanitizer?
-
-    var identity: String {
-        [
-            optimization.rawValue,
-            tracy ? "tracy" : "plain",
-            sanitizer?.rawValue ?? "unsanitized",
-        ].joined(separator: "-")
-    }
-
-    var metadata: String {
-        """
-        configuration=\(optimization.rawValue)
-        tracy=\(tracy)
-        sanitizer=\(sanitizer?.rawValue ?? "none")
-        """ + "\n"
-    }
-}
-
 struct RuntimeInstallation {
     let prefix: URL
 
@@ -99,21 +77,21 @@ struct RuntimeInstaller {
         try await validateELF(installation)
         try await validateRelocation(installation)
         try writeAndroidAddonCompatibility(into: installation)
-        let identity = try ArtifactHasher.digest(tree: FilePath(candidate.path))
+        let identity = try ArtifactHasher.digest(tree: FilePath(candidate))
         let generation = generationsRoot.appendingPathComponent(
             hex(identity.bytes.prefix(12)), isDirectory: true)
         try GenerationPublisher.publish(
-            candidate: FilePath(candidate.path),
-            generation: FilePath(generation.path),
-            active: FilePath(prefix.path))
+            candidate: FilePath(candidate),
+            generation: FilePath(generation),
+            active: FilePath(prefix))
         published = true
         try DirectoryLifecycle.prune(
             DirectoryRetentionPlan(
-                safetyRoot: FilePath(context.layout.runtimeState.path),
+                safetyRoot: context.layout.runtimeState,
                 rules: [
                     DirectoryRetentionRule(
-                        root: FilePath(generationsRoot.path),
-                        current: FilePath(prefix.path),
+                        root: FilePath(generationsRoot),
+                        current: FilePath(prefix),
                         retain: 3,
                         naming: .contentIdentity)
                 ]))
@@ -124,7 +102,7 @@ struct RuntimeInstaller {
     /// Per-prefix generations root under the repository's ignored `.nucleus/`
     /// tree, e.g. `.nucleus/runtime/install/generations` for `<root>/.install`.
     private func generationsRoot(for prefix: URL) -> URL {
-        context.layout.runtimeState
+        URL(context.layout.runtimeState, isDirectory: true)
             .appendingPathComponent(
                 generationKey(for: prefix),
                 isDirectory: true
@@ -134,7 +112,7 @@ struct RuntimeInstaller {
 
     private func generationKey(for prefix: URL) -> String {
         let standardized = prefix.standardizedFileURL.path
-        let rootPath = context.root.standardizedFileURL.path
+        let rootPath = URL(context.root, isDirectory: true).standardizedFileURL.path
         if standardized == rootPath { return "root" }
         if standardized.hasPrefix(rootPath + "/") {
             let sanitized = sanitizedKey(
@@ -238,11 +216,11 @@ struct RuntimeInstaller {
 
         try await context.runtime.execute(
             StageRuntimeELFAction(
-                products: FilePath(products.path),
-                prefix: FilePath(installation.prefix.path),
+                products: FilePath(products),
+                prefix: FilePath(installation.prefix),
                 environment: context.taskEnvironment))
 
-        let sessionPackage = context.layout.compositorSessionPackage
+        let sessionPackage = URL(context.layout.compositorSessionPackage)
         for name in ["nucleus-session", "nucleus-session-validate"] {
             let source = sessionPackage.appendingPathComponent(name)
             try await context.run("bash", ["-n", source.path])
@@ -314,12 +292,12 @@ struct RuntimeInstaller {
         let relativePath = "share/nucleus/android-addon-compatibility.json"
         let destination = installation.prefix.appendingPathComponent(relativePath)
         let buildIdentity = try ArtifactHasher.digest(
-            tree: FilePath(installation.prefix.path),
+            tree: FilePath(installation.prefix),
             excluding: [relativePath])
-        let kernelContract = context.layout.androidRuntime.appendingPathComponent(
+        let kernelContract = context.layout.androidRuntime.appending(
             "Sources/NucleusAndroidRuntimeCore/AndroidRuntimeKernelRequirements.swift")
         let kernelIdentity = try ArtifactHasher.digest(
-            file: FilePath(kernelContract.path))
+            file: kernelContract)
         #if arch(arm64)
         let architecture = AndroidAddonArchitecture.arm64
         #elseif arch(x86_64)
@@ -398,8 +376,8 @@ struct RuntimeInstaller {
             "share/nucleus/runtime-elf-report.json")
         try await context.runtime.execute(
             ValidateRuntimeELFAction(
-                root: FilePath(installation.prefix.path),
-                report: FilePath(stagedManifest.path),
+                root: FilePath(installation.prefix),
+                report: FilePath(stagedManifest),
                 environment: context.taskEnvironment))
     }
 
@@ -417,8 +395,8 @@ struct RuntimeInstaller {
                 "share/nucleus/runtime-elf-report.json")
             try await context.runtime.execute(
                 ValidateRuntimeELFAction(
-                    root: FilePath(relocated.path),
-                    report: FilePath(manifest.path),
+                    root: FilePath(relocated),
+                    report: FilePath(manifest),
                     environment: context.taskEnvironment))
             try FileManager.default.moveItem(at: relocated, to: original)
         } catch {
@@ -444,12 +422,9 @@ struct InstallCommand {
         explicit value: String?
     ) -> URL {
         if let value {
-            return URL(
-                fileURLWithPath: value,
-                relativeTo: context.root
-            ).standardizedFileURL
+            return URL(resolveWorkspacePath(value, relativeTo: context.root))
         }
-        return context.layout.installPrefix
+        return URL(context.layout.installPrefix)
     }
 }
 #endif

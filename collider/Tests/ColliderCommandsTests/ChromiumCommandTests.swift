@@ -34,7 +34,7 @@ func chromiumSourceIdentityMatchesThePinnedMetadataContract() throws {
         .deletingLastPathComponent()
     let command = ChromiumCommand(
         context: WorkspaceContext(
-            root: root,
+            root: FilePath(root.path),
             environment: ProcessInfo.processInfo.environment))
     let sourceIdentifier = try command.sourceIdentifier()
     #expect(sourceIdentifier == "65a9fbae8acff64ce6f7cfd6")
@@ -58,8 +58,15 @@ func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() throws {
             jobs: 16))
     let graph = try TaskGraph(tasks)
     #expect(
+        Set(tasks.map(\.id)).isSuperset(of: [
+            ChromiumTaskIDs.bootstrapSource,
+            ChromiumTaskIDs.retention,
+            ChromiumTaskIDs.test,
+            ChromiumTaskIDs.install,
+        ]))
+    #expect(
         try graph.orderedTasks(selecting: [
-            TaskID(rawValue: "browser.retention")
+            ChromiumTaskIDs.retention
         ]).map(\.id.rawValue) == [
             "browser.depot-tools",
             "browser.depot-tools-bootstrap",
@@ -113,7 +120,7 @@ func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() throws {
             == true)
 
     let test = try #require(
-        tasks.first { $0.id == TaskID(rawValue: "browser.test") })
+        tasks.first { $0.id == ChromiumTaskIDs.test })
     guard case .sequence(let testOperations) = test.operation,
         case .runOCI(let execution) = testOperations.first
     else {

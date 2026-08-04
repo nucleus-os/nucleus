@@ -1,187 +1,9 @@
 import ColliderCore
 import ColliderRuntime
 import Foundation
-import Synchronization
 import SystemPackage
 
-#if canImport(Glibc)
-import Glibc
-#elseif canImport(Darwin)
-import Darwin
-#endif
-
-let interruptedProcessExitStatus = 128 + Int32(SIGINT)
-
-enum WorkspaceFailure: Error, CustomStringConvertible, Sendable {
-    case message(String)
-    case process([String], Int32)
-
-    var description: String {
-        switch self {
-        case .message(let value): value
-        case .process(let command, let status):
-            "command failed with exit \(status): \(command.joined(separator: " "))"
-        }
-    }
-}
-
-/// Walk up from `start` for a Nucleus clone root: a directory holding both the
-/// `collider-setup.sh` entry point and the `collider` tool package manifest.
-func discoverWorkspaceRoot(from start: String) -> String? {
-    var directory = URL(fileURLWithPath: start).standardizedFileURL
-    let fileManager = FileManager.default
-    while true {
-        let marker = directory.appendingPathComponent("collider-setup.sh").path
-        let manifest = directory.appendingPathComponent("collider/Package.swift").path
-        if fileManager.fileExists(atPath: marker),
-            fileManager.fileExists(atPath: manifest)
-        {
-            return directory.path
-        }
-        let parent = directory.deletingLastPathComponent()
-        if parent.path == directory.path { return nil }
-        directory = parent
-    }
-}
-
-/// The active workspace root. The `collider` launcher and `collider-setup.sh`
-/// export `NUCLEUS_WORKSPACE_ROOT`; a directly invoked binary discovers it from
-/// the current directory. A command run outside any clone is rejected, so every
-/// command is gated to inside a Nucleus workspace.
-func resolveWorkspaceRoot(environment: [String: String]) throws -> String {
-    if let root = environment["NUCLEUS_WORKSPACE_ROOT"], !root.isEmpty {
-        return root
-    }
-    if let discovered = discoverWorkspaceRoot(
-        from: FileManager.default.currentDirectoryPath)
-    {
-        return discovered
-    }
-    throw WorkspaceFailure.message(
-        "collider must be run inside a Nucleus workspace "
-            + "(no clone at or above the current directory)")
-}
-
-private let activeCommandLogging = Mutex<CommandLogging?>(nil)
-private let activeCancellation = Mutex<RuntimeCancellation?>(nil)
-private let activeRuntime = Mutex<ColliderRuntime?>(nil)
-
-func setActiveCommandRuntime(
-    logging: CommandLogging?,
-    cancellation: RuntimeCancellation?,
-    runtime: ColliderRuntime?
-) {
-    activeCommandLogging.withLock { $0 = logging }
-    activeCancellation.withLock { $0 = cancellation }
-    activeRuntime.withLock { $0 = runtime }
-}
-
-struct WorkspaceContext: Sendable {
-    let root: URL
-    let environment: [String: String]
-    let runtime: ColliderRuntime
-
-    init(
-        root: URL,
-        environment: [String: String],
-        runtime: ColliderRuntime = ColliderRuntime()
-    ) {
-        self.root = root
-        var normalizedEnvironment = environment
-        if normalizedEnvironment["NUCLEUS_NATIVE_SDK_ROOT"]?.isEmpty != false {
-            let cacheRoot: URL
-            if let value = normalizedEnvironment["XDG_CACHE_HOME"],
-                !value.isEmpty
-            {
-                cacheRoot = URL(fileURLWithPath: value, isDirectory: true)
-            } else if let home = normalizedEnvironment["HOME"], !home.isEmpty {
-                cacheRoot = URL(fileURLWithPath: home, isDirectory: true)
-                    .appendingPathComponent(".cache", isDirectory: true)
-            } else {
-                cacheRoot = FileManager.default.homeDirectoryForCurrentUser
-                    .appendingPathComponent(".cache", isDirectory: true)
-            }
-            normalizedEnvironment["NUCLEUS_NATIVE_SDK_ROOT"] =
-                cacheRoot.appendingPathComponent(
-                    "nucleus/nucleus-native-sdk/linux-\(RunnerPlatform.current.architecture.rawValue)",
-                    isDirectory: true
-                ).path
-        }
-        self.environment = normalizedEnvironment
-        self.runtime = runtime
-    }
-
-    static func load() throws -> WorkspaceContext {
-        var environment = ProcessInfo.processInfo.environment
-        let root = try resolveWorkspaceRoot(environment: environment)
-        environment["NUCLEUS_WORKSPACE_ROOT"] = root
-        #if os(macOS)
-        if let contract = try? MacOSBuilderContract.load(
-            root: URL(fileURLWithPath: root, isDirectory: true))
-        {
-            if environment["XDG_CACHE_HOME"]?.isEmpty != false {
-                environment["XDG_CACHE_HOME"] = contract.environment.xdgCacheHome
-            }
-            if environment["NUCLEUS_NATIVE_SDK_ROOT"]?.isEmpty != false {
-                environment["NUCLEUS_NATIVE_SDK_ROOT"] =
-                    contract.environment.nativeSDKRoot
-            }
-            if environment["ANDROID_SDK_ROOT"]?.isEmpty != false {
-                environment["ANDROID_SDK_ROOT"] = contract.environment.androidSDKRoot
-            }
-            if environment["ANDROID_HOME"]?.isEmpty != false {
-                environment["ANDROID_HOME"] = contract.environment.androidSDKRoot
-            }
-        }
-        #endif
-        let logging = activeCommandLogging.withLock { $0 }
-        let cancellation =
-            activeCancellation.withLock { $0 }
-            ?? RuntimeCancellation()
-        let runtime =
-            activeRuntime.withLock { $0 }
-            ?? ColliderRuntime(
-                logging: logging,
-                cancellation: cancellation)
-        if let logging {
-            environment["NUCLEUS_RUN_DIR"] = logging.run.directory.string
-            environment["NUCLEUS_RUN_LOG"] =
-                logging.run.directory
-                .appending("run.log").string
-        }
-        return WorkspaceContext(
-            root: URL(fileURLWithPath: root),
-            environment: environment,
-            runtime: runtime)
-    }
-
-    func repository(_ name: String) -> URL { root.appendingPathComponent(name) }
-
-    var taskEnvironment: [String: String] {
-        var environment = sanitizedEnvironment(self.environment)
-        environment["CCACHE_BASEDIR"] = root.path
-        environment["CCACHE_COMPILERCHECK"] = "content"
-        environment["CCACHE_DIR"] =
-            cacheRoot
-            .appendingPathComponent("nucleus/host-ccache", isDirectory: true)
-            .path
-        environment["CCACHE_MAXSIZE"] = "50G"
-        // Header ctime/mtime affect cache validation but not preprocessed
-        // contents. Locale affects diagnostics only; warnings are errors in
-        // first-party builds, so successful object bytes remain unchanged.
-        environment["CCACHE_SLOPPINESS"] =
-            "include_file_ctime,include_file_mtime,locale"
-        // Swift Build caches one build description per root package and build
-        // action, and purges the oldest beyond these limits. Every workspace
-        // package builds and tests against the single shared scratch, so the
-        // stock limit of four evicts descriptions that the same run needs
-        // again, and each eviction re-plans the whole package graph. The limits
-        // hold every description the workspace produces.
-        environment["BuildDescriptionInMemoryCacheSize"] = "64"
-        environment["BuildDescriptionOnDiskCacheSize"] = "64"
-        return environment
-    }
-
+extension WorkspaceContext {
     @discardableResult
     func run(
         _ executable: String,
@@ -205,7 +27,7 @@ struct WorkspaceContext: Sendable {
         let specification = CommandSpec(
             executable: executableReference,
             arguments: arguments,
-            workingDirectory: FilePath((directory ?? root).path),
+            workingDirectory: directory.map(FilePath.init) ?? root,
             environment: childEnvironment,
             input: terminal ? .terminal : .none,
             output: output
@@ -247,7 +69,7 @@ struct WorkspaceContext: Sendable {
         let specification = CommandSpec(
             executable: executableReference,
             arguments: arguments,
-            workingDirectory: FilePath((directory ?? root).path),
+            workingDirectory: directory.map(FilePath.init) ?? root,
             environment: childEnvironment,
             input: terminal ? .terminal : .none,
             output: terminal ? .terminal : output,
@@ -333,10 +155,10 @@ struct WorkspaceContext: Sendable {
         let directory =
             layout.locks
         try FileManager.default.createDirectory(
-            at: directory,
+            at: URL(fileURLWithPath: directory.string, isDirectory: true),
             withIntermediateDirectories: true)
         let lock = try WorkspaceFileLock(
-            path: directory.appendingPathComponent("verification.lock").path,
+            path: directory.appending("verification.lock").string,
             purpose: "workspace verification")
         defer { withExtendedLifetime(lock) {} }
         return try await body()
@@ -473,7 +295,7 @@ private actor RunningCommandState {
     }
 }
 
-private func sanitizedEnvironment(
+func sanitizedEnvironment(
     _ environment: [String: String]
 ) -> [String: String] {
     let fixed = Set([
@@ -492,20 +314,5 @@ private func sanitizedEnvironment(
             || key.hasPrefix("NUCLEUS_")
             || key.hasPrefix("ANDROID_")
             || key.hasPrefix("SWIFT_")
-    }
-}
-
-final class WorkspaceFileLock {
-    private let lock: ColliderFileLock
-
-    init(path: String, purpose: String, waitForExistingOwner: Bool = true) throws {
-        do {
-            lock = try ColliderFileLock(
-                path: FilePath(path),
-                purpose: purpose,
-                waitForExistingOwner: waitForExistingOwner)
-        } catch {
-            throw WorkspaceFailure.message(String(describing: error))
-        }
     }
 }

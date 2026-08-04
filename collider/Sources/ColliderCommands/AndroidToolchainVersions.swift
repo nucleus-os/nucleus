@@ -1,4 +1,5 @@
 import Foundation
+import SystemPackage
 
 struct AndroidToolchainVersions: Equatable, Sendable {
     let androidGradlePlugin: String
@@ -11,9 +12,10 @@ struct AndroidToolchainVersions: Equatable, Sendable {
     let ndk: String
     let java: UInt32
 
-    static func load(workspaceRoot: URL) throws -> Self {
-        let catalog = workspaceRoot.appendingPathComponent(
+    static func load(workspaceRoot: FilePath) throws -> Self {
+        let catalogPath = workspaceRoot.appending(
             "core/android/gradle/libs.versions.toml")
+        let catalog = URL(fileURLWithPath: catalogPath.string)
         let contents: String
         do {
             contents = try String(contentsOf: catalog, encoding: .utf8)
@@ -39,65 +41,67 @@ struct AndroidToolchainVersions: Equatable, Sendable {
             java: unsigned("jvm", in: versions, catalog: catalog))
     }
 
-    func ndkRoot(environment: [String: String]) throws -> URL {
-        let root: URL
+    func ndkRoot(environment: [String: String]) throws -> FilePath {
+        let root: FilePath
         if let explicit = environment["NUCLEUS_ANDROID_NDK_HOME"]
             ?? environment["ANDROID_NDK_HOME"],
-           !explicit.isEmpty
+            !explicit.isEmpty
         {
-            root = URL(fileURLWithPath: explicit, isDirectory: true)
+            root = FilePath(explicit)
         } else {
-            let sdk: URL
+            let sdk: FilePath
             if let explicit = environment["ANDROID_SDK_ROOT"]
                 ?? environment["ANDROID_HOME"],
-               !explicit.isEmpty
+                !explicit.isEmpty
             {
-                sdk = URL(fileURLWithPath: explicit, isDirectory: true)
+                sdk = FilePath(explicit)
             } else {
                 guard let home = environment["HOME"], !home.isEmpty else {
                     throw WorkspaceFailure.message(
                         "HOME or an Android SDK/NDK location is required")
                 }
                 #if os(macOS)
-                sdk = URL(fileURLWithPath: home, isDirectory: true)
-                    .appendingPathComponent(
-                        "Library/Android/sdk", isDirectory: true)
+                sdk = FilePath(home).appending("Library/Android/sdk")
                 #else
-                sdk = URL(fileURLWithPath: home, isDirectory: true)
-                    .appendingPathComponent(
-                        "Android/Sdk", isDirectory: true)
+                sdk = FilePath(home).appending("Android/Sdk")
                 #endif
             }
-            root = sdk.appendingPathComponent("ndk/\(ndk)", isDirectory: true)
+            root = sdk.appending("ndk/\(ndk)")
         }
         try validateNDK(at: root)
         return root
     }
 
-    private func validateNDK(at root: URL) throws {
-        let sourceProperties = root.appendingPathComponent("source.properties")
-        guard let contents = try? String(
-            contentsOf: sourceProperties, encoding: .utf8)
+    private func validateNDK(at root: FilePath) throws {
+        let sourceProperties = URL(
+            fileURLWithPath: root.appending("source.properties").string)
+        guard
+            let contents = try? String(
+                contentsOf: sourceProperties, encoding: .utf8)
         else {
             throw WorkspaceFailure.message(
                 "Android NDK metadata is missing: \(sourceProperties.path)")
         }
-        let properties = Dictionary(uniqueKeysWithValues: contents
-            .split(whereSeparator: \.isNewline)
-            .compactMap { line -> (String, String)? in
-                let fields = line.split(
-                    separator: "=", maxSplits: 1,
-                    omittingEmptySubsequences: false)
-                guard fields.count == 2 else { return nil }
-                return (
-                    fields[0].trimmingCharacters(in: .whitespaces),
-                    fields[1].trimmingCharacters(in: .whitespaces))
-            })
-        let installed = properties["Pkg.BaseRevision"]
+        let properties = Dictionary(
+            uniqueKeysWithValues:
+                contents
+                .split(whereSeparator: \.isNewline)
+                .compactMap { line -> (String, String)? in
+                    let fields = line.split(
+                        separator: "=", maxSplits: 1,
+                        omittingEmptySubsequences: false)
+                    guard fields.count == 2 else { return nil }
+                    return (
+                        fields[0].trimmingCharacters(in: .whitespaces),
+                        fields[1].trimmingCharacters(in: .whitespaces)
+                    )
+                })
+        let installed =
+            properties["Pkg.BaseRevision"]
             ?? properties["Pkg.Revision"]?.split(separator: "-").first.map(String.init)
         guard installed == ndk else {
             throw WorkspaceFailure.message(
-                "Android NDK at \(root.path) is \(installed ?? "unversioned"); "
+                "Android NDK at \(root.string) is \(installed ?? "unversioned"); "
                     + "the version catalog requires \(ndk)")
         }
     }
@@ -124,8 +128,8 @@ struct AndroidToolchainVersions: Equatable, Sendable {
             let key = fields[0].trimmingCharacters(in: .whitespaces)
             let value = fields[1].trimmingCharacters(in: .whitespaces)
             guard value.count >= 2,
-                  value.first == "\"",
-                  value.last == "\""
+                value.first == "\"",
+                value.last == "\""
             else { continue }
             result[key] = String(value.dropFirst().dropLast())
         }

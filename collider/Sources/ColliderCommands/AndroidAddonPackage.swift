@@ -47,7 +47,7 @@ struct AndroidAddonPackageCommand {
                     + "this process is \(buildArchitecture.rawValue), but the base "
                     + "compatibility declaration is \(compatibility.architecture.rawValue)")
         }
-        let generatedRuntimeRoot = context.layout.work.appendingPathComponent(
+        let generatedRuntimeRoot = URL(context.layout.work).appendingPathComponent(
             "android-addon-runtime-\(UUID().uuidString)", isDirectory: true)
         let runtimeRoot: URL
         if let explicitRuntimeRoot {
@@ -111,7 +111,7 @@ struct AndroidAddonPackageCommand {
                 values.isRegularFile == true,
                 values.isSymbolicLink != true,
                 UInt64(size) == image.size,
-                hex(try ArtifactHasher.digest(file: FilePath(source.path)).bytes)
+                hex(try ArtifactHasher.digest(file: FilePath(source)).bytes)
                     == image.sha256
             else {
                 throw WorkspaceFailure.message(
@@ -125,12 +125,12 @@ struct AndroidAddonPackageCommand {
             aospGeneration.appendingPathComponent("out/host/linux-x86/bin/avbtool"),
             to: candidate.appendingPathComponent("libexec/android-tools/avbtool"))
         try copyRegularFile(
-            context.layout.androidRuntime.appendingPathComponent(
+            URL(context.layout.androidRuntime).appendingPathComponent(
                 "container/lxc-nucleus-android.apparmor"),
             to: candidate.appendingPathComponent(
                 "share/nucleus/android/lxc-nucleus-android.apparmor"))
         try copyRegularFile(
-            context.layout.androidRuntime.appendingPathComponent(
+            URL(context.layout.androidRuntime).appendingPathComponent(
                 "container/nucleus-android.seccomp"),
             to: candidate.appendingPathComponent(
                 "share/nucleus/android/nucleus-android.seccomp"))
@@ -196,7 +196,7 @@ struct AndroidAddonPackageCommand {
         try await context.runtime.execute(
             StageRuntimeELFAction(
                 products: swiftPM.configurationProducts,
-                prefix: FilePath(destination.path),
+                prefix: FilePath(destination),
                 environment: context.taskEnvironment,
                 productSet: .androidAddon))
     }
@@ -241,7 +241,7 @@ struct AndroidAddonPackageCommand {
                     path: relative,
                     size: UInt64(size),
                     sha256: hex(
-                        try ArtifactHasher.digest(file: FilePath(path.path)).bytes),
+                        try ArtifactHasher.digest(file: FilePath(path)).bytes),
                     executable: permissions.uint16Value & 0o111 != 0))
         }
         return result

@@ -1241,6 +1241,17 @@ success.
 
 ## Phase 3 — Normalize the declaration surface
 
+**Status: complete.** `WorkspaceLayout`, `WorkspaceContext`, cache roots, native
+SDK roots, and Swift target SDK storage use `FilePath`; cache and native SDK
+resolution happen once during context construction. Recipe modules own the
+package-visible identifiers used by their consumers. Host-only per-component
+build/test graphs and unreachable selection branches are gone, so planning no
+longer resolves the host Swift compiler for container-only selections. Command
+support has one owner per concern and one file per top-level command.
+`RunOptions` is the direct parsed representation. The engine test target lives
+in `collider/engine/Package.swift`, and the literal path-conversion gate is
+closed.
+
 The layer that later phases rewrite must first speak one path type, one
 workspace context, and one task-identifier vocabulary.
 

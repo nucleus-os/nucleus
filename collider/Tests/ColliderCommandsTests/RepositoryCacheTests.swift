@@ -1,4 +1,5 @@
 import Foundation
+import SystemPackage
 import Testing
 
 @testable import ColliderCommands
@@ -35,7 +36,7 @@ import Testing
         ).path,
         withDestinationPath: "generations/\(active.lastPathComponent)")
     let context = WorkspaceContext(
-        root: workspace,
+        root: FilePath(workspace.path),
         environment: [
             "HOME": workspace.path,
             "XDG_CACHE_HOME": cache.path,

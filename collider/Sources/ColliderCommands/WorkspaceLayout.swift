@@ -1,134 +1,56 @@
 import ColliderCore
 import ColliderRuntime
-import Foundation
 import SystemPackage
 
 /// The single authoritative map from a Nucleus checkout root to paths owned or
 /// consumed by Collider. Package recipes receive these resolved roots and own
 /// their internal build layouts.
 struct WorkspaceLayout: Sendable {
-    let root: URL
+    let root: FilePath
 
-    var rootPath: FilePath { FilePath(root.path) }
-
-    var state: URL {
-        root.appendingPathComponent(".nucleus", isDirectory: true)
-    }
-    var runs: URL {
-        state.appendingPathComponent("runs", isDirectory: true)
-    }
-    var tasks: URL {
-        state.appendingPathComponent("tasks", isDirectory: true)
-    }
-    var runtimeState: URL {
-        state.appendingPathComponent("runtime", isDirectory: true)
-    }
-    var androidAddonStore: URL {
-        runtimeState.appendingPathComponent("android-addon", isDirectory: true)
-    }
-    var androidPersistentState: URL {
-        runtimeState.appendingPathComponent("android-state", isDirectory: true)
-    }
-    var locks: URL {
-        state.appendingPathComponent("locks", isDirectory: true)
-    }
-    var work: URL {
-        state.appendingPathComponent("work", isDirectory: true)
-    }
-    func swiftScratch(for context: SwiftBuildContext) -> URL {
+    var state: FilePath { root.appending(".nucleus") }
+    var runs: FilePath { state.appending("runs") }
+    var tasks: FilePath { state.appending("tasks") }
+    var runtimeState: FilePath { state.appending("runtime") }
+    var androidAddonStore: FilePath { runtimeState.appending("android-addon") }
+    var androidPersistentState: FilePath { runtimeState.appending("android-state") }
+    var locks: FilePath { state.appending("locks") }
+    var work: FilePath { state.appending("work") }
+    func swiftScratch(for context: SwiftBuildContext) -> FilePath {
         let identity = ArtifactHasher.digest(bytes: context.identityBytes)
             .description
             .replacingOccurrences(of: ":", with: "-")
-        return
-            state
-            .appendingPathComponent("swiftpm", isDirectory: true)
-            .appendingPathComponent(
-                context.sanitizer ?? "unsanitized",
-                isDirectory: true
-            )
-            .appendingPathComponent(identity, isDirectory: true)
+        return state.appending("swiftpm")
+            .appending(context.sanitizer ?? "unsanitized")
+            .appending(identity)
     }
-    var benchmarkBuilds: URL {
-        state.appendingPathComponent(
-            "benchmarks",
-            isDirectory: true)
-    }
-    var nativeSanitizerBuilds: URL {
-        state.appendingPathComponent(
-            "native-sanitizers",
-            isDirectory: true)
-    }
-    var installPrefix: URL {
-        root.appendingPathComponent(".install", isDirectory: true)
-    }
+    var benchmarkBuilds: FilePath { state.appending("benchmarks") }
+    var nativeSanitizerBuilds: FilePath { state.appending("native-sanitizers") }
+    var installPrefix: FilePath { root.appending(".install") }
 
-    var swiftSDK: URL {
-        root.appendingPathComponent("swift-sdk", isDirectory: true)
+    var swiftSDK: FilePath { root.appending("swift-sdk") }
+    var swiftTracy: FilePath { root.appending("swift-tracy") }
+    var swiftVulkan: FilePath { root.appending("swift-vulkan") }
+    var swiftWayland: FilePath { root.appending("swift-wayland") }
+    var core: FilePath { root.appending("core") }
+    var config: FilePath { root.appending("config") }
+    var ipc: FilePath { root.appending("ipc") }
+    var reactNative: FilePath { root.appending("react-native") }
+    var androidRuntime: FilePath { root.appending("android-runtime") }
+    var chromium: FilePath { root.appending("chromium") }
+    var platformLinux: FilePath { root.appending("platform-linux") }
+    var platformLinuxDesktop: FilePath { platformLinux.appending("desktop") }
+    var platformLinuxSession: FilePath { platformLinux.appending("session") }
+    var compositor: FilePath { root.appending("compositor") }
+    var compositorCore: FilePath { compositor.appending("compositor-core") }
+    var compositorApp: FilePath { compositor.appending("compositor") }
+    var compositorSessionPackage: FilePath {
+        compositor.appending("packages").appending("session")
     }
-    var swiftTracy: URL {
-        root.appendingPathComponent("swift-tracy", isDirectory: true)
-    }
-    var swiftVulkan: URL {
-        root.appendingPathComponent("swift-vulkan", isDirectory: true)
-    }
-    var swiftWayland: URL {
-        root.appendingPathComponent("swift-wayland", isDirectory: true)
-    }
-    var core: URL {
-        root.appendingPathComponent("core", isDirectory: true)
-    }
-    var config: URL {
-        root.appendingPathComponent("config", isDirectory: true)
-    }
-    var ipc: URL {
-        root.appendingPathComponent("ipc", isDirectory: true)
-    }
-    var reactNative: URL {
-        root.appendingPathComponent("react-native", isDirectory: true)
-    }
-    var androidRuntime: URL {
-        root.appendingPathComponent("android-runtime", isDirectory: true)
-    }
-    var chromium: URL {
-        root.appendingPathComponent("chromium", isDirectory: true)
-    }
-    var platformLinux: URL {
-        root.appendingPathComponent("platform-linux", isDirectory: true)
-    }
-    var platformLinuxDesktop: URL {
-        platformLinux.appendingPathComponent("desktop", isDirectory: true)
-    }
-    var platformLinuxSession: URL {
-        platformLinux.appendingPathComponent("session", isDirectory: true)
-    }
-    var compositor: URL {
-        root.appendingPathComponent("compositor", isDirectory: true)
-    }
-    var compositorCore: URL {
-        compositor.appendingPathComponent(
-            "compositor-core",
-            isDirectory: true)
-    }
-    var compositorApp: URL {
-        compositor.appendingPathComponent(
-            "compositor",
-            isDirectory: true)
-    }
-    var compositorSessionPackage: URL {
-        compositor.appendingPathComponent(
-            "packages/session",
-            isDirectory: true)
-    }
-    var shell: URL {
-        root.appendingPathComponent("shell", isDirectory: true)
-    }
-    var tools: URL {
-        root.appendingPathComponent("tools", isDirectory: true)
-    }
+    var shell: FilePath { root.appending("shell") }
+    var tools: FilePath { root.appending("tools") }
 
-    var tracyBuild: URL {
-        compositor.appendingPathComponent(".tracy-build", isDirectory: true)
-    }
+    var tracyBuild: FilePath { compositor.appending(".tracy-build") }
 }
 
 extension WorkspaceContext {
