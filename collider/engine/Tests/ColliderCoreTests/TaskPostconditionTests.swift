@@ -17,7 +17,7 @@ import Testing
         outputs: [
             OutputDeclaration(path: link, validation: .symlinkTarget)
         ],
-        operation: try fixtureReplaceSymlinkOperation(
+        action: try fixtureReplaceSymlinkAction(
             path: link,
             target: "missing-target"))
 
@@ -44,10 +44,11 @@ import Testing
                 path: shared,
                 validation: .nonEmptyDirectory)
         ],
-        operation: .sequence([
-            try fixtureCreateDirectoryOperation(shared),
-            try fixtureWriteOperation(marker, bytes: Array("ready".utf8)),
-        ]))
+        action: try fixturePrepareAndWriteAction(
+            root: shared,
+            file: marker,
+            bytes: Array("ready".utf8),
+            reset: false))
     let runtime = ColliderRuntime()
     let state = FilePath(directory.appendingPathComponent("state").path)
 
@@ -72,7 +73,7 @@ import Testing
         postconditions: [
             PathPostcondition(path: shared, validation: .exists)
         ],
-        operation: task.operation)
+        action: task.action)
     let changedPlan = try await runtime.execute(
         graph: TaskGraph([changed]),
         selected: [changed.id],

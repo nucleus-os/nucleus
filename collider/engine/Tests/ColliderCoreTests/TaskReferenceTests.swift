@@ -130,7 +130,7 @@ private func inertActionFileSystem() -> ActionFileSystem {
         validation: .json)
     let result: TaskResultReference<FixtureResult> = try producer.result("result")
     let producerTask = producer.build(
-        operation: try fixtureWriteOperation(
+        action: try fixtureWriteAction(
             artifact.path,
             bytes: Array("{}".utf8)))
 
@@ -140,7 +140,7 @@ private func inertActionFileSystem() -> ActionFileSystem {
     consumer.consume(artifact)
     consumer.consume(result)
     let consumerTask = consumer.build(
-        operation: try fixtureCreateDirectoryOperation(FilePath("/tmp/fixture/consumer")))
+        action: try fixtureCreateDirectoryAction(FilePath("/tmp/fixture/consumer")))
 
     let graph = try TaskGraph([producerTask, consumerTask])
     #expect(
@@ -161,13 +161,13 @@ private func inertActionFileSystem() -> ActionFileSystem {
     let replacementProducer = TaskDeclaration(
         id: declaredProducer.id,
         component: ComponentID(rawValue: "fixture"),
-        operation: try fixtureCreateDirectoryOperation(FilePath("/tmp/fixture/replacement")))
+        action: try fixtureCreateDirectoryAction(FilePath("/tmp/fixture/replacement")))
     var consumer = TaskBuilder(
         id: TaskID(rawValue: "fixture.consumer"),
         component: ComponentID(rawValue: "fixture"))
     consumer.consume(reference)
     let consumerTask = consumer.build(
-        operation: try fixtureCreateDirectoryOperation(FilePath("/tmp/fixture/consumer")))
+        action: try fixtureCreateDirectoryAction(FilePath("/tmp/fixture/consumer")))
 
     #expect(throws: TaskGraphFailure.self) {
         _ = try TaskGraph([replacementProducer, consumerTask])
@@ -198,17 +198,17 @@ private func inertActionFileSystem() -> ActionFileSystem {
     let anchor = TaskDeclaration(
         id: anchorID,
         component: component,
-        operation: try fixtureCreateDirectoryOperation(root.appending("anchor")))
+        action: try fixtureCreateDirectoryAction(root.appending("anchor")))
 
     func consumer(
         after ordering: TaskOrderingReference?,
         policy: TaskAssessmentPolicy
-    ) -> TaskDeclaration {
+    ) throws -> TaskDeclaration {
         var builder = TaskBuilder(id: consumerID, component: component)
         if let ordering { builder.after(ordering) }
         return builder.build(
             assessmentPolicy: policy,
-            operation: try fixtureCreateDirectoryOperation(root.appending("consumer")))
+            action: try fixtureCreateDirectoryAction(root.appending("consumer")))
     }
 
     func identity(

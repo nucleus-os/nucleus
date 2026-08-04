@@ -1,5 +1,6 @@
 import ColliderCore
 import ColliderRuntime
+import ColliderSwiftPM
 import Foundation
 import QualificationColliderRecipe
 import SystemPackage
@@ -138,6 +139,7 @@ extension WorkspaceContext {
             selected: selected,
             stateRoot: stateRoot,
             workflowLocks: workflowLocks,
+            lowerings: [SwiftPMLowering()],
             options: controls.executionOptions)
         try controls.render(report)
         return report

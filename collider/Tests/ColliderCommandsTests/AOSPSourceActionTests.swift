@@ -70,14 +70,14 @@ import Testing
                 validation: .json)
         ],
         assessmentPolicy: .always,
-        operation: .action(
+        action:
             try AnyColliderAction(
                 VerifyAOSPSourceLockAction(
                     verification: AOSPSourceLockVerification(
                         specification: fixture.specification,
                         launcher: FilePath(fixture.launcher.path),
                         report: FilePath(report.path),
-                        environment: fixture.environment)))))
+                        environment: fixture.environment))))
 
     let execution = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
@@ -191,7 +191,7 @@ import Testing
                 path: FilePath(provenance.path),
                 validation: .json),
         ],
-        operation: .action(
+        action:
             try AnyColliderAction(
                 PrepareAOSPSourceAction(
                     preparation: AOSPSourcePreparation(
@@ -200,7 +200,7 @@ import Testing
                         source: FilePath(source.path),
                         syncJobs: 4,
                         retryFetches: 3,
-                        environment: environment)))))
+                        environment: environment))))
 
     let execution = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
@@ -291,13 +291,13 @@ import Testing
                 validation: .nonEmptyDirectory),
         ],
         assessmentPolicy: .always,
-        operation: .action(
+        action:
             try AnyColliderAction(
                 PrepareAOSPSigningIdentityAction(
                     preparation: AOSPSigningIdentityPreparation(
                         destination: FilePath(destination.path),
                         subject: "/O=Nucleus/CN=Fixture",
-                        environment: fixture.environment)))))
+                        environment: fixture.environment))))
 
     let runtime = ColliderRuntime()
     let graph = try TaskGraph([task])
@@ -630,8 +630,8 @@ import Testing
                 validation: .json),
         ],
         assessmentPolicy: .always,
-        operation: .action(
-            try AnyColliderAction(PublishAOSPProductAction(build: build))))
+        action:
+            try AnyColliderAction(PublishAOSPProductAction(build: build)))
 
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),

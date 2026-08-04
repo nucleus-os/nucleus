@@ -85,7 +85,7 @@ public enum BenchmarkColliderRecipe: ColliderComponent {
                 inputs: [swiftPM.identityInput],
                 locks: [.checkout("benchmark-\(outputDirectory)")],
                 assessmentPolicy: .always,
-                operation: .action(
+                action:
                     try AnyColliderAction(
                         RunBenchmarkAction(
                             output: output,
@@ -95,7 +95,7 @@ public enum BenchmarkColliderRecipe: ColliderComponent {
                                     "--output", output.string, "--iterations", "3",
                                 ],
                                 workingDirectory: context.repositoryRoot,
-                                environment: environment)))))
+                                environment: environment))))
         }
         return try ComponentDefinition(
             descriptor: descriptor,
@@ -251,8 +251,7 @@ public enum SanitizerColliderRecipe: ColliderComponent {
                 swiftTests: [requirement],
                 inputs: [swiftPM.identityInput, prerequisiteIdentity],
                 locks: [.checkout("sanitize-\(sanitizer.rawValue)")],
-                assessmentPolicy: .always,
-                operation: .sequence([]))
+                assessmentPolicy: .always)
         case .executable(let product):
             let executable = swiftPM.executable(product)
             let requirement = swiftPM.product(
@@ -275,14 +274,14 @@ public enum SanitizerColliderRecipe: ColliderComponent {
                 inputs: [swiftPM.identityInput, prerequisiteIdentity],
                 locks: [.checkout("sanitize-\(sanitizer.rawValue)")],
                 assessmentPolicy: .always,
-                operation: .action(
+                action:
                     try AnyColliderAction(
                         RunSanitizerExecutableAction(
                             execution: swiftPM.ociExecutableExecution(
                                 executable: executable,
                                 arguments: [],
                                 workingDirectory: context.repositoryRoot,
-                                environment: environment)))))
+                                environment: environment))))
         }
     }
 

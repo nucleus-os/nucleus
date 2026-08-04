@@ -171,7 +171,7 @@ import Testing
                 validation: .json)
         ],
         assessmentPolicy: .always,
-        operation: .action(
+        action:
             try AnyColliderAction(
                 PrepareChromiumSourceAction(
                     preparation: ChromiumSourcePreparation(
@@ -182,7 +182,7 @@ import Testing
                         depotTools: FilePath(depot.path),
                         sourceLockFile: FilePath(lockFile.path),
                         sourceLock: sourceLock,
-                        environment: environment)))))
+                        environment: environment))))
     _ = try await runtime.execute(
         graph: TaskGraph([task]),
         selected: [task.id],

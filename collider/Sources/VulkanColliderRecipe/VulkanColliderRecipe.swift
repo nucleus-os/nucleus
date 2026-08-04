@@ -28,9 +28,14 @@ public enum VulkanColliderRecipe: ColliderComponent {
         swiftPM: SwiftPMInvocation
     ) throws -> TaskDeclaration {
         let output = root.appending("Sources/Vulkan/Vulkan.swift")
-        return TaskDeclaration(
+        var builder = TaskBuilder(
             id: TaskID(rawValue: "vulkan.generate"),
-            component: ComponentID(rawValue: "vulkan"),
+            component: ComponentID(rawValue: "vulkan"))
+        let _: ArtifactReference<FileArtifact> = try builder.output(
+            "bindings",
+            path: output,
+            validation: .regularFile)
+        return builder.build(
             swiftProducts: [
                 swiftPM.product(
                     package: "swift-vulkan",
@@ -49,20 +54,15 @@ public enum VulkanColliderRecipe: ColliderComponent {
                 swiftPM.identityInput,
                 .tool(.named("swift")),
             ],
-            outputs: [
-                OutputDeclaration(
-                    path: output,
-                    validation: .regularFile)
-            ],
             locks: [.checkout("vulkan")],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     GenerateVulkanBindingsAction(
                         generator: swiftPM.executable("VulkanGen"),
                         registry: root.appending("third-party/vk.xml"),
                         output: output,
                         workingDirectory: root,
-                        environment: environment))))
+                        environment: environment)))
     }
 }
 

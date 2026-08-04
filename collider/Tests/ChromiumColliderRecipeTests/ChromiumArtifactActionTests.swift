@@ -76,9 +76,9 @@ import Testing
                 validation: .exists)
         ],
         assessmentPolicy: .always,
-        operation: .action(
+        action:
             try AnyColliderAction(
-                AssembleBrowserArtifactAction(assembly: assembly))))
+                AssembleBrowserArtifactAction(assembly: assembly)))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],
@@ -216,9 +216,9 @@ import Testing
                 validation: .exists)
         ],
         assessmentPolicy: .always,
-        operation: .action(
+        action:
             try AnyColliderAction(
-                AssembleCEFArtifactAction(assembly: assembly))))
+                AssembleCEFArtifactAction(assembly: assembly)))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],
@@ -325,13 +325,13 @@ import Testing
                 validation: .exists)
         ],
         assessmentPolicy: .always,
-        operation: .action(
+        action:
             try AnyColliderAction(
                 InstallBrowserAction(
                     installation: BrowserInstallation(
                         distributionRoot: FilePath(distribution.path),
                         prefix: FilePath(prefix.path),
-                        environment: ["PATH": tools.path])))))
+                        environment: ["PATH": tools.path]))))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],

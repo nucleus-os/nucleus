@@ -187,13 +187,13 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             ],
             locks: [.shared(cache.appending("locks/depot-tools.lock"))],
             assessmentPolicy: .always,
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     PrepareChromiumDepotToolsAction(
                         repository: depotTools,
                         remote: sourceLock.depotTools.remote,
                         commit: sourceLock.depotTools.commit,
-                        environment: childEnvironment))))
+                        environment: childEnvironment)))
         var bootstrapBuilder = TaskBuilder(
             id: TaskID(rawValue: "browser.depot-tools-bootstrap"),
             component: ComponentID(rawValue: "browser"))
@@ -204,12 +204,12 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             validation: .regularFile)
         let depotBootstrap = bootstrapBuilder.build(
             locks: [.shared(cache.appending("locks/depot-tools.lock"))],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     BootstrapChromiumDepotToolsAction(
                         executable: depotBootstrapExecutable.path,
                         repository: depotTools,
-                        environment: depotEnvironment))))
+                        environment: depotEnvironment)))
         let sourcePreparation = ChromiumSourcePreparation(
             sourceID: layout.sourceID,
             sourceRoot: source,
@@ -232,10 +232,10 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             locks: [
                 .shared(cache.appending("locks/source.lock"))
             ],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     PrepareChromiumSourceAction(
-                        preparation: sourcePreparation))))
+                        preparation: sourcePreparation)))
         var imageBuilder = TaskBuilder(
             id: TaskID(rawValue: "browser.builder"),
             component: ComponentID(rawValue: "browser"))
@@ -248,7 +248,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 .tree(builderContext)
             ],
             locks: [.shared(cache.appending("locks/builder.lock"))],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     PrepareChromiumBuilderImageAction(
                         preparation: OCIImagePreparation(
@@ -257,7 +257,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                             containerFile: builderContext.appending("Containerfile"),
                             imageID: builderImageID,
                             imageName: "localhost/nucleus-chromium-build",
-                            environment: childEnvironment)))))
+                            environment: childEnvironment))))
         let cefAssembly = CEFArtifactAssembly(
             chromiumSource: chromiumSource,
             buildOutput: cefOutput,
@@ -281,7 +281,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             locks: [
                 .shared(cache.appending("locks/cef-output.lock"))
             ],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     BuildChromiumProductAction(
                         build: ChromiumProductBuild(
@@ -293,7 +293,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                             gnArguments: cefGNArguments,
                             targets: ["libcef", "chrome_sandbox"],
                             jobs: UInt32(layout.jobs),
-                            environment: childEnvironment)))))
+                            environment: childEnvironment))))
         var cefBuilder = TaskBuilder(
             id: ChromiumTaskIDs.cefArtifact,
             component: ComponentID(rawValue: "browser"))
@@ -308,10 +308,10 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             locks: [
                 .shared(cache.appending("locks/cef-publication.lock"))
             ],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     AssembleCEFArtifactAction(
-                        assembly: cefAssembly))))
+                        assembly: cefAssembly)))
         let browserAssembly = BrowserArtifactAssembly(
             chromiumSource: chromiumSource,
             buildOutput: browserOutput,
@@ -335,7 +335,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             locks: [
                 .shared(cache.appending("locks/browser-output.lock"))
             ],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     BuildChromiumProductAction(
                         build: ChromiumProductBuild(
@@ -347,7 +347,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                             gnArguments: browserGNArguments,
                             targets: ["chrome", "chrome_sandbox"],
                             jobs: UInt32(layout.jobs),
-                            environment: childEnvironment)))))
+                            environment: childEnvironment))))
         var browserArtifactBuilder = TaskBuilder(
             id: ChromiumTaskIDs.browserArtifact,
             component: ComponentID(rawValue: "browser"))
@@ -362,10 +362,10 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             locks: [
                 .shared(cache.appending("locks/browser-publication.lock"))
             ],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     AssembleBrowserArtifactAction(
-                        assembly: browserAssembly))))
+                        assembly: browserAssembly)))
         var retentionBuilder = TaskBuilder(
             id: ChromiumTaskIDs.retention,
             component: ComponentID(rawValue: "browser"))
@@ -377,7 +377,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 .shared(cache.appending("locks/cache-retention.lock"))
             ],
             assessmentPolicy: .always,
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     PruneChromiumCacheAction(
                         plan: DirectoryRetentionPlan(
@@ -403,7 +403,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                                     current: browserDistribution.appending("current"),
                                     retain: 2,
                                     naming: .contentIdentity),
-                            ])))))
+                            ]))))
         var testBuilder = TaskBuilder(
             id: ChromiumTaskIDs.test,
             component: ComponentID(rawValue: "browser"))
@@ -417,7 +417,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 .shared(cache.appending("locks/browser-output.lock")),
             ],
             assessmentPolicy: .always,
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     RunChromiumTestsAction(
                         execution: chromiumBuildExecution(
@@ -433,7 +433,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                             ],
                             environment: childEnvironment),
                         output: browserOutput,
-                        environment: childEnvironment))))
+                        environment: childEnvironment)))
         var installBuilder = TaskBuilder(
             id: ChromiumTaskIDs.install,
             component: ComponentID(rawValue: "browser"))
@@ -444,13 +444,13 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 .shared(cache.appending("locks/browser-publication.lock"))
             ],
             assessmentPolicy: .always,
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     InstallBrowserAction(
                         installation: BrowserInstallation(
                             distributionRoot: browserDistribution,
                             prefix: layout.installPrefix,
-                            environment: childEnvironment)))))
+                            environment: childEnvironment))))
         return [
             depotToolsTask, depotBootstrap,
             sourceTask, builderTask, cefBuildTask, cefTask,

@@ -368,6 +368,7 @@ public struct ComponentCatalog: Sendable {
         }
 
         try Self.validateOutputOwnership(allTasks)
+        try Self.validateGeneratedOutputConsumption(allTasks)
         try Self.validateActions(allTasks)
 
         self.components = componentsByID
@@ -477,10 +478,52 @@ public struct ComponentCatalog: Sendable {
         }
     }
 
+    private static func validateGeneratedOutputConsumption(
+        _ tasks: [TaskDeclaration]
+    ) throws {
+        let outputs = tasks.flatMap { task in
+            task.outputs.map {
+                (
+                    producer: task.id,
+                    path: $0.path,
+                    normalized: $0.path.lexicallyNormalized().string
+                )
+            }
+        }
+        for task in tasks {
+            for input in task.inputs {
+                guard let path = rawInputPath(input) else { continue }
+                let normalized = path.lexicallyNormalized().string
+                if let output = outputs.first(where: {
+                    $0.producer != task.id
+                        && (normalized == $0.normalized
+                            || Self.contains(normalized, in: $0.normalized))
+                }) {
+                    throw ComponentCatalogFailure.rawGeneratedOutputConsumption(
+                        consumer: task.id,
+                        producer: output.producer,
+                        path: path)
+                }
+            }
+        }
+    }
+
+    private static func rawInputPath(_ input: ArtifactInput) -> FilePath? {
+        switch input {
+        case .file(let path), .tree(let path), .optionalTree(let path, _),
+            .dependencyOutput(let path):
+            path
+        case .tool(.taskOutput(let path)), .tool(.path(let path)):
+            path
+        case .value, .environment, .tool(.named), .tool(.operationalNamed):
+            nil
+        }
+    }
+
     private static func validateActions(_ tasks: [TaskDeclaration]) throws {
         var implementationsByKind: [ActionKind: String] = [:]
         for task in tasks {
-            for action in task.operation.colliderActions {
+            for action in task.action.map({ [$0] }) ?? [] {
                 guard action.kind.rawValue.hasPrefix(task.component.rawValue + ".") else {
                     throw ComponentCatalogFailure.actionNamespaceMismatch(
                         task: task.id,
@@ -587,6 +630,8 @@ public enum ComponentCatalogFailure: Error, CustomStringConvertible, Sendable {
     case actionNamespaceMismatch(
         task: TaskID, component: ComponentID, kind: ActionKind)
     case overlappingOutput(first: TaskID, second: TaskID, path: FilePath)
+    case rawGeneratedOutputConsumption(
+        consumer: TaskID, producer: TaskID, path: FilePath)
 
     public var description: String {
         switch self {
@@ -624,19 +669,9 @@ public enum ComponentCatalogFailure: Error, CustomStringConvertible, Sendable {
             "task '\(task)' owned by '\(component)' declares foreign action kind '\(kind)'"
         case .overlappingOutput(let first, let second, let path):
             "tasks '\(first)' and '\(second)' overlap output ownership at '\(path)'"
-        }
-    }
-}
-
-extension TaskOperation {
-    fileprivate var colliderActions: [AnyColliderAction] {
-        switch self {
-        case .action(let action):
-            [action]
-        case .sequence(let operations):
-            operations.flatMap(\.colliderActions)
-        case .command, .runOCI:
-            []
+        case .rawGeneratedOutputConsumption(let consumer, let producer, let path):
+            "task '\(consumer)' consumes generated output '\(path)' from '\(producer)' "
+                + "through a raw path instead of its typed artifact reference"
         }
     }
 }

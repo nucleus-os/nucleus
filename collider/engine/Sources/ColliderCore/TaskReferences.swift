@@ -259,6 +259,12 @@ public struct TaskBuilder: Sendable {
         }
     }
 
+    public mutating func consume(_ reference: AnyArtifactReference) {
+        if !artifactReferences.contains(reference) {
+            artifactReferences.append(reference)
+        }
+    }
+
     public mutating func consume(_ references: ArtifactReferenceSet) {
         for reference in references.references where !artifactReferences.contains(reference) {
             artifactReferences.append(reference)
@@ -267,6 +273,12 @@ public struct TaskBuilder: Sendable {
 
     public mutating func consume<Value>(_ reference: TaskResultReference<Value>) {
         let reference = AnyTaskResultReference(reference)
+        if !resultReferences.contains(reference) {
+            resultReferences.append(reference)
+        }
+    }
+
+    public mutating func consume(_ reference: AnyTaskResultReference) {
         if !resultReferences.contains(reference) {
             resultReferences.append(reference)
         }
@@ -287,7 +299,7 @@ public struct TaskBuilder: Sendable {
         locks: [TaskLock] = [],
         assessmentPolicy: TaskAssessmentPolicy = .incremental,
         recordsActiveArtifact: Bool = false,
-        operation: TaskOperation
+        action: AnyColliderAction? = nil
     ) -> TaskDeclaration {
         TaskDeclaration(
             id: id,
@@ -309,6 +321,6 @@ public struct TaskBuilder: Sendable {
             locks: locks,
             assessmentPolicy: assessmentPolicy,
             recordsActiveArtifact: recordsActiveArtifact,
-            operation: operation)
+            action: action)
     }
 }

@@ -33,12 +33,20 @@ private func fixtureNativeBuilder(
         "image-id",
         path: imageID,
         validation: .regularFile)
+    var swiftSDKProducer = TaskBuilder(
+        id: TaskID(rawValue: "swift-sdk.activate-target-sdks"),
+        component: ComponentID(rawValue: "swift-sdk"))
+    let swiftSDK: ArtifactReference<PathArtifact> = try swiftSDKProducer.output(
+        "active-sdk",
+        path: swiftSDKRoot,
+        validation: .symlinkTarget)
     return NativeOCIConfiguration(
-        context: context,
-        image: image,
-        ccache: ccache,
-        swiftSDKRoot: swiftSDKRoot,
-        environment: environment)
+        base: NativeOCIBaseConfiguration(
+            context: context,
+            image: image,
+            ccache: ccache,
+            environment: environment),
+        swiftSDK: swiftSDK)
 }
 
 private func fixtureICULibrary(
@@ -52,6 +60,18 @@ private func fixtureICULibrary(
         "libicu.a",
         path: root.appending(".skia-build/\(target.identifier)/libicu.a"),
         validation: .regularFile)
+}
+
+private func fixtureSkiaExternalSources(
+    root: FilePath = FilePath("/workspace/core")
+) throws -> ArtifactReference<DirectoryArtifact> {
+    var producer = TaskBuilder(
+        id: TaskID(rawValue: "core.sources"),
+        component: ComponentID(rawValue: "core"))
+    return try producer.output(
+        "external-sources",
+        path: root.appending("third-party/skia/third_party/externals"),
+        validation: .nonEmptyDirectory)
 }
 
 private func fixtureReactNativeNodeModules(
@@ -485,7 +505,7 @@ private func fixtureReactNativeNodeModules(
         root: root.appending("swift-vulkan"),
         environment: environment,
         swiftPM: swiftPM)
-    guard case .action(let vulkanAction) = vulkan.operation else {
+    guard let vulkanAction = vulkan.action else {
         Issue.record("Vulkan generation must be a recipe-owned action")
         return
     }
@@ -515,7 +535,7 @@ private func fixtureReactNativeNodeModules(
             swiftSDKRoot: FilePath("/cache/swift-sdks"),
             environment: environment)
     ).task
-    guard let reactNativeCommand = try await ociExecutions(in: reactNative.operation).first else {
+    guard let reactNativeCommand = try await ociExecutions(in: reactNative.action).first else {
         Issue.record("React Native generation must be a typed OCI command")
         return
     }
@@ -566,11 +586,11 @@ private func fixtureReactNativeNodeModules(
                 ).path)),
         builder: builder,
         scanner: scanner)
-    guard case .action(let action) = task.operation else {
+    guard let action = task.action else {
         Issue.record("Wayland generation must be one recipe-owned action")
         return
     }
-    let scannerContainers = try await ociExecutions(in: task.operation).filter {
+    let scannerContainers = try await ociExecutions(in: task.action).filter {
         $0.hostname == "wayland-source-generation"
     }
     #expect(
@@ -602,14 +622,14 @@ private func fixtureReactNativeNodeModules(
         environment: environment)
     let sourceTask = try #require(
         sources.tasks.first { $0.id == CoreTaskIDs.sources })
-    guard case .action(let sourceAction) = sourceTask.operation else {
+    guard let sourceAction = sourceTask.action else {
         Issue.record("Skia source preparation must be a recipe-owned action")
         return
     }
     #expect(sourceAction.kind == "core.materialize-skia-dependencies")
     let gnInstall = try #require(
         sources.tasks.first { $0.id == CoreTaskIDs.gnInstall })
-    guard case .action(let gnAction) = gnInstall.operation else {
+    guard let gnAction = gnInstall.action else {
         Issue.record("GN installation must be a recipe-owned action")
         return
     }
@@ -631,12 +651,12 @@ private func fixtureReactNativeNodeModules(
             builder: builder
         ).task,
     ] {
-        guard case .action(let action) = task.operation else {
+        guard let action = task.action else {
             Issue.record("Skia provisioning must be a recipe-owned action")
             continue
         }
         #expect(action.kind == "core.build-skia")
-        let executions = try await ociExecutions(in: task.operation)
+        let executions = try await ociExecutions(in: task.action)
         #expect(executions.count == 2)
         #expect(executions.allSatisfy { $0.imageID == builder.imageID })
         #expect(
@@ -689,12 +709,14 @@ private func fixtureReactNativeNodeModules(
         root: reactNativeRoot,
         environment: environment,
         target: arm64,
+        skiaExternalSources: skiaSources.externalSources,
         icuLibrary: fixtureICULibrary(arm64, root: coreRoot),
         builder: builder)
     let x86Hermes = try ReactNativeColliderRecipe.buildHermes(
         root: reactNativeRoot,
         environment: environment,
         target: x8664,
+        skiaExternalSources: skiaSources.externalSources,
         icuLibrary: fixtureICULibrary(x8664, root: coreRoot),
         builder: builder)
     let armSupport = try ReactNativeColliderRecipe.buildSupportLibraries(
@@ -779,6 +801,7 @@ private func fixtureReactNativeNodeModules(
         root: root,
         environment: environment,
         target: target,
+        skiaExternalSources: fixtureSkiaExternalSources(),
         icuLibrary: fixtureICULibrary(target),
         builder: builder)
     let support = try ReactNativeColliderRecipe.buildSupportLibraries(
@@ -793,12 +816,12 @@ private func fixtureReactNativeNodeModules(
         support: support,
         builder: builder)
     for task in [support.task, runtime.task] {
-        guard case .action(let action) = task.operation else {
+        guard let action = task.action else {
             Issue.record("RN native provisioning must be a recipe-owned action")
             continue
         }
         #expect(action.kind == "rn.run-native-build")
-        let nativeOperations = try await ociExecutions(in: task.operation)
+        let nativeOperations = try await ociExecutions(in: task.action)
         #expect(!nativeOperations.isEmpty)
         #expect(
             nativeOperations.allSatisfy {
@@ -822,6 +845,7 @@ private func fixtureReactNativeNodeModules(
             TaskID(rawValue: "rn.generate"),
             TaskID(rawValue: "rn.boost"),
             TaskID(rawValue: "rn.hermes.linux-arm64"),
+            TaskID(rawValue: "swift-sdk.activate-target-sdks"),
         ])
 }
 
@@ -838,16 +862,17 @@ private func fixtureReactNativeNodeModules(
         root: root,
         environment: environment,
         target: NativeLinuxTarget(architecture: .x86_64),
+        skiaExternalSources: fixtureSkiaExternalSources(),
         icuLibrary: fixtureICULibrary(
             NativeLinuxTarget(architecture: .x86_64)),
         builder: builder
     ).task
-    guard case .action(let action) = task.operation else {
+    guard let action = task.action else {
         Issue.record("Hermes provisioning must be a recipe-owned action")
         return
     }
     #expect(action.kind == "rn.run-native-build")
-    let executions = try await ociExecutions(in: task.operation)
+    let executions = try await ociExecutions(in: task.action)
     try #require(executions.count == 3)
     let configure = executions[0]
     let build = executions[1]
@@ -901,10 +926,15 @@ private func fixtureReactNativeNodeModules(
     let arm = armArtifacts.task
     let x86 = x86Artifacts.task
 
-    #expect(arm.dependencies == [TaskID(rawValue: "native.builder")])
+    #expect(
+        Set(arm.dependencies) == [
+            TaskID(rawValue: "native.builder"),
+            TaskID(rawValue: "swift-sdk.activate-target-sdks"),
+        ])
     #expect(
         Set(x86.dependencies) == [
             TaskID(rawValue: "native.builder"),
+            TaskID(rawValue: "swift-sdk.activate-target-sdks"),
             TaskID(rawValue: "wayland.native-sdk.linux-arm64"),
         ])
     #expect(
@@ -914,8 +944,8 @@ private func fixtureReactNativeNodeModules(
                     "/cache/native-sdk/linux-arm64/wayland/bin/wayland-scanner")
         })
 
-    guard case .action(let armAction) = arm.operation,
-        case .action(let x86Action) = x86.operation
+    guard let armAction = arm.action,
+        let x86Action = x86.action
     else {
         Issue.record("Wayland SDK builds must configure inside the ARM64 builder")
         return
@@ -923,11 +953,11 @@ private func fixtureReactNativeNodeModules(
     #expect(armAction.kind == "wayland.build-native-sdk")
     #expect(x86Action.kind == "wayland.build-native-sdk")
     let armConfigure = try #require(
-        try await ociExecutions(in: arm.operation).first {
+        try await ociExecutions(in: arm.action).first {
             $0.command.starts(with: ["wayland", "meson", "setup"])
         })
     let x86Configure = try #require(
-        try await ociExecutions(in: x86.operation).first {
+        try await ociExecutions(in: x86.action).first {
             $0.command.starts(with: ["wayland", "meson", "setup"])
         })
 
@@ -980,6 +1010,7 @@ private func fixtureReactNativeNodeModules(
         root: root,
         environment: environment,
         target: target,
+        skiaExternalSources: fixtureSkiaExternalSources(),
         icuLibrary: fixtureICULibrary(target),
         builder: builder)
     let support = try ReactNativeColliderRecipe.buildSupportLibraries(
@@ -1052,12 +1083,12 @@ private func fixtureReactNativeNodeModules(
         })
     #expect(
         {
-            guard case .action(let action) = builderImage.operation else {
+            guard let action = builderImage.action else {
                 return false
             }
             return action.kind == "android-runtime.prepare-aosp-builder-image"
         }())
-    let operations = Array(tasks.suffix(5)).map(\.operation)
+    let operations = Array(tasks.suffix(5)).map(\.action)
     let publication = try #require(tasks.last)
     #expect(
         publication.outputs.contains {
@@ -1070,35 +1101,35 @@ private func fixtureReactNativeNodeModules(
         })
     #expect(
         {
-            guard case .action(let action) = operations[0] else {
+            guard let action = operations[0] else {
                 return false
             }
             return action.kind == "android-runtime.compile-aosp-product"
         }())
     #expect(
         {
-            guard case .action(let action) = operations[1] else {
+            guard let action = operations[1] else {
                 return false
             }
             return action.kind == "android-runtime.sign-aosp-product"
         }())
     #expect(
         {
-            guard case .action(let action) = operations[2] else {
+            guard let action = operations[2] else {
                 return false
             }
             return action.kind == "android-runtime.assemble-aosp-product-images"
         }())
     #expect(
         {
-            guard case .action(let action) = operations[3] else {
+            guard let action = operations[3] else {
                 return false
             }
             return action.kind == "android-runtime.validate-aosp-product"
         }())
     #expect(
         {
-            guard case .action(let action) = operations[4] else {
+            guard let action = operations[4] else {
                 return false
             }
             return action.kind == "android-runtime.publish-aosp-product"

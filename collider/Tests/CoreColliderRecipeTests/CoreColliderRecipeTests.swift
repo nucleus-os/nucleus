@@ -55,7 +55,7 @@ import Testing
         "android-library",
         path: FilePath(library.path),
         validation: .regularFile)
-    let producer = producerBuilder.build(operation: .sequence([]))
+    let producer = producerBuilder.build()
     let validation = try CoreColliderRecipe.validateAndroidHost(
         root: FilePath(directory.path),
         library: libraryArtifact,

@@ -31,32 +31,39 @@ struct ComponentRegistry {
             imageID: nativeBuilderCache.appending(
                 "build-containers/native/image-id"),
             ccache: nativeBuilderCache.appending("ccache/native"),
-            swiftSDKRoot: nativeBuilderCache.appending(
-                "swift-target-sdks/current/swift-sdks"),
             environment: recipeEnvironment)
+        let androidToolchain = try AndroidToolchainVersions.load(
+            workspaceRoot: context.root)
+        let targetSDKInputs = try SwiftTargetSDKInputs.load(
+            from: context.layout.swiftSDK.appending("target-sdk-inputs.json"))
+        let swiftSDKConfiguration = try swiftTargetSDKGenerationConfiguration(
+            environment: recipeEnvironment,
+            android: androidToolchain,
+            inputs: targetSDKInputs)
+        let swiftTargetSDK = try SwiftTargetSDKColliderRecipe.prepare(
+            swiftSDKConfiguration)
+        let nativeConfiguration = NativeOCIConfiguration(
+            base: nativeBuilder.configuration,
+            swiftSDK: swiftTargetSDK.activeSDK)
         var buildContexts: [RecipeBuildContextID: SwiftPMInvocation] = [
             .hostDebug: try context.swiftPMInvocation()
         ]
         for architecture in PlatformArchitecture.allCases {
             buildContexts[.linux(architecture)] = try linuxSwiftPMInvocation(
                 architecture: architecture,
-                builder: nativeBuilder.configuration)
+                builder: nativeConfiguration)
         }
         buildContexts[.linux(.arm64, configuration: .release)] =
             try linuxSwiftPMInvocation(
                 configuration: .release,
-                builder: nativeBuilder.configuration)
+                builder: nativeConfiguration)
         for sanitizer in SanitizerKind.allCases {
             buildContexts[.linux(.arm64, sanitizer: sanitizer.rawValue)] =
                 try linuxSwiftPMInvocation(
                     sanitizer: sanitizer.rawValue,
                     linkerFlags: sanitizer == .undefined ? ["-lubsan"] : [],
-                    builder: nativeBuilder.configuration)
+                    builder: nativeConfiguration)
         }
-        let androidToolchain = try AndroidToolchainVersions.load(
-            workspaceRoot: context.root)
-        let targetSDKInputs = try SwiftTargetSDKInputs.load(
-            from: context.layout.swiftSDK.appending("target-sdk-inputs.json"))
         buildContexts[
             .androidARM64(apiLevel: androidToolchain.minimumSDK)
         ] = try context.swiftPMInvocation(
@@ -67,10 +74,6 @@ struct ComponentRegistry {
                 targetTriple:
                     "aarch64-unknown-linux-android\(androidToolchain.minimumSDK)"),
             toolchainIdentity: "target-sdk-\(targetSDKInputs.snapshot)-android")
-        let swiftSDKConfiguration = try swiftTargetSDKGenerationConfiguration(
-            environment: recipeEnvironment,
-            android: androidToolchain,
-            inputs: targetSDKInputs)
         var configurations: [ComponentID: any RecipeConfiguration] = [
             SwiftTargetSDKColliderRecipe.descriptor.id: swiftSDKConfiguration
         ]
@@ -92,7 +95,7 @@ struct ComponentRegistry {
             repositoryRoot: context.root,
             cacheRoot: context.cacheRoot,
             nativeSDKRoot: context.nativeSDKRoot.removingLastComponent(),
-            nativeBuilder: nativeBuilder.configuration,
+            nativeBuilder: nativeConfiguration,
             environment: recipeEnvironment,
             buildContexts: buildContexts,
             configurations: configurations)
@@ -103,9 +106,8 @@ struct ComponentRegistry {
             in: baseRecipeContext)
         let reactNativeArtifacts = try ReactNativeColliderRecipe.prepare(
             in: baseRecipeContext,
+            skiaExternalSources: coreArtifacts.skiaExternalSources,
             icuLibraries: coreArtifacts.linuxICULibraries)
-        let swiftTargetSDK = try SwiftTargetSDKColliderRecipe.prepare(
-            in: baseRecipeContext)
         var targetArtifacts: [NativeLinuxTarget: ArtifactReferenceSet] = [:]
         func merge(_ artifacts: [NativeLinuxTarget: ArtifactReferenceSet]) {
             for (target, references) in artifacts {
@@ -131,7 +133,7 @@ struct ComponentRegistry {
             repositoryRoot: context.root,
             cacheRoot: context.cacheRoot,
             nativeSDKRoot: context.nativeSDKRoot.removingLastComponent(),
-            nativeBuilder: nativeBuilder.configuration,
+            nativeBuilder: nativeConfiguration,
             environment: recipeEnvironment,
             buildContexts: buildContexts,
             configurations: configurations,
@@ -148,9 +150,10 @@ struct ComponentRegistry {
         ]
         let components =
             [
-                nativeBuilder.component, coreArtifacts.component,
+                nativeBuilder.component, swiftTargetSDK.component,
+                coreArtifacts.component,
                 androidRuntime.component, reactNativeArtifacts.component,
-                waylandArtifacts.component, swiftTargetSDK.component,
+                waylandArtifacts.component,
             ]
             + (try componentTypes.map {
                 try $0.makeComponent(in: recipeContext)
@@ -664,8 +667,6 @@ struct ComponentRegistry {
         let resolvedTriple = triple ?? target.targetTriple
         let resolvedArtifactTarget = artifactTarget ?? target.artifactTarget
         let resolvedTranslation = translation ?? target.intelBinaryTranslationPolicy
-        let sdkRoot = context.cacheRoot.appending(
-            "nucleus/swift-target-sdks/current/swift-sdks")
         let guestSDKRoot = "/home/nucleus-build/.swiftpm/swift-sdks"
         let sourceID =
             context.taskEnvironment["NUCLEUS_SWIFT_SOURCE_ID"]
@@ -702,7 +703,10 @@ struct ComponentRegistry {
                         source: swiftPMUserRoot.appending("configuration"),
                         target: "/home/nucleus-build/.swiftpm",
                         access: .readWrite),
-                    OCIMount(source: sdkRoot, target: guestSDKRoot, access: .readOnly),
+                    OCIMount(
+                        source: builder.swiftSDKRoot,
+                        target: guestSDKRoot,
+                        access: .readOnly),
                 ],
                 intelBinaryTranslationPolicy: resolvedTranslation,
                 resourceLimits: .parallelBuild,

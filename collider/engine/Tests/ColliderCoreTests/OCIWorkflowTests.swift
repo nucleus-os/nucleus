@@ -226,7 +226,7 @@ import Testing
         TaskDeclaration(
             id: taskID,
             component: ComponentID(rawValue: "fixture"),
-            operation: .runOCI(execution))
+            action: try fixtureOCIExecutionAction(execution))
     ])
 
     let report = try await ColliderRuntime().execute(

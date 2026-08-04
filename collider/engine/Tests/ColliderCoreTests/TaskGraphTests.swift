@@ -5,11 +5,10 @@ import Testing
 
 @Test func taskGraphOrdersDependenciesOnce() throws {
     let root = TaskDeclaration(
-        id: TaskID(rawValue: "root"), component: ComponentID(rawValue: "core"),
-        operation: .sequence([]))
+        id: TaskID(rawValue: "root"), component: ComponentID(rawValue: "core"))
     let leaf = TaskDeclaration(
         id: TaskID(rawValue: "leaf"), component: ComponentID(rawValue: "core"),
-        dependencies: [root.id], operation: .sequence([]))
+        dependencies: [root.id])
     let graph = try TaskGraph([leaf, root])
     #expect(try graph.orderedTasks(selecting: [leaf.id]).map(\.id) == [root.id, leaf.id])
 }
@@ -21,10 +20,10 @@ import Testing
         _ = try TaskGraph([
             TaskDeclaration(
                 id: firstID, component: ComponentID(rawValue: "core"),
-                dependencies: [secondID], operation: .sequence([])),
+                dependencies: [secondID]),
             TaskDeclaration(
                 id: secondID, component: ComponentID(rawValue: "core"),
-                dependencies: [firstID], operation: .sequence([])),
+                dependencies: [firstID]),
         ])
     }
 }
@@ -32,13 +31,11 @@ import Testing
 @Test func taskGraphRejectsSubsumingANonDependency() {
     let build = TaskDeclaration(
         id: TaskID(rawValue: "build"),
-        component: ComponentID(rawValue: "core"),
-        operation: .sequence([]))
+        component: ComponentID(rawValue: "core"))
     let test = TaskDeclaration(
         id: TaskID(rawValue: "test"),
         component: ComponentID(rawValue: "core"),
-        subsumedDependencies: [build.id],
-        operation: .sequence([]))
+        subsumedDependencies: [build.id])
 
     #expect(throws: TaskGraphFailure.self) {
         _ = try TaskGraph([build, test])

@@ -25,8 +25,7 @@ private func task(
         dependencies: dependencies,
         outputs: output.map {
             [OutputDeclaration(path: $0, validation: .regularFile)]
-        } ?? [],
-        operation: .sequence([]))
+        } ?? [])
 }
 
 private func component(
@@ -160,6 +159,38 @@ private func component(
     }
 }
 
+@Test func componentCatalogRejectsRawGeneratedOutputConsumption() throws {
+    let generatedID = ComponentID(rawValue: "generated")
+    let generatedBuildID = TaskID(rawValue: "generated.build")
+    let generated = try component(
+        id: generatedID,
+        name: "generated",
+        directory: "generated",
+        tasks: [
+            task(
+                generatedBuildID,
+                component: generatedID,
+                output: FilePath("/outputs/generated"))
+        ],
+        entrypoints: [
+            ComponentEntrypoint(id: .build, roots: [generatedBuildID])
+        ])
+    let consumer = try component(
+        tasks: [
+            TaskDeclaration(
+                id: buildID,
+                component: coreID,
+                dependencies: [generatedBuildID],
+                inputs: [.file(FilePath("/outputs/generated/value.json"))])
+        ])
+
+    #expect(throws: ComponentCatalogFailure.self) {
+        _ = try ComponentCatalog(
+            components: [generated, consumer],
+            publicEntrypoints: [request("generated"), request("core")])
+    }
+}
+
 private struct EmptyActionIdentity: ColliderActionIdentity {
     func encode(into _: inout ActionIdentityEncoder) {}
 }
@@ -241,5 +272,5 @@ private func taskWithAction<Action: ColliderAction>(
     TaskDeclaration(
         id: id,
         component: coreID,
-        operation: .action(try AnyColliderAction(action)))
+        action: try AnyColliderAction(action))
 }

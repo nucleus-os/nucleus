@@ -25,6 +25,7 @@ package enum CoreTaskIDs {
 public enum CoreColliderRecipe: ColliderComponent {
     package struct ComponentArtifacts: Sendable {
         package let component: ComponentDefinition
+        package let skiaExternalSources: ArtifactReference<DirectoryArtifact>
         package let linuxICULibraries: [NativeLinuxTarget: ArtifactReference<FileArtifact>]
         package let nativeSDKs: [NativeLinuxTarget: ArtifactReferenceSet]
     }
@@ -152,6 +153,7 @@ public enum CoreColliderRecipe: ColliderComponent {
             ])
         return ComponentArtifacts(
             component: component,
+            skiaExternalSources: sources.externalSources,
             linuxICULibraries: linuxICULibraries,
             nativeSDKs: nativeSDKs)
     }
@@ -192,11 +194,11 @@ public enum CoreColliderRecipe: ColliderComponent {
             validation: .regularFile)
         let download = downloadBuilder.build(
             locks: [.checkout("core-sources")],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     DownloadSkiaGNAction(
                         specification: gnDownload,
-                        destination: gnArchive))))
+                        destination: gnArchive)))
 
         var sourceBuilder = TaskBuilder(
             id: CoreTaskIDs.sources,
@@ -211,12 +213,12 @@ public enum CoreColliderRecipe: ColliderComponent {
             ],
             locks: [.checkout("core-sources")],
             assessmentPolicy: .always,
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     MaterializeSkiaDependenciesAction(
                         skia: skia,
                         dependencies: dependencies,
-                        environment: environment))))
+                        environment: environment)))
 
         var installBuilder = TaskBuilder(
             id: CoreTaskIDs.gnInstall,
@@ -228,12 +230,12 @@ public enum CoreColliderRecipe: ColliderComponent {
             validation: .executableFile)
         let install = installBuilder.build(
             locks: [.checkout("core-sources")],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     InstallSkiaGNAction(
                         archive: gnArchive,
                         executable: skia.appending("bin/gn"),
-                        environment: environment))))
+                        environment: environment)))
         return SkiaSourceArtifacts(
             tasks: [download, sources, install],
             externalSources: externalSources,
@@ -370,8 +372,7 @@ public enum CoreColliderRecipe: ColliderComponent {
                     path: product,
                     validation: .regularFile),
             ],
-            locks: [.checkout("core-android-host")],
-            operation: .sequence([]))
+            locks: [.checkout("core-android-host")])
         return AndroidHostArtifacts(task: task, library: library)
     }
 
@@ -395,14 +396,14 @@ public enum CoreColliderRecipe: ColliderComponent {
         let task = builder.build(
             inputs: [.file(kotlinContract)],
             assessmentPolicy: .always,
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     ValidateAndroidHostAction(
                         library: hostLibrary,
                         kotlinContract: kotlinContract,
                         readelf: readelf,
                         minimumSwiftJavaThunkCount: 20,
-                        environment: environment))))
+                        environment: environment)))
         return AndroidHostValidationArtifacts(task: task, result: result)
     }
 
@@ -427,11 +428,11 @@ public enum CoreColliderRecipe: ColliderComponent {
             ],
             locks: [.checkout("core-android-gradle")],
             assessmentPolicy: .always,
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     VerifyAndroidProjectAction(
                         project: android,
-                        environment: environment))))
+                        environment: environment)))
     }
 
     package static func publishAndroidRenderSDK(
@@ -466,9 +467,9 @@ public enum CoreColliderRecipe: ColliderComponent {
             locks: [
                 .shared(sdkRoot.appending(".render.lock"))
             ],
-            operation: .action(
+            action:
                 try AnyColliderAction(
-                    PublishRenderSDKAction(sdk: sdk, links: links))))
+                    PublishRenderSDKAction(sdk: sdk, links: links)))
         return NativeSDKArtifacts(task: task, outputs: outputs)
     }
 
@@ -504,9 +505,9 @@ public enum CoreColliderRecipe: ColliderComponent {
                 .value(name: $0.0, bytes: Array($0.1.string.utf8))
             },
             locks: [.shared(sdkRoot.appending(".render.lock"))],
-            operation: .action(
+            action:
                 try AnyColliderAction(
-                    PublishRenderSDKAction(sdk: sdk, links: links))))
+                    PublishRenderSDKAction(sdk: sdk, links: links)))
         return NativeSDKArtifacts(task: task, outputs: outputs)
     }
 }
@@ -1129,6 +1130,7 @@ private func skiaTask(
     task.consume(externalSources)
     task.consume(gn)
     task.consume(builder.image)
+    task.consume(builder.swiftSDK)
     let directory: ArtifactReference<DirectoryArtifact> = try task.output(
         "build-directory",
         path: buildDirectory,
@@ -1145,15 +1147,14 @@ private func skiaTask(
     }
     let declaration = task.build(
         inputs: [
-            .tree(builder.swiftSDKRoot),
             .value(
                 name: "gn-arguments",
-                bytes: Array(gnArguments.joined(separator: "\u{0}").utf8)),
+                bytes: Array(gnArguments.joined(separator: "\u{0}").utf8))
         ],
         locks: [.checkout(id.rawValue)],
-        operation: .action(
+        action:
             try AnyColliderAction(
-                RunSkiaBuildAction(executions: executions)))
+                RunSkiaBuildAction(executions: executions))
     )
     return CoreColliderRecipe.SkiaBuildArtifacts(
         task: declaration,

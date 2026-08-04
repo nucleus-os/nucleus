@@ -258,29 +258,51 @@ public struct OCIExecution: Hashable, Sendable {
     }
 }
 
-/// Shared configuration for the rootless native dependency builder.
-public struct NativeOCIConfiguration: Sendable {
+/// The rootless native builder image and its host-owned mutable caches. This
+/// bootstrap configuration deliberately does not name a target Swift SDK: the
+/// image is required to produce that SDK.
+public struct NativeOCIBaseConfiguration: Sendable {
     public let context: FilePath
     public let image: ArtifactReference<FileArtifact>
     public let ccache: FilePath
-    public let swiftSDKRoot: FilePath
     public let environment: [String: String]
 
     public init(
         context: FilePath,
         image: ArtifactReference<FileArtifact>,
         ccache: FilePath,
-        swiftSDKRoot: FilePath,
         environment: [String: String]
     ) {
         self.context = context
         self.image = image
         self.ccache = ccache
-        self.swiftSDKRoot = swiftSDKRoot
         self.environment = environment
     }
 
     public var imageID: FilePath { image.path }
+}
+
+/// A native builder equipped with the generated target Swift SDK. Every native
+/// consumer receives the typed activation artifact rather than rediscovering
+/// its publication through a raw cache path.
+public struct NativeOCIConfiguration: Sendable {
+    public let base: NativeOCIBaseConfiguration
+    public let swiftSDK: ArtifactReference<PathArtifact>
+
+    public init(
+        base: NativeOCIBaseConfiguration,
+        swiftSDK: ArtifactReference<PathArtifact>
+    ) {
+        self.base = base
+        self.swiftSDK = swiftSDK
+    }
+
+    public var context: FilePath { base.context }
+    public var image: ArtifactReference<FileArtifact> { base.image }
+    public var imageID: FilePath { base.imageID }
+    public var ccache: FilePath { base.ccache }
+    public var swiftSDKRoot: FilePath { swiftSDK.path }
+    public var environment: [String: String] { base.environment }
 }
 
 /// One Linux artifact lane produced inside the canonical ARM64 builder guest.
@@ -339,13 +361,6 @@ public struct NativeLinuxTarget: Hashable, Sendable {
     }
 }
 
-public enum TaskOperation: Hashable, Sendable {
-    case action(AnyColliderAction)
-    case command(CommandSpec)
-    case runOCI(OCIExecution)
-    indirect case sequence([TaskOperation])
-}
-
 public enum TaskLock: Hashable, Sendable {
     case checkout(String)
     case shared(FilePath)
@@ -366,10 +381,10 @@ public struct TaskDeclaration: Hashable, Sendable {
     public let resultReferences: [AnyTaskResultReference]
     public let outputSlots: [AnyTaskOutputSlot]
     public let resultSlots: [AnyTaskResultSlot]
-    /// Direct dependency operations that this task's operation performs as a
-    /// strict superset. Their identities still participate in this task's
-    /// identity, but the runtime may omit their redundant operations when this
-    /// task is dirty and selected.
+    /// Direct dependency actions that this task subsumes as a strict superset.
+    /// Their identities still participate in this task's identity, but the
+    /// runtime may omit their redundant execution when this task is dirty and
+    /// selected.
     public let subsumedDependencies: [TaskID]
     public let swiftProducts: [SwiftProductRequirement]
     public let swiftTests: [SwiftTestRequirement]
@@ -379,7 +394,7 @@ public struct TaskDeclaration: Hashable, Sendable {
     public let locks: [TaskLock]
     public let assessmentPolicy: TaskAssessmentPolicy
     public let recordsActiveArtifact: Bool
-    public let operation: TaskOperation
+    public let action: AnyColliderAction?
 
     public init(
         id: TaskID,
@@ -399,7 +414,7 @@ public struct TaskDeclaration: Hashable, Sendable {
         locks: [TaskLock] = [],
         assessmentPolicy: TaskAssessmentPolicy = .incremental,
         recordsActiveArtifact: Bool = false,
-        operation: TaskOperation
+        action: AnyColliderAction? = nil
     ) {
         self.id = id
         self.component = component
@@ -421,7 +436,7 @@ public struct TaskDeclaration: Hashable, Sendable {
         self.locks = locks
         self.assessmentPolicy = assessmentPolicy
         self.recordsActiveArtifact = recordsActiveArtifact
-        self.operation = operation
+        self.action = action
     }
 
     public var executionDependencies: [TaskID] {
@@ -457,7 +472,7 @@ public struct TaskDeclaration: Hashable, Sendable {
             locks: locks,
             assessmentPolicy: assessmentPolicy,
             recordsActiveArtifact: recordsActiveArtifact,
-            operation: operation)
+            action: action)
     }
 
     public func addingLocks(_ additionalLocks: [TaskLock]) -> TaskDeclaration {
@@ -479,7 +494,7 @@ public struct TaskDeclaration: Hashable, Sendable {
             locks: locks + additionalLocks.filter { !locks.contains($0) },
             assessmentPolicy: assessmentPolicy,
             recordsActiveArtifact: recordsActiveArtifact,
-            operation: operation)
+            action: action)
     }
 }
 

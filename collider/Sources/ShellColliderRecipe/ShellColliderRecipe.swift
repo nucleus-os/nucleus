@@ -102,22 +102,22 @@ public enum ShellColliderRecipe: ColliderComponent {
         if let trustKey = configuration.trustKey {
             inputs.append(.file(trustKey))
         }
-        return TaskDeclaration(
+        var builder = TaskBuilder(
             id: TaskID(rawValue: "shell.install"),
-            component: descriptor.id,
+            component: descriptor.id)
+        let _: ArtifactReference<PathArtifact> = try builder.output(
+            "active-installation",
+            path: configuration.prefix,
+            validation: .symlinkTarget)
+        return builder.build(
             swiftProducts: requirements,
             inputs: inputs,
-            outputs: [
-                OutputDeclaration(
-                    path: configuration.prefix,
-                    validation: .symlinkTarget)
-            ],
             locks: [
                 .shared(configuration.generationsRoot.appending(".install.lock"))
             ],
-            operation: .action(
+            action:
                 try AnyColliderAction(
-                    InstallRuntimeAction(configuration: configuration))))
+                    InstallRuntimeAction(configuration: configuration)))
     }
 
     private static func tracyReceiversTask(
@@ -129,29 +129,30 @@ public enum ShellColliderRecipe: ColliderComponent {
             "compositor/.tracy-build")
         var environment = context.environment
         environment["CPM_SOURCE_CACHE"] = build.appending(".cpm-cache").string
-        return TaskDeclaration(
+        var builder = TaskBuilder(
             id: TaskID(rawValue: "shell.tracy-receivers"),
-            component: descriptor.id,
+            component: descriptor.id)
+        let _: ArtifactReference<ExecutableArtifact> = try builder.output(
+            "tracy-capture",
+            path: build.appending("tracy-capture"),
+            validation: .executableFile)
+        let _: ArtifactReference<ExecutableArtifact> = try builder.output(
+            "tracy-csvexport",
+            path: build.appending("tracy-csvexport"),
+            validation: .executableFile)
+        return builder.build(
             inputs: [
                 .tree(source),
                 .tool(.named("cmake")),
             ],
-            outputs: [
-                OutputDeclaration(
-                    path: build.appending("tracy-capture"),
-                    validation: .executableFile),
-                OutputDeclaration(
-                    path: build.appending("tracy-csvexport"),
-                    validation: .executableFile),
-            ],
             locks: [.checkout("shell-tracy-receivers")],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     BuildTracyReceiversAction(
                         source: source,
                         build: build,
                         workingDirectory: context.repositoryRoot,
-                        environment: environment))))
+                        environment: environment)))
     }
     #endif
 }

@@ -88,16 +88,15 @@ private func preflightTask(
             swiftPM.identityInput,
             .tool(.named("swift")),
         ],
-        outputs: [],
         locks: [.checkout("compositor-core")],
         assessmentPolicy: .always,
-        operation: .action(
+        action:
             try AnyColliderAction(
                 CompositorLanePreflightAction(
                     probe: swiftPM.executable("NucleusVulkanLaneProbe"),
                     lane: lane,
                     workingDirectory: root,
-                    environment: environment))))
+                    environment: environment)))
 }
 
 private struct CompositorLanePreflightAction: ColliderAction {
@@ -183,6 +182,5 @@ private func testTask(
         ],
         postconditions: [swiftPM.postcondition],
         locks: [.checkout("compositor-core")],
-        assessmentPolicy: .always,
-        operation: .sequence([]))
+        assessmentPolicy: .always)
 }

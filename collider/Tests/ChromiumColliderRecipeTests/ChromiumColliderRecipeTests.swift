@@ -40,13 +40,13 @@ import Testing
                 validation: .regularFile)
         ],
         assessmentPolicy: .always,
-        operation: .action(
+        action:
             try AnyColliderAction(
                 PrepareChromiumDepotToolsAction(
                     repository: FilePath(depotCheckout.path),
                     remote: remote.path,
                     commit: first,
-                    environment: environment))))
+                    environment: environment)))
 
     let runtime = ColliderRuntime()
     _ = try await runtime.execute(

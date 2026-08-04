@@ -65,23 +65,15 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
             "browser.retention",
         ])
 
-    func actions(_ operation: TaskOperation) -> [AnyColliderAction] {
-        switch operation {
-        case .action(let action): [action]
-        case .sequence(let operations):
-            operations.flatMap(actions)
-        default: []
-        }
-    }
     #expect(
-        Set(tasks.flatMap { actions($0.operation).map(\.kind) }).isSuperset(of: [
+        Set(tasks.compactMap(\.action).map(\.kind)).isSuperset(of: [
             ActionKind(rawValue: "browser.bootstrap-depot-tools"),
             ActionKind(rawValue: "browser.run-tests"),
         ]))
 
-    let productActions = tasks.flatMap {
-        actions($0.operation)
-    }.filter { $0.kind == ActionKind(rawValue: "browser.build-product") }
+    let productActions = tasks.compactMap(\.action).filter {
+        $0.kind == ActionKind(rawValue: "browser.build-product")
+    }
     #expect(productActions.count == 2)
     #expect(Set(productActions.map(\.identity)).count == 2)
     #expect(
@@ -93,8 +85,8 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
 
     let test = try #require(
         tasks.first { $0.id == ChromiumTaskIDs.test })
-    guard case .action(let testAction) = test.operation,
-        let execution = try await ociExecutions(in: test.operation).first
+    guard let testAction = test.action,
+        let execution = try await ociExecutions(in: test.action).first
     else {
         Issue.record("Chromium test compilation must use the builder")
         return

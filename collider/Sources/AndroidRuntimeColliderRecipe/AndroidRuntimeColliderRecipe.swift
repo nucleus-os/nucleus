@@ -209,14 +209,14 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             ],
             locks: [.checkout("android-runtime-aosp-source-lock")],
             assessmentPolicy: .always,
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     VerifyAOSPSourceLockAction(
                         verification: AOSPSourceLockVerification(
                             specification: specification,
                             launcher: launcher.path,
                             report: report,
-                            environment: environment))))
+                            environment: environment)))
         )
         return SourceLockArtifacts(task: task, verification: verification)
     }
@@ -312,11 +312,11 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .file(root.appending("aosp.lock.json"))
             ],
             locks: [.checkout("android-runtime-aosp-downloads")],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     DownloadAOSPRepoLauncherAction(
                         specification: specification,
-                        destination: launcher))))
+                        destination: launcher)))
         return RepoLauncherArtifacts(task: task, executable: executable)
     }
 
@@ -350,7 +350,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .tool(.named("python3")),
             ],
             locks: [.checkout("android-runtime-aosp-source")],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     PrepareAOSPSourceAction(
                         preparation: AOSPSourcePreparation(
@@ -359,7 +359,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                             source: source,
                             syncJobs: 4,
                             retryFetches: 3,
-                            environment: environment))))
+                            environment: environment)))
         )
         return SourceTaskArtifacts(task: task, provenance: provenance)
     }
@@ -389,13 +389,13 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .tool(.named("openssl")),
             ],
             locks: [.checkout("android-runtime-aosp-signing")],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     PrepareAOSPSigningIdentityAction(
                         preparation: AOSPSigningIdentityPreparation(
                             destination: signingIdentity,
                             subject: aospSigningSubject,
-                            environment: environment)))))
+                            environment: environment))))
         return SigningArtifacts(
             task: task,
             identity: identity,
@@ -421,7 +421,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .tree(context)
             ],
             locks: [.checkout("android-runtime-aosp-builder-image")],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     PrepareAOSPBuilderImageAction(
                         preparation: OCIImagePreparation(
@@ -430,7 +430,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                             containerFile: containerFile,
                             imageID: imageID,
                             imageName: "localhost/nucleus-aosp-build",
-                            environment: environment)))))
+                            environment: environment))))
         return BuilderImageArtifacts(task: task, imageID: artifact)
     }
 
@@ -558,9 +558,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .checkout("android-runtime-aosp-build"),
                 .checkout("android-runtime-aosp-ccache"),
             ],
-            operation: .action(
+            action:
                 try AnyColliderAction(
-                    CompileAOSPProductAction(build: build)))
+                    CompileAOSPProductAction(build: build))
         )
         let compile = CompileArtifacts(
             task: compileTask,
@@ -590,9 +590,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .checkout("android-runtime-aosp-source"),
                 .checkout("android-runtime-aosp-build"),
             ],
-            operation: .action(
+            action:
                 try AnyColliderAction(
-                    SignAOSPProductAction(build: build)))
+                    SignAOSPProductAction(build: build))
         )
         var assembleBuilder = TaskBuilder(
             id: TaskID(rawValue: "android-runtime.aosp-assemble-images"),
@@ -623,9 +623,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .checkout("android-runtime-aosp-source"),
                 .checkout("android-runtime-aosp-build"),
             ],
-            operation: .action(
+            action:
                 try AnyColliderAction(
-                    AssembleAOSPProductImagesAction(build: build))))
+                    AssembleAOSPProductImagesAction(build: build)))
         let assemble = AssembleArtifacts(
             task: assembleTask,
             targetFiles: stagedTargetFilesReference,
@@ -665,9 +665,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .checkout("android-runtime-aosp-source"),
                 .checkout("android-runtime-aosp-build"),
             ],
-            operation: .action(
+            action:
                 try AnyColliderAction(
-                    ValidateAOSPProductAction(build: build)))
+                    ValidateAOSPProductAction(build: build))
         )
         var publishBuilder = TaskBuilder(
             id: AndroidRuntimeTaskIDs.aospImage,
@@ -703,9 +703,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         let publish = publishBuilder.build(
             inputs: [],
             locks: [.checkout("android-runtime-aosp-build")],
-            operation: .action(
+            action:
                 try AnyColliderAction(
-                    PublishAOSPProductAction(build: build)))
+                    PublishAOSPProductAction(build: build))
         )
         return PublishedAOSPArtifacts(
             tasks: [compile.task, sign, assemble.task, validate, publish],
@@ -762,6 +762,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             id: AndroidRuntimeTaskIDs.gfxstream(target),
             component: component)
         task.consume(builder.image)
+        task.consume(builder.swiftSDK)
         let hostBackend: ArtifactReference<FileArtifact> = try task.output(
             "host-backend",
             path: buildRoot.appending("host/host/libgfxstream_backend.a"),
@@ -775,13 +776,12 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             inputs: [
                 .tree(hostSource),
                 .tree(guestSource),
-                .tree(builder.swiftSDKRoot),
             ] + (target.architecture == .x86_64 ? [.file(crossFile)] : []),
             locks: [
                 .checkout("android-runtime-gfxstream-\(target.identifier)")
             ],
             assessmentPolicy: .incremental,
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     RunGfxstreamBuildAction(
                         buildRoot: buildRoot,
@@ -829,7 +829,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                                         + " && mkdir -p /build/guest"
                                         + " && cp -a \(guestBuild)/. /build/guest/",
                                 ]),
-                        ]))))
+                        ])))
         return GfxstreamArtifacts(
             task: declaration,
             hostBackend: hostBackend,

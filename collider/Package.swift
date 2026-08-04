@@ -22,6 +22,7 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "ColliderCore", package: "engine"),
                 .product(name: "ColliderRuntime", package: "engine"),
+                "ColliderSwiftPM",
                 .product(
                     name: "NucleusSessionProtocol",
                     package: "Nucleus",
@@ -154,6 +155,7 @@ let package = Package(
             dependencies: [
                 "ColliderSwiftPM",
                 .product(name: "ColliderCore", package: "engine"),
+                .product(name: "ColliderRuntime", package: "engine"),
             ]),
         .testTarget(
             name: "SwiftTargetSDKColliderRecipeTests",

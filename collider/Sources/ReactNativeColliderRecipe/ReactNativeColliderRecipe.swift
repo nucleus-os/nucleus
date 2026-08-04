@@ -62,6 +62,7 @@ public enum ReactNativeColliderRecipe {
 
     package static func prepare(
         in context: RecipeContext,
+        skiaExternalSources: ArtifactReference<DirectoryArtifact>,
         icuLibraries: [NativeLinuxTarget: ArtifactReference<FileArtifact>]
     ) throws -> PreparedComponent {
         let root = context.componentRoot(descriptor)
@@ -89,6 +90,7 @@ public enum ReactNativeColliderRecipe {
                 root: root,
                 environment: context.environment,
                 target: target,
+                skiaExternalSources: skiaExternalSources,
                 icuLibrary: icuLibrary,
                 builder: context.nativeBuilder)
             let support = try buildSupportLibraries(
@@ -153,7 +155,7 @@ public enum ReactNativeColliderRecipe {
                         "third-party/react-native/packages/react-native/package.json")),
             ],
             locks: [.checkout("rn-javascript")],
-            operation: try javascriptOperation(
+            action: try javascriptAction(
                 root: root,
                 builder: builder,
                 networkPolicy: .externalEnabled,
@@ -209,11 +211,11 @@ public enum ReactNativeColliderRecipe {
             validation: .regularFile)
         let downloadTask = downloadBuilder.build(
             locks: [.checkout("rn-boost")],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     DownloadBoostAction(
                         specification: download,
-                        destination: archive))))
+                        destination: archive)))
 
         var boostBuilder = TaskBuilder(
             id: TaskID(rawValue: "rn.boost"),
@@ -235,7 +237,7 @@ public enum ReactNativeColliderRecipe {
                 .tool(.named("tar")),
             ],
             locks: [.checkout("rn-boost")],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     ProvisionBoostAction(
                         archive: archive,
@@ -243,7 +245,7 @@ public enum ReactNativeColliderRecipe {
                         generation: generation,
                         active: active,
                         workingDirectory: root,
-                        environment: environment))))
+                        environment: environment)))
         return BoostArtifacts(
             tasks: [downloadTask, boostTask],
             active: activeArtifact)
@@ -270,7 +272,7 @@ public enum ReactNativeColliderRecipe {
                 .tree(root.appending("third-party/react-native/packages/react-native-codegen")),
             ],
             locks: [.checkout("rn")],
-            operation: try javascriptOperation(
+            action: try javascriptAction(
                 root: root,
                 builder: builder,
                 networkPolicy: .externalDisabled,
@@ -287,6 +289,7 @@ public enum ReactNativeColliderRecipe {
         root: FilePath,
         environment: [String: String],
         target: NativeLinuxTarget,
+        skiaExternalSources: ArtifactReference<DirectoryArtifact>,
         icuLibrary: ArtifactReference<FileArtifact>,
         builder: NativeOCIConfiguration
     ) throws -> HermesArtifacts {
@@ -297,16 +300,14 @@ public enum ReactNativeColliderRecipe {
         let icuSource = root.appending(
             "../core/third-party/skia/third_party/externals/icu/source")
         let icuLibraryDirectory = icuLibrary.path.removingLastComponent()
-        let nativeInputs: [ArtifactInput] = [
-            .tree(icuSource.appending("common")),
-            .tree(icuSource.appending("i18n")),
-        ]
         let cmakeArguments: [String] = []
         let ninjaEnvironment = environment
         var taskBuilder = TaskBuilder(
             id: TaskID(rawValue: "rn.hermes.\(target.identifier)"),
             component: ComponentID(rawValue: "rn"))
         taskBuilder.consume(builder.image)
+        taskBuilder.consume(builder.swiftSDK)
+        taskBuilder.consume(skiaExternalSources)
         taskBuilder.consume(icuLibrary)
         let combinedArtifact: ArtifactReference<FileArtifact> = try taskBuilder.output(
             "combined-library",
@@ -320,9 +321,9 @@ public enum ReactNativeColliderRecipe {
             inputs: [
                 .tree(source),
                 .file(root.appending("../tools/merge-static-archives.sh")),
-            ] + nativeInputs,
+            ],
             locks: [.checkout("rn-native-\(target.identifier)")],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     RunReactNativeNativeBuildAction(executions: [
                         try nativeCMake(
@@ -391,7 +392,7 @@ public enum ReactNativeColliderRecipe {
                             ],
                             environment: environment,
                             target: target),
-                    ])))
+                    ]))
         )
         return HermesArtifacts(
             task: task,
@@ -412,6 +413,7 @@ public enum ReactNativeColliderRecipe {
             id: TaskID(rawValue: "rn.support.\(target.identifier)"),
             component: ComponentID(rawValue: "rn"))
         taskBuilder.consume(builder.image)
+        taskBuilder.consume(builder.swiftSDK)
         let fmt: ArtifactReference<FileArtifact> = try taskBuilder.output(
             "fmt-library",
             path: fmtBuild.appending("libfmt.a"),
@@ -426,10 +428,9 @@ public enum ReactNativeColliderRecipe {
                 .tree(
                     root.appending(
                         "third-party/double-conversion")),
-                .tree(builder.swiftSDKRoot),
             ],
             locks: [.checkout("rn-native-\(target.identifier)")],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     RunReactNativeNativeBuildAction(executions: [
                         try nativeCMake(
@@ -471,7 +472,7 @@ public enum ReactNativeColliderRecipe {
                             root: root, environment: environment,
                             target: target,
                             builder: builder),
-                    ])))
+                    ]))
         )
         return SupportLibraryArtifacts(
             task: task,
@@ -497,6 +498,7 @@ public enum ReactNativeColliderRecipe {
             id: TaskID(rawValue: "rn.cxx.\(target.identifier)"),
             component: ComponentID(rawValue: "rn"))
         taskBuilder.consume(builder.image)
+        taskBuilder.consume(builder.swiftSDK)
         taskBuilder.consume(boost)
         taskBuilder.consume(generated)
         for library in hermes.libraries + support.libraries {
@@ -527,10 +529,9 @@ public enum ReactNativeColliderRecipe {
                 .tree(root.appending("third-party/hermes")),
                 .tree(reactNative.appending("ReactCommon")),
                 .tree(root.appending("../core/swiftpm/cmake/reactnative")),
-                .tree(builder.swiftSDKRoot),
             ],
             locks: [.checkout("rn-native-\(target.identifier)")],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     RunReactNativeNativeBuildAction(executions: [
                         try nativeCMake(
@@ -588,7 +589,7 @@ public enum ReactNativeColliderRecipe {
                             environment: environment,
                             target: target,
                             builder: builder),
-                    ])))
+                    ]))
         )
         return CxxRuntimeArtifacts(task: task, outputs: outputArtifacts)
     }
@@ -656,9 +657,9 @@ public enum ReactNativeColliderRecipe {
             locks: [
                 .shared(sdkRoot.appending(".rn.lock"))
             ],
-            operation: .action(
+            action:
                 try AnyColliderAction(
-                    PublishReactNativeSDKAction(sdk: sdk, links: links)))
+                    PublishReactNativeSDKAction(sdk: sdk, links: links))
         )
         return NativeSDKArtifacts(task: task, outputs: outputs)
     }
@@ -810,13 +811,13 @@ private enum BoostProvisioningFailure: Error {
     case commandFailed(Int32)
 }
 
-private func javascriptOperation(
+private func javascriptAction(
     root: FilePath,
     builder: NativeOCIConfiguration,
     networkPolicy: OCINetworkPolicy,
     command: [String],
     environment: [String: String]
-) throws -> TaskOperation {
+) throws -> AnyColliderAction {
     let execution = OCIExecution(
         executionPlatform: .linuxARM64OCI,
         artifactTarget: .linuxARM64,
@@ -841,9 +842,9 @@ private func javascriptOperation(
         command: ["javascript"] + command,
         environment: environment,
         output: .logged)
-    return .action(
+    return
         try AnyColliderAction(
-            RunReactNativeJavaScriptAction(execution: execution)))
+            RunReactNativeJavaScriptAction(execution: execution))
 }
 
 private let boostVersion = "1.84.0"

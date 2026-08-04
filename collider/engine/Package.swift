@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS("27")],
     products: [
         .library(name: "ColliderCore", targets: ["ColliderCore"]),
+        .library(name: "ColliderPlanning", targets: ["ColliderPlanning"]),
         .library(name: "ColliderRuntime", targets: ["ColliderRuntime"]),
     ],
     dependencies: [
@@ -23,6 +24,9 @@ let package = Package(
                 .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "SystemPackage", package: "swift-system"),
             ]),
+        .target(
+            name: "ColliderPlanning",
+            dependencies: ["ColliderCore"]),
         .target(
             name: "ColliderDownloads",
             dependencies: [
@@ -43,6 +47,7 @@ let package = Package(
             dependencies: [
                 "ColliderCore",
                 "ColliderDownloads",
+                "ColliderPlanning",
                 "ColliderPlatformC",
                 .product(
                     name: "ContainerAPIClient",

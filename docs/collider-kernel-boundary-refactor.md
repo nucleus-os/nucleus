@@ -1551,6 +1551,32 @@ values are empty placeholders on logical SwiftPM requirements plus synthesized
 SwiftPM operations in the runtime; phase 6 removes both while extracting the
 lowering.
 
+The native builder bootstrap boundary is now typed as well. The builder image
+and ccache form a `NativeOCIBaseConfiguration`; only the Swift target SDK recipe
+uses that bootstrap layer. After SDK activation, graph construction creates the
+full `NativeOCIConfiguration` with the activation task's opaque `active-sdk`
+reference. Skia, Wayland, gfxstream, Hermes, and the remaining React Native
+native builds consume that reference directly, and Linux SwiftPM contexts mount
+its resolved path. React Native also consumes Core's typed Skia external-source
+artifact for ICU instead of rediscovering a generated subtree by path.
+
+Complete-catalog validation now rejects any raw file, tree, optional-tree,
+dependency-output, or tool path equal to or nested beneath another task's
+declared output. The complete runtime graph passes this validation, and a
+negative contract fixture proves that an explicit dependency plus a raw child
+path is still rejected: generated data crosses components only through its
+producer and output slot.
+
+`TaskOperation` is deleted. A task now carries either one namespaced semantic
+action or no action when it is a logical SwiftPM requirement or aggregate.
+Runtime no longer switches over commands, OCI executions, or nested sequences;
+it schedules, identifies, executes, and validates the task's single action.
+Atomic multi-process behavior lives inside the owning recipe action. SwiftPM's
+ordered prebuild and root invocations are consequently one
+`swift-package.invoke` action owned by `ColliderSwiftPM`, with host commands or
+OCI executions selected from the complete build context. Empty sequence
+placeholders and the global operation identity branches are gone.
+
 Complete the existing action seam with:
 
 - `ActionKind`;
@@ -1649,6 +1675,19 @@ engine source, and no identity version, compatibility decoder, dual encoder, or
 legacy state remains.
 
 ## Phase 6 — Extract deterministic planning, persistence, and SwiftPM lowering
+
+**Progress: in progress.** The deterministic lowering protocol and immutable
+assessed/lowered task values now live in `ColliderCore`. `ColliderSwiftPM` owns
+grouping by complete build context, filter-preserving test grouping,
+output-aware test-over-build subsumption, physical task identity and
+construction, semantic-reference propagation, logical attribution, and
+non-Swift prerequisite discovery. The composition root installs that lowering.
+`ColliderRuntime` consumes only generic lowered tasks and no longer names,
+groups, or synthesizes Swift build contexts. Swift-specific invocation-count,
+selection, subsumption, context-separation, and prerequisite tests moved beside
+the lowering. Extracting `ColliderPlanning` and `ColliderPersistence`, freezing
+the full `ExecutionPlan`, and reducing runtime to execution over that plan
+remain open.
 
 Create `ColliderPlanning` and move component expansion, selection, graph
 normalization, semantic-edge identity, placement validation, output ownership,

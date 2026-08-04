@@ -55,8 +55,7 @@ public struct SwiftPackageRequirementBuilder: Sendable {
             },
             inputs: declaredInputs(includeTests: false) + additionalInputs,
             postconditions: [invocation.postcondition] + additionalPostconditions,
-            locks: [lock],
-            operation: .sequence([]))
+            locks: [lock])
     }
 
     public func test(
@@ -86,8 +85,7 @@ public struct SwiftPackageRequirementBuilder: Sendable {
             inputs: declaredInputs(includeTests: true) + additionalInputs,
             postconditions: [invocation.postcondition] + additionalPostconditions,
             locks: [lock],
-            assessmentPolicy: .always,
-            operation: .sequence([]))
+            assessmentPolicy: .always)
     }
 
     private func declaredInputs(includeTests: Bool) -> [ArtifactInput] {

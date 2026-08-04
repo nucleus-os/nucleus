@@ -261,6 +261,12 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
     ) throws -> PreparedComponent {
         let configuration: SwiftTargetSDKGenerationConfiguration =
             try context.configuration(for: descriptor.id)
+        return try prepare(configuration)
+    }
+
+    package static func prepare(
+        _ configuration: SwiftTargetSDKGenerationConfiguration
+    ) throws -> PreparedComponent {
         let taskSet = try generation(configuration)
         let component = try ComponentDefinition(
             descriptor: descriptor,
@@ -509,11 +515,11 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             validation: .regularFile)
         let task = builder.build(
             locks: [.checkout("swift-target-sdk-downloads")],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     DownloadSwiftTargetSDKInputAction(
                         specification: specification,
-                        destination: destination))))
+                        destination: destination)))
         return DownloadArtifact(task: task, artifact: artifact)
     }
 
@@ -531,7 +537,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             inputs: [.tree(configuration.runtimeBuilderContext)],
             locks: [.checkout("swift-linux-runtime-builder-image")],
             assessmentPolicy: .incremental,
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     PrepareSwiftRuntimeBuilderImageAction(
                         preparation: OCIImagePreparation(
@@ -541,7 +547,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                                 "Containerfile"),
                             imageID: configuration.runtimeBuilderImageID,
                             imageName: "localhost/nucleus-swift-runtime-build",
-                            environment: configuration.environment)))))
+                            environment: configuration.environment))))
         return RuntimeBuilderArtifact(task: task, image: image)
     }
 
@@ -566,14 +572,14 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         let task = builder.build(
             inputs: [.file(configuration.sysrootPreparer)],
             assessmentPolicy: .incremental,
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     PrepareLinuxSysrootAction(
                         preparer: configuration.sysrootPreparer,
                         sysroot: target.sysroot,
                         architecture: architecture.gnuArchitecture,
                         packages: downloads.runtimePackages.map(\.artifact.path),
-                        environment: configuration.environment))))
+                        environment: configuration.environment)))
         return SysrootArtifact(task: task, artifact: artifact)
     }
 
@@ -659,7 +665,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             ],
             locks: [.checkout("swift-linux-\(architecture.rawValue)-runtime")],
             assessmentPolicy: .incremental,
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     BuildSwiftLinuxRuntimeAction(
                         install: target.runtimeInstall,
@@ -683,7 +689,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                             command: ["--reconfigure"],
                             environment: configuration.environment,
                             output: .logged)))
-            ))
+        )
         return RuntimeArtifact(task: task, install: install)
     }
 
@@ -709,13 +715,13 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             locks: [
                 .shared(configuration.generatorScratch.appending(".collider.lock"))
             ],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     BuildSwiftSDKGeneratorAction(
                         swift: configuration.swiftExecutable,
                         source: configuration.generatorSource,
                         scratch: configuration.generatorScratch,
-                        environment: environment))))
+                        environment: environment)))
         return GeneratorArtifact(task: task, executable: artifact)
     }
 
@@ -784,7 +790,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             locks: [
                 .shared(configuration.generatorScratch.appending(".collider.lock"))
             ],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     AssembleSwiftTargetSDKsAction(
                         candidate: configuration.candidate,
@@ -798,7 +804,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                         targets: assemblyTargets,
                         linuxManifest: manifest,
                         linuxMetadata: metadata,
-                        environment: hostEnvironment)))
+                        environment: hostEnvironment))
         )
         return AssemblyArtifacts(
             task: task,
@@ -917,7 +923,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 .tree(configuration.validationFixture),
                 .file(configuration.validator),
             ],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     ValidateSwiftTargetSDKsAction(
                         hostSwift: hostSwift,
@@ -933,7 +939,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                         androidBundleID: configuration.inputs.androidBundleID,
                         androidAPILevel: configuration.androidAPILevel,
                         executablePaths: executablePaths,
-                        environment: environment))))
+                        environment: environment)))
         return ValidationArtifacts(task: task, executables: executables)
     }
 
@@ -964,12 +970,12 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             ],
             assessmentPolicy: .always,
             recordsActiveArtifact: true,
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     ActivateSwiftSDKGenerationAction(
                         candidate: configuration.candidate,
                         generation: configuration.generation,
-                        active: configuration.active))))
+                        active: configuration.active)))
         return ActivationArtifact(
             task: task,
             generationMarker: marker,
@@ -999,12 +1005,12 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                         PathPostcondition(path: link, validation: .symlinkTarget)
                     ],
                     assessmentPolicy: .always,
-                    operation: .action(
+                    action:
                         try AnyColliderAction(
                             PublishSwiftSDKDiscoveryAction(
                                 path: link,
                                 target: target.string,
-                                displacedItem: configuration.displacedRoot.appending(name)))))
+                                displacedItem: configuration.displacedRoot.appending(name))))
                 return DiscoveryArtifact(task: task, link: artifact)
             }
     }

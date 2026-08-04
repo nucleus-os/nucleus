@@ -29,7 +29,7 @@ private let builder = SwiftPackageRequirementBuilder(
 
     #expect(task.swiftProducts.map(\.product) == ["Nucleus"])
     #expect(task.swiftTests.isEmpty)
-    #expect(task.operation == .sequence([]))
+    #expect(task.action == nil)
     #expect(task.inputs.contains(.tree(root.appending("core/swift"))))
 }
 

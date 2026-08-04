@@ -103,11 +103,11 @@ public struct CommandSpec: Hashable, Sendable {
     public enum Executable: Hashable, Sendable {
         case named(String)
         /// A host executable whose implementation cannot affect output
-        /// equivalence because the operation independently verifies the exact
+        /// equivalence because the action independently verifies the exact
         /// materialized content. Its name is operational, not task identity.
         case operationalNamed(String)
         case path(FilePath)
-        /// An executable built earlier in the same ordered task operation.
+        /// An executable built earlier in the same task action.
         ///
         /// Its producing command and sources define the task identity, so the
         /// path is framed without requiring the file to exist during planning.

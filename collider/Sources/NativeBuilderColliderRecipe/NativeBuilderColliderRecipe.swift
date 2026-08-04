@@ -7,7 +7,7 @@ package enum NativeBuilderTaskIDs {
 
 public struct NativeBuilderArtifacts: Sendable {
     public let component: ComponentDefinition
-    public let configuration: NativeOCIConfiguration
+    public let configuration: NativeOCIBaseConfiguration
 }
 
 public enum NativeBuilderColliderRecipe {
@@ -20,7 +20,6 @@ public enum NativeBuilderColliderRecipe {
         context: FilePath,
         imageID: FilePath,
         ccache: FilePath,
-        swiftSDKRoot: FilePath,
         environment: [String: String]
     ) throws -> NativeBuilderArtifacts {
         var builder = TaskBuilder(
@@ -41,7 +40,7 @@ public enum NativeBuilderColliderRecipe {
             ],
             locks: [.checkout("native-builder-image")],
             assessmentPolicy: .incremental,
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     PrepareNativeBuilderImageAction(
                         cache: ccache,
@@ -52,12 +51,11 @@ public enum NativeBuilderColliderRecipe {
                                 "Containerfile"),
                             imageID: imageID,
                             imageName: "localhost/nucleus-linux-build",
-                            environment: environment)))))
-        let configuration = NativeOCIConfiguration(
+                            environment: environment))))
+        let configuration = NativeOCIBaseConfiguration(
             context: context,
             image: image,
             ccache: ccache,
-            swiftSDKRoot: swiftSDKRoot,
             environment: environment)
         return NativeBuilderArtifacts(
             component: try ComponentDefinition(

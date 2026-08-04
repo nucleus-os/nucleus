@@ -68,7 +68,7 @@ import Testing
         !result.tasks.contains { $0.id.rawValue == "swift-sdk.download-linux-target" })
     let ubuntuDownloads = result.tasks.filter { task in
         guard task.id.rawValue.hasPrefix("swift-sdk.download-ubuntu-"),
-            case .action(let action) = task.operation
+            let action = task.action
         else { return false }
         return action.kind == "swift-sdk.download-input"
     }
@@ -82,7 +82,7 @@ import Testing
     #expect(result.tasks.contains { $0.id.rawValue == "swift-sdk.validate-target-sdks" })
     var executions: [OCIExecution] = []
     for task in result.tasks {
-        executions += try await ociExecutions(in: task.operation)
+        executions += try await ociExecutions(in: task.action)
     }
     #expect(executions.count == 2)
     #expect(executions.allSatisfy { $0.executionPlatform == .linuxARM64OCI })
@@ -102,7 +102,7 @@ import Testing
                 $0.rawValue.hasPrefix(
                     "swift-sdk.download-ubuntu-\(architecture.rawValue)-")
             })
-        guard case .action(let sysrootAction) = sysroot.operation else {
+        guard let sysrootAction = sysroot.action else {
             Issue.record("sysroot preparation must be a recipe-owned action")
             return
         }
@@ -118,7 +118,7 @@ import Testing
 
     let generator = try #require(
         result.tasks.first { $0.id.rawValue == "swift-sdk.build-sdk-generator" })
-    guard case .action(let generatorAction) = generator.operation else {
+    guard let generatorAction = generator.action else {
         Issue.record("SDK generator compilation must be a recipe-owned action")
         return
     }
@@ -133,7 +133,7 @@ import Testing
     let assembly = try #require(
         result.tasks.first { $0.id.rawValue == "swift-sdk.assemble-target-sdks" })
     #expect(assembly.locks == [generatorLock, rebuildLock])
-    guard case .action(let assemblyAction) = assembly.operation else {
+    guard let assemblyAction = assembly.action else {
         Issue.record("SDK assembly must be a recipe-owned action")
         return
     }
@@ -148,7 +148,7 @@ import Testing
 
     let validation = try #require(
         result.tasks.first { $0.id.rawValue == "swift-sdk.validate-target-sdks" })
-    guard case .action(let validationAction) = validation.operation else {
+    guard let validationAction = validation.action else {
         Issue.record("SDK validation must be a recipe-owned action")
         return
     }
@@ -274,48 +274,35 @@ private actor OCIExecutionRecorder {
 }
 
 private func ociExecutions(
-    in operation: TaskOperation
+    in action: AnyColliderAction?
 ) async throws -> [OCIExecution] {
     let recorder = OCIExecutionRecorder()
-    try await executeContainerActions(in: operation, recorder: recorder)
+    try await executeContainerAction(action, recorder: recorder)
     return await recorder.executions()
 }
 
-private func executeContainerActions(
-    in operation: TaskOperation,
+private func executeContainerAction(
+    _ action: AnyColliderAction?,
     recorder: OCIExecutionRecorder
 ) async throws {
-    switch operation {
-    case .action(let action):
-        guard action.requirements.executionPlatform?.environment == .oci else {
-            return
-        }
-        try await action.execute(
-            in: ActionContext(
-                files: inertActionFileSystem(),
-                cancellation: ActionCancellation {},
-                logger: ActionLogger { _ in },
-                commands: ActionCommandExecutor { _ in
-                    throw ActionContainerExecutorFailure.unavailable
-                },
-                downloads: ActionDownloader { _, _ in },
-                containers: ActionContainerExecutor(
-                    prepareImage: { _ in },
-                    run: { execution in
-                        await recorder.append(execution)
-                        return CommandResult(status: 0)
-                    })))
-    case .runOCI(let execution):
-        await recorder.append(execution)
-    case .sequence(let operations):
-        for operation in operations {
-            try await executeContainerActions(
-                in: operation,
-                recorder: recorder)
-        }
-    default:
-        return
-    }
+    guard let action,
+        action.requirements.executionPlatform?.environment == .oci
+    else { return }
+    try await action.execute(
+        in: ActionContext(
+            files: inertActionFileSystem(),
+            cancellation: ActionCancellation {},
+            logger: ActionLogger { _ in },
+            commands: ActionCommandExecutor { _ in
+                throw ActionContainerExecutorFailure.unavailable
+            },
+            downloads: ActionDownloader { _, _ in },
+            containers: ActionContainerExecutor(
+                prepareImage: { _ in },
+                run: { execution in
+                    await recorder.append(execution)
+                    return CommandResult(status: 0)
+                })))
 }
 
 private func inertActionFileSystem() -> ActionFileSystem {

@@ -318,76 +318,43 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             environment: commandEnvironment(environment))
     }
 
-    public func operation(
+    public func ociExecution(
         arguments: [String],
         workingDirectory: FilePath,
         environment: [String: String]
-    ) -> TaskOperation {
-        switch context.execution {
-        case .host:
-            return .command(
-                command(
-                    arguments: arguments,
-                    workingDirectory: workingDirectory,
-                    environment: environment))
-        case .oci(let configuration):
-            var containerEnvironment: [String: String] = [:]
-            for (name, value) in commandEnvironment(environment)
-            where containerEnvironmentVariable(name) {
-                containerEnvironment[name] = value
-            }
-            containerEnvironment.merge(
-                configuration.containerEnvironment,
-                uniquingKeysWith: { _, configured in configured })
-            return .runOCI(
-                OCIExecution(
-                    executionPlatform: configuration.executionPlatform,
-                    artifactTarget: configuration.artifactTarget,
-                    imageID: configuration.imageID,
-                    hostname: configuration.hostname,
-                    workingDirectory: workingDirectory.string,
-                    hostWorkingDirectory: configuration.hostWorkingDirectory,
-                    mounts: configuration.mounts,
-                    temporaryDirectory: configuration.temporaryDirectory,
-                    networkPolicy: .externalDisabled,
-                    userPolicy: .builder,
-                    capabilityPolicy: .dropAll,
-                    privilegePolicy: .prohibitAcquisition,
-                    processFilesystemPolicy: configuration.processFilesystemPolicy,
-                    intelBinaryTranslationPolicy: configuration.intelBinaryTranslationPolicy,
-                    resourceLimits: configuration.resourceLimits,
-                    containerEnvironment: containerEnvironment,
-                    command: configuration.commandPrefix + processorAffinityArguments + ["swift"]
-                        + commandArguments(arguments),
-                    environment: environment,
-                    output: .logged))
+    ) throws -> OCIExecution {
+        guard case .oci(let configuration) = context.execution else {
+            throw SwiftPMInvocationExecutionFailure.requiresOCIContext
         }
-    }
-
-    /// Executes a built product in the same host or OCI context that produced it.
-    public func operation(
-        executable: FilePath,
-        arguments: [String],
-        workingDirectory: FilePath,
-        environment: [String: String]
-    ) -> TaskOperation {
-        switch context.execution {
-        case .host:
-            return .command(
-                CommandSpec(
-                    executable: .taskOutput(executable),
-                    arguments: arguments,
-                    workingDirectory: workingDirectory,
-                    environment: commandEnvironment(environment)))
-        case .oci(let configuration):
-            return .runOCI(
-                ociExecutableExecution(
-                    executable: executable,
-                    arguments: arguments,
-                    workingDirectory: workingDirectory,
-                    environment: environment,
-                    configuration: configuration))
+        var containerEnvironment: [String: String] = [:]
+        for (name, value) in commandEnvironment(environment)
+        where containerEnvironmentVariable(name) {
+            containerEnvironment[name] = value
         }
+        containerEnvironment.merge(
+            configuration.containerEnvironment,
+            uniquingKeysWith: { _, configured in configured })
+        return OCIExecution(
+            executionPlatform: configuration.executionPlatform,
+            artifactTarget: configuration.artifactTarget,
+            imageID: configuration.imageID,
+            hostname: configuration.hostname,
+            workingDirectory: workingDirectory.string,
+            hostWorkingDirectory: configuration.hostWorkingDirectory,
+            mounts: configuration.mounts,
+            temporaryDirectory: configuration.temporaryDirectory,
+            networkPolicy: .externalDisabled,
+            userPolicy: .builder,
+            capabilityPolicy: .dropAll,
+            privilegePolicy: .prohibitAcquisition,
+            processFilesystemPolicy: configuration.processFilesystemPolicy,
+            intelBinaryTranslationPolicy: configuration.intelBinaryTranslationPolicy,
+            resourceLimits: configuration.resourceLimits,
+            containerEnvironment: containerEnvironment,
+            command: configuration.commandPrefix + processorAffinityArguments + ["swift"]
+                + commandArguments(arguments),
+            environment: environment,
+            output: .logged)
     }
 
     public func ociExecutableExecution(

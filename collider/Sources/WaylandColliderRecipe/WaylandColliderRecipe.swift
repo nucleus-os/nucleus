@@ -121,6 +121,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
             id: WaylandTaskIDs.nativeSDK(target),
             component: ComponentID(rawValue: "wayland"))
         task.consume(builder.image)
+        task.consume(builder.swiftSDK)
         if let nativeScanner {
             task.consume(nativeScanner)
         }
@@ -161,7 +162,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
             inputs: inputs,
             locks: [.checkout("wayland-native-\(target.identifier)")],
             assessmentPolicy: .incremental,
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     RunWaylandNativeBuildAction(
                         build: build,
@@ -197,7 +198,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
                                 target: target,
                                 environment: environment,
                                 command: ["meson", "install", "-C", "/build", "--no-rebuild"]),
-                        ])))
+                        ]))
         )
         return NativeSDKArtifacts(
             task: declaration,
@@ -280,7 +281,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
                 swiftPM.identityInput,
             ],
             locks: [.checkout("wayland")],
-            operation: .action(
+            action:
                 try AnyColliderAction(
                     GenerateWaylandSwiftSourcesAction(
                         generator: generator,
@@ -303,7 +304,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
                             arguments: scannerArguments,
                             environment: environment),
                         manifests: manifests,
-                        environment: environment)))
+                        environment: environment))
         )
     }
 }

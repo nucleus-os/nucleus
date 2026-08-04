@@ -268,18 +268,13 @@ private let fixturePackageRoot = FilePath("/workspace")
         context: context,
         scratchPath: FilePath("/workspace/.nucleus/swiftpm/linux-amd64"))
 
-    guard
-        case .runOCI(let operation) = invocation.operation(
-            arguments: ["test"],
-            workingDirectory: fixturePackageRoot,
-            environment: [
-                "PATH": "/host/bin",
-                "NUCLEUS_NATIVE_SDK_ROOT": "/cache/native-sdk",
-            ])
-    else {
-        Issue.record("expected an OCI SwiftPM operation")
-        return
-    }
+    let operation = try invocation.ociExecution(
+        arguments: ["test"],
+        workingDirectory: fixturePackageRoot,
+        environment: [
+            "PATH": "/host/bin",
+            "NUCLEUS_NATIVE_SDK_ROOT": "/cache/native-sdk",
+        ])
 
     #expect(operation.executionPlatform == .linuxARM64OCI)
     #expect(operation.artifactTarget == .linuxX86_64)

@@ -108,9 +108,9 @@ extension AndroidRuntimeColliderRecipe {
                     configuration.output.removingLastComponent().appending(
                         ".android-addon-package.lock"))
             ],
-            operation: .action(
+            action:
                 try AnyColliderAction(
-                    PackageAndroidAddonAction(configuration: configuration))))
+                    PackageAndroidAddonAction(configuration: configuration)))
     }
 }
 
