@@ -21,6 +21,7 @@ public struct ComponentEntrypointID: RawRepresentable, Hashable, Codable, Sendab
     public static let androidBuild = Self(rawValue: "android.build")
     public static let androidNative = Self(rawValue: "android.native")
     public static let androidVerify = Self(rawValue: "android.verify")
+    public static let packageAndroidAddon = Self(rawValue: "package.android-addon")
     public static let sanitizeAddress = Self(rawValue: "sanitize.address")
     public static let sanitizeUndefined = Self(rawValue: "sanitize.undefined")
     public static let sanitizeThread = Self(rawValue: "sanitize.thread")
@@ -202,6 +203,17 @@ public struct RecipeContext: Sendable {
         }
         return typed
     }
+
+    public func configurationIfPresent<Value: RecipeConfiguration>(
+        _ type: Value.Type = Value.self,
+        for component: ComponentID
+    ) throws -> Value? {
+        guard let value = configurations[component] else { return nil }
+        guard let typed = value as? Value else {
+            throw RecipeContextFailure.invalidConfigurationType(component)
+        }
+        return typed
+    }
 }
 
 public enum RecipeContextFailure: Error, CustomStringConvertible, Sendable {
@@ -257,19 +269,35 @@ public struct ComponentEntrypointRoute: Hashable, Sendable {
     }
 }
 
+public struct ComponentEntrypointRequest: Hashable, Sendable {
+    public let spelling: String
+    public let entrypoint: ComponentEntrypointID
+
+    public init(
+        spelling: String,
+        entrypoint: ComponentEntrypointID
+    ) {
+        self.spelling = spelling
+        self.entrypoint = entrypoint
+    }
+}
+
 public struct ComponentCatalog: Sendable {
     public let components: [ComponentID: ComponentDefinition]
     public let groups: [String: ComponentSelectionGroup]
     public let routes: [ComponentEntrypointRoute]
+    public let publicEntrypoints: [ComponentEntrypointRequest]
     public let tasks: [TaskDeclaration]
 
     private let componentSpellings: [String: ComponentID]
     private let routesByKey: [RouteKey: [ComponentEntrypointReference]]
+    private let publicEntrypointSet: Set<ComponentEntrypointRequest>
 
     public init(
         components: [ComponentDefinition],
         groups: [ComponentSelectionGroup] = [],
-        routes: [ComponentEntrypointRoute] = []
+        routes: [ComponentEntrypointRoute] = [],
+        publicEntrypoints: [ComponentEntrypointRequest]
     ) throws {
         var componentsByID: [ComponentID: ComponentDefinition] = [:]
         var spellings: [String: ComponentID] = [:]
@@ -333,13 +361,18 @@ public struct ComponentCatalog: Sendable {
         }
 
         try Self.validateOutputOwnership(allTasks)
+        try Self.validateActions(allTasks)
 
         self.components = componentsByID
         self.groups = groupsByName
         self.routes = routes
+        self.publicEntrypoints = publicEntrypoints
         tasks = allTasks
         componentSpellings = spellings
         self.routesByKey = routesByKey
+        publicEntrypointSet = Set(publicEntrypoints)
+
+        try validatePublicEntrypoints()
     }
 
     public func entrypoints(
@@ -347,6 +380,21 @@ public struct ComponentCatalog: Sendable {
         selection: String?
     ) throws -> [ComponentEntrypointReference] {
         let spelling = selection ?? "all"
+        let request = ComponentEntrypointRequest(
+            spelling: spelling,
+            entrypoint: entrypoint)
+        guard publicEntrypointSet.contains(request) else {
+            throw ComponentCatalogFailure.nonPublicEntrypoint(request)
+        }
+        return try resolveEntrypoints(
+            named: entrypoint,
+            spelling: spelling)
+    }
+
+    private func resolveEntrypoints(
+        named entrypoint: ComponentEntrypointID,
+        spelling: String
+    ) throws -> [ComponentEntrypointReference] {
         if let destinations = routesByKey[
             RouteKey(spelling: spelling, entrypoint: entrypoint)
         ] {
@@ -422,6 +470,63 @@ public struct ComponentCatalog: Sendable {
         }
     }
 
+    private static func validateActions(_ tasks: [TaskDeclaration]) throws {
+        var implementationsByKind: [String: String] = [:]
+        for task in tasks {
+            for action in task.operation.colliderActions {
+                guard action.kind.hasPrefix(task.component.rawValue + ".") else {
+                    throw ComponentCatalogFailure.actionNamespaceMismatch(
+                        task: task.id,
+                        component: task.component,
+                        kind: action.kind)
+                }
+                if let existing = implementationsByKind[action.kind],
+                    existing != action.implementationType
+                {
+                    throw ComponentCatalogFailure.duplicateActionKind(
+                        kind: action.kind,
+                        first: existing,
+                        second: action.implementationType)
+                }
+                implementationsByKind[action.kind] = action.implementationType
+            }
+        }
+    }
+
+    private func validatePublicEntrypoints() throws {
+        var requests: Set<ComponentEntrypointRequest> = []
+        var reachable: Set<ComponentEntrypointReference> = []
+        for request in publicEntrypoints {
+            guard requests.insert(request).inserted else {
+                throw ComponentCatalogFailure.duplicatePublicEntrypoint(request)
+            }
+            reachable.formUnion(
+                try resolveEntrypoints(
+                    named: request.entrypoint,
+                    spelling: request.spelling))
+        }
+
+        for route in routes {
+            let request = ComponentEntrypointRequest(
+                spelling: route.spelling,
+                entrypoint: route.requestedEntrypoint)
+            guard requests.contains(request) else {
+                throw ComponentCatalogFailure.unreachableRoute(request)
+            }
+        }
+
+        for component in components.values {
+            for entrypoint in component.entrypoints.keys {
+                let reference = ComponentEntrypointReference(
+                    component: component.descriptor.id,
+                    entrypoint: entrypoint)
+                guard reachable.contains(reference) else {
+                    throw ComponentCatalogFailure.unreachableEntrypoint(reference)
+                }
+            }
+        }
+    }
+
     private static func contains(_ child: String, in parent: String) -> Bool {
         let prefix = parent.hasSuffix("/") ? parent : parent + "/"
         return child.hasPrefix(prefix)
@@ -467,6 +572,12 @@ public enum ComponentCatalogFailure: Error, CustomStringConvertible, Sendable {
     case unsupportedEntrypoint(spelling: String, entrypoint: ComponentEntrypointID)
     case emptyRoute(spelling: String, entrypoint: ComponentEntrypointID)
     case duplicateRoute(spelling: String, entrypoint: ComponentEntrypointID)
+    case duplicatePublicEntrypoint(ComponentEntrypointRequest)
+    case nonPublicEntrypoint(ComponentEntrypointRequest)
+    case unreachableRoute(ComponentEntrypointRequest)
+    case unreachableEntrypoint(ComponentEntrypointReference)
+    case duplicateActionKind(kind: String, first: String, second: String)
+    case actionNamespaceMismatch(task: TaskID, component: ComponentID, kind: String)
     case overlappingOutput(first: TaskID, second: TaskID, path: FilePath)
 
     public var description: String {
@@ -491,8 +602,44 @@ public enum ComponentCatalogFailure: Error, CustomStringConvertible, Sendable {
             "selection route '\(spelling)' for '\(entrypoint)' has no destinations"
         case .duplicateRoute(let spelling, let entrypoint):
             "duplicate selection route '\(spelling)' for '\(entrypoint)'"
+        case .duplicatePublicEntrypoint(let request):
+            "duplicate public entrypoint '\(request.spelling)' for '\(request.entrypoint)'"
+        case .nonPublicEntrypoint(let request):
+            "selection '\(request.spelling)' does not publish entrypoint '\(request.entrypoint)'"
+        case .unreachableRoute(let request):
+            "selection route '\(request.spelling)' for '\(request.entrypoint)' is not public"
+        case .unreachableEntrypoint(let reference):
+            "component '\(reference.component)' entrypoint '\(reference.entrypoint)' is unreachable"
+        case .duplicateActionKind(let kind, let first, let second):
+            "action kind '\(kind)' is declared by both '\(first)' and '\(second)'"
+        case .actionNamespaceMismatch(let task, let component, let kind):
+            "task '\(task)' owned by '\(component)' declares foreign action kind '\(kind)'"
         case .overlappingOutput(let first, let second, let path):
             "tasks '\(first)' and '\(second)' overlap output ownership at '\(path)'"
+        }
+    }
+}
+
+extension TaskOperation {
+    fileprivate var colliderActions: [AnyColliderAction] {
+        switch self {
+        case .action(let action):
+            [action]
+        case .sequence(let operations):
+            operations.flatMap(\.colliderActions)
+        case .command, .runSwiftTest, .configureMeson, .createDirectory,
+            .copyFile, .copyMatchingFile, .extractZip, .removePath,
+            .replaceSymlink, .setPermissions, .writeFile,
+            .validateAndroidHost, .sanitizeLinkMetadata, .publishSymlink,
+            .publishDirectory, .pruneDirectories, .verifyAOSPSourceLock,
+            .prepareAOSPSource, .prepareOCIImage, .runOCI,
+            .prepareAOSPSigningIdentity, .aospProduct,
+            .prepareChromiumDepotTools, .prepareChromiumSource,
+            .buildChromiumProduct, .assembleBrowserArtifact,
+            .validateBrowserArtifact, .assembleCEFArtifact,
+            .validateCEFArtifact, .installBrowser, .validateAptPackages,
+            .download, .activateGeneration:
+            []
         }
     }
 }

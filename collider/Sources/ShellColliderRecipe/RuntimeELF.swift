@@ -60,94 +60,109 @@ public struct StageRuntimeELFAction: ColliderAction {
     }
 
     public func execute(in context: ActionContext) async throws {
-        for directory in RuntimeELFLayout.stagingDirectories(root: prefix) {
-            try context.files.createDirectory(directory)
-        }
+        try await stageRuntimeELF(
+            products: products,
+            prefix: prefix,
+            environment: environment,
+            productSet: productSet,
+            context: context)
+    }
+}
 
-        var queue: [FilePath] = []
-        let executables = RuntimeELFLayout.executables(productSet: productSet)
-        for executable in executables {
-            let source = products.appending(executable.name)
-            let destination = RuntimeELFLayout.path(
-                for: executable,
-                under: prefix,
-                staged: true)
-            try requireRegularExecutable(source, files: context.files)
-            try context.files.copy(from: source, to: destination)
-            try context.files.setPermissions(0o755, for: destination)
-            queue.append(destination)
-        }
+package func stageRuntimeELF(
+    products: FilePath,
+    prefix: FilePath,
+    environment: [String: String],
+    productSet: RuntimeELFProductSet,
+    context: ActionContext
+) async throws {
+    for directory in RuntimeELFLayout.stagingDirectories(root: prefix) {
+        try context.files.createDirectory(directory)
+    }
 
-        var copiedDependencies: [String: FilePath] = [:]
-        var index = 0
-        while index < queue.count {
-            let artifact = queue[index]
-            index += 1
-            let output = try await run(
-                "ldd",
-                [artifact.string],
-                workingDirectory: prefix,
-                environment: environment,
-                context: context)
-            for dependency in parseLDDResolvedPaths(output)
-            where !RuntimeELFLayout.isSystemLibrary(dependency) {
-                let name = dependency.lastComponent?.string ?? dependency.string
-                let destination = prefix.appending("lib").appending(name)
-                if let existing = copiedDependencies[name] {
-                    if dependency == destination || existing == dependency {
-                        continue
-                    }
-                    guard
-                        try context.files.contentsEqual(
-                            at: existing,
-                            and: dependency)
-                    else {
-                        throw RuntimeELFFailure(
-                            "dynamic dependency basename collision for \(name): "
-                                + "\(existing) and \(dependency)")
-                    }
+    var queue: [FilePath] = []
+    let executables = RuntimeELFLayout.executables(productSet: productSet)
+    for executable in executables {
+        let source = products.appending(executable.name)
+        let destination = RuntimeELFLayout.path(
+            for: executable,
+            under: prefix,
+            staged: true)
+        try requireRegularExecutable(source, files: context.files)
+        try context.files.copy(from: source, to: destination)
+        try context.files.setPermissions(0o755, for: destination)
+        queue.append(destination)
+    }
+
+    var copiedDependencies: [String: FilePath] = [:]
+    var index = 0
+    while index < queue.count {
+        let artifact = queue[index]
+        index += 1
+        let output = try await run(
+            "ldd",
+            [artifact.string],
+            workingDirectory: prefix,
+            environment: environment,
+            context: context)
+        for dependency in parseLDDResolvedPaths(output)
+        where !RuntimeELFLayout.isSystemLibrary(dependency) {
+            let name = dependency.lastComponent?.string ?? dependency.string
+            let destination = prefix.appending("lib").appending(name)
+            if let existing = copiedDependencies[name] {
+                if dependency == destination || existing == dependency {
                     continue
                 }
-                try requireRegularFile(dependency, files: context.files)
-                try context.files.copy(from: dependency, to: destination)
-                try context.files.setPermissions(0o755, for: destination)
-                copiedDependencies[name] = dependency
-                queue.append(destination)
+                guard
+                    try context.files.contentsEqual(
+                        at: existing,
+                        and: dependency)
+                else {
+                    throw RuntimeELFFailure(
+                        "dynamic dependency basename collision for \(name): "
+                            + "\(existing) and \(dependency)")
+                }
+                continue
             }
+            try requireRegularFile(dependency, files: context.files)
+            try context.files.copy(from: dependency, to: destination)
+            try context.files.setPermissions(0o755, for: destination)
+            copiedDependencies[name] = dependency
+            queue.append(destination)
         }
+    }
 
-        for library in copiedDependencies.keys.sorted() {
-            try await requireSuccess(
-                "patchelf",
-                [
-                    "--set-rpath", "$ORIGIN",
-                    prefix.appending("lib")
-                        .appending(library).string,
-                ],
-                workingDirectory: prefix,
-                environment: environment,
-                context: context)
-        }
-        for executable in executables {
-            let path = RuntimeELFLayout.path(
-                for: executable,
-                under: prefix,
-                staged: true)
-            try await requireSuccess(
-                "patchelf",
-                ["--set-rpath", "$ORIGIN/../lib", path.string],
-                workingDirectory: prefix,
-                environment: environment,
-                context: context)
-        }
-        for artifact in queue {
-            try await requireSuccess(
-                "strip",
-                ["--strip-debug", artifact.string],
-                workingDirectory: prefix,
-                environment: environment,
-                context: context)
-        }
+    for library in copiedDependencies.keys.sorted() {
+        try await requireSuccess(
+            "patchelf",
+            [
+                "--set-rpath", "$ORIGIN",
+                prefix.appending("lib")
+                    .appending(library).string,
+            ],
+            workingDirectory: prefix,
+            environment: environment,
+            context: context)
+    }
+    for executable in executables {
+        let path = RuntimeELFLayout.path(
+            for: executable,
+            under: prefix,
+            staged: true)
+        try await requireSuccess(
+            "patchelf",
+            ["--set-rpath", "$ORIGIN/../lib", path.string],
+            workingDirectory: prefix,
+            environment: environment,
+            context: context)
+    }
+    for artifact in queue {
+        try await requireSuccess(
+            "strip",
+            ["--strip-debug", artifact.string],
+            workingDirectory: prefix,
+            environment: environment,
+            context: context)
     }
 }
 
@@ -191,80 +206,95 @@ public struct ValidateRuntimeELFAction: ColliderAction {
     }
 
     public func execute(in context: ActionContext) async throws {
-        let staged =
-            try context.files.metadata(for: root.appending("bin"))?.type
-            == .directory
-            && context.files.metadata(for: root.appending("lib"))?.type
-                == .directory
-            && context.files.metadata(for: root.appending("libexec"))?.type
-                == .directory
-        var inspections: [String: RuntimeELFInspection] = [:]
-        var reportExecutables: [RuntimeELFReport.Executable] = []
+        try await validateRuntimeELF(
+            root: root,
+            report: report,
+            environment: environment,
+            productSet: productSet,
+            context: context)
+    }
+}
 
-        for executable in RuntimeELFLayout.executables(productSet: productSet) {
-            let path = RuntimeELFLayout.path(
-                for: executable,
-                under: root,
-                staged: staged)
-            try requireRegularExecutable(path, files: context.files)
-            try await requireSuccess(
-                "readelf",
-                ["-h", path.string],
-                workingDirectory: root,
-                environment: environment,
-                context: context,
-                failure: "\(executable.name) is not an ELF executable")
-            let dynamic = try await run(
-                "readelf",
-                ["-d", path.string],
+func validateRuntimeELF(
+    root: FilePath,
+    report: FilePath,
+    environment: [String: String],
+    productSet: RuntimeELFProductSet,
+    context: ActionContext
+) async throws {
+    let staged =
+        try context.files.metadata(for: root.appending("bin"))?.type
+        == .directory
+        && context.files.metadata(for: root.appending("lib"))?.type
+            == .directory
+        && context.files.metadata(for: root.appending("libexec"))?.type
+            == .directory
+    var inspections: [String: RuntimeELFInspection] = [:]
+    var reportExecutables: [RuntimeELFReport.Executable] = []
+
+    for executable in RuntimeELFLayout.executables(productSet: productSet) {
+        let path = RuntimeELFLayout.path(
+            for: executable,
+            under: root,
+            staged: staged)
+        try requireRegularExecutable(path, files: context.files)
+        try await requireSuccess(
+            "readelf",
+            ["-h", path.string],
+            workingDirectory: root,
+            environment: environment,
+            context: context,
+            failure: "\(executable.name) is not an ELF executable")
+        let dynamic = try await run(
+            "readelf",
+            ["-d", path.string],
+            workingDirectory: root,
+            environment: environment,
+            context: context)
+        let inspection = parseReadELFDynamic(dynamic)
+        try validate(
+            executable: executable,
+            inspection: inspection,
+            dynamicMetadata: dynamic,
+            staged: staged)
+        let relocation: String
+        do {
+            relocation = try await run(
+                "ldd",
+                ["-r", path.string],
                 workingDirectory: root,
                 environment: environment,
                 context: context)
-            let inspection = parseReadELFDynamic(dynamic)
-            try validate(
-                executable: executable,
-                inspection: inspection,
-                dynamicMetadata: dynamic,
-                staged: staged)
-            let relocation: String
-            do {
-                relocation = try await run(
-                    "ldd",
-                    ["-r", path.string],
-                    workingDirectory: root,
-                    environment: environment,
-                    context: context)
-            } catch {
-                throw RuntimeELFFailure(
-                    "\(executable.name) failed relocation validation: \(error)")
-            }
-            guard !relocation.contains("not found"),
-                !relocation.contains("undefined symbol")
-            else {
-                throw RuntimeELFFailure(
-                    "\(executable.name) has an unresolved dependency:\n"
-                        + relocation)
-            }
-            inspections[executable.name] = inspection
-            reportExecutables.append(
-                RuntimeELFReport.Executable(
-                    name: executable.name,
-                    path: path.string,
-                    runpath: inspection.runpath,
-                    needed: inspection.needed.sorted()))
+        } catch {
+            throw RuntimeELFFailure(
+                "\(executable.name) failed relocation validation: \(error)")
         }
-
-        try validateDependencyContracts(inspections)
-        let value = RuntimeELFReport(
-            root: root.string,
-            staged: staged,
-            executables: reportExecutables)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        var bytes = Array(try encoder.encode(value))
-        bytes.append(0x0a)
-        try context.files.write(bytes, to: report)
+        guard !relocation.contains("not found"),
+            !relocation.contains("undefined symbol")
+        else {
+            throw RuntimeELFFailure(
+                "\(executable.name) has an unresolved dependency:\n"
+                    + relocation)
+        }
+        inspections[executable.name] = inspection
+        reportExecutables.append(
+            RuntimeELFReport.Executable(
+                name: executable.name,
+                path: path.string,
+                runpath: inspection.runpath,
+                needed: inspection.needed.sorted()))
     }
+
+    try validateDependencyContracts(inspections)
+    let value = RuntimeELFReport(
+        root: root.string,
+        staged: staged,
+        executables: reportExecutables)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    var bytes = Array(try encoder.encode(value))
+    bytes.append(0x0a)
+    try context.files.write(bytes, to: report)
 }
 
 struct RuntimeELFInspection: Hashable, Sendable {

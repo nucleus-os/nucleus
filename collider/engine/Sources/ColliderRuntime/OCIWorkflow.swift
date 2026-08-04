@@ -1,9 +1,13 @@
 import ColliderCore
-import ContainerAPIClient
-import ContainerBuild
 import Foundation
 import SystemPackage
 
+#if os(macOS)
+import ContainerAPIClient
+import ContainerBuild
+#endif
+
+#if os(macOS)
 extension ColliderRuntime {
     func prepareOCIImage(
         _ preparation: OCIImagePreparation,
@@ -180,6 +184,30 @@ extension ColliderRuntime {
             stage: stage)
     }
 }
+#else
+extension ColliderRuntime {
+    func prepareOCIImage(
+        _ preparation: OCIImagePreparation,
+        stage: TaskID
+    ) async throws {
+        throw OCIExecutorFailure.unsupportedRunner(.current)
+    }
+
+    func runOCI(
+        _ execution: OCIExecution,
+        stage: TaskID
+    ) async throws {
+        throw OCIExecutorFailure.unsupportedRunner(.current)
+    }
+
+    func executeOCI(
+        _ execution: OCIExecution,
+        stage: TaskID
+    ) async throws -> CommandResult {
+        throw OCIExecutorFailure.unsupportedRunner(.current)
+    }
+}
+#endif
 
 private func validOCIImageDigest(in identifier: String) -> String? {
     let digest = identifier.split(whereSeparator: \.isNewline).last.map(String.init)

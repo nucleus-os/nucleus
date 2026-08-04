@@ -52,6 +52,11 @@ let package = Package(
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
                 "NativeBuilderColliderRecipe",
+                "ShellColliderRecipe",
+                .product(
+                    name: "NucleusAndroidRuntimeCore",
+                    package: "Nucleus",
+                    condition: .when(platforms: [.linux])),
             ]),
         .target(
             name: "ChromiumColliderRecipe",
@@ -97,7 +102,13 @@ let package = Package(
             ]),
         .target(
             name: "ShellColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                .product(
+                    name: "NucleusAndroidRuntimeCore",
+                    package: "Nucleus",
+                    condition: .when(platforms: [.linux])),
+            ]),
         .target(
             name: "SwiftTargetSDKColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),

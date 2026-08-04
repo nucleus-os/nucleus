@@ -1,11 +1,14 @@
 import ColliderCore
+import Foundation
+import Logging
+import SystemPackage
+
+#if os(macOS)
 import ContainerAPIClient
 import ContainerCommands
 import ContainerResource
 import Darwin
-import Foundation
-import Logging
-import SystemPackage
+#endif
 
 public struct AppleContainerBackendHealth: Sendable {
     public let appRoot: URL
@@ -16,6 +19,7 @@ public struct AppleContainerBackendHealth: Sendable {
     public let apiServerAppName: String
 }
 
+#if os(macOS)
 public func appleContainerBackendHealth() async throws
     -> AppleContainerBackendHealth
 {
@@ -580,3 +584,10 @@ private func collectAppleContainerOutput(
     try await sink.finish()
     return captured
 }
+#else
+public func appleContainerBackendHealth() async throws
+    -> AppleContainerBackendHealth
+{
+    throw OCIExecutorFailure.unsupportedRunner(.current)
+}
+#endif

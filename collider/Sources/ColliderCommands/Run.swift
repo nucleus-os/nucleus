@@ -138,17 +138,18 @@ struct RunCommand {
         try requireLaunchableSeatEnvironment()
 
         let prefix = URL(context.layout.installPrefix)
-        let installer = RuntimeInstaller(context: context)
-        let installation =
-            if options.build {
-                try await installer.install(
-                    prefix: prefix,
-                    options: options.buildOptions)
-            } else {
-                try installer.existingSession(
-                    prefix: prefix,
-                    options: options.buildOptions)
-            }
+        let installer = RuntimeInstaller()
+        let installation: RuntimeInstallation
+        if options.build {
+            try await ComponentRegistry(context: context).installSession(
+                prefix: FilePath(prefix),
+                options: options.buildOptions)
+            installation = RuntimeInstallation(prefix: prefix)
+        } else {
+            installation = try installer.existingSession(
+                prefix: prefix,
+                options: options.buildOptions)
+        }
 
         var environment = context.environment
         try configureRuntimeEnvironment(options, environment: &environment)
@@ -161,7 +162,7 @@ struct RunCommand {
 
         if options.tracy {
             if options.build {
-                try await TracyTools(context: context).buildReceivers()
+                try await ComponentRegistry(context: context).buildTracyReceivers()
             }
             try await authenticateAndroidRuntimeIfNeeded(options)
             try await ProfileCapture(context: context).run(

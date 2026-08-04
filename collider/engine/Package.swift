@@ -45,19 +45,24 @@ let package = Package(
                 "ColliderPlatformC",
                 .product(
                     name: "ContainerAPIClient",
-                    package: "container"),
+                    package: "container",
+                    condition: .when(platforms: [.macOS])),
                 .product(
                     name: "ContainerBuild",
-                    package: "container"),
+                    package: "container",
+                    condition: .when(platforms: [.macOS])),
                 .product(
                     name: "ContainerCommands",
-                    package: "container"),
+                    package: "container",
+                    condition: .when(platforms: [.macOS])),
                 .product(
                     name: "ContainerResource",
-                    package: "container"),
+                    package: "container",
+                    condition: .when(platforms: [.macOS])),
                 .product(
                     name: "Containerization",
-                    package: "containerization"),
+                    package: "containerization",
+                    condition: .when(platforms: [.macOS])),
                 .product(
                     name: "Subprocess",
                     package: "swift-subprocess"),

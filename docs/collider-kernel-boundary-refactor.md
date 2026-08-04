@@ -1295,7 +1295,7 @@ component resolves no tool the selection does not require.
 
 ## Phase 4 — Unify components and command entrypoints
 
-**Progress: in progress.** The engine now owns immutable component descriptors,
+**Progress: complete.** The engine now owns immutable component descriptors,
 entrypoints, definitions, recipe context, typed entrypoint references, selection
 groups, and a validated component catalog. Catalog construction validates the
 complete task graph, component and directory identity, selection spellings,
@@ -1319,10 +1319,14 @@ cross-process lifecycle lock is declared by every task rather than supplied by
 one command path. `ComponentSelection` and `GeneratorComponent` are deleted.
 Build, test, bootstrap, and generation commands pass registry spellings
 directly, and each execution constructs one catalog and selects roots from it.
-The remaining Phase 4 work is moving the Linux runtime installer and Android
-add-on packager off direct command/runtime execution, publishing their tasks
-through the Shell and Android-runtime components, then completing
-reachability/action-kind validation for the frozen public entrypoint table.
+The Linux runtime installer, Android add-on packager, and Tracy receiver build
+are recipe-owned tasks selected through the Shell and Android-runtime
+components. Commands no longer launch build systems or construct task
+declarations. The registry freezes its complete public request table, rejects
+unpublished routes and unreachable entrypoints, requires action kinds to live
+under their owning component namespace, and rejects one action kind backed by
+multiple implementations. Focused catalog and registry tests cover the frozen
+spelling table and these construction-time failures.
 
 Add `ColliderComponent`, `ComponentDescriptor`, `ComponentDefinition`,
 `ComponentEntrypoint`, `RecipeContext`, and immutable task builders to

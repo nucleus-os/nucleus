@@ -129,32 +129,40 @@ public actor ColliderRuntime {
     }
 
     private nonisolated func actionFileSystem() -> ActionFileSystem {
-        ActionFileSystem(
-            metadata: { path in
-                guard FileManager.default.fileExists(atPath: path.string) else {
+        let inspect:
+            @Sendable (
+                FilePath, Bool
+            ) throws -> ActionFileSystem.Metadata? = { path, followTargetSymlink in
+                let value: Stat
+                do {
+                    value = try path.stat(
+                        followTargetSymlink: followTargetSymlink)
+                } catch let error as Errno {
+                    guard error == Errno.noSuchFileOrDirectory else {
+                        throw error
+                    }
                     return nil
                 }
-                let resolved = URL(fileURLWithPath: path.string)
-                    .resolvingSymlinksInPath().path
-                let attributes = try FileManager.default.attributesOfItem(
-                    atPath: resolved)
-                let fileType: ActionFileSystem.FileType
-                switch attributes[.type] as? FileAttributeType {
-                case .typeRegular:
-                    fileType = .regular
-                case .typeDirectory:
-                    fileType = .directory
-                case .typeSymbolicLink:
-                    fileType = .symbolicLink
-                default:
-                    fileType = .other
-                }
-                let permissions =
-                    (attributes[.posixPermissions] as? NSNumber)?.uint16Value
-                    ?? 0
+                let type: ActionFileSystem.FileType =
+                    switch value.type {
+                    case .regular: .regular
+                    case .directory: .directory
+                    case .symbolicLink: .symbolicLink
+                    default: .other
+                    }
+                let permissions = UInt16(truncatingIfNeeded: value.permissions.rawValue)
                 return ActionFileSystem.Metadata(
-                    type: fileType,
-                    ownerExecutable: permissions & 0o100 != 0)
+                    type: type,
+                    ownerExecutable: permissions & 0o100 != 0,
+                    size: UInt64(max(0, value.size)),
+                    permissions: permissions)
+            }
+        return ActionFileSystem(
+            metadata: { path in
+                try inspect(path, true)
+            },
+            metadataNoFollow: { path in
+                try inspect(path, false)
             },
             contentsEqual: { first, second in
                 let firstResolved = URL(fileURLWithPath: first.string)
@@ -177,6 +185,57 @@ public actor ColliderRuntime {
                     from: FilePath(resolved),
                     to: destination)
             },
+            copyTree: { source, destination in
+                let resolved = URL(fileURLWithPath: source.string)
+                    .resolvingSymlinksInPath()
+                try FileManager.default.createDirectory(
+                    at: URL(
+                        fileURLWithPath: destination.removingLastComponent().string),
+                    withIntermediateDirectories: true)
+                try FileManager.default.copyItem(
+                    at: resolved,
+                    to: URL(fileURLWithPath: destination.string))
+            },
+            read: { path in
+                Array(try Data(contentsOf: URL(fileURLWithPath: path.string)))
+            },
+            remove: { path in
+                guard (try? path.stat(followTargetSymlink: false)) != nil else {
+                    return
+                }
+                try FileManager.default.removeItem(atPath: path.string)
+            },
+            move: { source, destination in
+                try FileManager.default.moveItem(
+                    atPath: source.string,
+                    toPath: destination.string)
+            },
+            listRecursively: { root in
+                guard
+                    let enumerator = FileManager.default.enumerator(
+                        atPath: root.string)
+                else { return [] }
+                return try enumerator.compactMap { value -> ActionFileSystem.Entry? in
+                    guard let relative = value as? String else { return nil }
+                    let path = root.appending(relative)
+                    guard let metadata = try inspect(path, false) else { return nil }
+                    return ActionFileSystem.Entry(
+                        path: path,
+                        relativePath: relative,
+                        metadata: metadata)
+                }
+            },
+            digestFile: { try ArtifactHasher.digest(file: $0) },
+            digestTree: {
+                try ArtifactHasher.digest(tree: $0, excluding: $1)
+            },
+            publishGeneration: {
+                try GenerationPublisher.publish(
+                    candidate: $0,
+                    generation: $1,
+                    active: $2)
+            },
+            pruneDirectories: { try DirectoryLifecycle.prune($0) },
             setPermissions: { path, permissions in
                 try FileManager.default.setAttributes(
                     [.posixPermissions: NSNumber(value: permissions)],

@@ -6,6 +6,13 @@ import Testing
 private let coreID = ComponentID(rawValue: "core")
 private let buildID = TaskID(rawValue: "core.build")
 
+private func request(
+    _ spelling: String,
+    _ entrypoint: ComponentEntrypointID = .build
+) -> ComponentEntrypointRequest {
+    ComponentEntrypointRequest(spelling: spelling, entrypoint: entrypoint)
+}
+
 private func task(
     _ id: TaskID = buildID,
     component: ComponentID = coreID,
@@ -71,6 +78,10 @@ private func component(
                         component: coreID,
                         entrypoint: .build)
                 ])
+        ],
+        publicEntrypoints: [
+            request("all"), request("core"), request("render-core"),
+            request("everything"),
         ])
 
     #expect(try catalog.roots(named: .build, selection: nil) == [buildID])
@@ -87,7 +98,8 @@ private func component(
     #expect(throws: ComponentCatalogFailure.self) {
         _ = try ComponentCatalog(
             components: [core],
-            groups: [ComponentSelectionGroup(name: "runtime", components: [coreID])])
+            groups: [ComponentSelectionGroup(name: "runtime", components: [coreID])],
+            publicEntrypoints: [request("core")])
     }
     #expect(throws: ComponentCatalogFailure.self) {
         _ = try ComponentCatalog(
@@ -96,7 +108,8 @@ private func component(
                 ComponentSelectionGroup(
                     name: "all",
                     components: [ComponentID(rawValue: "missing")])
-            ])
+            ],
+            publicEntrypoints: [request("core")])
     }
 }
 
@@ -124,7 +137,8 @@ private func component(
         components: [core, other],
         groups: [
             ComponentSelectionGroup(name: "all", components: [coreID, otherID])
-        ])
+        ],
+        publicEntrypoints: [request("all")])
 
     let overlapping = try component(
         id: otherID,
@@ -140,6 +154,92 @@ private func component(
             ComponentEntrypoint(id: .build, roots: [otherBuildID])
         ])
     #expect(throws: ComponentCatalogFailure.self) {
-        _ = try ComponentCatalog(components: [core, overlapping])
+        _ = try ComponentCatalog(
+            components: [core, overlapping],
+            publicEntrypoints: [request("core"), request("overlapping")])
     }
+}
+
+private struct EmptyActionIdentity: ColliderActionIdentity {
+    func encode(into _: inout CanonicalDigestEncoder) {}
+}
+
+private struct FirstAction: ColliderAction {
+    static let kind = "core.colliding"
+    let identity = EmptyActionIdentity()
+
+    func execute(in _: ActionContext) async throws {}
+}
+
+private struct SecondAction: ColliderAction {
+    static let kind = "core.colliding"
+    let identity = EmptyActionIdentity()
+
+    func execute(in _: ActionContext) async throws {}
+}
+
+private struct ForeignAction: ColliderAction {
+    static let kind = "other.foreign"
+    let identity = EmptyActionIdentity()
+
+    func execute(in _: ActionContext) async throws {}
+}
+
+@Test func componentCatalogRejectsUnreachableEntrypointsAndRoutes() throws {
+    let core = try component()
+    #expect(throws: ComponentCatalogFailure.self) {
+        _ = try ComponentCatalog(
+            components: [core],
+            publicEntrypoints: [])
+    }
+    #expect(throws: ComponentCatalogFailure.self) {
+        _ = try ComponentCatalog(
+            components: [core],
+            routes: [
+                ComponentEntrypointRoute(
+                    spelling: "everything",
+                    requestedEntrypoint: .build,
+                    destinations: [
+                        ComponentEntrypointReference(
+                            component: coreID,
+                            entrypoint: .build)
+                    ])
+            ],
+            publicEntrypoints: [request("core")])
+    }
+}
+
+@Test func componentCatalogRejectsActionKindCollisionsAndForeignNamespaces() throws {
+    let first = taskWithAction(FirstAction())
+    let secondID = TaskID(rawValue: "core.second")
+    let second = taskWithAction(SecondAction(), id: secondID)
+    #expect(throws: ComponentCatalogFailure.self) {
+        _ = try ComponentCatalog(
+            components: [
+                try component(
+                    tasks: [first, second],
+                    entrypoints: [
+                        ComponentEntrypoint(id: .build, roots: [buildID, secondID])
+                    ])
+            ],
+            publicEntrypoints: [request("core")])
+    }
+
+    #expect(throws: ComponentCatalogFailure.self) {
+        _ = try ComponentCatalog(
+            components: [
+                try component(tasks: [taskWithAction(ForeignAction())])
+            ],
+            publicEntrypoints: [request("core")])
+    }
+}
+
+private func taskWithAction<Action: ColliderAction>(
+    _ action: Action,
+    id: TaskID = buildID
+) -> TaskDeclaration {
+    TaskDeclaration(
+        id: id,
+        component: coreID,
+        operation: .action(AnyColliderAction(action)))
 }

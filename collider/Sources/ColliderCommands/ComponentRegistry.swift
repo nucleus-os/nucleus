@@ -20,7 +20,9 @@ struct ComponentRegistry {
     let context: WorkspaceContext
 
     func componentCatalog(
-        environment environmentOverride: [String: String]? = nil
+        environment environmentOverride: [String: String]? = nil,
+        shellConfiguration: ShellRuntimeInstallConfiguration? = nil,
+        androidAddonConfiguration: AndroidAddonPackageConfiguration? = nil
     ) throws -> ComponentCatalog {
         let recipeEnvironment = environmentOverride ?? context.taskEnvironment
         var buildContexts: [RecipeBuildContextID: SwiftPMInvocation] = [
@@ -56,15 +58,30 @@ struct ComponentRegistry {
             environment: recipeEnvironment,
             android: androidToolchain,
             inputs: targetSDKInputs)
+        var configurations: [ComponentID: any RecipeConfiguration] = [
+            SwiftTargetSDKColliderRecipe.descriptor.id: swiftSDKConfiguration
+        ]
+        if let androidAddonConfiguration {
+            configurations[AndroidRuntimeColliderRecipe.descriptor.id] =
+                androidAddonConfiguration
+        }
+        #if os(Linux)
+        configurations[ShellColliderRecipe.descriptor.id] =
+            if let shellConfiguration {
+                shellConfiguration
+            } else {
+                try shellRuntimeInstallConfiguration(
+                    prefix: context.layout.installPrefix,
+                    options: RuntimeBuildOptions())
+            }
+        #endif
         let recipeContext = RecipeContext(
             repositoryRoot: context.root,
             cacheRoot: context.cacheRoot,
             nativeSDKRoot: context.nativeSDKRoot.removingLastComponent(),
             environment: recipeEnvironment,
             buildContexts: buildContexts,
-            configurations: [
-                SwiftTargetSDKColliderRecipe.descriptor.id: swiftSDKConfiguration
-            ])
+            configurations: configurations)
         let componentTypes: [any ColliderComponent.Type] = [
             NativeBuilderColliderRecipe.self,
             BenchmarkColliderRecipe.self,
@@ -74,6 +91,7 @@ struct ComponentRegistry {
             CoreColliderRecipe.self,
             ReactNativeColliderRecipe.self,
             ReleaseGateColliderRecipe.self,
+            ShellColliderRecipe.self,
             SwiftTargetSDKColliderRecipe.self,
             WaylandColliderRecipe.self,
             LinuxColliderRecipe.self,
@@ -87,6 +105,9 @@ struct ComponentRegistry {
         let wayland = WaylandColliderRecipe.descriptor.id
         let reactNative = ReactNativeColliderRecipe.descriptor.id
         let linux = LinuxColliderRecipe.descriptor.id
+        #if os(Linux)
+        let shell = ShellColliderRecipe.descriptor.id
+        #endif
         let runtime = Set([
             NativeBuilderColliderRecipe.descriptor.id,
             AndroidRuntimeColliderRecipe.descriptor.id,
@@ -95,6 +116,7 @@ struct ComponentRegistry {
             wayland,
             linux,
             CompositorColliderRecipe.descriptor.id,
+            ShellColliderRecipe.descriptor.id,
             VulkanColliderRecipe.descriptor.id,
         ])
         let runtimeSpellings = [
@@ -107,6 +129,23 @@ struct ComponentRegistry {
         let linuxTest = ComponentEntrypointReference(
             component: linux,
             entrypoint: .testDefault)
+        var shellBootstrapDestinations = [
+            ComponentEntrypointReference(
+                component: core,
+                entrypoint: .bootstrap),
+            ComponentEntrypointReference(
+                component: wayland,
+                entrypoint: .bootstrap),
+            ComponentEntrypointReference(
+                component: reactNative,
+                entrypoint: .bootstrap),
+        ]
+        #if os(Linux)
+        shellBootstrapDestinations.append(
+            ComponentEntrypointReference(
+                component: shell,
+                entrypoint: .bootstrap))
+        #endif
         var routes = runtimeSpellings.flatMap { spelling in
             [
                 ComponentEntrypointRoute(
@@ -159,17 +198,7 @@ struct ComponentRegistry {
             ComponentEntrypointRoute(
                 spelling: "shell",
                 requestedEntrypoint: .bootstrap,
-                destinations: [
-                    ComponentEntrypointReference(
-                        component: core,
-                        entrypoint: .bootstrap),
-                    ComponentEntrypointReference(
-                        component: wayland,
-                        entrypoint: .bootstrap),
-                    ComponentEntrypointReference(
-                        component: reactNative,
-                        entrypoint: .bootstrap),
-                ]),
+                destinations: shellBootstrapDestinations),
             ComponentEntrypointRoute(
                 spelling: "android",
                 requestedEntrypoint: .build,
@@ -211,13 +240,92 @@ struct ComponentRegistry {
                         entrypoint: ComponentEntrypointID(rawValue: "test.loader"))
                 ]),
         ]
+        #if os(Linux)
+        routes.append(
+            ComponentEntrypointRoute(
+                spelling: "tracy",
+                requestedEntrypoint: .bootstrap,
+                destinations: [
+                    ComponentEntrypointReference(
+                        component: shell,
+                        entrypoint: .bootstrap)
+                ]))
+        #endif
         return try ComponentCatalog(
             components: components,
             groups: [
                 ComponentSelectionGroup(name: "all", components: runtime),
                 ComponentSelectionGroup(name: "runtime", components: runtime),
             ],
-            routes: routes)
+            routes: routes,
+            publicEntrypoints: publicEntrypoints(
+                includeAndroidAddon: androidAddonConfiguration != nil))
+    }
+
+    private func publicEntrypoints(
+        includeAndroidAddon: Bool
+    ) -> [ComponentEntrypointRequest] {
+        var requests: [ComponentEntrypointRequest] = []
+        func expose(
+            _ entrypoint: ComponentEntrypointID,
+            to spellings: [String]
+        ) {
+            requests += spellings.map {
+                ComponentEntrypointRequest(
+                    spelling: $0,
+                    entrypoint: entrypoint)
+            }
+        }
+
+        let runtimeSpellings = [
+            "all", "runtime", "linux", "tracy", "vulkan", "wayland",
+            "core", "config", "ipc", "rn", "compositor", "shell",
+            "android-runtime",
+        ]
+        expose(.build, to: runtimeSpellings + ["android", "browser", "chromium"])
+        expose(
+            .testDefault,
+            to: runtimeSpellings
+                + [
+                    "android", "browser", "chromium", "gpu-headless",
+                    "gpu-drm", "loader",
+                ])
+        var bootstrapSpellings = [
+            "all", "runtime", "linux", "native-builder", "core",
+            "react-native", "rn", "wayland", "android-runtime",
+            "compositor", "shell", "browser", "chromium",
+        ]
+        #if os(Linux)
+        bootstrapSpellings.append("tracy")
+        #endif
+        expose(.bootstrap, to: bootstrapSpellings)
+        expose(.generate, to: ["react-native", "rn", "vulkan", "wayland"])
+        expose(.install, to: ["browser", "chromium"])
+        #if os(Linux)
+        expose(.install, to: ["shell"])
+        #endif
+        expose(.benchmark, to: ["benchmark"])
+        expose(.sanitizeAddress, to: ["sanitize"])
+        expose(.sanitizeUndefined, to: ["sanitize"])
+        expose(.sanitizeThread, to: ["sanitize"])
+        expose(.testReleaseGate, to: ["release-gate"])
+        expose(.androidBuild, to: ["core"])
+        expose(.androidNative, to: ["core"])
+        expose(.androidVerify, to: ["core"])
+        expose(
+            ComponentEntrypointID(rawValue: "aosp.source-lock"),
+            to: ["android-runtime"])
+        expose(
+            ComponentEntrypointID(rawValue: "aosp.source"),
+            to: ["android-runtime"])
+        expose(
+            ComponentEntrypointID(rawValue: "aosp.image"),
+            to: ["android-runtime"])
+        expose(.build, to: ["swift-sdk"])
+        if includeAndroidAddon {
+            expose(.packageAndroidAddon, to: ["android-runtime"])
+        }
+        return requests
     }
 
     func build(
@@ -337,6 +445,132 @@ struct ComponentRegistry {
             ],
             controls: TaskControls())
     }
+
+    #if os(Linux)
+    func buildTracyReceivers(
+        controls: TaskControls = TaskControls()
+    ) async throws {
+        let catalog = try componentCatalog()
+        try await context.execute(
+            tasks: catalog.tasks,
+            selected: try catalog.roots(
+                named: .bootstrap,
+                selection: "tracy"),
+            controls: controls)
+    }
+
+    func packageAndroidAddon(
+        runtimeRoot: FilePath?,
+        aospGeneration: FilePath,
+        usesManagedAOSPGeneration: Bool,
+        compatibility: FilePath,
+        aospSigningKey: FilePath,
+        addonSigningKey: FilePath,
+        output: FilePath,
+        controls: TaskControls = TaskControls()
+    ) async throws {
+        let configuration = AndroidAddonPackageConfiguration(
+            swiftPM: try context.swiftPMInvocation(configuration: .release),
+            runtimeRoot: runtimeRoot,
+            runtimeScratch: context.layout.work.appending(
+                "android-addon-runtime"),
+            aospGeneration: aospGeneration,
+            usesManagedAOSPGeneration: usesManagedAOSPGeneration,
+            compatibility: compatibility,
+            aospSigningKey: aospSigningKey,
+            addonSigningKey: addonSigningKey,
+            output: output,
+            appArmorPolicy: context.layout.androidRuntime.appending(
+                "container/lxc-nucleus-android.apparmor"),
+            seccompPolicy: context.layout.androidRuntime.appending(
+                "container/nucleus-android.seccomp"),
+            environment: context.taskEnvironment)
+        let catalog = try componentCatalog(
+            androidAddonConfiguration: configuration)
+        try await context.execute(
+            tasks: catalog.tasks,
+            selected: try catalog.roots(
+                named: .packageAndroidAddon,
+                selection: AndroidRuntimeColliderRecipe.descriptor.canonicalName),
+            controls: controls)
+    }
+
+    func installSession(
+        prefix: FilePath,
+        options: RuntimeBuildOptions,
+        controls: TaskControls = TaskControls()
+    ) async throws {
+        let configuration = try shellRuntimeInstallConfiguration(
+            prefix: prefix,
+            options: options)
+        let catalog = try componentCatalog(
+            shellConfiguration: configuration)
+        try await context.execute(
+            tasks: catalog.tasks,
+            selected: try catalog.roots(
+                named: .install,
+                selection: ShellColliderRecipe.descriptor.canonicalName),
+            controls: controls)
+    }
+
+    private func shellRuntimeInstallConfiguration(
+        prefix: FilePath,
+        options: RuntimeBuildOptions
+    ) throws -> ShellRuntimeInstallConfiguration {
+        let swiftPM = try context.swiftPMInvocation(
+            configuration: options.optimization == .debug ? .debug : .release,
+            sanitizer: options.sanitizer?.rawValue,
+            cFlags: options.tracy ? ["-DTRACY_ENABLE"] : [],
+            linkerFlags: options.sanitizer == .undefined ? ["-lubsan"] : [])
+        return ShellRuntimeInstallConfiguration(
+            swiftPM: swiftPM,
+            prefix: prefix,
+            generationsRoot: runtimeGenerationsRoot(for: prefix),
+            sessionPackage: context.layout.compositorSessionPackage,
+            kernelContract: context.layout.androidRuntime.appending(
+                "Sources/NucleusAndroidRuntimeCore/AndroidRuntimeKernelRequirements.swift"),
+            trustKey: context.environment["NUCLEUS_ANDROID_ADDON_TRUST_KEY"]
+                .flatMap { $0.isEmpty ? nil : FilePath($0) },
+            buildMetadata: options.metadata,
+            environment: context.taskEnvironment)
+    }
+
+    private func runtimeGenerationsRoot(for prefix: FilePath) -> FilePath {
+        context.layout.runtimeState
+            .appending(runtimeGenerationKey(for: prefix))
+            .appending("generations")
+    }
+
+    private func runtimeGenerationKey(for prefix: FilePath) -> String {
+        let standardized = URL(fileURLWithPath: prefix.string)
+            .standardizedFileURL.path
+        let root = URL(fileURLWithPath: context.root.string)
+            .standardizedFileURL.path
+        if standardized == root { return "root" }
+        if standardized.hasPrefix(root + "/") {
+            let relative = String(standardized.dropFirst(root.count + 1))
+            let sanitized = String(
+                relative.map { character in
+                    character.isLetter || character.isNumber ? character : "-"
+                }
+            )
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+            if !sanitized.isEmpty { return sanitized }
+        }
+        let digest = ArtifactHasher.digest(bytes: Array(standardized.utf8))
+        return "external-" + hex(digest.bytes.prefix(8))
+    }
+
+    private func hex(_ bytes: some Sequence<UInt8>) -> String {
+        let digits = Array("0123456789abcdef".utf8)
+        var result: [UInt8] = []
+        for byte in bytes {
+            result.append(digits[Int(byte >> 4)])
+            result.append(digits[Int(byte & 0x0f)])
+        }
+        return String(decoding: result, as: UTF8.self)
+    }
+    #endif
 
     func selectedBuildTasks(
         _ selection: String?

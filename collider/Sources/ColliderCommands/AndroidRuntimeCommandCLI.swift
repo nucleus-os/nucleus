@@ -74,21 +74,24 @@ struct AndroidRuntime: AsyncParsableCommand {
         mutating func run() async throws {
             let workspace = try context()
             let android = workspace.layout.androidRuntime
-            try await AndroidAddonPackageCommand(context: workspace).run(
+            let managedAOSPGeneration = android.appending(".aosp-build/current")
+            try await ComponentRegistry(context: workspace).packageAndroidAddon(
                 runtimeRoot: runtimeRoot.map {
-                    URL(resolveWorkspacePath($0, relativeTo: workspace.root))
+                    resolveWorkspacePath($0, relativeTo: workspace.root)
                 },
                 aospGeneration: aospGeneration.map {
-                    URL(resolveWorkspacePath($0, relativeTo: workspace.root))
-                } ?? URL(android.appending(".aosp-build/current")),
-                compatibilityURL: URL(
-                    resolveWorkspacePath(compatibility, relativeTo: workspace.root)),
-                aospSigningKey: URL(
-                    resolveWorkspacePath(aospSigningKey, relativeTo: workspace.root)),
-                addonSigningKey: URL(
-                    resolveWorkspacePath(addonSigningKey, relativeTo: workspace.root)),
-                output: URL(
-                    resolveWorkspacePath(output, relativeTo: workspace.root)))
+                    resolveWorkspacePath($0, relativeTo: workspace.root)
+                } ?? managedAOSPGeneration,
+                usesManagedAOSPGeneration: aospGeneration == nil,
+                compatibility: resolveWorkspacePath(
+                    compatibility,
+                    relativeTo: workspace.root),
+                aospSigningKey:
+                    resolveWorkspacePath(aospSigningKey, relativeTo: workspace.root),
+                addonSigningKey:
+                    resolveWorkspacePath(addonSigningKey, relativeTo: workspace.root),
+                output:
+                    resolveWorkspacePath(output, relativeTo: workspace.root))
         }
     }
     #endif

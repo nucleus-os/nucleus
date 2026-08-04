@@ -41,21 +41,37 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             tasks.append(task)
             gfxstreamRoots.insert(task.id)
         }
+        var entrypoints = [
+            ComponentEntrypoint(id: .bootstrap, roots: gfxstreamRoots),
+            ComponentEntrypoint(
+                id: ComponentEntrypointID(rawValue: "aosp.source-lock"),
+                roots: [AndroidRuntimeTaskIDs.aospSourceLock]),
+            ComponentEntrypoint(
+                id: ComponentEntrypointID(rawValue: "aosp.source"),
+                roots: [AndroidRuntimeTaskIDs.aospSource]),
+            ComponentEntrypoint(
+                id: ComponentEntrypointID(rawValue: "aosp.image"),
+                roots: [AndroidRuntimeTaskIDs.aospImage]),
+        ]
+        #if os(Linux)
+        if let configuration = try context.configurationIfPresent(
+            AndroidAddonPackageConfiguration.self,
+            for: descriptor.id)
+        {
+            let package = addonPackageTask(
+                configuration: configuration,
+                repositoryRoot: context.repositoryRoot)
+            tasks.append(package)
+            entrypoints.append(
+                ComponentEntrypoint(
+                    id: .packageAndroidAddon,
+                    roots: [package.id]))
+        }
+        #endif
         return try ComponentDefinition(
             descriptor: descriptor,
             tasks: tasks,
-            entrypoints: [
-                ComponentEntrypoint(id: .bootstrap, roots: gfxstreamRoots),
-                ComponentEntrypoint(
-                    id: ComponentEntrypointID(rawValue: "aosp.source-lock"),
-                    roots: [AndroidRuntimeTaskIDs.aospSourceLock]),
-                ComponentEntrypoint(
-                    id: ComponentEntrypointID(rawValue: "aosp.source"),
-                    roots: [AndroidRuntimeTaskIDs.aospSource]),
-                ComponentEntrypoint(
-                    id: ComponentEntrypointID(rawValue: "aosp.image"),
-                    roots: [AndroidRuntimeTaskIDs.aospImage]),
-            ])
+            entrypoints: entrypoints)
     }
 
     public static func aospProductSourceOverlays(
