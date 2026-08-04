@@ -163,20 +163,12 @@ private func scheduledResources(
                 memoryBytes: max(accumulated.memoryBytes, next.memoryBytes),
                 exclusive: accumulated.exclusive || next.exclusive)
         }
-    case .buildChromiumProduct:
-        return ScheduledTaskResources(
-            cpuCount: budget.cpuCount,
-            memoryBytes: budget.memoryBytes,
-            exclusive: true)
     case .action(let action):
         return ScheduledTaskResources(
             cpuCount: action.requirements.resources.cpuCount ?? budget.cpuCount,
             memoryBytes: action.requirements.resources.memoryBytes ?? budget.memoryBytes,
             exclusive: action.requirements.resources.exclusive)
-    case .command,
-        .prepareChromiumSource, .assembleBrowserArtifact,
-        .validateBrowserArtifact, .assembleCEFArtifact, .validateCEFArtifact,
-        .installBrowser:
+    case .command:
         return .lightweight
     }
 }
@@ -202,10 +194,7 @@ private func containsOCIExecution(_ operation: TaskOperation) -> Bool {
         operations.contains(where: containsOCIExecution)
     case .action(let action):
         action.requirements.executionPlatform?.environment == .oci
-    case .command,
-        .prepareChromiumSource, .buildChromiumProduct, .assembleBrowserArtifact,
-        .validateBrowserArtifact, .assembleCEFArtifact, .validateCEFArtifact,
-        .installBrowser:
+    case .command:
         false
     }
 }
@@ -1337,116 +1326,6 @@ extension ColliderRuntime {
                 environment: execution.environment)
             encoder.append(tag: 253, string: tool.path.string)
             encoder.append(tag: 254, bytes: tool.digest.bytes)
-        case .prepareChromiumSource(let preparation):
-            for path in [
-                preparation.sourceRoot,
-                preparation.sourceGenerations,
-                preparation.current,
-                preparation.depotTools,
-                preparation.sourceLockFile,
-            ] {
-                encoder.append(tag: 151, string: path.string)
-            }
-            encoder.append(tag: 152, string: preparation.sourceID)
-            encoder.append(
-                tag: 153,
-                bytes: Array(
-                    try JSONEncoder().encode(
-                        preparation.sourceLock)))
-            for repository in preparation.sourceLock.repositories {
-                encoder.append(tag: 154, string: repository.name)
-                encoder.append(tag: 154, string: repository.commit)
-                encoder.append(tag: 154, string: repository.tree)
-            }
-            for (name, value) in artifactEnvironment(
-                preparation.environment)
-            {
-                encoder.append(tag: 155, string: name)
-                encoder.append(tag: 156, string: value)
-            }
-        case .buildChromiumProduct(let build):
-            encoder.append(tag: 157, string: build.product.rawValue)
-            for path in [
-                build.sourceRoot, build.output, build.depotTools,
-                build.containerImageID,
-            ] {
-                encoder.append(tag: 158, string: path.string)
-            }
-            encoder.append(tag: 159, string: build.gnArguments ?? "")
-            for target in build.targets {
-                encoder.append(tag: 160, string: target)
-            }
-            encoder.append(tag: 161, integer: UInt64(build.jobs))
-            for (name, value) in artifactEnvironment(build.environment) {
-                encoder.append(tag: 162, string: name)
-                encoder.append(tag: 163, string: value)
-            }
-        case .assembleBrowserArtifact(let assembly),
-            .validateBrowserArtifact(let assembly):
-            for path in [
-                assembly.chromiumSource,
-                assembly.buildOutput,
-                assembly.distributionRoot,
-                assembly.launcher,
-                assembly.desktopTemplate,
-            ] {
-                encoder.append(tag: 164, string: path.string)
-            }
-            for (name, value) in artifactEnvironment(
-                assembly.environment)
-            {
-                encoder.append(tag: 165, string: name)
-                encoder.append(tag: 166, string: value)
-            }
-            if case .assembleBrowserArtifact = operation {
-                encoder.append(tag: 167, string: "assemble")
-            } else {
-                encoder.append(tag: 167, string: "validate")
-            }
-        case .assembleCEFArtifact(let assembly),
-            .validateCEFArtifact(let assembly):
-            for path in [
-                assembly.chromiumSource,
-                assembly.buildOutput,
-                assembly.depotTools,
-                assembly.distributionRoot,
-            ] {
-                encoder.append(tag: 168, string: path.string)
-            }
-            for value in [
-                assembly.cefCheckout,
-                assembly.chromiumVersion,
-            ] {
-                encoder.append(tag: 169, string: value)
-            }
-            for (name, value) in artifactEnvironment(
-                assembly.environment)
-            {
-                encoder.append(tag: 170, string: name)
-                encoder.append(tag: 171, string: value)
-            }
-            if case .assembleCEFArtifact = operation {
-                encoder.append(tag: 172, string: "assemble")
-            } else {
-                encoder.append(tag: 172, string: "validate")
-            }
-        case .installBrowser(let installation):
-            encoder.append(
-                tag: 173,
-                string: installation.distributionRoot.string)
-            encoder.append(tag: 174, string: installation.prefix.string)
-            encoder.append(
-                tag: 175,
-                string: installation.systemSandboxDirectory.string)
-            for path in installation.widevineCandidates {
-                encoder.append(tag: 176, string: path.string)
-            }
-            for (name, value) in artifactEnvironment(
-                installation.environment)
-            {
-                encoder.append(tag: 177, string: name)
-                encoder.append(tag: 178, string: value)
-            }
         case .sequence(let operations):
             encoder.append(tag: 46, integer: UInt64(operations.count))
             for operation in operations {
@@ -1566,20 +1445,6 @@ extension ColliderRuntime {
             }
         case .runOCI(let execution):
             try await runOCI(execution, stage: stage)
-        case .prepareChromiumSource(let preparation):
-            try await prepareChromiumSource(preparation, stage: stage)
-        case .buildChromiumProduct(let build):
-            try await buildChromiumProduct(build, stage: stage)
-        case .assembleBrowserArtifact(let assembly):
-            try await assembleBrowserArtifact(assembly, stage: stage)
-        case .validateBrowserArtifact(let assembly):
-            try await validateBrowserArtifact(assembly, stage: stage)
-        case .assembleCEFArtifact(let assembly):
-            try await assembleCEFArtifact(assembly, stage: stage)
-        case .validateCEFArtifact(let assembly):
-            try await validateCEFArtifact(assembly, stage: stage)
-        case .installBrowser(let installation):
-            try await installBrowser(installation, stage: stage)
         case .sequence(let operations):
             for operation in operations {
                 try await perform(
@@ -1652,11 +1517,7 @@ extension ColliderRuntime {
             for operation in operations {
                 try validateActionOutputs(operation)
             }
-        case .command, .runOCI,
-            .prepareChromiumSource,
-            .buildChromiumProduct, .assembleBrowserArtifact,
-            .validateBrowserArtifact, .assembleCEFArtifact, .validateCEFArtifact,
-            .installBrowser:
+        case .command, .runOCI:
             break
         }
     }
@@ -1895,18 +1756,6 @@ private func operationEnvironment(_ operation: TaskOperation) -> [String: String
         command.environment
     case .runOCI(let execution):
         execution.environment
-    case .prepareChromiumSource(let preparation):
-        preparation.environment
-    case .buildChromiumProduct(let build):
-        build.environment
-    case .assembleBrowserArtifact(let assembly),
-        .validateBrowserArtifact(let assembly):
-        assembly.environment
-    case .assembleCEFArtifact(let assembly),
-        .validateCEFArtifact(let assembly):
-        assembly.environment
-    case .installBrowser(let installation):
-        installation.environment
     case .sequence(let operations):
         operations.lazy.map(operationEnvironment).first(where: { !$0.isEmpty }) ?? [:]
     }
@@ -1948,10 +1797,7 @@ private func executionCoordinates(
                 "one task sequence cannot cross execution coordinates")
         }
         return first
-    case .command,
-        .prepareChromiumSource, .buildChromiumProduct,
-        .assembleBrowserArtifact, .validateBrowserArtifact,
-        .assembleCEFArtifact, .validateCEFArtifact, .installBrowser:
+    case .command:
         return nil
     }
 }

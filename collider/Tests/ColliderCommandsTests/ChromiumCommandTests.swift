@@ -76,31 +76,17 @@ func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() async throws {
             ActionKind(rawValue: "browser.test-ozone"),
         ]))
 
-    func builds(_ operation: TaskOperation) -> [ChromiumProductBuild] {
-        switch operation {
-        case .buildChromiumProduct(let build): [build]
-        case .sequence(let operations):
-            operations.flatMap(builds)
-        default: []
-        }
-    }
-    let products = tasks.flatMap { builds($0.operation) }
-    #expect(products.count == 2)
+    let productActions = tasks.flatMap {
+        actions($0.operation)
+    }.filter { $0.kind == ActionKind(rawValue: "browser.build-product") }
+    #expect(productActions.count == 2)
+    #expect(Set(productActions.map(\.identity)).count == 2)
     #expect(
-        products.allSatisfy {
-            $0.gnArguments?.contains(#"ffmpeg_branding="Chrome""#) == true
-                && $0.gnArguments?.contains(#"ozone_platform="wayland""#) == true
+        productActions.allSatisfy {
+            $0.requirements.executionPlatform == .linuxAMD64OCI
+                && $0.requirements.artifactTarget == .linuxX86_64
+                && $0.requirements.resources.exclusive
         })
-    let cef = try #require(products.first { $0.product == .cef })
-    #expect(cef.output == FilePath("/cache/cef/build/source-identity/cef"))
-    #expect(
-        cef.containerImageID
-            == FilePath("/cache/cef/build-container/image-id"))
-    #expect(cef.gnArguments?.contains("enable_widevine=true") == true)
-    #expect(cef.gnArguments?.contains("use_allocator_shim=false") == true)
-    #expect(
-        cef.gnArguments?.contains("use_partition_alloc_as_malloc=false")
-            == true)
 
     let test = try #require(
         tasks.first { $0.id == ChromiumTaskIDs.test })

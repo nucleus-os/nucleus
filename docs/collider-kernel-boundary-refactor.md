@@ -1503,6 +1503,29 @@ provenance checks. The AOSP build model and all behavioral fixtures moved into
 the Android-runtime recipe; `TaskOperation.aospProduct`, its global identity and
 coordinate branches, every runtime dispatch branch, and the complete engine
 `AOSPProductWorkflow.swift` are deleted.
+Chromium source preparation is now a recipe-owned action. It declares exact
+Git, Python, and depot-tools requirements; scopes immutable source generations
+and the shared repository object cache separately; uses one recoverable
+content-addressed candidate; validates every locked commit, tree, clean
+worktree, PGO profile, V8 profile, depot-tools revision, and provenance digest;
+and durably publishes the generation before activation. Its behavioral fixture
+moved beside the Chromium recipe. The global source-preparation case, digest,
+resource, environment, coordinate, validation, and dispatch branches and the
+engine `ChromiumSourceWorkflow.swift` implementation are deleted.
+The rest of the Chromium family is recipe-owned too. Product compilation
+declares its Linux/amd64 container coordinate, exclusive build resources,
+source/image/depot-tools inputs, staged PGO data, and scratch roots; records the
+normalized GN, Clang, source, PGO, and V8 identity before and after the build;
+and fails if they drift. Browser and CEF assembly use fixed recoverable
+candidates, validate dynamic linkage and launch/consumer contracts, create
+deterministic archives and checksums, and publish immutable generations through
+scoped capabilities. Browser installation declares its Widevine inputs,
+versioned prefix publication, privileged system-sandbox root, validation tools,
+desktop integration, and retention policy. The source/build/artifact/install
+payload models and behavioral fixtures live with the Chromium recipe. Every
+Chromium operation case, global digest/resource/environment/coordinate branch,
+runtime dispatch branch, and the product, browser, CEF, and installation engine
+workflow files are deleted.
 
 Complete the existing action seam with:
 
