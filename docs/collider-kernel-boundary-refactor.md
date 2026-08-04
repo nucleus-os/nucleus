@@ -1526,6 +1526,30 @@ payload models and behavioral fixtures live with the Chromium recipe. Every
 Chromium operation case, global digest/resource/environment/coordinate branch,
 runtime dispatch branch, and the product, browser, CEF, and installation engine
 workflow files are deleted.
+Every executable recipe task now has one recipe-owned action. The former
+nonempty `TaskOperation.sequence` sites in the native builder, Swift runtime,
+Skia, React Native, Wayland, gfxstream, Linux architecture probes,
+qualification workloads, and Chromium are gone. Atomic configure/build/install
+workflows own ordered OCI process pipelines as action data and execute those
+processes directly through the container capability; they never contain or
+dispatch child actions. Pipeline construction validates one execution platform,
+artifact target, and host environment, combines effect scopes and resource
+demand, and contributes every ordered execution to action-local identity.
+Preparation that belongs to the same transaction now happens inside that
+action. Skia dependency materialization and GN installation instead became two
+tasks because they publish independent typed outputs.
+
+Chromium build and publication ownership is now explicit. CEF compilation and
+browser compilation publish distinct typed build-directory artifacts and may
+run concurrently. Their publication actions consume those exact directories,
+and retention consumes both publications. Assembly actions perform their own
+dynamic-link, launch, consumer, version-manager, archive, and output validation;
+the redundant standalone validation actions are deleted. Chromium test
+compilation and execution form one test action, and browser installation owns
+validation of its consumed active publication. The only remaining sequence
+values are empty placeholders on logical SwiftPM requirements plus synthesized
+SwiftPM operations in the runtime; phase 6 removes both while extracting the
+lowering.
 
 Complete the existing action seam with:
 

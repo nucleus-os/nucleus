@@ -109,6 +109,12 @@ package struct AssembleCEFArtifactAction: ColliderAction {
             environment: commandEnvironment,
             smoke: candidate.appending(".consumer-smoke"),
             context: context)
+        try await requireCEFSuccess(
+            .named("python3"),
+            ["tools/version_manager.py", "-c"],
+            directory: assembly.chromiumSource.appending("cef"),
+            environment: commandEnvironment,
+            context: context)
 
         let producedName = produced.relativePath
         let version = String(
@@ -154,51 +160,6 @@ package struct AssembleCEFArtifactAction: ColliderAction {
             at: assembly.distributionRoot.appending("artifacts-current"),
             target: "current-release/artifacts")
         succeeded = true
-    }
-
-    package func validateOutputs(using files: ActionFileSystem) throws {
-        try validateCEFPublicationStructure(assembly, files: files)
-    }
-}
-
-package struct ValidateCEFArtifactAction: ColliderAction {
-    package struct Identity: ColliderActionIdentity {
-        let assembly: CEFArtifactAssembly
-
-        package func encode(into encoder: inout ActionIdentityEncoder) {
-            encodeCEFArtifactIdentity(assembly, into: &encoder)
-        }
-    }
-
-    package static let kind: ActionKind = "browser.validate-cef"
-
-    let assembly: CEFArtifactAssembly
-
-    package init(assembly: CEFArtifactAssembly) {
-        self.assembly = assembly
-    }
-
-    package var identity: Identity { Identity(assembly: assembly) }
-    package var environment: [String: String] { assembly.environment }
-    package var requirements: ActionRequirements {
-        cefArtifactRequirements(assembly, publicationAccess: .read)
-    }
-
-    package func execute(in context: ActionContext) async throws {
-        let sdk = try validateCEFPublicationStructure(
-            assembly,
-            files: context.files)
-        try await validateCEFSDK(
-            sdk,
-            environment: cefEnvironment(assembly),
-            smoke: assembly.distributionRoot.appending(".consumer-smoke"),
-            context: context)
-        try await requireCEFSuccess(
-            .named("python3"),
-            ["tools/version_manager.py", "-c"],
-            directory: assembly.chromiumSource.appending("cef"),
-            environment: cefEnvironment(assembly),
-            context: context)
     }
 
     package func validateOutputs(using files: ActionFileSystem) throws {

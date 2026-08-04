@@ -161,43 +161,43 @@ public enum WaylandColliderRecipe: ColliderComponent {
             inputs: inputs,
             locks: [.checkout("wayland-native-\(target.identifier)")],
             assessmentPolicy: .incremental,
-            operation: .sequence([
-                .action(
-                    try AnyColliderAction(
-                        PrepareWaylandNativeBuildAction(
-                            build: build,
-                            sdk: sdk))),
-                try nativeOperation(
-                    root: root,
-                    source: source,
-                    build: build,
-                    sdk: sdk,
-                    nativeScannerSDK: nativeScannerSDK,
-                    builder: builder,
-                    target: target,
-                    environment: environment,
-                    command: configureArguments),
-                try nativeOperation(
-                    root: root,
-                    source: source,
-                    build: build,
-                    sdk: sdk,
-                    nativeScannerSDK: nativeScannerSDK,
-                    builder: builder,
-                    target: target,
-                    environment: environment,
-                    command: ["meson", "compile", "-C", "/build"]),
-                try nativeOperation(
-                    root: root,
-                    source: source,
-                    build: build,
-                    sdk: sdk,
-                    nativeScannerSDK: nativeScannerSDK,
-                    builder: builder,
-                    target: target,
-                    environment: environment,
-                    command: ["meson", "install", "-C", "/build", "--no-rebuild"]),
-            ])
+            operation: .action(
+                try AnyColliderAction(
+                    RunWaylandNativeBuildAction(
+                        build: build,
+                        sdk: sdk,
+                        executions: [
+                            try nativeExecution(
+                                root: root,
+                                source: source,
+                                build: build,
+                                sdk: sdk,
+                                nativeScannerSDK: nativeScannerSDK,
+                                builder: builder,
+                                target: target,
+                                environment: environment,
+                                command: configureArguments),
+                            try nativeExecution(
+                                root: root,
+                                source: source,
+                                build: build,
+                                sdk: sdk,
+                                nativeScannerSDK: nativeScannerSDK,
+                                builder: builder,
+                                target: target,
+                                environment: environment,
+                                command: ["meson", "compile", "-C", "/build"]),
+                            try nativeExecution(
+                                root: root,
+                                source: source,
+                                build: build,
+                                sdk: sdk,
+                                nativeScannerSDK: nativeScannerSDK,
+                                builder: builder,
+                                target: target,
+                                environment: environment,
+                                command: ["meson", "install", "-C", "/build", "--no-rebuild"]),
+                        ])))
         )
         return NativeSDKArtifacts(
             task: declaration,
@@ -233,24 +233,6 @@ public enum WaylandColliderRecipe: ColliderComponent {
         let waylandXML = root.appending("third-party/wayland/protocol/wayland.xml")
         let generator = swiftPM.executable("SwiftWaylandGen")
         var scannerArguments: [String] = []
-        var operations: [TaskOperation] = [
-            .action(
-                try AnyColliderAction(
-                    GenerateWaylandSwiftSourcesAction(
-                        generator: generator,
-                        root: root,
-                        protocolsRoot: protocolsRoot,
-                        waylandXML: waylandXML,
-                        xmlPaths: records.map(\.path),
-                        generatedDirectories: generatedDirectories,
-                        server: server,
-                        client: client,
-                        protocols: protocols,
-                        protocolTypes: protocolTypes,
-                        serverDispatch: serverDispatch,
-                        clientDispatch: clientDispatch,
-                        environment: environment)))
-        ]
         for record in records {
             scannerArguments += [
                 "server-header", record.path.string,
@@ -261,21 +243,10 @@ public enum WaylandColliderRecipe: ColliderComponent {
                 protocols.appending("\(record.name)-protocol.c").string,
             ]
         }
-        operations.append(
-            try scannerOperation(
-                root: root,
-                scannerSDK: scanner.path.removingLastComponent().removingLastComponent(),
-                builder: builder,
-                arguments: scannerArguments,
-                environment: environment))
-        operations.append(
-            .action(
-                try AnyColliderAction(
-                    FinalizeWaylandGenerationAction(
-                        manifests: [
-                            server.appending("generated-protocols.tsv"),
-                            client.appending("generated-protocols.tsv"),
-                        ]))))
+        let manifests = [
+            server.appending("generated-protocols.tsv"),
+            client.appending("generated-protocols.tsv"),
+        ]
         var task = TaskBuilder(
             id: TaskID(rawValue: "wayland.generate"),
             component: ComponentID(rawValue: "wayland"))
@@ -309,72 +280,31 @@ public enum WaylandColliderRecipe: ColliderComponent {
                 swiftPM.identityInput,
             ],
             locks: [.checkout("wayland")],
-            operation: .sequence(operations)
+            operation: .action(
+                try AnyColliderAction(
+                    GenerateWaylandSwiftSourcesAction(
+                        generator: generator,
+                        root: root,
+                        protocolsRoot: protocolsRoot,
+                        waylandXML: waylandXML,
+                        xmlPaths: records.map(\.path),
+                        generatedDirectories: generatedDirectories,
+                        server: server,
+                        client: client,
+                        protocols: protocols,
+                        protocolTypes: protocolTypes,
+                        serverDispatch: serverDispatch,
+                        clientDispatch: clientDispatch,
+                        scannerExecution: scannerExecution(
+                            root: root,
+                            scannerSDK: scanner.path.removingLastComponent()
+                                .removingLastComponent(),
+                            builder: builder,
+                            arguments: scannerArguments,
+                            environment: environment),
+                        manifests: manifests,
+                        environment: environment)))
         )
-    }
-}
-
-private struct PrepareWaylandNativeBuildAction: ColliderAction {
-    struct Identity: ColliderActionIdentity {
-        let build: FilePath
-        let sdk: FilePath
-
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: build.string)
-            encoder.append(tag: 2, string: sdk.string)
-        }
-    }
-
-    static let kind: ActionKind = "wayland.prepare-native-build"
-
-    let build: FilePath
-    let sdk: FilePath
-
-    var identity: Identity { Identity(build: build, sdk: sdk) }
-
-    var requirements: ActionRequirements {
-        ActionRequirements(effects: [
-            ActionEffect(.readWrite, scope: .scratch(build)),
-            ActionEffect(.readWrite, scope: .output(sdk)),
-        ])
-    }
-
-    func execute(in context: ActionContext) async throws {
-        try context.files.remove(build)
-        try context.files.remove(sdk)
-        try context.files.createDirectory(build)
-        try context.files.createDirectory(sdk)
-    }
-}
-
-private struct FinalizeWaylandGenerationAction: ColliderAction {
-    struct Identity: ColliderActionIdentity {
-        let manifests: [FilePath]
-
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(
-                tag: 1,
-                string: manifests.map(\.string).joined(separator: "\u{0}"))
-        }
-    }
-
-    static let kind: ActionKind = "wayland.finalize-generation"
-
-    let manifests: [FilePath]
-
-    var identity: Identity { Identity(manifests: manifests) }
-
-    var requirements: ActionRequirements {
-        ActionRequirements(
-            effects: manifests.map {
-                ActionEffect(.write, scope: .output($0))
-            })
-    }
-
-    func execute(in context: ActionContext) async throws {
-        for manifest in manifests {
-            try context.files.remove(manifest)
-        }
     }
 }
 
@@ -386,6 +316,8 @@ private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
         let waylandXML: FilePath
         let xmlPaths: [FilePath]
         let generatedDirectories: [FilePath]
+        let scannerExecution: OCIExecution
+        let manifests: [FilePath]
 
         func encode(into encoder: inout ActionIdentityEncoder) {
             encoder.append(tag: 1, string: generator.string)
@@ -398,6 +330,12 @@ private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
             encoder.append(
                 tag: 6,
                 string: generatedDirectories.map(\.string).joined(separator: "\0"))
+            encoder.append(
+                tag: 7,
+                nested: OCIExecutionActionIdentity(scannerExecution))
+            encoder.append(
+                tag: 8,
+                string: manifests.map(\.string).joined(separator: "\0"))
         }
     }
 
@@ -415,6 +353,8 @@ private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
     let protocolTypes: FilePath
     let serverDispatch: FilePath
     let clientDispatch: FilePath
+    let scannerExecution: OCIExecution
+    let manifests: [FilePath]
     let environment: [String: String]
 
     var identity: Identity {
@@ -424,24 +364,39 @@ private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
             protocolsRoot: protocolsRoot,
             waylandXML: waylandXML,
             xmlPaths: xmlPaths,
-            generatedDirectories: generatedDirectories)
+            generatedDirectories: generatedDirectories,
+            scannerExecution: scannerExecution,
+            manifests: manifests)
     }
 
     var requirements: ActionRequirements {
-        ActionRequirements(
+        let scannerRequirements = ociActionRequirements(
+            execution: scannerExecution)
+        var effects =
+            [
+                ActionEffect(.read, scope: .checkout(protocolsRoot)),
+                ActionEffect(.read, scope: .input(waylandXML)),
+            ]
+            + generatedDirectories.map {
+                ActionEffect(.readWrite, scope: .output($0))
+            }
+            + manifests.map {
+                ActionEffect(.write, scope: .output($0))
+            }
+        for effect in scannerRequirements.effects where !effects.contains(effect) {
+            effects.append(effect)
+        }
+        return ActionRequirements(
             tools: [
                 ActionToolRequirement(
                     "swift-wayland-generator",
                     executable: .taskOutput(generator),
                     role: .operational)
             ],
-            effects: [
-                ActionEffect(.read, scope: .checkout(protocolsRoot)),
-                ActionEffect(.read, scope: .input(waylandXML)),
-            ]
-                + generatedDirectories.map {
-                    ActionEffect(.readWrite, scope: .output($0))
-                })
+            effects: effects,
+            resources: scannerRequirements.resources,
+            executionPlatform: scannerRequirements.executionPlatform,
+            artifactTarget: scannerRequirements.artifactTarget)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -467,6 +422,10 @@ private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
                 waylandXML.string,
             ] + xmlPaths.map(\.string),
             context: context)
+        try await context.containers.run(scannerExecution)
+        for manifest in manifests {
+            try context.files.remove(manifest)
+        }
         try await run(
             [
                 "--mode", "client",
@@ -499,14 +458,14 @@ private enum WaylandSourceGenerationFailure: Error {
     case commandFailed(Int32)
 }
 
-private func scannerOperation(
+private func scannerExecution(
     root: FilePath,
     scannerSDK: FilePath,
     builder: NativeOCIConfiguration,
     arguments: [String],
     environment: [String: String]
-) throws -> TaskOperation {
-    let execution = OCIExecution(
+) -> OCIExecution {
+    OCIExecution(
         executionPlatform: .linuxARM64OCI,
         artifactTarget: .linuxARM64,
         imageID: builder.imageID,
@@ -537,12 +496,9 @@ private func scannerOperation(
         ] + arguments,
         environment: environment,
         output: .logged)
-    return .action(
-        try AnyColliderAction(
-            RunWaylandSourceGenerationAction(execution: execution)))
 }
 
-private func nativeOperation(
+private func nativeExecution(
     root: FilePath,
     source: FilePath,
     build: FilePath,
@@ -552,7 +508,7 @@ private func nativeOperation(
     target: NativeLinuxTarget,
     environment: [String: String],
     command: [String]
-) throws -> TaskOperation {
+) throws -> OCIExecution {
     var mounts = [
         OCIMount(source: source, target: "/src", access: .readOnly),
         OCIMount(source: build, target: "/build", access: .readWrite),
@@ -591,7 +547,7 @@ private func nativeOperation(
         containerEnvironment["PKG_CONFIG_LIBDIR_FOR_BUILD"] =
             "/native-wayland/lib/pkgconfig"
     }
-    let execution = OCIExecution(
+    return OCIExecution(
         executionPlatform: .linuxARM64OCI,
         artifactTarget: target.artifactTarget,
         imageID: builder.imageID,
@@ -610,48 +566,60 @@ private func nativeOperation(
         command: ["wayland"] + command,
         environment: environment,
         output: .logged)
-    return .action(
-        try AnyColliderAction(
-            RunWaylandNativeBuildAction(execution: execution)))
-}
-
-private struct RunWaylandSourceGenerationAction: ColliderAction {
-    static let kind: ActionKind = "wayland.generate-sources"
-
-    let execution: OCIExecution
-
-    var identity: OCIExecutionActionIdentity {
-        OCIExecutionActionIdentity(execution)
-    }
-
-    var requirements: ActionRequirements {
-        ociActionRequirements(execution: execution)
-    }
-
-    var environment: [String: String] { execution.environment }
-
-    func execute(in context: ActionContext) async throws {
-        try await context.containers.run(execution)
-    }
 }
 
 private struct RunWaylandNativeBuildAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let build: FilePath
+        let sdk: FilePath
+        let pipeline: OCIExecutionPipelineIdentity
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: build.string)
+            encoder.append(tag: 2, string: sdk.string)
+            encoder.append(tag: 3, nested: pipeline)
+        }
+    }
+
     static let kind: ActionKind = "wayland.build-native-sdk"
 
-    let execution: OCIExecution
+    let build: FilePath
+    let sdk: FilePath
+    let pipeline: OCIExecutionPipeline
 
-    var identity: OCIExecutionActionIdentity {
-        OCIExecutionActionIdentity(execution)
+    init(build: FilePath, sdk: FilePath, executions: [OCIExecution]) throws {
+        self.build = build
+        self.sdk = sdk
+        pipeline = try OCIExecutionPipeline(executions)
+    }
+
+    var identity: Identity {
+        Identity(build: build, sdk: sdk, pipeline: pipeline.identity)
     }
 
     var requirements: ActionRequirements {
-        ociActionRequirements(execution: execution)
+        var effects = pipeline.requirements.effects
+        for effect in [
+            ActionEffect(.readWrite, scope: .scratch(build)),
+            ActionEffect(.readWrite, scope: .output(sdk)),
+        ] where !effects.contains(effect) {
+            effects.append(effect)
+        }
+        return ActionRequirements(
+            effects: effects,
+            resources: pipeline.requirements.resources,
+            executionPlatform: pipeline.requirements.executionPlatform,
+            artifactTarget: pipeline.requirements.artifactTarget)
     }
 
-    var environment: [String: String] { execution.environment }
+    var environment: [String: String] { pipeline.environment }
 
     func execute(in context: ActionContext) async throws {
-        try await context.containers.run(execution)
+        try context.files.remove(build)
+        try context.files.remove(sdk)
+        try context.files.createDirectory(build)
+        try context.files.createDirectory(sdk)
+        try await pipeline.execute(in: context)
     }
 }
 

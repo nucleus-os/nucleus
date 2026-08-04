@@ -18,6 +18,17 @@ public enum SwiftPMExecution: Hashable, Sendable {
     case oci(SwiftPMOCIExecution)
 }
 
+public enum SwiftPMInvocationExecutionFailure: Error, CustomStringConvertible, Sendable {
+    case requiresOCIContext
+
+    public var description: String {
+        switch self {
+        case .requiresOCIContext:
+            "the requested SwiftPM executable action requires an OCI build context"
+        }
+    }
+}
+
 public struct SwiftPMOCIExecution: Hashable, Sendable {
     public let executionPlatform: ExecutionPlatform
     public let artifactTarget: ArtifactTarget
@@ -369,37 +380,69 @@ public struct SwiftPMInvocation: Hashable, Sendable {
                     workingDirectory: workingDirectory,
                     environment: commandEnvironment(environment)))
         case .oci(let configuration):
-            var containerEnvironment: [String: String] = [:]
-            for (name, value) in commandEnvironment(environment)
-            where containerEnvironmentVariable(name) {
-                containerEnvironment[name] = value
-            }
-            containerEnvironment.merge(
-                configuration.containerEnvironment,
-                uniquingKeysWith: { _, configured in configured })
             return .runOCI(
-                OCIExecution(
-                    executionPlatform: configuration.executionPlatform,
-                    artifactTarget: configuration.artifactTarget,
-                    imageID: configuration.imageID,
-                    hostname: configuration.hostname,
-                    workingDirectory: workingDirectory.string,
-                    hostWorkingDirectory: configuration.hostWorkingDirectory,
-                    mounts: configuration.mounts,
-                    temporaryDirectory: configuration.temporaryDirectory,
-                    networkPolicy: .externalDisabled,
-                    userPolicy: .builder,
-                    capabilityPolicy: .dropAll,
-                    privilegePolicy: .prohibitAcquisition,
-                    processFilesystemPolicy: configuration.processFilesystemPolicy,
-                    intelBinaryTranslationPolicy: configuration.intelBinaryTranslationPolicy,
-                    resourceLimits: configuration.resourceLimits,
-                    containerEnvironment: containerEnvironment,
-                    command: configuration.commandPrefix + processorAffinityArguments
-                        + [executable.string] + arguments,
+                ociExecutableExecution(
+                    executable: executable,
+                    arguments: arguments,
+                    workingDirectory: workingDirectory,
                     environment: environment,
-                    output: .logged))
+                    configuration: configuration))
         }
+    }
+
+    public func ociExecutableExecution(
+        executable: FilePath,
+        arguments: [String],
+        workingDirectory: FilePath,
+        environment: [String: String]
+    ) throws -> OCIExecution {
+        guard case .oci(let configuration) = context.execution else {
+            throw SwiftPMInvocationExecutionFailure.requiresOCIContext
+        }
+        return ociExecutableExecution(
+            executable: executable,
+            arguments: arguments,
+            workingDirectory: workingDirectory,
+            environment: environment,
+            configuration: configuration)
+    }
+
+    private func ociExecutableExecution(
+        executable: FilePath,
+        arguments: [String],
+        workingDirectory: FilePath,
+        environment: [String: String],
+        configuration: SwiftPMOCIExecution
+    ) -> OCIExecution {
+        var containerEnvironment: [String: String] = [:]
+        for (name, value) in commandEnvironment(environment)
+        where containerEnvironmentVariable(name) {
+            containerEnvironment[name] = value
+        }
+        containerEnvironment.merge(
+            configuration.containerEnvironment,
+            uniquingKeysWith: { _, configured in configured })
+        return OCIExecution(
+            executionPlatform: configuration.executionPlatform,
+            artifactTarget: configuration.artifactTarget,
+            imageID: configuration.imageID,
+            hostname: configuration.hostname,
+            workingDirectory: workingDirectory.string,
+            hostWorkingDirectory: configuration.hostWorkingDirectory,
+            mounts: configuration.mounts,
+            temporaryDirectory: configuration.temporaryDirectory,
+            networkPolicy: .externalDisabled,
+            userPolicy: .builder,
+            capabilityPolicy: .dropAll,
+            privilegePolicy: .prohibitAcquisition,
+            processFilesystemPolicy: configuration.processFilesystemPolicy,
+            intelBinaryTranslationPolicy: configuration.intelBinaryTranslationPolicy,
+            resourceLimits: configuration.resourceLimits,
+            containerEnvironment: containerEnvironment,
+            command: configuration.commandPrefix + processorAffinityArguments
+                + [executable.string] + arguments,
+            environment: environment,
+            output: .logged)
     }
 
     private var processorAffinityArguments: [String] {

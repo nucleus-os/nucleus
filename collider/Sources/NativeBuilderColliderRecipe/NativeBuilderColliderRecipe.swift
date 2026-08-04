@@ -41,23 +41,18 @@ public enum NativeBuilderColliderRecipe {
             ],
             locks: [.checkout("native-builder-image")],
             assessmentPolicy: .incremental,
-            operation: .sequence([
-                .action(
-                    try AnyColliderAction(
-                        PrepareNativeBuilderCacheAction(
-                            cache: ccache))),
-                .action(
-                    try AnyColliderAction(
-                        PrepareNativeBuilderImageAction(
-                            preparation: OCIImagePreparation(
-                                executionPlatform: .linuxARM64OCI,
-                                context: context,
-                                containerFile: context.appending(
-                                    "Containerfile"),
-                                imageID: imageID,
-                                imageName: "localhost/nucleus-linux-build",
-                                environment: environment)))),
-            ]))
+            operation: .action(
+                try AnyColliderAction(
+                    PrepareNativeBuilderImageAction(
+                        cache: ccache,
+                        preparation: OCIImagePreparation(
+                            executionPlatform: .linuxARM64OCI,
+                            context: context,
+                            containerFile: context.appending(
+                                "Containerfile"),
+                            imageID: imageID,
+                            imageName: "localhost/nucleus-linux-build",
+                            environment: environment)))))
         let configuration = NativeOCIConfiguration(
             context: context,
             image: image,
@@ -76,47 +71,42 @@ public enum NativeBuilderColliderRecipe {
 }
 
 private struct PrepareNativeBuilderImageAction: ColliderAction {
-    static let kind: ActionKind = "native.prepare-builder-image"
-
-    let identity: OCIImagePreparationActionIdentity
-
-    init(preparation: OCIImagePreparation) {
-        identity = OCIImagePreparationActionIdentity(preparation)
-    }
-
-    var requirements: ActionRequirements {
-        ociImagePreparationActionRequirements(preparation: identity.preparation)
-    }
-
-    var environment: [String: String] { identity.preparation.environment }
-
-    func execute(in context: ActionContext) async throws {
-        try await context.containers.prepareImage(identity.preparation)
-    }
-}
-
-private struct PrepareNativeBuilderCacheAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let cache: FilePath
+        let preparation: OCIImagePreparation
 
         func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: cache.string)
+            encoder.append(
+                tag: 1,
+                nested: OCIImagePreparationActionIdentity(preparation))
+            encoder.append(tag: 2, string: cache.string)
         }
     }
 
-    static let kind: ActionKind = "native.prepare-builder-cache"
+    static let kind: ActionKind = "native.prepare-builder-image"
 
     let cache: FilePath
+    let preparation: OCIImagePreparation
 
-    var identity: Identity { Identity(cache: cache) }
+    var identity: Identity {
+        Identity(cache: cache, preparation: preparation)
+    }
 
     var requirements: ActionRequirements {
-        ActionRequirements(effects: [
-            ActionEffect(.write, scope: .scratch(cache))
-        ])
+        let image = ociImagePreparationActionRequirements(
+            preparation: preparation)
+        return ActionRequirements(
+            effects: image.effects + [
+                ActionEffect(.write, scope: .scratch(cache))
+            ],
+            resources: image.resources,
+            executionPlatform: image.executionPlatform)
     }
+
+    var environment: [String: String] { preparation.environment }
 
     func execute(in context: ActionContext) async throws {
         try context.files.createDirectory(cache)
+        try await context.containers.prepareImage(preparation)
     }
 }

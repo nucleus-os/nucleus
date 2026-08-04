@@ -322,74 +322,76 @@ public enum ReactNativeColliderRecipe {
                 .file(root.appending("../tools/merge-static-archives.sh")),
             ] + nativeInputs,
             locks: [.checkout("rn-native-\(target.identifier)")],
-            operation: .sequence([
-                try nativeCMake(
-                    source: source,
-                    containerSource: "/src/third-party/hermes",
-                    build: build,
-                    containerBuild: "/build/\(target.identifier)/hermes",
-                    arguments: [
-                        "-DBUILD_SHARED_LIBS=OFF",
-                        "-DHERMES_BUILD_SHARED_JSI=OFF",
-                        "-DHERMES_BUILD_APPLE_FRAMEWORK=OFF",
-                        "-DHERMES_ENABLE_DEBUGGER=OFF",
-                        "-DHERMES_ENABLE_INTL=ON",
-                        "-DICU_FOUND=ON",
-                        "-DICU_INCLUDE_DIRS=/icu/common;/icu/i18n",
-                        "-DICU_LIBRARIES=/icu/lib/libicu.a",
-                    ] + cmakeArguments,
-                    root: root,
-                    environment: environment,
-                    target: target,
-                    builder: builder,
-                    compileDefinitions: [
-                        "U_DISABLE_RENAMING=1",
-                        "U_STATIC_IMPLEMENTATION",
-                    ],
-                    additionalCXXFlags: [
-                        "-I/icu/common",
-                        "-I/icu/i18n",
-                    ],
-                    additionalMounts: [
-                        OCIMount(
-                            source: icuSource.appending("common"),
-                            target: "/icu/common",
-                            access: .readOnly),
-                        OCIMount(
-                            source: icuSource.appending("i18n"),
-                            target: "/icu/i18n",
-                            access: .readOnly),
-                        OCIMount(
-                            source: icuLibraryDirectory,
-                            target: "/icu/lib",
-                            access: .readOnly),
-                    ]),
-                try nativeNinja(
-                    build: build,
-                    containerBuild: "/build/\(target.identifier)/hermes",
-                    targets: ["hermesvmlean", "jsi", "hermesc"],
-                    root: root,
-                    environment: ninjaEnvironment,
-                    target: target,
-                    builder: builder,
-                    additionalMounts: [
-                        OCIMount(
-                            source: icuLibraryDirectory,
-                            target: "/icu/lib",
-                            access: .readOnly)
-                    ]),
-                try nativeContainerOperation(
-                    root: root,
-                    builder: builder,
-                    command: [
-                        "/tools/merge-static-archives.sh",
-                        "/build/\(target.identifier)/hermes",
-                        "/build/\(target.identifier)/hermes/libhermes_lean_combined.a",
-                        "libgtest",
-                    ],
-                    environment: environment,
-                    target: target),
-            ])
+            operation: .action(
+                try AnyColliderAction(
+                    RunReactNativeNativeBuildAction(executions: [
+                        try nativeCMake(
+                            source: source,
+                            containerSource: "/src/third-party/hermes",
+                            build: build,
+                            containerBuild: "/build/\(target.identifier)/hermes",
+                            arguments: [
+                                "-DBUILD_SHARED_LIBS=OFF",
+                                "-DHERMES_BUILD_SHARED_JSI=OFF",
+                                "-DHERMES_BUILD_APPLE_FRAMEWORK=OFF",
+                                "-DHERMES_ENABLE_DEBUGGER=OFF",
+                                "-DHERMES_ENABLE_INTL=ON",
+                                "-DICU_FOUND=ON",
+                                "-DICU_INCLUDE_DIRS=/icu/common;/icu/i18n",
+                                "-DICU_LIBRARIES=/icu/lib/libicu.a",
+                            ] + cmakeArguments,
+                            root: root,
+                            environment: environment,
+                            target: target,
+                            builder: builder,
+                            compileDefinitions: [
+                                "U_DISABLE_RENAMING=1",
+                                "U_STATIC_IMPLEMENTATION",
+                            ],
+                            additionalCXXFlags: [
+                                "-I/icu/common",
+                                "-I/icu/i18n",
+                            ],
+                            additionalMounts: [
+                                OCIMount(
+                                    source: icuSource.appending("common"),
+                                    target: "/icu/common",
+                                    access: .readOnly),
+                                OCIMount(
+                                    source: icuSource.appending("i18n"),
+                                    target: "/icu/i18n",
+                                    access: .readOnly),
+                                OCIMount(
+                                    source: icuLibraryDirectory,
+                                    target: "/icu/lib",
+                                    access: .readOnly),
+                            ]),
+                        try nativeNinja(
+                            build: build,
+                            containerBuild: "/build/\(target.identifier)/hermes",
+                            targets: ["hermesvmlean", "jsi", "hermesc"],
+                            root: root,
+                            environment: ninjaEnvironment,
+                            target: target,
+                            builder: builder,
+                            additionalMounts: [
+                                OCIMount(
+                                    source: icuLibraryDirectory,
+                                    target: "/icu/lib",
+                                    access: .readOnly)
+                            ]),
+                        try nativeContainerOperation(
+                            root: root,
+                            builder: builder,
+                            command: [
+                                "/tools/merge-static-archives.sh",
+                                "/build/\(target.identifier)/hermes",
+                                "/build/\(target.identifier)/hermes/libhermes_lean_combined.a",
+                                "libgtest",
+                            ],
+                            environment: environment,
+                            target: target),
+                    ])))
         )
         return HermesArtifacts(
             task: task,
@@ -427,47 +429,49 @@ public enum ReactNativeColliderRecipe {
                 .tree(builder.swiftSDKRoot),
             ],
             locks: [.checkout("rn-native-\(target.identifier)")],
-            operation: .sequence([
-                try nativeCMake(
-                    source: root.appending("third-party/fmt"),
-                    containerSource: "/src/third-party/fmt",
-                    build: fmtBuild,
-                    containerBuild: "/build/\(target.identifier)/fmt",
-                    arguments: [
-                        "-DFMT_TEST=OFF", "-DFMT_DOC=OFF", "-DFMT_INSTALL=OFF",
-                    ],
-                    root: root,
-                    environment: environment,
-                    target: target,
-                    builder: builder),
-                try nativeNinja(
-                    build: fmtBuild,
-                    containerBuild: "/build/\(target.identifier)/fmt",
-                    targets: ["fmt"],
-                    root: root, environment: environment,
-                    target: target,
-                    builder: builder),
-                try nativeCMake(
-                    source: root.appending("third-party/double-conversion"),
-                    containerSource: "/src/third-party/double-conversion",
-                    build: conversionBuild,
-                    containerBuild: "/build/\(target.identifier)/double-conversion",
-                    arguments: [
-                        "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
-                        "-DCMAKE_EXPORT_NO_PACKAGE_REGISTRY=ON",
-                    ],
-                    root: root,
-                    environment: environment,
-                    target: target,
-                    builder: builder),
-                try nativeNinja(
-                    build: conversionBuild,
-                    containerBuild: "/build/\(target.identifier)/double-conversion",
-                    targets: ["double-conversion"],
-                    root: root, environment: environment,
-                    target: target,
-                    builder: builder),
-            ])
+            operation: .action(
+                try AnyColliderAction(
+                    RunReactNativeNativeBuildAction(executions: [
+                        try nativeCMake(
+                            source: root.appending("third-party/fmt"),
+                            containerSource: "/src/third-party/fmt",
+                            build: fmtBuild,
+                            containerBuild: "/build/\(target.identifier)/fmt",
+                            arguments: [
+                                "-DFMT_TEST=OFF", "-DFMT_DOC=OFF", "-DFMT_INSTALL=OFF",
+                            ],
+                            root: root,
+                            environment: environment,
+                            target: target,
+                            builder: builder),
+                        try nativeNinja(
+                            build: fmtBuild,
+                            containerBuild: "/build/\(target.identifier)/fmt",
+                            targets: ["fmt"],
+                            root: root, environment: environment,
+                            target: target,
+                            builder: builder),
+                        try nativeCMake(
+                            source: root.appending("third-party/double-conversion"),
+                            containerSource: "/src/third-party/double-conversion",
+                            build: conversionBuild,
+                            containerBuild: "/build/\(target.identifier)/double-conversion",
+                            arguments: [
+                                "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+                                "-DCMAKE_EXPORT_NO_PACKAGE_REGISTRY=ON",
+                            ],
+                            root: root,
+                            environment: environment,
+                            target: target,
+                            builder: builder),
+                        try nativeNinja(
+                            build: conversionBuild,
+                            containerBuild: "/build/\(target.identifier)/double-conversion",
+                            targets: ["double-conversion"],
+                            root: root, environment: environment,
+                            target: target,
+                            builder: builder),
+                    ])))
         )
         return SupportLibraryArtifacts(
             task: task,
@@ -526,63 +530,65 @@ public enum ReactNativeColliderRecipe {
                 .tree(builder.swiftSDKRoot),
             ],
             locks: [.checkout("rn-native-\(target.identifier)")],
-            operation: .sequence([
-                try nativeCMake(
-                    source: root.appending("third-party/glog"),
-                    containerSource: "/src/third-party/glog",
-                    build: glogBuild,
-                    containerBuild: "/build/\(target.identifier)/glog",
-                    arguments: [
-                        "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
-                        "-DCMAKE_EXPORT_NO_PACKAGE_REGISTRY=ON",
-                        "-DWITH_GFLAGS=OFF", "-DBUILD_TESTING=OFF",
-                        "-DHAVE_EXECINFO_H=0", "-DHAVE_UNWIND_H=0",
-                    ],
-                    root: root,
-                    environment: environment,
-                    target: target,
-                    builder: builder),
-                try nativeNinja(
-                    build: glogBuild,
-                    containerBuild: "/build/\(target.identifier)/glog",
-                    targets: ["glog"],
-                    root: root, environment: environment,
-                    target: target,
-                    builder: builder),
-                try nativeCMake(
-                    source: root.appending("../core/swiftpm/cmake/reactnative"),
-                    containerSource: "/core-cmake",
-                    build: nativeBuild,
-                    containerBuild: "/build/\(target.identifier)/reactnative",
-                    arguments: [
-                        "-DFOLLY_DIR=\(nativePath(root.appending("third-party/folly"), "/src/third-party/folly"))",
-                        "-DBOOST_INC=\(nativePath(root.appending(".rn-build/dependencies/boost/current"), "/build/dependencies/boost/current"))",
-                        "-DGLOG_INC=\(nativePath(glogBuild, "/build/\(target.identifier)/glog"))",
-                        "-DGLOG_SRC_INC=\(nativePath(root.appending("third-party/glog/src"), "/src/third-party/glog/src"))",
-                        "-DDOUBLE_CONVERSION_INC=/dependencies/include",
-                        "-DFMT_INC=\(nativePath(root.appending("third-party/fmt/include"), "/src/third-party/fmt/include"))",
-                        "-DFAST_FLOAT_INC=\(nativePath(root.appending("third-party/fast_float/include"), "/src/third-party/fast_float/include"))",
-                        "-DJSI_DIR=\(nativePath(reactNative.appending("ReactCommon/jsi"), "/src/third-party/react-native/packages/react-native/ReactCommon/jsi"))",
-                        "-DRN_ROOT=\(nativePath(reactNative, "/src/third-party/react-native/packages/react-native"))",
-                        "-DRN_CODEGEN_ROOT=\(nativePath(generated.path.removingLastComponent(), "/build/generated"))",
-                        "-DHERMES_DIR=\(nativePath(root.appending("third-party/hermes"), "/src/third-party/hermes"))",
-                    ],
-                    root: root,
-                    environment: environment,
-                    target: target,
-                    builder: builder),
-                try nativeNinja(
-                    build: nativeBuild,
-                    containerBuild: "/build/\(target.identifier)/reactnative",
-                    targets: [
-                        "folly_runtime", "jsi", "react_native",
-                        "react_cxx_platform", "yogacore",
-                    ],
-                    root: root,
-                    environment: environment,
-                    target: target,
-                    builder: builder),
-            ])
+            operation: .action(
+                try AnyColliderAction(
+                    RunReactNativeNativeBuildAction(executions: [
+                        try nativeCMake(
+                            source: root.appending("third-party/glog"),
+                            containerSource: "/src/third-party/glog",
+                            build: glogBuild,
+                            containerBuild: "/build/\(target.identifier)/glog",
+                            arguments: [
+                                "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+                                "-DCMAKE_EXPORT_NO_PACKAGE_REGISTRY=ON",
+                                "-DWITH_GFLAGS=OFF", "-DBUILD_TESTING=OFF",
+                                "-DHAVE_EXECINFO_H=0", "-DHAVE_UNWIND_H=0",
+                            ],
+                            root: root,
+                            environment: environment,
+                            target: target,
+                            builder: builder),
+                        try nativeNinja(
+                            build: glogBuild,
+                            containerBuild: "/build/\(target.identifier)/glog",
+                            targets: ["glog"],
+                            root: root, environment: environment,
+                            target: target,
+                            builder: builder),
+                        try nativeCMake(
+                            source: root.appending("../core/swiftpm/cmake/reactnative"),
+                            containerSource: "/core-cmake",
+                            build: nativeBuild,
+                            containerBuild: "/build/\(target.identifier)/reactnative",
+                            arguments: [
+                                "-DFOLLY_DIR=\(nativePath(root.appending("third-party/folly"), "/src/third-party/folly"))",
+                                "-DBOOST_INC=\(nativePath(root.appending(".rn-build/dependencies/boost/current"), "/build/dependencies/boost/current"))",
+                                "-DGLOG_INC=\(nativePath(glogBuild, "/build/\(target.identifier)/glog"))",
+                                "-DGLOG_SRC_INC=\(nativePath(root.appending("third-party/glog/src"), "/src/third-party/glog/src"))",
+                                "-DDOUBLE_CONVERSION_INC=/dependencies/include",
+                                "-DFMT_INC=\(nativePath(root.appending("third-party/fmt/include"), "/src/third-party/fmt/include"))",
+                                "-DFAST_FLOAT_INC=\(nativePath(root.appending("third-party/fast_float/include"), "/src/third-party/fast_float/include"))",
+                                "-DJSI_DIR=\(nativePath(reactNative.appending("ReactCommon/jsi"), "/src/third-party/react-native/packages/react-native/ReactCommon/jsi"))",
+                                "-DRN_ROOT=\(nativePath(reactNative, "/src/third-party/react-native/packages/react-native"))",
+                                "-DRN_CODEGEN_ROOT=\(nativePath(generated.path.removingLastComponent(), "/build/generated"))",
+                                "-DHERMES_DIR=\(nativePath(root.appending("third-party/hermes"), "/src/third-party/hermes"))",
+                            ],
+                            root: root,
+                            environment: environment,
+                            target: target,
+                            builder: builder),
+                        try nativeNinja(
+                            build: nativeBuild,
+                            containerBuild: "/build/\(target.identifier)/reactnative",
+                            targets: [
+                                "folly_runtime", "jsi", "react_native",
+                                "react_cxx_platform", "yogacore",
+                            ],
+                            root: root,
+                            environment: environment,
+                            target: target,
+                            builder: builder),
+                    ])))
         )
         return CxxRuntimeArtifacts(task: task, outputs: outputArtifacts)
     }
@@ -912,7 +918,7 @@ private func nativeCMake(
     compileDefinitions: [String] = [],
     additionalCXXFlags: [String] = [],
     additionalMounts: [OCIMount] = []
-) throws -> TaskOperation {
+) throws -> OCIExecution {
     _ = source
     _ = build
     return try nativeContainerOperation(
@@ -941,7 +947,7 @@ private func nativeNinja(
     target: NativeLinuxTarget,
     builder: NativeOCIConfiguration,
     additionalMounts: [OCIMount] = []
-) throws -> TaskOperation {
+) throws -> OCIExecution {
     _ = build
     return try nativeContainerOperation(
         root: root,
@@ -959,8 +965,8 @@ private func nativeContainerOperation(
     environment: [String: String],
     target: NativeLinuxTarget,
     additionalMounts: [OCIMount] = []
-) throws -> TaskOperation {
-    let execution = OCIExecution(
+) throws -> OCIExecution {
+    return OCIExecution(
         executionPlatform: .linuxARM64OCI,
         artifactTarget: target.artifactTarget,
         imageID: builder.imageID,
@@ -1012,9 +1018,6 @@ private func nativeContainerOperation(
         command: ["react-native"] + command,
         environment: environment,
         output: .logged)
-    return .action(
-        try AnyColliderAction(
-            RunReactNativeNativeBuildAction(execution: execution)))
 }
 
 private struct RunReactNativeJavaScriptAction: ColliderAction {
@@ -1040,19 +1043,19 @@ private struct RunReactNativeJavaScriptAction: ColliderAction {
 private struct RunReactNativeNativeBuildAction: ColliderAction {
     static let kind: ActionKind = "rn.run-native-build"
 
-    let execution: OCIExecution
+    let pipeline: OCIExecutionPipeline
 
-    var identity: OCIExecutionActionIdentity {
-        OCIExecutionActionIdentity(execution)
+    init(executions: [OCIExecution]) throws {
+        pipeline = try OCIExecutionPipeline(executions)
     }
 
-    var requirements: ActionRequirements {
-        ociActionRequirements(execution: execution)
-    }
+    var identity: OCIExecutionPipelineIdentity { pipeline.identity }
 
-    var environment: [String: String] { execution.environment }
+    var requirements: ActionRequirements { pipeline.requirements }
+
+    var environment: [String: String] { pipeline.environment }
 
     func execute(in context: ActionContext) async throws {
-        try await context.containers.run(execution)
+        try await pipeline.execute(in: context)
     }
 }

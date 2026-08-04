@@ -144,44 +144,6 @@ package struct AssembleBrowserArtifactAction: ColliderAction {
     }
 }
 
-package struct ValidateBrowserArtifactAction: ColliderAction {
-    package struct Identity: ColliderActionIdentity {
-        let assembly: BrowserArtifactAssembly
-
-        package func encode(into encoder: inout ActionIdentityEncoder) {
-            encodeBrowserArtifactIdentity(assembly, into: &encoder)
-        }
-    }
-
-    package static let kind: ActionKind = "browser.validate-artifact"
-
-    let assembly: BrowserArtifactAssembly
-
-    package init(assembly: BrowserArtifactAssembly) {
-        self.assembly = assembly
-    }
-
-    package var identity: Identity { Identity(assembly: assembly) }
-    package var environment: [String: String] { assembly.environment }
-    package var requirements: ActionRequirements {
-        browserArtifactRequirements(assembly, access: .read)
-    }
-
-    package func execute(in context: ActionContext) async throws {
-        let current = try validateBrowserPublicationStructure(
-            assembly,
-            files: context.files)
-        try await validateBrowserGeneration(
-            current,
-            environment: assembly.environment,
-            context: context)
-    }
-
-    package func validateOutputs(using files: ActionFileSystem) throws {
-        try validateBrowserPublicationStructure(assembly, files: files)
-    }
-}
-
 private func encodeBrowserArtifactIdentity(
     _ assembly: BrowserArtifactAssembly,
     into encoder: inout ActionIdentityEncoder

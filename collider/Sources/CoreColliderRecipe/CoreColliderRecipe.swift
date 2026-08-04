@@ -4,6 +4,7 @@ import SystemPackage
 
 package enum CoreTaskIDs {
     package static let gnDownload = TaskID(rawValue: "core.gn-download")
+    package static let gnInstall = TaskID(rawValue: "core.gn-install")
     package static let sources = TaskID(rawValue: "core.sources")
     package static let androidNativeSDK = TaskID(rawValue: "core.native-sdk.android-arm64")
     package static let androidSkia = TaskID(rawValue: "core.skia.android-arm64")
@@ -200,37 +201,41 @@ public enum CoreColliderRecipe: ColliderComponent {
         var sourceBuilder = TaskBuilder(
             id: CoreTaskIDs.sources,
             component: ComponentID(rawValue: "core"))
-        sourceBuilder.consume(archive)
         let externalSources: ArtifactReference<DirectoryArtifact> = try sourceBuilder.output(
             "external-sources",
             path: skia.appending("third_party/externals"),
             validation: .nonEmptyDirectory)
-        let gn: ArtifactReference<ExecutableArtifact> = try sourceBuilder.output(
-            "gn",
-            path: skia.appending("bin/gn"),
-            validation: .executableFile)
         let sources = sourceBuilder.build(
             inputs: [
                 .file(skia.appending("DEPS"))
             ],
             locks: [.checkout("core-sources")],
             assessmentPolicy: .always,
-            operation: .sequence([
-                .action(
-                    try AnyColliderAction(
-                        MaterializeSkiaDependenciesAction(
-                            skia: skia,
-                            dependencies: dependencies,
-                            environment: environment))),
-                .action(
-                    try AnyColliderAction(
-                        InstallSkiaGNAction(
-                            archive: gnArchive,
-                            executable: skia.appending("bin/gn"),
-                            environment: environment))),
-            ]))
+            operation: .action(
+                try AnyColliderAction(
+                    MaterializeSkiaDependenciesAction(
+                        skia: skia,
+                        dependencies: dependencies,
+                        environment: environment))))
+
+        var installBuilder = TaskBuilder(
+            id: CoreTaskIDs.gnInstall,
+            component: ComponentID(rawValue: "core"))
+        installBuilder.consume(archive)
+        let gn: ArtifactReference<ExecutableArtifact> = try installBuilder.output(
+            "gn",
+            path: skia.appending("bin/gn"),
+            validation: .executableFile)
+        let install = installBuilder.build(
+            locks: [.checkout("core-sources")],
+            operation: .action(
+                try AnyColliderAction(
+                    InstallSkiaGNAction(
+                        archive: gnArchive,
+                        executable: skia.appending("bin/gn"),
+                        environment: environment))))
         return SkiaSourceArtifacts(
-            tasks: [download, sources],
+            tasks: [download, sources, install],
             externalSources: externalSources,
             gn: gn)
     }
@@ -1087,8 +1092,8 @@ private func skiaTask(
             target: "/swift-sdk",
             access: .readOnly),
     ]
-    func execution(_ command: [String]) throws -> TaskOperation {
-        let execution = OCIExecution(
+    func execution(_ command: [String]) -> OCIExecution {
+        OCIExecution(
             executionPlatform: .linuxARM64OCI,
             artifactTarget: artifactTarget,
             imageID: builder.imageID,
@@ -1109,18 +1114,15 @@ private func skiaTask(
             command: ["skia-\(mode)"] + command,
             environment: builder.environment,
             output: .logged)
-        return .action(
-            try AnyColliderAction(
-                RunSkiaBuildAction(execution: execution)))
     }
-    let operation = TaskOperation.sequence([
-        try execution([
+    let executions = [
+        execution([
             "/src/bin/gn", "gen", containerBuildDirectory,
             "--args=" + gnArguments.joined(separator: " "),
         ]),
-        try execution(
+        execution(
             ["ninja", "-C", containerBuildDirectory] + ninjaTargets),
-    ])
+    ]
     var task = TaskBuilder(
         id: id,
         component: ComponentID(rawValue: "core"))
@@ -1149,7 +1151,9 @@ private func skiaTask(
                 bytes: Array(gnArguments.joined(separator: "\u{0}").utf8)),
         ],
         locks: [.checkout(id.rawValue)],
-        operation: operation
+        operation: .action(
+            try AnyColliderAction(
+                RunSkiaBuildAction(executions: executions)))
     )
     return CoreColliderRecipe.SkiaBuildArtifacts(
         task: declaration,
@@ -1160,19 +1164,19 @@ private func skiaTask(
 private struct RunSkiaBuildAction: ColliderAction {
     static let kind: ActionKind = "core.build-skia"
 
-    let execution: OCIExecution
+    let pipeline: OCIExecutionPipeline
 
-    var identity: OCIExecutionActionIdentity {
-        OCIExecutionActionIdentity(execution)
+    init(executions: [OCIExecution]) throws {
+        pipeline = try OCIExecutionPipeline(executions)
     }
 
-    var requirements: ActionRequirements {
-        ociActionRequirements(execution: execution)
-    }
+    var identity: OCIExecutionPipelineIdentity { pipeline.identity }
 
-    var environment: [String: String] { execution.environment }
+    var requirements: ActionRequirements { pipeline.requirements }
+
+    var environment: [String: String] { pipeline.environment }
 
     func execute(in context: ActionContext) async throws {
-        try await context.containers.run(execution)
+        try await pipeline.execute(in: context)
     }
 }

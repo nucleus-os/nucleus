@@ -659,36 +659,31 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             ],
             locks: [.checkout("swift-linux-\(architecture.rawValue)-runtime")],
             assessmentPolicy: .incremental,
-            operation: .sequence([
-                .action(
-                    try AnyColliderAction(
-                        PrepareSwiftRuntimeBuildAction(
-                            install: target.runtimeInstall,
-                            workspace: target.runtimeBuildWorkspace,
-                            compilerCache: target.runtimeCompilerCache))),
-                .action(
-                    try AnyColliderAction(
-                        BuildSwiftLinuxRuntimeAction(
-                            execution: OCIExecution(
-                                executionPlatform: .linuxARM64OCI,
-                                artifactTarget: architecture.artifactTarget,
-                                imageID: builder.image.path,
-                                hostname: "swift-linux-\(architecture.rawValue)-runtime",
-                                workingDirectory: "/src",
-                                hostWorkingDirectory: configuration.sourceWorkspace,
-                                mounts: mounts,
-                                networkPolicy: .externalDisabled,
-                                userPolicy: .builder,
-                                capabilityPolicy: .dropAll,
-                                privilegePolicy: .prohibitAcquisition,
-                                processFilesystemPolicy: .standard,
-                                resourceLimits: .parallelBuild,
-                                containerEnvironment: containerEnvironment,
-                                command: ["--reconfigure"],
-                                environment: configuration.environment,
-                                output: .logged)))),
-            ])
-        )
+            operation: .action(
+                try AnyColliderAction(
+                    BuildSwiftLinuxRuntimeAction(
+                        install: target.runtimeInstall,
+                        workspace: target.runtimeBuildWorkspace,
+                        compilerCache: target.runtimeCompilerCache,
+                        execution: OCIExecution(
+                            executionPlatform: .linuxARM64OCI,
+                            artifactTarget: architecture.artifactTarget,
+                            imageID: builder.image.path,
+                            hostname: "swift-linux-\(architecture.rawValue)-runtime",
+                            workingDirectory: "/src",
+                            hostWorkingDirectory: configuration.sourceWorkspace,
+                            mounts: mounts,
+                            networkPolicy: .externalDisabled,
+                            userPolicy: .builder,
+                            capabilityPolicy: .dropAll,
+                            privilegePolicy: .prohibitAcquisition,
+                            processFilesystemPolicy: .standard,
+                            resourceLimits: .parallelBuild,
+                            containerEnvironment: containerEnvironment,
+                            command: ["--reconfigure"],
+                            environment: configuration.environment,
+                            output: .logged)))
+            ))
         return RuntimeArtifact(task: task, install: install)
     }
 
@@ -1044,21 +1039,57 @@ private struct PrepareSwiftRuntimeBuilderImageAction: ColliderAction {
 }
 
 private struct BuildSwiftLinuxRuntimeAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let install: FilePath
+        let workspace: FilePath
+        let compilerCache: FilePath
+        let execution: OCIExecution
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: install.string)
+            encoder.append(tag: 2, string: workspace.string)
+            encoder.append(tag: 3, string: compilerCache.string)
+            encoder.append(
+                tag: 4,
+                nested: OCIExecutionActionIdentity(execution))
+        }
+    }
+
     static let kind: ActionKind = "swift-sdk.build-linux-runtime"
 
+    let install: FilePath
+    let workspace: FilePath
+    let compilerCache: FilePath
     let execution: OCIExecution
 
-    var identity: OCIExecutionActionIdentity {
-        OCIExecutionActionIdentity(execution)
+    var identity: Identity {
+        Identity(
+            install: install,
+            workspace: workspace,
+            compilerCache: compilerCache,
+            execution: execution)
     }
 
     var requirements: ActionRequirements {
-        ociActionRequirements(execution: execution)
+        let executionRequirements = ociActionRequirements(execution: execution)
+        return ActionRequirements(
+            effects: executionRequirements.effects + [
+                ActionEffect(.readWrite, scope: .output(install)),
+                ActionEffect(.write, scope: .scratch(workspace)),
+                ActionEffect(.write, scope: .scratch(compilerCache)),
+            ],
+            resources: executionRequirements.resources,
+            executionPlatform: executionRequirements.executionPlatform,
+            artifactTarget: executionRequirements.artifactTarget)
     }
 
     var environment: [String: String] { execution.environment }
 
     func execute(in context: ActionContext) async throws {
+        try context.files.remove(install)
+        try context.files.createDirectory(install)
+        try context.files.createDirectory(workspace)
+        try context.files.createDirectory(compilerCache)
         try await context.containers.run(execution)
     }
 }
@@ -1140,48 +1171,6 @@ private struct SwiftSDKAssemblyTarget: Hashable, Sendable {
     let triple: String
     let runtimeInstall: FilePath
     let packages: [FilePath]
-}
-
-private struct PrepareSwiftRuntimeBuildAction: ColliderAction {
-    struct Identity: ColliderActionIdentity {
-        let install: FilePath
-        let workspace: FilePath
-        let compilerCache: FilePath
-
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: install.string)
-            encoder.append(tag: 2, string: workspace.string)
-            encoder.append(tag: 3, string: compilerCache.string)
-        }
-    }
-
-    static let kind: ActionKind = "swift-sdk.prepare-runtime-build"
-
-    let install: FilePath
-    let workspace: FilePath
-    let compilerCache: FilePath
-
-    var identity: Identity {
-        Identity(
-            install: install,
-            workspace: workspace,
-            compilerCache: compilerCache)
-    }
-
-    var requirements: ActionRequirements {
-        ActionRequirements(effects: [
-            ActionEffect(.readWrite, scope: .output(install)),
-            ActionEffect(.write, scope: .scratch(workspace)),
-            ActionEffect(.write, scope: .scratch(compilerCache)),
-        ])
-    }
-
-    func execute(in context: ActionContext) async throws {
-        try context.files.remove(install)
-        try context.files.createDirectory(install)
-        try context.files.createDirectory(workspace)
-        try context.files.createDirectory(compilerCache)
-    }
 }
 
 package struct PublishSwiftSDKDiscoveryAction: ColliderAction {

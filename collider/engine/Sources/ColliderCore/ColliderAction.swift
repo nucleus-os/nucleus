@@ -54,8 +54,25 @@ public struct ActionIdentityEncoder: Sendable {
         append(tag: tag, value: .integer(integer))
     }
 
+    public mutating func append<Identity: ColliderActionIdentity>(
+        tag: UInt64,
+        nested identity: Identity
+    ) {
+        var nested = ActionIdentityEncoder()
+        identity.encode(into: &nested)
+        if let failure = nested.failure {
+            self.failure = failure
+            return
+        }
+        append(tag: tag, value: .bytes(nested.canonicalBytes()))
+    }
+
     public func encodedBytes() throws -> [UInt8] {
         if let failure { throw failure }
+        return canonicalBytes()
+    }
+
+    private func canonicalBytes() -> [UInt8] {
         var bytes: [UInt8] = []
         for tag in fields.keys.sorted() {
             guard let value = fields[tag] else { continue }
@@ -370,6 +387,114 @@ public struct OCIExecutionActionIdentity: ColliderActionIdentity {
         encoder.append(tag: 25, bytes: command.bytes)
         encoder.append(tag: 26, string: ociActionOutputIdentity(execution.output))
     }
+}
+
+public struct OCIExecutionPipelineIdentity: ColliderActionIdentity {
+    public let executions: [OCIExecution]
+
+    public init(_ executions: [OCIExecution]) {
+        self.executions = executions
+    }
+
+    public func encode(into encoder: inout ActionIdentityEncoder) {
+        encoder.append(tag: 1, integer: UInt64(executions.count))
+        for (index, execution) in executions.enumerated() {
+            encoder.append(
+                tag: UInt64(index + 2),
+                nested: OCIExecutionActionIdentity(execution))
+        }
+    }
+}
+
+public enum OCIExecutionPipelineFailure: Error, CustomStringConvertible, Sendable {
+    case empty
+    case mixedExecutionPlatforms
+    case mixedArtifactTargets
+    case mixedEnvironments
+
+    public var description: String {
+        switch self {
+        case .empty:
+            "an OCI execution pipeline must contain at least one execution"
+        case .mixedExecutionPlatforms:
+            "all OCI executions in one action must use the same execution platform"
+        case .mixedArtifactTargets:
+            "all OCI executions in one action must produce the same artifact target"
+        case .mixedEnvironments:
+            "all OCI executions in one action must use the same host environment"
+        }
+    }
+}
+
+public struct OCIExecutionPipeline: Sendable {
+    public let executions: [OCIExecution]
+    public let identity: OCIExecutionPipelineIdentity
+    public let requirements: ActionRequirements
+    public let environment: [String: String]
+
+    public init(_ executions: [OCIExecution]) throws {
+        guard let first = executions.first else {
+            throw OCIExecutionPipelineFailure.empty
+        }
+        guard
+            executions.allSatisfy({
+                $0.executionPlatform == first.executionPlatform
+            })
+        else {
+            throw OCIExecutionPipelineFailure.mixedExecutionPlatforms
+        }
+        guard
+            executions.allSatisfy({
+                $0.artifactTarget == first.artifactTarget
+            })
+        else {
+            throw OCIExecutionPipelineFailure.mixedArtifactTargets
+        }
+        guard executions.allSatisfy({ $0.environment == first.environment }) else {
+            throw OCIExecutionPipelineFailure.mixedEnvironments
+        }
+
+        var effects: [ActionEffect] = []
+        var cpuCount: UInt32? = 0
+        var memoryBytes: UInt64? = 0
+        for execution in executions {
+            for effect in ociActionRequirements(execution: execution).effects
+            where !effects.contains(effect) {
+                effects.append(effect)
+            }
+            cpuCount = maximumResource(cpuCount, execution.resourceLimits.cpuCount)
+            memoryBytes = maximumResource(
+                memoryBytes,
+                execution.resourceLimits.memoryBytes)
+        }
+
+        self.executions = executions
+        identity = OCIExecutionPipelineIdentity(executions)
+        requirements = ActionRequirements(
+            effects: effects,
+            resources: ActionResourceRequest(
+                cpuCount: cpuCount,
+                memoryBytes: memoryBytes,
+                exclusive: false),
+            executionPlatform: first.executionPlatform,
+            artifactTarget: first.artifactTarget)
+        environment = first.environment
+    }
+
+    public func execute(in context: ActionContext) async throws {
+        for execution in executions {
+            try context.cancellation.check()
+            try await context.containers.run(execution)
+        }
+    }
+}
+
+private func maximumResource<Value: FixedWidthInteger>(
+    _ lhs: Value?,
+    _ rhs: Value?
+) -> Value? {
+    guard let lhs, let rhs else { return nil }
+    return max(lhs, rhs)
 }
 
 public func ociActionRequirements(

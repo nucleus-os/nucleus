@@ -35,7 +35,7 @@ private func executeContainerActions(
                 cancellation: ActionCancellation {},
                 logger: ActionLogger { _ in },
                 commands: ActionCommandExecutor { _ in
-                    throw ActionContainerExecutorFailure.unavailable
+                    CommandResult(status: 0)
                 },
                 downloads: ActionDownloader { _, _ in },
                 containers: ActionContainerExecutor(
@@ -63,6 +63,7 @@ private func inertActionFileSystem() -> ActionFileSystem {
         contentsEqual: { _, _ in true },
         createDirectory: { _ in },
         copy: { _, _ in },
+        remove: { _ in },
         setPermissions: { _, _ in },
         write: { _, _ in })
 }

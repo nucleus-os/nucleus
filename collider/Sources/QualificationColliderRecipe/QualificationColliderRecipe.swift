@@ -85,16 +85,17 @@ public enum BenchmarkColliderRecipe: ColliderComponent {
                 inputs: [swiftPM.identityInput],
                 locks: [.checkout("benchmark-\(outputDirectory)")],
                 assessmentPolicy: .always,
-                operation: .sequence([
-                    .action(
-                        try AnyColliderAction(
-                            PrepareBenchmarkOutputAction(output: output))),
-                    swiftPM.operation(
-                        executable: executable,
-                        arguments: ["--output", output.string, "--iterations", "3"],
-                        workingDirectory: context.repositoryRoot,
-                        environment: environment),
-                ]))
+                operation: .action(
+                    try AnyColliderAction(
+                        RunBenchmarkAction(
+                            output: output,
+                            execution: swiftPM.ociExecutableExecution(
+                                executable: executable,
+                                arguments: [
+                                    "--output", output.string, "--iterations", "3",
+                                ],
+                                workingDirectory: context.repositoryRoot,
+                                environment: environment)))))
         }
         return try ComponentDefinition(
             descriptor: descriptor,
@@ -105,29 +106,43 @@ public enum BenchmarkColliderRecipe: ColliderComponent {
     }
 }
 
-private struct PrepareBenchmarkOutputAction: ColliderAction {
+private struct RunBenchmarkAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let output: FilePath
+        let execution: OCIExecution
 
         func encode(into encoder: inout ActionIdentityEncoder) {
             encoder.append(tag: 1, string: output.string)
+            encoder.append(
+                tag: 2,
+                nested: OCIExecutionActionIdentity(execution))
         }
     }
 
-    static let kind: ActionKind = "benchmark.prepare-output"
+    static let kind: ActionKind = "benchmark.run"
 
     let output: FilePath
+    let execution: OCIExecution
 
-    var identity: Identity { Identity(output: output) }
+    var identity: Identity { Identity(output: output, execution: execution) }
 
     var requirements: ActionRequirements {
-        ActionRequirements(effects: [
-            ActionEffect(.write, scope: .output(output))
-        ])
+        let executionRequirements = ociActionRequirements(execution: execution)
+        var effects = executionRequirements.effects
+        let outputEffect = ActionEffect(.write, scope: .output(output))
+        if !effects.contains(outputEffect) { effects.append(outputEffect) }
+        return ActionRequirements(
+            effects: effects,
+            resources: executionRequirements.resources,
+            executionPlatform: executionRequirements.executionPlatform,
+            artifactTarget: executionRequirements.artifactTarget)
     }
+
+    var environment: [String: String] { execution.environment }
 
     func execute(in context: ActionContext) async throws {
         try context.files.remove(output)
+        try await context.containers.run(execution)
     }
 }
 
@@ -156,8 +171,8 @@ public enum SanitizerColliderRecipe: ColliderComponent {
                     ":suppressions=\(suppressions.string)"
             }
             environment["NUCLEUS_TEST_SEED"] = "0x4e55434c455553"
-            let sanitizerTasks = invocations(for: sanitizer).map {
-                task(
+            let sanitizerTasks = try invocations(for: sanitizer).map {
+                try task(
                     $0,
                     sanitizer: sanitizer,
                     swiftPM: swiftPM,
@@ -215,7 +230,7 @@ public enum SanitizerColliderRecipe: ColliderComponent {
         environment: [String: String],
         context: RecipeContext,
         targetArtifacts: ArtifactReferenceSet
-    ) -> TaskDeclaration {
+    ) throws -> TaskDeclaration {
         let id = TaskID(rawValue: "sanitize.\(sanitizer.rawValue).\(invocation.id)")
         let prerequisiteIdentity = ArtifactInput.value(
             name: "prerequisite-targets",
@@ -260,11 +275,14 @@ public enum SanitizerColliderRecipe: ColliderComponent {
                 inputs: [swiftPM.identityInput, prerequisiteIdentity],
                 locks: [.checkout("sanitize-\(sanitizer.rawValue)")],
                 assessmentPolicy: .always,
-                operation: swiftPM.operation(
-                    executable: executable,
-                    arguments: [],
-                    workingDirectory: context.repositoryRoot,
-                    environment: environment))
+                operation: .action(
+                    try AnyColliderAction(
+                        RunSanitizerExecutableAction(
+                            execution: swiftPM.ociExecutableExecution(
+                                executable: executable,
+                                arguments: [],
+                                workingDirectory: context.repositoryRoot,
+                                environment: environment)))))
         }
     }
 
@@ -347,5 +365,25 @@ public enum SanitizerColliderRecipe: ColliderComponent {
                     executable: "NucleusReactThreadSanitizerHarness"),
             ]
         }
+    }
+}
+
+private struct RunSanitizerExecutableAction: ColliderAction {
+    static let kind: ActionKind = "sanitize.run-executable"
+
+    let execution: OCIExecution
+
+    var identity: OCIExecutionActionIdentity {
+        OCIExecutionActionIdentity(execution)
+    }
+
+    var requirements: ActionRequirements {
+        ociActionRequirements(execution: execution)
+    }
+
+    var environment: [String: String] { execution.environment }
+
+    func execute(in context: ActionContext) async throws {
+        try await context.containers.run(execution)
     }
 }

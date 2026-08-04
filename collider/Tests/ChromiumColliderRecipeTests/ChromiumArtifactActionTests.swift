@@ -76,14 +76,9 @@ import Testing
                 validation: .exists)
         ],
         assessmentPolicy: .always,
-        operation: .sequence([
-            .action(
-                try AnyColliderAction(
-                    AssembleBrowserArtifactAction(assembly: assembly))),
-            .action(
-                try AnyColliderAction(
-                    ValidateBrowserArtifactAction(assembly: assembly))),
-        ]))
+        operation: .action(
+            try AnyColliderAction(
+                AssembleBrowserArtifactAction(assembly: assembly))))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],
@@ -221,14 +216,9 @@ import Testing
                 validation: .exists)
         ],
         assessmentPolicy: .always,
-        operation: .sequence([
-            .action(
-                try AnyColliderAction(
-                    AssembleCEFArtifactAction(assembly: assembly))),
-            .action(
-                try AnyColliderAction(
-                    ValidateCEFArtifactAction(assembly: assembly))),
-        ]))
+        operation: .action(
+            try AnyColliderAction(
+                AssembleCEFArtifactAction(assembly: assembly))))
     _ = try await ColliderRuntime().execute(
         graph: TaskGraph([task]),
         selected: [task.id],

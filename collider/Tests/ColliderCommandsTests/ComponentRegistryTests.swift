@@ -530,7 +530,7 @@ private func fixtureReactNativeNodeModules(
             == "/workspace/react-native/third-party/react-native")
 }
 
-@Test func waylandGenerationIsOneColliderOwnedCommandSequence() async throws {
+@Test func waylandGenerationIsOneColliderOwnedAction() async throws {
     let workspace = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
@@ -566,13 +566,9 @@ private func fixtureReactNativeNodeModules(
                 ).path)),
         builder: builder,
         scanner: scanner)
-    guard case .sequence(let operations) = task.operation else {
-        Issue.record("Wayland generation must be one ordered task sequence")
+    guard case .action(let action) = task.operation else {
+        Issue.record("Wayland generation must be one recipe-owned action")
         return
-    }
-    let actions = operations.compactMap { operation -> AnyColliderAction? in
-        guard case .action(let action) = operation else { return nil }
-        return action
     }
     let scannerContainers = try await ociExecutions(in: task.operation).filter {
         $0.hostname == "wayland-source-generation"
@@ -582,8 +578,7 @@ private func fixtureReactNativeNodeModules(
             "swift-wayland:SwiftWaylandGen"
         ])
     #expect(
-        actions.map(\.kind).contains(
-            ActionKind(rawValue: "wayland.generate-swift-sources")))
+        action.kind == ActionKind(rawValue: "wayland.generate-swift-sources"))
     let scannerExecution = try #require(scannerContainers.first)
     #expect(scannerContainers.count == 1)
     #expect(scannerExecution.command.first == "wayland-generate")
@@ -607,18 +602,19 @@ private func fixtureReactNativeNodeModules(
         environment: environment)
     let sourceTask = try #require(
         sources.tasks.first { $0.id == CoreTaskIDs.sources })
-    guard case .sequence(let sourceOperations) = sourceTask.operation else {
-        Issue.record("Skia source preparation must be an ordered action sequence")
+    guard case .action(let sourceAction) = sourceTask.operation else {
+        Issue.record("Skia source preparation must be a recipe-owned action")
         return
     }
-    #expect(
-        sourceOperations.compactMap { operation -> ActionKind? in
-            guard case .action(let action) = operation else { return nil }
-            return action.kind
-        } == [
-            ActionKind(rawValue: "core.materialize-skia-dependencies"),
-            ActionKind(rawValue: "core.install-skia-gn"),
-        ])
+    #expect(sourceAction.kind == "core.materialize-skia-dependencies")
+    let gnInstall = try #require(
+        sources.tasks.first { $0.id == CoreTaskIDs.gnInstall })
+    guard case .action(let gnAction) = gnInstall.operation else {
+        Issue.record("GN installation must be a recipe-owned action")
+        return
+    }
+    #expect(gnAction.kind == "core.install-skia-gn")
+    #expect(gnInstall.dependencies == [CoreTaskIDs.gnDownload])
     for task in [
         try CoreColliderRecipe.buildSkiaLinux(
             root: root,
@@ -635,10 +631,11 @@ private func fixtureReactNativeNodeModules(
             builder: builder
         ).task,
     ] {
-        guard case .sequence = task.operation else {
-            Issue.record("Skia provisioning must be an ordered task sequence")
+        guard case .action(let action) = task.operation else {
+            Issue.record("Skia provisioning must be a recipe-owned action")
             continue
         }
+        #expect(action.kind == "core.build-skia")
         let executions = try await ociExecutions(in: task.operation)
         #expect(executions.count == 2)
         #expect(executions.allSatisfy { $0.imageID == builder.imageID })
@@ -796,10 +793,11 @@ private func fixtureReactNativeNodeModules(
         support: support,
         builder: builder)
     for task in [support.task, runtime.task] {
-        guard case .sequence = task.operation else {
-            Issue.record("RN native provisioning must be an ordered task sequence")
+        guard case .action(let action) = task.operation else {
+            Issue.record("RN native provisioning must be a recipe-owned action")
             continue
         }
+        #expect(action.kind == "rn.run-native-build")
         let nativeOperations = try await ociExecutions(in: task.operation)
         #expect(!nativeOperations.isEmpty)
         #expect(
@@ -844,10 +842,11 @@ private func fixtureReactNativeNodeModules(
             NativeLinuxTarget(architecture: .x86_64)),
         builder: builder
     ).task
-    guard case .sequence = task.operation else {
-        Issue.record("Hermes provisioning must be an ordered task sequence")
+    guard case .action(let action) = task.operation else {
+        Issue.record("Hermes provisioning must be a recipe-owned action")
         return
     }
+    #expect(action.kind == "rn.run-native-build")
     let executions = try await ociExecutions(in: task.operation)
     try #require(executions.count == 3)
     let configure = executions[0]
@@ -915,12 +914,14 @@ private func fixtureReactNativeNodeModules(
                     "/cache/native-sdk/linux-arm64/wayland/bin/wayland-scanner")
         })
 
-    guard case .sequence = arm.operation,
-        case .sequence = x86.operation
+    guard case .action(let armAction) = arm.operation,
+        case .action(let x86Action) = x86.operation
     else {
         Issue.record("Wayland SDK builds must configure inside the ARM64 builder")
         return
     }
+    #expect(armAction.kind == "wayland.build-native-sdk")
+    #expect(x86Action.kind == "wayland.build-native-sdk")
     let armConfigure = try #require(
         try await ociExecutions(in: arm.operation).first {
             $0.command.starts(with: ["wayland", "meson", "setup"])

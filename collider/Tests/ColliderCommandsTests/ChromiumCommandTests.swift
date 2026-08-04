@@ -26,7 +26,7 @@ func chromiumCommandHasOneOpinionatedOperationSurface() throws {
 }
 
 @Test
-func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() async throws {
+func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
     let root = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
@@ -49,16 +49,19 @@ func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() async throws {
             ChromiumTaskIDs.test,
             ChromiumTaskIDs.install,
         ]))
+    let orderedBuildTasks = try graph.orderedTasks(selecting: [
+        ChromiumTaskIDs.retention
+    ]).map(\.id.rawValue)
     #expect(
-        try graph.orderedTasks(selecting: [
-            ChromiumTaskIDs.retention
-        ]).map(\.id.rawValue) == [
+        orderedBuildTasks == [
             "browser.depot-tools",
             "browser.depot-tools-bootstrap",
             "browser.source",
             "browser.builder",
-            "browser.cef",
+            "browser.product.build",
             "browser.artifact",
+            "browser.cef.build",
+            "browser.cef",
             "browser.retention",
         ])
 
@@ -73,7 +76,7 @@ func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() async throws {
     #expect(
         Set(tasks.flatMap { actions($0.operation).map(\.kind) }).isSuperset(of: [
             ActionKind(rawValue: "browser.bootstrap-depot-tools"),
-            ActionKind(rawValue: "browser.test-ozone"),
+            ActionKind(rawValue: "browser.run-tests"),
         ]))
 
     let productActions = tasks.flatMap {
@@ -90,12 +93,13 @@ func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() async throws {
 
     let test = try #require(
         tasks.first { $0.id == ChromiumTaskIDs.test })
-    guard case .sequence = test.operation,
+    guard case .action(let testAction) = test.operation,
         let execution = try await ociExecutions(in: test.operation).first
     else {
         Issue.record("Chromium test compilation must use the builder")
         return
     }
+    #expect(testAction.kind == "browser.run-tests")
     #expect(execution.command.first == "build")
     #expect(
         execution.mounts == [
@@ -119,4 +123,18 @@ func chromiumRecipeOwnsTheOrderedCefAndBrowserGraph() async throws {
                 target: "/build",
                 access: .readWrite),
         ])
+
+    let cefBuild = try #require(
+        tasks.first { $0.id == ChromiumTaskIDs.cefBuild })
+    let browserBuild = try #require(
+        tasks.first { $0.id == ChromiumTaskIDs.browserBuild })
+    #expect(!cefBuild.dependencies.contains(ChromiumTaskIDs.browserBuild))
+    #expect(!browserBuild.dependencies.contains(ChromiumTaskIDs.cefBuild))
+    let retention = try #require(
+        tasks.first { $0.id == ChromiumTaskIDs.retention })
+    #expect(
+        Set(retention.dependencies).isSuperset(of: [
+            ChromiumTaskIDs.cefArtifact,
+            ChromiumTaskIDs.browserArtifact,
+        ]))
 }

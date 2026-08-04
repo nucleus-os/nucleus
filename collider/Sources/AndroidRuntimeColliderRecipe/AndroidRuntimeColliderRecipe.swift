@@ -781,54 +781,55 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .checkout("android-runtime-gfxstream-\(target.identifier)")
             ],
             assessmentPolicy: .incremental,
-            operation: .sequence([
-                .action(
-                    try AnyColliderAction(
-                        PrepareGfxstreamBuildAction(buildRoot: buildRoot))),
-                try gfxstreamOperation(
-                    root: root,
-                    hostSource: hostSource,
-                    guestSource: guestSource,
-                    buildRoot: buildRoot,
-                    target: target,
-                    builder: builder,
-                    environment: environment,
-                    command: [
-                        "bash", "-lc",
-                        "meson setup \(hostBuild) /gfxstream"
-                            + " -Dbuildtype=release -Ddefault_library=static"
-                            + " -Ddecoders=gles,vulkan,composer -Dgfxstream-build=host"
-                            + crossOption
-                            + " && meson compile -C \(hostBuild) gfxstream_backend"
-                            + " && mkdir -p /build/host/host"
-                            + " && cp \(hostBuild)/host/libgfxstream_backend.a"
-                            + " /build/host/host/libgfxstream_backend.a",
-                    ]),
-                try gfxstreamOperation(
-                    root: root,
-                    hostSource: hostSource,
-                    guestSource: guestSource,
-                    buildRoot: buildRoot,
-                    target: target,
-                    builder: builder,
-                    environment: environment,
-                    command: [
-                        "bash", "-lc",
-                        "meson setup \(guestBuild) /mesa"
-                            + " -Dbuildtype=release -Dvulkan-drivers=gfxstream"
-                            + " -Dgallium-drivers=[] -Dplatforms=[] -Dglx=disabled"
-                            + " -Degl=disabled -Dgbm=disabled -Dgles1=disabled"
-                            + " -Dgles2=disabled -Dopengl=false -Dllvm=disabled"
-                            + " -Dshared-glapi=disabled -Dvalgrind=disabled"
-                            + " -Dlibunwind=disabled -Dbuild-tests=false"
-                            + " -Dvideo-codecs=[]"
-                            + crossOption
-                            + " && meson compile -C \(guestBuild) vulkan_gfxstream"
-                            + " gfxstream_vk_icd gfxstream_vk_devenv_icd"
-                            + " && mkdir -p /build/guest"
-                            + " && cp -a \(guestBuild)/. /build/guest/",
-                    ]),
-            ]))
+            operation: .action(
+                try AnyColliderAction(
+                    RunGfxstreamBuildAction(
+                        buildRoot: buildRoot,
+                        executions: [
+                            try gfxstreamExecution(
+                                root: root,
+                                hostSource: hostSource,
+                                guestSource: guestSource,
+                                buildRoot: buildRoot,
+                                target: target,
+                                builder: builder,
+                                environment: environment,
+                                command: [
+                                    "bash", "-lc",
+                                    "meson setup \(hostBuild) /gfxstream"
+                                        + " -Dbuildtype=release -Ddefault_library=static"
+                                        + " -Ddecoders=gles,vulkan,composer -Dgfxstream-build=host"
+                                        + crossOption
+                                        + " && meson compile -C \(hostBuild) gfxstream_backend"
+                                        + " && mkdir -p /build/host/host"
+                                        + " && cp \(hostBuild)/host/libgfxstream_backend.a"
+                                        + " /build/host/host/libgfxstream_backend.a",
+                                ]),
+                            try gfxstreamExecution(
+                                root: root,
+                                hostSource: hostSource,
+                                guestSource: guestSource,
+                                buildRoot: buildRoot,
+                                target: target,
+                                builder: builder,
+                                environment: environment,
+                                command: [
+                                    "bash", "-lc",
+                                    "meson setup \(guestBuild) /mesa"
+                                        + " -Dbuildtype=release -Dvulkan-drivers=gfxstream"
+                                        + " -Dgallium-drivers=[] -Dplatforms=[] -Dglx=disabled"
+                                        + " -Degl=disabled -Dgbm=disabled -Dgles1=disabled"
+                                        + " -Dgles2=disabled -Dopengl=false -Dllvm=disabled"
+                                        + " -Dshared-glapi=disabled -Dvalgrind=disabled"
+                                        + " -Dlibunwind=disabled -Dbuild-tests=false"
+                                        + " -Dvideo-codecs=[]"
+                                        + crossOption
+                                        + " && meson compile -C \(guestBuild) vulkan_gfxstream"
+                                        + " gfxstream_vk_icd gfxstream_vk_devenv_icd"
+                                        + " && mkdir -p /build/guest"
+                                        + " && cp -a \(guestBuild)/. /build/guest/",
+                                ]),
+                        ]))))
         return GfxstreamArtifacts(
             task: declaration,
             hostBackend: hostBackend,
@@ -885,34 +886,7 @@ private struct DownloadAOSPRepoLauncherAction: ColliderAction {
     }
 }
 
-private struct PrepareGfxstreamBuildAction: ColliderAction {
-    struct Identity: ColliderActionIdentity {
-        let buildRoot: FilePath
-
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: buildRoot.string)
-        }
-    }
-
-    static let kind: ActionKind = "android-runtime.prepare-gfxstream-build"
-
-    let buildRoot: FilePath
-
-    var identity: Identity { Identity(buildRoot: buildRoot) }
-
-    var requirements: ActionRequirements {
-        ActionRequirements(effects: [
-            ActionEffect(.readWrite, scope: .output(buildRoot))
-        ])
-    }
-
-    func execute(in context: ActionContext) async throws {
-        try context.files.remove(buildRoot)
-        try context.files.createDirectory(buildRoot)
-    }
-}
-
-private func gfxstreamOperation(
+private func gfxstreamExecution(
     root: FilePath,
     hostSource: FilePath,
     guestSource: FilePath,
@@ -921,8 +895,8 @@ private func gfxstreamOperation(
     builder: NativeOCIConfiguration,
     environment: [String: String],
     command: [String]
-) throws -> TaskOperation {
-    let execution = OCIExecution(
+) throws -> OCIExecution {
+    OCIExecution(
         executionPlatform: .linuxARM64OCI,
         artifactTarget: target.artifactTarget,
         imageID: builder.imageID,
@@ -966,28 +940,49 @@ private func gfxstreamOperation(
         command: ["gfxstream"] + command,
         environment: environment,
         output: .logged)
-    return .action(
-        try AnyColliderAction(
-            RunGfxstreamBuildAction(execution: execution)))
 }
 
 private struct RunGfxstreamBuildAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let buildRoot: FilePath
+        let pipeline: OCIExecutionPipelineIdentity
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: buildRoot.string)
+            encoder.append(tag: 2, nested: pipeline)
+        }
+    }
+
     static let kind: ActionKind = "android-runtime.build-gfxstream"
 
-    let execution: OCIExecution
+    let buildRoot: FilePath
+    let pipeline: OCIExecutionPipeline
 
-    var identity: OCIExecutionActionIdentity {
-        OCIExecutionActionIdentity(execution)
+    init(buildRoot: FilePath, executions: [OCIExecution]) throws {
+        self.buildRoot = buildRoot
+        pipeline = try OCIExecutionPipeline(executions)
+    }
+
+    var identity: Identity {
+        Identity(buildRoot: buildRoot, pipeline: pipeline.identity)
     }
 
     var requirements: ActionRequirements {
-        ociActionRequirements(execution: execution)
+        ActionRequirements(
+            effects: pipeline.requirements.effects + [
+                ActionEffect(.readWrite, scope: .output(buildRoot))
+            ],
+            resources: pipeline.requirements.resources,
+            executionPlatform: pipeline.requirements.executionPlatform,
+            artifactTarget: pipeline.requirements.artifactTarget)
     }
 
-    var environment: [String: String] { execution.environment }
+    var environment: [String: String] { pipeline.environment }
 
     func execute(in context: ActionContext) async throws {
-        try await context.containers.run(execution)
+        try context.files.remove(buildRoot)
+        try context.files.createDirectory(buildRoot)
+        try await pipeline.execute(in: context)
     }
 }
 

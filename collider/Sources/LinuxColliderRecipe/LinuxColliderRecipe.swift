@@ -35,7 +35,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
         var headlessRoots: Set<TaskID> = []
         for architecture in PlatformArchitecture.allCases {
             let target = NativeLinuxTarget(architecture: architecture)
-            tasks += architectureLane(
+            tasks += try architectureLane(
                 architecture: architecture,
                 root: context.repositoryRoot,
                 environment: context.environment,
@@ -65,7 +65,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
         environment: [String: String],
         swiftPM: SwiftPMInvocation,
         targetArtifacts: ArtifactReferenceSet
-    ) -> [TaskDeclaration] {
+    ) throws -> [TaskDeclaration] {
         let name = architecture.rawValue
         let buildID = LinuxTaskIDs.build(architecture)
         let buildRequirement = swiftPM.product(
@@ -149,7 +149,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                 ])
             return [
                 build,
-                translatedExecutableTask(
+                try translatedExecutableTask(
                     id: LinuxTaskIDs.test(architecture),
                     buildID: buildID,
                     requirements: [buildRequirement, probeRequirement],
@@ -161,7 +161,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                         (swiftPM.executable("NucleusVulkanLaneProbe"), ["gpu-headless"]),
                         (swiftPM.executable("NucleusSessionSupervisor"), ["--help"]),
                     ]),
-                translatedExecutableTask(
+                try translatedExecutableTask(
                     id: LinuxTaskIDs.testLoader(architecture),
                     buildID: buildID,
                     requirements: [probeRequirement],
@@ -171,7 +171,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                     operations: [
                         (swiftPM.executable("NucleusVulkanLaneProbe"), ["loader"])
                     ]),
-                translatedExecutableTask(
+                try translatedExecutableTask(
                     id: LinuxTaskIDs.testGPUHeadless(architecture),
                     buildID: buildID,
                     requirements: [probeRequirement],
@@ -215,7 +215,7 @@ private func translatedExecutableTask(
     swiftPM: SwiftPMInvocation,
     environment: [String: String],
     operations: [(FilePath, [String])]
-) -> TaskDeclaration {
+) throws -> TaskDeclaration {
     TaskDeclaration(
         id: id,
         component: ComponentID(rawValue: "linux"),
@@ -228,12 +228,32 @@ private func translatedExecutableTask(
         postconditions: [swiftPM.postcondition],
         locks: [.checkout("linux-x86_64")],
         assessmentPolicy: .always,
-        operation: .sequence(
-            operations.map { executable, arguments in
-                swiftPM.operation(
-                    executable: executable,
-                    arguments: arguments,
-                    workingDirectory: swiftPM.context.packageRoot,
-                    environment: environment)
-            }))
+        operation: .action(
+            try AnyColliderAction(
+                RunLinuxLaneExecutablesAction(
+                    executions: try operations.map { executable, arguments in
+                        try swiftPM.ociExecutableExecution(
+                            executable: executable,
+                            arguments: arguments,
+                            workingDirectory: swiftPM.context.packageRoot,
+                            environment: environment)
+                    }))))
+}
+
+private struct RunLinuxLaneExecutablesAction: ColliderAction {
+    static let kind: ActionKind = "linux.run-lane-executables"
+
+    let pipeline: OCIExecutionPipeline
+
+    init(executions: [OCIExecution]) throws {
+        pipeline = try OCIExecutionPipeline(executions)
+    }
+
+    var identity: OCIExecutionPipelineIdentity { pipeline.identity }
+    var requirements: ActionRequirements { pipeline.requirements }
+    var environment: [String: String] { pipeline.environment }
+
+    func execute(in context: ActionContext) async throws {
+        try await pipeline.execute(in: context)
+    }
 }

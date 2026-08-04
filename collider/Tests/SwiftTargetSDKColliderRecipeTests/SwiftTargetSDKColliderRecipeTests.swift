@@ -324,6 +324,7 @@ private func inertActionFileSystem() -> ActionFileSystem {
         contentsEqual: { _, _ in true },
         createDirectory: { _ in },
         copy: { _, _ in },
+        remove: { _ in },
         setPermissions: { _, _ in },
         write: { _, _ in })
 }
