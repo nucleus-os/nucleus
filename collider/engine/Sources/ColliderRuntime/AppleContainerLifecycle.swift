@@ -35,9 +35,14 @@ public func appleContainerBackendHealth() async throws
 
 struct AppleContainerLifecycle: Sendable {
     private let client: ContainerClient
+    private let cancellation: RuntimeCancellation
 
-    init(client: ContainerClient = ContainerClient()) {
+    init(
+        client: ContainerClient = ContainerClient(),
+        cancellation: RuntimeCancellation
+    ) {
         self.client = client
+        self.cancellation = cancellation
     }
 
     func execute(
@@ -49,33 +54,54 @@ struct AppleContainerLifecycle: Sendable {
         logging: CommandLogging?,
         stage: TaskID?
     ) async throws -> CommandResult {
-        let cleanup = AppleContainerCleanup(client: client, name: name)
-        return try await withTaskCancellationHandler {
-            do {
-                let result = try await executeCreatedContainer(
-                    execution,
-                    name: name,
-                    imageReference: imageReference,
-                    temporaryDirectory: temporaryDirectory,
-                    output: output,
-                    logging: logging,
-                    stage: stage)
-                try await cleanup.deleteAndVerify()
-                return result
-            } catch {
-                do {
-                    try await cleanup.deleteAndVerify()
-                } catch let cleanupError {
-                    throw OCIExecutorFailure.containerCleanupFailed(
-                        name: name,
-                        reason: String(describing: cleanupError))
-                }
-                throw error
-            }
-        } onCancel: {
+        let interruptionCleanup = AppleContainerCleanup(client: client, name: name)
+        let operation = Task {
+            try await executeCreatedContainer(
+                execution,
+                name: name,
+                imageReference: imageReference,
+                temporaryDirectory: temporaryDirectory,
+                output: output,
+                logging: logging,
+                stage: stage)
+        }
+        let cancellationRegistration = await cancellation.register {
+            operation.cancel()
             Task.detached {
-                try? await cleanup.deleteAndVerify()
+                try? await interruptionCleanup.deleteAndVerify()
             }
+        }
+        do {
+            let result = try await withTaskCancellationHandler {
+                try await operation.value
+            } onCancel: {
+                operation.cancel()
+                Task.detached {
+                    try? await interruptionCleanup.deleteAndVerify()
+                }
+            }
+            try Task.checkCancellation()
+            if await cancellation.wasInterrupted() {
+                throw CancellationError()
+            }
+            try await AppleContainerCleanup(client: client, name: name)
+                .deleteAndVerify()
+            await cancellation.unregister(cancellationRegistration)
+            return result
+        } catch {
+            operation.cancel()
+            _ = try? await operation.value
+            do {
+                try await AppleContainerCleanup(client: client, name: name)
+                    .deleteAndVerify()
+            } catch let cleanupError {
+                await cancellation.unregister(cancellationRegistration)
+                throw OCIExecutorFailure.containerCleanupFailed(
+                    name: name,
+                    reason: String(describing: cleanupError))
+            }
+            await cancellation.unregister(cancellationRegistration)
+            throw error
         }
     }
 

@@ -1376,54 +1376,21 @@ component graph is constructed exactly once per planning operation.
 This phase establishes the final declaration and identity vocabulary before any
 new persisted identity becomes active.
 
-**Progress: in progress.** `ActionKind`, action-local canonical identity
-encoding, semantic and operational tool requirements, declared effect scopes,
-the final assessment-policy names, and cancellation, logging, filesystem,
-command, and download capabilities are implemented. `TaskBuilder` now creates
-opaque typed artifact, result, and ordering references; graph validation proves
-their producer slots, paths, and value types, and ordering-only edges are
-excluded from identity. Runtime filesystem capabilities enforce declared
-read/write roots and reject lexical escapes. The first producer-consumer
-migration is underway: AOSP source-lock verification, source provenance,
-signing metadata, validation provenance, and publication provenance now flow
-through typed JSON references instead of raw dependency-output paths. Every
-standalone download now produces a typed file slot: Swift host, Android, and
-Ubuntu packages; the AOSP Repo launcher; GN; and Boost. Swift Linux sysroots
-and runtime installations, the active Boost generation, Skia external sources,
-React Native codegen, and Wayland-generated sources flow as typed directories.
-Skia consumes the exact GN executable, Wayland x86_64 compilation and codegen
-consume the exact native `wayland-scanner`, and render-SDK publication consumes
-the exact architecture-matched Skia build directory. React Native's Hermes and
-support-library archives feed its C++ runtime through typed slots, and native
-SDK publication consumes that typed runtime closure. The Swift SDK generator,
-assembled Linux and Android SDKs, validation executables, activation marker,
-and discovery publications form one typed producer-consumer chain. Chromium's
-depot-tools bootstrap executable, source provenance, builder image, CEF and
-browser publications, retention, tests, and installation also form one typed
-chain. AOSP compilation, signing, image assembly, validation, and publication
-consume typed builder-image, target-files, host-tool, image, signing, and
-provenance slots. The composition root now merges each architecture's active
-Swift target SDK, Core, React Native, and Wayland SDK publications, and
-gfxstream products into one typed target-artifact closure. Linux builds,
-benchmarks, sanitizers, and release gates consume that closure; raw SDK-tree
-inputs and handwritten cross-recipe task-ID edges are deleted. The managed
-Android add-on consumes the exact active AOSP generation. The Swift runtime
-builder image, React Native JavaScript dependency tree, and Core Android host
-build and validation chain are typed producer-consumer relationships as well.
-Swift SDK activation and discovery links are declared output slots rather than
-postcondition-only paths. Remaining operation cases, unrestricted command
-paths, legacy identity activation, and the derived-state reset remain open. The
-first operation-family deletion is complete: Meson
-setup, direct file copy, matching-file copy, ZIP extraction, raw file write,
-link-metadata sanitation, directory publication, and apt-package validation no
-longer exist as operation cases, payloads, runtime dispatch, or retained
-test-only compatibility surface. The obsolete attributed Swift-test no-op and
-raw permission mutation cases are gone as well. Test fixtures write through
-scoped actions. Every production create/remove/symlink/retention preparation is
-now owned by a semantic recipe action. The create-directory, remove-path,
-replace-symlink, symlink-publication, and directory-retention operation cases,
-their global identity tags, and their runtime dispatch are deleted; engine
-fixtures use scoped actions, and Swift SDK discovery publication retains its
+**Progress: complete.** Every task carries one namespaced semantic action or is
+a logical SwiftPM requirement/aggregate. `TaskOperation`, its payloads, global
+identity tags, runtime dispatch, compatibility surface, and nested sequences
+are deleted. Action-local identity encoding, semantic and operational tools,
+scoped effects, cancellation, logging, filesystem, command, download, and
+container capabilities are authoritative. `TaskBuilder` creates opaque typed
+artifact, result, and ordering references; graph validation proves producer
+slots, paths, value types, and ownership while excluding ordering-only edges
+from identity. The complete Swift SDK, native SDK, AOSP, Chromium, Android,
+React Native, Wayland, Linux, benchmark, sanitizer, and release-gate graph uses
+typed producer-consumer relationships. Raw generated-output inputs and
+handwritten cross-recipe task-ID edges are gone. Runtime filesystem
+capabilities enforce declared roots and reject lexical escapes. The canonical
+derived-state layout is active without a legacy reader or dual identity path.
+Fixtures use scoped actions, and Swift SDK discovery publication retains its
 behavioral coverage beside the owning recipe. Generation activation and every
 standalone download are now namespaced recipe actions, so their operation cases
 and global identity tags are deleted as well. Download policy has one canonical
@@ -1546,10 +1513,9 @@ and retention consumes both publications. Assembly actions perform their own
 dynamic-link, launch, consumer, version-manager, archive, and output validation;
 the redundant standalone validation actions are deleted. Chromium test
 compilation and execution form one test action, and browser installation owns
-validation of its consumed active publication. The only remaining sequence
-values are empty placeholders on logical SwiftPM requirements plus synthesized
-SwiftPM operations in the runtime; phase 6 removes both while extracting the
-lowering.
+validation of its consumed active publication. Logical SwiftPM requirements
+remain actionless declarations, while phase 6 lowers their complete build
+contexts into immutable physical invocations before runtime execution.
 
 The native builder bootstrap boundary is now typed as well. The builder image
 and ccache form a `NativeOCIBaseConfiguration`; only the Swift target SDK recipe
@@ -1560,8 +1526,8 @@ native builds consume that reference directly, and Linux SwiftPM contexts mount
 its resolved path. React Native also consumes Core's typed Skia external-source
 artifact for ICU instead of rediscovering a generated subtree by path.
 
-Complete-catalog validation now rejects any raw file, tree, optional-tree,
-dependency-output, or tool path equal to or nested beneath another task's
+Complete-catalog validation now rejects any raw file, tree, optional-tree, or
+tool path equal to or nested beneath another task's
 declared output. The complete runtime graph passes this validation, and a
 negative contract fixture proves that an explicit dependency plus a raw child
 path is still rejected: generated data crosses components only through its
@@ -1676,7 +1642,7 @@ legacy state remains.
 
 ## Phase 6 — Extract deterministic planning, persistence, and SwiftPM lowering
 
-**Progress: in progress.** The deterministic lowering protocol and immutable
+**Progress: complete.** The deterministic lowering protocol and immutable
 assessed/lowered task values live in `ColliderCore`. `ColliderSwiftPM` owns
 grouping by complete build context, filter-preserving test grouping,
 output-aware test-over-build subsumption, physical task identity and
@@ -1696,12 +1662,17 @@ tools, or derives scheduler resources from actions; it schedules and executes
 only the tasks and resources in the frozen plan. Dedicated planning and
 persistence test targets prove deterministic plan encoding, selection-scoped
 observations, corrupt-state handling, hashing, and run-record behavior.
-
-Component expansion and entrypoint selection still occur before the planner,
-and complete-catalog output ownership validation still lives in the component
-catalog. Moving those operations into `ColliderPlanning`, deleting their old
-command/core paths, and completing the interrupted-write and bounded-retention
-acceptance coverage remain open.
+`ComponentCatalog` is declaration-only Core data. `ColliderPlanning` expands
+and indexes it, validates all public routes and action namespaces, resolves
+entrypoint requests, rejects overlapping outputs and raw generated-output
+consumption across the complete graph, and derives the selected closure.
+Commands submit catalog declarations and entrypoint requests to
+`ColliderEngine`; no production command resolves task IDs or constructs a
+graph. Persistence acceptance coverage exercises corrupt task state, fault
+injection at every generation-publication boundary, reusable immutable
+generations, and bounded ownership-aware retention. The old Core catalog
+index, command selection helpers, runtime planning dependency, and misowned
+persistence tests are deleted.
 
 Create `ColliderPlanning` and move component expansion, selection, graph
 normalization, semantic-edge identity, placement validation, output ownership,
@@ -1758,6 +1729,17 @@ interrupted writes, corrupt derived state, and bounded retention.
 
 ## Phase 7 — Complete the resource-aware runtime
 
+**Progress: complete.** The frozen plan carries normalized CPU, memory, I/O,
+exclusive-host, named-lock, and canonical output/publication-tree claims. The
+runtime admits the complete claim set atomically, bounds every resource class,
+and acquires cross-process locks asynchronously with interruption checks.
+Runtime signals and Swift task cancellation both terminate execution sessions
+and force verified Apple-container deletion, including the late-registration
+race. Successful task state is published only after action and output
+validation succeed. Stable reports and run manifests now include execution,
+critical-path, and resource-wait measurements. The capacity-one/concurrent
+equivalence suite and the complete engine suite pass.
+
 Move the existing bounded ready queue, weighted CPU and memory admission,
 exclusive claims, and lock-disjointness checks into `ColliderRuntime` execution
 over the frozen plan.
@@ -1796,6 +1778,17 @@ difference from the Phase 1 makespan baseline.
 
 ## Phase 8 — Remove superseded architecture and validate the kernel
 
+**Progress: in progress.** The command-layer placement diagnostic and its
+source-shape test are deleted; target placement is validated from the complete
+catalog and frozen plan. The obsolete raw `dependencyOutput` input case and its
+identity branch are deleted. ColliderRuntime no longer bundles or implements
+component-specific validation fixtures: the Android Swift SDK consumer now
+lives under `swift-sdk/validation`, while C++ interop and SourceKit-LSP fixture
+materialization is test-only. Duplicate native-SDK forwarding in the composition
+root is removed. Workspace planning and download persistence now resolve
+`XDG_CACHE_HOME` and `HOME` through one `ColliderCacheLayout`. The focused
+engine acceptance tests pass; the complete kernel matrix remains open.
+
 Delete:
 
 - obsolete operation payloads and digest encoders;
@@ -1813,7 +1806,8 @@ dependency verifier and no Collider invocation of `git-sync-deps` remains.
 Run the kernel acceptance matrix:
 
 1. engine, planning, persistence, runtime, recipe, and command tests;
-2. root host build and complete root tests;
+2. root manifest resolution on macOS, followed by complete root builds and
+   tests in their declared Linux and Android target environments;
 3. Android manifest resolution and supported cross-compilation checks;
 4. Swift SDK, AOSP, Chromium, native SDK, and publication behavioral suites;
 5. capacity-one and production-capacity scheduler replays;

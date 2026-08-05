@@ -14,6 +14,10 @@ import Testing
     try await registry.record(
         kind: .taskStarted, task: TaskID(rawValue: "doctor.host"), in: run)
     try await registry.appendLog(Array("diagnostic\n".utf8), in: run)
+    try await registry.recordExecutionMetrics(
+        criticalPathDurationNanoseconds: 123,
+        resourceWaitDurationNanoseconds: 45,
+        in: run)
     try await registry.finish(run, status: .succeeded)
 
     let manifest = try JSONDecoder().decode(
@@ -23,6 +27,8 @@ import Testing
                 directory
                 .appendingPathComponent("runs/\(run.id.rawValue)/manifest.json")))
     #expect(manifest.status == .succeeded)
+    #expect(manifest.criticalPathDurationNanoseconds == 123)
+    #expect(manifest.resourceWaitDurationNanoseconds == 45)
     #expect(
         try FileManager.default.destinationOfSymbolicLink(
             atPath: directory.appendingPathComponent("latest").path)

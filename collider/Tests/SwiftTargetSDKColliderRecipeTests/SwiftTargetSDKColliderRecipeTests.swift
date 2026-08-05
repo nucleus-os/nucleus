@@ -48,8 +48,7 @@ import Testing
         active: temporary.appending("current"),
         ndkRoot: temporary.appending("ndk"),
         validationFixture: root.appending(
-            "collider/engine/Sources/ColliderRuntime/Resources/ToolchainValidationFixtures/AndroidSDKConsumer"
-        ),
+            "swift-sdk/validation/AndroidSDKConsumer"),
         validator: root.appending(
             "swift-sdk/validate-target-sdk-artifacts.sh"),
         swiftExecutable: FilePath("/usr/bin/swift"),

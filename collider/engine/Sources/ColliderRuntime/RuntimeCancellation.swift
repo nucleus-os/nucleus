@@ -1,4 +1,5 @@
 import Dispatch
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Darwin)
@@ -16,7 +17,11 @@ public actor RuntimeCancellation {
     func register(_ handler: @escaping @Sendable () -> Void) -> UInt64 {
         let id = nextID
         nextID &+= 1
-        handlers[id] = handler
+        if interrupted {
+            handler()
+        } else {
+            handlers[id] = handler
+        }
         return id
     }
 

@@ -38,6 +38,8 @@ public struct TaskExecutionReport: Codable, Sendable {
     public let selectedInputHashingDurationNanoseconds: UInt64
     public let swiftPMInvocationCount: Int
     public let executionDurationNanoseconds: UInt64
+    public let criticalPathDurationNanoseconds: UInt64
+    public let resourceWaitDurationNanoseconds: UInt64
 
     public init(
         plan: [TaskPlanEntry],
@@ -45,7 +47,9 @@ public struct TaskExecutionReport: Codable, Sendable {
         planningDurationNanoseconds: UInt64,
         selectedInputHashingDurationNanoseconds: UInt64,
         swiftPMInvocationCount: Int,
-        executionDurationNanoseconds: UInt64
+        executionDurationNanoseconds: UInt64,
+        criticalPathDurationNanoseconds: UInt64,
+        resourceWaitDurationNanoseconds: UInt64
     ) {
         self.plan = plan
         self.executed = executed
@@ -54,6 +58,8 @@ public struct TaskExecutionReport: Codable, Sendable {
             selectedInputHashingDurationNanoseconds
         self.swiftPMInvocationCount = swiftPMInvocationCount
         self.executionDurationNanoseconds = executionDurationNanoseconds
+        self.criticalPathDurationNanoseconds = criticalPathDurationNanoseconds
+        self.resourceWaitDurationNanoseconds = resourceWaitDurationNanoseconds
     }
 }
 
@@ -70,26 +76,28 @@ private struct ScheduledTaskExecution: Sendable {
     let recordsActiveArtifact: Bool
 }
 
+private struct ScheduledTaskResult: Sendable {
+    let scheduledTask: ScheduledTask
+    let durationNanoseconds: UInt64
+}
+
 private func canSchedule(
     _ candidate: ScheduledTask,
-    swiftBuilds: [LoweredExecutionTask],
     swiftBuildPlans: [TaskPlanEntry],
-    declaredTasks: [TaskDeclaration],
     declaredPlans: [TaskPlanEntry],
     running: [ScheduledTask: PlannedTaskResources],
-    runningLocks: [ScheduledTask: Set<TaskLock>],
+    runningClaims: [ScheduledTask: [PlannedTaskClaim]],
     capacity: TaskResourceCapacity
 ) -> Bool {
     let resources: PlannedTaskResources
-    let locks: Set<TaskLock>
+    let claims: [PlannedTaskClaim]
     switch candidate {
     case .swiftBuild(let index):
         resources = swiftBuildPlans[index].resources
-        locks = Set(swiftBuilds[index].task.locks)
+        claims = swiftBuildPlans[index].claims
     case .declared(let index):
-        let task = declaredTasks[index]
         resources = declaredPlans[index].resources
-        locks = Set(task.locks)
+        claims = declaredPlans[index].claims
     }
 
     if running.isEmpty {
@@ -97,13 +105,39 @@ private func canSchedule(
     }
     guard !resources.exclusive,
         !running.values.contains(where: \.exclusive),
-        runningLocks.values.allSatisfy({ $0.isDisjoint(with: locks) })
+        runningClaims.values.allSatisfy({ !claimsConflict($0, claims) })
     else { return false }
 
     let usedCPU = running.values.reduce(UInt32(0)) { $0 + $1.cpuCount }
     let usedMemory = running.values.reduce(UInt64(0)) { $0 + $1.memoryBytes }
+    let usedIO = running.values.reduce(UInt32(0)) { $0 + $1.ioWeight }
     return usedCPU + resources.cpuCount <= capacity.cpuCount
         && usedMemory + resources.memoryBytes <= capacity.memoryBytes
+        && usedIO + resources.ioWeight <= capacity.ioWeight
+}
+
+private func claimsConflict(
+    _ lhs: [PlannedTaskClaim],
+    _ rhs: [PlannedTaskClaim]
+) -> Bool {
+    for left in lhs {
+        for right in rhs where left.access == .exclusive || right.access == .exclusive {
+            switch (left.subject, right.subject) {
+            case (.named(let leftName), .named(let rightName)):
+                if leftName == rightName { return true }
+            case (.path(let leftPath), .path(let rightPath)):
+                if pathsOverlap(leftPath, rightPath) { return true }
+            case (.named, .path), (.path, .named):
+                break
+            }
+        }
+    }
+    return false
+}
+
+private func pathsOverlap(_ lhs: String, _ rhs: String) -> Bool {
+    lhs == rhs || lhs.hasPrefix(rhs.hasSuffix("/") ? rhs : rhs + "/")
+        || rhs.hasPrefix(lhs.hasSuffix("/") ? lhs : lhs + "/")
 }
 
 extension ColliderRuntime {
@@ -131,11 +165,12 @@ extension ColliderRuntime {
         if options.dryRun {
             workflowHeldLocks = []
         } else {
-            workflowHeldLocks = try acquireTaskLocks(
+            workflowHeldLocks = try await acquireTaskLocks(
                 workflowLocks,
                 stateRoot: stateRoot,
                 run: eventRun,
-                purpose: "workflow")
+                purpose: "workflow",
+                cancellation: cancellation)
         }
         defer { withExtendedLifetime(workflowHeldLocks) {} }
 
@@ -164,7 +199,9 @@ extension ColliderRuntime {
                 selectedInputHashingDurationNanoseconds:
                     selectedInputHashingDurationNanoseconds,
                 swiftPMInvocationCount: swiftPMInvocationCount,
-                executionDurationNanoseconds: 0)
+                executionDurationNanoseconds: 0,
+                criticalPathDurationNanoseconds: 0,
+                resourceWaitDurationNanoseconds: 0)
         }
         let executionStart = ContinuousClock().now
         if let eventRun, let eventRegistry {
@@ -213,47 +250,53 @@ extension ColliderRuntime {
         var executed: [TaskID] = []
         let resourceCapacity = frozenPlan.resourceCapacity
         var running: [ScheduledTask: PlannedTaskResources] = [:]
-        var runningLocks: [ScheduledTask: Set<TaskLock>] = [:]
+        var runningClaims: [ScheduledTask: [PlannedTaskClaim]] = [:]
+        var readySince: [ScheduledTask: ContinuousClock.Instant] = [:]
+        var resourceWaitDuration: UInt64 = 0
+        var criticalPathByTask: [TaskID: UInt64] = [:]
 
-        try await withThrowingTaskGroup(of: ScheduledTask.self) { group in
+        try await withThrowingTaskGroup(of: ScheduledTaskResult.self) { group in
             while !pendingBuilds.isEmpty || !pendingTasks.isEmpty || !running.isEmpty {
                 while running.count < options.maximumParallelism {
+                    let readyBuilds = pendingBuilds.compactMap {
+                        index -> ScheduledTask? in
+                        buildPrerequisites[swiftBuilds[index].task.id, default: []]
+                            .isSubset(of: completed)
+                            ? .swiftBuild(index) : nil
+                    }
+                    let readyDeclared = pendingTasks.compactMap {
+                        index -> ScheduledTask? in
+                        let task = ordered[index]
+                        let dependenciesReady = task.executionDependencies.allSatisfy {
+                            completed.contains($0)
+                                || task.subsumedDependencies.contains($0)
+                        }
+                        let swiftBuildsReady = buildsByOwner[
+                            task.id, default: []
+                        ].isSubset(of: completed)
+                        return dependenciesReady && swiftBuildsReady
+                            ? .declared(index) : nil
+                    }
+                    for ready in readyBuilds + readyDeclared where readySince[ready] == nil {
+                        readySince[ready] = ContinuousClock().now
+                    }
                     let candidate =
-                        pendingBuilds.compactMap { index -> ScheduledTask? in
-                            buildPrerequisites[swiftBuilds[index].task.id, default: []]
-                                .isSubset(of: completed)
-                                ? .swiftBuild(index) : nil
-                        }.first(where: { candidate in
+                        readyBuilds.first(where: { candidate in
                             canSchedule(
                                 candidate,
-                                swiftBuilds: swiftBuilds,
                                 swiftBuildPlans: swiftBuildPlans,
-                                declaredTasks: ordered,
                                 declaredPlans: plan,
                                 running: running,
-                                runningLocks: runningLocks,
+                                runningClaims: runningClaims,
                                 capacity: resourceCapacity)
                         })
-                        ?? pendingTasks.compactMap { index -> ScheduledTask? in
-                            let task = ordered[index]
-                            let dependenciesReady = task.executionDependencies.allSatisfy {
-                                completed.contains($0)
-                                    || task.subsumedDependencies.contains($0)
-                            }
-                            let swiftBuildsReady = buildsByOwner[
-                                task.id, default: []
-                            ].isSubset(of: completed)
-                            return dependenciesReady && swiftBuildsReady
-                                ? .declared(index) : nil
-                        }.first(where: { candidate in
+                        ?? readyDeclared.first(where: { candidate in
                             canSchedule(
                                 candidate,
-                                swiftBuilds: swiftBuilds,
                                 swiftBuildPlans: swiftBuildPlans,
-                                declaredTasks: ordered,
                                 declaredPlans: plan,
                                 running: running,
-                                runningLocks: runningLocks,
+                                runningClaims: runningClaims,
                                 capacity: resourceCapacity)
                         })
 
@@ -284,10 +327,14 @@ extension ColliderRuntime {
                             recordsActiveArtifact: true)
                     }
                     running[candidate] = resources
-                    runningLocks[candidate] = Set(task.locks)
+                    runningClaims[candidate] = execution.plan.claims
+                    if let ready = readySince.removeValue(forKey: candidate) {
+                        resourceWaitDuration &+= elapsedNanoseconds(since: ready)
+                    }
                     executed.append(task.id)
 
                     group.addTask {
+                        let taskStart = ContinuousClock().now
                         if let attribution = execution.swiftBuildAttribution {
                             do {
                                 try await self.executePlannedTask(
@@ -315,7 +362,9 @@ extension ColliderRuntime {
                                 options: options,
                                 recordsActiveArtifact: execution.recordsActiveArtifact)
                         }
-                        return execution.scheduledTask
+                        return ScheduledTaskResult(
+                            scheduledTask: execution.scheduledTask,
+                            durationNanoseconds: elapsedNanoseconds(since: taskStart))
                     }
                 }
 
@@ -332,16 +381,29 @@ extension ColliderRuntime {
                 guard let finished = try await group.next() else {
                     preconditionFailure("task group ended with scheduled tasks still running")
                 }
-                running.removeValue(forKey: finished)
-                runningLocks.removeValue(forKey: finished)
-                switch finished {
+                let finishedTask = finished.scheduledTask
+                running.removeValue(forKey: finishedTask)
+                runningClaims.removeValue(forKey: finishedTask)
+                let taskID: TaskID
+                let criticalDependencies: Set<TaskID>
+                switch finishedTask {
                 case .swiftBuild(let index):
-                    completed.insert(swiftBuilds[index].task.id)
+                    taskID = swiftBuilds[index].task.id
+                    criticalDependencies = buildPrerequisites[taskID, default: []]
+                    completed.insert(taskID)
                 case .declared(let index):
                     let task = ordered[index]
+                    taskID = task.id
+                    criticalDependencies = Set(task.executionDependencies).union(
+                        buildsByOwner[task.id, default: []])
                     completed.insert(task.id)
                     completed.formUnion(task.subsumedDependencies)
                 }
+                let dependencyPath =
+                    criticalDependencies.compactMap {
+                        criticalPathByTask[$0]
+                    }.max() ?? 0
+                criticalPathByTask[taskID] = dependencyPath &+ finished.durationNanoseconds
             }
         }
 
@@ -356,9 +418,14 @@ extension ColliderRuntime {
                     completedAt: ISO8601DateFormatter().string(from: Date())))
         }
         let executionDuration = elapsedNanoseconds(since: executionStart)
+        let criticalPathDuration = criticalPathByTask.values.max() ?? 0
         if let eventRun, let eventRegistry {
             try await eventRegistry.recordExecutionDuration(
                 executionDuration,
+                in: eventRun)
+            try await eventRegistry.recordExecutionMetrics(
+                criticalPathDurationNanoseconds: criticalPathDuration,
+                resourceWaitDurationNanoseconds: resourceWaitDuration,
                 in: eventRun)
         }
         return TaskExecutionReport(
@@ -368,7 +435,9 @@ extension ColliderRuntime {
             selectedInputHashingDurationNanoseconds:
                 selectedInputHashingDurationNanoseconds,
             swiftPMInvocationCount: swiftPMInvocationCount,
-            executionDurationNanoseconds: executionDuration)
+            executionDurationNanoseconds: executionDuration,
+            criticalPathDurationNanoseconds: criticalPathDuration,
+            resourceWaitDurationNanoseconds: resourceWaitDuration)
     }
 
     private func executePlannedTask(
@@ -382,12 +451,13 @@ extension ColliderRuntime {
         recordsActiveArtifact: Bool
     ) async throws {
         let taskStart = ContinuousClock().now
-        let heldLocks = try acquireTaskLocks(
+        let heldLocks = try await acquireTaskLocks(
             task.locks,
             stateRoot: stateRoot,
             run: eventRun,
             task: task.id,
-            purpose: "task")
+            purpose: "task",
+            cancellation: cancellation)
         defer { withExtendedLifetime(heldLocks) {} }
         if let eventRun, let eventRegistry {
             try await eventRegistry.record(
@@ -504,10 +574,12 @@ private func acquireTaskLocks(
     stateRoot: FilePath,
     run: RunHandle?,
     task: TaskID? = nil,
-    purpose: String
-) throws -> [ColliderFileLock] {
+    purpose: String,
+    cancellation: RuntimeCancellation
+) async throws -> [ColliderFileLock] {
     let locksRoot = stateRoot.removingLastComponent().appending("locks")
-    return try locks.sorted(by: lockOrdering).map { lock in
+    var held: [ColliderFileLock] = []
+    for lock in locks.sorted(by: lockOrdering) {
         let path: FilePath
         let detail: String
         switch lock {
@@ -518,13 +590,25 @@ private func acquireTaskLocks(
             path = sharedPath
             detail = "shared mutation"
         }
-        return try ColliderFileLock(
-            path: path,
-            purpose: "\(purpose) \(detail)",
-            owner: LockOwner(
-                run: run?.id.rawValue,
-                task: task?.rawValue))
+        while true {
+            try Task.checkCancellation()
+            if await cancellation.wasInterrupted() { throw CancellationError() }
+            do {
+                held.append(
+                    try ColliderFileLock(
+                        path: path,
+                        purpose: "\(purpose) \(detail)",
+                        waitForExistingOwner: false,
+                        owner: LockOwner(
+                            run: run?.id.rawValue,
+                            task: task?.rawValue)))
+                break
+            } catch RuntimeLockFailure.alreadyOwned {
+                try await ContinuousClock().sleep(for: .milliseconds(100))
+            }
+        }
     }
+    return held
 }
 
 private func lockOrdering(_ lhs: TaskLock, _ rhs: TaskLock) -> Bool {

@@ -115,8 +115,6 @@ struct TaskIdentityBuilder {
                 } else {
                     encoder.append(tag: 74, bytes: fallback)
                 }
-            case .dependencyOutput(let path):
-                encoder.append(tag: 71, string: path.string)
             case .tool(let executable):
                 let tool = try services.semanticToolIdentity(
                     executable,

@@ -4,10 +4,6 @@ import Testing
 
 @testable import ColliderCommands
 
-@Test func everyDirectWorkloadHasValidTargetPlacement() {
-    #expect(DirectWorkloadPlacementAudit.invalidIDs.isEmpty)
-}
-
 #if os(Linux)
 import NucleusAndroidRuntimeCore
 #endif

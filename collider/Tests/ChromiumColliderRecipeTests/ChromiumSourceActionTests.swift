@@ -163,7 +163,7 @@ import Testing
     let current = generations.appendingPathComponent("current")
     let task = TaskDeclaration(
         id: TaskID(rawValue: "fixture.prepare-chromium-source"),
-        component: ComponentID(rawValue: "fixture"),
+        component: ComponentID(rawValue: "browser"),
         outputs: [
             OutputDeclaration(
                 path: FilePath(

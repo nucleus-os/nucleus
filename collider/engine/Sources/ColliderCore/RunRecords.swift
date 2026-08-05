@@ -26,6 +26,8 @@ public struct RunManifest: Codable, Sendable {
     public var selectedInputHashingDurationNanoseconds: UInt64?
     public var swiftPMInvocationCount: Int?
     public var executionDurationNanoseconds: UInt64?
+    public var criticalPathDurationNanoseconds: UInt64?
+    public var resourceWaitDurationNanoseconds: UInt64?
     public var taskDurationsNanoseconds: [String: UInt64]
     public var activeArtifacts: [String: ArtifactDigest]
     public var plannedTasks: [String: ArtifactDigest]?
@@ -43,6 +45,8 @@ public struct RunManifest: Codable, Sendable {
         selectedInputHashingDurationNanoseconds = nil
         swiftPMInvocationCount = nil
         executionDurationNanoseconds = nil
+        criticalPathDurationNanoseconds = nil
+        resourceWaitDurationNanoseconds = nil
         taskDurationsNanoseconds = [:]
         activeArtifacts = [:]
         plannedTasks = nil

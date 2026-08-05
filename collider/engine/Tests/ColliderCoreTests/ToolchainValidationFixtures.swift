@@ -1,13 +1,12 @@
-import ColliderCore
-import ColliderPersistence
 import Foundation
 import SystemPackage
+
+@testable import ColliderRuntime
 
 enum ToolchainValidationFixtures {
     enum Fixture: String, CaseIterable {
         case cxxInterop = "CxxInteropTestRunner"
         case sourceKitLSP = "NucleusLSPPackage"
-        case androidSDKConsumer = "AndroidSDKConsumer"
     }
 
     static func materialize(
@@ -27,25 +26,19 @@ enum ToolchainValidationFixtures {
             at: source,
             to: URL(fileURLWithPath: destination.string))
         guard !substitutions.isEmpty else { return }
-        try substitute(
-            substitutions,
-            under: URL(fileURLWithPath: destination.string))
+        try substitute(substitutions, under: URL(fileURLWithPath: destination.string))
     }
 
     static func resourceURL(for fixture: Fixture) throws -> URL {
         guard
-            let root = Bundle.module.resourceURL?
-                .appendingPathComponent(
-                    "ToolchainValidationFixtures",
-                    isDirectory: true),
+            let root = Bundle.module.resourceURL?.appendingPathComponent(
+                "ToolchainValidationFixtures",
+                isDirectory: true),
             FileManager.default.fileExists(atPath: root.path)
         else {
-            throw RuntimeFailure.invalidOutput(
-                "Collider validation fixture bundle is missing")
+            throw RuntimeFailure.invalidOutput("Collider validation fixture bundle is missing")
         }
-        let fixtureURL = root.appendingPathComponent(
-            fixture.rawValue,
-            isDirectory: true)
+        let fixtureURL = root.appendingPathComponent(fixture.rawValue, isDirectory: true)
         guard FileManager.default.fileExists(atPath: fixtureURL.path) else {
             throw RuntimeFailure.invalidOutput(
                 "Collider validation fixture is missing: \(fixture.rawValue)")
@@ -53,40 +46,28 @@ enum ToolchainValidationFixtures {
         return fixtureURL
     }
 
-    static func jsonRPCPayload(
-        _ messages: [[String: Any]]
-    ) throws -> [UInt8] {
+    static func jsonRPCPayload(_ messages: [[String: Any]]) throws -> [UInt8] {
         var payload = Data()
         for message in messages {
-            let body = try JSONSerialization.data(
-                withJSONObject: message,
-                options: [.sortedKeys])
-            payload.append(
-                Data("Content-Length: \(body.count)\r\n\r\n".utf8))
+            let body = try JSONSerialization.data(withJSONObject: message, options: [.sortedKeys])
+            payload.append(Data("Content-Length: \(body.count)\r\n\r\n".utf8))
             payload.append(body)
         }
         return Array(payload)
     }
 
-    static func jsonRPCMessages(
-        _ output: String
-    ) throws -> [[String: Any]] {
+    static func jsonRPCMessages(_ output: String) throws -> [[String: Any]] {
         let data = Data(output.utf8)
         let separator = Data("\r\n\r\n".utf8)
         var offset = data.startIndex
         var messages: [[String: Any]] = []
         while offset < data.endIndex {
             guard
-                let headerRange = data.range(
-                    of: separator,
-                    in: offset..<data.endIndex),
-                let header = String(
-                    data: data[offset..<headerRange.lowerBound],
-                    encoding: .utf8),
-                let lengthLine = header.split(separator: "\r\n").first(
-                    where: {
-                        $0.lowercased().hasPrefix("content-length:")
-                    }),
+                let headerRange = data.range(of: separator, in: offset..<data.endIndex),
+                let header = String(data: data[offset..<headerRange.lowerBound], encoding: .utf8),
+                let lengthLine = header.split(separator: "\r\n").first(where: {
+                    $0.lowercased().hasPrefix("content-length:")
+                }),
                 let length = Int(
                     lengthLine.split(separator: ":", maxSplits: 1)[1]
                         .trimmingCharacters(in: .whitespaces))
@@ -123,23 +104,16 @@ enum ToolchainValidationFixtures {
                 "cannot enumerate validation fixture \(directory.path)")
         }
         for case let url as URL in enumerator {
-            let values = try url.resourceValues(
-                forKeys: [.isRegularFileKey])
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey])
             guard values.isRegularFile == true,
                 var source = try? String(contentsOf: url, encoding: .utf8)
             else { continue }
             let original = source
-            for (placeholder, value) in substitutions.sorted(
-                by: { $0.key < $1.key })
-            {
-                source = source.replacingOccurrences(
-                    of: placeholder,
-                    with: value)
+            for (placeholder, value) in substitutions.sorted(by: { $0.key < $1.key }) {
+                source = source.replacingOccurrences(of: placeholder, with: value)
             }
             if source != original {
-                try DurableFile.write(
-                    Data(source.utf8),
-                    to: FilePath(url.path))
+                try Data(source.utf8).write(to: url)
             }
         }
     }

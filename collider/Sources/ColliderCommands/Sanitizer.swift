@@ -1,4 +1,5 @@
 import ArgumentParser
+import ColliderCore
 import QualificationColliderRecipe
 
 extension SanitizerKind: ExpressibleByArgument {}
@@ -27,14 +28,14 @@ struct SanitizerCommand {
         controls: TaskControls
     ) async throws {
         let catalog = try ComponentRegistry(context: context).componentCatalog()
-        let selected = try selection.sanitizers.flatMap { sanitizer in
-            try catalog.roots(
-                named: sanitizer.entrypoint,
+        let requests = selection.sanitizers.map { sanitizer in
+            ComponentEntrypointRequest(
+                entrypoint: sanitizer.entrypoint,
                 selection: SanitizerColliderRecipe.descriptor.canonicalName)
         }
         try await context.execute(
-            tasks: catalog.tasks,
-            selected: selected,
+            catalog: catalog,
+            requests: requests,
             controls: controls)
     }
 }

@@ -5,9 +5,7 @@ let package = Package(
     name: "CxxInteropTestRunner",
     products: [.library(name: "Example", targets: ["Example"])],
     targets: [
-        .target(
-            name: "Example",
-            swiftSettings: [.strictMemorySafety()]),
+        .target(name: "Example", swiftSettings: [.strictMemorySafety()]),
         .testTarget(
             name: "ExampleTests",
             dependencies: ["Example"],

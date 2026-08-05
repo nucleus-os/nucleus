@@ -287,304 +287,36 @@ public struct ComponentEntrypointRequest: Hashable, Sendable {
         self.spelling = spelling
         self.entrypoint = entrypoint
     }
+
+    public init(
+        entrypoint: ComponentEntrypointID,
+        selection: String?
+    ) {
+        spelling = selection ?? "all"
+        self.entrypoint = entrypoint
+    }
 }
 
 public struct ComponentCatalog: Sendable {
-    public let components: [ComponentID: ComponentDefinition]
-    public let groups: [String: ComponentSelectionGroup]
+    public let components: [ComponentDefinition]
+    public let groups: [ComponentSelectionGroup]
     public let routes: [ComponentEntrypointRoute]
     public let publicEntrypoints: [ComponentEntrypointRequest]
-    public let tasks: [TaskDeclaration]
-
-    private let componentSpellings: [String: ComponentID]
-    private let routesByKey: [RouteKey: [ComponentEntrypointReference]]
-    private let publicEntrypointSet: Set<ComponentEntrypointRequest>
 
     public init(
         components: [ComponentDefinition],
         groups: [ComponentSelectionGroup] = [],
         routes: [ComponentEntrypointRoute] = [],
         publicEntrypoints: [ComponentEntrypointRequest]
-    ) throws {
-        var componentsByID: [ComponentID: ComponentDefinition] = [:]
-        var spellings: [String: ComponentID] = [:]
-        var directoryNames: [String: ComponentID] = [:]
-        var allTasks: [TaskDeclaration] = []
-
-        for component in components {
-            let descriptor = component.descriptor
-            guard componentsByID.updateValue(component, forKey: descriptor.id) == nil else {
-                throw ComponentCatalogFailure.duplicateComponent(descriptor.id)
-            }
-            guard
-                directoryNames.updateValue(descriptor.id, forKey: descriptor.directoryName)
-                    == nil
-            else {
-                throw ComponentCatalogFailure.duplicateDirectory(descriptor.directoryName)
-            }
-            for spelling in [descriptor.canonicalName] + descriptor.aliases.sorted() {
-                guard spellings.updateValue(descriptor.id, forKey: spelling) == nil else {
-                    throw ComponentCatalogFailure.duplicateSpelling(spelling)
-                }
-            }
-            allTasks += component.tasks
-        }
-
-        _ = try TaskGraph(allTasks)
-
-        var groupsByName: [String: ComponentSelectionGroup] = [:]
-        for group in groups {
-            guard spellings[group.name] == nil else {
-                throw ComponentCatalogFailure.duplicateSpelling(group.name)
-            }
-            guard groupsByName.updateValue(group, forKey: group.name) == nil else {
-                throw ComponentCatalogFailure.duplicateSpelling(group.name)
-            }
-            for component in group.components where componentsByID[component] == nil {
-                throw ComponentCatalogFailure.unknownGroupComponent(
-                    group: group.name,
-                    component: component)
-            }
-        }
-
-        var routesByKey: [RouteKey: [ComponentEntrypointReference]] = [:]
-        for route in routes {
-            guard !route.destinations.isEmpty else {
-                throw ComponentCatalogFailure.emptyRoute(
-                    spelling: route.spelling,
-                    entrypoint: route.requestedEntrypoint)
-            }
-            let key = RouteKey(
-                spelling: route.spelling,
-                entrypoint: route.requestedEntrypoint)
-            guard routesByKey.updateValue(route.destinations, forKey: key) == nil else {
-                throw ComponentCatalogFailure.duplicateRoute(
-                    spelling: route.spelling,
-                    entrypoint: route.requestedEntrypoint)
-            }
-            for destination in route.destinations {
-                try Self.validate(destination, in: componentsByID)
-            }
-        }
-
-        try Self.validateOutputOwnership(allTasks)
-        try Self.validateGeneratedOutputConsumption(allTasks)
-        try Self.validateActions(allTasks)
-
-        self.components = componentsByID
-        self.groups = groupsByName
+    ) {
+        self.components = components
+        self.groups = groups
         self.routes = routes
         self.publicEntrypoints = publicEntrypoints
-        tasks = allTasks
-        componentSpellings = spellings
-        self.routesByKey = routesByKey
-        publicEntrypointSet = Set(publicEntrypoints)
-
-        try validatePublicEntrypoints()
     }
 
-    public func entrypoints(
-        named entrypoint: ComponentEntrypointID,
-        selection: String?
-    ) throws -> [ComponentEntrypointReference] {
-        let spelling = selection ?? "all"
-        let request = ComponentEntrypointRequest(
-            spelling: spelling,
-            entrypoint: entrypoint)
-        guard publicEntrypointSet.contains(request) else {
-            throw ComponentCatalogFailure.nonPublicEntrypoint(request)
-        }
-        return try resolveEntrypoints(
-            named: entrypoint,
-            spelling: spelling)
-    }
-
-    private func resolveEntrypoints(
-        named entrypoint: ComponentEntrypointID,
-        spelling: String
-    ) throws -> [ComponentEntrypointReference] {
-        if let destinations = routesByKey[
-            RouteKey(spelling: spelling, entrypoint: entrypoint)
-        ] {
-            return destinations
-        }
-        if let componentID = componentSpellings[spelling] {
-            let reference = ComponentEntrypointReference(
-                component: componentID,
-                entrypoint: entrypoint)
-            try Self.validate(reference, in: components)
-            return [reference]
-        }
-        if let group = groups[spelling] {
-            let references = group.components.sorted(by: {
-                $0.rawValue < $1.rawValue
-            }).compactMap { componentID -> ComponentEntrypointReference? in
-                guard components[componentID]?.entrypoints[entrypoint] != nil else {
-                    return nil
-                }
-                return ComponentEntrypointReference(
-                    component: componentID,
-                    entrypoint: entrypoint)
-            }
-            guard !references.isEmpty else {
-                throw ComponentCatalogFailure.unsupportedEntrypoint(
-                    spelling: spelling,
-                    entrypoint: entrypoint)
-            }
-            return references
-        }
-        throw ComponentCatalogFailure.unknownSelection(spelling)
-    }
-
-    public func roots(
-        named entrypoint: ComponentEntrypointID,
-        selection: String?
-    ) throws -> [TaskID] {
-        try entrypoints(named: entrypoint, selection: selection).flatMap { reference in
-            components[reference.component]!.entrypoints[reference.entrypoint]!.roots
-        }.sorted { $0.rawValue < $1.rawValue }
-    }
-
-    private static func validate(
-        _ reference: ComponentEntrypointReference,
-        in components: [ComponentID: ComponentDefinition]
-    ) throws {
-        guard let component = components[reference.component] else {
-            throw ComponentCatalogFailure.unknownComponent(reference.component)
-        }
-        guard component.entrypoints[reference.entrypoint] != nil else {
-            throw ComponentCatalogFailure.unknownEntrypoint(reference)
-        }
-    }
-
-    private static func validateOutputOwnership(_ tasks: [TaskDeclaration]) throws {
-        var owners: [(path: FilePath, normalized: String, task: TaskID)] = []
-        for task in tasks {
-            for output in task.outputs {
-                let normalized = output.path.lexicallyNormalized().string
-                for owner in owners
-                where task.id != owner.task
-                    && (normalized == owner.normalized
-                        || Self.contains(normalized, in: owner.normalized)
-                        || Self.contains(owner.normalized, in: normalized))
-                {
-                    throw ComponentCatalogFailure.overlappingOutput(
-                        first: owner.task,
-                        second: task.id,
-                        path: output.path)
-                }
-                owners.append((output.path, normalized, task.id))
-            }
-        }
-    }
-
-    private static func validateGeneratedOutputConsumption(
-        _ tasks: [TaskDeclaration]
-    ) throws {
-        let outputs = tasks.flatMap { task in
-            task.outputs.map {
-                (
-                    producer: task.id,
-                    path: $0.path,
-                    normalized: $0.path.lexicallyNormalized().string
-                )
-            }
-        }
-        for task in tasks {
-            for input in task.inputs {
-                guard let path = rawInputPath(input) else { continue }
-                let normalized = path.lexicallyNormalized().string
-                if let output = outputs.first(where: {
-                    $0.producer != task.id
-                        && (normalized == $0.normalized
-                            || Self.contains(normalized, in: $0.normalized))
-                }) {
-                    throw ComponentCatalogFailure.rawGeneratedOutputConsumption(
-                        consumer: task.id,
-                        producer: output.producer,
-                        path: path)
-                }
-            }
-        }
-    }
-
-    private static func rawInputPath(_ input: ArtifactInput) -> FilePath? {
-        switch input {
-        case .file(let path), .tree(let path), .optionalTree(let path, _),
-            .dependencyOutput(let path):
-            path
-        case .tool(.taskOutput(let path)), .tool(.path(let path)):
-            path
-        case .value, .environment, .tool(.named), .tool(.operationalNamed):
-            nil
-        }
-    }
-
-    private static func validateActions(_ tasks: [TaskDeclaration]) throws {
-        var implementationsByKind: [ActionKind: String] = [:]
-        for task in tasks {
-            for action in task.action.map({ [$0] }) ?? [] {
-                guard action.kind.rawValue.hasPrefix(task.component.rawValue + ".") else {
-                    throw ComponentCatalogFailure.actionNamespaceMismatch(
-                        task: task.id,
-                        component: task.component,
-                        kind: action.kind)
-                }
-                if let existing = implementationsByKind[action.kind],
-                    existing != action.implementationType
-                {
-                    throw ComponentCatalogFailure.duplicateActionKind(
-                        kind: action.kind,
-                        first: existing,
-                        second: action.implementationType)
-                }
-                implementationsByKind[action.kind] = action.implementationType
-            }
-        }
-    }
-
-    private func validatePublicEntrypoints() throws {
-        var requests: Set<ComponentEntrypointRequest> = []
-        var reachable: Set<ComponentEntrypointReference> = []
-        for request in publicEntrypoints {
-            guard requests.insert(request).inserted else {
-                throw ComponentCatalogFailure.duplicatePublicEntrypoint(request)
-            }
-            reachable.formUnion(
-                try resolveEntrypoints(
-                    named: request.entrypoint,
-                    spelling: request.spelling))
-        }
-
-        for route in routes {
-            let request = ComponentEntrypointRequest(
-                spelling: route.spelling,
-                entrypoint: route.requestedEntrypoint)
-            guard requests.contains(request) else {
-                throw ComponentCatalogFailure.unreachableRoute(request)
-            }
-        }
-
-        for component in components.values {
-            for entrypoint in component.entrypoints.keys {
-                let reference = ComponentEntrypointReference(
-                    component: component.descriptor.id,
-                    entrypoint: entrypoint)
-                guard reachable.contains(reference) else {
-                    throw ComponentCatalogFailure.unreachableEntrypoint(reference)
-                }
-            }
-        }
-    }
-
-    private static func contains(_ child: String, in parent: String) -> Bool {
-        let prefix = parent.hasSuffix("/") ? parent : parent + "/"
-        return child.hasPrefix(prefix)
-    }
-
-    private struct RouteKey: Hashable, Sendable {
-        let spelling: String
-        let entrypoint: ComponentEntrypointID
+    public var tasks: [TaskDeclaration] {
+        components.flatMap(\.tasks)
     }
 }
 
@@ -607,71 +339,6 @@ public enum ComponentDefinitionFailure: Error, CustomStringConvertible, Sendable
             "component entrypoint '\(entrypoint)' has no roots"
         case .unknownEntrypointRoot(let entrypoint, let task):
             "component entrypoint '\(entrypoint)' names unknown root task '\(task)'"
-        }
-    }
-}
-
-public enum ComponentCatalogFailure: Error, CustomStringConvertible, Sendable {
-    case duplicateComponent(ComponentID)
-    case duplicateDirectory(String)
-    case duplicateSpelling(String)
-    case unknownComponent(ComponentID)
-    case unknownGroupComponent(group: String, component: ComponentID)
-    case unknownEntrypoint(ComponentEntrypointReference)
-    case unknownSelection(String)
-    case unsupportedEntrypoint(spelling: String, entrypoint: ComponentEntrypointID)
-    case emptyRoute(spelling: String, entrypoint: ComponentEntrypointID)
-    case duplicateRoute(spelling: String, entrypoint: ComponentEntrypointID)
-    case duplicatePublicEntrypoint(ComponentEntrypointRequest)
-    case nonPublicEntrypoint(ComponentEntrypointRequest)
-    case unreachableRoute(ComponentEntrypointRequest)
-    case unreachableEntrypoint(ComponentEntrypointReference)
-    case duplicateActionKind(kind: ActionKind, first: String, second: String)
-    case actionNamespaceMismatch(
-        task: TaskID, component: ComponentID, kind: ActionKind)
-    case overlappingOutput(first: TaskID, second: TaskID, path: FilePath)
-    case rawGeneratedOutputConsumption(
-        consumer: TaskID, producer: TaskID, path: FilePath)
-
-    public var description: String {
-        switch self {
-        case .duplicateComponent(let component):
-            "duplicate component '\(component)'"
-        case .duplicateDirectory(let directory):
-            "duplicate component directory '\(directory)'"
-        case .duplicateSpelling(let spelling):
-            "duplicate component selection spelling '\(spelling)'"
-        case .unknownComponent(let component):
-            "unknown component '\(component)'"
-        case .unknownGroupComponent(let group, let component):
-            "selection group '\(group)' names unknown component '\(component)'"
-        case .unknownEntrypoint(let reference):
-            "component '\(reference.component)' has no entrypoint '\(reference.entrypoint)'"
-        case .unknownSelection(let spelling):
-            "unknown component selection '\(spelling)'"
-        case .unsupportedEntrypoint(let spelling, let entrypoint):
-            "selection '\(spelling)' does not support entrypoint '\(entrypoint)'"
-        case .emptyRoute(let spelling, let entrypoint):
-            "selection route '\(spelling)' for '\(entrypoint)' has no destinations"
-        case .duplicateRoute(let spelling, let entrypoint):
-            "duplicate selection route '\(spelling)' for '\(entrypoint)'"
-        case .duplicatePublicEntrypoint(let request):
-            "duplicate public entrypoint '\(request.spelling)' for '\(request.entrypoint)'"
-        case .nonPublicEntrypoint(let request):
-            "selection '\(request.spelling)' does not publish entrypoint '\(request.entrypoint)'"
-        case .unreachableRoute(let request):
-            "selection route '\(request.spelling)' for '\(request.entrypoint)' is not public"
-        case .unreachableEntrypoint(let reference):
-            "component '\(reference.component)' entrypoint '\(reference.entrypoint)' is unreachable"
-        case .duplicateActionKind(let kind, let first, let second):
-            "action kind '\(kind)' is declared by both '\(first)' and '\(second)'"
-        case .actionNamespaceMismatch(let task, let component, let kind):
-            "task '\(task)' owned by '\(component)' declares foreign action kind '\(kind)'"
-        case .overlappingOutput(let first, let second, let path):
-            "tasks '\(first)' and '\(second)' overlap output ownership at '\(path)'"
-        case .rawGeneratedOutputConsumption(let consumer, let producer, let path):
-            "task '\(consumer)' consumes generated output '\(path)' from '\(producer)' "
-                + "through a raw path instead of its typed artifact reference"
         }
     }
 }

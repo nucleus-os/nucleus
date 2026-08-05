@@ -175,7 +175,7 @@ extension ColliderRuntime {
         let output =
             taskOutputPresentation?.output(for: execution.output)
             ?? execution.output
-        return try await AppleContainerLifecycle().execute(
+        return try await AppleContainerLifecycle(cancellation: cancellation).execute(
             execution,
             name: name,
             imageReference: appleImageReference(imageID),

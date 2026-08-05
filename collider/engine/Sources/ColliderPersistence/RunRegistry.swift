@@ -172,6 +172,17 @@ public actor RunRegistry {
         }
     }
 
+    public func recordExecutionMetrics(
+        criticalPathDurationNanoseconds: UInt64,
+        resourceWaitDurationNanoseconds: UInt64,
+        in run: RunHandle
+    ) throws {
+        try updateManifest(run) {
+            $0.criticalPathDurationNanoseconds = criticalPathDurationNanoseconds
+            $0.resourceWaitDurationNanoseconds = resourceWaitDurationNanoseconds
+        }
+    }
+
     public func recordActiveArtifact(
         _ digest: ArtifactDigest,
         name: String,

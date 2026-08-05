@@ -309,7 +309,7 @@ struct ComponentRegistry {
                         entrypoint: .bootstrap)
                 ]))
         #endif
-        return try ComponentCatalog(
+        return ComponentCatalog(
             components: components,
             groups: [
                 ComponentSelectionGroup(name: "all", components: runtime),
@@ -392,10 +392,12 @@ struct ComponentRegistry {
     ) async throws {
         let catalog = try componentCatalog()
         try await context.execute(
-            tasks: catalog.tasks,
-            selected: try catalog.roots(
-                named: .build,
-                selection: selection),
+            catalog: catalog,
+            requests: [
+                ComponentEntrypointRequest(
+                    entrypoint: .build,
+                    selection: selection)
+            ],
             controls: controls)
     }
 
@@ -405,10 +407,12 @@ struct ComponentRegistry {
     ) async throws {
         let catalog = try componentCatalog()
         try await context.execute(
-            tasks: catalog.tasks,
-            selected: try catalog.roots(
-                named: .bootstrap,
-                selection: selection),
+            catalog: catalog,
+            requests: [
+                ComponentEntrypointRequest(
+                    entrypoint: .bootstrap,
+                    selection: selection)
+            ],
             controls: controls)
     }
 
@@ -417,17 +421,20 @@ struct ComponentRegistry {
         controls: TaskControls
     ) async throws {
         let catalog = try componentCatalog()
-        var selected = try catalog.roots(
-            named: .testDefault,
-            selection: selection)
+        var requests = [
+            ComponentEntrypointRequest(
+                entrypoint: .testDefault,
+                selection: selection)
+        ]
         if selection == nil || selection == "all" {
-            selected += try catalog.roots(
-                named: .testReleaseGate,
-                selection: ReleaseGateColliderRecipe.descriptor.canonicalName)
+            requests.append(
+                ComponentEntrypointRequest(
+                    entrypoint: .testReleaseGate,
+                    selection: ReleaseGateColliderRecipe.descriptor.canonicalName))
         }
         try await context.execute(
-            tasks: catalog.tasks,
-            selected: selected,
+            catalog: catalog,
+            requests: requests,
             controls: controls)
     }
 
@@ -437,10 +444,12 @@ struct ComponentRegistry {
     ) async throws {
         let catalog = try componentCatalog()
         try await context.execute(
-            tasks: catalog.tasks,
-            selected: try catalog.roots(
-                named: .generate,
-                selection: selection),
+            catalog: catalog,
+            requests: [
+                ComponentEntrypointRequest(
+                    entrypoint: .generate,
+                    selection: selection)
+            ],
             controls: controls)
     }
 
@@ -450,10 +459,12 @@ struct ComponentRegistry {
     ) async throws {
         let catalog = try componentCatalog()
         try await context.execute(
-            tasks: catalog.tasks,
-            selected: try catalog.roots(
-                named: entrypoint,
-                selection: CoreColliderRecipe.descriptor.canonicalName),
+            catalog: catalog,
+            requests: [
+                ComponentEntrypointRequest(
+                    entrypoint: entrypoint,
+                    selection: CoreColliderRecipe.descriptor.canonicalName)
+            ],
             controls: controls)
     }
 
@@ -462,10 +473,12 @@ struct ComponentRegistry {
     ) async throws {
         let catalog = try componentCatalog()
         try await context.execute(
-            tasks: catalog.tasks,
-            selected: try catalog.roots(
-                named: ComponentEntrypointID(rawValue: "aosp.source-lock"),
-                selection: AndroidRuntimeColliderRecipe.descriptor.canonicalName),
+            catalog: catalog,
+            requests: [
+                ComponentEntrypointRequest(
+                    entrypoint: ComponentEntrypointID(rawValue: "aosp.source-lock"),
+                    selection: AndroidRuntimeColliderRecipe.descriptor.canonicalName)
+            ],
             controls: controls)
     }
 
@@ -474,10 +487,12 @@ struct ComponentRegistry {
     ) async throws {
         let catalog = try componentCatalog()
         try await context.execute(
-            tasks: catalog.tasks,
-            selected: try catalog.roots(
-                named: ComponentEntrypointID(rawValue: "aosp.source"),
-                selection: AndroidRuntimeColliderRecipe.descriptor.canonicalName),
+            catalog: catalog,
+            requests: [
+                ComponentEntrypointRequest(
+                    entrypoint: ComponentEntrypointID(rawValue: "aosp.source"),
+                    selection: AndroidRuntimeColliderRecipe.descriptor.canonicalName)
+            ],
             controls: controls)
     }
 
@@ -486,20 +501,21 @@ struct ComponentRegistry {
     ) async throws {
         let catalog = try componentCatalog()
         try await context.execute(
-            tasks: catalog.tasks,
-            selected: try catalog.roots(
-                named: ComponentEntrypointID(rawValue: "aosp.image"),
-                selection: AndroidRuntimeColliderRecipe.descriptor.canonicalName),
+            catalog: catalog,
+            requests: [
+                ComponentEntrypointRequest(
+                    entrypoint: ComponentEntrypointID(rawValue: "aosp.image"),
+                    selection: AndroidRuntimeColliderRecipe.descriptor.canonicalName)
+            ],
             controls: controls)
     }
 
     func buildAndroidRuntimeHost() async throws {
         let catalog = try componentCatalog()
         try await context.execute(
-            tasks: catalog.tasks,
-            selected: [
-                LinuxTaskIDs.build(.arm64),
-                LinuxTaskIDs.build(.x86_64),
+            catalog: catalog,
+            requests: [
+                ComponentEntrypointRequest(entrypoint: .build, selection: "linux")
             ],
             controls: TaskControls())
     }
@@ -510,10 +526,12 @@ struct ComponentRegistry {
     ) async throws {
         let catalog = try componentCatalog()
         try await context.execute(
-            tasks: catalog.tasks,
-            selected: try catalog.roots(
-                named: .bootstrap,
-                selection: "tracy"),
+            catalog: catalog,
+            requests: [
+                ComponentEntrypointRequest(
+                    entrypoint: .bootstrap,
+                    selection: "tracy")
+            ],
             controls: controls)
     }
 
@@ -546,10 +564,12 @@ struct ComponentRegistry {
         let catalog = try componentCatalog(
             androidAddonConfiguration: configuration)
         try await context.execute(
-            tasks: catalog.tasks,
-            selected: try catalog.roots(
-                named: .packageAndroidAddon,
-                selection: AndroidRuntimeColliderRecipe.descriptor.canonicalName),
+            catalog: catalog,
+            requests: [
+                ComponentEntrypointRequest(
+                    entrypoint: .packageAndroidAddon,
+                    selection: AndroidRuntimeColliderRecipe.descriptor.canonicalName)
+            ],
             controls: controls)
     }
 
@@ -564,10 +584,12 @@ struct ComponentRegistry {
         let catalog = try componentCatalog(
             shellConfiguration: configuration)
         try await context.execute(
-            tasks: catalog.tasks,
-            selected: try catalog.roots(
-                named: .install,
-                selection: ShellColliderRecipe.descriptor.canonicalName),
+            catalog: catalog,
+            requests: [
+                ComponentEntrypointRequest(
+                    entrypoint: .install,
+                    selection: ShellColliderRecipe.descriptor.canonicalName)
+            ],
             controls: controls)
     }
 
@@ -630,29 +652,6 @@ struct ComponentRegistry {
     }
     #endif
 
-    func selectedBuildTasks(
-        _ selection: String?
-    ) throws -> [TaskID] {
-        return try componentCatalog().roots(
-            named: .build,
-            selection: selection)
-    }
-
-    func selectedTestTasks(
-        _ selection: String?
-    ) throws -> [TaskID] {
-        let catalog = try componentCatalog()
-        var selected = try catalog.roots(
-            named: .testDefault,
-            selection: selection)
-        if selection == nil || selection == "all" {
-            selected += try catalog.roots(
-                named: .testReleaseGate,
-                selection: ReleaseGateColliderRecipe.descriptor.canonicalName)
-        }
-        return selected
-    }
-
     func linuxSwiftPMInvocation(
         architecture: PlatformArchitecture = .arm64,
         triple: String? = nil,
@@ -674,7 +673,7 @@ struct ComponentRegistry {
             ?? "swift-6.4"
         let toolchainIdentity =
             "nucleus-linux-build-\(sourceID)-\(architecture.rawValue)"
-        let nativeSDK = nativeSDKRoot(for: target)
+        let nativeSDK = context.nativeSDKRoot(for: target)
         let waylandSDK = nativeSDK.appending("wayland")
         let swiftPMUserRoot = root.appending(
             ".nucleus/swiftpm-user/\(target.identifier)")
@@ -776,8 +775,7 @@ struct ComponentRegistry {
             fallbackHome: context.cacheRoot.appending("nucleus/unconfigured-home"))
         let paths = SwiftTargetSDKStoragePaths(cacheRoot: context.cacheRoot)
         let fixture = context.root.appending(
-            "collider/engine/Sources/ColliderRuntime/Resources/"
-                + "ToolchainValidationFixtures/AndroidSDKConsumer")
+            "swift-sdk/validation/AndroidSDKConsumer")
         let validator = recipeRoot.appending("validate-target-sdk-artifacts.sh")
         let runtimeBuilderContext = recipeRoot.appending("runtime-build-container")
         let runtimePreset = recipeRoot.appending(
@@ -847,14 +845,6 @@ struct ComponentRegistry {
             environment: swiftTargetSDKTaskEnvironment(
                 environment,
                 runtimeSourceID: sourceID))
-    }
-
-    private var nativeSDKRoot: FilePath {
-        context.nativeSDKRoot
-    }
-
-    private func nativeSDKRoot(for target: NativeLinuxTarget) -> FilePath {
-        context.nativeSDKRoot(for: target)
     }
 
 }

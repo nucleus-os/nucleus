@@ -9,10 +9,6 @@ public enum ArtifactInput: Hashable, Sendable {
     /// Hashes a source tree when checked out and otherwise uses the repository
     /// gitlink identity so a fresh checkout can still plan its source-sync task.
     case optionalTree(FilePath, fallback: [UInt8])
-    /// A path produced by an ordered dependency. Its producing dependency
-    /// identity carries the content identity, so planning does not require the
-    /// path to exist yet.
-    case dependencyOutput(FilePath)
     case tool(CommandSpec.Executable)
 }
 
@@ -547,6 +543,10 @@ public enum TaskGraphFailure: Error, CustomStringConvertible, Sendable {
 
 public struct TaskGraph: Sendable {
     private let tasks: [TaskID: TaskDeclaration]
+
+    package var declarations: [TaskDeclaration] {
+        tasks.values.sorted { $0.id.rawValue < $1.id.rawValue }
+    }
 
     public init(_ declarations: [TaskDeclaration]) throws {
         var tasks: [TaskID: TaskDeclaration] = [:]

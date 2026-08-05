@@ -93,15 +93,15 @@ let package = Package(
                 .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "SystemPackage", package: "swift-system"),
-            ],
-            resources: [
-                .copy("Resources/ToolchainValidationFixtures")
             ]),
         .testTarget(
             name: "ColliderCoreTests",
             dependencies: [
                 "ColliderCore", "ColliderDownloads", "ColliderEngine",
                 "ColliderPersistence", "ColliderPlanning", "ColliderRuntime",
+            ],
+            resources: [
+                .copy("Resources/ToolchainValidationFixtures")
             ]),
         .testTarget(
             name: "ColliderPersistenceTests",

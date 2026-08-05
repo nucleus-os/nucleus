@@ -104,7 +104,7 @@ import Testing
     let inputs = FilePath(recipe.appendingPathComponent("target-sdk-inputs.json").path)
     let fixture = FilePath(
         root.appendingPathComponent(
-            "collider/engine/Sources/ColliderRuntime/Resources/ToolchainValidationFixtures/AndroidSDKConsumer",
+            "swift-sdk/validation/AndroidSDKConsumer",
             isDirectory: true
         ).path)
     let validator = FilePath(

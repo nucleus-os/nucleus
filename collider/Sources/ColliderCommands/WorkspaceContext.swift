@@ -32,16 +32,9 @@ struct WorkspaceContext: Sendable {
     ) {
         self.root = root
         var normalizedEnvironment = environment
-        let resolvedCacheRoot: FilePath
-        if let value = normalizedEnvironment["XDG_CACHE_HOME"], !value.isEmpty {
-            resolvedCacheRoot = FilePath(value)
-        } else if let home = normalizedEnvironment["HOME"], !home.isEmpty {
-            resolvedCacheRoot = FilePath(home).appending(".cache")
-        } else {
-            resolvedCacheRoot = FilePath(
-                FileManager.default.homeDirectoryForCurrentUser
-                    .appendingPathComponent(".cache", isDirectory: true))
-        }
+        let resolvedCacheRoot = ColliderCacheLayout(
+            environment: normalizedEnvironment
+        ).root
         let resolvedNativeSDKRoot =
             normalizedEnvironment["NUCLEUS_NATIVE_SDK_ROOT"]
             .flatMap { $0.isEmpty ? nil : FilePath($0) }

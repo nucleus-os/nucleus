@@ -5,9 +5,7 @@ let package = Package(
     name: "NucleusLSPPackage",
     products: [.library(name: "Greeter", targets: ["Greeter"])],
     targets: [
-        .target(
-            name: "Greeter",
-            swiftSettings: [.strictMemorySafety()]),
+        .target(name: "Greeter", swiftSettings: [.strictMemorySafety()]),
         .executableTarget(
             name: "App",
             dependencies: ["Greeter"],

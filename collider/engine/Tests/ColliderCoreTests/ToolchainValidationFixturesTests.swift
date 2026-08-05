@@ -23,11 +23,6 @@ import Testing
             "Sources/Greeter/Greeter.swift",
             "Sources/App/main.swift",
         ],
-        .androidSDKConsumer: [
-            "Package.swift",
-            "Sources/hello/hello.swift",
-            "Plugins/FoundationXMLHostPlugin/plugin.swift",
-        ],
     ]
     for fixture in ToolchainValidationFixtures.Fixture.allCases {
         let destination = FilePath(

@@ -1,6 +1,7 @@
 import ColliderCore
 import ColliderEngine
 import Foundation
+import Synchronization
 import SystemPackage
 import Testing
 
@@ -139,6 +140,38 @@ import Testing
 
     let deletedNames = await fixture.deletedNames
     #expect(deletedNames == [name, name])
+}
+
+@Test func appleContainerCleanupFinishesAfterCallerCancellation() async throws {
+    let fixture = AppleContainerCleanupFixture(remainingChecks: 1)
+    let name = "fixture-cleanup-cancellation"
+    let cleanup = AppleContainerCleanup(
+        name: name,
+        delete: { await fixture.recordDelete(name) },
+        exists: { await fixture.exists() })
+    let operation = Task {
+        try await cleanup.deleteAndVerify()
+    }
+
+    try await ContinuousClock().sleep(for: .milliseconds(20))
+    operation.cancel()
+    try await operation.value
+
+    #expect(await fixture.deletedNames == [name, name])
+}
+
+@Test func runtimeInterruptionImmediatelyInvokesLateCleanupRegistration() async {
+    let cancellation = RuntimeCancellation()
+    let invocationCount = Mutex(0)
+    await cancellation.interruptAll()
+
+    let registration = await cancellation.register {
+        invocationCount.withLock { $0 += 1 }
+    }
+    await cancellation.cancelAll()
+    await cancellation.unregister(registration)
+
+    #expect(invocationCount.withLock { $0 } == 1)
 }
 
 @Test func appleContainerSuspensionStopsAndPreservesTheExactBuilder() async throws {

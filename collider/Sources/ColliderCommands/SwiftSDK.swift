@@ -175,10 +175,12 @@ struct SwiftSDKCommand {
         let registry = ComponentRegistry(context: context)
         let catalog = try registry.componentCatalog()
         try await context.execute(
-            tasks: catalog.tasks,
-            selected: try catalog.roots(
-                named: .build,
-                selection: SwiftTargetSDKColliderRecipe.descriptor.canonicalName),
+            catalog: catalog,
+            requests: [
+                ComponentEntrypointRequest(
+                    entrypoint: .build,
+                    selection: SwiftTargetSDKColliderRecipe.descriptor.canonicalName)
+            ],
             controls: options.controls)
         #endif
     }

@@ -450,13 +450,9 @@ public actor ColliderDownloads {
     }
 
     private static func defaultCacheRoot() -> FilePath {
-        let environment = ProcessInfo.processInfo.environment
-        if let xdg = environment["XDG_CACHE_HOME"], !xdg.isEmpty {
-            return FilePath(xdg).appending("nucleus").appending("downloads")
-        }
-        let home = environment["HOME"] ?? "/tmp"
-        return FilePath(home).appending(".cache").appending("nucleus")
-            .appending("downloads")
+        ColliderCacheLayout(
+            environment: ProcessInfo.processInfo.environment
+        ).downloads
     }
 }
 

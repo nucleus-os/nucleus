@@ -30,10 +30,56 @@ private actor ParallelismProbe {
 }
 
 private struct ParallelismProbeAction: ColliderAction {
-    static let kind: ActionKind = "test.parallelism-probe"
+    static let kind: ActionKind = "fixture.parallelism-probe"
 
     let identity: ParallelismProbeIdentity
     let probe: ParallelismProbe
+    let output: FilePath
+    let publicationClaim: FilePath?
+    let ioWeight: UInt32
+
+    init(
+        identity: ParallelismProbeIdentity,
+        probe: ParallelismProbe,
+        output: FilePath,
+        publicationClaim: FilePath? = nil,
+        ioWeight: UInt32 = 1
+    ) {
+        self.identity = identity
+        self.probe = probe
+        self.output = output
+        self.publicationClaim = publicationClaim
+        self.ioWeight = ioWeight
+    }
+
+    var requirements: ActionRequirements {
+        var effects = [ActionEffect(.write, scope: .output(output))]
+        if let publicationClaim {
+            effects.append(
+                ActionEffect(.readWrite, scope: .publication(publicationClaim)))
+        }
+        return ActionRequirements(
+            effects: effects,
+            resources: ActionResourceRequest(
+                cpuCount: 1,
+                memoryBytes: 512 * 1_024 * 1_024,
+                ioWeight: ioWeight,
+                exclusive: false))
+    }
+
+    func execute(in context: ActionContext) async throws {
+        await probe.exercise()
+        try context.files.write(Array(identity.name.utf8), to: output)
+    }
+}
+
+private struct FailAfterWriteAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        func encode(into _: inout ActionIdentityEncoder) {}
+    }
+
+    static let kind: ActionKind = "fixture.fail-after-write"
+    let identity = Identity()
     let output: FilePath
 
     var requirements: ActionRequirements {
@@ -43,8 +89,8 @@ private struct ParallelismProbeAction: ColliderAction {
     }
 
     func execute(in context: ActionContext) async throws {
-        await probe.exercise()
-        try context.files.write(Array(identity.name.utf8), to: output)
+        try context.files.write(Array("partial".utf8), to: output)
+        throw RuntimeFailure.invalidOutput("injected failure")
     }
 }
 
@@ -81,6 +127,54 @@ private struct ParallelismProbeAction: ColliderAction {
     #expect(maximumActive == 2)
 }
 
+@Test func capacityOneAndConcurrentExecutionProduceTheSamePlanAndOutputs() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-capacity-equivalence-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let stateRoot = root.appending("state")
+    let tasks = try ["first", "second"].map { name in
+        let output = root.appending(name)
+        return TaskDeclaration(
+            id: TaskID(rawValue: "fixture.capacity.\(name)"),
+            component: ComponentID(rawValue: "fixture"),
+            outputs: [OutputDeclaration(path: output, validation: .regularFile)],
+            action: try AnyColliderAction(
+                ParallelismProbeAction(
+                    identity: ParallelismProbeIdentity(name: name),
+                    probe: ParallelismProbe(),
+                    output: output)))
+    }
+    let graph = try TaskGraph(tasks)
+
+    let serial = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: graph,
+        selected: tasks.map(\.id),
+        stateRoot: stateRoot,
+        options: TaskExecutionOptions(maximumParallelism: 1))
+    let serialOutputs = try tasks.map { task in
+        try Data(contentsOf: URL(fileURLWithPath: task.outputs[0].path.string))
+    }
+    for task in tasks {
+        try FileManager.default.removeItem(atPath: task.outputs[0].path.string)
+    }
+    try FileManager.default.removeItem(atPath: stateRoot.string)
+
+    let concurrent = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: graph,
+        selected: tasks.map(\.id),
+        stateRoot: stateRoot,
+        options: TaskExecutionOptions(maximumParallelism: 2))
+    let concurrentOutputs = try tasks.map { task in
+        try Data(contentsOf: URL(fileURLWithPath: task.outputs[0].path.string))
+    }
+
+    #expect(serial.plan.map(\.task) == concurrent.plan.map(\.task))
+    #expect(serial.plan.map(\.identity) == concurrent.plan.map(\.identity))
+    #expect(serial.executed == concurrent.executed)
+    #expect(serialOutputs == concurrentOutputs)
+}
+
 @Test func taskSchedulerSerializesTasksWithTheSameLock() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-engine-lock-concurrency-\(UUID().uuidString)")
@@ -113,6 +207,132 @@ private struct ParallelismProbeAction: ColliderAction {
     let maximumActive = await probe.maximum()
 
     #expect(maximumActive == 1)
+}
+
+@Test func taskSchedulerAtomicallyReservesOverlappingPublicationClaims() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-claim-concurrency-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let probe = ParallelismProbe()
+    let publication = root.appending("published")
+    let tasks = try ["first", "second"].map { name in
+        let output = root.appending(name)
+        return TaskDeclaration(
+            id: TaskID(rawValue: "fixture.claimed.\(name)"),
+            component: ComponentID(rawValue: "fixture"),
+            outputs: [OutputDeclaration(path: output, validation: .regularFile)],
+            action: try AnyColliderAction(
+                ParallelismProbeAction(
+                    identity: ParallelismProbeIdentity(name: name),
+                    probe: probe,
+                    output: output,
+                    publicationClaim: publication)))
+    }
+
+    let report = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: TaskGraph(tasks),
+        selected: tasks.map(\.id),
+        stateRoot: root.appending("state"),
+        options: TaskExecutionOptions(maximumParallelism: 2))
+
+    let maximumActive = await probe.maximum()
+    #expect(maximumActive == 1)
+    #expect(report.resourceWaitDurationNanoseconds > 0)
+    #expect(report.criticalPathDurationNanoseconds > 0)
+}
+
+@Test func taskSchedulerBoundsConcurrentIOWeight() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-io-concurrency-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let probe = ParallelismProbe()
+    let tasks = try ["first", "second"].map { name in
+        let output = root.appending(name)
+        return TaskDeclaration(
+            id: TaskID(rawValue: "fixture.io.\(name)"),
+            component: ComponentID(rawValue: "fixture"),
+            outputs: [OutputDeclaration(path: output, validation: .regularFile)],
+            action: try AnyColliderAction(
+                ParallelismProbeAction(
+                    identity: ParallelismProbeIdentity(name: name),
+                    probe: probe,
+                    output: output,
+                    ioWeight: 4)))
+    }
+
+    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: TaskGraph(tasks),
+        selected: tasks.map(\.id),
+        stateRoot: root.appending("state"),
+        options: TaskExecutionOptions(maximumParallelism: 2))
+
+    let maximumActive = await probe.maximum()
+    #expect(maximumActive == 1)
+}
+
+@Test func crossProcessLockAdmissionIsCancellationAware() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-lock-cancellation-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let lockPath = root.appending("shared.lock")
+    let blocker = try ColliderFileLock(
+        path: lockPath,
+        purpose: "fixture blocker")
+    defer { withExtendedLifetime(blocker) {} }
+    let output = root.appending("output")
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.lock-cancellation"),
+        component: ComponentID(rawValue: "fixture"),
+        outputs: [OutputDeclaration(path: output, validation: .regularFile)],
+        locks: [.shared(lockPath)],
+        action: try AnyColliderAction(
+            ParallelismProbeAction(
+                identity: ParallelismProbeIdentity(name: "cancelled"),
+                probe: ParallelismProbe(),
+                output: output)))
+    let cancellation = RuntimeCancellation()
+    let runtime = ColliderRuntime(cancellation: cancellation)
+    let execution = Task {
+        try await ColliderEngine(runtime: runtime).execute(
+            graph: TaskGraph([task]),
+            selected: [task.id],
+            stateRoot: root.appending("state"))
+    }
+    try await ContinuousClock().sleep(for: .milliseconds(50))
+    await cancellation.interruptAll()
+
+    await #expect(throws: CancellationError.self) {
+        _ = try await execution.value
+    }
+    #expect(!FileManager.default.fileExists(atPath: output.string))
+}
+
+@Test func failedTaskNeverPublishesSuccessfulTaskState() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-failed-state-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let output = root.appending("output")
+    let stateRoot = root.appending("state")
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.fail-after-write"),
+        component: ComponentID(rawValue: "fixture"),
+        outputs: [OutputDeclaration(path: output, validation: .regularFile)],
+        action: try AnyColliderAction(FailAfterWriteAction(output: output)))
+
+    await #expect(throws: RuntimeFailure.self) {
+        _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+            graph: TaskGraph([task]),
+            selected: [task.id],
+            stateRoot: stateRoot)
+    }
+    #expect(FileManager.default.fileExists(atPath: output.string))
+    #expect(
+        !FileManager.default.fileExists(
+            atPath: TaskStateStore(root: stateRoot).path(for: task.id).string))
 }
 
 @Test func unselectedToolsAreNotResolvedAndPlanOrderIsDeterministic() async throws {
@@ -663,97 +883,6 @@ private struct ParallelismProbeAction: ColliderAction {
             encoding: .utf8) == "fresh")
 }
 
-@Test func directoryRetentionKeepsNewestAndCurrentContentIdentities() async throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-directory-retention-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let generations = directory.appendingPathComponent("generations")
-    try FileManager.default.createDirectory(
-        at: generations, withIntermediateDirectories: true)
-    let names = [
-        "111111111111111111111111",
-        "222222222222222222222222",
-        "333333333333333333333333",
-    ]
-    for (index, name) in names.enumerated() {
-        let path = generations.appendingPathComponent(name)
-        try FileManager.default.createDirectory(
-            at: path, withIntermediateDirectories: true)
-        try FileManager.default.setAttributes(
-            [.modificationDate: Date(timeIntervalSince1970: Double(index))],
-            ofItemAtPath: path.path)
-    }
-    let current = directory.appendingPathComponent("current")
-    try FileManager.default.createSymbolicLink(
-        atPath: current.path,
-        withDestinationPath: "generations/\(names[0])")
-    let task = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.prune-directories"),
-        component: ComponentID(rawValue: "fixture"),
-        assessmentPolicy: .always,
-        action: try fixturePruneDirectoriesAction(
-            DirectoryRetentionPlan(
-                safetyRoot: FilePath(directory.path),
-                rules: [
-                    DirectoryRetentionRule(
-                        root: FilePath(generations.path),
-                        current: FilePath(current.path),
-                        retain: 1,
-                        naming: .contentIdentity)
-                ])))
-    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
-        graph: TaskGraph([task]),
-        selected: [task.id],
-        stateRoot: FilePath(directory.appendingPathComponent("state").path))
-    #expect(
-        FileManager.default.fileExists(
-            atPath: generations.appendingPathComponent(names[0]).path))
-    #expect(
-        !FileManager.default.fileExists(
-            atPath: generations.appendingPathComponent(names[1]).path))
-    #expect(
-        FileManager.default.fileExists(
-            atPath: generations.appendingPathComponent(names[2]).path))
-}
-
-@Test func directoryRetentionRemovesOnlySwiftSDKCandidateDirectories() async throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-swift-sdk-candidate-retention-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let generations = directory.appendingPathComponent("generations")
-    try FileManager.default.createDirectory(
-        at: generations, withIntermediateDirectories: true)
-    let candidate = generations.appendingPathComponent(
-        ".candidate-1234567890abcdef12345678-2026-08-02T01-42-29Z-38631")
-    let active = generations.appendingPathComponent("1234567890abcdef12345678")
-    let unrelated = generations.appendingPathComponent(".candidate-manual-not-owned")
-    for path in [candidate, active, unrelated] {
-        try FileManager.default.createDirectory(
-            at: path, withIntermediateDirectories: true)
-    }
-    let task = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.prune-swift-sdk-candidates"),
-        component: ComponentID(rawValue: "fixture"),
-        assessmentPolicy: .always,
-        action: try fixturePruneDirectoriesAction(
-            DirectoryRetentionPlan(
-                safetyRoot: FilePath(directory.path),
-                rules: [
-                    DirectoryRetentionRule(
-                        root: FilePath(generations.path),
-                        retain: 0,
-                        naming: .swiftSDKCandidate)
-                ])))
-    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
-        graph: TaskGraph([task]),
-        selected: [task.id],
-        stateRoot: FilePath(directory.appendingPathComponent("state").path))
-
-    #expect(!FileManager.default.fileExists(atPath: candidate.path))
-    #expect(FileManager.default.fileExists(atPath: active.path))
-    #expect(FileManager.default.fileExists(atPath: unrelated.path))
-}
-
 @Test func invalidGenerationCandidateNeverReplacesTheActivePointer() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-generation-rollback-\(UUID().uuidString)")
@@ -833,96 +962,4 @@ private struct ParallelismProbeAction: ColliderAction {
         try String(
             contentsOf: generation.appendingPathComponent("payload"),
             encoding: .utf8) == "artifact")
-}
-
-@Test func generationPublicationCutsOverMutableLayoutAndReusesIdenticalGeneration() throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-generation-cutover-\(UUID().uuidString)")
-    let candidate = directory.appendingPathComponent("candidate")
-    let generation = directory.appendingPathComponent("generation")
-    let active = directory.appendingPathComponent("active")
-    try FileManager.default.createDirectory(
-        at: candidate, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(
-        at: active, withIntermediateDirectories: true)
-    try Data("obsolete".utf8).write(
-        to: active.appendingPathComponent("mutable"))
-    try Data("artifact".utf8).write(
-        to: candidate.appendingPathComponent("payload"))
-    defer { try? FileManager.default.removeItem(at: directory) }
-
-    try GenerationPublisher.publish(
-        candidate: FilePath(candidate.path),
-        generation: FilePath(generation.path),
-        active: FilePath(active.path))
-    #expect(
-        try FileManager.default.destinationOfSymbolicLink(
-            atPath: active.path) == "generation")
-
-    try FileManager.default.createDirectory(
-        at: candidate, withIntermediateDirectories: true)
-    try Data("artifact".utf8).write(
-        to: candidate.appendingPathComponent("payload"))
-    try GenerationPublisher.publish(
-        candidate: FilePath(candidate.path),
-        generation: FilePath(generation.path),
-        active: FilePath(active.path))
-    #expect(!FileManager.default.fileExists(atPath: candidate.path))
-    #expect(
-        try FileManager.default.destinationOfSymbolicLink(
-            atPath: active.path) == "generation")
-}
-
-@Test func publicationFaultsPreserveACompleteOldOrNewActiveGeneration() throws {
-    struct InjectedPublicationFault: Error {}
-
-    for boundary in GenerationPublicationBoundary.allCases {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent(
-                "collider-generation-fault-\(UUID().uuidString)")
-        let previous = directory.appendingPathComponent("previous")
-        let candidate = directory.appendingPathComponent("candidate")
-        let generation = directory.appendingPathComponent("generation")
-        let active = directory.appendingPathComponent("active")
-        try FileManager.default.createDirectory(
-            at: previous, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(
-            at: candidate, withIntermediateDirectories: true)
-        try Data("old".utf8).write(
-            to: previous.appendingPathComponent("payload"))
-        try Data("new".utf8).write(
-            to: candidate.appendingPathComponent("payload"))
-        try FileManager.default.createSymbolicLink(
-            atPath: active.path, withDestinationPath: "previous")
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        #expect(throws: InjectedPublicationFault.self) {
-            try GenerationPublisher.publish(
-                candidate: FilePath(candidate.path),
-                generation: FilePath(generation.path),
-                active: FilePath(active.path),
-                after: {
-                    if $0 == boundary { throw InjectedPublicationFault() }
-                })
-        }
-
-        let cutoverCompleted =
-            switch boundary {
-            case .activePointerReplaced, .activeDirectorySynchronized:
-                true
-            default:
-                false
-            }
-        let target = try FileManager.default.destinationOfSymbolicLink(
-            atPath: active.path)
-        #expect(target == (cutoverCompleted ? "generation" : "previous"))
-        let activePayload =
-            active
-            .resolvingSymlinksInPath()
-            .appendingPathComponent("payload")
-        #expect(
-            try String(contentsOf: activePayload, encoding: .utf8)
-                == (cutoverCompleted ? "new" : "old"))
-        #expect(FileManager.default.fileExists(atPath: previous.path))
-    }
 }

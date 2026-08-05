@@ -1,5 +1,6 @@
 import AndroidRuntimeColliderRecipe
 import ColliderCore
+import ColliderPlanning
 import CompositorColliderRecipe
 import CoreColliderRecipe
 import Foundation
@@ -18,6 +19,35 @@ private let fixtureRepositoryRoot = FilePath(
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent().path)
+
+private func selectedTasks(
+    in catalog: ComponentCatalog,
+    entrypoint: ComponentEntrypointID,
+    selection: String?
+) throws -> [TaskID] {
+    try ColliderPlanner().selectedTasks(
+        in: catalog,
+        requests: [
+            ComponentEntrypointRequest(entrypoint: entrypoint, selection: selection)
+        ])
+}
+
+private func selectedTestTasks(
+    in registry: ComponentRegistry,
+    selection: String?
+) throws -> [TaskID] {
+    let catalog = try registry.componentCatalog()
+    var requests = [
+        ComponentEntrypointRequest(entrypoint: .testDefault, selection: selection)
+    ]
+    if selection == nil || selection == "all" {
+        requests.append(
+            ComponentEntrypointRequest(
+                spelling: "release-gate",
+                entrypoint: .testReleaseGate))
+    }
+    return try ColliderPlanner().selectedTasks(in: catalog, requests: requests)
+}
 
 private func fixtureNativeBuilder(
     context: FilePath,
@@ -146,7 +176,7 @@ private func fixtureReactNativeNodeModules(
         context: WorkspaceContext(
             root: root,
             environment: [:]))
-    let all = try registry.selectedTestTasks(nil).map(\.rawValue)
+    let all = try selectedTestTasks(in: registry, selection: nil).map(\.rawValue)
 
     #expect(
         all == [
@@ -159,31 +189,31 @@ private func fixtureReactNativeNodeModules(
             "test.release-gate.text-editor",
         ])
     #expect(
-        try registry.selectedTestTasks("config").map(\.rawValue) == [
+        try selectedTestTasks(in: registry, selection: "config").map(\.rawValue) == [
             "linux.arm64.test", "linux.x86_64.test",
         ])
     #expect(
-        try registry.selectedTestTasks("ipc").map(\.rawValue) == [
+        try selectedTestTasks(in: registry, selection: "ipc").map(\.rawValue) == [
             "linux.arm64.test", "linux.x86_64.test",
         ])
     #expect(
-        try registry.selectedTestTasks("compositor").map(\.rawValue) == [
+        try selectedTestTasks(in: registry, selection: "compositor").map(\.rawValue) == [
             "linux.arm64.test", "linux.x86_64.test",
         ])
     #expect(
-        try registry.selectedTestTasks("loader").map(\.rawValue) == [
+        try selectedTestTasks(in: registry, selection: "loader").map(\.rawValue) == [
             "linux.arm64.test-loader", "linux.x86_64.test-loader",
         ])
     #expect(
-        try registry.selectedTestTasks("gpu-headless").map(\.rawValue) == [
+        try selectedTestTasks(in: registry, selection: "gpu-headless").map(\.rawValue) == [
             "linux.arm64.test-gpu-headless", "linux.x86_64.test-gpu-headless",
         ])
     #expect(
-        try registry.selectedTestTasks("gpu-drm").map(\.rawValue) == [
+        try selectedTestTasks(in: registry, selection: "gpu-drm").map(\.rawValue) == [
             "compositor-core.test-gpu-drm"
         ])
     #expect(throws: (any Error).self) {
-        try registry.selectedTestTasks("unknown")
+        try selectedTestTasks(in: registry, selection: "unknown")
     }
 }
 
@@ -203,12 +233,16 @@ private func fixtureReactNativeNodeModules(
     ] {
         #expect(
             declared.isSuperset(
-                of: try catalog.roots(
-                    named: .testDefault,
+                of: try selectedTasks(
+                    in: catalog,
+                    entrypoint: .testDefault,
                     selection: selection)))
     }
     #expect(throws: (any Error).self) {
-        try catalog.roots(named: .testDefault, selection: "swift-sdk")
+        try selectedTasks(
+            in: catalog,
+            entrypoint: .testDefault,
+            selection: "swift-sdk")
     }
 
     for selection in [
@@ -218,11 +252,17 @@ private func fixtureReactNativeNodeModules(
     ] {
         #expect(
             declared.isSuperset(
-                of: try catalog.roots(named: .build, selection: selection)))
+                of: try selectedTasks(
+                    in: catalog,
+                    entrypoint: .build,
+                    selection: selection)))
     }
     for selection in ["loader", "gpu-headless", "gpu-drm"] {
         #expect(throws: (any Error).self) {
-            try catalog.roots(named: .build, selection: selection)
+            try selectedTasks(
+                in: catalog,
+                entrypoint: .build,
+                selection: selection)
         }
     }
 }
@@ -440,9 +480,13 @@ private func fixtureReactNativeNodeModules(
 
     #expect(
         Set(allTasks.map(\.id)).isSuperset(
-            of: try catalog.roots(named: .testDefault, selection: "all")
-                + catalog.roots(
-                    named: .testReleaseGate,
+            of: try selectedTasks(
+                in: catalog,
+                entrypoint: .testDefault,
+                selection: "all")
+                + selectedTasks(
+                    in: catalog,
+                    entrypoint: .testReleaseGate,
                     selection: "release-gate")))
     #expect(releaseTasks.count == 6)
     #expect(
@@ -474,7 +518,7 @@ private func fixtureReactNativeNodeModules(
         context: WorkspaceContext(root: repositoryRoot, environment: [:]))
 
     #expect(task.id == CompositorTaskIDs.testGPUDRM)
-    #expect(try registry.selectedTestTasks("gpu-drm") == [task.id])
+    #expect(try selectedTestTasks(in: registry, selection: "gpu-drm") == [task.id])
 }
 
 @Test func drmLaneRejectsAConfiguredNonRenderNode() throws {
@@ -886,11 +930,6 @@ private func fixtureReactNativeNodeModules(
     #expect(
         task.dependencies.contains(
             TaskID(rawValue: "core.skia.linux-x86_64")))
-    #expect(
-        !task.inputs.contains(
-            .dependencyOutput(
-                FilePath(
-                    "/workspace/core/.skia-build/linux-x86_64/libicu.a"))))
     #expect(
         executions.allSatisfy {
             $0.intelBinaryTranslationPolicy == .required

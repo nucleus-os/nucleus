@@ -8,6 +8,7 @@ public struct TaskPlanEntry: Codable, Sendable {
     public let explanation: String
     public let coordinates: TaskExecutionCoordinates?
     public let resources: PlannedTaskResources
+    public let claims: [PlannedTaskClaim]
 
     public init(
         task: TaskID,
@@ -16,7 +17,8 @@ public struct TaskPlanEntry: Codable, Sendable {
         isSubsumed: Bool = false,
         explanation: String,
         coordinates: TaskExecutionCoordinates?,
-        resources: PlannedTaskResources = .lightweight
+        resources: PlannedTaskResources = .lightweight,
+        claims: [PlannedTaskClaim] = []
     ) {
         self.task = task
         self.identity = identity
@@ -25,36 +27,82 @@ public struct TaskPlanEntry: Codable, Sendable {
         self.explanation = explanation
         self.coordinates = coordinates
         self.resources = resources
+        self.claims = claims
     }
 }
 
 public struct TaskResourceCapacity: Codable, Hashable, Sendable {
     public let cpuCount: UInt32
     public let memoryBytes: UInt64
+    public let ioWeight: UInt32
 
-    public init(cpuCount: UInt32, memoryBytes: UInt64) {
+    public init(
+        cpuCount: UInt32,
+        memoryBytes: UInt64,
+        ioWeight: UInt32 = 4
+    ) {
         precondition(cpuCount > 0)
         precondition(memoryBytes > 0)
+        precondition(ioWeight > 0)
         self.cpuCount = cpuCount
         self.memoryBytes = memoryBytes
+        self.ioWeight = ioWeight
     }
 }
 
 public struct PlannedTaskResources: Codable, Hashable, Sendable {
     public let cpuCount: UInt32
     public let memoryBytes: UInt64
+    public let ioWeight: UInt32
     public let exclusive: Bool
 
-    public init(cpuCount: UInt32, memoryBytes: UInt64, exclusive: Bool) {
+    public init(
+        cpuCount: UInt32,
+        memoryBytes: UInt64,
+        ioWeight: UInt32 = 1,
+        exclusive: Bool
+    ) {
         self.cpuCount = cpuCount
         self.memoryBytes = memoryBytes
+        self.ioWeight = ioWeight
         self.exclusive = exclusive
     }
 
     public static let lightweight = PlannedTaskResources(
         cpuCount: 1,
         memoryBytes: 512 * 1_024 * 1_024,
+        ioWeight: 1,
         exclusive: false)
+}
+
+public enum PlannedTaskClaimAccess: String, Codable, Hashable, Sendable {
+    case shared
+    case exclusive
+}
+
+public enum PlannedTaskClaimSubject: Codable, Hashable, Sendable {
+    case named(String)
+    case path(String)
+}
+
+public struct PlannedTaskClaim: Codable, Hashable, Sendable {
+    public let subject: PlannedTaskClaimSubject
+    public let access: PlannedTaskClaimAccess
+
+    public init(
+        subject: PlannedTaskClaimSubject,
+        access: PlannedTaskClaimAccess
+    ) {
+        self.subject = subject
+        self.access = access
+    }
+
+    public var canonicalKey: String {
+        switch subject {
+        case .named(let value): "named:\(value)"
+        case .path(let value): "path:\(value)"
+        }
+    }
 }
 
 public struct TaskExecutionCoordinates: Codable, Hashable, Sendable {

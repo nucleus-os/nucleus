@@ -48,10 +48,12 @@ struct ChromiumCommand {
             case .install: ComponentEntrypointID.install
             }
         try await context.execute(
-            tasks: catalog.tasks,
-            selected: try catalog.roots(
-                named: entrypoint,
-                selection: ChromiumColliderRecipe.descriptor.canonicalName),
+            catalog: catalog,
+            requests: [
+                ComponentEntrypointRequest(
+                    entrypoint: entrypoint,
+                    selection: ChromiumColliderRecipe.descriptor.canonicalName)
+            ],
             controls: controls)
     }
 }

@@ -590,26 +590,31 @@ public struct ActionRequirements: Hashable, Sendable {
 public struct ActionResourceRequest: Hashable, Sendable {
     public let cpuCount: UInt32?
     public let memoryBytes: UInt64?
+    public let ioWeight: UInt32?
     public let exclusive: Bool
 
     public init(
         cpuCount: UInt32?,
         memoryBytes: UInt64?,
+        ioWeight: UInt32? = 1,
         exclusive: Bool
     ) {
         self.cpuCount = cpuCount
         self.memoryBytes = memoryBytes
+        self.ioWeight = ioWeight
         self.exclusive = exclusive
     }
 
     public static let lightweight = ActionResourceRequest(
         cpuCount: 1,
         memoryBytes: 512 * 1_024 * 1_024,
+        ioWeight: 1,
         exclusive: false)
 
     public static let fullHostExclusive = ActionResourceRequest(
         cpuCount: nil,
         memoryBytes: nil,
+        ioWeight: nil,
         exclusive: true)
 }
 

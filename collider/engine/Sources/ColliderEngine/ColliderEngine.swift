@@ -22,6 +22,56 @@ public struct ColliderEngine: Sendable {
         registry: RunRegistry? = nil,
         options: TaskExecutionOptions = TaskExecutionOptions()
     ) async throws -> TaskExecutionReport {
+        try await execute(
+            stateRoot: stateRoot,
+            workflowLocks: workflowLocks,
+            run: run,
+            registry: registry,
+            options: options
+        ) { services in
+            try ColliderPlanner().plan(
+                graph: graph,
+                selected: selected,
+                rebuildSelected: options.rebuildSelected,
+                lowerings: lowerings,
+                services: services)
+        }
+    }
+
+    public func execute(
+        catalog: ComponentCatalog,
+        requests: [ComponentEntrypointRequest],
+        stateRoot: FilePath,
+        workflowLocks: [TaskLock] = [],
+        lowerings: [any TaskPlanLowering] = [],
+        run: RunHandle? = nil,
+        registry: RunRegistry? = nil,
+        options: TaskExecutionOptions = TaskExecutionOptions()
+    ) async throws -> TaskExecutionReport {
+        try await execute(
+            stateRoot: stateRoot,
+            workflowLocks: workflowLocks,
+            run: run,
+            registry: registry,
+            options: options
+        ) { services in
+            try ColliderPlanner().plan(
+                catalog: catalog,
+                requests: requests,
+                rebuildSelected: options.rebuildSelected,
+                lowerings: lowerings,
+                services: services)
+        }
+    }
+
+    private func execute(
+        stateRoot: FilePath,
+        workflowLocks: [TaskLock],
+        run: RunHandle?,
+        registry: RunRegistry?,
+        options: TaskExecutionOptions,
+        planning: (TaskPlanningServices) throws -> ExecutionPlan
+    ) async throws -> TaskExecutionReport {
         try FileManager.default.createDirectory(
             atPath: stateRoot.string,
             withIntermediateDirectories: true)
@@ -40,12 +90,7 @@ public struct ColliderEngine: Sendable {
             taskState: state.lookup,
             validateOutputs: outputValidator.validate)
         let planningStart = ContinuousClock().now
-        let plan = try ColliderPlanner().plan(
-            graph: graph,
-            selected: selected,
-            rebuildSelected: options.rebuildSelected,
-            lowerings: lowerings,
-            services: services)
+        let plan = try planning(services)
         let planningDuration = elapsedNanoseconds(since: planningStart)
         let hashingDuration = planningInputs.hashingDurationNanoseconds
         try planningInputs.persistDigestIndex()

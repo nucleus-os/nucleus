@@ -7,10 +7,12 @@ struct BenchmarkCommand {
     func run(controls: TaskControls) async throws {
         let catalog = try ComponentRegistry(context: context).componentCatalog()
         try await context.execute(
-            tasks: catalog.tasks,
-            selected: try catalog.roots(
-                named: .benchmark,
-                selection: BenchmarkColliderRecipe.descriptor.canonicalName),
+            catalog: catalog,
+            requests: [
+                ComponentEntrypointRequest(
+                    entrypoint: .benchmark,
+                    selection: BenchmarkColliderRecipe.descriptor.canonicalName)
+            ],
             controls: controls)
     }
 }

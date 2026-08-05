@@ -1,7 +1,31 @@
 import ColliderCore
+import SystemPackage
 
 public struct ColliderPlanner {
     public init() {}
+
+    public func selectedTasks(
+        in catalog: ComponentCatalog,
+        requests: [ComponentEntrypointRequest]
+    ) throws -> [TaskID] {
+        try ComponentCatalogIndex(catalog).roots(for: requests)
+    }
+
+    public func plan(
+        catalog: ComponentCatalog,
+        requests: [ComponentEntrypointRequest],
+        rebuildSelected: Bool,
+        lowerings: [any TaskPlanLowering],
+        services: TaskPlanningServices
+    ) throws -> ExecutionPlan {
+        let index = try ComponentCatalogIndex(catalog)
+        return try plan(
+            graph: TaskGraph(index.tasks),
+            selected: index.roots(for: requests),
+            rebuildSelected: rebuildSelected,
+            lowerings: lowerings,
+            services: services)
+    }
 
     public func plan(
         graph: TaskGraph,
@@ -10,6 +34,7 @@ public struct ColliderPlanner {
         lowerings: [any TaskPlanLowering],
         services: TaskPlanningServices
     ) throws -> ExecutionPlan {
+        try validateCompleteGraph(graph.declarations)
         let ordered = try graph.orderedTasks(selecting: selected)
         let explicitlySelected = Set(selected)
         let identityBuilder = TaskIdentityBuilder()
@@ -43,7 +68,8 @@ public struct ColliderPlanner {
                     coordinates: try executionCoordinates(for: task.action),
                     resources: try normalizedResources(
                         for: task.action,
-                        capacity: services.resourceCapacity)))
+                        capacity: services.resourceCapacity),
+                    claims: normalizedClaims(for: task)))
         }
 
         let subsumed = subsumedTasks(in: ordered, entries: entries)
@@ -58,7 +84,8 @@ public struct ColliderPlanner {
                 isSubsumed: true,
                 explanation: "action is subsumed by a selected dirty task",
                 coordinates: entry.coordinates,
-                resources: entry.resources)
+                resources: entry.resources,
+                claims: entry.claims)
         }
 
         let assessed = zip(ordered, entries).map {
@@ -98,7 +125,8 @@ public struct ColliderPlanner {
                 coordinates: try executionCoordinates(for: lowered.task.action),
                 resources: try normalizedResources(
                     for: lowered.task.action,
-                    capacity: services.resourceCapacity))
+                    capacity: services.resourceCapacity),
+                claims: normalizedClaims(for: lowered.task))
         }
         return ExecutionPlan(
             resourceCapacity: services.resourceCapacity,
@@ -224,19 +252,147 @@ public struct ColliderPlanner {
         let request = action?.requirements.resources ?? .lightweight
         let cpuCount = request.cpuCount ?? capacity.cpuCount
         let memoryBytes = request.memoryBytes ?? capacity.memoryBytes
-        guard cpuCount > 0, memoryBytes > 0,
+        let ioWeight = request.ioWeight ?? capacity.ioWeight
+        guard cpuCount > 0, memoryBytes > 0, ioWeight > 0,
             cpuCount <= capacity.cpuCount,
-            memoryBytes <= capacity.memoryBytes
+            memoryBytes <= capacity.memoryBytes,
+            ioWeight <= capacity.ioWeight
         else {
             throw ColliderPlanningFailure.resourceRequestExceedsCapacity(
                 cpuCount: cpuCount,
                 memoryBytes: memoryBytes,
+                ioWeight: ioWeight,
                 capacity: capacity)
         }
         return PlannedTaskResources(
             cpuCount: cpuCount,
             memoryBytes: memoryBytes,
+            ioWeight: ioWeight,
             exclusive: request.exclusive)
+    }
+
+    private func normalizedClaims(
+        for task: TaskDeclaration
+    ) -> [PlannedTaskClaim] {
+        var claims: [String: PlannedTaskClaim] = [:]
+        func insert(_ claim: PlannedTaskClaim) {
+            let key = claim.canonicalKey
+            if claims[key]?.access == .exclusive { return }
+            claims[key] = claim
+        }
+        for lock in task.locks {
+            let name =
+                switch lock {
+                case .checkout(let value): "checkout:\(value)"
+                case .shared(let path):
+                    "shared:\(path.lexicallyNormalized().string)"
+                }
+            insert(
+                PlannedTaskClaim(
+                    subject: .named(name),
+                    access: .exclusive))
+        }
+        for output in task.outputs {
+            insert(
+                PlannedTaskClaim(
+                    subject: .path(output.path.lexicallyNormalized().string),
+                    access: .exclusive))
+        }
+        for effect in task.action?.requirements.effects ?? []
+        where effect.access != .read {
+            switch effect.scope {
+            case .checkout(let path), .output(let path), .publication(let path):
+                insert(
+                    PlannedTaskClaim(
+                        subject: .path(path.lexicallyNormalized().string),
+                        access: .exclusive))
+            case .input, .scratch, .unrestricted:
+                break
+            }
+        }
+        return claims.values.sorted { $0.canonicalKey < $1.canonicalKey }
+    }
+
+    private func validateCompleteGraph(_ tasks: [TaskDeclaration]) throws {
+        var owners: [(normalized: String, task: TaskID)] = []
+        for task in tasks {
+            for output in task.outputs {
+                let normalized = output.path.lexicallyNormalized().string
+                for owner in owners
+                where task.id != owner.task
+                    && (normalized == owner.normalized
+                        || contains(normalized, in: owner.normalized)
+                        || contains(owner.normalized, in: normalized))
+                {
+                    throw ColliderPlanningFailure.overlappingOutput(
+                        first: owner.task,
+                        second: task.id,
+                        path: output.path)
+                }
+                owners.append((normalized, task.id))
+            }
+        }
+
+        let outputs = tasks.flatMap { task in
+            task.outputs.map {
+                (
+                    producer: task.id,
+                    normalized: $0.path.lexicallyNormalized().string
+                )
+            }
+        }
+        for task in tasks {
+            for input in task.inputs {
+                guard let path = rawInputPath(input) else { continue }
+                let normalized = path.lexicallyNormalized().string
+                if let output = outputs.first(where: {
+                    $0.producer != task.id
+                        && (normalized == $0.normalized
+                            || contains(normalized, in: $0.normalized))
+                }) {
+                    throw ColliderPlanningFailure.rawGeneratedOutputConsumption(
+                        consumer: task.id,
+                        producer: output.producer,
+                        path: path)
+                }
+            }
+        }
+
+        var implementationsByKind: [ActionKind: String] = [:]
+        for task in tasks {
+            guard let action = task.action else { continue }
+            guard action.kind.rawValue.hasPrefix(task.component.rawValue + ".") else {
+                throw ColliderPlanningFailure.actionNamespaceMismatch(
+                    task: task.id,
+                    component: task.component,
+                    kind: action.kind)
+            }
+            if let existing = implementationsByKind[action.kind],
+                existing != action.implementationType
+            {
+                throw ColliderPlanningFailure.duplicateActionKind(
+                    kind: action.kind,
+                    first: existing,
+                    second: action.implementationType)
+            }
+            implementationsByKind[action.kind] = action.implementationType
+        }
+    }
+
+    private func rawInputPath(_ input: ArtifactInput) -> FilePath? {
+        switch input {
+        case .file(let path), .tree(let path), .optionalTree(let path, _):
+            path
+        case .tool(.taskOutput(let path)), .tool(.path(let path)):
+            path
+        case .value, .environment, .tool(.named), .tool(.operationalNamed):
+            nil
+        }
+    }
+
+    private func contains(_ child: String, in parent: String) -> Bool {
+        let prefix = parent.hasSuffix("/") ? parent : parent + "/"
+        return child.hasPrefix(prefix)
     }
 }
 
@@ -247,7 +403,14 @@ public enum ColliderPlanningFailure: Error, CustomStringConvertible, Sendable {
     case resourceRequestExceedsCapacity(
         cpuCount: UInt32,
         memoryBytes: UInt64,
+        ioWeight: UInt32,
         capacity: TaskResourceCapacity)
+    case duplicateActionKind(kind: ActionKind, first: String, second: String)
+    case actionNamespaceMismatch(
+        task: TaskID, component: ComponentID, kind: ActionKind)
+    case overlappingOutput(first: TaskID, second: TaskID, path: FilePath)
+    case rawGeneratedOutputConsumption(
+        consumer: TaskID, producer: TaskID, path: FilePath)
 
     public var description: String {
         switch self {
@@ -260,9 +423,19 @@ public enum ColliderPlanningFailure: Error, CustomStringConvertible, Sendable {
         case .unsupportedRunner(let runner):
             "unsupported execution runner: \(runner.operatingSystem.rawValue)/"
                 + runner.architecture.rawValue
-        case .resourceRequestExceedsCapacity(let cpu, let memory, let capacity):
-            "task resource request \(cpu) CPU/\(memory) bytes exceeds planning capacity "
-                + "\(capacity.cpuCount) CPU/\(capacity.memoryBytes) bytes"
+        case .resourceRequestExceedsCapacity(let cpu, let memory, let io, let capacity):
+            "task resource request \(cpu) CPU/\(memory) bytes/\(io) I/O exceeds "
+                + "planning capacity \(capacity.cpuCount) CPU/"
+                + "\(capacity.memoryBytes) bytes/\(capacity.ioWeight) I/O"
+        case .duplicateActionKind(let kind, let first, let second):
+            "action kind '\(kind)' is declared by both '\(first)' and '\(second)'"
+        case .actionNamespaceMismatch(let task, let component, let kind):
+            "task '\(task)' owned by '\(component)' declares foreign action kind '\(kind)'"
+        case .overlappingOutput(let first, let second, let path):
+            "tasks '\(first)' and '\(second)' overlap output ownership at '\(path)'"
+        case .rawGeneratedOutputConsumption(let consumer, let producer, let path):
+            "task '\(consumer)' consumes generated output '\(path)' from '\(producer)' "
+                + "through a raw path instead of its typed artifact reference"
         }
     }
 }

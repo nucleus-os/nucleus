@@ -129,16 +129,15 @@ extension WorkspaceContext {
     /// task-state root, render the report, and return it.
     @discardableResult
     func execute(
-        tasks: [TaskDeclaration],
-        selected: [TaskID],
+        catalog: ComponentCatalog,
+        requests: [ComponentEntrypointRequest],
         controls: TaskControls,
         workflowLocks: [TaskLock] = []
     ) async throws -> TaskExecutionReport {
-        let graph = try TaskGraph(tasks)
         let stateRoot = layout.tasks
         let report = try await ColliderEngine(runtime: runtime).execute(
-            graph: graph,
-            selected: selected,
+            catalog: catalog,
+            requests: requests,
             stateRoot: stateRoot,
             workflowLocks: workflowLocks,
             lowerings: [SwiftPMLowering()],

@@ -67,7 +67,7 @@ import Testing
         ])
     let task = TaskDeclaration(
         id: TaskID(rawValue: "fixture.assemble-browser-artifact"),
-        component: ComponentID(rawValue: "fixture"),
+        component: ComponentID(rawValue: "browser"),
         outputs: [
             OutputDeclaration(
                 path: FilePath(
@@ -207,7 +207,7 @@ import Testing
         environment: environment)
     let task = TaskDeclaration(
         id: TaskID(rawValue: "fixture.assemble-cef-artifact"),
-        component: ComponentID(rawValue: "fixture"),
+        component: ComponentID(rawValue: "browser"),
         outputs: [
             OutputDeclaration(
                 path: FilePath(
@@ -316,7 +316,7 @@ import Testing
     let prefix = directory.appendingPathComponent("prefix")
     let task = TaskDeclaration(
         id: TaskID(rawValue: "fixture.install-browser"),
-        component: ComponentID(rawValue: "fixture"),
+        component: ComponentID(rawValue: "browser"),
         outputs: [
             OutputDeclaration(
                 path: FilePath(

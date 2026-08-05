@@ -1,0 +1,170 @@
+import ColliderCore
+import ColliderPlanning
+import SystemPackage
+import Testing
+
+private let catalogCoreID = ComponentID(rawValue: "core")
+private let catalogBuildID = TaskID(rawValue: "core.build")
+
+private func catalogRequest(
+    _ spelling: String,
+    _ entrypoint: ComponentEntrypointID = .build
+) -> ComponentEntrypointRequest {
+    ComponentEntrypointRequest(spelling: spelling, entrypoint: entrypoint)
+}
+
+private func catalogTask(
+    _ id: TaskID = catalogBuildID,
+    component: ComponentID = catalogCoreID,
+    dependencies: [TaskID] = [],
+    inputs: [ArtifactInput] = [],
+    output: FilePath? = nil,
+    action: AnyColliderAction? = nil
+) -> TaskDeclaration {
+    TaskDeclaration(
+        id: id,
+        component: component,
+        dependencies: dependencies,
+        inputs: inputs,
+        outputs: output.map {
+            [OutputDeclaration(path: $0, validation: .regularFile)]
+        } ?? [],
+        action: action)
+}
+
+private func catalogComponent(
+    id: ComponentID = catalogCoreID,
+    name: String = "core",
+    directory: String = "core",
+    aliases: Set<String> = [],
+    tasks: [TaskDeclaration] = [catalogTask()],
+    entrypoints: [ComponentEntrypoint]? = nil
+) throws -> ComponentDefinition {
+    try ComponentDefinition(
+        descriptor: ComponentDescriptor(
+            id: id,
+            canonicalName: name,
+            directoryName: directory,
+            aliases: aliases),
+        tasks: tasks,
+        entrypoints: entrypoints ?? [
+            ComponentEntrypoint(id: .build, roots: Set(tasks.map(\.id)))
+        ])
+}
+
+@Test func plannerIndexesCatalogAliasesGroupsAndRoutes() throws {
+    let core = try catalogComponent(aliases: ["render-core"])
+    let catalog = ComponentCatalog(
+        components: [core],
+        groups: [ComponentSelectionGroup(name: "all", components: [catalogCoreID])],
+        routes: [
+            ComponentEntrypointRoute(
+                spelling: "everything",
+                requestedEntrypoint: .build,
+                destinations: [
+                    ComponentEntrypointReference(
+                        component: catalogCoreID,
+                        entrypoint: .build)
+                ])
+        ],
+        publicEntrypoints: [
+            catalogRequest("all"), catalogRequest("core"),
+            catalogRequest("render-core"), catalogRequest("everything"),
+        ])
+    let planner = ColliderPlanner()
+
+    for spelling in ["all", "core", "render-core", "everything"] {
+        #expect(
+            try planner.selectedTasks(
+                in: catalog,
+                requests: [catalogRequest(spelling)]) == [catalogBuildID])
+    }
+    #expect(throws: ComponentCatalogFailure.self) {
+        _ = try planner.selectedTasks(
+            in: catalog,
+            requests: [catalogRequest("everything", .testDefault)])
+    }
+}
+
+@Test func plannerRejectsInvalidCatalogIndexDeclarations() throws {
+    let core = try catalogComponent(aliases: ["runtime"])
+    let duplicateSpelling = ComponentCatalog(
+        components: [core],
+        groups: [ComponentSelectionGroup(name: "runtime", components: [catalogCoreID])],
+        publicEntrypoints: [catalogRequest("core")])
+    #expect(throws: ComponentCatalogFailure.self) {
+        _ = try ColliderPlanner().selectedTasks(
+            in: duplicateSpelling,
+            requests: [catalogRequest("core")])
+    }
+
+    let unreachable = ComponentCatalog(
+        components: [try catalogComponent()],
+        publicEntrypoints: [])
+    #expect(throws: ComponentCatalogFailure.self) {
+        _ = try ColliderPlanner().selectedTasks(in: unreachable, requests: [])
+    }
+}
+
+@Test func plannerValidatesCompleteCatalogOutputOwnership() throws {
+    let producerID = ComponentID(rawValue: "producer")
+    let producerTaskID = TaskID(rawValue: "producer.build")
+    let producer = try catalogComponent(
+        id: producerID,
+        name: "producer",
+        directory: "producer",
+        tasks: [
+            catalogTask(
+                producerTaskID,
+                component: producerID,
+                output: FilePath("/outputs/generated"))
+        ])
+    let rawConsumer = try catalogComponent(
+        tasks: [
+            catalogTask(
+                dependencies: [producerTaskID],
+                inputs: [.file(FilePath("/outputs/generated/value.json"))])
+        ])
+    let rawCatalog = ComponentCatalog(
+        components: [producer, rawConsumer],
+        publicEntrypoints: [catalogRequest("producer"), catalogRequest("core")])
+    #expect(throws: ColliderPlanningFailure.self) {
+        _ = try plan(rawCatalog, request: catalogRequest("core"))
+    }
+
+    let overlapping = try catalogComponent(
+        tasks: [
+            catalogTask(output: FilePath("/outputs/generated/child"))
+        ])
+    let overlapCatalog = ComponentCatalog(
+        components: [producer, overlapping],
+        publicEntrypoints: [catalogRequest("producer"), catalogRequest("core")])
+    #expect(throws: ColliderPlanningFailure.self) {
+        _ = try plan(overlapCatalog, request: catalogRequest("core"))
+    }
+}
+
+private func plan(
+    _ catalog: ComponentCatalog,
+    request: ComponentEntrypointRequest
+) throws -> ExecutionPlan {
+    let digest = ArtifactDigest(bytes: Array(repeating: 19, count: 32))
+    return try ColliderPlanner().plan(
+        catalog: catalog,
+        requests: [request],
+        rebuildSelected: false,
+        lowerings: [],
+        services: TaskPlanningServices(
+            resourceCapacity: TaskResourceCapacity(
+                cpuCount: 8,
+                memoryBytes: 32 * 1_024 * 1_024 * 1_024),
+            digestBytes: { _ in digest },
+            digestFile: { _ in digest },
+            digestTree: { _ in digest },
+            optionalTreeDigest: { _ in nil },
+            semanticToolIdentity: { _, _ in
+                ToolIdentitySnapshot(path: FilePath("/fixture/tool"), digest: digest)
+            },
+            taskState: { _ in .missing },
+            validateOutputs: { _ in }))
+}
