@@ -80,7 +80,8 @@ package struct PrepareChromiumSourceAction: ColliderAction {
             resources: ActionResourceRequest(
                 cpuCount: 1,
                 memoryBytes: 2 * 1_024 * 1_024 * 1_024,
-                exclusive: false))
+                exclusive: false),
+            executionPlatform: .macOSARM64Native)
     }
 
     package func execute(in context: ActionContext) async throws {

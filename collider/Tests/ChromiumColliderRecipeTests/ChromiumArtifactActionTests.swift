@@ -13,6 +13,10 @@ import Testing
     let source = directory.appendingPathComponent("chromium")
     let output = directory.appendingPathComponent("out")
     let distribution = directory.appendingPathComponent("dist")
+    let imageID = directory.appendingPathComponent("image-id")
+    try FileManager.default.createDirectory(
+        at: directory, withIntermediateDirectories: true)
+    try Data("fixture-image".utf8).write(to: imageID)
     try FileManager.default.createDirectory(
         at: output.appendingPathComponent("locales"),
         withIntermediateDirectories: true)
@@ -57,6 +61,7 @@ import Testing
     let assembly = BrowserArtifactAssembly(
         chromiumSource: FilePath(source.path),
         buildOutput: FilePath(output.path),
+        containerImageID: FilePath(imageID.path),
         distributionRoot: FilePath(distribution.path),
         launcher: FilePath(launcher.path),
         desktopTemplate: FilePath(desktop.path),
@@ -65,25 +70,17 @@ import Testing
                 + (ProcessInfo.processInfo.environment["PATH"]
                     ?? "/usr/bin:/bin")
         ])
-    let task = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.assemble-browser-artifact"),
-        component: ComponentID(rawValue: "browser"),
-        outputs: [
-            OutputDeclaration(
-                path: FilePath(
-                    distribution.appendingPathComponent(
-                        "current"
-                    ).path),
-                validation: .exists)
-        ],
-        assessmentPolicy: .always,
-        action:
-            try AnyColliderAction(
-                AssembleBrowserArtifactAction(assembly: assembly)))
-    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
-        graph: TaskGraph([task]),
-        selected: [task.id],
-        stateRoot: FilePath(directory.appendingPathComponent("state").path))
+    let action = AssembleBrowserArtifactAction(assembly: assembly)
+    let executions = OCIExecutionRecorder()
+    try await execute(
+        action,
+        recording: executions,
+        containerRun: { _ in CommandResult(status: 0) })
+    let validation = try #require(await executions.values().last)
+    #expect(validation.executionPlatform == .linuxARM64OCI)
+    #expect(validation.artifactTarget == .linuxX86_64)
+    #expect(validation.intelBinaryTranslationPolicy == .required)
+    #expect(validation.command == ["validate-browser"])
     #expect(
         try FileManager.default.destinationOfSymbolicLink(
             atPath: distribution.appendingPathComponent("current").path)
@@ -99,6 +96,10 @@ import Testing
     let output = chromium.appendingPathComponent("out/Release_GN_x64")
     let depot = directory.appendingPathComponent("depot_tools")
     let distribution = directory.appendingPathComponent("dist")
+    let imageID = directory.appendingPathComponent("image-id")
+    try FileManager.default.createDirectory(
+        at: directory, withIntermediateDirectories: true)
+    try Data("fixture-image".utf8).write(to: imageID)
     try FileManager.default.createDirectory(
         at: output, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(
@@ -201,29 +202,69 @@ import Testing
         chromiumSource: FilePath(chromium.path),
         buildOutput: FilePath(output.path),
         depotTools: FilePath(depot.path),
+        containerImageID: FilePath(imageID.path),
         distributionRoot: FilePath(distribution.path),
         cefCheckout: checkout,
         chromiumVersion: version,
         environment: environment)
-    let task = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.assemble-cef-artifact"),
-        component: ComponentID(rawValue: "browser"),
-        outputs: [
-            OutputDeclaration(
-                path: FilePath(
-                    distribution.appendingPathComponent(
-                        "current"
-                    ).path),
-                validation: .exists)
-        ],
-        assessmentPolicy: .always,
-        action:
-            try AnyColliderAction(
-                AssembleCEFArtifactAction(assembly: assembly)))
-    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
-        graph: TaskGraph([task]),
-        selected: [task.id],
-        stateRoot: FilePath(directory.appendingPathComponent("state").path))
+    let action = AssembleCEFArtifactAction(assembly: assembly)
+    let executions = OCIExecutionRecorder()
+    try await execute(
+        action,
+        recording: executions,
+        containerRun: { execution in
+            switch execution.command.first {
+            case "cef-make-distrib":
+                let candidate = try #require(
+                    execution.mounts.first { $0.target == "/distribution" }
+                ).source
+                let root = candidate.appending(
+                    "cef_binary_fixture+gabcdefa+chromium-\(version)"
+                        + "_linux64_minimal")
+                for relative in ["Release", "Resources", "include"] {
+                    try FileManager.default.createDirectory(
+                        atPath: root.appending(relative).string,
+                        withIntermediateDirectories: true)
+                }
+                for relative in [
+                    "Release/libcef.so",
+                    "Release/chrome-sandbox",
+                    "Release/icudtl.dat",
+                    "include/cef_version_info.h",
+                    "Resources/resources.pak",
+                ] {
+                    try Data("fixture".utf8).write(
+                        to: URL(fileURLWithPath: root.appending(relative).string))
+                }
+            case "cef-archive":
+                let candidate = try #require(
+                    execution.mounts.first { $0.target == "/candidate" }
+                ).source
+                let archive = try #require(execution.command.dropFirst().first)
+                try Data("deterministic archive fixture".utf8).write(
+                    to: URL(
+                        fileURLWithPath: candidate.appending(
+                            "artifacts/\(archive)"
+                        ).string))
+            case "validate-cef", "cef-version-check":
+                break
+            default:
+                Issue.record("unexpected CEF container command: \(execution.command)")
+                return CommandResult(status: 64)
+            }
+            return CommandResult(status: 0)
+        })
+    let recorded = await executions.values()
+    #expect(
+        recorded.map(\.command.first) == [
+            "cef-make-distrib", "validate-cef", "cef-version-check", "cef-archive",
+        ])
+    #expect(
+        recorded.allSatisfy {
+            $0.executionPlatform == .linuxARM64OCI
+                && $0.artifactTarget == .linuxX86_64
+                && $0.intelBinaryTranslationPolicy == .required
+        })
     #expect(
         try FileManager.default.destinationOfSymbolicLink(
             atPath: distribution.appendingPathComponent(
@@ -348,4 +389,39 @@ import Testing
                 "bin/nucleus-browser"
             ).path)
             == "../lib/nucleus-browser/current/bin/nucleus-browser")
+}
+
+private actor OCIExecutionRecorder {
+    private var executions: [OCIExecution] = []
+
+    func append(_ execution: OCIExecution) {
+        executions.append(execution)
+    }
+
+    func values() -> [OCIExecution] {
+        executions
+    }
+}
+
+private func execute<Action: ColliderAction>(
+    _ action: Action,
+    recording recorder: OCIExecutionRecorder,
+    containerRun: @escaping @Sendable (OCIExecution) async throws -> CommandResult
+) async throws {
+    let files = ColliderRuntime().actionFileSystem()
+    let context = ActionContext(
+        files: files,
+        cancellation: ActionCancellation {},
+        logger: ActionLogger { _ in },
+        commands: ActionCommandExecutor { _ in
+            throw ActionContainerExecutorFailure.unavailable
+        },
+        downloads: ActionDownloader { _, _ in },
+        containers: ActionContainerExecutor(
+            run: { execution in
+                await recorder.append(execution)
+                return try await containerRun(execution)
+            }))
+    try await action.execute(in: context)
+    try action.validateOutputs(using: files)
 }

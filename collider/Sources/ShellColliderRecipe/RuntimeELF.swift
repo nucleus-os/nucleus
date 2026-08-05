@@ -39,6 +39,7 @@ public struct StageRuntimeELFAction: ColliderAction {
     public let prefix: FilePath
     public let environment: [String: String]
     public let productSet: RuntimeELFProductSet
+    public let executionPlatform: ExecutionPlatform
 
     public var identity: Identity {
         Identity(
@@ -61,19 +62,23 @@ public struct StageRuntimeELFAction: ColliderAction {
                 ActionEffect(.read, scope: .input(products)),
                 ActionEffect(.read, scope: .unrestricted(FilePath("/"))),
                 ActionEffect(.readWrite, scope: .output(prefix)),
-            ])
+            ],
+            executionPlatform: executionPlatform,
+            artifactTarget: linuxArtifactTarget(for: executionPlatform))
     }
 
     public init(
         products: FilePath,
         prefix: FilePath,
         environment: [String: String],
-        productSet: RuntimeELFProductSet = .baseRuntime
+        productSet: RuntimeELFProductSet = .baseRuntime,
+        executionPlatform: ExecutionPlatform
     ) {
         self.products = products
         self.prefix = prefix
         self.environment = environment
         self.productSet = productSet
+        self.executionPlatform = executionPlatform
     }
 
     public func execute(in context: ActionContext) async throws {
@@ -202,6 +207,7 @@ public struct ValidateRuntimeELFAction: ColliderAction {
     public let report: FilePath
     public let environment: [String: String]
     public let productSet: RuntimeELFProductSet
+    public let executionPlatform: ExecutionPlatform
 
     public var identity: Identity {
         Identity(
@@ -221,19 +227,23 @@ public struct ValidateRuntimeELFAction: ColliderAction {
             effects: [
                 ActionEffect(.read, scope: .input(root)),
                 ActionEffect(.write, scope: .output(report)),
-            ])
+            ],
+            executionPlatform: executionPlatform,
+            artifactTarget: linuxArtifactTarget(for: executionPlatform))
     }
 
     public init(
         root: FilePath,
         report: FilePath,
         environment: [String: String],
-        productSet: RuntimeELFProductSet = .baseRuntime
+        productSet: RuntimeELFProductSet = .baseRuntime,
+        executionPlatform: ExecutionPlatform
     ) {
         self.root = root
         self.report = report
         self.environment = environment
         self.productSet = productSet
+        self.executionPlatform = executionPlatform
     }
 
     public func execute(in context: ActionContext) async throws {
@@ -243,6 +253,20 @@ public struct ValidateRuntimeELFAction: ColliderAction {
             environment: environment,
             productSet: productSet,
             context: context)
+    }
+}
+
+private func linuxArtifactTarget(
+    for executionPlatform: ExecutionPlatform
+) -> ArtifactTarget {
+    precondition(
+        executionPlatform.environment == .native
+            && executionPlatform.operatingSystem == .linux)
+    switch executionPlatform.architecture {
+    case .arm64:
+        return .linuxARM64
+    case .x86_64:
+        return .linuxX86_64
     }
 }
 

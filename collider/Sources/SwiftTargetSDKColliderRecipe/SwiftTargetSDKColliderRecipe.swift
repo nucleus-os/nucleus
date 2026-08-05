@@ -1112,9 +1112,10 @@ private struct DownloadSwiftTargetSDKInputAction: ColliderAction {
     }
 
     var requirements: ActionRequirements {
-        ActionRequirements(effects: [
-            ActionEffect(.readWrite, scope: .output(identity.destination))
-        ])
+        ActionRequirements(
+            effects: [
+                ActionEffect(.readWrite, scope: .output(identity.destination))
+            ], executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -1152,11 +1153,12 @@ private struct ActivateSwiftSDKGenerationAction: ColliderAction {
     }
 
     var requirements: ActionRequirements {
-        ActionRequirements(effects: [
-            ActionEffect(.readWrite, scope: .output(candidate)),
-            ActionEffect(.write, scope: .output(generation)),
-            ActionEffect(.write, scope: .publication(active)),
-        ])
+        ActionRequirements(
+            effects: [
+                ActionEffect(.readWrite, scope: .output(candidate)),
+                ActionEffect(.write, scope: .output(generation)),
+                ActionEffect(.write, scope: .publication(active)),
+            ], executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -1209,10 +1211,11 @@ package struct PublishSwiftSDKDiscoveryAction: ColliderAction {
     }
 
     package var requirements: ActionRequirements {
-        ActionRequirements(effects: [
-            ActionEffect(.readWrite, scope: .publication(path)),
-            ActionEffect(.readWrite, scope: .publication(displacedItem)),
-        ])
+        ActionRequirements(
+            effects: [
+                ActionEffect(.readWrite, scope: .publication(path)),
+                ActionEffect(.readWrite, scope: .publication(displacedItem)),
+            ], executionPlatform: .macOSARM64Native)
     }
 
     package func execute(in context: ActionContext) async throws {
@@ -1352,7 +1355,8 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
                 }
                 + packagePaths.map {
                     ActionEffect(.read, scope: .input($0))
-                })
+                },
+            executionPlatform: .macOSARM64Native)
     }
 
     private var sdkRoot: FilePath { candidate.appending("swift-sdks") }
@@ -1511,7 +1515,8 @@ private struct BuildSwiftSDKGeneratorAction: ColliderAction {
             effects: [
                 ActionEffect(.read, scope: .checkout(source)),
                 ActionEffect(.readWrite, scope: .scratch(scratch)),
-            ])
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -1623,7 +1628,8 @@ private struct ValidateSwiftTargetSDKsAction: ColliderAction {
                 ActionEffect(.read, scope: .input(validator)),
                 ActionEffect(.read, scope: .input(ndkRoot)),
                 ActionEffect(.readWrite, scope: .output(validationRoot)),
-            ])
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -1739,7 +1745,8 @@ private struct PrepareLinuxSysrootAction: ColliderAction {
                 ActionEffect(
                     .readWrite,
                     scope: .output(sysroot.removingLastComponent()))
-            ])
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {

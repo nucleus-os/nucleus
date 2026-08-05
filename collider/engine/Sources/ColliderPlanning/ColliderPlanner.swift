@@ -226,22 +226,41 @@ public struct ColliderPlanner {
     private func executionCoordinates(
         for action: AnyColliderAction?
     ) throws -> TaskExecutionCoordinates? {
-        guard let action,
-            let execution = action.requirements.executionPlatform
-        else { return nil }
-        guard execution.environment == .oci,
-            execution.operatingSystem == .linux
-        else {
-            throw ColliderPlanningFailure.unsupportedExecutionPlatform(execution)
-        }
+        guard let action else { return nil }
+        let execution = action.requirements.executionPlatform
         let runner = RunnerPlatform.current
-        guard runner.operatingSystem == .macOS, runner.architecture == .arm64 else {
-            throw ColliderPlanningFailure.unsupportedRunner(runner)
+        let backend: ExecutionBackend
+        switch execution.environment {
+        case .native:
+            guard execution.operatingSystem == runner.operatingSystem,
+                execution.architecture == runner.architecture
+            else {
+                throw ColliderPlanningFailure.unsupportedNativeExecution(
+                    execution: execution,
+                    runner: runner)
+            }
+            if let artifact = action.requirements.artifactTarget,
+                artifact.operatingSystem != runner.operatingSystem
+                    || artifact.architecture != runner.architecture
+            {
+                throw ColliderPlanningFailure.unsupportedNativeArtifact(
+                    artifact: artifact,
+                    runner: runner)
+            }
+            backend = .native
+        case .oci:
+            guard execution.operatingSystem == .linux else {
+                throw ColliderPlanningFailure.unsupportedExecutionPlatform(execution)
+            }
+            guard runner.operatingSystem == .macOS, runner.architecture == .arm64 else {
+                throw ColliderPlanningFailure.unsupportedRunner(runner)
+            }
+            backend = .appleContainer
         }
         return TaskExecutionCoordinates(
             runner: runner,
             execution: execution,
-            backend: .appleContainer,
+            backend: backend,
             artifact: action.requirements.artifactTarget)
     }
 
@@ -400,6 +419,12 @@ public enum ColliderPlanningFailure: Error, CustomStringConvertible, Sendable {
     case unloweredLogicalRequirements([TaskID])
     case unsupportedExecutionPlatform(ExecutionPlatform)
     case unsupportedRunner(RunnerPlatform)
+    case unsupportedNativeExecution(
+        execution: ExecutionPlatform,
+        runner: RunnerPlatform)
+    case unsupportedNativeArtifact(
+        artifact: ArtifactTarget,
+        runner: RunnerPlatform)
     case resourceRequestExceedsCapacity(
         cpuCount: UInt32,
         memoryBytes: UInt64,
@@ -423,6 +448,14 @@ public enum ColliderPlanningFailure: Error, CustomStringConvertible, Sendable {
         case .unsupportedRunner(let runner):
             "unsupported execution runner: \(runner.operatingSystem.rawValue)/"
                 + runner.architecture.rawValue
+        case .unsupportedNativeExecution(let execution, let runner):
+            "native execution requires \(execution.operatingSystem.rawValue)/"
+                + "\(execution.architecture.rawValue), but the runner is "
+                + "\(runner.operatingSystem.rawValue)/\(runner.architecture.rawValue)"
+        case .unsupportedNativeArtifact(let artifact, let runner):
+            "native execution on \(runner.operatingSystem.rawValue)/"
+                + "\(runner.architecture.rawValue) cannot produce "
+                + "\(artifact.operatingSystem.rawValue)/\(artifact.architecture.rawValue)"
         case .resourceRequestExceedsCapacity(let cpu, let memory, let io, let capacity):
             "task resource request \(cpu) CPU/\(memory) bytes/\(io) I/O exceeds "
                 + "planning capacity \(capacity.cpuCount) CPU/"

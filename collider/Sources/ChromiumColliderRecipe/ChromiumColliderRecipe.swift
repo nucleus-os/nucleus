@@ -252,7 +252,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 try AnyColliderAction(
                     PrepareChromiumBuilderImageAction(
                         preparation: OCIImagePreparation(
-                            executionPlatform: .linuxAMD64OCI,
+                            executionPlatform: .linuxARM64OCI,
                             context: builderContext,
                             containerFile: builderContext.appending("Containerfile"),
                             imageID: builderImageID,
@@ -262,6 +262,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             chromiumSource: chromiumSource,
             buildOutput: cefOutput,
             depotTools: depotTools,
+            containerImageID: builderImageID,
             distributionRoot: cefDistribution,
             cefCheckout: cefRepository.commit,
             chromiumVersion: sourceLock.chromiumVersion,
@@ -299,6 +300,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             component: ComponentID(rawValue: "browser"))
         cefBuilder.consume(sourceProvenance)
         cefBuilder.consume(cefBuildArtifact)
+        cefBuilder.consume(builderImage)
         let cefPublication: ArtifactReference<PathArtifact> = try cefBuilder.output(
             "publication",
             path: cefDistribution.appending("current"),
@@ -315,6 +317,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
         let browserAssembly = BrowserArtifactAssembly(
             chromiumSource: chromiumSource,
             buildOutput: browserOutput,
+            containerImageID: builderImageID,
             distributionRoot: browserDistribution,
             launcher: chromium.appending("launcher/nucleus-browser"),
             desktopTemplate: chromium.appending(
@@ -352,6 +355,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             id: ChromiumTaskIDs.browserArtifact,
             component: ComponentID(rawValue: "browser"))
         browserArtifactBuilder.consume(browserBuildArtifact)
+        browserArtifactBuilder.consume(builderImage)
         let browserPublication: ArtifactReference<PathArtifact> =
             try browserArtifactBuilder.output(
                 "publication",
@@ -680,7 +684,8 @@ package struct PrepareChromiumDepotToolsAction: ColliderAction {
                 ActionEffect(
                     .readWrite,
                     scope: .checkout(repository.removingLastComponent()))
-            ])
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     package func execute(in context: ActionContext) async throws {
@@ -812,7 +817,8 @@ private struct PruneChromiumCacheAction: ColliderAction {
         ActionRequirements(
             effects: plan.rules.map {
                 ActionEffect(.readWrite, scope: .scratch($0.root))
-            })
+            },
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -851,7 +857,8 @@ private struct BootstrapChromiumDepotToolsAction: ColliderAction {
             ],
             effects: [
                 ActionEffect(.readWrite, scope: .checkout(repository))
-            ])
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -885,7 +892,7 @@ private func chromiumBuildExecution(
     environment: [String: String]
 ) -> OCIExecution {
     OCIExecution(
-        executionPlatform: .linuxAMD64OCI,
+        executionPlatform: .linuxARM64OCI,
         artifactTarget: .linuxX86_64,
         imageID: imageID,
         hostname: "chromium-build",
@@ -916,6 +923,7 @@ private func chromiumBuildExecution(
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
         processFilesystemPolicy: .standard,
+        intelBinaryTranslationPolicy: .required,
         resourceLimits: .build,
         containerEnvironment: [
             "DEPOT_TOOLS_UPDATE": "0",

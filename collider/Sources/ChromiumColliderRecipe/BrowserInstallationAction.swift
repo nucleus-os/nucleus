@@ -67,7 +67,9 @@ package struct InstallBrowserAction: ColliderAction {
             ]
                 + installation.widevineCandidates.map {
                     ActionEffect(.read, scope: .input($0))
-                })
+                },
+            executionPlatform: .linuxX86_64Native,
+            artifactTarget: .linuxX86_64)
     }
 
     package func execute(in context: ActionContext) async throws {

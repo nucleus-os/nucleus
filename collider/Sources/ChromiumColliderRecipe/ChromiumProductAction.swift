@@ -35,14 +35,6 @@ package struct BuildChromiumProductAction: ColliderAction {
 
     package var requirements: ActionRequirements {
         ActionRequirements(
-            tools: [
-                ActionToolRequirement(
-                    "chromium-clang",
-                    executable: .taskOutput(
-                        chromium.appending(
-                            "third_party/llvm-build/Release+Asserts/bin/clang")),
-                    role: .operational)
-            ],
             effects: [
                 ActionEffect(.read, scope: .input(build.sourceRoot)),
                 ActionEffect(.read, scope: .input(build.depotTools)),
@@ -55,7 +47,7 @@ package struct BuildChromiumProductAction: ColliderAction {
                 cpuCount: OCIResourceLimits.build.cpuCount,
                 memoryBytes: OCIResourceLimits.build.memoryBytes,
                 exclusive: true),
-            executionPlatform: .linuxAMD64OCI,
+            executionPlatform: .linuxARM64OCI,
             artifactTarget: .linuxX86_64)
     }
 
@@ -154,9 +146,12 @@ package struct BuildChromiumProductAction: ColliderAction {
             + #" pgo_data_path="/inputs/chrome.profdata""#
     }
 
-    private func containerExecution(command: [String]) -> OCIExecution {
+    private func containerExecution(
+        command: [String],
+        output: CommandSpec.Output = .logged
+    ) -> OCIExecution {
         OCIExecution(
-            executionPlatform: .linuxAMD64OCI,
+            executionPlatform: .linuxARM64OCI,
             artifactTarget: .linuxX86_64,
             imageID: build.containerImageID,
             hostname: "chromium-build",
@@ -186,6 +181,7 @@ package struct BuildChromiumProductAction: ColliderAction {
             capabilityPolicy: .dropAll,
             privilegePolicy: .prohibitAcquisition,
             processFilesystemPolicy: .standard,
+            intelBinaryTranslationPolicy: .required,
             resourceLimits: .build,
             containerEnvironment: [
                 "DEPOT_TOOLS_UPDATE": "0",
@@ -197,7 +193,7 @@ package struct BuildChromiumProductAction: ColliderAction {
             ],
             command: command,
             environment: build.environment,
-            output: .logged)
+            output: output)
     }
 
     private func buildManifest(
@@ -220,12 +216,9 @@ package struct BuildChromiumProductAction: ColliderAction {
         guard try context.files.metadata(for: clang)?.type == .regular else {
             throw failure("Chromium clang is missing: \(clang)")
         }
-        let versionResult = try await context.commands.execute(
-            CommandSpec(
-                executable: .taskOutput(clang),
-                arguments: ["--version"],
-                workingDirectory: chromium,
-                environment: environment,
+        let versionResult = try await context.containers.run(
+            containerExecution(
+                command: ["clang-version"],
                 output: .captured(limit: 64 * 1_024)))
         guard versionResult.status == 0,
             let version = versionResult.standardOutput.split(

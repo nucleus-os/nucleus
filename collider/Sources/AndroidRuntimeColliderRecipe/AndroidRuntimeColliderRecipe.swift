@@ -715,12 +715,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
     private static func aospCCacheDirectory(
         environment: [String: String]
     ) -> FilePath {
-        if let xdg = environment["XDG_CACHE_HOME"], !xdg.isEmpty {
-            return FilePath(xdg).appending("nucleus").appending("aosp-ccache")
-        }
-        let home = environment["HOME"] ?? "/tmp"
-        return FilePath(home).appending(".cache").appending("nucleus")
-            .appending("aosp-ccache")
+        ColliderCacheLayout(environment: environment).root
+            .appending("nucleus/aosp-ccache")
     }
 
     private static func loadAOSPSourceLock(

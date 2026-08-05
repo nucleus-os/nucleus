@@ -78,7 +78,7 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
     #expect(Set(productActions.map(\.identity)).count == 2)
     #expect(
         productActions.allSatisfy {
-            $0.requirements.executionPlatform == .linuxAMD64OCI
+            $0.requirements.executionPlatform == .linuxARM64OCI
                 && $0.requirements.artifactTarget == .linuxX86_64
                 && $0.requirements.resources.exclusive
         })

@@ -17,7 +17,7 @@ public enum CompositorColliderRecipe: ColliderComponent {
         in context: RecipeContext
     ) throws -> ComponentDefinition {
         let root = context.componentRoot(descriptor)
-        let swiftPM = try context.swiftPM(.hostDebug)
+        let swiftPM = try context.swiftPM(.linux(.arm64))
         let preflight = try preflightDRMGPU(
             root: root,
             environment: context.environment,
@@ -86,65 +86,46 @@ private func preflightTask(
         inputs: [
             .tree(root.appending("Sources")),
             swiftPM.identityInput,
-            .tool(.named("swift")),
         ],
         locks: [.checkout("compositor-core")],
         assessmentPolicy: .always,
         action:
             try AnyColliderAction(
                 CompositorLanePreflightAction(
-                    probe: swiftPM.executable("NucleusVulkanLaneProbe"),
-                    lane: lane,
-                    workingDirectory: root,
-                    environment: environment)))
+                    execution: try swiftPM.ociExecutableExecution(
+                        executable: swiftPM.executable("NucleusVulkanLaneProbe"),
+                        arguments: [lane],
+                        workingDirectory: root,
+                        environment: environment))))
 }
 
 private struct CompositorLanePreflightAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
-        let probe: FilePath
-        let lane: String
-        let workingDirectory: FilePath
+        let execution: OCIExecution
 
         func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: probe.string)
-            encoder.append(tag: 2, string: lane)
-            encoder.append(tag: 3, string: workingDirectory.string)
+            encoder.append(
+                tag: 1,
+                nested: OCIExecutionActionIdentity(execution))
         }
     }
 
     static let kind: ActionKind = "compositor.preflight-lane"
 
-    let probe: FilePath
-    let lane: String
-    let workingDirectory: FilePath
-    let environment: [String: String]
+    let execution: OCIExecution
 
     var identity: Identity {
-        Identity(probe: probe, lane: lane, workingDirectory: workingDirectory)
+        Identity(execution: execution)
     }
 
     var requirements: ActionRequirements {
-        ActionRequirements(
-            tools: [
-                ActionToolRequirement(
-                    "lane-probe",
-                    executable: .taskOutput(probe),
-                    role: .operational)
-            ],
-            effects: [
-                ActionEffect(
-                    .read,
-                    scope: .unrestricted(FilePath("/dev/dri")))
-            ])
+        ociActionRequirements(execution: execution)
     }
 
+    var environment: [String: String] { execution.environment }
+
     func execute(in context: ActionContext) async throws {
-        let result = try await context.commands.execute(
-            CommandSpec(
-                executable: .taskOutput(probe),
-                arguments: [lane],
-                workingDirectory: workingDirectory,
-                environment: environment))
+        let result = try await context.containers.run(execution)
         guard result.status == 0 else {
             throw CompositorPreflightFailure.commandFailed(result.status)
         }
@@ -178,7 +159,6 @@ private func testTask(
             .tree(root.appending("Sources")),
             .tree(root.appending("Tests")),
             swiftPM.identityInput,
-            .tool(.named("swift")),
         ],
         postconditions: [swiftPM.postcondition],
         locks: [.checkout("compositor-core")],

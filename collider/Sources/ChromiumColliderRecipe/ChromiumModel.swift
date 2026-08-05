@@ -130,6 +130,7 @@ package struct ChromiumProductBuild: Hashable, Sendable {
 package struct BrowserArtifactAssembly: Hashable, Sendable {
     package let chromiumSource: FilePath
     package let buildOutput: FilePath
+    package let containerImageID: FilePath
     package let distributionRoot: FilePath
     package let launcher: FilePath
     package let desktopTemplate: FilePath
@@ -138,6 +139,7 @@ package struct BrowserArtifactAssembly: Hashable, Sendable {
     package init(
         chromiumSource: FilePath,
         buildOutput: FilePath,
+        containerImageID: FilePath,
         distributionRoot: FilePath,
         launcher: FilePath,
         desktopTemplate: FilePath,
@@ -145,6 +147,7 @@ package struct BrowserArtifactAssembly: Hashable, Sendable {
     ) {
         self.chromiumSource = chromiumSource
         self.buildOutput = buildOutput
+        self.containerImageID = containerImageID
         self.distributionRoot = distributionRoot
         self.launcher = launcher
         self.desktopTemplate = desktopTemplate
@@ -156,6 +159,7 @@ package struct CEFArtifactAssembly: Hashable, Sendable {
     package let chromiumSource: FilePath
     package let buildOutput: FilePath
     package let depotTools: FilePath
+    package let containerImageID: FilePath
     package let distributionRoot: FilePath
     package let cefCheckout: String
     package let chromiumVersion: String
@@ -165,6 +169,7 @@ package struct CEFArtifactAssembly: Hashable, Sendable {
         chromiumSource: FilePath,
         buildOutput: FilePath,
         depotTools: FilePath,
+        containerImageID: FilePath,
         distributionRoot: FilePath,
         cefCheckout: String,
         chromiumVersion: String,
@@ -173,6 +178,7 @@ package struct CEFArtifactAssembly: Hashable, Sendable {
         self.chromiumSource = chromiumSource
         self.buildOutput = buildOutput
         self.depotTools = depotTools
+        self.containerImageID = containerImageID
         self.distributionRoot = distributionRoot
         self.cefCheckout = cefCheckout
         self.chromiumVersion = chromiumVersion

@@ -130,6 +130,7 @@ package struct AssembleBrowserArtifactAction: ColliderAction {
             files: context.files)
         try await validateBrowserGeneration(
             candidate,
+            assembly: assembly,
             environment: assembly.environment,
             context: context)
         try context.files.publishGeneration(
@@ -160,19 +161,10 @@ private func browserArtifactRequirements(
     access: ActionEffectAccess
 ) -> ActionRequirements {
     ActionRequirements(
-        tools: [
-            ActionToolRequirement(
-                "ldd",
-                executable: .named("ldd"),
-                role: .semantic),
-            ActionToolRequirement(
-                "bash",
-                executable: .named("bash"),
-                role: .semantic),
-        ],
         effects: [
             ActionEffect(.read, scope: .input(assembly.chromiumSource)),
             ActionEffect(.read, scope: .input(assembly.buildOutput)),
+            ActionEffect(.read, scope: .input(assembly.containerImageID)),
             ActionEffect(.read, scope: .input(assembly.launcher)),
             ActionEffect(.read, scope: .input(assembly.desktopTemplate)),
             ActionEffect(
@@ -180,7 +172,13 @@ private func browserArtifactRequirements(
                 scope: access == .read
                     ? .input(assembly.distributionRoot)
                     : .publication(assembly.distributionRoot)),
-        ])
+        ],
+        resources: ActionResourceRequest(
+            cpuCount: chromiumToolResourceLimits.cpuCount,
+            memoryBytes: chromiumToolResourceLimits.memoryBytes,
+            exclusive: false),
+        executionPlatform: .linuxARM64OCI,
+        artifactTarget: .linuxX86_64)
 }
 
 @discardableResult
@@ -213,35 +211,33 @@ private func validateBrowserPublicationStructure(
 
 private func validateBrowserGeneration(
     _ generation: FilePath,
+    assembly: BrowserArtifactAssembly,
     environment: [String: String],
     context: ActionContext
 ) async throws {
     try validateBrowserGenerationStructure(generation, files: context.files)
-    let runtime = generation.appending("runtime")
-    let linker = try await context.commands.execute(
-        CommandSpec(
-            executable: .named("ldd"),
-            arguments: [runtime.appending("nucleus-browser-bin").string],
-            workingDirectory: generation,
+    let validation = try await context.containers.run(
+        chromiumToolExecution(
+            imageID: assembly.containerImageID,
+            hostname: "chromium-browser-validation",
+            workingDirectory: "/artifact",
+            hostWorkingDirectory: generation,
+            mounts: [
+                OCIMount(
+                    source: generation,
+                    target: "/artifact",
+                    access: .readOnly)
+            ],
+            temporaryDirectory: assembly.distributionRoot.appending(
+                ".container-temporary"),
+            command: ["validate-browser"],
             environment: environment,
             output: .captured(limit: 4 * 1_024 * 1_024)))
-    guard linker.status == 0,
-        !linker.standardOutput.contains("not found")
+    guard validation.status == 0,
+        !validation.standardOutput.contains("not found")
     else {
         throw BrowserArtifactActionFailure.invalidOutput(
-            "browser generation has unresolved dynamic libraries")
-    }
-    let launcher = try await context.commands.execute(
-        CommandSpec(
-            executable: .named("bash"),
-            arguments: [
-                "-n", generation.appending("bin/nucleus-browser").string,
-            ],
-            workingDirectory: generation,
-            environment: environment))
-    guard launcher.status == 0 else {
-        throw BrowserArtifactActionFailure.invalidOutput(
-            "browser launcher is not valid shell syntax")
+            "browser generation failed Linux linkage or launcher validation")
     }
 }
 

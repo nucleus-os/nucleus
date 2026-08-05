@@ -364,7 +364,6 @@ public enum CoreColliderRecipe: ColliderComponent {
                 .tree(package.appending("swift-core")),
                 .tree(package.appending("swift-jni")),
                 swiftPM.identityInput,
-                .tool(.named("swift")),
             ],
             postconditions: [
                 swiftPM.postcondition,
@@ -554,7 +553,8 @@ private struct ValidateAndroidHostAction: ColliderAction {
             effects: [
                 ActionEffect(.read, scope: .input(library)),
                 ActionEffect(.read, scope: .input(kotlinContract)),
-            ])
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -655,9 +655,10 @@ private struct DownloadSkiaGNAction: ColliderAction {
     }
 
     var requirements: ActionRequirements {
-        ActionRequirements(effects: [
-            ActionEffect(.readWrite, scope: .output(identity.destination))
-        ])
+        ActionRequirements(
+            effects: [
+                ActionEffect(.readWrite, scope: .output(identity.destination))
+            ], executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -708,9 +709,10 @@ private struct PublishRenderSDKAction: ColliderAction {
     var identity: Identity { Identity(sdk: sdk, links: links) }
 
     var requirements: ActionRequirements {
-        ActionRequirements(effects: [
-            ActionEffect(.write, scope: .publication(sdk))
-        ])
+        ActionRequirements(
+            effects: [
+                ActionEffect(.write, scope: .publication(sdk))
+            ], executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -749,7 +751,8 @@ private struct VerifyAndroidProjectAction: ColliderAction {
             ],
             effects: [
                 ActionEffect(.readWrite, scope: .checkout(project))
-            ])
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -819,7 +822,8 @@ private struct MaterializeSkiaDependenciesAction: ColliderAction {
                 }
                 + checkouts.map {
                     ActionEffect(.readWrite, scope: .checkout($0))
-                })
+                },
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -967,7 +971,8 @@ private struct InstallSkiaGNAction: ColliderAction {
                 ActionEffect(
                     .readWrite,
                     scope: .output(executable.removingLastComponent())),
-            ])
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {

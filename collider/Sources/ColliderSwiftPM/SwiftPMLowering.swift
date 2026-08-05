@@ -458,7 +458,8 @@ private struct SwiftPMAction: ColliderAction {
                     ActionEffect(.read, scope: .input(packageRoot)),
                     ActionEffect(.readWrite, scope: .scratch(scratchPath)),
                 ],
-                resources: .fullHostExclusive)
+                resources: .fullHostExclusive,
+                executionPlatform: .macOSARM64Native)
         case .oci:
             requirements = try OCIExecutionPipeline(
                 processes.compactMap {

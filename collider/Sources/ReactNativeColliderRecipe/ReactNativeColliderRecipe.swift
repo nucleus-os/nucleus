@@ -678,9 +678,10 @@ private struct DownloadBoostAction: ColliderAction {
     }
 
     var requirements: ActionRequirements {
-        ActionRequirements(effects: [
-            ActionEffect(.readWrite, scope: .output(identity.destination))
-        ])
+        ActionRequirements(
+            effects: [
+                ActionEffect(.readWrite, scope: .output(identity.destination))
+            ], executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -718,9 +719,10 @@ private struct PublishReactNativeSDKAction: ColliderAction {
     }
 
     var requirements: ActionRequirements {
-        ActionRequirements(effects: [
-            ActionEffect(.write, scope: .publication(sdk))
-        ])
+        ActionRequirements(
+            effects: [
+                ActionEffect(.write, scope: .publication(sdk))
+            ], executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -777,7 +779,8 @@ private struct ProvisionBoostAction: ColliderAction {
                 ActionEffect(.readWrite, scope: .scratch(candidate)),
                 ActionEffect(.readWrite, scope: .output(generation)),
                 ActionEffect(.readWrite, scope: .publication(active)),
-            ])
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {

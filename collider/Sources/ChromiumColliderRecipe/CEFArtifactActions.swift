@@ -39,20 +39,32 @@ package struct AssembleCEFArtifactAction: ColliderAction {
         try context.files.createDirectory(distributionCandidate)
         defer { try? context.files.remove(distributionCandidate) }
 
-        try await requireCEFSuccess(
-            .named("python3"),
-            [
-                "cef/tools/make_distrib.py",
-                "--output-dir=\(distributionCandidate)",
-                "--allow-partial",
-                "--ninja-build",
-                "--release-build-dir=\(assembly.buildOutput)",
-                "--x64-build",
-                "--minimal",
-                "--no-archive",
+        try await requireCEFContainerSuccess(
+            command: ["cef-make-distrib"],
+            workingDirectory: "/source/chromium/src",
+            hostWorkingDirectory: assembly.chromiumSource,
+            mounts: [
+                OCIMount(
+                    source: assembly.chromiumSource,
+                    target: "/source/chromium/src",
+                    access: .readOnly),
+                OCIMount(
+                    source: assembly.buildOutput,
+                    target: "/build",
+                    access: .readOnly),
+                OCIMount(
+                    source: assembly.depotTools,
+                    target: "/depot_tools",
+                    access: .readOnly),
+                OCIMount(
+                    source: distributionCandidate,
+                    target: "/distribution",
+                    access: .readWrite),
             ],
-            directory: assembly.chromiumSource,
+            temporaryDirectory: assembly.distributionRoot.appending(
+                ".container-temporary"),
             environment: commandEnvironment,
+            assembly: assembly,
             context: context)
         let checkout = String(assembly.cefCheckout.prefix(7))
         let suffix =
@@ -106,14 +118,24 @@ package struct AssembleCEFArtifactAction: ColliderAction {
         }
         try await validateCEFSDK(
             sdk,
+            assembly: assembly,
             environment: commandEnvironment,
             smoke: candidate.appending(".consumer-smoke"),
             context: context)
-        try await requireCEFSuccess(
-            .named("python3"),
-            ["tools/version_manager.py", "-c"],
-            directory: assembly.chromiumSource.appending("cef"),
+        try await requireCEFContainerSuccess(
+            command: ["cef-version-check"],
+            workingDirectory: "/source/chromium/src/cef",
+            hostWorkingDirectory: assembly.chromiumSource.appending("cef"),
+            mounts: [
+                OCIMount(
+                    source: assembly.chromiumSource,
+                    target: "/source/chromium/src",
+                    access: .readOnly)
+            ],
+            temporaryDirectory: assembly.distributionRoot.appending(
+                ".container-temporary"),
             environment: commandEnvironment,
+            assembly: assembly,
             context: context)
 
         let producedName = produced.relativePath
@@ -123,22 +145,20 @@ package struct AssembleCEFArtifactAction: ColliderAction {
                 .dropLast("_linux64_minimal".count))
         let tarball = "cef-\(version)-linux64-codecs.tar.gz"
         let archive = artifacts.appending(tarball)
-        try await requireCEFSuccess(
-            .named("tar"),
-            [
-                "-C", candidate.string,
-                "--sort=name",
-                "--mtime=@0",
-                "--owner=0",
-                "--group=0",
-                "--numeric-owner",
-                "--use-compress-program=gzip -n",
-                "-cf", archive.string,
-                "--transform=s,^sdk,\(buildID),",
-                "sdk",
+        try await requireCEFContainerSuccess(
+            command: ["cef-archive", tarball, buildID],
+            workingDirectory: "/candidate",
+            hostWorkingDirectory: candidate,
+            mounts: [
+                OCIMount(
+                    source: candidate,
+                    target: "/candidate",
+                    access: .readWrite)
             ],
-            directory: candidate,
+            temporaryDirectory: assembly.distributionRoot.appending(
+                ".container-temporary"),
             environment: commandEnvironment,
+            assembly: assembly,
             context: context)
         let checksum = try context.files.digest(file: archive)
             .description.replacingOccurrences(of: "sha256:", with: "")
@@ -184,20 +204,11 @@ private func cefArtifactRequirements(
     publicationAccess: ActionEffectAccess
 ) -> ActionRequirements {
     ActionRequirements(
-        tools: [
-            ActionToolRequirement(
-                "python3", executable: .named("python3"), role: .semantic),
-            ActionToolRequirement(
-                "tar", executable: .named("tar"), role: .semantic),
-            ActionToolRequirement(
-                "ldd", executable: .named("ldd"), role: .semantic),
-            ActionToolRequirement(
-                "cc", executable: .named("cc"), role: .semantic),
-        ],
         effects: [
             ActionEffect(.read, scope: .input(assembly.chromiumSource)),
             ActionEffect(.read, scope: .input(assembly.buildOutput)),
             ActionEffect(.read, scope: .input(assembly.depotTools)),
+            ActionEffect(.read, scope: .input(assembly.containerImageID)),
             ActionEffect(
                 publicationAccess,
                 scope: publicationAccess == .read
@@ -207,7 +218,13 @@ private func cefArtifactRequirements(
                 .readWrite,
                 scope: .scratch(
                     assembly.distributionRoot.appending(".consumer-smoke"))),
-        ])
+        ],
+        resources: ActionResourceRequest(
+            cpuCount: chromiumToolResourceLimits.cpuCount,
+            memoryBytes: chromiumToolResourceLimits.memoryBytes,
+            exclusive: false),
+        executionPlatform: .linuxARM64OCI,
+        artifactTarget: .linuxX86_64)
 }
 
 @discardableResult
@@ -245,55 +262,36 @@ private func validateCEFPublicationStructure(
 
 private func validateCEFSDK(
     _ sdk: FilePath,
+    assembly: CEFArtifactAssembly,
     environment: [String: String],
     smoke: FilePath,
     context: ActionContext
 ) async throws {
     try validateCEFSDKStructure(sdk, files: context.files)
-    let linker = try await context.commands.execute(
-        CommandSpec(
-            executable: .named("ldd"),
-            arguments: [sdk.appending("Release/libcef.so").string],
-            workingDirectory: sdk,
-            environment: environment,
-            output: .captured(limit: 4 * 1_024 * 1_024)))
-    guard linker.status == 0,
-        !linker.standardOutput.contains("not found")
-    else {
-        throw CEFArtifactActionFailure.invalidOutput(
-            "CEF SDK has unresolved dynamic libraries")
-    }
     try context.files.remove(smoke)
     try context.files.createDirectory(smoke)
     defer { try? context.files.remove(smoke) }
-    let source = smoke.appending("consumer.c")
-    try context.files.write(
-        Array(
-            """
-            #include "include/cef_version_info.h"
-            int main(void) { return cef_version_info(0) > 0 ? 0 : 1; }
-            """.utf8),
-        to: source)
-    let consumer = smoke.appending("consumer")
-    try await requireCEFSuccess(
-        .named("cc"),
-        [
-            "-I", sdk.string,
-            source.string,
-            "-L", sdk.appending("Release").string,
-            "-Wl,-rpath,\(sdk.appending("Release"))",
-            "-lcef",
-            "-o", consumer.string,
-        ],
-        directory: smoke,
-        environment: environment,
-        context: context)
-    try await requireCEFSuccess(
-        .taskOutput(consumer),
-        [],
-        directory: smoke,
-        environment: environment,
-        context: context)
+    let validation = try await context.containers.run(
+        chromiumToolExecution(
+            imageID: assembly.containerImageID,
+            hostname: "chromium-cef-validation",
+            workingDirectory: "/sdk",
+            hostWorkingDirectory: sdk,
+            mounts: [
+                OCIMount(source: sdk, target: "/sdk", access: .readOnly),
+                OCIMount(source: smoke, target: "/smoke", access: .readWrite),
+            ],
+            temporaryDirectory: assembly.distributionRoot.appending(
+                ".container-temporary"),
+            command: ["validate-cef"],
+            environment: environment,
+            output: .captured(limit: 4 * 1_024 * 1_024)))
+    guard validation.status == 0,
+        !validation.standardOutput.contains("not found")
+    else {
+        throw CEFArtifactActionFailure.invalidOutput(
+            "CEF SDK failed Linux linkage or consumer validation")
+    }
 }
 
 private func validateCEFSDKStructure(
@@ -313,18 +311,25 @@ private func validateCEFSDKStructure(
     }
 }
 
-private func requireCEFSuccess(
-    _ executable: CommandSpec.Executable,
-    _ arguments: [String],
-    directory: FilePath,
+private func requireCEFContainerSuccess(
+    command: [String],
+    workingDirectory: String,
+    hostWorkingDirectory: FilePath,
+    mounts: [OCIMount],
+    temporaryDirectory: FilePath,
     environment: [String: String],
+    assembly: CEFArtifactAssembly,
     context: ActionContext
 ) async throws {
-    let result = try await context.commands.execute(
-        CommandSpec(
-            executable: executable,
-            arguments: arguments,
-            workingDirectory: directory,
+    let result = try await context.containers.run(
+        chromiumToolExecution(
+            imageID: assembly.containerImageID,
+            hostname: "chromium-cef-artifact",
+            workingDirectory: workingDirectory,
+            hostWorkingDirectory: hostWorkingDirectory,
+            mounts: mounts,
+            temporaryDirectory: temporaryDirectory,
+            command: command,
             environment: environment))
     guard result.status == 0 else {
         throw CEFArtifactActionFailure.commandFailed(result.status)

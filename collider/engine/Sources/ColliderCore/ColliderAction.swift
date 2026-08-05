@@ -569,14 +569,14 @@ public struct ActionRequirements: Hashable, Sendable {
     public let tools: [ActionToolRequirement]
     public let effects: [ActionEffect]
     public let resources: ActionResourceRequest
-    public let executionPlatform: ExecutionPlatform?
+    public let executionPlatform: ExecutionPlatform
     public let artifactTarget: ArtifactTarget?
 
     public init(
         tools: [ActionToolRequirement] = [],
         effects: [ActionEffect] = [],
         resources: ActionResourceRequest = .lightweight,
-        executionPlatform: ExecutionPlatform? = nil,
+        executionPlatform: ExecutionPlatform,
         artifactTarget: ArtifactTarget? = nil
     ) {
         self.tools = tools
@@ -655,7 +655,6 @@ public protocol ColliderAction: Sendable {
 }
 
 extension ColliderAction {
-    public var requirements: ActionRequirements { ActionRequirements() }
     public var environment: [String: String] { [:] }
     public func validateOutputs(using _: ActionFileSystem) throws {}
 }

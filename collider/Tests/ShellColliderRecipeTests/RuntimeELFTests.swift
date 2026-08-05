@@ -50,23 +50,27 @@ import Testing
         ValidateRuntimeELFAction(
             root: FilePath("/products"),
             report: FilePath("/products/report.json"),
-            environment: ["PATH": "/one"]))
+            environment: ["PATH": "/one"],
+            executionPlatform: .linuxX86_64Native))
     let sameDeclaration = try AnyColliderAction(
         ValidateRuntimeELFAction(
             root: FilePath("/products"),
             report: FilePath("/products/report.json"),
-            environment: ["PATH": "/one"]))
+            environment: ["PATH": "/one"],
+            executionPlatform: .linuxX86_64Native))
     let differentOutput = try AnyColliderAction(
         ValidateRuntimeELFAction(
             root: FilePath("/products"),
             report: FilePath("/elsewhere/report.json"),
-            environment: ["PATH": "/one"]))
+            environment: ["PATH": "/one"],
+            executionPlatform: .linuxX86_64Native))
     let androidAddon = try AnyColliderAction(
         ValidateRuntimeELFAction(
             root: FilePath("/products"),
             report: FilePath("/products/report.json"),
             environment: ["PATH": "/one"],
-            productSet: .androidAddon))
+            productSet: .androidAddon,
+            executionPlatform: .linuxX86_64Native))
 
     #expect(first == sameDeclaration)
     #expect(first != differentOutput)
@@ -123,7 +127,8 @@ import Testing
     try await ValidateRuntimeELFAction(
         root: FilePath("/products"),
         report: FilePath("/products/runtime-elf-report.json"),
-        environment: [:]
+        environment: [:],
+        executionPlatform: .linuxX86_64Native
     ).execute(in: context)
 
     let bytes = try #require(reportBytes.withLock { $0 })
@@ -177,7 +182,8 @@ import Testing
     try await StageRuntimeELFAction(
         products: FilePath("/products"),
         prefix: FilePath("/runtime"),
-        environment: [:]
+        environment: [:],
+        executionPlatform: .linuxX86_64Native
     ).execute(in: context)
 
     let result = recording.withLock { $0 }
@@ -220,7 +226,8 @@ import Testing
         try await StageRuntimeELFAction(
             products: FilePath("/products"),
             prefix: FilePath("/runtime"),
-            environment: [:]
+            environment: [:],
+            executionPlatform: .linuxX86_64Native
         ).execute(in: context)
     }
 }

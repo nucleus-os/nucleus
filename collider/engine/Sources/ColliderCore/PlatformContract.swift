@@ -55,6 +55,21 @@ public struct ExecutionPlatform: Codable, Hashable, Sendable {
         environment: .oci,
         operatingSystem: .linux,
         architecture: .arm64)
+
+    public static let macOSARM64Native = ExecutionPlatform(
+        environment: .native,
+        operatingSystem: .macOS,
+        architecture: .arm64)
+
+    public static let linuxARM64Native = ExecutionPlatform(
+        environment: .native,
+        operatingSystem: .linux,
+        architecture: .arm64)
+
+    public static let linuxX86_64Native = ExecutionPlatform(
+        environment: .native,
+        operatingSystem: .linux,
+        architecture: .x86_64)
 }
 
 public struct ArtifactTarget: Codable, Hashable, Sendable {

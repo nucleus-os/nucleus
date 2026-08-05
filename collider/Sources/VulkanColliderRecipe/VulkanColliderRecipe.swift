@@ -52,7 +52,6 @@ public enum VulkanColliderRecipe: ColliderComponent {
                 .tree(root.appending("Tools/VulkanGen")),
                 .file(root.appending("third-party/vk.xml")),
                 swiftPM.identityInput,
-                .tool(.named("swift")),
             ],
             locks: [.checkout("vulkan")],
             action:
@@ -103,7 +102,8 @@ private struct GenerateVulkanBindingsAction: ColliderAction {
             effects: [
                 ActionEffect(.read, scope: .input(registry)),
                 ActionEffect(.write, scope: .output(output)),
-            ])
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
