@@ -35,11 +35,17 @@
 #include "NucleusAndroidProcessLifecycleC.h"
 #include "NucleusAndroidSharedRingC.h"
 
-#ifndef NUCLEUS_ANDROID_GFXSTREAM_GUEST_ICD
-#error "The gfxstream guest ICD path must be provided by the build."
-#endif
-
 namespace {
+
+std::string guestICDPath() {
+    const char *buildRoot = std::getenv("NUCLEUS_GFXSTREAM_BUILD_ROOT");
+    if (!buildRoot || buildRoot[0] == '\0') {
+        throw std::runtime_error(
+            "NUCLEUS_GFXSTREAM_BUILD_ROOT is required to locate the guest ICD");
+    }
+    return std::string(buildRoot) +
+        "/guest/src/gfxstream/guest/vulkan/libvulkan_gfxstream.so";
+}
 
 constexpr uint32_t kInitialWidth = 64;
 constexpr uint32_t kInitialHeight = 64;
@@ -2211,10 +2217,9 @@ int runBrokerWorker(int controlDescriptor) {
         traceStage("broker-worker.create-renderer.complete");
 
         traceStage("broker-worker.load-icd.begin");
+        const std::string icdPath = guestICDPath();
         void *icdHandle =
-            dlopen(
-                NUCLEUS_ANDROID_GFXSTREAM_GUEST_ICD,
-                RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
+            dlopen(icdPath.c_str(), RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
         if (!icdHandle) {
             throw std::runtime_error(
                 std::string("failed to load the guest ICD: ") +
@@ -2604,10 +2609,9 @@ int main(int argc, char **argv) {
         traceStage("failure-paths.host-import.complete");
 
         traceStage("guest.load-icd.begin");
+        const std::string icdPath = guestICDPath();
         void *icdHandle =
-            dlopen(
-                NUCLEUS_ANDROID_GFXSTREAM_GUEST_ICD,
-                RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
+            dlopen(icdPath.c_str(), RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
         if (!icdHandle) {
             throw std::runtime_error(
                 std::string("failed to load the guest ICD: ") +

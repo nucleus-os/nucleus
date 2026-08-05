@@ -159,6 +159,7 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
     public let runtimeBuilderImageID: FilePath
     public let linuxTargets: [SwiftLinuxTargetBuildConfiguration]
     public let sysrootPreparer: FilePath
+    public let pkgConfigDirectory: FilePath
     public let candidate: FilePath
     public let generation: FilePath
     public let active: FilePath
@@ -184,6 +185,7 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
         runtimeBuilderImageID: FilePath,
         linuxTargets: [SwiftLinuxTargetBuildConfiguration],
         sysrootPreparer: FilePath,
+        pkgConfigDirectory: FilePath,
         candidate: FilePath,
         generation: FilePath,
         active: FilePath,
@@ -208,6 +210,7 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
         self.runtimeBuilderImageID = runtimeBuilderImageID
         self.linuxTargets = linuxTargets
         self.sysrootPreparer = sysrootPreparer
+        self.pkgConfigDirectory = pkgConfigDirectory
         self.candidate = candidate
         self.generation = generation
         self.active = active
@@ -226,6 +229,7 @@ public struct SwiftTargetSDKTaskSet: Sendable {
     public let tasks: [TaskDeclaration]
     public let selected: [TaskID]
     public let activeSDK: ArtifactReference<PathArtifact>
+    public let activeSwift: ArtifactReference<ExecutableArtifact>
 }
 
 public enum SwiftTargetSDKRecipeFailure: Error, CustomStringConvertible, Sendable {
@@ -242,6 +246,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
     package struct PreparedComponent: Sendable {
         package let component: ComponentDefinition
         package let activeSDK: ArtifactReference<PathArtifact>
+        package let activeSwift: ArtifactReference<ExecutableArtifact>
     }
 
     public static let descriptor = ComponentDescriptor(
@@ -265,8 +270,14 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
     }
 
     package static func prepare(
-        _ configuration: SwiftTargetSDKGenerationConfiguration
+        _ configuration: SwiftTargetSDKGenerationConfiguration,
+        reuseActiveGeneration: Bool = true
     ) throws -> PreparedComponent {
+        if reuseActiveGeneration,
+            activeGenerationIsReusable(configuration)
+        {
+            return try reusableActiveGeneration(configuration)
+        }
         let taskSet = try generation(configuration)
         let component = try ComponentDefinition(
             descriptor: descriptor,
@@ -278,7 +289,51 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             ])
         return PreparedComponent(
             component: component,
-            activeSDK: taskSet.activeSDK)
+            activeSDK: taskSet.activeSDK,
+            activeSwift: taskSet.activeSwift)
+    }
+
+    package static func activeGenerationIsReusable(
+        _ configuration: SwiftTargetSDKGenerationConfiguration
+    ) -> Bool {
+        let activeURL = URL(fileURLWithPath: configuration.active.string)
+        let resolvedActive = activeURL.resolvingSymlinksInPath().standardizedFileURL.path
+        let expectedGeneration = URL(fileURLWithPath: configuration.generation.string)
+            .standardizedFileURL.path
+        guard resolvedActive == expectedGeneration else { return false }
+        let fileManager = FileManager.default
+        return fileManager.fileExists(
+            atPath: configuration.active.appending("swift-sdks").string)
+            && fileManager.fileExists(
+                atPath: configuration.active.appending("toolchain/usr/bin/swift").string)
+    }
+
+    private static func reusableActiveGeneration(
+        _ configuration: SwiftTargetSDKGenerationConfiguration
+    ) throws -> PreparedComponent {
+        var builder = TaskBuilder(
+            id: TaskID(rawValue: "swift-sdk.use-active-generation"),
+            component: component)
+        let activeSDK: ArtifactReference<PathArtifact> = try builder.output(
+            "active-sdk",
+            path: configuration.active.appending("swift-sdks"),
+            validation: .nonEmptyDirectory)
+        let activeSwift: ArtifactReference<ExecutableArtifact> = try builder.output(
+            "active-swift",
+            path: configuration.active.appending("toolchain/usr/bin/swift"),
+            validation: .executableFile)
+        let task = builder.build(
+            inputs: [.file(configuration.inputsFile)],
+            recordsActiveArtifact: true)
+        return PreparedComponent(
+            component: try ComponentDefinition(
+                descriptor: descriptor,
+                tasks: [task],
+                entrypoints: [
+                    ComponentEntrypoint(id: .build, roots: [task.id])
+                ]),
+            activeSDK: activeSDK,
+            activeSwift: activeSwift)
     }
 
     public static func generation(
@@ -333,7 +388,8 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 $0.addingLocks([.shared(configuration.rebuildLock)])
             },
             selected: discoveries.map(\.task.id),
-            activeSDK: activation.activeSDK)
+            activeSDK: activation.activeSDK,
+            activeSwift: activation.activeSwift)
     }
 
     private struct Downloads {
@@ -391,6 +447,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         let task: TaskDeclaration
         let generationMarker: ArtifactReference<FileArtifact>
         let activeSDK: ArtifactReference<PathArtifact>
+        let activeSwift: ArtifactReference<ExecutableArtifact>
     }
 
     private struct DiscoveryArtifact {
@@ -787,6 +844,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             inputs: [
                 .file(configuration.inputsFile),
                 .file(configuration.ndkRoot.appending("source.properties")),
+                .tree(configuration.pkgConfigDirectory),
             ],
             locks: [
                 .shared(configuration.generatorScratch.appending(".collider.lock"))
@@ -802,6 +860,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                         snapshot: configuration.inputs.snapshot,
                         linuxBundleID: configuration.inputs.linuxBundleID,
                         androidBundleID: configuration.inputs.androidBundleID,
+                        pkgConfigDirectory: configuration.pkgConfigDirectory,
                         targets: assemblyTargets,
                         linuxManifest: manifest,
                         linuxMetadata: metadata,
@@ -961,8 +1020,12 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             validation: .regularFile)
         let activeSDK: ArtifactReference<PathArtifact> = try builder.output(
             "active-sdk",
-            path: configuration.active,
-            validation: .symlinkTarget)
+            path: configuration.active.appending("swift-sdks"),
+            validation: .nonEmptyDirectory)
+        let activeSwift: ArtifactReference<ExecutableArtifact> = try builder.output(
+            "active-swift",
+            path: configuration.active.appending("toolchain/usr/bin/swift"),
+            validation: .executableFile)
         let task = builder.build(
             postconditions: [
                 PathPostcondition(
@@ -980,7 +1043,8 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         return ActivationArtifact(
             task: task,
             generationMarker: marker,
-            activeSDK: activeSDK)
+            activeSDK: activeSDK,
+            activeSwift: activeSwift)
     }
 
     private static func discoveryTasks(
@@ -1170,6 +1234,11 @@ private struct ActivateSwiftSDKGenerationAction: ColliderAction {
             throw SwiftTargetSDKRecipeFailure.invalidInput(
                 "target SDK candidate has no generation marker at \(marker)")
         }
+        for stagingDirectory in [
+            "generated-linux", "host-package", "host-payload", "validation",
+        ] {
+            try context.files.remove(candidate.appending(stagingDirectory))
+        }
         try context.files.publishGeneration(
             candidate: candidate,
             generation: generation,
@@ -1261,6 +1330,7 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
         let snapshot: String
         let linuxBundleID: String
         let androidBundleID: String
+        let pkgConfigDirectory: FilePath
         let targets: [SwiftSDKAssemblyTarget]
         let linuxManifest: [UInt8]
         let linuxMetadata: [UInt8]
@@ -1286,6 +1356,7 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
                 }.joined(separator: "\0"))
             encoder.append(tag: 10, bytes: linuxManifest)
             encoder.append(tag: 11, bytes: linuxMetadata)
+            encoder.append(tag: 12, string: pkgConfigDirectory.string)
         }
     }
 
@@ -1299,6 +1370,7 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
     let snapshot: String
     let linuxBundleID: String
     let androidBundleID: String
+    let pkgConfigDirectory: FilePath
     let targets: [SwiftSDKAssemblyTarget]
     let linuxManifest: [UInt8]
     let linuxMetadata: [UInt8]
@@ -1314,6 +1386,7 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
             snapshot: snapshot,
             linuxBundleID: linuxBundleID,
             androidBundleID: androidBundleID,
+            pkgConfigDirectory: pkgConfigDirectory,
             targets: targets,
             linuxManifest: linuxManifest,
             linuxMetadata: linuxMetadata)
@@ -1351,6 +1424,7 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
                 ActionEffect(.read, scope: .input(androidArchive)),
                 ActionEffect(.read, scope: .input(ndkRoot)),
                 ActionEffect(.read, scope: .input(generator)),
+                ActionEffect(.read, scope: .input(pkgConfigDirectory)),
                 ActionEffect(.readWrite, scope: .output(candidate)),
             ]
                 + targets.map {
@@ -1373,6 +1447,7 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
         let expandedHost = candidate.appending("host-package")
         let hostPayload = expandedHost.appending(
             "\(snapshot)-osx-package.pkg/Payload")
+        let expandedHostPayload = candidate.appending("host-payload")
         let hostToolchain = candidate.appending("toolchain")
         let generatedLinux = candidate.appending("generated-linux")
         let finalLinuxBundle = sdkRoot.appending(linuxBundle)
@@ -1382,14 +1457,20 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
         try context.files.createDirectory(candidate)
         try await run(
             executable: .path(FilePath("/usr/sbin/pkgutil")),
-            arguments: ["--expand-full", hostArchive.string, expandedHost.string],
+            arguments: ["--expand", hostArchive.string, expandedHost.string],
+            workingDirectory: candidate,
+            context: context)
+        try context.files.createDirectory(expandedHostPayload)
+        try await run(
+            executable: .path(FilePath("/usr/bin/ditto")),
+            arguments: ["-x", hostPayload.string, expandedHostPayload.string],
             workingDirectory: candidate,
             context: context)
         try context.files.createDirectory(hostToolchain)
         try await run(
             executable: .path(FilePath("/usr/bin/ditto")),
             arguments: [
-                hostPayload.appending("usr").string,
+                expandedHostPayload.appending("usr").string,
                 hostToolchain.appending("usr").string,
             ],
             workingDirectory: candidate,
@@ -1436,6 +1517,16 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
                 arguments: [
                     generatedTripleRoot.string,
                     finalLinuxSDK.appending(target.triple).string,
+                ],
+                workingDirectory: candidate,
+                context: context)
+            try await run(
+                executable: .path(FilePath("/usr/bin/ditto")),
+                arguments: [
+                    pkgConfigDirectory.string,
+                    finalLinuxSDK.appending(
+                        "\(target.triple)/ubuntu-noble.sdk/usr/share/pkgconfig"
+                    ).string,
                 ],
                 workingDirectory: candidate,
                 context: context)

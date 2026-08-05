@@ -64,6 +64,57 @@ private func executeWithSwiftPM(
     #expect(lowered[0].task.dependencies == [prerequisite.id])
 }
 
+@Test func loweringConsumesAnArtifactBackedSwiftCompiler() throws {
+    let packageRoot = FilePath("/fixture/package")
+    var compilerBuilder = TaskBuilder(
+        id: TaskID(rawValue: "fixture.swift-compiler"),
+        component: ComponentID(rawValue: "fixture"))
+    let compiler: ArtifactReference<ExecutableArtifact> = try compilerBuilder.output(
+        "swift",
+        path: FilePath("/fixture/toolchain/bin/swift"),
+        validation: .executableFile)
+    let compilerTask = compilerBuilder.build()
+    let invocation = SwiftPMInvocation(
+        context: SwiftBuildContext(
+            packageRoot: packageRoot,
+            configuration: .release,
+            target: .swiftSDK(
+                name: "fixture-android",
+                targetTriple: "aarch64-unknown-linux-android24"),
+            toolchainIdentity: "fixture-toolchain"),
+        scratchPath: FilePath("/fixture/scratch"),
+        swiftExecutable: compiler.executable)
+    let owner = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.android-product"),
+        component: ComponentID(rawValue: "fixture"),
+        swiftProducts: [
+            SwiftProductRequirement(
+                package: "fixture",
+                product: "FixtureProduct",
+                packageRoot: packageRoot,
+                invocation: invocation,
+                inputs: [],
+                environment: [:])
+        ])
+
+    let lowered = try SwiftPMLowering().lower([
+        AssessedTaskDeclaration(
+            task: compilerTask,
+            isClean: false,
+            isSubsumed: false),
+        AssessedTaskDeclaration(
+            task: owner,
+            isClean: false,
+            isSubsumed: false),
+    ])
+
+    #expect(lowered.count == 1)
+    #expect(lowered[0].task.dependencies == [compilerTask.id])
+    #expect(lowered[0].prerequisites == [])
+    #expect(lowered[0].task.artifactReferences.count == 1)
+    #expect(!lowered[0].task.inputs.contains(.tool(compiler.executable)))
+}
+
 @Test func synthesizedSwiftTestForwardsSelectionArguments() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-swift-test-arguments-\(UUID().uuidString)")

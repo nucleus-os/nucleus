@@ -174,26 +174,31 @@ public struct OCIResourceLimits: Codable, Hashable, Sendable {
     public let cpuCount: UInt32?
     public let memoryBytes: UInt64?
     public let processCount: UInt32
+    public let openFileCount: UInt32
 
     public init(
         cpuCount: UInt32?,
         memoryBytes: UInt64?,
-        processCount: UInt32
+        processCount: UInt32,
+        openFileCount: UInt32 = 65_536
     ) {
         self.cpuCount = cpuCount
         self.memoryBytes = memoryBytes
         self.processCount = processCount
+        self.openFileCount = openFileCount
     }
 
     public static let build = OCIResourceLimits(
         cpuCount: 20,
         memoryBytes: 96 * 1_024 * 1_024 * 1_024,
-        processCount: 32_768)
+        processCount: 32_768,
+        openFileCount: 131_072)
 
     public static let parallelBuild = OCIResourceLimits(
         cpuCount: 11,
         memoryBytes: 56 * 1_024 * 1_024 * 1_024,
-        processCount: 16_384)
+        processCount: 16_384,
+        openFileCount: 65_536)
 }
 
 public struct OCIExecution: Hashable, Sendable {

@@ -1,0 +1,4 @@
+#ifndef NUCLEUS_RENDER_SYSTEM_C_H
+#define NUCLEUS_RENDER_SYSTEM_C_H
+
+#endif

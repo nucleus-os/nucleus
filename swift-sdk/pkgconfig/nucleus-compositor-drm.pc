@@ -1,0 +1,4 @@
+Name: nucleus-compositor-drm
+Description: Nucleus compositor DRM and GBM system dependencies
+Version: 1
+Requires: libdrm gbm

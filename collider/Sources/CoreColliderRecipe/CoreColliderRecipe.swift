@@ -57,6 +57,8 @@ public enum CoreColliderRecipe: ColliderComponent {
     package struct AndroidHostArtifacts: Sendable {
         package let task: TaskDeclaration
         package let library: ArtifactReference<FileArtifact>
+        package let swiftJavaLibrary: ArtifactReference<FileArtifact>
+        package let generatedJava: ArtifactReference<DirectoryArtifact>
     }
 
     package enum AndroidHostValidationResult: TaskResultValue {}
@@ -144,7 +146,9 @@ public enum CoreColliderRecipe: ColliderComponent {
         let androidBuild = try buildAndroidProject(
             root: root,
             environment: androidEnvironment,
-            validation: androidValidation.result)
+            validation: androidValidation.result,
+            host: androidHost,
+            ndk: ndk)
         tasks += [
             androidSkia.task, androidNativeSDK.task, androidHost.task,
             androidValidation.task, androidBuild,
@@ -259,7 +263,7 @@ public enum CoreColliderRecipe: ColliderComponent {
             gn: gn)
     }
 
-    private static func skiaGitDependencies(
+    package static func skiaGitDependencies(
         from deps: FilePath
     ) throws -> [SkiaGitDependency] {
         let source = try String(
@@ -267,7 +271,7 @@ public enum CoreColliderRecipe: ColliderComponent {
             encoding: .utf8)
         let expression = try NSRegularExpression(
             pattern:
-                #"(?m)^\s*["']([^"']+)["']\s*:\s*["'](https://[^"']+)@([0-9a-f]{40})["']\s*,?\s*$"#)
+                #"(?m)^  ["']([^"']+)["']\s*:\s*["'](https://[^"']+)@([0-9a-f]{40})["']\s*,?\s*$"#)
         let range = NSRange(source.startIndex..., in: source)
         var paths: Set<String> = []
         let dependencies = expression.matches(in: source, range: range).map { match in
@@ -355,6 +359,11 @@ public enum CoreColliderRecipe: ColliderComponent {
         let package = root.appending("platform-android")
         let product = swiftPM.configurationProducts.appending(
             "libnucleus-android.so")
+        let swiftJavaProduct = swiftPM.configurationProducts.appending(
+            "libSwiftJava.so")
+        let generatedJava = swiftPM.scratchPath.appending(
+            "plugins/outputs/nucleus/NucleusAndroidJNI/destination/"
+                + "JExtractSwiftPlugin/src/generated/java")
         var builder = TaskBuilder(
             id: CoreTaskIDs.androidHostBuild,
             component: ComponentID(rawValue: "core"))
@@ -363,6 +372,15 @@ public enum CoreColliderRecipe: ColliderComponent {
             "android-library",
             path: product,
             validation: .regularFile)
+        let swiftJavaLibrary: ArtifactReference<FileArtifact> = try builder.output(
+            "swift-java-library",
+            path: swiftJavaProduct,
+            validation: .regularFile)
+        let generatedJavaArtifact: ArtifactReference<DirectoryArtifact> =
+            try builder.output(
+                "generated-java",
+                path: generatedJava,
+                validation: .nonEmptyDirectory)
         let task = builder.build(
             swiftProducts: [
                 swiftPM.product(
@@ -372,8 +390,14 @@ public enum CoreColliderRecipe: ColliderComponent {
                     environment: environment,
                     expectedOutputs: [
                         PathPostcondition(
-                            path: swiftPM.executable("nucleus-android"),
-                            validation: .executableFile)
+                            path: product,
+                            validation: .regularFile),
+                        PathPostcondition(
+                            path: swiftJavaProduct,
+                            validation: .regularFile),
+                        PathPostcondition(
+                            path: generatedJava,
+                            validation: .nonEmptyDirectory),
                     ])
             ],
             inputs: [
@@ -387,9 +411,19 @@ public enum CoreColliderRecipe: ColliderComponent {
                 PathPostcondition(
                     path: product,
                     validation: .regularFile),
+                PathPostcondition(
+                    path: swiftJavaProduct,
+                    validation: .regularFile),
+                PathPostcondition(
+                    path: generatedJava,
+                    validation: .nonEmptyDirectory),
             ],
             locks: [.checkout("core-android-host")])
-        return AndroidHostArtifacts(task: task, library: library)
+        return AndroidHostArtifacts(
+            task: task,
+            library: library,
+            swiftJavaLibrary: swiftJavaLibrary,
+            generatedJava: generatedJavaArtifact)
     }
 
     package static func validateAndroidHost(
@@ -426,13 +460,18 @@ public enum CoreColliderRecipe: ColliderComponent {
     package static func buildAndroidProject(
         root: FilePath,
         environment: [String: String],
-        validation: TaskResultReference<AndroidHostValidationResult>
+        validation: TaskResultReference<AndroidHostValidationResult>,
+        host: AndroidHostArtifacts,
+        ndk: FilePath
     ) throws -> TaskDeclaration {
         let android = root.appending("android")
         var builder = TaskBuilder(
             id: CoreTaskIDs.androidBuild,
             component: descriptor.id)
         builder.consume(validation)
+        builder.consume(host.library)
+        builder.consume(host.swiftJavaLibrary)
+        builder.consume(host.generatedJava)
         return builder.build(
             inputs: [
                 .file(android.appending("settings.gradle.kts")),
@@ -448,6 +487,10 @@ public enum CoreColliderRecipe: ColliderComponent {
                 try AnyColliderAction(
                     VerifyAndroidProjectAction(
                         project: android,
+                        ndk: ndk,
+                        nucleusLibrary: host.library.path,
+                        swiftJavaLibrary: host.swiftJavaLibrary.path,
+                        generatedJava: host.generatedJava.path,
                         environment: environment)))
     }
 
@@ -746,19 +789,38 @@ private struct PublishRenderSDKAction: ColliderAction {
 private struct VerifyAndroidProjectAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let project: FilePath
+        let ndk: FilePath
+        let nucleusLibrary: FilePath
+        let swiftJavaLibrary: FilePath
+        let generatedJava: FilePath
 
         func encode(into encoder: inout ActionIdentityEncoder) {
             encoder.append(tag: 1, string: project.string)
             encoder.append(tag: 2, string: "verifyDebug")
+            encoder.append(tag: 3, string: ndk.string)
+            encoder.append(tag: 4, string: nucleusLibrary.string)
+            encoder.append(tag: 5, string: swiftJavaLibrary.string)
+            encoder.append(tag: 6, string: generatedJava.string)
         }
     }
 
     static let kind: ActionKind = "core.verify-android-project"
 
     let project: FilePath
+    let ndk: FilePath
+    let nucleusLibrary: FilePath
+    let swiftJavaLibrary: FilePath
+    let generatedJava: FilePath
     let environment: [String: String]
 
-    var identity: Identity { Identity(project: project) }
+    var identity: Identity {
+        Identity(
+            project: project,
+            ndk: ndk,
+            nucleusLibrary: nucleusLibrary,
+            swiftJavaLibrary: swiftJavaLibrary,
+            generatedJava: generatedJava)
+    }
 
     var requirements: ActionRequirements {
         ActionRequirements(
@@ -769,7 +831,10 @@ private struct VerifyAndroidProjectAction: ColliderAction {
                     role: .semantic)
             ],
             effects: [
-                ActionEffect(.readWrite, scope: .checkout(project))
+                ActionEffect(.readWrite, scope: .checkout(project)),
+                ActionEffect(.read, scope: .input(nucleusLibrary)),
+                ActionEffect(.read, scope: .input(swiftJavaLibrary)),
+                ActionEffect(.read, scope: .input(generatedJava)),
             ],
             executionPlatform: .macOSARM64Native)
     }
@@ -778,7 +843,14 @@ private struct VerifyAndroidProjectAction: ColliderAction {
         let result = try await context.commands.execute(
             CommandSpec(
                 executable: .path(project.appending("gradlew")),
-                arguments: ["verifyDebug"],
+                arguments: [
+                    "verifyDebug",
+                    "-Pnucleus.androidNdk=\(ndk.string)",
+                    "-Pnucleus.nativeLibrary=\(nucleusLibrary.string)",
+                    "-Pnucleus.swiftJavaLibrary=\(swiftJavaLibrary.string)",
+                    "-Pnucleus.generatedJava=\(generatedJava.string)",
+                    "-Pnucleus.cxxRuntime=\(androidNDKCxxRuntimePath(ndk).string)",
+                ],
                 workingDirectory: project,
                 environment: environment))
         guard result.status == 0 else {
@@ -791,10 +863,16 @@ private enum AndroidProjectVerificationFailure: Error {
     case commandFailed(Int32)
 }
 
-private struct SkiaGitDependency: Hashable, Sendable {
-    let relativePath: String
-    let remote: String
-    let commit: String
+package struct SkiaGitDependency: Hashable, Sendable {
+    package let relativePath: String
+    package let remote: String
+    package let commit: String
+
+    package init(relativePath: String, remote: String, commit: String) {
+        self.relativePath = relativePath
+        self.remote = remote
+        self.commit = commit
+    }
 }
 
 private struct MaterializeSkiaDependenciesAction: ColliderAction {
@@ -906,13 +984,19 @@ private struct MaterializeSkiaDependenciesAction: ColliderAction {
                 ["-C", checkout.string, "rev-parse", "HEAD"],
                 workingDirectory: skia,
                 context: context)
+            let expected = try await git(
+                ["-C", checkout.string, "rev-parse", "\(dependency.commit)^{commit}"],
+                workingDirectory: skia,
+                context: context)
             guard resolved.status == 0,
+                expected.status == 0,
                 resolved.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
-                    == dependency.commit
+                    == expected.standardOutput.trimmingCharacters(
+                        in: .whitespacesAndNewlines)
             else {
                 throw SkiaDependencyFailure.wrongCommit(
                     dependency.relativePath,
-                    expected: dependency.commit,
+                    expected: expected.standardOutput,
                     actual: resolved.standardOutput)
             }
             let dirty = try await git(
@@ -1114,6 +1198,17 @@ private func androidNDKReadELFPath(_ ndk: FilePath) -> FilePath {
     #endif
     return ndk.appending(
         "toolchains/llvm/prebuilt/\(host)/bin/llvm-readelf")
+}
+
+private func androidNDKCxxRuntimePath(_ ndk: FilePath) -> FilePath {
+    #if os(macOS)
+    let host = "darwin-x86_64"
+    #else
+    let host = "linux-x86_64"
+    #endif
+    return ndk.appending(
+        "toolchains/llvm/prebuilt/\(host)/sysroot/usr/lib/"
+            + "aarch64-linux-android/libc++_shared.so")
 }
 
 private func skiaTask(

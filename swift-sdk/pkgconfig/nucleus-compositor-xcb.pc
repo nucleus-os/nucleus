@@ -1,0 +1,4 @@
+Name: nucleus-compositor-xcb
+Description: Nucleus compositor XCB system dependencies
+Version: 1
+Requires: xcb-ewmh xcb-icccm xcb-composite xcb-xfixes xcb-res xcb

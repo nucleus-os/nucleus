@@ -115,6 +115,8 @@ import Testing
         recipe.appendingPathComponent("nucleus-target-runtime-presets.ini").path)
     let sysroot = FilePath(
         recipe.appendingPathComponent("prepare-linux-sysroot.sh").path)
+    let pkgConfig = FilePath(
+        recipe.appendingPathComponent("pkgconfig", isDirectory: true).path)
 
     let first = try swiftTargetSDKArtifactID(
         inputsFile: inputs,
@@ -126,6 +128,7 @@ import Testing
         runtimeBuilderContext: builder,
         runtimePreset: preset,
         sysrootPreparer: sysroot,
+        pkgConfigDirectory: pkgConfig,
         generatorSourceID: "generator-a")
     let changedGenerator = try swiftTargetSDKArtifactID(
         inputsFile: inputs,
@@ -137,6 +140,7 @@ import Testing
         runtimeBuilderContext: builder,
         runtimePreset: preset,
         sysrootPreparer: sysroot,
+        pkgConfigDirectory: pkgConfig,
         generatorSourceID: "generator-b")
 
     #expect(first.count == 24)

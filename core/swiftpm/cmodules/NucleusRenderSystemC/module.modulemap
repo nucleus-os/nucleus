@@ -1,0 +1,4 @@
+module NucleusRenderSystemC [system] {
+    header "include/NucleusRenderSystemC.h"
+    export *
+}

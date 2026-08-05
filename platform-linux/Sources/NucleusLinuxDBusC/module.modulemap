@@ -1,5 +1,4 @@
 module NucleusLinuxDBusC [system] {
     header "NucleusLinuxDBusC.h"
-    link "systemd"
     export *
 }

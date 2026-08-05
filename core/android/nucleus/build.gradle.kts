@@ -15,22 +15,12 @@ plugins {
 }
 
 val coreRoot = layout.projectDirectory.dir("../..")
-val coreRootFile = coreRoot.asFile
-val workspaceRootFile = coreRoot.dir("..").asFile
-val androidSdkRoot = providers.gradleProperty("nucleus.androidSdk")
-    .orElse(providers.environmentVariable("ANDROID_HOME"))
-    .orElse(providers.environmentVariable("ANDROID_SDK_ROOT"))
-    .orElse("${System.getProperty("user.home")}/Android/Sdk")
-val ndkHome = providers.gradleProperty("nucleus.androidNdk")
-    .orElse(providers.environmentVariable("NUCLEUS_ANDROID_NDK_HOME"))
-    .orElse(providers.environmentVariable("ANDROID_NDK_HOME"))
-    .orElse(androidSdkRoot.map { "$it/ndk/${libs.versions.ndk.get()}" })
 val nucleusSourceId = providers.gradleProperty("nucleus.swiftSourceId")
     .orElse(providers.environmentVariable("NUCLEUS_SWIFT_SOURCE_ID"))
-// Cross-compile libnucleus-android.so via SwiftPM (the platform-android package)
-// using the paired Swift platform generation selected by the workspace entry
-// point, then verify the JNI export contract.
-val nucleusCommand = "collider"
+val nucleusNativeLibrary = providers.gradleProperty("nucleus.nativeLibrary")
+val swiftJavaNativeLibrary = providers.gradleProperty("nucleus.swiftJavaLibrary")
+val nucleusGeneratedJava = providers.gradleProperty("nucleus.generatedJava")
+val nucleusCxxRuntime = providers.gradleProperty("nucleus.cxxRuntime")
 val nucleusMinSdkVersion = libs.versions.minSdk
 val nucleusTargetSdkVersion = libs.versions.targetSdkApi
 
@@ -155,49 +145,26 @@ extensions.configure<com.android.build.api.dsl.LibraryExtension>("android") {
                 coreRoot.dir("../third-party/swift-java/SwiftKitCore/src/main/java").asFile.path
             )
             java.directories.add(
-                coreRoot.dir(
-                    "platform-android/.build/plugins/outputs/platform-android/" +
-                        "NucleusAndroidJNI/destination/JExtractSwiftPlugin/src/generated/java"
-                ).asFile.path
+                nucleusGeneratedJava.get()
             )
         }
     }
 }
 
-val buildNucleusAndroidNative = tasks.register<Exec>("buildNucleusAndroidNative") {
-    group = "build"
-    description = "Build libnucleus-android.so through the SwiftPM platform-android package."
-    workingDir(coreRootFile)
-    commandLine(nucleusCommand, "android", "native")
-    environment("NUCLEUS_SWIFT_SOURCE_ID", nucleusSourceId.get())
-}
-
-val ndkCxxShared = ndkHome.map {
-    "$it/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
-}
-
-// The jextract-generated AndroidHost.java is produced by the native build, so all
-// Java/Kotlin compilation must run after it.
 tasks.withType<JavaCompile>().configureEach {
-    dependsOn(buildNucleusAndroidNative)
     // These optional JVM annotations depend on jdk.jfr, which is not an
     // Android API. The generated AndroidHost surface uses neither type.
     exclude("**/annotations/ThreadSafe.java")
     exclude("**/annotations/Unsigned.java")
-}
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-    dependsOn(buildNucleusAndroidNative)
 }
 
 extensions.configure<com.android.build.api.variant.LibraryAndroidComponentsExtension>("androidComponents") {
     onVariants { variant ->
         val variantTaskName = variant.name.capitalizedTaskName()
         val copyJniLibs = tasks.register<CopyNucleusJniLibs>("copy${variantTaskName}JniLibs") {
-            dependsOn(buildNucleusAndroidNative)
-            val productDir = "platform-android/.build/out/Products/Release-android-aarch64"
-            nucleusLibrary.set(coreRoot.file("$productDir/libnucleus-android.so"))
-            swiftJavaLibrary.set(coreRoot.file("$productDir/libSwiftJava.so"))
-            cxxRuntime.set(layout.file(ndkCxxShared.map { file(it) }))
+            nucleusLibrary.set(layout.file(nucleusNativeLibrary.map { file(it) }))
+            swiftJavaLibrary.set(layout.file(swiftJavaNativeLibrary.map { file(it) }))
+            cxxRuntime.set(layout.file(nucleusCxxRuntime.map { file(it) }))
             outputDirectory.set(layout.buildDirectory.dir("generated/jniLibs/${variant.name}"))
         }
         val writeMetadata = tasks.register<WriteNucleusAndroidMetadata>("write${variantTaskName}Metadata") {

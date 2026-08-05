@@ -1,0 +1,4 @@
+Name: nucleus-compositor-input
+Description: Nucleus compositor input system dependencies
+Version: 1
+Requires: libinput libudev libseat xkbcommon

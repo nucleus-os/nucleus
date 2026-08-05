@@ -6,6 +6,37 @@ import Foundation
 import SystemPackage
 import Testing
 
+@Test func skiaDependencyParsingIgnoresNestedConditionalURLs() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-skia-deps-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true)
+    let deps = directory.appendingPathComponent("DEPS")
+    try Data(
+        """
+        deps = {
+          "third_party/externals/example": "https://example.com/example.git@1111111111111111111111111111111111111111",
+          "conditional": {
+            "url": "https://private.example.com/internal.git@2222222222222222222222222222222222222222",
+          },
+        }
+        """.utf8
+    ).write(to: deps)
+
+    let dependencies = try CoreColliderRecipe.skiaGitDependencies(
+        from: FilePath(deps.path))
+
+    #expect(
+        dependencies == [
+            SkiaGitDependency(
+                relativePath: "third_party/externals/example",
+                remote: "https://example.com/example.git",
+                commit: "1111111111111111111111111111111111111111")
+        ])
+}
+
 @Test func androidHostValidationChecksELFAndKotlinJNIContracts() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-android-host-validation-\(UUID().uuidString)")

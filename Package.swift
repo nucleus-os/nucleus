@@ -3,44 +3,7 @@
 // Canonical first-party Swift package. Generated once during the package
 // consolidation; this manifest is the maintained source of truth.
 
-import Foundation
 import PackageDescription
-
-let repoRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
-let environment = ProcessInfo.processInfo.environment
-guard let nativeSDKRoot = environment["NUCLEUS_NATIVE_SDK_ROOT"],
-    let generatedModuleMaps = environment["NUCLEUS_SWIFTPM_GENERATED_MODULE_MAPS_PATH"],
-    let swiftToolchain = environment["SWIFT_TOOLCHAIN"],
-    let swiftSourceID = environment["NUCLEUS_SWIFT_SOURCE_ID"],
-    let homeDirectory = environment["HOME"]
-else {
-    fatalError("source tools/host-env.sh before invoking SwiftPM")
-}
-
-func pkgConfig(_ arguments: [String]) -> [String] {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-    process.arguments = ["pkg-config"] + arguments
-    let output = Pipe()
-    process.standardOutput = output
-    try! process.run()
-    process.waitUntilExit()
-    guard process.terminationStatus == 0 else {
-        fatalError("pkg-config failed: \(arguments)")
-    }
-    return String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        .split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" })
-        .map(String.init)
-}
-
-let gfxstreamBuildRoot =
-    environment["NUCLEUS_GFXSTREAM_BUILD_ROOT"]
-    ?? repoRoot + "/android-runtime/.gfxstream-build/linux-arm64"
-
-let androidSDKSearchRoot: String = {
-    if let path = environment["NUCLEUS_SWIFT_SDKS_PATH"] { return path }
-    return homeDirectory + "/.cache/nucleus/swift-platforms/unused"
-}()
 
 let products: [Product] = [
     .library(name: "NucleusAndroidRuntimeCore", targets: ["NucleusAndroidRuntimeCore"]),
@@ -135,214 +98,127 @@ let dependencies: [Package.Dependency] = [
     .package(name: "swift-syntax", path: "third-party/swift-syntax"),
     .package(name: "swift-system", path: "third-party/swift-system"),
 ]
+
+let reactNativeSwiftSettings: [SwiftSetting] = [
+    .unsafeFlags([
+        "-Xcc", "-DJS_RUNTIME_HERMES=1",
+        "-Xcc", "-DHERMES_V1_ENABLED=1",
+        "-Xcc", "-DREACT_NATIVE_DEBUG=1",
+        "-Xcc", "-DFOLLY_NO_CONFIG=1",
+        "-Xcc", "-DFOLLY_MOBILE=0",
+        "-Xcc", "-DFOLLY_CFG_NO_COROUTINES=1",
+        "-Xcc", "-DFMT_USE_CONSTEVAL=0",
+        "-Xcc", "-DSK_GRAPHITE",
+        "-Xcc", "-DSK_VULKAN",
+        "-Xcc", "-std=c++20",
+    ])
+]
+
+let reactNativeBridgeCxxSettings: [CXXSetting] = [
+    .unsafeFlags([
+        "-std=c++20", "-DFOLLY_NO_CONFIG=1", "-DFOLLY_MOBILE=0", "-DFOLLY_USE_LIBCPP=1",
+        "-DFOLLY_CFG_NO_COROUTINES=1", "-DFOLLY_HAVE_CLOCK_GETTIME=1",
+        "-DFOLLY_HAVE_PTHREAD=1",
+    ])
+]
+
+let reactNativeHostCxxSettings: [CXXSetting] = [
+    .unsafeFlags([
+        "-std=c++20", "-fexceptions", "-frtti", "-DJS_RUNTIME_HERMES=1",
+        "-DHERMES_V1_ENABLED=1", "-DREACT_NATIVE_DEBUG=1", "-DFOLLY_NO_CONFIG=1",
+        "-DFOLLY_MOBILE=0", "-DFOLLY_CFG_NO_COROUTINES=1", "-DFMT_USE_CONSTEVAL=0",
+        "-DSK_GRAPHITE", "-DSK_VULKAN",
+    ])
+]
+
+let reactNativeRuntimeLinkerSettings: [LinkerSetting] = [
+    .unsafeFlags([
+        "-Xlinker", "--start-group", "-lhermes_lean_combined", "-lreact_native",
+        "-lreact_cxx_platform", "-lyogacore", "-lfolly_runtime", "-lglog", "-lfmt",
+        "-ldouble-conversion", "-Xlinker", "--end-group", "-latomic", "-lpthread", "-ldl",
+        "-lm", "-Xlinker", "--start-group", "-lskia", "-lskshaper", "-lskparagraph",
+        "-lskunicode_core", "-lskunicode_icu", "-lsvg", "-lskcms", "-lskresources",
+        "-lfreetype2", "-lharfbuzz", "-licu", "-lpng", "-ljpeg", "-ljpeg12", "-ljpeg16",
+        "-lwebp", "-lwebp_sse41", "-lexpat", "-lzlib", "-lwuffs", "-ldng_sdk", "-lpiex",
+        "-Xlinker", "--end-group", "-ldl",
+        "-lpthread", "-lm",
+    ])
+]
+
 let targets: [Target] = [
     .target(
         name: "NucleusAndroidProcessLifecycleC",
-        path: "android-runtime/Sources/NucleusAndroidProcessLifecycleC",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Sources/NucleusAndroidProcessLifecycleC"),
     .target(
         name: "NucleusAndroidComposerProtocolC",
-        path: "android-runtime/aosp/device/nucleus/nucleus_x86_64/native/composer-protocol",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/aosp/device/nucleus/nucleus_x86_64/native/composer-protocol"),
     .target(
         name: "NucleusAndroidPresentationProtocolC",
         path:
-            "android-runtime/aosp/device/nucleus/nucleus_x86_64/native/presentation-protocol",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+            "android-runtime/aosp/device/nucleus/nucleus_x86_64/native/presentation-protocol"),
     .target(
         name: "NucleusAndroidDisplayControlProtocolC",
         path:
-            "android-runtime/aosp/device/nucleus/nucleus_x86_64/native/display-control-protocol",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+            "android-runtime/aosp/device/nucleus/nucleus_x86_64/native/display-control-protocol"),
     .target(
         name: "NucleusAndroidSharedRingC",
-        path: "android-runtime/aosp/device/nucleus/nucleus_x86_64/native/shared-ring",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/aosp/device/nucleus/nucleus_x86_64/native/shared-ring"),
     .target(
         name: "NucleusAndroidGfxstreamWorkerProtocolC",
-        path: "android-runtime/Sources/NucleusAndroidGfxstreamWorkerProtocolC",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Sources/NucleusAndroidGfxstreamWorkerProtocolC"),
     .target(
         name: "NucleusAndroidGfxstreamGuestTransportCxx",
         dependencies: ["NucleusIPCTransport", "NucleusIPCTransportC", "NucleusAndroidSharedRingC"],
-        path: "android-runtime/aosp/device/nucleus/nucleus_x86_64/native/gfxstream-guest",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [
-            .unsafeFlags([
-                "-I\(repoRoot)/third-party/mesa/src/gfxstream/guest/iostream/include"
-            ])
-        ],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/aosp/device/nucleus/nucleus_x86_64/native/gfxstream-guest"),
     .target(
         name: "NucleusAndroidGfxstreamAdaptersCxx",
         dependencies: ["NucleusAndroidGfxstreamGuestTransportCxx", "NucleusAndroidSharedRingC"],
         path: "android-runtime/Sources/NucleusAndroidGfxstreamAdaptersCxx",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [
-            .unsafeFlags([
-                "-I\(repoRoot)/third-party/mesa/src/gfxstream/guest/iostream/include",
-                "-I\(repoRoot)/third-party/gfxstream/host/include",
-            ])
-        ],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ], linkerSettings: [.linkedLibrary("dl")]),
+        linkerSettings: [.linkedLibrary("dl")]),
     .target(
         name: "NucleusAndroidGfxstreamAdaptersTestSupport",
         dependencies: ["NucleusAndroidGfxstreamAdaptersCxx", "NucleusAndroidSharedRingC"],
-        path: "android-runtime/Sources/NucleusAndroidGfxstreamAdaptersTestSupport",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [
-            .unsafeFlags([
-                "-I\(repoRoot)/third-party/mesa/src/gfxstream/guest/iostream/include",
-                "-I\(repoRoot)/third-party/gfxstream/host/include",
-            ])
-        ],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Sources/NucleusAndroidGfxstreamAdaptersTestSupport"),
     .target(
         name: "NucleusAndroidGfxstreamHostC",
         dependencies: ["NucleusAndroidGfxstreamAdaptersCxx", "NucleusAndroidSharedRingC"],
         path: "android-runtime/Sources/NucleusAndroidGfxstreamHostC",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [
-            .unsafeFlags([
-                "-I\(repoRoot)/third-party/gfxstream/host/common/include",
-                "-I\(repoRoot)/third-party/gfxstream/host/features/include",
-                "-I\(repoRoot)/third-party/gfxstream/host/include",
-                "-I\(repoRoot)/third-party/gfxstream/host/iostream/include",
-                "-I\(repoRoot)/third-party/gfxstream/host/library/include",
-            ])
-        ],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ],
         linkerSettings: [
-            .unsafeFlags([
-                gfxstreamBuildRoot + "/host/host/libgfxstream_backend.a",
-                "-Xlinker",
-                "-rpath", "-Xlinker", swiftToolchain + "/lib",
-            ]), .linkedLibrary("dl"), .linkedLibrary("rt"),
+            .linkedLibrary("gfxstream_backend"), .linkedLibrary("dl"), .linkedLibrary("rt"),
         ]),
     .target(
-        name: "NucleusAndroidDrmC", path: "android-runtime/Sources/NucleusAndroidDrmC",
-        cSettings: [.unsafeFlags(["-I/usr/include/libdrm"]), .unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ], linkerSettings: [.unsafeFlags(["-ldrm", "-lgbm", "-lvulkan"])]),
+        name: "NucleusAndroidDrmC", dependencies: ["NucleusCompositorDrmC", "VulkanC"],
+        path: "android-runtime/Sources/NucleusAndroidDrmC"),
     .target(
         name: "NucleusAndroidGraphicsContract",
-        path: "android-runtime/Sources/NucleusAndroidGraphicsContract",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Sources/NucleusAndroidGraphicsContract"),
     .target(
         name: "NucleusAndroidIPC",
         dependencies: [
             "NucleusAndroidGraphicsContract", "NucleusIPCTransport", "NucleusIPCTransportC",
-        ], path: "android-runtime/Sources/NucleusAndroidIPC",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "android-runtime/Sources/NucleusAndroidIPC"),
     .target(
         name: "NucleusAndroidGfxstreamTransport", dependencies: ["NucleusAndroidSharedRingC"],
-        path: "android-runtime/Sources/NucleusAndroidGfxstreamTransport",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Sources/NucleusAndroidGfxstreamTransport"),
     .target(
         name: "NucleusAndroidGraphicsPlatform",
         dependencies: ["NucleusAndroidGraphicsContract", "NucleusAndroidDrmC"],
-        path: "android-runtime/Sources/NucleusAndroidGraphicsPlatform",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Sources/NucleusAndroidGraphicsPlatform"),
     .target(
         name: "NucleusAndroidGpuBrokerCore",
         dependencies: [
             "NucleusAndroidGraphicsContract", "NucleusAndroidGraphicsPlatform", "NucleusAndroidIPC",
-        ], path: "android-runtime/Sources/NucleusAndroidGpuBrokerCore",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "android-runtime/Sources/NucleusAndroidGpuBrokerCore"),
     .target(
         name: "NucleusAndroidContainerContract",
-        path: "android-runtime/Sources/NucleusAndroidContainerContract",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Sources/NucleusAndroidContainerContract"),
     .target(
         name: "NucleusAndroidRuntimeCore",
         dependencies: [
             "NucleusAndroidContainerContract",
             "NucleusAndroidRuntimePlatformC",
         ],
-        path: "android-runtime/Sources/NucleusAndroidRuntimeCore",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Sources/NucleusAndroidRuntimeCore"),
     .target(
         name: "NucleusAndroidRuntimeBridgeProtocol",
         dependencies: [
@@ -350,40 +226,24 @@ let targets: [Target] = [
             "NucleusIPCTransport",
         ],
         path:
-            "android-runtime/Sources/NucleusAndroidRuntimeBridgeProtocol",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+            "android-runtime/Sources/NucleusAndroidRuntimeBridgeProtocol"),
     .target(
         name: "NucleusAndroidRuntimeBrokerCore",
         dependencies: [
             "NucleusAndroidRuntimeBridgeProtocol",
             "NucleusAndroidRuntimeCore",
         ],
-        path: "android-runtime/Sources/NucleusAndroidRuntimeBrokerCore",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Sources/NucleusAndroidRuntimeBrokerCore"),
     .target(
         name: "NucleusAndroidRuntimePlatformC",
-        path: "android-runtime/Sources/NucleusAndroidRuntimePlatformC",
-        cSettings: [.unsafeFlags(["-Werror"])]),
+        path: "android-runtime/Sources/NucleusAndroidRuntimePlatformC"),
     .target(
         name: "NucleusAndroidRuntimeHostLinux",
         dependencies: [
             "NucleusAndroidRuntimeCore",
             "NucleusAndroidRuntimePlatformC",
         ],
-        path: "android-runtime/Sources/NucleusAndroidRuntimeHostLinux",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Sources/NucleusAndroidRuntimeHostLinux"),
     .executableTarget(
         name: "NucleusAndroidRuntime",
         dependencies: [
@@ -392,21 +252,11 @@ let targets: [Target] = [
             "NucleusAndroidRuntimeHostLinux",
             "NucleusSessionProtocol",
         ],
-        path: "android-runtime/Sources/NucleusAndroidRuntime",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Sources/NucleusAndroidRuntime"),
     .executableTarget(
         name: "NucleusAndroidRuntimePrivileged",
         dependencies: ["NucleusAndroidRuntimeCore"],
-        path: "android-runtime/Sources/NucleusAndroidRuntimePrivileged",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Sources/NucleusAndroidRuntimePrivileged"),
     .executableTarget(
         name: "NucleusAndroidGpuBroker",
         dependencies: [
@@ -416,13 +266,7 @@ let targets: [Target] = [
             "NucleusLinuxPrimitives", "NucleusLinuxPrimitivesC", "NucleusLinuxReactor",
             "NucleusLinuxReactorC", "NucleusLinuxDBus", "NucleusLinuxSessionC",
             "NucleusThemeAssetIO",
-        ], path: "android-runtime/Sources/NucleusAndroidGpuBroker",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "android-runtime/Sources/NucleusAndroidGpuBroker"),
     .executableTarget(
         name: "NucleusAndroidGfxstreamWorkload",
         dependencies: [
@@ -431,20 +275,7 @@ let targets: [Target] = [
             "NucleusAndroidProcessLifecycleC", "NucleusIPCTransport", "NucleusIPCTransportC",
             "NucleusAndroidSharedRingC", "NucleusAndroidGfxstreamWorkerProtocolC",
         ], path: "android-runtime/Sources/NucleusAndroidGfxstreamWorkload",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [
-            .define(
-                "NUCLEUS_ANDROID_GFXSTREAM_GUEST_ICD=\"\(gfxstreamBuildRoot)/guest/src/gfxstream/guest/vulkan/libvulkan_gfxstream.so\""
-            ),
-            .unsafeFlags([
-                "-I\(repoRoot)/third-party/mesa/src/gfxstream/guest/vulkan_enc"
-            ]),
-        ],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ], linkerSettings: [.linkedLibrary("dl"), .linkedLibrary("pthread")]),
+        linkerSettings: [.linkedLibrary("dl"), .linkedLibrary("pthread")]),
     .executableTarget(
         name: "NucleusAndroidGfxstreamBroker",
         dependencies: [
@@ -453,24 +284,12 @@ let targets: [Target] = [
             "NucleusIPCTransport",
             "NucleusIPCTransportC", "NucleusAndroidSharedRingC",
         ], path: "android-runtime/Sources/NucleusAndroidGfxstreamBroker",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ],
         linkerSettings: [
             .linkedLibrary("pthread"), .unsafeFlags(["-Xlinker", "--export-dynamic"]),
         ]),
     .executableTarget(
         name: "NucleusAndroidDisplayHost", dependencies: ["NucleusAndroidDisplayHostCore"],
-        path: "android-runtime/Sources/NucleusAndroidDisplayHost",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Sources/NucleusAndroidDisplayHost"),
     .target(
         name: "NucleusAndroidDisplayHostCore",
         dependencies: [
@@ -487,62 +306,30 @@ let targets: [Target] = [
             "NucleusThemeAssetIO", "WaylandClient", "WaylandClientC", "WaylandClientDispatch",
             "WaylandProtocolTypes", "WaylandProtocolsC",
         ], path: "android-runtime/Sources/NucleusAndroidDisplayHostCore",
-        cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
             .enableUpcomingFeature("InternalImportsByDefault"),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .executableTarget(
         name: "NucleusAndroidSharedRingStress", dependencies: ["NucleusAndroidSharedRingC"],
-        path: "android-runtime/Sources/NucleusAndroidSharedRingStress",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Sources/NucleusAndroidSharedRingStress"),
     .testTarget(
         name: "NucleusAndroidGraphicsContractTests",
         dependencies: ["NucleusAndroidGraphicsContract"],
-        path: "android-runtime/Tests/NucleusAndroidGraphicsContractTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Tests/NucleusAndroidGraphicsContractTests"),
     .testTarget(
         name: "NucleusAndroidContainerContractTests",
         dependencies: ["NucleusAndroidContainerContract"],
-        path: "android-runtime/Tests/NucleusAndroidContainerContractTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Tests/NucleusAndroidContainerContractTests"),
     .testTarget(
         name: "NucleusAndroidRuntimeCoreTests",
         dependencies: ["NucleusAndroidRuntimeCore"],
-        path: "android-runtime/Tests/NucleusAndroidRuntimeCoreTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Tests/NucleusAndroidRuntimeCoreTests"),
     .testTarget(
         name: "NucleusAndroidRuntimeHostLinuxTests",
         dependencies: ["NucleusAndroidRuntimeHostLinux"],
         path:
-            "android-runtime/Tests/NucleusAndroidRuntimeHostLinuxTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+            "android-runtime/Tests/NucleusAndroidRuntimeHostLinuxTests"),
     .testTarget(
         name: "NucleusAndroidRuntimeBridgeProtocolTests",
         dependencies: [
@@ -550,87 +337,40 @@ let targets: [Target] = [
             "NucleusIPCTransport",
         ],
         path:
-            "android-runtime/Tests/NucleusAndroidRuntimeBridgeProtocolTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+            "android-runtime/Tests/NucleusAndroidRuntimeBridgeProtocolTests"),
     .testTarget(
         name: "NucleusAndroidIPCTests",
         dependencies: ["NucleusAndroidGraphicsContract", "NucleusAndroidIPC"],
-        path: "android-runtime/Tests/NucleusAndroidIPCTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Tests/NucleusAndroidIPCTests"),
     .testTarget(
         name: "NucleusAndroidGfxstreamTransportTests",
         dependencies: ["NucleusAndroidGfxstreamTransport"],
-        path: "android-runtime/Tests/NucleusAndroidGfxstreamTransportTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Tests/NucleusAndroidGfxstreamTransportTests"),
     .testTarget(
         name: "NucleusAndroidGfxstreamAdaptersTests",
         dependencies: ["NucleusAndroidGfxstreamAdaptersTestSupport"],
-        path: "android-runtime/Tests/NucleusAndroidGfxstreamAdaptersTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Tests/NucleusAndroidGfxstreamAdaptersTests"),
     .testTarget(
         name: "NucleusAndroidGraphicsPlatformTests",
         dependencies: [
             "NucleusAndroidDrmC", "NucleusAndroidDrmCTestSupport", "NucleusAndroidGraphicsContract",
             "NucleusAndroidGraphicsPlatform",
-        ], path: "android-runtime/Tests/NucleusAndroidGraphicsPlatformTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "android-runtime/Tests/NucleusAndroidGraphicsPlatformTests"),
     .target(
         name: "NucleusAndroidDrmCTestSupport", dependencies: ["NucleusAndroidDrmC"],
-        path: "android-runtime/Tests/Support/NucleusAndroidDrmCTestSupport",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "android-runtime/Tests/Support/NucleusAndroidDrmCTestSupport"),
     .executableTarget(
         name: "NucleusAndroidThreadSanitizerHarness",
         dependencies: [
             "NucleusAndroidDrmC", "NucleusAndroidDrmCTestSupport",
             "NucleusAndroidGfxstreamTransport",
-        ], path: "android-runtime/SanitizerHarnesses/NucleusAndroidThreadSanitizerHarness",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "android-runtime/SanitizerHarnesses/NucleusAndroidThreadSanitizerHarness"),
     .testTarget(
         name: "NucleusAndroidGpuBrokerCoreTests",
         dependencies: [
             "NucleusAndroidGraphicsContract", "NucleusAndroidGraphicsPlatform",
             "NucleusAndroidGpuBrokerCore", "NucleusAndroidIPC",
-        ], path: "android-runtime/Tests/NucleusAndroidGpuBrokerCoreTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "android-runtime/Tests/NucleusAndroidGpuBrokerCoreTests"),
     .testTarget(
         name: "NucleusAndroidDisplayHostCoreTests",
         dependencies: [
@@ -639,57 +379,30 @@ let targets: [Target] = [
             "NucleusLinuxPrimitives", "NucleusLinuxPrimitivesC", "NucleusLinuxReactor",
             "NucleusLinuxReactorC", "NucleusLinuxDBus", "NucleusLinuxSessionC",
             "NucleusThemeAssetIO",
-        ], path: "android-runtime/Tests/NucleusAndroidDisplayHostCoreTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "android-runtime/Tests/NucleusAndroidDisplayHostCoreTests"),
     .target(
         name: "NucleusCompositorServerTypes",
-        path: "compositor/compositor-core/Sources/NucleusCompositorServerTypes",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "compositor/compositor-core/Sources/NucleusCompositorServerTypes"),
     .systemLibrary(
         name: "NucleusCompositorDrmC",
-        path: "compositor/compositor-core/Sources/NucleusCompositorDrmC"),
+        path: "compositor/compositor-core/Sources/NucleusCompositorDrmC",
+        pkgConfig: "nucleus-compositor-drm"),
     .systemLibrary(
         name: "NucleusCompositorXcbC",
-        path: "compositor/compositor-core/Sources/NucleusCompositorXcbC"),
+        path: "compositor/compositor-core/Sources/NucleusCompositorXcbC",
+        pkgConfig: "nucleus-compositor-xcb"),
     .systemLibrary(
         name: "NucleusCompositorInputC",
-        path: "compositor/compositor-core/Sources/NucleusCompositorInputC"),
+        path: "compositor/compositor-core/Sources/NucleusCompositorInputC",
+        pkgConfig: "nucleus-compositor-input"),
     .target(
         name: "NucleusCompositorSignalC",
-        path: "compositor/compositor-core/Sources/NucleusCompositorSignalC",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "compositor/compositor-core/Sources/NucleusCompositorSignalC"),
     .target(
         name: "NucleusCompositorRenderSession",
-        path: "compositor/compositor-core/Sources/NucleusCompositorRenderSession",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "compositor/compositor-core/Sources/NucleusCompositorRenderSession"),
     .target(
-        name: "WaylandWireTestC", path: "compositor/compositor-core/Tests/WaylandWireTestC",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "WaylandWireTestC", path: "compositor/compositor-core/Tests/WaylandWireTestC"),
     .target(
         name: "NucleusCompositorServer",
         dependencies: [
@@ -698,13 +411,7 @@ let targets: [Target] = [
             "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
             "NucleusCompositorServerTypes",
-        ], path: "compositor/compositor-core/Sources/NucleusCompositorServer",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "compositor/compositor-core/Sources/NucleusCompositorServer"),
     .target(
         name: "NucleusCompositorWindowManager",
         dependencies: [
@@ -713,13 +420,7 @@ let targets: [Target] = [
             "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
             "NucleusCompositorServerTypes", "NucleusCompositorServer", "Tracy",
-        ], path: "compositor/compositor-core/Sources/NucleusCompositorWindowManager",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "compositor/compositor-core/Sources/NucleusCompositorWindowManager"),
     .target(
         name: "NucleusCompositorWindowScene",
         dependencies: [
@@ -728,13 +429,7 @@ let targets: [Target] = [
             "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
             "NucleusCompositorServerTypes",
-        ], path: "compositor/compositor-core/Sources/NucleusCompositorWindowScene",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "compositor/compositor-core/Sources/NucleusCompositorWindowScene"),
     .target(
         name: "NucleusCompositorPolicy",
         dependencies: [
@@ -747,13 +442,7 @@ let targets: [Target] = [
             "NucleusLinuxReactorC", "NucleusLinuxDBus", "NucleusLinuxSessionC",
             "NucleusThemeAssetIO",
             "NucleusSessionProtocol",
-        ], path: "compositor/compositor-core/Sources/NucleusCompositorPolicy",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "compositor/compositor-core/Sources/NucleusCompositorPolicy"),
     .target(
         name: "NucleusCompositorWaylandRuntime",
         dependencies: [
@@ -770,14 +459,9 @@ let targets: [Target] = [
             "NucleusLinuxSessionC",
             "NucleusThemeAssetIO", "NucleusConfig", "Tracy",
         ], path: "compositor/compositor-core/Sources/NucleusCompositorWaylandRuntime",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
             .enableUpcomingFeature("InternalImportsByDefault"),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
-            .unsafeFlags([]), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .target(
         name: "NucleusRenderServerTestSupport",
@@ -789,13 +473,9 @@ let targets: [Target] = [
             "NucleusRenderer", "NucleusSkiaGraphiteBridge", "NucleusTextBackend",
             "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
         ], path: "compositor/compositor-core/Sources/NucleusRenderServerTestSupport",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
             .enableUpcomingFeature("InternalImportsByDefault"),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .target(
         name: "NucleusCompositorRendererLinux",
@@ -806,18 +486,7 @@ let targets: [Target] = [
             "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
             "VulkanC", "Vulkan", "Tracy", "NucleusCompositorDrmC",
-        ], path: "compositor/compositor-core/Sources/NucleusCompositorRendererLinux",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags([
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia/third_party/externals/vulkan-headers/include",
-                "-Xcc",
-                "-I/usr/include/libdrm",
-            ]), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ], linkerSettings: [.unsafeFlags(["-ldrm", "-lgbm"])]),
+        ], path: "compositor/compositor-core/Sources/NucleusCompositorRendererLinux"),
     .target(
         name: "NucleusCompositorRenderRuntime",
         dependencies: [
@@ -828,18 +497,7 @@ let targets: [Target] = [
             "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
             "NucleusCompositorRendererLinux", "VulkanC", "NucleusCompositorDrmC", "Tracy",
             "NucleusCompositorServer",
-        ], path: "compositor/compositor-core/Sources/NucleusCompositorRenderRuntime",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags([
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia/third_party/externals/vulkan-headers/include",
-                "-Xcc",
-                "-I/usr/include/libdrm",
-            ]), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "compositor/compositor-core/Sources/NucleusCompositorRenderRuntime"),
     .target(
         name: "NucleusRenderServerRuntime",
         dependencies: [
@@ -859,34 +517,13 @@ let targets: [Target] = [
             "NucleusThemeAssetIO",
             "NucleusSessionProtocol", "NucleusIPCTransport", "NucleusIPCTransportC", "Tracy",
         ], path: "compositor/compositor-core/Sources/NucleusRenderServerRuntime",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags([
-                "-enable-experimental-feature", "Lifetimes", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia/third_party/externals/vulkan-headers/include",
-                "-Xcc",
-                "-I/usr/include/libdrm",
-            ]), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"])
         ]),
     .target(
         name: "NucleusRenderServer",
         dependencies: ["NucleusRenderServerRuntime", "NucleusSessionProtocol"],
-        path: "compositor/compositor-core/Sources/NucleusRenderServer",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ],
-        linkerSettings: [
-            .unsafeFlags([
-                "-ldrm", "-lgbm", "-lxcb-ewmh", "-lxcb-icccm", "-lxcb-composite", "-lxcb-xfixes",
-                "-lxcb-res", "-lxcb", "-linput", "-ludev", "-lseat", "-lxkbcommon", "-lfontconfig",
-                "-lfreetype", "-lz",
-            ])
-        ]),
+        path: "compositor/compositor-core/Sources/NucleusRenderServer"),
     .executableTarget(
         name: "NucleusRenderServerThreadSanitizerHarness",
         dependencies: [
@@ -895,20 +532,8 @@ let targets: [Target] = [
             "NucleusRenderServerTestSupport",
         ],
         path:
-            "compositor/compositor-core/SanitizerHarnesses/NucleusRenderServerThreadSanitizerHarness",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .unsafeFlags([]), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ],
-        linkerSettings: [
-            .unsafeFlags([
-                "-lxcb-ewmh", "-lxcb-icccm", "-lxcb-composite", "-lxcb-xfixes", "-lxcb-res",
-                "-lxcb",
-                "-linput", "-ludev", "-lseat", "-lxkbcommon",
-            ])
-        ]),
+            "compositor/compositor-core/SanitizerHarnesses/NucleusRenderServerThreadSanitizerHarness"
+    ),
     .executableTarget(
         name: "NucleusVulkanLaneProbe",
         dependencies: [
@@ -917,49 +542,17 @@ let targets: [Target] = [
             "NucleusTextBackend",
             "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder", "Vulkan", "VulkanC",
             "NucleusCompositorDrmC",
-        ], path: "compositor/compositor-core/Sources/NucleusVulkanLaneProbe",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags([
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia/third_party/externals/vulkan-headers/include",
-                "-Xcc",
-                "-I/usr/include/libdrm",
-            ]), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ], linkerSettings: [.unsafeFlags(["-ldrm", "-lgbm"])]),
+        ], path: "compositor/compositor-core/Sources/NucleusVulkanLaneProbe"),
     .testTarget(
         name: "NucleusCompositorRenderSessionTests",
         dependencies: ["NucleusCompositorRenderSession"],
-        path: "compositor/compositor-core/Tests/NucleusCompositorRenderSessionTests",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "compositor/compositor-core/Tests/NucleusCompositorRenderSessionTests"),
     .testTarget(
         name: "NucleusRenderServerRuntimeTests",
         dependencies: ["NucleusRenderServerRuntime", "NucleusConfig"],
         path: "compositor/compositor-core/Tests/NucleusRenderServerRuntimeTests",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags([
-                "-enable-experimental-feature", "Lifetimes", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia/third_party/externals/vulkan-headers/include",
-                "-Xcc",
-                "-I/usr/include/libdrm",
-            ]), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ],
-        linkerSettings: [
-            .unsafeFlags([
-                "-ldrm", "-lgbm", "-lxcb-ewmh", "-lxcb-icccm", "-lxcb-composite", "-lxcb-xfixes",
-                "-lxcb-res", "-lxcb", "-linput", "-ludev", "-lseat", "-lxkbcommon", "-lfontconfig",
-                "-lfreetype", "-lz",
-            ])
+            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"])
         ]),
     .testTarget(
         name: "NucleusCompositorRendererLinuxTests",
@@ -972,18 +565,7 @@ let targets: [Target] = [
             "NucleusUIEmbedder", "NucleusPresentationBackendContractTestSupport",
             "NucleusFoundation",
             "Vulkan",
-        ], path: "compositor/compositor-core/Tests/NucleusCompositorRendererLinuxTests",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags([
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia/third_party/externals/vulkan-headers/include",
-                "-Xcc",
-                "-I/usr/include/libdrm",
-            ]), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ], linkerSettings: [.unsafeFlags(["-ldrm", "-lgbm"])]),
+        ], path: "compositor/compositor-core/Tests/NucleusCompositorRendererLinuxTests"),
     .testTarget(
         name: "NucleusCompositorRenderRuntimeTests",
         dependencies: [
@@ -994,49 +576,20 @@ let targets: [Target] = [
             "NucleusRenderModel", "NucleusRenderer", "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend",
             "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
-        ], path: "compositor/compositor-core/Tests/NucleusCompositorRenderRuntimeTests",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags([
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia/third_party/externals/vulkan-headers/include",
-                "-Xcc",
-                "-I/usr/include/libdrm",
-            ]), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ], linkerSettings: [.unsafeFlags(["-ldrm", "-lgbm"])]),
+        ], path: "compositor/compositor-core/Tests/NucleusCompositorRenderRuntimeTests"),
     .testTarget(
         name: "NucleusCompositorWaylandCTests",
         dependencies: [
             "WaylandServerC", "WaylandProtocolTypes",
             "WaylandProtocolsC",
-        ], path: "compositor/compositor-core/Tests/NucleusCompositorWaylandCTests",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "compositor/compositor-core/Tests/NucleusCompositorWaylandCTests"),
     .testTarget(
         name: "NucleusCompositorServerTests", dependencies: ["NucleusCompositorServer"],
-        path: "compositor/compositor-core/Tests/NucleusCompositorServerTests",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "compositor/compositor-core/Tests/NucleusCompositorServerTests"),
     .testTarget(
         name: "NucleusCompositorWindowManagerTests",
         dependencies: ["NucleusCompositorServer", "NucleusCompositorWindowManager"],
-        path: "compositor/compositor-core/Tests/NucleusCompositorWindowManagerTests",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "compositor/compositor-core/Tests/NucleusCompositorWindowManagerTests"),
     .testTarget(
         name: "NucleusCompositorWaylandRuntimeTests",
         dependencies: [
@@ -1065,20 +618,10 @@ let targets: [Target] = [
             "WaylandXdgShellFixture.swift",
             "XwaylandAtomsFixture.swift", "XwaylandPropertiesFixture.swift",
             "XwaylandXSettingsFixture.swift",
-        ], cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
+        ],
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
             .enableUpcomingFeature("InternalImportsByDefault"),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
-            .unsafeFlags([]), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ],
-        linkerSettings: [
-            .unsafeFlags([
-                "-lxcb-ewmh", "-lxcb-icccm", "-lxcb-composite", "-lxcb-xfixes", "-lxcb-res",
-                "-lxcb",
-                "-linput", "-ludev", "-lseat", "-lxkbcommon",
-            ])
         ]),
     .testTarget(
         name: "NucleusCompositorPolicyTests",
@@ -1089,13 +632,7 @@ let targets: [Target] = [
             "NucleusSkiaGraphiteBridge", "NucleusTextBackend", "NucleusTextRenderingBridge",
             "NucleusUI",
             "NucleusUIEmbedder",
-        ], path: "compositor/compositor-core/Tests/NucleusCompositorPolicyTests",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "compositor/compositor-core/Tests/NucleusCompositorPolicyTests"),
     .testTarget(
         name: "NucleusCompositorWindowSceneTests",
         dependencies: [
@@ -1104,61 +641,27 @@ let targets: [Target] = [
             "NucleusSkiaGraphiteBridge", "NucleusTextBackend", "NucleusTextRenderingBridge",
             "NucleusUI",
             "NucleusUIEmbedder",
-        ], path: "compositor/compositor-core/Tests/NucleusCompositorWindowSceneTests",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "compositor/compositor-core/Tests/NucleusCompositorWindowSceneTests"),
     .executableTarget(
         name: "NucleusCompositor",
         dependencies: ["NucleusRenderServer", "NucleusFoundation", "NucleusSessionProtocol"],
         path: "compositor/compositor/Sources/NucleusCompositor",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ], linkerSettings: [.unsafeFlags(["-Xlinker", "--as-needed"])]),
+        linkerSettings: [.unsafeFlags(["-Xlinker", "--as-needed"])]),
     .target(
-        name: "NucleusConfigSyntax", path: "config/Sources/NucleusConfigSyntax",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "NucleusConfigSyntax", path: "config/Sources/NucleusConfigSyntax"),
     .testTarget(
         name: "NucleusConfigSyntaxTests", dependencies: ["NucleusConfigSyntax"],
-        path: "config/Tests/NucleusConfigSyntaxTests", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "config/Tests/NucleusConfigSyntaxTests"),
     .target(
         name: "NucleusConfigIO", dependencies: ["NucleusConfigSyntax", "NucleusConfig"],
-        path: "config/Sources/NucleusConfigIO", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
+        path: "config/Sources/NucleusConfigIO",
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .enableUpcomingFeature("InternalImportsByDefault"),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+            .enableUpcomingFeature("InternalImportsByDefault")
         ]),
     .testTarget(
         name: "NucleusConfigTests",
         dependencies: ["NucleusConfigIO", "NucleusConfigSyntax", "NucleusConfig"],
-        path: "config/Tests/NucleusConfigTests", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "config/Tests/NucleusConfigTests"),
     .target(
         name: "NucleusConfigService",
         dependencies: [
@@ -1167,131 +670,63 @@ let targets: [Target] = [
             "NucleusLinuxDBus",
             "NucleusLinuxSessionC", "NucleusThemeAssetIO", "NucleusSessionProtocol",
         ], path: "config/config-service-core/Sources/NucleusConfigService",
-        cSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .enableUpcomingFeature("InternalImportsByDefault"),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+            .enableUpcomingFeature("InternalImportsByDefault")
         ]),
     .testTarget(
         name: "NucleusConfigServiceTests", dependencies: ["NucleusConfigService"],
-        path: "config/config-service-core/Tests/NucleusConfigServiceTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "config/config-service-core/Tests/NucleusConfigServiceTests"),
     .executableTarget(
         name: "NucleusConfigServiceExecutable", dependencies: ["NucleusConfigService"],
-        path: "config/config-service/Sources/NucleusConfigServiceExecutable",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "config/config-service/Sources/NucleusConfigServiceExecutable"),
     .target(
-        name: "NucleusConfig", path: "config/model/Sources/NucleusConfig",
-        swiftSettings: [
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "NucleusConfig", path: "config/model/Sources/NucleusConfig"),
     .testTarget(
         name: "NucleusConfigModelTests", dependencies: ["NucleusConfig"],
-        path: "config/model/Tests/NucleusConfigModelTests",
-        swiftSettings: [
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "config/model/Tests/NucleusConfigModelTests"),
     .target(
-        name: "Nucleus", dependencies: ["NucleusApp", "NucleusUI", "NucleusFoundation"],
-        path: "core/swift/Sources/Nucleus", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+        name: "Nucleus",
+        dependencies: [
+            "NucleusApp", "NucleusUI", "NucleusFoundation",
+            .target(name: "NucleusRenderSystemC", condition: .when(platforms: [.linux])),
         ],
+        path: "core/swift/Sources/Nucleus",
         linkerSettings: [
             .unsafeFlags(
                 [
-                    "-L", nativeSDKRoot + "/render/lib/skia-graphite", "-Xlinker", "--start-group",
-                    "-lskia",
+                    "-Xlinker", "--start-group", "-lskia",
                     "-lskshaper", "-lskparagraph", "-lskunicode_core", "-lskunicode_icu", "-lsvg",
                     "-lskcms",
                     "-lskresources", "-lfreetype2", "-lharfbuzz", "-licu", "-lpng", "-ljpeg",
                     "-ljpeg12",
                     "-ljpeg16", "-lwebp", "-lwebp_sse41", "-lexpat", "-lzlib", "-lwuffs",
                     "-ldng_sdk",
-                    "-lpiex", "-Xlinker", "--end-group", "-lvulkan", "-lfontconfig", "-lfreetype",
-                    "-lz",
-                    "-ldl", "-lpthread", "-lm", "-Xlinker", "--exclude-libs=ALL", "-Xlinker",
+                    "-lpiex", "-Xlinker", "--end-group", "-ldl", "-lpthread", "-lm", "-Xlinker",
+                    "--exclude-libs=ALL", "-Xlinker",
                     "--no-undefined", "-Xlinker", "-z", "-Xlinker", "relro", "-Xlinker", "-z",
                     "-Xlinker",
                     "now",
                 ], .when(platforms: [.linux]))
         ]),
     .target(
-        name: "NucleusAndroidHostLifecycle", path: "core/swift/Sources/NucleusAndroidHostLifecycle",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "NucleusAndroidHostLifecycle", path: "core/swift/Sources/NucleusAndroidHostLifecycle"),
     .target(
         name: "NucleusLayers", dependencies: ["NucleusTypes", "NucleusFoundation"],
-        path: "core/swift/Sources/NucleusLayers", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "core/swift/Sources/NucleusLayers"),
     .systemLibrary(
         name: "NucleusTextCxxBridge", path: "core/swiftpm/cmodules/NucleusTextCxxBridge"),
+    .systemLibrary(
+        name: "NucleusRenderSystemC", path: "core/swiftpm/cmodules/NucleusRenderSystemC",
+        pkgConfig: "nucleus-render-system"),
     .target(
         name: "NucleusTextBackendNative", path: "core/render-cxx/skia",
-        cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [
             .unsafeFlags(
                 [
                     "-std=c++20", "-DNDEBUG", "-DSK_GRAPHITE", "-DSK_VULKAN",
                     "-DSK_GAMMA_APPLY_TO_A8",
-                    "-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=1", "-I",
-                    nativeSDKRoot + "/render/include/skia",
-                    "-I", nativeSDKRoot + "/render/include/skia/src", "-I",
-                    nativeSDKRoot + "/render/include/skia/include/third_party/vulkan", "-I",
-                    nativeSDKRoot + "/render/include/skia/src/gpu/vk/vulkanmemoryallocator", "-I",
-                    nativeSDKRoot
-                        + "/render/include/skia/third_party/externals/vulkanmemoryallocator/include",
-                    "-I",
-                    nativeSDKRoot
-                        + "/render/include/skia/third_party/externals/vulkan-headers/include",
-                ], .when(platforms: [.linux])),
-            .unsafeFlags(
-                [
-                    "-std=c++20", "-DNDEBUG", "-DSK_GRAPHITE", "-DSK_VULKAN",
-                    "-DSK_GAMMA_APPLY_TO_A8",
-                    "-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=1", "-I",
-                    nativeSDKRoot + "/render/include/skia",
-                    "-I", nativeSDKRoot + "/render/include/skia/src", "-I",
-                    nativeSDKRoot + "/render/include/skia/include/third_party/vulkan", "-I",
-                    nativeSDKRoot + "/render/include/skia/src/gpu/vk/vulkanmemoryallocator", "-I",
-                    nativeSDKRoot
-                        + "/render/include/skia/third_party/externals/vulkanmemoryallocator/include",
-                    "-I",
-                    nativeSDKRoot
-                        + "/render/include/skia/third_party/externals/vulkan-headers/include",
-                ], .when(platforms: [.android])), .unsafeFlags(["-Werror"]),
-        ],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+                    "-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=1",
+                ], .when(platforms: [.linux, .android]))
         ]),
     .target(
         name: "NucleusTextBackend",
@@ -1299,119 +734,53 @@ let targets: [Target] = [
             "NucleusUI", "NucleusTextCxxBridge", "NucleusTextBackendNative",
             "NucleusTextRenderingBridge",
             "Tracy",
-        ], path: "core/swift/Sources/NucleusTextBackend", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "core/swift/Sources/NucleusTextBackend"),
     .target(
         name: "NucleusUI",
         dependencies: [
             "NucleusTypes", "NucleusLayers", "NucleusSecureMemoryC", "NucleusFoundation", "Tracy",
         ],
-        path: "core/swift/Sources/NucleusUI", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "core/swift/Sources/NucleusUI"),
     .target(
-        name: "NucleusSecureMemoryC", path: "core/swift/Sources/NucleusSecureMemoryC",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "NucleusSecureMemoryC", path: "core/swift/Sources/NucleusSecureMemoryC"),
     .target(
         name: "NucleusUIEmbedder",
         dependencies: ["NucleusTypes", "NucleusUI", "NucleusLayers", "NucleusFoundation"],
-        path: "core/swift/Sources/NucleusUIEmbedder", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "core/swift/Sources/NucleusUIEmbedder"),
     .target(
         name: "NucleusApp", dependencies: ["NucleusUI", "NucleusLayers", "NucleusFoundation"],
-        path: "core/swift/Sources/NucleusApp", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "core/swift/Sources/NucleusApp"),
     .target(
         name: "NucleusRenderModel", dependencies: ["NucleusTypes", "NucleusFoundation"],
-        path: "core/swift/Sources/NucleusRenderModel", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "core/swift/Sources/NucleusRenderModel"),
     .target(
         name: "NucleusAppHostBundle",
         dependencies: [
             "NucleusTypes", "NucleusLayers", "NucleusRenderModel", "NucleusFoundation",
         ],
-        path: "core/swift/Sources/NucleusAppHostBundle", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
+        path: "core/swift/Sources/NucleusAppHostBundle",
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .enableUpcomingFeature("InternalImportsByDefault"),
-            .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+            .enableUpcomingFeature("InternalImportsByDefault")
         ]),
     .target(
-        name: "NucleusSkiaGraphiteBridge", path: "core/swift/Sources/NucleusSkiaGraphite/cxx",
-        cSettings: [.unsafeFlags(["-Werror"])],
+        name: "NucleusSkiaGraphiteBridge",
+        dependencies: [
+            .target(name: "NucleusRenderSystemC", condition: .when(platforms: [.linux]))
+        ],
+        path: "core/swift/Sources/NucleusSkiaGraphite/cxx",
         cxxSettings: [
             .unsafeFlags(
                 [
                     "-std=c++20", "-DNDEBUG", "-DSK_GRAPHITE", "-DSK_VULKAN",
                     "-DSK_GAMMA_APPLY_TO_A8",
-                    "-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=1", "-I",
-                    nativeSDKRoot + "/render/include/skia",
-                    "-I", nativeSDKRoot + "/render/include/skia/src", "-I",
-                    nativeSDKRoot + "/render/include/skia/include/third_party/vulkan", "-I",
-                    nativeSDKRoot + "/render/include/skia/src/gpu/vk/vulkanmemoryallocator", "-I",
-                    nativeSDKRoot
-                        + "/render/include/skia/third_party/externals/vulkanmemoryallocator/include",
-                    "-I",
-                    nativeSDKRoot
-                        + "/render/include/skia/third_party/externals/vulkan-headers/include",
-                ], .when(platforms: [.linux])),
-            .unsafeFlags(
-                [
-                    "-std=c++20", "-DNDEBUG", "-DSK_GRAPHITE", "-DSK_VULKAN",
-                    "-DSK_GAMMA_APPLY_TO_A8",
-                    "-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=1", "-I",
-                    nativeSDKRoot + "/render/include/skia",
-                    "-I", nativeSDKRoot + "/render/include/skia/src", "-I",
-                    nativeSDKRoot + "/render/include/skia/include/third_party/vulkan", "-I",
-                    nativeSDKRoot + "/render/include/skia/src/gpu/vk/vulkanmemoryallocator", "-I",
-                    nativeSDKRoot
-                        + "/render/include/skia/third_party/externals/vulkanmemoryallocator/include",
-                    "-I",
-                    nativeSDKRoot
-                        + "/render/include/skia/third_party/externals/vulkan-headers/include",
-                ], .when(platforms: [.android])), .unsafeFlags(["-Werror"]),
-        ],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+                    "-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=1",
+                ], .when(platforms: [.linux, .android]))
         ],
         linkerSettings: [
             .unsafeFlags(
                 [
-                    "-L", nativeSDKRoot + "/render/lib/skia-graphite-android-arm64", "-Xlinker",
-                    "--start-group", "-lskia", "-lskshaper", "-lskparagraph", "-lskunicode_core",
+                    "-Xlinker", "--start-group", "-lskia", "-lskshaper", "-lskparagraph",
+                    "-lskunicode_core",
                     "-lskunicode_icu", "-lsvg", "-lskcms", "-lskresources", "-lfreetype2",
                     "-lharfbuzz",
                     "-licu", "-lpng", "-ljpeg", "-ljpeg12", "-ljpeg16", "-lwebp", "-lwebp_sse41",
@@ -1425,276 +794,123 @@ let targets: [Target] = [
         name: "NucleusTextRenderingBridge",
         dependencies: ["NucleusTextBackendNative", "NucleusSkiaGraphiteBridge"],
         path: "core/swift/Sources/NucleusTextRenderingBridge",
-        cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [
             .unsafeFlags(
                 [
                     "-std=c++20", "-DNDEBUG", "-DSK_GRAPHITE", "-DSK_VULKAN",
                     "-DSK_GAMMA_APPLY_TO_A8",
-                    "-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=1", "-I",
-                    nativeSDKRoot + "/render/include/skia",
-                    "-I", nativeSDKRoot + "/render/include/skia/src", "-I",
-                    nativeSDKRoot + "/render/include/skia/include/third_party/vulkan", "-I",
-                    nativeSDKRoot + "/render/include/skia/src/gpu/vk/vulkanmemoryallocator", "-I",
-                    nativeSDKRoot
-                        + "/render/include/skia/third_party/externals/vulkanmemoryallocator/include",
-                    "-I",
-                    nativeSDKRoot
-                        + "/render/include/skia/third_party/externals/vulkan-headers/include",
-                ], .when(platforms: [.linux])),
-            .unsafeFlags(
-                [
-                    "-std=c++20", "-DNDEBUG", "-DSK_GRAPHITE", "-DSK_VULKAN",
-                    "-DSK_GAMMA_APPLY_TO_A8",
-                    "-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=1", "-I",
-                    nativeSDKRoot + "/render/include/skia",
-                    "-I", nativeSDKRoot + "/render/include/skia/src", "-I",
-                    nativeSDKRoot + "/render/include/skia/include/third_party/vulkan", "-I",
-                    nativeSDKRoot + "/render/include/skia/src/gpu/vk/vulkanmemoryallocator", "-I",
-                    nativeSDKRoot
-                        + "/render/include/skia/third_party/externals/vulkanmemoryallocator/include",
-                    "-I",
-                    nativeSDKRoot
-                        + "/render/include/skia/third_party/externals/vulkan-headers/include",
-                ], .when(platforms: [.android])), .unsafeFlags(["-Werror"]),
-        ],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+                    "-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=1",
+                ], .when(platforms: [.linux, .android]))
         ]),
     .testTarget(
         name: "NucleusSkiaGraphiteTests", dependencies: ["NucleusSkiaGraphiteBridge"],
-        path: "core/swift/Tests/NucleusSkiaGraphiteTests", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ],
+        path: "core/swift/Tests/NucleusSkiaGraphiteTests",
         linkerSettings: [
             .unsafeFlags([
-                "-L", nativeSDKRoot + "/render/lib/skia-graphite", "-Xlinker", "--start-group",
-                "-lskia",
+                "-Xlinker", "--start-group", "-lskia",
                 "-lskshaper", "-lskparagraph", "-lskunicode_core", "-lskunicode_icu", "-lsvg",
                 "-lskcms",
                 "-lskresources", "-lfreetype2", "-lharfbuzz", "-licu", "-lpng", "-ljpeg",
                 "-ljpeg12",
                 "-ljpeg16", "-lwebp", "-lwebp_sse41", "-lexpat", "-lzlib", "-lwuffs", "-ldng_sdk",
                 "-lpiex",
-                "-Xlinker", "--end-group", "-lvulkan", "-lfontconfig", "-lfreetype", "-lz", "-ldl",
+                "-Xlinker", "--end-group", "-ldl",
                 "-lpthread", "-lm",
             ])
         ]),
     .target(
         name: "NucleusBlockingSynchronizationC",
-        path: "core/swift/Sources/NucleusBlockingSynchronizationC",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "core/swift/Sources/NucleusBlockingSynchronizationC"),
     .target(
         name: "NucleusRenderHost",
         dependencies: [
             "NucleusTypes", "NucleusLayers", "NucleusRenderModel", "NucleusFoundation",
         ],
-        path: "core/swift/Sources/NucleusRenderHost", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "core/swift/Sources/NucleusRenderHost"),
     .testTarget(
         name: "NucleusRenderHostTests",
         dependencies: [
             "NucleusTypes", "NucleusRenderHost", "NucleusLayers", "NucleusRenderModel",
             "NucleusFoundation",
-        ], path: "core/swift/Tests/NucleusRenderHostTests", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "core/swift/Tests/NucleusRenderHostTests"),
     .testTarget(
         name: "NucleusRuntimeGraphTests",
         dependencies: [
             "NucleusTypes", "NucleusAppHostBundle", "NucleusRenderHost", "NucleusRenderModel",
             "NucleusLayers", "NucleusUI", "NucleusFoundation",
-        ], path: "core/swift/Tests/NucleusRuntimeGraphTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "core/swift/Tests/NucleusRuntimeGraphTests"),
     .testTarget(
         name: "NucleusAndroidHostLifecycleTests", dependencies: ["NucleusAndroidHostLifecycle"],
-        path: "core/swift/Tests/NucleusAndroidHostLifecycleTests",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "core/swift/Tests/NucleusAndroidHostLifecycleTests"),
     .target(
         name: "NucleusRenderer",
         dependencies: [
             "NucleusAppHostProtocols", "NucleusRenderModel", "NucleusTypes",
             "NucleusBlockingSynchronizationC",
             "NucleusFoundation", "VulkanC", "Vulkan", "NucleusSkiaGraphiteBridge", "Tracy",
-        ], path: "core/swift/Sources/NucleusRenderer", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
+        ], path: "core/swift/Sources/NucleusRenderer",
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .enableUpcomingFeature("InternalImportsByDefault"),
-            .unsafeFlags([
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia/third_party/externals/vulkan-headers/include",
-            ]), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+            .enableUpcomingFeature("InternalImportsByDefault")
         ]),
     .testTarget(
         name: "NucleusRendererTests",
         dependencies: [
             "NucleusAppHostProtocols", "NucleusTypes", "NucleusRenderer", "NucleusFoundation",
         ],
-        path: "core/swift/Tests/NucleusRendererTests", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ],
+        path: "core/swift/Tests/NucleusRendererTests",
         linkerSettings: [
             .unsafeFlags([
-                "-L", nativeSDKRoot + "/render/lib/skia-graphite", "-Xlinker", "--start-group",
-                "-lskia",
+                "-Xlinker", "--start-group", "-lskia",
                 "-lskshaper", "-lskparagraph", "-lskunicode_core", "-lskunicode_icu", "-lsvg",
                 "-lskcms",
                 "-lskresources", "-lfreetype2", "-lharfbuzz", "-licu", "-lpng", "-ljpeg",
                 "-ljpeg12",
                 "-ljpeg16", "-lwebp", "-lwebp_sse41", "-lexpat", "-lzlib", "-lwuffs", "-ldng_sdk",
                 "-lpiex",
-                "-Xlinker", "--end-group", "-lvulkan", "-lfontconfig", "-lfreetype", "-lz", "-ldl",
+                "-Xlinker", "--end-group", "-ldl",
                 "-lpthread", "-lm",
             ])
         ]),
     .testTarget(
         name: "NucleusDiagnosticsTests", dependencies: ["NucleusFoundation"],
-        path: "core/swift/Tests/NucleusDiagnosticsTests", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "core/swift/Tests/NucleusDiagnosticsTests"),
     .testTarget(
         name: "NucleusRenderModelTests",
         dependencies: ["NucleusTypes", "NucleusRenderModel", "NucleusFoundation"],
-        path: "core/swift/Tests/NucleusRenderModelTests", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "core/swift/Tests/NucleusRenderModelTests"),
     .target(
         name: "NucleusRetainedSceneTestSupport", dependencies: ["NucleusUI"],
-        path: "core/swift/Tests/Support/RetainedScene", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "core/swift/Tests/Support/RetainedScene"),
     .target(
-        name: "NucleusHostProjectionTestSupport", path: "core/swift/Tests/Support/HostProjection",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "NucleusHostProjectionTestSupport", path: "core/swift/Tests/Support/HostProjection"),
     .target(
-        name: "NucleusRendererTestSupport", path: "core/swift/Tests/Support/Renderer",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "NucleusRendererTestSupport", path: "core/swift/Tests/Support/Renderer"),
     .target(
         name: "NucleusPresentationBackendContractTestSupport",
-        path: "core/swift/Tests/Support/PresentationBackendContract",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "core/swift/Tests/Support/PresentationBackendContract"),
     .target(
-        name: "NucleusResourceTestSupport", path: "core/swift/Tests/Support/Resources",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "NucleusResourceTestSupport", path: "core/swift/Tests/Support/Resources"),
     .target(
         name: "NucleusTextRenderingTestSupport",
         dependencies: ["NucleusSkiaGraphiteBridge", "NucleusTextRenderingBridge"],
-        path: "core/swift/Tests/Support/TextRendering", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "core/swift/Tests/Support/TextRendering"),
     .target(
         name: "NucleusUITestSupport",
         dependencies: ["NucleusTextBackend", "NucleusUI"],
-        path: "core/swift/Tests/Support/UIContext",
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "core/swift/Tests/Support/UIContext"),
     .testTarget(
         name: "NucleusUmbrellaTests", dependencies: ["Nucleus"],
-        path: "core/swift/Tests/NucleusUmbrellaTests", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "core/swift/Tests/NucleusUmbrellaTests"),
     .testTarget(
         name: "NucleusUIEmbedderTests",
         dependencies: [
             "NucleusTypes", "NucleusUIEmbedder", "NucleusUI", "NucleusLayers",
             "NucleusFoundation",
         ],
-        path: "core/swift/Tests/NucleusUIEmbedderTests", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "core/swift/Tests/NucleusUIEmbedderTests"),
     .testTarget(
         name: "NucleusAppTests", dependencies: ["NucleusApp", "NucleusUI"],
-        path: "core/swift/Tests/NucleusAppTests", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "core/swift/Tests/NucleusAppTests"),
     .testTarget(
         name: "NucleusUITests",
         dependencies: [
@@ -1705,24 +921,17 @@ let targets: [Target] = [
             "NucleusRendererTestSupport", "NucleusResourceTestSupport",
             "NucleusTextRenderingTestSupport", "NucleusUITestSupport",
             "NucleusFoundation",
-        ], path: "core/swift/Tests/NucleusUITests", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ],
+        ], path: "core/swift/Tests/NucleusUITests",
         linkerSettings: [
             .unsafeFlags([
-                "-L", nativeSDKRoot + "/render/lib/skia-graphite", "-Xlinker", "--start-group",
-                "-lskia",
+                "-Xlinker", "--start-group", "-lskia",
                 "-lskshaper", "-lskparagraph", "-lskunicode_core", "-lskunicode_icu", "-lsvg",
                 "-lskcms",
                 "-lskresources", "-lfreetype2", "-lharfbuzz", "-licu", "-lpng", "-ljpeg",
                 "-ljpeg12",
                 "-ljpeg16", "-lwebp", "-lwebp_sse41", "-lexpat", "-lzlib", "-lwuffs", "-ldng_sdk",
                 "-lpiex",
-                "-Xlinker", "--end-group", "-lvulkan", "-lfontconfig", "-lfreetype", "-lz", "-ldl",
+                "-Xlinker", "--end-group", "-ldl",
                 "-lpthread", "-lm",
             ])
         ]),
@@ -1731,41 +940,15 @@ let targets: [Target] = [
         dependencies: [
             "NucleusBenchmarkSupport", "NucleusLayers", "NucleusUI", "NucleusRenderModel",
             "NucleusFoundation",
-        ], path: "core/swift/Benchmarks/NucleusHeadlessBenchmarks",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "core/swift/Benchmarks/NucleusHeadlessBenchmarks"),
     .target(
         name: "NucleusBenchmarkSupport", dependencies: ["NucleusBenchmarkMetricsC"],
-        path: "core/swift/Benchmarks/NucleusBenchmarkSupport",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "core/swift/Benchmarks/NucleusBenchmarkSupport"),
     .target(
-        name: "NucleusBenchmarkMetricsC", path: "core/swift/Benchmarks/NucleusBenchmarkMetricsC",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "NucleusBenchmarkMetricsC", path: "core/swift/Benchmarks/NucleusBenchmarkMetricsC"),
     .testTarget(
         name: "NucleusBenchmarkSupportTests", dependencies: ["NucleusBenchmarkSupport"],
-        path: "core/swift/Tests/NucleusBenchmarkSupportTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "core/swift/Tests/NucleusBenchmarkSupportTests"),
     .executableTarget(
         name: "NucleusCoreThreadSanitizerHarness",
         dependencies: [
@@ -1773,23 +956,16 @@ let targets: [Target] = [
             "NucleusFoundation",
         ],
         path: "core/swift/SanitizerHarnesses/NucleusCoreThreadSanitizerHarness",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ],
         linkerSettings: [
             .unsafeFlags([
-                "-L", nativeSDKRoot + "/render/lib/skia-graphite", "-Xlinker", "--start-group",
-                "-lskia",
+                "-Xlinker", "--start-group", "-lskia",
                 "-lskshaper", "-lskparagraph", "-lskunicode_core", "-lskunicode_icu", "-lsvg",
                 "-lskcms",
                 "-lskresources", "-lfreetype2", "-lharfbuzz", "-licu", "-lpng", "-ljpeg",
                 "-ljpeg12",
                 "-ljpeg16", "-lwebp", "-lwebp_sse41", "-lexpat", "-lzlib", "-lwuffs", "-ldng_sdk",
                 "-lpiex",
-                "-Xlinker", "--end-group", "-lvulkan", "-lfontconfig", "-lfreetype", "-lz", "-ldl",
+                "-Xlinker", "--end-group", "-ldl",
                 "-lpthread", "-lm",
             ])
         ]),
@@ -1798,59 +974,24 @@ let targets: [Target] = [
         dependencies: [
             "Nucleus", "NucleusAppHostProtocols", "NucleusWindowClientContracts",
             "NucleusWindowClientHost",
-        ], path: "desktop/Sources/NucleusDesktop",
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "desktop/Sources/NucleusDesktop"),
     .testTarget(
         name: "NucleusDesktopTests", dependencies: ["NucleusDesktop"],
-        path: "desktop/Tests/NucleusDesktopTests",
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "desktop/Tests/NucleusDesktopTests"),
     .target(
-        name: "NucleusTypes", path: "foundation/Sources/NucleusTypes",
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "NucleusTypes", path: "foundation/Sources/NucleusTypes"),
     .testTarget(
         name: "NucleusTypesTests", dependencies: ["NucleusTypes"],
-        path: "foundation/Tests/NucleusTypesTests",
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "foundation/Tests/NucleusTypesTests"),
     .target(
-        name: "NucleusDiagnostics", path: "foundation/Sources/NucleusDiagnostics",
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "NucleusDiagnostics", path: "foundation/Sources/NucleusDiagnostics"),
     .target(
         name: "NucleusAppHostProtocols", dependencies: ["NucleusTypes"],
-        path: "foundation/Sources/NucleusAppHostProtocols",
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "foundation/Sources/NucleusAppHostProtocols"),
     .target(
         name: "NucleusFoundation",
         dependencies: ["NucleusTypes", "NucleusDiagnostics", "NucleusAppHostProtocols"],
-        path: "foundation/Sources/NucleusFoundation",
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "foundation/Sources/NucleusFoundation"),
     .testTarget(
         name: "NucleusWindowClientPasteboardIntegrationTests",
         dependencies: [
@@ -1868,17 +1009,8 @@ let targets: [Target] = [
         ],
         path:
             "integration-tests/window-client-conformance/Tests/NucleusWindowClientPasteboardIntegrationTests",
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ],
         linkerSettings: [
-            .unsafeFlags([
-                "-lwayland-client", "-lm", "-lxcb-ewmh", "-lxcb-icccm", "-lxcb-composite",
-                "-lxcb-xfixes",
-                "-lxcb-res", "-lxcb", "-linput", "-ludev", "-lseat", "-lxkbcommon",
-            ])
+            .unsafeFlags(["-lwayland-client", "-lm"])
         ]),
     .testTarget(
         name: "NucleusWindowClientInputIntegrationTests",
@@ -1897,17 +1029,8 @@ let targets: [Target] = [
         ],
         path:
             "integration-tests/window-client-conformance/Tests/NucleusWindowClientInputIntegrationTests",
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ],
         linkerSettings: [
-            .unsafeFlags([
-                "-lwayland-client", "-lm", "-lxcb-ewmh", "-lxcb-icccm", "-lxcb-composite",
-                "-lxcb-xfixes",
-                "-lxcb-res", "-lxcb", "-linput", "-ludev", "-lseat", "-lxkbcommon",
-            ])
+            .unsafeFlags(["-lwayland-client", "-lm"])
         ]),
     .executableTarget(
         name: "NucleusControlCLI",
@@ -1915,55 +1038,24 @@ let targets: [Target] = [
             "NucleusAndroidRuntimeCore", "NucleusControlClient", "NucleusControlProtocol",
             "NucleusConfig",
             .product(name: "ArgumentParser", package: "swift-argument-parser"),
-        ], path: "ipc/Sources/NucleusControlCLI", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "ipc/Sources/NucleusControlCLI"),
     .testTarget(
         name: "NucleusControlCLITests",
         dependencies: ["NucleusControlCLI"],
-        path: "ipc/Tests/NucleusControlCLITests",
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "ipc/Tests/NucleusControlCLITests"),
     .target(
         name: "NucleusControlClient",
         dependencies: ["NucleusIPCTransport", "NucleusIPCTransportC", "NucleusControlProtocol"],
-        path: "ipc/control-client/Sources/NucleusControlClient",
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "ipc/control-client/Sources/NucleusControlClient"),
     .testTarget(
         name: "NucleusControlClientTests", dependencies: ["NucleusControlClient"],
-        path: "ipc/control-client/Tests/NucleusControlClientTests",
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "ipc/control-client/Tests/NucleusControlClientTests"),
     .target(
         name: "NucleusControlProtocol", dependencies: ["NucleusFoundation", "NucleusConfig"],
-        path: "ipc/control-protocol/Sources/NucleusControlProtocol",
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "ipc/control-protocol/Sources/NucleusControlProtocol"),
     .testTarget(
         name: "NucleusControlProtocolTests", dependencies: ["NucleusControlProtocol"],
-        path: "ipc/control-protocol/Tests/NucleusControlProtocolTests",
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "ipc/control-protocol/Tests/NucleusControlProtocolTests"),
     .target(
         name: "NucleusControlService",
         dependencies: [
@@ -1972,165 +1064,75 @@ let targets: [Target] = [
             "NucleusLinuxReactorC", "NucleusLinuxDBus", "NucleusLinuxSessionC",
             "NucleusThemeAssetIO",
             "NucleusSessionProtocol",
-        ], path: "ipc/control-service-core/Sources/NucleusControlService",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "ipc/control-service-core/Sources/NucleusControlService"),
     .testTarget(
         name: "NucleusControlServiceTests", dependencies: ["NucleusControlService"],
-        path: "ipc/control-service-core/Tests/NucleusControlServiceTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "ipc/control-service-core/Tests/NucleusControlServiceTests"),
     .executableTarget(
         name: "NucleusControlServiceExecutable", dependencies: ["NucleusControlService"],
-        path: "ipc/control-service/Sources/NucleusControlServiceExecutable",
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "ipc/control-service/Sources/NucleusControlServiceExecutable"),
     .target(name: "NucleusIPCTransportC", path: "ipc/transport/Sources/NucleusIPCTransportC"),
     .target(
         name: "NucleusIPCTransport", dependencies: ["NucleusIPCTransportC"],
-        path: "ipc/transport/Sources/NucleusIPCTransport",
-        swiftSettings: [
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "ipc/transport/Sources/NucleusIPCTransport"),
     .testTarget(
         name: "NucleusIPCTransportTests", dependencies: ["NucleusIPCTransport"],
-        path: "ipc/transport/Tests/NucleusIPCTransportTests",
-        swiftSettings: [
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "ipc/transport/Tests/NucleusIPCTransportTests"),
     .target(
         name: "NucleusLinuxPrimitives", dependencies: ["NucleusLinuxPrimitivesC"],
         path: "platform-linux/Sources/NucleusLinuxPrimitives",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"])
         ]),
     .target(
-        name: "NucleusLinuxPrimitivesC", path: "platform-linux/Sources/NucleusLinuxPrimitivesC",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "NucleusLinuxPrimitivesC", path: "platform-linux/Sources/NucleusLinuxPrimitivesC"),
     .target(
         name: "NucleusLinuxReactor",
         dependencies: [
             "NucleusLinuxPrimitives", "NucleusLinuxReactorC",
             .product(name: "SystemPackage", package: "swift-system"),
         ], path: "platform-linux/Sources/NucleusLinuxReactor",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"])
         ]),
     .target(
-        name: "NucleusLinuxReactorC", path: "platform-linux/Sources/NucleusLinuxReactorC",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "NucleusLinuxReactorC", path: "platform-linux/Sources/NucleusLinuxReactorC"),
     .systemLibrary(
-        name: "NucleusLinuxDBusC", path: "platform-linux/Sources/NucleusLinuxDBusC"),
+        name: "NucleusLinuxDBusC", path: "platform-linux/Sources/NucleusLinuxDBusC",
+        pkgConfig: "libsystemd"),
     .target(
         name: "NucleusLinuxDBus", dependencies: ["NucleusLinuxDBusC", "NucleusLinuxReactor"],
-        path: "platform-linux/Sources/NucleusLinuxDBus", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "platform-linux/Sources/NucleusLinuxDBus"),
     .target(
-        name: "NucleusLinuxSessionC", path: "platform-linux/Sources/NucleusLinuxSessionC",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "NucleusLinuxSessionC", path: "platform-linux/Sources/NucleusLinuxSessionC"),
     .target(
-        name: "NucleusThemeAssetIO", path: "platform-linux/Sources/NucleusThemeAssetIO",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "NucleusThemeAssetIO", path: "platform-linux/Sources/NucleusThemeAssetIO"),
     .executableTarget(
         name: "NucleusLinuxThreadSanitizerHarness",
         dependencies: ["NucleusLinuxReactor", "NucleusLinuxReactorC"],
         path: "platform-linux/SanitizerHarnesses/NucleusLinuxThreadSanitizerHarness",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"])
         ]),
     .testTarget(
         name: "NucleusLinuxPrimitivesTests",
         dependencies: ["NucleusLinuxPrimitives", "NucleusLinuxPrimitivesC"],
         path: "platform-linux/Tests/NucleusLinuxPrimitivesTests",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"])
         ]),
     .testTarget(
         name: "NucleusLinuxReactorTests", dependencies: ["NucleusLinuxReactor"],
         path: "platform-linux/Tests/NucleusLinuxReactorTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"])
         ]),
     .testTarget(
         name: "NucleusLinuxDBusTests", dependencies: ["NucleusLinuxDBus"],
-        path: "platform-linux/Tests/NucleusLinuxDBusTests", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "platform-linux/Tests/NucleusLinuxDBusTests"),
     .testTarget(
         name: "NucleusThemeAssetIOTests", dependencies: ["NucleusThemeAssetIO"],
-        path: "platform-linux/Tests/NucleusThemeAssetIOTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "platform-linux/Tests/NucleusThemeAssetIOTests"),
     .target(
         name: "NucleusLinuxAccessibility",
         dependencies: [
@@ -2142,13 +1144,7 @@ let targets: [Target] = [
             "NucleusLinuxPrimitivesC", "NucleusLinuxReactor", "NucleusLinuxReactorC",
             "NucleusLinuxDBus",
             "NucleusLinuxSessionC", "NucleusThemeAssetIO",
-        ], path: "platform-linux/desktop/Sources/NucleusLinuxAccessibility",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "platform-linux/desktop/Sources/NucleusLinuxAccessibility"),
     .target(
         name: "NucleusLinuxEnvironment",
         dependencies: [
@@ -2160,13 +1156,7 @@ let targets: [Target] = [
             "NucleusLinuxPrimitivesC", "NucleusLinuxReactor", "NucleusLinuxReactorC",
             "NucleusLinuxDBus",
             "NucleusLinuxSessionC", "NucleusThemeAssetIO",
-        ], path: "platform-linux/desktop/Sources/NucleusLinuxEnvironment",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "platform-linux/desktop/Sources/NucleusLinuxEnvironment"),
     .executableTarget(
         name: "NucleusLinuxBenchmarks",
         dependencies: [
@@ -2180,12 +1170,8 @@ let targets: [Target] = [
             "NucleusLinuxSessionC",
             "NucleusThemeAssetIO",
         ], path: "platform-linux/desktop/Benchmarks/NucleusLinuxBenchmarks",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"])
         ]),
     .testTarget(
         name: "NucleusLinuxAccessibilityTests",
@@ -2197,12 +1183,7 @@ let targets: [Target] = [
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
             "NucleusUITestSupport",
         ], path: "platform-linux/desktop/Tests/NucleusLinuxAccessibilityTests",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ], linkerSettings: [.unsafeFlags(["-Xlinker", "--no-as-needed"])]),
+        linkerSettings: [.unsafeFlags(["-Xlinker", "--no-as-needed"])]),
     .testTarget(
         name: "NucleusLinuxEnvironmentTests",
         dependencies: [
@@ -2212,12 +1193,7 @@ let targets: [Target] = [
             "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
         ], path: "platform-linux/desktop/Tests/NucleusLinuxEnvironmentTests",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ], linkerSettings: [.unsafeFlags(["-Xlinker", "--no-as-needed"])]),
+        linkerSettings: [.unsafeFlags(["-Xlinker", "--no-as-needed"])]),
     .executableTarget(
         name: "NucleusSessionSupervisor",
         dependencies: [
@@ -2226,25 +1202,13 @@ let targets: [Target] = [
             "NucleusLinuxSessionC",
             "NucleusThemeAssetIO", "NucleusSessionProtocol", "NucleusIPCTransport",
             "NucleusIPCTransportC",
-        ], path: "platform-linux/session/Sources/NucleusSessionSupervisor",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "platform-linux/session/Sources/NucleusSessionSupervisor"),
     .executableTarget(
         name: "NucleusSessionFixture",
         dependencies: [
             "NucleusControlClient", "NucleusControlProtocol", "NucleusSessionProtocol",
             "NucleusIPCTransport", "NucleusIPCTransportC",
-        ], path: "platform-linux/session/Tests/Fixtures/NucleusSessionFixture",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "platform-linux/session/Tests/Fixtures/NucleusSessionFixture"),
     .testTarget(
         name: "NucleusLinuxSessionTests",
         dependencies: [
@@ -2252,63 +1216,21 @@ let targets: [Target] = [
             "NucleusControlServiceExecutable", "NucleusControlClient", "NucleusControlProtocol",
             "NucleusIPCTransport", "NucleusIPCTransportC", "NucleusControlCLI",
             "NucleusSessionProtocol",
-        ], path: "platform-linux/session/Tests/NucleusLinuxSessionTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "platform-linux/session/Tests/NucleusLinuxSessionTests"),
     .systemLibrary(
         name: "NucleusReactRuntimeCxxBridge",
         path: "react-native/swiftpm/cmodules/NucleusReactRuntimeCxxBridge"),
     .target(
         name: "NucleusReactNativeCxxBridge",
         path: "react-native/swift/Sources/NucleusReactNativeCxxBridge",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [
-            .unsafeFlags([
-                "-std=c++20", "-I", nativeSDKRoot + "/rn/include/hermes/API", "-I",
-                nativeSDKRoot + "/rn/include/hermes/API/jsi", "-I",
-                nativeSDKRoot + "/rn/include/hermes/public", "-I",
-                nativeSDKRoot + "/rn/include/hermes/include", "-I",
-                nativeSDKRoot + "/rn/include/folly", "-I",
-                nativeSDKRoot + "/rn/include",
-                "-I", nativeSDKRoot + "/rn/include/boost", "-I",
-                nativeSDKRoot + "/rn/include/glog-gen",
-                "-I", nativeSDKRoot + "/rn/include/glog/src", "-I",
-                "-I", nativeSDKRoot + "/rn/include/fmt/include", "-I",
-                nativeSDKRoot + "/rn/include/fast_float/include", "-DFOLLY_NO_CONFIG=1",
-                "-DFOLLY_MOBILE=0",
-                "-DFOLLY_USE_LIBCPP=1", "-DFOLLY_CFG_NO_COROUTINES=1",
-                "-DFOLLY_HAVE_CLOCK_GETTIME=1",
-                "-DFOLLY_HAVE_PTHREAD=1",
-            ]), .unsafeFlags(["-Werror"]),
-        ],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        cxxSettings: reactNativeBridgeCxxSettings),
     .testTarget(
         name: "NucleusReactNativeCxxTests", dependencies: ["NucleusReactNativeCxxBridge"],
         path: "react-native/swift/Tests/NucleusReactNativeCxxTests",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ],
         linkerSettings: [
             .unsafeFlags([
-                "-Xlinker", "--start-group",
-                nativeSDKRoot + "/rn/lib/rn/hermes/libhermes_lean_combined.a",
-                nativeSDKRoot + "/rn/lib/rn/reactnative/libfolly_runtime.a",
-                nativeSDKRoot + "/rn/lib/rn/glog/libglog.a",
-                nativeSDKRoot + "/rn/lib/rn/fmt/libfmt.a",
-                nativeSDKRoot + "/rn/lib/rn/double-conversion/src/libdouble-conversion.a",
-                "-Xlinker",
-                "--end-group", "-L", nativeSDKRoot + "/render/lib/skia-graphite", "-licu",
+                "-Xlinker", "--start-group", "-lhermes_lean_combined", "-lfolly_runtime",
+                "-lglog", "-lfmt", "-ldouble-conversion", "-Xlinker", "--end-group", "-licu",
                 "-lpthread", "-ldl", "-lm",
             ])
         ]),
@@ -2319,136 +1241,16 @@ let targets: [Target] = [
     .testTarget(
         name: "NucleusReactRuntimeFabricTests",
         dependencies: [
-            "NucleusReactFabricSmokeC", "NucleusReactRuntimeHostCxx", "NucleusReactRuntimeCxx",
+            "NucleusReactFabricSmokeC", "NucleusReactRuntimeCxxBridge",
+            "NucleusReactRuntimeHostCxx", "NucleusReactRuntimeCxx",
             "Nucleus",
             "NucleusApp", "NucleusAppHostBundle", "NucleusLayers", "NucleusRenderHost",
             "NucleusRenderModel", "NucleusRenderer", "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend",
             "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
         ], path: "react-native/swift/Tests/NucleusReactRuntimeFabricTests",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags([
-                "-Xcc",
-                "-fmodule-map-file=\(repoRoot)/react-native/swiftpm/cmodules/NucleusReactRuntimeCxxBridge/module.modulemap",
-                "-Xcc", "-I", "-Xcc",
-                repoRoot + "/react-native/swiftpm/cmodules/NucleusReactRuntimeCxxBridge", "-Xcc",
-                "-I",
-                "-Xcc", repoRoot + "/react-native/swift/Sources/NucleusReactRuntime/cxx/include",
-                "-Xcc",
-                "-I", "-Xcc", repoRoot + "/react-native/../core/render-cxx/skia/include", "-Xcc",
-                "-I",
-                "-Xcc",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCommon/jsi",
-                "-Xcc", "-I", "-Xcc", nativeSDKRoot + "/rn/include/rn-codegen", "-Xcc", "-I",
-                "-Xcc",
-                nativeSDKRoot + "/rn/include/rn-codegen/FBReactNativeSpec", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCommon",
-                "-Xcc", "-I",
-                "-Xcc", nativeSDKRoot + "/rn/include/react-native/packages/react-native/React",
-                "-Xcc",
-                "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/callinvoker",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/jsiexecutor",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCommon/yoga",
-                "-Xcc",
-                "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/runtimeexecutor",
-                "-Xcc",
-                "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/nativemodule/core",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native",
-                "-Xcc", "-I", "-Xcc", nativeSDKRoot + "/rn/include/hermes/API", "-Xcc", "-I",
-                "-Xcc",
-                nativeSDKRoot + "/rn/include/hermes/API/jsi", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/hermes/public", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/components/view/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/graphics/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/imagemanager",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/imagemanager/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/utils/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/components/text/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/textlayoutmanager/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/reactperflogger",
-                "-Xcc",
-                "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCxxPlatform",
-                "-Xcc",
-                "-I", "-Xcc", nativeSDKRoot + "/rn/include/folly", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/boost", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/glog-gen", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/glog/src", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/fmt/include", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/fast_float/include", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia/src", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia/third_party/externals/vulkan-headers/include",
-                "-Xcc",
-                "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia/src/gpu/vk/vulkanmemoryallocator",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/render/include/skia/third_party/externals/vulkanmemoryallocator/include",
-                "-Xcc", "-DJS_RUNTIME_HERMES=1", "-Xcc", "-DHERMES_V1_ENABLED=1", "-Xcc",
-                "-DREACT_NATIVE_DEBUG=1", "-Xcc", "-DFOLLY_NO_CONFIG=1", "-Xcc", "-DFOLLY_MOBILE=0",
-                "-Xcc",
-                "-DFOLLY_CFG_NO_COROUTINES=1", "-Xcc", "-DFMT_USE_CONSTEVAL=0", "-Xcc",
-                "-DSK_GRAPHITE",
-                "-Xcc", "-DSK_VULKAN", "-Xcc", "-std=c++20",
-            ]), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ],
-        linkerSettings: [
-            .unsafeFlags([
-                "-Xlinker", "--start-group",
-                nativeSDKRoot + "/rn/lib/rn/hermes/libhermes_lean_combined.a",
-                nativeSDKRoot + "/rn/lib/rn/reactnative/libreact_native.a",
-                nativeSDKRoot + "/rn/lib/rn/reactnative/libreact_cxx_platform.a",
-                nativeSDKRoot + "/rn/lib/rn/reactnative/libyogacore.a",
-                nativeSDKRoot + "/rn/lib/rn/reactnative/libfolly_runtime.a",
-                nativeSDKRoot + "/rn/lib/rn/glog/libglog.a",
-                nativeSDKRoot + "/rn/lib/rn/fmt/libfmt.a",
-                nativeSDKRoot + "/rn/lib/rn/double-conversion/src/libdouble-conversion.a",
-                "-Xlinker",
-                "--end-group", "-latomic", "-lpthread", "-ldl", "-lm", "-L",
-                nativeSDKRoot + "/render/lib/skia-graphite", "-Xlinker", "--start-group", "-lskia",
-                "-lskshaper", "-lskparagraph", "-lskunicode_core", "-lskunicode_icu", "-lsvg",
-                "-lskcms",
-                "-lskresources", "-lfreetype2", "-lharfbuzz", "-licu", "-lpng", "-ljpeg",
-                "-ljpeg12",
-                "-ljpeg16", "-lwebp", "-lwebp_sse41", "-lexpat", "-lzlib", "-lwuffs", "-ldng_sdk",
-                "-lpiex",
-                "-Xlinker", "--end-group", "-lvulkan", "-lfontconfig", "-lfreetype", "-lz", "-ldl",
-                "-lpthread", "-lm",
-            ])
-        ]),
+        swiftSettings: reactNativeSwiftSettings,
+        linkerSettings: reactNativeRuntimeLinkerSettings),
     .executableTarget(
         name: "NucleusReactThreadSanitizerHarness",
         dependencies: [
@@ -2459,36 +1261,7 @@ let targets: [Target] = [
             "NucleusTextBackend",
             "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
         ], path: "react-native/swift/SanitizerHarnesses/NucleusReactThreadSanitizerHarness",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ],
-        linkerSettings: [
-            .unsafeFlags([
-                "-Xlinker", "--start-group",
-                nativeSDKRoot + "/rn/lib/rn/hermes/libhermes_lean_combined.a",
-                nativeSDKRoot + "/rn/lib/rn/reactnative/libreact_native.a",
-                nativeSDKRoot + "/rn/lib/rn/reactnative/libreact_cxx_platform.a",
-                nativeSDKRoot + "/rn/lib/rn/reactnative/libyogacore.a",
-                nativeSDKRoot + "/rn/lib/rn/reactnative/libfolly_runtime.a",
-                nativeSDKRoot + "/rn/lib/rn/glog/libglog.a",
-                nativeSDKRoot + "/rn/lib/rn/fmt/libfmt.a",
-                nativeSDKRoot + "/rn/lib/rn/double-conversion/src/libdouble-conversion.a",
-                "-Xlinker",
-                "--end-group", "-latomic", "-lpthread", "-ldl", "-lm", "-L",
-                nativeSDKRoot + "/render/lib/skia-graphite", "-Xlinker", "--start-group", "-lskia",
-                "-lskshaper", "-lskparagraph", "-lskunicode_core", "-lskunicode_icu", "-lsvg",
-                "-lskcms",
-                "-lskresources", "-lfreetype2", "-lharfbuzz", "-licu", "-lpng", "-ljpeg",
-                "-ljpeg12",
-                "-ljpeg16", "-lwebp", "-lwebp_sse41", "-lexpat", "-lzlib", "-lwuffs", "-ldng_sdk",
-                "-lpiex",
-                "-Xlinker", "--end-group", "-lvulkan", "-lfontconfig", "-lfreetype", "-lz", "-ldl",
-                "-lpthread", "-lm",
-            ])
-        ]),
+        linkerSettings: reactNativeRuntimeLinkerSettings),
     .executableTarget(
         name: "NucleusReactBenchmarks",
         dependencies: [
@@ -2499,129 +1272,8 @@ let targets: [Target] = [
             "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
         ], path: "react-native/swift/Benchmarks/NucleusReactBenchmarks",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags([
-                "-Xcc",
-                "-fmodule-map-file=\(repoRoot)/react-native/swiftpm/cmodules/NucleusReactRuntimeCxxBridge/module.modulemap",
-                "-Xcc", "-I", "-Xcc",
-                repoRoot + "/react-native/swiftpm/cmodules/NucleusReactRuntimeCxxBridge", "-Xcc",
-                "-I",
-                "-Xcc", repoRoot + "/react-native/swift/Sources/NucleusReactRuntime/cxx/include",
-                "-Xcc",
-                "-I", "-Xcc", repoRoot + "/react-native/../core/render-cxx/skia/include", "-Xcc",
-                "-I",
-                "-Xcc",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCommon/jsi",
-                "-Xcc", "-I", "-Xcc", nativeSDKRoot + "/rn/include/rn-codegen", "-Xcc", "-I",
-                "-Xcc",
-                nativeSDKRoot + "/rn/include/rn-codegen/FBReactNativeSpec", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCommon",
-                "-Xcc", "-I",
-                "-Xcc", nativeSDKRoot + "/rn/include/react-native/packages/react-native/React",
-                "-Xcc",
-                "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/callinvoker",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/jsiexecutor",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCommon/yoga",
-                "-Xcc",
-                "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/runtimeexecutor",
-                "-Xcc",
-                "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/nativemodule/core",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native",
-                "-Xcc", "-I", "-Xcc", nativeSDKRoot + "/rn/include/hermes/API", "-Xcc", "-I",
-                "-Xcc",
-                nativeSDKRoot + "/rn/include/hermes/API/jsi", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/hermes/public", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/components/view/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/graphics/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/imagemanager",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/imagemanager/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/utils/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/components/text/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/textlayoutmanager/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/reactperflogger",
-                "-Xcc",
-                "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCxxPlatform",
-                "-Xcc",
-                "-I", "-Xcc", nativeSDKRoot + "/rn/include/folly", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/boost", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/glog-gen", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/glog/src", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/fmt/include", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/fast_float/include", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia/src", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia/third_party/externals/vulkan-headers/include",
-                "-Xcc",
-                "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia/src/gpu/vk/vulkanmemoryallocator",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/render/include/skia/third_party/externals/vulkanmemoryallocator/include",
-                "-Xcc", "-DJS_RUNTIME_HERMES=1", "-Xcc", "-DHERMES_V1_ENABLED=1", "-Xcc",
-                "-DREACT_NATIVE_DEBUG=1", "-Xcc", "-DFOLLY_NO_CONFIG=1", "-Xcc", "-DFOLLY_MOBILE=0",
-                "-Xcc",
-                "-DFOLLY_CFG_NO_COROUTINES=1", "-Xcc", "-DFMT_USE_CONSTEVAL=0", "-Xcc",
-                "-DSK_GRAPHITE",
-                "-Xcc", "-DSK_VULKAN", "-Xcc", "-std=c++20",
-            ]), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ],
-        linkerSettings: [
-            .unsafeFlags([
-                "-Xlinker", "--start-group",
-                nativeSDKRoot + "/rn/lib/rn/hermes/libhermes_lean_combined.a",
-                nativeSDKRoot + "/rn/lib/rn/reactnative/libreact_native.a",
-                nativeSDKRoot + "/rn/lib/rn/reactnative/libreact_cxx_platform.a",
-                nativeSDKRoot + "/rn/lib/rn/reactnative/libyogacore.a",
-                nativeSDKRoot + "/rn/lib/rn/reactnative/libfolly_runtime.a",
-                nativeSDKRoot + "/rn/lib/rn/glog/libglog.a",
-                nativeSDKRoot + "/rn/lib/rn/fmt/libfmt.a",
-                nativeSDKRoot + "/rn/lib/rn/double-conversion/src/libdouble-conversion.a",
-                "-Xlinker",
-                "--end-group", "-latomic", "-lpthread", "-ldl", "-lm", "-L",
-                nativeSDKRoot + "/render/lib/skia-graphite", "-Xlinker", "--start-group", "-lskia",
-                "-lskshaper", "-lskparagraph", "-lskunicode_core", "-lskunicode_icu", "-lsvg",
-                "-lskcms",
-                "-lskresources", "-lfreetype2", "-lharfbuzz", "-licu", "-lpng", "-ljpeg",
-                "-ljpeg12",
-                "-ljpeg16", "-lwebp", "-lwebp_sse41", "-lexpat", "-lzlib", "-lwuffs", "-ldng_sdk",
-                "-lpiex",
-                "-Xlinker", "--end-group", "-lvulkan", "-lfontconfig", "-lfreetype", "-lz", "-ldl",
-                "-lpthread", "-lm",
-            ])
-        ]),
+        swiftSettings: reactNativeSwiftSettings,
+        linkerSettings: reactNativeRuntimeLinkerSettings),
     .target(
         name: "NucleusReactRuntimeCxx",
         dependencies: [
@@ -2630,197 +1282,15 @@ let targets: [Target] = [
             "NucleusTextBackend",
             "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder", "Tracy",
             "NucleusFoundation",
-            "NucleusReactFabricSmokeC",
+            "NucleusReactFabricSmokeC", "NucleusReactRuntimeCxxBridge",
         ], path: "react-native/swift/Sources/NucleusReactRuntimeCxx",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags([
-                "-Xcc",
-                "-fmodule-map-file=\(repoRoot)/react-native/swiftpm/cmodules/NucleusReactRuntimeCxxBridge/module.modulemap",
-                "-Xcc", "-I", "-Xcc",
-                repoRoot + "/react-native/swiftpm/cmodules/NucleusReactRuntimeCxxBridge", "-Xcc",
-                "-I",
-                "-Xcc", repoRoot + "/react-native/swift/Sources/NucleusReactRuntime/cxx/include",
-                "-Xcc",
-                "-I", "-Xcc", repoRoot + "/react-native/../core/render-cxx/skia/include", "-Xcc",
-                "-I",
-                "-Xcc",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCommon/jsi",
-                "-Xcc", "-I", "-Xcc", nativeSDKRoot + "/rn/include/rn-codegen", "-Xcc", "-I",
-                "-Xcc",
-                nativeSDKRoot + "/rn/include/rn-codegen/FBReactNativeSpec", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCommon",
-                "-Xcc", "-I",
-                "-Xcc", nativeSDKRoot + "/rn/include/react-native/packages/react-native/React",
-                "-Xcc",
-                "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/callinvoker",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/jsiexecutor",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCommon/yoga",
-                "-Xcc",
-                "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/runtimeexecutor",
-                "-Xcc",
-                "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/nativemodule/core",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native",
-                "-Xcc", "-I", "-Xcc", nativeSDKRoot + "/rn/include/hermes/API", "-Xcc", "-I",
-                "-Xcc",
-                nativeSDKRoot + "/rn/include/hermes/API/jsi", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/hermes/public", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/components/view/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/graphics/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/imagemanager",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/imagemanager/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/utils/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/components/text/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/textlayoutmanager/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/reactperflogger",
-                "-Xcc",
-                "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCxxPlatform",
-                "-Xcc",
-                "-I", "-Xcc", nativeSDKRoot + "/rn/include/folly", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/boost", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/glog-gen", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/glog/src", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/fmt/include", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/fast_float/include", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia/src", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia/third_party/externals/vulkan-headers/include",
-                "-Xcc",
-                "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia/src/gpu/vk/vulkanmemoryallocator",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/render/include/skia/third_party/externals/vulkanmemoryallocator/include",
-                "-Xcc", "-DJS_RUNTIME_HERMES=1", "-Xcc", "-DHERMES_V1_ENABLED=1", "-Xcc",
-                "-DREACT_NATIVE_DEBUG=1", "-Xcc", "-DFOLLY_NO_CONFIG=1", "-Xcc", "-DFOLLY_MOBILE=0",
-                "-Xcc",
-                "-DFOLLY_CFG_NO_COROUTINES=1", "-Xcc", "-DFMT_USE_CONSTEVAL=0", "-Xcc",
-                "-DSK_GRAPHITE",
-                "-Xcc", "-DSK_VULKAN", "-Xcc", "-std=c++20",
-            ]), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        swiftSettings: reactNativeSwiftSettings),
     .target(
         name: "NucleusReactRuntimeHostCxx",
         dependencies: ["NucleusReactRuntimeCxx"],
         path: "react-native/swift/Sources/NucleusReactRuntime/cxx",
         publicHeadersPath: "empty-public",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [
-            .unsafeFlags([
-                "-std=c++20", "-fexceptions", "-frtti", "-I",
-                repoRoot + "/react-native/swiftpm/cmodules/NucleusReactRuntimeCxxBridge", "-I",
-                repoRoot + "/react-native/swift/Sources/NucleusReactRuntime/cxx/include", "-I",
-                repoRoot + "/react-native/../core/render-cxx/skia/include", "-I",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCommon/jsi",
-                "-I",
-                nativeSDKRoot + "/rn/include/rn-codegen", "-I",
-                nativeSDKRoot + "/rn/include/rn-codegen/FBReactNativeSpec", "-I",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCommon", "-I",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/React", "-I",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/callinvoker",
-                "-I",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/jsiexecutor",
-                "-I",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCommon/yoga",
-                "-I",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/runtimeexecutor",
-                "-I",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/nativemodule/core",
-                "-I", nativeSDKRoot + "/rn/include/react-native/packages/react-native", "-I",
-                nativeSDKRoot + "/rn/include/hermes/API", "-I",
-                nativeSDKRoot + "/rn/include/hermes/API/jsi", "-I",
-                nativeSDKRoot + "/rn/include/hermes/public", "-I",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/components/view/platform/cxx",
-                "-I",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/platform/cxx",
-                "-I",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/graphics/platform/cxx",
-                "-I",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/imagemanager",
-                "-I",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/imagemanager/platform/cxx",
-                "-I",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/utils/platform/cxx",
-                "-I",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/components/text/platform/cxx",
-                "-I",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/textlayoutmanager/platform/cxx",
-                "-I",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/reactperflogger",
-                "-I",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCxxPlatform",
-                "-I",
-                nativeSDKRoot + "/rn/include/folly", "-I", nativeSDKRoot + "/rn/include", "-I",
-                nativeSDKRoot + "/rn/include/boost",
-                "-I",
-                nativeSDKRoot + "/rn/include/glog-gen", "-I",
-                nativeSDKRoot + "/rn/include/glog/src", "-I",
-                nativeSDKRoot + "/rn/include/fmt/include", "-I",
-                nativeSDKRoot + "/rn/include/fast_float/include", "-I",
-                nativeSDKRoot + "/render/include/skia", "-I",
-                nativeSDKRoot + "/render/include/skia/src",
-                "-I",
-                nativeSDKRoot + "/render/include/skia/third_party/externals/vulkan-headers/include",
-                "-I", nativeSDKRoot + "/render/include/skia/src/gpu/vk/vulkanmemoryallocator", "-I",
-                nativeSDKRoot
-                    + "/render/include/skia/third_party/externals/vulkanmemoryallocator/include",
-                "-I", repoRoot + "/react-native/swiftpm/shims/NucleusReactRuntimeSwift", "-I",
-                generatedModuleMaps, "-DJS_RUNTIME_HERMES=1", "-DHERMES_V1_ENABLED=1",
-                "-DREACT_NATIVE_DEBUG=1", "-DFOLLY_NO_CONFIG=1", "-DFOLLY_MOBILE=0",
-                "-DFOLLY_CFG_NO_COROUTINES=1", "-DFMT_USE_CONSTEVAL=0", "-DSK_GRAPHITE",
-                "-DSK_VULKAN",
-            ]), .unsafeFlags(["-Werror"]),
-        ],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        cxxSettings: reactNativeHostCxxSettings),
     .target(
         name: "NucleusReactRuntime",
         dependencies: [
@@ -2831,180 +1301,35 @@ let targets: [Target] = [
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
             "NucleusFoundation", "Tracy",
         ], path: "react-native/swift/Sources/NucleusReactRuntime", exclude: ["cxx"],
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags([
-                "-Xcc",
-                "-fmodule-map-file=\(repoRoot)/react-native/swiftpm/cmodules/NucleusReactRuntimeCxxBridge/module.modulemap",
-                "-Xcc", "-I", "-Xcc",
-                repoRoot + "/react-native/swiftpm/cmodules/NucleusReactRuntimeCxxBridge", "-Xcc",
-                "-I",
-                "-Xcc", repoRoot + "/react-native/swift/Sources/NucleusReactRuntime/cxx/include",
-                "-Xcc",
-                "-I", "-Xcc", repoRoot + "/react-native/../core/render-cxx/skia/include", "-Xcc",
-                "-I",
-                "-Xcc",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCommon/jsi",
-                "-Xcc", "-I", "-Xcc", nativeSDKRoot + "/rn/include/rn-codegen", "-Xcc", "-I",
-                "-Xcc",
-                nativeSDKRoot + "/rn/include/rn-codegen/FBReactNativeSpec", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCommon",
-                "-Xcc", "-I",
-                "-Xcc", nativeSDKRoot + "/rn/include/react-native/packages/react-native/React",
-                "-Xcc",
-                "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/callinvoker",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/jsiexecutor",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCommon/yoga",
-                "-Xcc",
-                "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/runtimeexecutor",
-                "-Xcc",
-                "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/nativemodule/core",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native",
-                "-Xcc", "-I", "-Xcc", nativeSDKRoot + "/rn/include/hermes/API", "-Xcc", "-I",
-                "-Xcc",
-                nativeSDKRoot + "/rn/include/hermes/API/jsi", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/hermes/public", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/components/view/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/components/scrollview/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/graphics/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/imagemanager",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/imagemanager/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/utils/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/components/text/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/react/renderer/textlayoutmanager/platform/cxx",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/rn/include/react-native/packages/react-native/ReactCommon/reactperflogger",
-                "-Xcc",
-                "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/react-native/packages/react-native/ReactCxxPlatform",
-                "-Xcc",
-                "-I", "-Xcc", nativeSDKRoot + "/rn/include/folly", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/boost", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/glog-gen", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/glog/src", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/fmt/include", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/rn/include/fast_float/include", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia/src", "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia/third_party/externals/vulkan-headers/include",
-                "-Xcc",
-                "-I", "-Xcc",
-                nativeSDKRoot + "/render/include/skia/src/gpu/vk/vulkanmemoryallocator",
-                "-Xcc", "-I", "-Xcc",
-                nativeSDKRoot
-                    + "/render/include/skia/third_party/externals/vulkanmemoryallocator/include",
-                "-Xcc", "-DJS_RUNTIME_HERMES=1", "-Xcc", "-DHERMES_V1_ENABLED=1", "-Xcc",
-                "-DREACT_NATIVE_DEBUG=1", "-Xcc", "-DFOLLY_NO_CONFIG=1", "-Xcc", "-DFOLLY_MOBILE=0",
-                "-Xcc",
-                "-DFOLLY_CFG_NO_COROUTINES=1", "-Xcc", "-DFMT_USE_CONSTEVAL=0", "-Xcc",
-                "-DSK_GRAPHITE",
-                "-Xcc", "-DSK_VULKAN", "-Xcc", "-std=c++20",
-            ]), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        swiftSettings: reactNativeSwiftSettings),
     .target(
         name: "NucleusSessionProtocol",
         dependencies: ["NucleusConfig", "NucleusIPCTransport", "NucleusIPCTransportC"],
-        path: "session/protocol/Sources/NucleusSessionProtocol",
-        swiftSettings: [
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "session/protocol/Sources/NucleusSessionProtocol"),
     .testTarget(
         name: "NucleusSessionProtocolTests",
         dependencies: ["NucleusSessionProtocol", "NucleusIPCTransport", "NucleusIPCTransportC"],
-        path: "session/protocol/Tests/NucleusSessionProtocolTests",
-        swiftSettings: [
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
-    .systemLibrary(name: "NucleusShellPamC", path: "shell/Sources/NucleusShellPamC"),
+        path: "session/protocol/Tests/NucleusSessionProtocolTests"),
+    .systemLibrary(
+        name: "NucleusShellPamC", path: "shell/Sources/NucleusShellPamC", pkgConfig: "pam"),
     .executableTarget(
         name: "NucleusShellPamHelper", dependencies: ["NucleusShellAuthWire", "NucleusShellPamC"],
-        path: "shell/Sources/NucleusShellPamHelper", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ], linkerSettings: [.unsafeFlags(["-lpam"])]),
+        path: "shell/Sources/NucleusShellPamHelper"),
     .executableTarget(
         name: "NucleusShellThreadSanitizerHarness", dependencies: ["NucleusShellRuntime"],
-        path: "shell/SanitizerHarnesses/NucleusShellThreadSanitizerHarness",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "shell/SanitizerHarnesses/NucleusShellThreadSanitizerHarness"),
     .executableTarget(
         name: "NucleusShell", dependencies: ["NucleusShellRuntime"],
-        path: "shell/Sources/NucleusShell",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "shell/Sources/NucleusShell"),
     .target(
-        name: "NucleusShellAuthWire", path: "shell/auth-wire/Sources/NucleusShellAuthWire",
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "NucleusShellAuthWire", path: "shell/auth-wire/Sources/NucleusShellAuthWire"),
     .testTarget(
         name: "NucleusShellAuthWireTests", dependencies: ["NucleusShellAuthWire"],
-        path: "shell/auth-wire/Tests/NucleusShellInputTests",
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "shell/auth-wire/Tests/NucleusShellInputTests"),
     .target(
-        name: "NucleusShellSignalC", path: "shell/shell-kit/Sources/NucleusShellSignalC",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "NucleusShellSignalC", path: "shell/shell-kit/Sources/NucleusShellSignalC"),
     .target(
-        name: "NucleusShellProcessC", path: "shell/shell-kit/Sources/NucleusShellProcessC",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "NucleusShellProcessC", path: "shell/shell-kit/Sources/NucleusShellProcessC"),
     .target(
         name: "NucleusShellProduct",
         dependencies: [
@@ -3013,13 +1338,8 @@ let targets: [Target] = [
             "NucleusTextBackend",
             "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
         ], path: "shell/shell-kit/Sources/NucleusShellProduct",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"])
         ]),
     .target(
         name: "NucleusShellServices",
@@ -3032,14 +1352,7 @@ let targets: [Target] = [
             "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
             "NucleusConfig", "NucleusSessionProtocol",
-        ], path: "shell/shell-kit/Sources/NucleusShellServices",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "shell/shell-kit/Sources/NucleusShellServices"),
     .target(
         name: "NucleusShellAuth",
         dependencies: [
@@ -3048,13 +1361,7 @@ let targets: [Target] = [
             "NucleusRenderModel", "NucleusRenderer", "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend",
             "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
-        ], path: "shell/shell-kit/Sources/NucleusShellAuth", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "shell/shell-kit/Sources/NucleusShellAuth"),
     .target(
         name: "NucleusShellRuntime",
         dependencies: [
@@ -3073,23 +1380,10 @@ let targets: [Target] = [
             "NucleusAppHostBundle", "NucleusLayers", "NucleusRenderHost", "NucleusRenderModel",
             "NucleusRenderer", "NucleusSkiaGraphiteBridge", "NucleusTextBackend",
             "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder", "Tracy",
-        ], path: "shell/shell-kit/Sources/NucleusShellRuntime",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "shell/shell-kit/Sources/NucleusShellRuntime"),
     .executableTarget(
         name: "NucleusShellPamAttemptFixture",
-        path: "shell/shell-kit/Tests/Fixtures/NucleusShellPamAttemptFixture",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "shell/shell-kit/Tests/Fixtures/NucleusShellPamAttemptFixture"),
     .testTarget(
         name: "NucleusWindowClientRuntimeTests",
         dependencies: [
@@ -3098,25 +1392,11 @@ let targets: [Target] = [
             "NucleusWindowClientPasteboard", "NucleusWindowClientRender",
             "NucleusWindowClientInput",
             "NucleusWindowClientHost", "NucleusShellSignalC",
-        ], path: "shell/shell-kit/Tests/NucleusShellLoopTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "shell/shell-kit/Tests/NucleusShellLoopTests"),
     .testTarget(
         name: "NucleusShellServicesTests",
         dependencies: ["NucleusShellServices", "NucleusConfig", "NucleusSessionProtocol"],
-        path: "shell/shell-kit/Tests/NucleusShellServicesTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "shell/shell-kit/Tests/NucleusShellServicesTests"),
     .testTarget(
         name: "NucleusShellAuthTests",
         dependencies: [
@@ -3126,14 +1406,7 @@ let targets: [Target] = [
             "NucleusSkiaGraphiteBridge", "NucleusTextBackend", "NucleusTextRenderingBridge",
             "NucleusUI",
             "NucleusUIEmbedder",
-        ], path: "shell/shell-kit/Tests/NucleusShellAuthTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "shell/shell-kit/Tests/NucleusShellAuthTests"),
     .testTarget(
         name: "NucleusShellProductTests",
         dependencies: [
@@ -3142,101 +1415,38 @@ let targets: [Target] = [
             "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
             "NucleusFoundation", "NucleusUITestSupport",
-        ], path: "shell/shell-kit/Tests/NucleusShellProductTests",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "shell/shell-kit/Tests/NucleusShellProductTests"),
     .target(
         name: "TracyBridge", path: "swift-tracy/Sources/TracyBridge",
-        cSettings: [.unsafeFlags(["-Werror"])],
         cxxSettings: [
             .headerSearchPath("../../third-party/tracy/public"), .unsafeFlags(["-std=c++20"]),
-            .unsafeFlags(["-Werror"]),
-        ],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ],
         linkerSettings: [
             .linkedLibrary("pthread", .when(platforms: [.linux])), .linkedLibrary("dl"),
         ]),
     .target(
-        name: "Tracy", dependencies: ["TracyBridge"], path: "swift-tracy/Sources/Tracy",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "Tracy", dependencies: ["TracyBridge"], path: "swift-tracy/Sources/Tracy"),
     .testTarget(
-        name: "TracyTests", dependencies: ["Tracy"], path: "swift-tracy/Tests/TracyTests",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
-    .systemLibrary(name: "VulkanC", path: "swift-vulkan/Sources/VulkanC"),
+        name: "TracyTests", dependencies: ["Tracy"], path: "swift-tracy/Tests/TracyTests"),
+    .systemLibrary(name: "VulkanC", path: "swift-vulkan/Sources/VulkanC", pkgConfig: "vulkan"),
     .target(
-        name: "Vulkan", dependencies: ["VulkanC"], path: "swift-vulkan/Sources/Vulkan",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "Vulkan", dependencies: ["VulkanC"], path: "swift-vulkan/Sources/Vulkan"),
     .executableTarget(
-        name: "VulkanGen", path: "swift-vulkan/Tools/VulkanGen",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "VulkanGen", path: "swift-vulkan/Tools/VulkanGen"),
     .testTarget(
-        name: "VulkanTests", dependencies: ["Vulkan"], path: "swift-vulkan/Tests/VulkanTests",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "VulkanTests", dependencies: ["Vulkan"], path: "swift-vulkan/Tests/VulkanTests"),
     .target(
-        name: "WaylandProtocolModel", path: "swift-wayland/Sources/WaylandProtocolModel",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        name: "WaylandProtocolModel", path: "swift-wayland/Sources/WaylandProtocolModel"),
     .target(
         name: "SwiftWaylandGenerator",
         dependencies: [
             "WaylandProtocolModel", .product(name: "SwiftBasicFormat", package: "swift-syntax"),
             .product(name: "SwiftSyntax", package: "swift-syntax"),
             .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
-        ], path: "swift-wayland/Sources/SwiftWaylandGenerator",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "swift-wayland/Sources/SwiftWaylandGenerator"),
     .executableTarget(
         name: "SwiftWaylandGen", dependencies: ["SwiftWaylandGenerator"],
-        path: "swift-wayland/Sources/SwiftWaylandGen", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "swift-wayland/Sources/SwiftWaylandGen"),
     .systemLibrary(
         name: "WaylandServerC", path: "swift-wayland/Sources/WaylandServerC"),
     .systemLibrary(
@@ -3246,14 +1456,10 @@ let targets: [Target] = [
         dependencies: [
             "WaylandServerC", "WaylandProtocolTypes",
             "WaylandProtocolsC",
-        ], path: "swift-wayland/Sources/WaylandServer", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
+        ], path: "swift-wayland/Sources/WaylandServer",
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
             .enableUpcomingFeature("InternalImportsByDefault"),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .target(
         name: "WaylandServerDispatch",
@@ -3262,14 +1468,9 @@ let targets: [Target] = [
             "WaylandProtocolTypes",
             "WaylandProtocolsC",
         ], path: "swift-wayland/Sources/WaylandServerDispatch",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
             .enableUpcomingFeature("InternalImportsByDefault"),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .target(
         name: "WaylandClientDispatch",
@@ -3277,94 +1478,53 @@ let targets: [Target] = [
             "WaylandClientC", "WaylandProtocolTypes",
             "WaylandProtocolsC",
         ], path: "swift-wayland/Sources/WaylandClientDispatch",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
             .enableUpcomingFeature("InternalImportsByDefault"),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .target(
         name: "WaylandClient", dependencies: ["WaylandClientC", "WaylandClientDispatch"],
-        path: "swift-wayland/Sources/WaylandClient", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
+        path: "swift-wayland/Sources/WaylandClient",
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
             .enableUpcomingFeature("InternalImportsByDefault"),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .testTarget(
         name: "WaylandClientCTests",
         dependencies: [
             "WaylandClientC", "WaylandProtocolTypes",
             "WaylandProtocolsC",
-        ], path: "swift-wayland/Tests/WaylandClientCTests", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "swift-wayland/Tests/WaylandClientCTests"),
     .testTarget(
         name: "WaylandProtocolModelTests", dependencies: ["WaylandProtocolModel"],
-        path: "swift-wayland/Tests/WaylandProtocolModelTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "swift-wayland/Tests/WaylandProtocolModelTests"),
     .testTarget(
         name: "SwiftWaylandGeneratorTests",
         dependencies: ["SwiftWaylandGenerator", "WaylandProtocolModel"],
-        path: "swift-wayland/Tests/SwiftWaylandGeneratorTests",
-        cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "swift-wayland/Tests/SwiftWaylandGeneratorTests"),
     .testTarget(
         name: "WaylandServerTests",
         dependencies: [
             "WaylandServer", "WaylandProtocolTypes",
             "WaylandProtocolsC",
-        ], path: "swift-wayland/Tests/WaylandServerTests", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
+        ], path: "swift-wayland/Tests/WaylandServerTests",
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"])
         ]),
     .testTarget(
         name: "WaylandClientTests", dependencies: ["WaylandClient", "WaylandClientDispatch"],
-        path: "swift-wayland/Tests/WaylandClientTests", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
+        path: "swift-wayland/Tests/WaylandClientTests",
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"])
         ]),
     .testTarget(
         name: "WaylandLoopbackTests",
         dependencies: [
             "WaylandServer", "WaylandServerDispatch", "WaylandClient", "WaylandClientDispatch",
             "WaylandProtocolTypes", "WaylandProtocolsC",
-        ], path: "swift-wayland/Tests/WaylandLoopbackTests", cSettings: [.unsafeFlags(["-Werror"])],
-        cxxSettings: [.unsafeFlags(["-Werror"])],
+        ], path: "swift-wayland/Tests/WaylandLoopbackTests",
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"])
         ]),
     .systemLibrary(
         name: "WaylandUtilC", path: "swift-wayland/protocol-runtime/Sources/WaylandUtilC"),
@@ -3373,36 +1533,20 @@ let targets: [Target] = [
         path: "swift-wayland/protocol-runtime/Sources/WaylandProtocolsC"),
     .target(
         name: "WaylandProtocolTypes",
-        path: "swift-wayland/protocol-runtime/Sources/WaylandProtocolTypes",
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "swift-wayland/protocol-runtime/Sources/WaylandProtocolTypes"),
     .target(
         name: "NucleusWindowClientContracts",
-        path: "window-client/Sources/NucleusWindowClientContracts",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "window-client/Sources/NucleusWindowClientContracts"),
     .target(
         name: "NucleusWindowClientRuntime",
         dependencies: [
             "NucleusLinuxPrimitives", "NucleusLinuxPrimitivesC", "NucleusLinuxReactor",
             "NucleusLinuxReactorC", "NucleusLinuxDBus", "NucleusLinuxSessionC",
             "NucleusThemeAssetIO",
-        ], path: "window-client/Sources/NucleusWindowClientRuntime",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "window-client/Sources/NucleusWindowClientRuntime"),
     .systemLibrary(
-        name: "NucleusWindowClientXkbC", path: "window-client/Sources/NucleusWindowClientXkbC"),
+        name: "NucleusWindowClientXkbC", path: "window-client/Sources/NucleusWindowClientXkbC",
+        pkgConfig: "xkbcommon"),
     .systemLibrary(
         name: "NucleusWindowClientVulkanWaylandC",
         path: "window-client/Sources/NucleusWindowClientVulkanWaylandC"),
@@ -3413,13 +1557,9 @@ let targets: [Target] = [
             "WaylandClientC", "WaylandClientDispatch", "WaylandClient",
             "WaylandProtocolTypes", "WaylandProtocolsC", "NucleusFoundation",
         ], path: "window-client/Sources/NucleusWindowClientWayland",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
             .enableUpcomingFeature("InternalImportsByDefault"),
             .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
-            .unsafeFlags([]), .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
         ]),
     .target(
         name: "NucleusWindowClientPasteboard",
@@ -3431,12 +1571,8 @@ let targets: [Target] = [
             "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
         ], path: "window-client/Sources/NucleusWindowClientPasteboard",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
         swiftSettings: [
-            .interoperabilityMode(.Cxx),
-            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"]),
-            .strictMemorySafety(), .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+            .unsafeFlags(["-enable-experimental-feature", "Lifetimes"])
         ]),
     .target(
         name: "NucleusWindowClientRender",
@@ -3449,13 +1585,7 @@ let targets: [Target] = [
             "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
             "Vulkan", "VulkanC", "Tracy", "NucleusWindowClientVulkanWaylandC",
-        ], path: "window-client/Sources/NucleusWindowClientRender",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "window-client/Sources/NucleusWindowClientRender"),
     .target(
         name: "NucleusWindowClientInput",
         dependencies: [
@@ -3465,13 +1595,7 @@ let targets: [Target] = [
             "NucleusRenderHost", "NucleusRenderModel", "NucleusRenderer",
             "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend", "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
-        ], path: "window-client/Sources/NucleusWindowClientInput",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "window-client/Sources/NucleusWindowClientInput"),
     .target(
         name: "NucleusWindowClientHost",
         dependencies: [
@@ -3479,34 +1603,16 @@ let targets: [Target] = [
             "NucleusLinuxReactor", "NucleusRenderModel", "NucleusTextBackend", "NucleusUI",
             "NucleusWindowClientContracts", "NucleusWindowClientRender",
             "NucleusWindowClientWayland",
-        ], path: "window-client/Sources/NucleusWindowClientHost",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        ], path: "window-client/Sources/NucleusWindowClientHost"),
     .testTarget(
         name: "NucleusWindowClientWaylandTests", dependencies: ["NucleusWindowClientWayland"],
-        path: "window-client/Tests/NucleusWindowClientWaylandTests",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "window-client/Tests/NucleusWindowClientWaylandTests"),
     .testTarget(
         name: "NucleusWindowClientRenderTests",
         dependencies: [
             "NucleusWindowClientRender", "NucleusPresentationBackendContractTestSupport",
         ],
-        path: "window-client/Tests/NucleusWindowClientRenderTests",
-        cSettings: [.unsafeFlags(["-Werror"])], cxxSettings: [.unsafeFlags(["-Werror"])],
-        swiftSettings: [
-            .interoperabilityMode(.Cxx), .strictMemorySafety(),
-            .unsafeFlags(["-warnings-as-errors"]),
-            .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
-        ]),
+        path: "window-client/Tests/NucleusWindowClientRenderTests"),
     .target(name: "NucleusAndroidC", path: "core/platform-android/c", publicHeadersPath: "."),
     .target(
         name: "NucleusAndroidCore",
@@ -3517,34 +1623,13 @@ let targets: [Target] = [
             "NucleusRenderModel", "NucleusRenderer", "NucleusSkiaGraphiteBridge",
             "NucleusTextBackend",
             "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder",
-        ], path: "core/platform-android/swift-core",
-        swiftSettings: [
-            .strictMemorySafety(), .swiftLanguageMode(.v6), .interoperabilityMode(.Cxx),
-            .unsafeFlags(["-warnings-as-errors", "-Werror", "StrictLanguageFeatures"]),
-            .unsafeFlags([
-                "-Xcc", "-I", "-Xcc",
-                repoRoot + "/core/third-party/skia/third_party/externals/vulkan-headers/include",
-                "-disable-cmo",
-            ]),
-        ],
-        linkerSettings: [
-            .linkedLibrary("vulkan"),
-            .unsafeFlags([
-                "-L",
-                androidSDKSearchRoot
-                    + "/swift-\(swiftSourceID)_android.artifactbundle/swift-android/swift-resources/usr/lib/swift-aarch64/android",
-            ]),
-        ]),
+        ], path: "core/platform-android/swift-core"),
     .target(
         name: "NucleusAndroidJNI",
         dependencies: [
             "NucleusAndroidHostLifecycle", "NucleusAndroidCore", "NucleusAndroidC",
             .product(name: "SwiftJava", package: "swift-java"),
         ], path: "core/platform-android/swift-jni", exclude: ["swift-java.config"],
-        swiftSettings: [
-            .strictMemorySafety(), .swiftLanguageMode(.v6), .interoperabilityMode(.Cxx),
-            .unsafeFlags(["-warnings-as-errors", "-Werror", "StrictLanguageFeatures"]),
-        ],
         linkerSettings: [
             .linkedLibrary("android"),
             .unsafeFlags([
@@ -3552,8 +1637,31 @@ let targets: [Target] = [
                 "-Xlinker",
                 "max-page-size=16384",
             ]),
+        ],
+        plugins: [
+            .plugin(name: "JExtractSwiftPlugin", package: "swift-java")
         ]),
 ]
+
+let uniformSwiftSettings: [SwiftSetting] = [
+    .interoperabilityMode(.Cxx),
+    .strictMemorySafety(),
+    .unsafeFlags(["-warnings-as-errors"]),
+    .unsafeFlags(["-Werror", "StrictLanguageFeatures"]),
+]
+
+for target in targets {
+    switch target.type {
+    case .regular, .executable, .test, .macro:
+        target.swiftSettings = (target.swiftSettings ?? []) + uniformSwiftSettings
+        target.cSettings = (target.cSettings ?? []) + [.unsafeFlags(["-Werror"])]
+        target.cxxSettings = (target.cxxSettings ?? []) + [.unsafeFlags(["-Werror"])]
+    case .system, .binary, .plugin:
+        break
+    @unknown default:
+        break
+    }
+}
 
 let package = Package(
     name: "Nucleus",
@@ -3561,4 +1669,5 @@ let package = Package(
     products: products,
     dependencies: dependencies,
     targets: targets,
+    swiftLanguageModes: [.v6],
     cxxLanguageStandard: .cxx20)

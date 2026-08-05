@@ -395,6 +395,7 @@ public struct OCIExecutionActionIdentity: ColliderActionIdentity {
         encoder.append(tag: 21, integer: UInt64(execution.resourceLimits.cpuCount ?? 0))
         encoder.append(tag: 22, integer: execution.resourceLimits.memoryBytes ?? 0)
         encoder.append(tag: 23, integer: UInt64(execution.resourceLimits.processCount))
+        encoder.append(tag: 24, integer: UInt64(execution.resourceLimits.openFileCount))
 
         var containerEnvironment = CanonicalDigestEncoder(
             identityPathMap: encoder.identityPathMap)
@@ -404,15 +405,15 @@ public struct OCIExecutionActionIdentity: ColliderActionIdentity {
             containerEnvironment.append(tag: 1, string: name)
             containerEnvironment.append(tag: 2, string: value)
         }
-        encoder.append(tag: 24, bytes: containerEnvironment.bytes)
+        encoder.append(tag: 25, bytes: containerEnvironment.bytes)
 
         var command = CanonicalDigestEncoder(
             identityPathMap: encoder.identityPathMap)
         for argument in execution.command {
             command.append(tag: 1, string: argument)
         }
-        encoder.append(tag: 25, bytes: command.bytes)
-        encoder.append(tag: 26, string: ociActionOutputIdentity(execution.output))
+        encoder.append(tag: 26, bytes: command.bytes)
+        encoder.append(tag: 27, string: ociActionOutputIdentity(execution.output))
     }
 }
 

@@ -70,7 +70,8 @@ private let fixturePackageRoot = FilePath("/workspace")
     let scratch = FilePath("/workspace/.nucleus/swiftpm/fixture")
     let invocation = SwiftPMInvocation(
         context: context,
-        scratchPath: scratch)
+        scratchPath: scratch,
+        swiftExecutable: .path(FilePath("/toolchain/bin/swift")))
     let command = invocation.command(
         arguments: ["test"],
         workingDirectory: FilePath("/workspace/core"),
@@ -89,8 +90,10 @@ private let fixturePackageRoot = FilePath("/workspace")
             "-Xswiftc", "-enable-a",
             "-Xcc", "-DC_FEATURE",
             "-Xcxx", "-DCXX_FEATURE",
+            "-Xcxx", "-I\(invocation.generatedModuleMaps.string)",
             "-Xlinker", "-lfixture",
         ])
+    #expect(command.executable == .path(FilePath("/toolchain/bin/swift")))
     #expect(command.environment["NUCLEUS_SWIFTPM_SANITIZER"] == "address")
     #expect(
         invocation.postcondition
@@ -139,6 +142,7 @@ private let fixturePackageRoot = FilePath("/workspace")
                 "-Xswiftc", "-enable-a",
                 "-Xcc", "-DC_FEATURE",
                 "-Xcxx", "-DCXX_FEATURE",
+                "-Xcxx", "-I\(invocation.generatedModuleMaps.string)",
                 "-Xlinker", "-lfixture",
                 "FixtureProbe", "loader",
             ])
@@ -168,6 +172,7 @@ private let fixturePackageRoot = FilePath("/workspace")
             "--triple", "aarch64-unknown-linux-android24",
             "--toolset", "/workspace/linux-toolset.json",
             "--static-swift-stdlib",
+            "-Xcxx", "-I\(invocation.generatedModuleMaps.string)",
         ])
     #expect(
         invocation.configurationProducts

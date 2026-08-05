@@ -17,13 +17,20 @@ import SystemPackage
 import VulkanColliderRecipe
 import WaylandColliderRecipe
 
+private struct NativeSDKCompilerConfiguration {
+    let cFlags: [String]
+    let cxxFlags: [String]
+    let linkerFlags: [String]
+}
+
 struct ComponentRegistry {
     let context: WorkspaceContext
 
     func componentCatalog(
         environment environmentOverride: [String: String]? = nil,
         shellConfiguration: ShellRuntimeInstallConfiguration? = nil,
-        androidAddonConfiguration: AndroidAddonPackageConfiguration? = nil
+        androidAddonConfiguration: AndroidAddonPackageConfiguration? = nil,
+        forceSwiftSDKGeneration: Bool = false
     ) throws -> ComponentCatalog {
         let recipeEnvironment = environmentOverride ?? context.taskEnvironment
         let nativeBuilderCache = context.cacheRoot.appending("nucleus")
@@ -42,7 +49,8 @@ struct ComponentRegistry {
             android: androidToolchain,
             inputs: targetSDKInputs)
         let swiftTargetSDK = try SwiftTargetSDKColliderRecipe.prepare(
-            swiftSDKConfiguration)
+            swiftSDKConfiguration,
+            reuseActiveGeneration: !forceSwiftSDKGeneration)
         let nativeConfiguration = NativeOCIConfiguration(
             base: nativeBuilder.configuration,
             swiftSDK: swiftTargetSDK.activeSDK)
@@ -67,14 +75,11 @@ struct ComponentRegistry {
         }
         buildContexts[
             .androidARM64(apiLevel: androidToolchain.minimumSDK)
-        ] = try context.swiftPMInvocation(
-            configuration: .release,
-            staticSwiftStandardLibrary: true,
-            target: .swiftSDK(
-                name: targetSDKInputs.androidBundleID,
-                targetTriple:
-                    "aarch64-unknown-linux-android\(androidToolchain.minimumSDK)"),
-            toolchainIdentity: "target-sdk-\(targetSDKInputs.snapshot)-android")
+        ] = try androidSwiftPMInvocation(
+            toolchain: androidToolchain,
+            inputs: targetSDKInputs,
+            swiftSDKRoot: swiftTargetSDK.activeSDK.path,
+            swiftExecutable: swiftTargetSDK.activeSwift.executable)
         var configurations: [ComponentID: any RecipeConfiguration] = [
             SwiftTargetSDKColliderRecipe.descriptor.id: swiftSDKConfiguration,
             NativeBuilderColliderRecipe.descriptor.id:
@@ -685,9 +690,12 @@ struct ComponentRegistry {
             guestSDKRoot
             + "/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
             + resolvedTriple + "/ubuntu-noble.sdk"
-        let architectureLibraryDirectory = "/usr/lib/\(target.gnuArchitecture)"
         let targetRuntimeLibraryDirectory =
             guestTargetSDK + "/usr/lib/\(target.gnuArchitecture)"
+        let nativeCompiler = nativeSDKCompilerConfiguration(
+            nativeSDK: nativeSDK,
+            gfxstreamBuildRoot: root.appending(
+                "android-runtime/.gfxstream-build/\(target.identifier)"))
         let execution = SwiftPMExecution.oci(
             SwiftPMOCIExecution(
                 executionPlatform: .linuxARM64OCI,
@@ -726,11 +734,11 @@ struct ComponentRegistry {
                         guestTargetSDK + "/usr/lib/swift/linux",
                         targetRuntimeLibraryDirectory,
                         waylandSDK.appending("lib").string,
-                        architectureLibraryDirectory,
                     ].joined(separator: ":"),
                     "PKG_CONFIG_LIBDIR":
-                        waylandSDK.appending("lib/pkgconfig").string
-                        + ":\(architectureLibraryDirectory)/pkgconfig:/usr/share/pkgconfig",
+                        guestTargetSDK + "/usr/lib/\(target.gnuArchitecture)/pkgconfig"
+                        + ":" + guestTargetSDK + "/usr/share/pkgconfig",
+                    "PKG_CONFIG_SYSROOT_DIR": guestTargetSDK,
                     "SWIFT_TOOLCHAIN": "/opt/swift/usr",
                     "VK_DRIVER_FILES": "/usr/share/vulkan/icd.d/lvp_icd.json",
                     "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json",
@@ -738,17 +746,13 @@ struct ComponentRegistry {
         return try context.swiftPMInvocation(
             configuration: configuration,
             sanitizer: sanitizer,
-            cFlags: [
-                "-I\(waylandSDK.appending("include").string)",
-                "-idirafter/usr/include",
-                "-idirafter/usr/include/\(target.gnuArchitecture)",
+            cFlags: nativeCompiler.cFlags + [
+                "-I\(waylandSDK.appending("include").string)"
             ],
-            cxxFlags: [
-                "-I\(waylandSDK.appending("include").string)",
-                "-idirafter/usr/include",
-                "-idirafter/usr/include/\(target.gnuArchitecture)",
+            cxxFlags: nativeCompiler.cxxFlags + [
+                "-I\(waylandSDK.appending("include").string)"
             ],
-            linkerFlags: [
+            linkerFlags: nativeCompiler.linkerFlags + [
                 "-L/opt/nucleus-swiftpm-libcxx",
                 "-L\(waylandSDK.appending("lib").string)",
                 "-L\(targetRuntimeLibraryDirectory)",
@@ -759,6 +763,111 @@ struct ComponentRegistry {
                 targetTriple: resolvedTriple),
             execution: execution,
             toolchainIdentity: toolchainIdentity)
+    }
+
+    private func androidSwiftPMInvocation(
+        toolchain: AndroidToolchainVersions,
+        inputs: SwiftTargetSDKInputs,
+        swiftSDKRoot: FilePath,
+        swiftExecutable: CommandSpec.Executable
+    ) throws -> SwiftPMInvocation {
+        let nativeSDK = context.nativeSDKRoot(named: "android-arm64")
+        let nativeCompiler = nativeSDKCompilerConfiguration(
+            nativeSDK: nativeSDK,
+            gfxstreamBuildRoot: context.layout.androidRuntime.appending(
+                ".gfxstream-build/android-arm64"))
+        let swiftCxxLibraries = swiftSDKRoot.appending(
+            "\(inputs.androidBundleID).artifactbundle/swift-android/"
+                + "swift-resources/usr/lib/swift-aarch64/android")
+        return try context.swiftPMInvocation(
+            configuration: .release,
+            swiftFlags: ["-disable-cmo"],
+            cFlags: nativeCompiler.cFlags,
+            cxxFlags: nativeCompiler.cxxFlags,
+            linkerFlags: nativeCompiler.linkerFlags + ["-L\(swiftCxxLibraries.string)"],
+            staticSwiftStandardLibrary: true,
+            target: .swiftSDK(
+                name: inputs.androidBundleID,
+                targetTriple: "aarch64-unknown-linux-android\(toolchain.minimumSDK)"),
+            toolchainIdentity: "target-sdk-\(inputs.snapshot)-android",
+            swiftExecutable: swiftExecutable)
+    }
+
+    private func nativeSDKCompilerConfiguration(
+        nativeSDK: FilePath,
+        gfxstreamBuildRoot: FilePath
+    ) -> NativeSDKCompilerConfiguration {
+        let root = context.layout.root
+        let render = nativeSDK.appending("render")
+        let rn = nativeSDK.appending("rn")
+        let reactNative = rn.appending("include/react-native/packages/react-native")
+        let reactCommon = reactNative.appending("ReactCommon")
+        let includeDirectories = [
+            root.appending("third-party/mesa/src/gfxstream/guest/iostream/include"),
+            root.appending("third-party/mesa/src/gfxstream/guest/vulkan_enc"),
+            root.appending("third-party/gfxstream/host/common/include"),
+            root.appending("third-party/gfxstream/host/features/include"),
+            root.appending("third-party/gfxstream/host/include"),
+            root.appending("third-party/gfxstream/host/iostream/include"),
+            root.appending("third-party/gfxstream/host/library/include"),
+            root.appending("react-native/swiftpm/cmodules/NucleusReactRuntimeCxxBridge"),
+            root.appending("react-native/swift/Sources/NucleusReactRuntime/cxx/include"),
+            root.appending("core/render-cxx/skia/include"),
+            root.appending("react-native/swiftpm/shims/NucleusReactRuntimeSwift"),
+            render.appending("include/skia"),
+            render.appending("include/skia/src"),
+            render.appending("include/skia/include/third_party/vulkan"),
+            render.appending("include/skia/src/gpu/vk/vulkanmemoryallocator"),
+            render.appending("include/skia/third_party/externals/vulkanmemoryallocator/include"),
+            render.appending("include/skia/third_party/externals/vulkan-headers/include"),
+            rn.appending("include"),
+            rn.appending("include/hermes/API"),
+            rn.appending("include/hermes/API/jsi"),
+            rn.appending("include/hermes/public"),
+            rn.appending("include/hermes/include"),
+            rn.appending("include/folly"),
+            rn.appending("include/boost"),
+            rn.appending("include/glog-gen"),
+            rn.appending("include/glog/src"),
+            rn.appending("include/fmt/include"),
+            rn.appending("include/fast_float/include"),
+            rn.appending("include/rn-codegen"),
+            rn.appending("include/rn-codegen/FBReactNativeSpec"),
+            reactNative,
+            reactNative.appending("React"),
+            reactNative.appending("ReactCxxPlatform"),
+            reactCommon,
+            reactCommon.appending("jsi"),
+            reactCommon.appending("callinvoker"),
+            reactCommon.appending("jsiexecutor"),
+            reactCommon.appending("yoga"),
+            reactCommon.appending("runtimeexecutor"),
+            reactCommon.appending("react/nativemodule/core"),
+            reactCommon.appending("react/renderer/components/view/platform/cxx"),
+            reactCommon.appending("react/renderer/components/scrollview/platform/cxx"),
+            reactCommon.appending("react/renderer/graphics/platform/cxx"),
+            reactCommon.appending("react/renderer/imagemanager"),
+            reactCommon.appending("react/renderer/imagemanager/platform/cxx"),
+            reactCommon.appending("react/utils/platform/cxx"),
+            reactCommon.appending("react/renderer/components/text/platform/cxx"),
+            reactCommon.appending("react/renderer/textlayoutmanager/platform/cxx"),
+            reactCommon.appending("reactperflogger"),
+        ]
+        let includeFlags = includeDirectories.map { "-I\($0.string)" }
+        let libraryDirectories = [
+            render.appending("lib/skia-graphite"),
+            render.appending("lib/skia-graphite-android-arm64"),
+            rn.appending("lib/rn/hermes"),
+            rn.appending("lib/rn/reactnative"),
+            rn.appending("lib/rn/glog"),
+            rn.appending("lib/rn/fmt"),
+            rn.appending("lib/rn/double-conversion/src"),
+            gfxstreamBuildRoot.appending("host/host"),
+        ]
+        return NativeSDKCompilerConfiguration(
+            cFlags: includeFlags,
+            cxxFlags: includeFlags,
+            linkerFlags: libraryDirectories.map { "-L\($0.string)" })
     }
 
     private func swiftTargetSDKGenerationConfiguration(
@@ -785,6 +894,7 @@ struct ComponentRegistry {
         let runtimePreset = recipeRoot.appending(
             "nucleus-target-runtime-presets.ini")
         let sysrootPreparer = recipeRoot.appending("prepare-linux-sysroot.sh")
+        let pkgConfigDirectory = recipeRoot.appending("pkgconfig")
         let swiftExecutable = FilePath(
             environment["SWIFT"] ?? "/usr/bin/swift")
         let artifactID = try swiftTargetSDKArtifactID(
@@ -797,6 +907,7 @@ struct ComponentRegistry {
             runtimeBuilderContext: runtimeBuilderContext,
             runtimePreset: runtimePreset,
             sysrootPreparer: sysrootPreparer,
+            pkgConfigDirectory: pkgConfigDirectory,
             generatorSourceID: sourceID)
         let linuxTargets = try inputs.linuxTargets.map { target in
             let buildID = try swiftTargetRuntimeBuildID(
@@ -835,6 +946,7 @@ struct ComponentRegistry {
             runtimeBuilderImageID: paths.runtimeBuilderImageID,
             linuxTargets: linuxTargets,
             sysrootPreparer: sysrootPreparer,
+            pkgConfigDirectory: pkgConfigDirectory,
             candidate: paths.artifactRoot.appending(
                 "generations/.candidate-\(artifactID)"),
             generation: generation,

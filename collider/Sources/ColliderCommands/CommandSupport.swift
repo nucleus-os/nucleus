@@ -78,7 +78,8 @@ extension WorkspaceContext {
         staticSwiftStandardLibrary: Bool = false,
         target: SwiftBuildTarget? = nil,
         execution: SwiftPMExecution = .host,
-        toolchainIdentity: String? = nil
+        toolchainIdentity: String? = nil,
+        swiftExecutable: CommandSpec.Executable = .named("swift")
     ) throws -> SwiftPMInvocation {
         let packageRoot = layout.root
         let manifest = packageRoot.appending("Package.swift")
@@ -111,7 +112,8 @@ extension WorkspaceContext {
             execution: execution)
         let invocation = SwiftPMInvocation(
             context: context,
-            scratchPath: layout.swiftScratch(for: context))
+            scratchPath: layout.swiftScratch(for: context),
+            swiftExecutable: swiftExecutable)
         let isDefaultContext =
             configuration == .debug
             && sanitizer == nil

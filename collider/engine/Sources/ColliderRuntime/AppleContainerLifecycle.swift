@@ -199,7 +199,8 @@ func appleContainerFlags(
         tty: false,
         uid: execution.userPolicy.userID,
         ulimits: [
-            "nproc=\(execution.resourceLimits.processCount):\(execution.resourceLimits.processCount)"
+            "nproc=\(execution.resourceLimits.processCount):\(execution.resourceLimits.processCount)",
+            "nofile=\(execution.resourceLimits.openFileCount):\(execution.resourceLimits.openFileCount)",
         ],
         user: nil)
     let management = Flags.Management(

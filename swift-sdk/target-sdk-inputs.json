@@ -179,6 +179,26 @@
           "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libx/libxcb/libxcb1_1.15-1ubuntu2_arm64.deb"
         },
         {
+          "sha256": "246ffb5b49c3d26b243fe4ce18777815484112c64f167ef37cf48b805a6a4ca2",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libx/libxau/libxau-dev_1.0.9-1build6_arm64.deb"
+        },
+        {
+          "sha256": "348d0732ff9571f95d6ff18373a93e827bfe00474d792ef5e9071e6dd618605c",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libx/libxau/libxau6_1.0.9-1build6_arm64.deb"
+        },
+        {
+          "sha256": "dcbc325116fd8c91188a7dc7118dbfe8948ef349f337fbcc1a57e97d42139ac5",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libx/libxdmcp/libxdmcp-dev_1.1.3-0ubuntu6_arm64.deb"
+        },
+        {
+          "sha256": "6b96dbbae4e515ac8f32d6dacfcb6afd1266118400a85ae7cb3f887895017f53",
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libx/libxdmcp/libxdmcp6_1.1.3-0ubuntu6_arm64.deb"
+        },
+        {
+          "sha256": "3bf13a2ffb79ecd4014d438936014e5863f79eb59ebf76e8f43356271c90e7ce",
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/x/xorgproto/x11proto-dev_2023.2-1_all.deb"
+        },
+        {
           "sha256": "4d389a1432da043024595681aca17b4273303b59d1cbb0baad25c4d8fda846f8",
           "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/libx/libxcb/libxcb-res0-dev_1.15-1ubuntu2_arm64.deb"
         },
@@ -400,6 +420,26 @@
     {
       "sha256": "e1c6611d11ad7398326f1bf028afc34c3b14c51d917a3426b966ed4b9687fa58",
       "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxcb/libxcb1_1.15-1ubuntu2_amd64.deb"
+    },
+    {
+      "sha256": "46783c6af2d87c06394d55dfaa21dac07396f13cfc5ea6afbd9313ab49fc0e50",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxau/libxau-dev_1.0.9-1build6_amd64.deb"
+    },
+    {
+      "sha256": "e40d29f1d1a62393bacaedebe0da3d9006084152a9f7e5e029293f08ce1c5c80",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxau/libxau6_1.0.9-1build6_amd64.deb"
+    },
+    {
+      "sha256": "ba2f2230b391c292f5f399d6e04d48181be6b3100556f7870591ca95c9d00667",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxdmcp/libxdmcp-dev_1.1.3-0ubuntu6_amd64.deb"
+    },
+    {
+      "sha256": "bcd336fce11ce2a45f34d0f95e6980af22529f22147e8f98c156e5cee8ee42bb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxdmcp/libxdmcp6_1.1.3-0ubuntu6_amd64.deb"
+    },
+    {
+      "sha256": "3bf13a2ffb79ecd4014d438936014e5863f79eb59ebf76e8f43356271c90e7ce",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/x/xorgproto/x11proto-dev_2023.2-1_all.deb"
     },
     {
       "sha256": "8bab1bb3721dbe13f12e43bce48ebfd68791242c994cf8cff6e1dfbc683dd2eb",

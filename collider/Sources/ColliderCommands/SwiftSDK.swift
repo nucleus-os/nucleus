@@ -29,6 +29,7 @@ func swiftTargetSDKArtifactID(
     runtimeBuilderContext: FilePath,
     runtimePreset: FilePath,
     sysrootPreparer: FilePath,
+    pkgConfigDirectory: FilePath,
     generatorSourceID: String
 ) throws -> String {
     var encoder = CanonicalDigestEncoder()
@@ -45,7 +46,8 @@ func swiftTargetSDKArtifactID(
         bytes: try ArtifactHasher.digest(tree: runtimeBuilderContext).bytes)
     encoder.append(tag: 8, bytes: try ArtifactHasher.digest(file: runtimePreset).bytes)
     encoder.append(tag: 9, bytes: try ArtifactHasher.digest(file: sysrootPreparer).bytes)
-    encoder.append(tag: 10, string: generatorSourceID)
+    encoder.append(tag: 10, bytes: try ArtifactHasher.digest(tree: pkgConfigDirectory).bytes)
+    encoder.append(tag: 11, string: generatorSourceID)
     return shortenedDigest(ArtifactHasher.digest(bytes: encoder.bytes))
 }
 
@@ -173,7 +175,8 @@ struct SwiftSDKCommand {
             "Swift target SDK generation requires native macOS arm64")
         #endif
         let registry = ComponentRegistry(context: context)
-        let catalog = try registry.componentCatalog()
+        let catalog = try registry.componentCatalog(
+            forceSwiftSDKGeneration: true)
         try await context.execute(
             catalog: catalog,
             requests: [

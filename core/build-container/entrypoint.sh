@@ -25,13 +25,13 @@ case "${1:-}" in
     ;;
   extract-gn)
     if [[ "$#" -ne 1 \
-        || ! -f /archive/gn.zip \
+        || ! -f /archive/gn-linux-arm64.zip \
         || ! -d /output \
         || ! -w /output ]]; then
-      echo "error: extract-gn requires /archive/gn.zip and writable /output" >&2
+      echo "error: extract-gn requires /archive/gn-linux-arm64.zip and writable /output" >&2
       exit 64
     fi
-    unzip -o /archive/gn.zip gn -d /output
+    unzip -o /archive/gn-linux-arm64.zip gn -d /output
     chmod 0755 /output/gn
     exit 0
     ;;

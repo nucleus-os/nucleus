@@ -203,8 +203,12 @@ public struct SwiftPMLowering: TaskPlanLowering {
         let products = Array(Set(requirements.map(\.qualifiedProduct))).sorted()
         var inputs = [first.invocation.identityInput]
         inputs += first.invocation.context.toolsets.map(ArtifactInput.file)
-        if case .host = first.invocation.context.execution {
-            inputs.append(.tool(.named("swift")))
+        if case .host = first.invocation.context.execution,
+            case .artifact = first.invocation.swiftExecutable
+        {
+            // The typed producer dependency carries the compiler identity.
+        } else if case .host = first.invocation.context.execution {
+            inputs.append(.tool(first.invocation.swiftExecutable))
         }
         for requirement in requirements.sorted(by: {
             $0.qualifiedProduct < $1.qualifiedProduct
@@ -228,6 +232,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
         var builder = TaskBuilder(
             id: taskID,
             component: ComponentID(rawValue: "swift-package"))
+        consumeSwiftExecutable(first.invocation, into: &builder)
         consumeOwnerReferences(owners, into: &builder)
         if case .oci(let configuration) = first.invocation.context.execution {
             builder.consume(configuration.image)
@@ -271,8 +276,12 @@ public struct SwiftPMLowering: TaskPlanLowering {
         let buildProducts = Array(Set(products.map(\.qualifiedProduct))).sorted()
         var inputs = [first.invocation.identityInput]
         inputs += first.invocation.context.toolsets.map(ArtifactInput.file)
-        if case .host = first.invocation.context.execution {
-            inputs.append(.tool(.named("swift")))
+        if case .host = first.invocation.context.execution,
+            case .artifact = first.invocation.swiftExecutable
+        {
+            // The typed producer dependency carries the compiler identity.
+        } else if case .host = first.invocation.context.execution {
+            inputs.append(.tool(first.invocation.swiftExecutable))
         }
         for requirement in requirements.sorted(by: {
             $0.qualifiedProduct < $1.qualifiedProduct
@@ -298,6 +307,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
         var builder = TaskBuilder(
             id: taskID,
             component: ComponentID(rawValue: "swift-package"))
+        consumeSwiftExecutable(first.invocation, into: &builder)
         consumeOwnerReferences(owners, into: &builder)
         if case .oci(let configuration) = first.invocation.context.execution {
             builder.consume(configuration.image)
@@ -331,6 +341,16 @@ public struct SwiftPMLowering: TaskPlanLowering {
                 builder.consume(reference)
             }
         }
+    }
+
+    private func consumeSwiftExecutable(
+        _ invocation: SwiftPMInvocation,
+        into builder: inout TaskBuilder
+    ) {
+        guard case .host = invocation.context.execution,
+            case .artifact(let reference) = invocation.swiftExecutable
+        else { return }
+        builder.consume(reference)
     }
 
     private func swiftPMAction(
@@ -450,12 +470,12 @@ private struct SwiftPMAction: ColliderAction {
                 }
             } ?? [:]
         switch processes.first {
-        case .host:
+        case .host(let command):
             requirements = ActionRequirements(
                 tools: [
                     ActionToolRequirement(
                         "swift",
-                        executable: .named("swift"),
+                        executable: command.executable,
                         role: .semantic)
                 ],
                 effects: [

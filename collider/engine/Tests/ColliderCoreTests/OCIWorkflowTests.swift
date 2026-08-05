@@ -55,6 +55,11 @@ import Testing
     #expect(flags.process.gid == 1000)
     #expect(flags.process.env == ["BUILD_MODE=fixture"])
     #expect(flags.process.cwd == "/src")
+    #expect(
+        flags.process.ulimits == [
+            "nproc=32768:32768",
+            "nofile=131072:131072",
+        ])
     #expect(flags.resource.cpus == 20)
     #expect(flags.resource.memory == String(96 * 1_024 * 1_024 * 1_024))
     #expect(

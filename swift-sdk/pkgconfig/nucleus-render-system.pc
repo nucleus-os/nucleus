@@ -1,0 +1,4 @@
+Name: nucleus-render-system
+Description: Nucleus Linux render-system dependencies
+Version: 1
+Libs: -lvulkan -lfontconfig -lfreetype -lz

@@ -203,13 +203,16 @@ public struct SwiftBuildContext: Hashable, Sendable {
 public struct SwiftPMInvocation: Hashable, Sendable {
     public let context: SwiftBuildContext
     public let scratchPath: FilePath
+    public let swiftExecutable: CommandSpec.Executable
 
     public init(
         context: SwiftBuildContext,
-        scratchPath: FilePath
+        scratchPath: FilePath,
+        swiftExecutable: CommandSpec.Executable = .named("swift")
     ) {
         self.context = context
         self.scratchPath = scratchPath
+        self.swiftExecutable = swiftExecutable
     }
 
     public var identityInput: ArtifactInput {
@@ -316,7 +319,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         environment: [String: String]
     ) -> CommandSpec {
         return CommandSpec(
-            executable: .named("swift"),
+            executable: swiftExecutable,
             arguments: commandArguments(arguments),
             workingDirectory: workingDirectory,
             environment: commandEnvironment(environment))
@@ -483,6 +486,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         for flag in context.cxxFlags {
             arguments += ["-Xcxx", flag]
         }
+        arguments += ["-Xcxx", "-I\(generatedModuleMaps.string)"]
         for flag in context.linkerFlags {
             arguments += ["-Xlinker", flag]
         }

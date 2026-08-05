@@ -22,6 +22,16 @@
   </dict>
   <key>ProcessType</key>
   <string>Background</string>
+  <key>SoftResourceLimits</key>
+  <dict>
+    <key>NumberOfFiles</key>
+    <integer>65536</integer>
+  </dict>
+  <key>HardResourceLimits</key>
+  <dict>
+    <key>NumberOfFiles</key>
+    <integer>65536</integer>
+  </dict>
   <key>ThrottleInterval</key>
   <integer>30</integer>
   <key>StandardOutPath</key>

@@ -4,6 +4,5 @@
 // this façade exists for the same library but a different entry point.
 module NucleusWindowClientXkbC {
     header "NucleusWindowClientXkbC.h"
-    link "xkbcommon"
     export *
 }

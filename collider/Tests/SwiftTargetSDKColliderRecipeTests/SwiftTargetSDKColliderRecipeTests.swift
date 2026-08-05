@@ -18,6 +18,7 @@ import Testing
     let temporary = FilePath(
         FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString).path)
+    defer { try? FileManager.default.removeItem(atPath: temporary.string) }
     let linuxTargets = inputs.linuxTargets.map { target in
         SwiftLinuxTargetBuildConfiguration(
             target: target,
@@ -44,6 +45,7 @@ import Testing
         runtimeBuilderImageID: temporary.appending("runtime-builder-image-id"),
         linuxTargets: linuxTargets,
         sysrootPreparer: root.appending("swift-sdk/prepare-linux-sysroot.sh"),
+        pkgConfigDirectory: root.appending("swift-sdk/pkgconfig"),
         candidate: temporary.appending("candidate"),
         generation: temporary.appending("generation"),
         active: temporary.appending("current"),
@@ -61,6 +63,10 @@ import Testing
     let result = try SwiftTargetSDKColliderRecipe.generation(configuration)
 
     #expect(result.selected.count == 2)
+    #expect(result.activeSDK.path == configuration.active.appending("swift-sdks"))
+    #expect(
+        result.activeSwift.path
+            == configuration.active.appending("toolchain/usr/bin/swift"))
     #expect(
         result.tasks.filter { $0.id.rawValue.hasPrefix("swift-sdk.download-") }.count
             == 2 + inputs.linuxTargets.flatMap(\.allUbuntuPackages).count)
@@ -140,6 +146,10 @@ import Testing
     #expect(
         assemblyAction.kind
             == ActionKind(rawValue: "swift-sdk.assemble-target-sdks"))
+    #expect(assembly.inputs.contains(.tree(configuration.pkgConfigDirectory)))
+    #expect(
+        assemblyAction.requirements.effects.contains(
+            ActionEffect(.read, scope: .input(configuration.pkgConfigDirectory))))
     for target in linuxTargets {
         #expect(
             assemblyAction.requirements.effects.contains(
@@ -161,6 +171,33 @@ import Testing
             ActionEffect(
                 .readWrite,
                 scope: .output(configuration.candidate.appending("validation")))))
+
+    let activeSDKRoot = configuration.generation.appending("swift-sdks/fixture")
+    let activeSwift = configuration.generation.appending("toolchain/usr/bin/swift")
+    try FileManager.default.createDirectory(
+        atPath: activeSDKRoot.string,
+        withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        atPath: activeSwift.removingLastComponent().string,
+        withIntermediateDirectories: true)
+    #expect(
+        FileManager.default.createFile(
+            atPath: activeSDKRoot.appending("info.json").string, contents: Data("{}".utf8)))
+    #expect(FileManager.default.createFile(atPath: activeSwift.string, contents: Data()))
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755],
+        ofItemAtPath: activeSwift.string)
+    try FileManager.default.createSymbolicLink(
+        atPath: configuration.active.string,
+        withDestinationPath: configuration.generation.string)
+
+    let reused = try SwiftTargetSDKColliderRecipe.prepare(configuration)
+    #expect(reused.component.tasks.count == 1)
+    #expect(reused.component.tasks[0].id.rawValue == "swift-sdk.use-active-generation")
+    #expect(reused.activeSDK.path == configuration.active.appending("swift-sdks"))
+    #expect(
+        reused.activeSwift.path
+            == configuration.active.appending("toolchain/usr/bin/swift"))
 }
 
 @Test func checkedInTargetSDKInputsAreComplete() throws {
@@ -180,7 +217,7 @@ import Testing
     #expect(inputs.linuxTargets.map(\.architecture) == [.arm64, .amd64])
     for target in inputs.linuxTargets {
         #expect(target.runtimeUbuntuPackages.count == 16)
-        #expect(target.sdkUbuntuPackages.count == 38)
+        #expect(target.sdkUbuntuPackages.count == 43)
         #expect(target.allUbuntuPackages.allSatisfy { !$0.url.contains("libstdc++") })
         #expect(target.allUbuntuPackages.allSatisfy { !$0.url.contains("libicu") })
         #expect(target.allUbuntuPackages.allSatisfy { !$0.url.contains("libxml2") })
@@ -196,9 +233,11 @@ import Testing
         #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libgbm1_") })
         #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libsystemd-dev_") })
         #expect(target.sdkUbuntuPackages.contains { $0.url.contains("libsystemd0_") })
+        #expect(target.sdkUbuntuPackages.contains { $0.url.contains("x11proto-dev_") })
         #expect(
             target.allUbuntuPackages.allSatisfy {
                 $0.url.hasSuffix("_\(target.architecture.debianArchitecture).deb")
+                    || $0.url.hasSuffix("_all.deb")
             })
     }
     #expect(inputs.artifacts.macOSHostPackage.sha256.count == 64)
