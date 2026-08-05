@@ -28,10 +28,11 @@ Collider launches outside a planned action are the ones that produce the plan.
 
 **Execution environment is declared, never inherited.** A task that produces or
 exercises a Linux artifact declares a Linux execution contract and runs in the
-pinned container image regardless of runner operating system. The host runner is
-never an implicit substitute for the target. Planning rejects a host-executed
-task whose Swift build context, artifact target, or machine requirement names a
-non-host platform. There is no host fallback path.
+pinned Apple-container image on the supported macOS 27/Apple-silicon runner.
+The host is never an implicit substitute for the target. Planning rejects a
+host-executed task whose Swift build context, artifact target, or machine
+requirement names a non-host platform. There is no Linux-runner backend and no
+host fallback path.
 
 **Tools are either semantic or operational.** A semantic tool can affect output
 equivalence; its binary digest enters task identity, so it is resolved inside a
@@ -558,8 +559,8 @@ It excludes:
 - `--jobs` and scheduler capacity;
 - log presentation settings;
 - absolute resolved output paths for portable artifacts;
-- the runner operating system, for any task whose execution environment is a
-  pinned container.
+- physical checkout, cache, and container-instance placement for any task whose
+  execution environment and artifact target are otherwise identical.
 
 If a resource changes output behavior, the task declares the semantic value as
 an identity input in addition to its scheduling claim.
@@ -1196,8 +1197,10 @@ Move every Linux-target Swift workload off the host runner:
 Move code generation that shapes committed source into the container. The
 `wayland.generate` scanner steps execute against the pinned scanner produced by
 `wayland.native-sdk.linux-arm64` rather than an ambient `PATH` lookup.
-`SwiftWaylandGen` and `VulkanGen` remain first-party host Swift tools whose
-binary identities are first-party produced artifacts.
+`VulkanGen` remains a first-party macOS Swift tool whose typed executable
+artifact enters identity. `SwiftWaylandGen` is a first-party Linux/arm64 tool
+and executes inside the same pinned OCI guest as `wayland-scanner`. Neither is
+an installed host prerequisite.
 
 Remove ambient host tools from target task identity. During this phase,
 `core.sources` may use host `git` and `python3` only as operational tools for
@@ -1234,8 +1237,9 @@ explicit path, timestamp, locale, archive, and random-seed normalization.
 No target identity contains an ambient host tool, directly or transitively.
 Planning rejects a selected entrypoint whose prerequisite cannot be resolved.
 `collider doctor` validates only complete-checkout and bootstrap prerequisites.
-Regenerating the Wayland protocol sources on macOS and on Linux produces
-identical committed output. Every path under the native SDK root has exactly one
+Regenerating the Wayland protocol sources in relocated checkouts and cache roots
+on the supported macOS runner produces identical committed output through the
+pinned Linux guest. Every path under the native SDK root has exactly one
 producing task, and deleting any of them fails validation rather than reporting
 success.
 
@@ -1796,8 +1800,16 @@ Repo verification, product compilation, image assembly, signing, and validation
 no longer escape through host commands. Compositor DRM preflight and execution
 use the declared Linux/ARM64 OCI lane. Duplicate AOSP cache ownership is removed.
 Specialized component entrypoint names, directory-retention formats, and
-native-builder Swift-SDK/Skia helpers no longer live in engine targets. The
-complete kernel matrix remains open.
+native-builder Swift-SDK/Skia helpers no longer live in engine targets.
+Native-builder workflow models now live in their recipe module rather than
+`ColliderCore`. Semantic dependency identity is keyed by task ID and independent
+of declaration order, and synthesized SwiftPM work retains owner dependency
+identity and execution edges. First-party executable artifacts are typed tools;
+Vulkan generation consumes one directly, and Wayland generation now builds its
+Linux/arm64 generator separately and runs the generator, produced scanner, and
+client/server generation exclusively inside one pinned OCI action. The complete
+run-manifest audit contract, final engine terminology audit, and complete kernel
+matrix remain open.
 
 Delete:
 
@@ -1822,7 +1834,9 @@ Run the kernel acceptance matrix:
 4. Swift SDK, AOSP, Chromium, native SDK, and publication behavioral suites;
 5. capacity-one and production-capacity scheduler replays;
 6. clean second-run verification for every component entrypoint;
-7. macOS-runner and Linux-runner equivalence for container-executed entrypoints;
+7. relocation equivalence across independent checkout and cache roots on the
+   supported macOS 27/Apple-silicon runner, including both Linux architecture
+   artifact lanes;
 8. SourceKit-LSP configuration and semantic checks;
 9. planning, hashing, invocation-count, resource-wait, and critical-path
    comparison with the Phase 1 baseline.
@@ -1849,6 +1863,19 @@ The kernel refactor is complete only when:
 Portable caching builds on the completed kernel; it does not shape or delay the
 kernel migration.
 
+**Progress: in progress.** `ColliderPersistence` owns verified portable
+snapshots, atomic per-slot restoration, corruption quarantine, bounded sharded
+locking, retention synchronized against restoration, physical-size accounting,
+and rejection of escaping symlinks. Runtime distinguishes cache corruption from
+transient I/O failures so a good snapshot is never destroyed by an unrelated
+restore failure. Planning rejects portable tasks with ambient semantic or
+operational tools, unrestricted effects or network, mutable checkouts, shared
+postconditions, result slots, or SwiftPM scratch state. Content-addressed
+downloads declare restricted network access. Vulkan and Wayland deterministic
+generated-source actions consume typed first-party tools and are the first
+promoted recipe outputs. Manifest-level audit records and behavioral replay of
+every promoted recipe remain open.
+
 Keep `always`, `incremental`, and `portable` as assessment policies excluded
 from task identity. Migrating an action from incremental to portable never
 changes its output-equivalence identity.
@@ -1872,10 +1899,11 @@ unverified operational tool is ineligible.
 
 Deleting a portable local output and restoring it reproduces the complete
 validated tree, metadata, permissions, and symlinks. Corrupt snapshots are
-quarantined and rebuilt. Relocation proves absolute checkout paths are absent
-from artifact identity. A macOS runner and Linux runner exchange artifacts for
-every container-executed task actually promoted to portable. Incremental and
-portable assessment of the same task use the same output-equivalence identity.
+quarantined and rebuilt. Relocation between independent checkout and cache roots
+on the supported macOS runner proves absolute placement is absent from artifact
+identity and allows every promoted container-executed artifact to be reused.
+Incremental and portable assessment of the same task use the same
+output-equivalence identity.
 
 ## Non-Goals
 

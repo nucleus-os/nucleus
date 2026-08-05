@@ -139,7 +139,7 @@ public struct AnyTaskOutputSlot: Hashable, Sendable {
 }
 
 public struct TaskOrderingReference: Hashable, Sendable {
-    let producer: TaskID
+    package let producer: TaskID
 
     fileprivate init(producer: TaskID) {
         self.producer = producer

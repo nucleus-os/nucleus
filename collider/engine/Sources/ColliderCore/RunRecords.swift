@@ -15,6 +15,13 @@ public enum RunStatus: String, Codable, Sendable {
     case interrupted
 }
 
+public enum TaskRunOutcome: String, Codable, Sendable {
+    case localClean
+    case subsumed
+    case restored
+    case executed
+}
+
 public struct RunManifest: Codable, Sendable {
     public let runID: RunID
     public let command: [String]
@@ -31,6 +38,9 @@ public struct RunManifest: Codable, Sendable {
     public var taskDurationsNanoseconds: [String: UInt64]
     public var activeArtifacts: [String: ArtifactDigest]
     public var plannedTasks: [String: ArtifactDigest]?
+    public var plannedTaskAudits: [String: PlannedTaskAudit]?
+    public var taskOutcomes: [String: TaskRunOutcome]?
+    public var outputSnapshotDigests: [String: [String: ArtifactDigest]]?
     public var resumedAt: [String]?
     public var resumeCount: Int?
 
@@ -50,6 +60,9 @@ public struct RunManifest: Codable, Sendable {
         taskDurationsNanoseconds = [:]
         activeArtifacts = [:]
         plannedTasks = nil
+        plannedTaskAudits = nil
+        taskOutcomes = nil
+        outputSnapshotDigests = nil
         resumedAt = nil
         resumeCount = nil
     }

@@ -495,7 +495,7 @@ extension ColliderRuntime {
                 try portableArtifacts.quarantine(identity: plan.identity)
             } else if plan.portableSnapshot == .restore {
                 do {
-                    try portableArtifacts.restore(
+                    let outputDigests = try portableArtifacts.restore(
                         task: task,
                         identity: plan.identity)
                     try TaskOutputValidator(fileSystem: actionFileSystem()).validate(task)
@@ -508,6 +508,14 @@ extension ColliderRuntime {
                     if let eventRun, let eventRegistry {
                         try await eventRegistry.recordTaskDuration(
                             elapsedNanoseconds(since: taskStart),
+                            task: task.id,
+                            in: eventRun)
+                        try await eventRegistry.recordTaskOutcome(
+                            .restored,
+                            task: task.id,
+                            in: eventRun)
+                        try await eventRegistry.recordOutputSnapshotDigests(
+                            outputDigests,
                             task: task.id,
                             in: eventRun)
                         try await eventRegistry.record(
@@ -524,10 +532,13 @@ extension ColliderRuntime {
             }
             try await perform(task, stage: task.id, options: options)
             try TaskOutputValidator(fileSystem: actionFileSystem()).validate(task)
+            let outputDigests: [String: ArtifactDigest]?
             if task.assessmentPolicy == .portable {
-                try portableArtifacts.capture(
+                outputDigests = try portableArtifacts.capture(
                     task: task,
                     identity: plan.identity)
+            } else {
+                outputDigests = nil
             }
             try stateStore.persist(
                 TaskStateRecord(
@@ -540,6 +551,16 @@ extension ColliderRuntime {
                     elapsedNanoseconds(since: taskStart),
                     task: task.id,
                     in: eventRun)
+                try await eventRegistry.recordTaskOutcome(
+                    .executed,
+                    task: task.id,
+                    in: eventRun)
+                if let outputDigests {
+                    try await eventRegistry.recordOutputSnapshotDigests(
+                        outputDigests,
+                        task: task.id,
+                        in: eventRun)
+                }
                 if recordsActiveArtifact, task.recordsActiveArtifact {
                     try await eventRegistry.recordActiveArtifact(
                         plan.identity,

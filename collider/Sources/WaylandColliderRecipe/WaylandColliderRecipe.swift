@@ -21,6 +21,11 @@ public enum WaylandColliderRecipe: ColliderComponent {
         package let nativeSDKs: [NativeLinuxTarget: ArtifactReferenceSet]
     }
 
+    package struct Generation: Sendable {
+        package let tasks: [TaskDeclaration]
+        package let task: TaskDeclaration
+    }
+
     public static let descriptor = ComponentDescriptor(
         id: ComponentID(rawValue: "wayland"),
         canonicalName: "wayland",
@@ -66,13 +71,13 @@ public enum WaylandColliderRecipe: ColliderComponent {
             swiftPM: context.swiftPM(.linux(.arm64)),
             builder: native.builder,
             scanner: scanner)
-        tasks.append(generation)
+        tasks.append(contentsOf: generation.tasks)
         let component = try ComponentDefinition(
             descriptor: descriptor,
             tasks: tasks,
             entrypoints: [
                 ComponentEntrypoint(id: .bootstrap, roots: bootstrapRoots),
-                ComponentEntrypoint(id: .generate, roots: [generation.id]),
+                ComponentEntrypoint(id: .generate, roots: [generation.task.id]),
             ])
         return ComponentArtifacts(
             component: component,
@@ -216,7 +221,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
         swiftPM: SwiftPMInvocation,
         builder: NativeOCIConfiguration,
         scanner: ArtifactReference<ExecutableArtifact>
-    ) throws -> TaskDeclaration {
+    ) throws -> Generation {
         let protocolsRoot = root.appending("Protocols")
         let records = try protocolRecords(under: protocolsRoot)
         let server = root.appending("Sources/WaylandServerC")
@@ -236,7 +241,33 @@ public enum WaylandColliderRecipe: ColliderComponent {
             server, client, protocols, protocolTypes, serverDispatch, clientDispatch,
         ]
         let waylandXML = root.appending("third-party/wayland/protocol/wayland.xml")
-        let generator = swiftPM.executable("SwiftWaylandGen")
+        guard case .oci(let swiftOCI) = swiftPM.context.execution else {
+            throw SwiftPMInvocationExecutionFailure.requiresOCIContext
+        }
+        var generatorBuilder = TaskBuilder(
+            id: TaskID(rawValue: "wayland.generator"),
+            component: descriptor.id)
+        generatorBuilder.consume(swiftOCI.image)
+        generatorBuilder.consume(builder.swiftSDK)
+        let generator: ArtifactReference<ExecutableArtifact> =
+            try generatorBuilder.output(
+                "executable",
+                path: swiftPM.executable("SwiftWaylandGen"),
+                validation: .executableFile)
+        let generatorTask = generatorBuilder.build(
+            swiftProducts: [
+                swiftPM.product(
+                    package: "swift-wayland",
+                    product: "SwiftWaylandGen",
+                    packageRoot: root,
+                    environment: environment,
+                    expectedOutputs: [
+                        PathPostcondition(
+                            path: generator.path,
+                            validation: .executableFile)
+                    ])
+            ],
+            locks: [.checkout("wayland")])
         var scannerArguments: [String] = []
         for record in records {
             scannerArguments += [
@@ -255,89 +286,109 @@ public enum WaylandColliderRecipe: ColliderComponent {
         var task = TaskBuilder(
             id: TaskID(rawValue: "wayland.generate"),
             component: ComponentID(rawValue: "wayland"))
+        task.consume(generator)
         task.consume(scanner)
-        task.consume(builder.image)
+        task.consume(swiftOCI.image)
+        task.consume(builder.swiftSDK)
         for (index, directory) in generatedDirectories.enumerated() {
             let _: ArtifactReference<DirectoryArtifact> = try task.output(
                 OutputSlotID(rawValue: "generated-\(index)"),
                 path: directory,
                 validation: .nonEmptyDirectory)
         }
-        return task.build(
-            swiftProducts: [
-                swiftPM.product(
-                    package: "swift-wayland",
-                    product: "SwiftWaylandGen",
-                    packageRoot: root,
-                    environment: environment,
-                    expectedOutputs: [
-                        PathPostcondition(
-                            path: swiftPM.executable("SwiftWaylandGen"),
-                            validation: .executableFile)
-                    ])
-            ],
+        let generationTask = task.build(
             inputs: [
-                .tree(root.appending("Sources/SwiftWaylandGen")),
-                .tree(root.appending("Sources/SwiftWaylandGenerator")),
-                .tree(root.appending("Sources/WaylandProtocolModel")),
                 .tree(root.appending("Protocols")),
                 .file(waylandXML),
-                swiftPM.identityInput,
             ],
             locks: [.checkout("wayland")],
+            assessmentPolicy: .portable,
             action:
                 try AnyColliderAction(
                     GenerateWaylandSwiftSourcesAction(
                         generator: generator,
-                        root: root,
+                        scanner: scanner,
                         protocolsRoot: protocolsRoot,
                         waylandXML: waylandXML,
-                        xmlPaths: records.map(\.path),
                         generatedDirectories: generatedDirectories,
-                        server: server,
-                        client: client,
                         protocols: protocols,
-                        protocolTypes: protocolTypes,
-                        serverDispatch: serverDispatch,
-                        clientDispatch: clientDispatch,
-                        scannerExecution: scannerExecution(
-                            root: root,
-                            scannerSDK: scanner.path.removingLastComponent()
-                                .removingLastComponent(),
-                            builder: builder,
-                            arguments: scannerArguments,
-                            environment: environment),
-                        manifests: manifests,
-                        environment: environment))
+                        executions: [
+                            sourceGenerationExecution(
+                                root: root,
+                                generatedDirectories: generatedDirectories,
+                                scannerSDK: scanner.path.removingLastComponent()
+                                    .removingLastComponent(),
+                                swiftSDKRoot: builder.swiftSDKRoot,
+                                swiftOCI: swiftOCI,
+                                command: [generator.path.string]
+                                    + serverArguments(
+                                        protocolsRoot: protocolsRoot,
+                                        protocolTypes: protocolTypes,
+                                        serverDispatch: serverDispatch,
+                                        server: server,
+                                        waylandXML: waylandXML,
+                                        xmlPaths: records.map(\.path)),
+                                environment: environment),
+                            sourceGenerationExecution(
+                                root: root,
+                                generatedDirectories: generatedDirectories,
+                                scannerSDK: scanner.path.removingLastComponent()
+                                    .removingLastComponent(),
+                                swiftSDKRoot: builder.swiftSDKRoot,
+                                swiftOCI: swiftOCI,
+                                command: [
+                                    "sh", "-eu", "-c",
+                                    "scanner=/native-wayland/bin/wayland-scanner; "
+                                        + "while [ \"$#\" -ne 0 ]; do "
+                                        + "\"$scanner\" \"$1\" \"$2\" \"$3\"; shift 3; done",
+                                    "wayland-scanner",
+                                ] + scannerArguments,
+                                environment: environment),
+                            sourceGenerationExecution(
+                                root: root,
+                                generatedDirectories: generatedDirectories,
+                                scannerSDK: scanner.path.removingLastComponent()
+                                    .removingLastComponent(),
+                                swiftSDKRoot: builder.swiftSDKRoot,
+                                swiftOCI: swiftOCI,
+                                command: [generator.path.string]
+                                    + clientArguments(
+                                        protocolsRoot: protocolsRoot,
+                                        clientDispatch: clientDispatch,
+                                        client: client,
+                                        waylandXML: waylandXML,
+                                        xmlPaths: records.map(\.path)),
+                                environment: environment),
+                        ],
+                        manifests: manifests))
         )
+        return Generation(
+            tasks: [generatorTask, generationTask],
+            task: generationTask)
     }
 }
 
 private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let generator: FilePath
-        let root: FilePath
+        let scanner: FilePath
         let protocolsRoot: FilePath
         let waylandXML: FilePath
-        let xmlPaths: [FilePath]
         let generatedDirectories: [FilePath]
-        let scannerExecution: OCIExecution
+        let protocols: FilePath
+        let pipeline: OCIExecutionPipelineIdentity
         let manifests: [FilePath]
 
         func encode(into encoder: inout ActionIdentityEncoder) {
             encoder.append(tag: 1, string: generator.string)
-            encoder.append(tag: 2, string: root.string)
+            encoder.append(tag: 2, string: scanner.string)
             encoder.append(tag: 3, string: protocolsRoot.string)
             encoder.append(tag: 4, string: waylandXML.string)
             encoder.append(
                 tag: 5,
-                string: xmlPaths.map(\.string).joined(separator: "\0"))
-            encoder.append(
-                tag: 6,
                 string: generatedDirectories.map(\.string).joined(separator: "\0"))
-            encoder.append(
-                tag: 7,
-                nested: OCIExecutionActionIdentity(scannerExecution))
+            encoder.append(tag: 6, string: protocols.string)
+            encoder.append(tag: 7, nested: pipeline)
             encoder.append(
                 tag: 8,
                 string: manifests.map(\.string).joined(separator: "\0"))
@@ -346,37 +397,48 @@ private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
 
     static let kind: ActionKind = "wayland.generate-swift-sources"
 
-    let generator: FilePath
-    let root: FilePath
+    let generator: ArtifactReference<ExecutableArtifact>
+    let scanner: ArtifactReference<ExecutableArtifact>
     let protocolsRoot: FilePath
     let waylandXML: FilePath
-    let xmlPaths: [FilePath]
     let generatedDirectories: [FilePath]
-    let server: FilePath
-    let client: FilePath
     let protocols: FilePath
-    let protocolTypes: FilePath
-    let serverDispatch: FilePath
-    let clientDispatch: FilePath
-    let scannerExecution: OCIExecution
+    let pipeline: OCIExecutionPipeline
     let manifests: [FilePath]
-    let environment: [String: String]
+
+    init(
+        generator: ArtifactReference<ExecutableArtifact>,
+        scanner: ArtifactReference<ExecutableArtifact>,
+        protocolsRoot: FilePath,
+        waylandXML: FilePath,
+        generatedDirectories: [FilePath],
+        protocols: FilePath,
+        executions: [OCIExecution],
+        manifests: [FilePath]
+    ) throws {
+        self.generator = generator
+        self.scanner = scanner
+        self.protocolsRoot = protocolsRoot
+        self.waylandXML = waylandXML
+        self.generatedDirectories = generatedDirectories
+        self.protocols = protocols
+        pipeline = try OCIExecutionPipeline(executions)
+        self.manifests = manifests
+    }
 
     var identity: Identity {
         Identity(
-            generator: generator,
-            root: root,
+            generator: generator.path,
+            scanner: scanner.path,
             protocolsRoot: protocolsRoot,
             waylandXML: waylandXML,
-            xmlPaths: xmlPaths,
             generatedDirectories: generatedDirectories,
-            scannerExecution: scannerExecution,
+            protocols: protocols,
+            pipeline: pipeline.identity,
             manifests: manifests)
     }
 
     var requirements: ActionRequirements {
-        let scannerRequirements = ociActionRequirements(
-            execution: scannerExecution)
         var effects =
             [
                 ActionEffect(.read, scope: .checkout(protocolsRoot)),
@@ -385,24 +447,28 @@ private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
             + generatedDirectories.map {
                 ActionEffect(.readWrite, scope: .output($0))
             }
-            + manifests.map {
-                ActionEffect(.write, scope: .output($0))
-            }
-        for effect in scannerRequirements.effects where !effects.contains(effect) {
+        for effect in pipeline.requirements.effects where !effects.contains(effect) {
             effects.append(effect)
         }
         return ActionRequirements(
             tools: [
                 ActionToolRequirement(
                     "swift-wayland-generator",
-                    executable: .taskOutput(generator),
-                    role: .operational)
+                    executable: generator.executable,
+                    role: .semantic),
+                ActionToolRequirement(
+                    "wayland-scanner",
+                    executable: scanner.executable,
+                    role: .semantic),
             ],
             effects: effects,
-            resources: scannerRequirements.resources,
-            executionPlatform: scannerRequirements.executionPlatform,
-            artifactTarget: scannerRequirements.artifactTarget)
+            resources: pipeline.requirements.resources,
+            networkAccess: pipeline.requirements.networkAccess,
+            executionPlatform: pipeline.requirements.executionPlatform,
+            artifactTarget: pipeline.requirements.artifactTarget)
     }
+
+    var environment: [String: String] { pipeline.environment }
 
     func execute(in context: ActionContext) async throws {
         for directory in generatedDirectories {
@@ -412,95 +478,104 @@ private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
         try context.files.createDirectory(protocols.appending("include"))
         try context.files.write([], to: protocols.appending("include/.gitkeep"))
 
-        let searchArguments = [
-            "--search-dir", protocolsRoot.appending("protocols").string,
-            "--search-dir", protocolsRoot.appending("wayland-protocols").string,
-        ]
-        try await run(
-            [
-                "--mode", "server",
-                "--module", "WaylandServerC",
-            ] + searchArguments + [
-                "--types", protocolTypes.string,
-                "--dispatch", serverDispatch.string,
-                server.string,
-                waylandXML.string,
-            ] + xmlPaths.map(\.string),
-            context: context)
-        try await context.containers.run(scannerExecution)
+        for execution in pipeline.executions.dropLast() {
+            try context.cancellation.check()
+            try await context.containers.run(execution)
+        }
         for manifest in manifests {
             try context.files.remove(manifest)
         }
-        try await run(
-            [
-                "--mode", "client",
-                "--module", "WaylandClientC",
-            ] + searchArguments + [
-                "--dispatch", clientDispatch.string,
-                client.string,
-                waylandXML.string,
-            ] + xmlPaths.map(\.string),
-            context: context)
-    }
-
-    private func run(
-        _ arguments: [String],
-        context: ActionContext
-    ) async throws {
-        let result = try await context.commands.execute(
-            CommandSpec(
-                executable: .taskOutput(generator),
-                arguments: arguments,
-                workingDirectory: root,
-                environment: environment))
-        guard result.status == 0 else {
-            throw WaylandSourceGenerationFailure.commandFailed(result.status)
+        if let clientExecution = pipeline.executions.last {
+            try context.cancellation.check()
+            try await context.containers.run(clientExecution)
         }
     }
 }
 
-private enum WaylandSourceGenerationFailure: Error {
-    case commandFailed(Int32)
-}
-
-private func scannerExecution(
+private func sourceGenerationExecution(
     root: FilePath,
+    generatedDirectories: [FilePath],
     scannerSDK: FilePath,
-    builder: NativeOCIConfiguration,
-    arguments: [String],
+    swiftSDKRoot: FilePath,
+    swiftOCI: SwiftPMOCIExecution,
+    command: [String],
     environment: [String: String]
 ) -> OCIExecution {
-    OCIExecution(
-        executionPlatform: .linuxARM64OCI,
-        artifactTarget: .linuxARM64,
-        imageID: builder.imageID,
+    let target = NativeLinuxTarget(architecture: .arm64)
+    return OCIExecution(
+        executionPlatform: swiftOCI.executionPlatform,
+        artifactTarget: swiftOCI.artifactTarget,
+        imageID: swiftOCI.imageID,
         hostname: "wayland-source-generation",
         workingDirectory: root.string,
         hostWorkingDirectory: root,
         mounts: [
-            OCIMount(source: root, target: root.string, access: .readWrite),
+            OCIMount(source: root, target: root.string, access: .readOnly),
             OCIMount(
                 source: scannerSDK,
                 target: "/native-wayland",
                 access: .readOnly),
-        ],
+            OCIMount(
+                source: swiftSDKRoot,
+                target: "/swift-sdk",
+                access: .readOnly),
+        ]
+            + generatedDirectories.map {
+                OCIMount(source: $0, target: $0.string, access: .readWrite)
+            },
         networkPolicy: .externalDisabled,
         userPolicy: .builder,
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
-        processFilesystemPolicy: .standard,
-        resourceLimits: .parallelBuild,
-        containerEnvironment: [:],
-        command: [
-            "wayland-generate",
-            "sh", "-eu", "-c",
-            "scanner=/native-wayland/bin/wayland-scanner; "
-                + "while [ \"$#\" -ne 0 ]; do "
-                + "\"$scanner\" \"$1\" \"$2\" \"$3\"; shift 3; done",
-            "wayland-scanner",
-        ] + arguments,
+        processFilesystemPolicy: swiftOCI.processFilesystemPolicy,
+        intelBinaryTranslationPolicy: swiftOCI.intelBinaryTranslationPolicy,
+        resourceLimits: swiftOCI.resourceLimits,
+        containerEnvironment: [
+            "LD_LIBRARY_PATH":
+                target.containerSwiftSDKRoot + "/usr/lib/swift/linux:"
+                + target.containerRuntimeLibraryPath
+        ],
+        command: ["wayland-generate"] + command,
         environment: environment,
         output: .logged)
+}
+
+private func serverArguments(
+    protocolsRoot: FilePath,
+    protocolTypes: FilePath,
+    serverDispatch: FilePath,
+    server: FilePath,
+    waylandXML: FilePath,
+    xmlPaths: [FilePath]
+) -> [String] {
+    [
+        "--mode", "server",
+        "--module", "WaylandServerC",
+        "--search-dir", protocolsRoot.appending("protocols").string,
+        "--search-dir", protocolsRoot.appending("wayland-protocols").string,
+        "--types", protocolTypes.string,
+        "--dispatch", serverDispatch.string,
+        server.string,
+        waylandXML.string,
+    ] + xmlPaths.map(\.string)
+}
+
+private func clientArguments(
+    protocolsRoot: FilePath,
+    clientDispatch: FilePath,
+    client: FilePath,
+    waylandXML: FilePath,
+    xmlPaths: [FilePath]
+) -> [String] {
+    [
+        "--mode", "client",
+        "--module", "WaylandClientC",
+        "--search-dir", protocolsRoot.appending("protocols").string,
+        "--search-dir", protocolsRoot.appending("wayland-protocols").string,
+        "--dispatch", clientDispatch.string,
+        client.string,
+        waylandXML.string,
+    ] + xmlPaths.map(\.string)
 }
 
 private func nativeExecution(

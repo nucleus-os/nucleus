@@ -110,6 +110,20 @@ public actor RunRegistry {
             }
         }
         manifest.plannedTasks = identities
+        manifest.plannedTaskAudits = Dictionary(
+            uniqueKeysWithValues: plan.compactMap { entry in
+                entry.audit.map { (entry.task.rawValue, $0) }
+            })
+        manifest.taskOutcomes = Dictionary(
+            uniqueKeysWithValues: plan.compactMap { entry in
+                if entry.isClean {
+                    return (entry.task.rawValue, TaskRunOutcome.localClean)
+                }
+                if entry.isSubsumed {
+                    return (entry.task.rawValue, TaskRunOutcome.subsumed)
+                }
+                return nil
+            })
         try writeJSON(manifest, to: path)
     }
 
@@ -139,6 +153,30 @@ public actor RunRegistry {
     ) throws {
         try updateManifest(run) {
             $0.taskDurationsNanoseconds[task.rawValue] = nanoseconds
+        }
+    }
+
+    public func recordTaskOutcome(
+        _ outcome: TaskRunOutcome,
+        task: TaskID,
+        in run: RunHandle
+    ) throws {
+        try updateManifest(run) {
+            var outcomes = $0.taskOutcomes ?? [:]
+            outcomes[task.rawValue] = outcome
+            $0.taskOutcomes = outcomes
+        }
+    }
+
+    public func recordOutputSnapshotDigests(
+        _ digests: [String: ArtifactDigest],
+        task: TaskID,
+        in run: RunHandle
+    ) throws {
+        try updateManifest(run) {
+            var outputs = $0.outputSnapshotDigests ?? [:]
+            outputs[task.rawValue] = digests
+            $0.outputSnapshotDigests = outputs
         }
     }
 

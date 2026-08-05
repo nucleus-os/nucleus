@@ -48,10 +48,11 @@ public struct ColliderPlanner {
                 }
                 return (task: $0, identity: identity)
             }
-            let identity = try identityBuilder.identity(
+            let evidence = try identityBuilder.build(
                 of: task,
                 dependencies: dependencyIdentities,
                 services: services)
+            let identity = evidence.identity
             identities[task.id] = identity
             let assessment =
                 rebuildSelected && explicitlySelected.contains(task.id)
@@ -72,7 +73,8 @@ public struct ColliderPlanner {
                         for: task.action,
                         capacity: services.resourceCapacity),
                     claims: normalizedClaims(for: task),
-                    portableSnapshot: assessment.portableSnapshot))
+                    portableSnapshot: assessment.portableSnapshot,
+                    audit: evidence.audit))
         }
 
         let subsumed = subsumedTasks(in: ordered, entries: entries)
@@ -89,7 +91,8 @@ public struct ColliderPlanner {
                 coordinates: entry.coordinates,
                 resources: entry.resources,
                 claims: entry.claims,
-                portableSnapshot: nil)
+                portableSnapshot: nil,
+                audit: entry.audit)
         }
 
         let assessed = zip(ordered, entries).map {
@@ -121,10 +124,11 @@ public struct ColliderPlanner {
                 }
                 return (task: $0, identity: identity)
             }
-            let identity = try identityBuilder.identity(
+            let evidence = try identityBuilder.build(
                 of: lowered.task,
                 dependencies: dependencyIdentities,
                 services: services)
+            let identity = evidence.identity
             let assessment = assessment(
                 of: lowered.task,
                 identity: identity,
@@ -141,7 +145,8 @@ public struct ColliderPlanner {
                     for: lowered.task.action,
                     capacity: services.resourceCapacity),
                 claims: normalizedClaims(for: lowered.task),
-                portableSnapshot: assessment.portableSnapshot)
+                portableSnapshot: assessment.portableSnapshot,
+                audit: evidence.audit)
         }
         return ExecutionPlan(
             resourceCapacity: services.resourceCapacity,

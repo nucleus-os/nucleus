@@ -620,37 +620,58 @@ private func fixtureReactNativeNodeModules(
         nativeScanner: nil,
         builder: builder)
     let scanner = try #require(nativeSDK.scanner)
-    let task = try WaylandColliderRecipe.generate(
+    let generation = try WaylandColliderRecipe.generate(
         root: root,
         environment: ["PATH": "/usr/bin"],
         swiftPM: SwiftPMInvocation(
             context: SwiftBuildContext(
                 packageRoot: fixtureSwiftPackageRoot,
                 configuration: .debug,
-                target: .host(identity: "x86_64-linux"),
-                toolchainIdentity: "swiftc@fixture"),
+                target: .swiftSDK(
+                    name: "nucleus-swift-6.4-linux",
+                    targetTriple: "aarch64-unknown-linux-gnu"),
+                toolchainIdentity: "swiftc@fixture",
+                execution: .oci(
+                    SwiftPMOCIExecution(
+                        executionPlatform: .linuxARM64OCI,
+                        artifactTarget: .linuxARM64,
+                        image: builder.image,
+                        hostname: "swift-wayland-fixture",
+                        hostWorkingDirectory: root,
+                        mounts: []))),
             scratchPath: FilePath(
                 workspace.appendingPathComponent(
                     ".nucleus/swiftpm/fixture"
                 ).path)),
         builder: builder,
         scanner: scanner)
+    let task = generation.task
     guard let action = task.action else {
         Issue.record("Wayland generation must be one recipe-owned action")
         return
     }
-    let scannerContainers = try await ociExecutions(in: task.action).filter {
+    let generationContainers = try await ociExecutions(in: task.action).filter {
         $0.hostname == "wayland-source-generation"
     }
     #expect(
-        task.swiftProducts.map(\.qualifiedProduct) == [
+        generation.tasks.flatMap(\.swiftProducts).map(\.qualifiedProduct) == [
             "swift-wayland:SwiftWaylandGen"
         ])
+    #expect(task.swiftProducts.isEmpty)
+    #expect(task.assessmentPolicy == .portable)
     #expect(
         action.kind == ActionKind(rawValue: "wayland.generate-swift-sources"))
-    let scannerExecution = try #require(scannerContainers.first)
-    #expect(scannerContainers.count == 1)
-    #expect(scannerExecution.command.first == "wayland-generate")
+    #expect(generationContainers.count == 3)
+    #expect(
+        generationContainers.allSatisfy {
+            $0.command.first == "wayland-generate"
+        })
+    #expect(
+        action.requirements.tools.map(\.role) == [.semantic, .semantic])
+    #expect(
+        action.requirements.tools.allSatisfy {
+            if case .artifact = $0.executable { true } else { false }
+        })
 }
 
 @Test func skiaRecipesUseTheIsolatedNativeBuilder() async throws {

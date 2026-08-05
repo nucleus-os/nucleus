@@ -72,22 +72,23 @@ public struct PortableArtifactStore: Sendable {
         }
     }
 
+    @discardableResult
     public func capture(
         task: TaskDeclaration,
         identity: ArtifactDigest
-    ) throws {
-        try withSnapshotLock(identity) {
+    ) throws -> [String: ArtifactDigest] {
+        let outputDigests = try withSnapshotLock(identity) {
             try FileManager.default.createDirectory(
                 atPath: root.string,
                 withIntermediateDirectories: true)
             let final = snapshotPath(identity)
             if pathExists(final) {
                 do {
-                    try validateSnapshot(
+                    let manifest = try validateSnapshot(
                         at: final,
                         task: task,
                         identity: identity)
-                    return
+                    return try snapshotDigests(manifest)
                 } catch let failure as PortableArtifactStoreFailure
                     where failure.isSnapshotCorruption
                 {
@@ -115,18 +116,21 @@ public struct PortableArtifactStore: Sendable {
                     throw Errno(rawValue: errno)
                 }
                 try DurableFile.synchronizeDirectory(root)
+                return try snapshotDigests(manifest)
             } catch {
                 try? FileManager.default.removeItem(atPath: candidate.string)
                 throw error
             }
         }
         try prune()
+        return outputDigests
     }
 
+    @discardableResult
     public func restore(
         task: TaskDeclaration,
         identity: ArtifactDigest
-    ) throws {
+    ) throws -> [String: ArtifactDigest] {
         try withSnapshotLock(identity) {
             let snapshot = snapshotPath(identity)
             let manifest = try validateSnapshot(
@@ -173,6 +177,7 @@ public struct PortableArtifactStore: Sendable {
                 }
                 throw error
             }
+            return try snapshotDigests(manifest)
         }
     }
 
@@ -625,6 +630,20 @@ public struct PortableArtifactStore: Sendable {
             from: Data(
                 contentsOf: URL(
                     fileURLWithPath: snapshot.appending("manifest.json").string)))
+    }
+
+    private func snapshotDigests(
+        _ manifest: PortableArtifactManifest
+    ) throws -> [String: ArtifactDigest] {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try Dictionary(
+            uniqueKeysWithValues: manifest.outputs.map { output in
+                (
+                    output.slot.rawValue,
+                    ArtifactDigest.sha256(try encoder.encode(output))
+                )
+            })
     }
 
     private func payloadPath(

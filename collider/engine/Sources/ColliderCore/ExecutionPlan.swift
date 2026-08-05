@@ -10,6 +10,7 @@ public struct TaskPlanEntry: Codable, Sendable {
     public let resources: PlannedTaskResources
     public let claims: [PlannedTaskClaim]
     public let portableSnapshot: PlannedPortableSnapshot?
+    public let audit: PlannedTaskAudit?
 
     public init(
         task: TaskID,
@@ -20,7 +21,8 @@ public struct TaskPlanEntry: Codable, Sendable {
         coordinates: TaskExecutionCoordinates?,
         resources: PlannedTaskResources = .lightweight,
         claims: [PlannedTaskClaim] = [],
-        portableSnapshot: PlannedPortableSnapshot? = nil
+        portableSnapshot: PlannedPortableSnapshot? = nil,
+        audit: PlannedTaskAudit? = nil
     ) {
         self.task = task
         self.identity = identity
@@ -31,6 +33,180 @@ public struct TaskPlanEntry: Codable, Sendable {
         self.resources = resources
         self.claims = claims
         self.portableSnapshot = portableSnapshot
+        self.audit = audit
+    }
+}
+
+public struct PlannedTaskAudit: Codable, Sendable {
+    public let component: ComponentID
+    public let actionKind: String?
+    public let actionIdentity: ArtifactDigest?
+    public let semanticDependencies: [String: ArtifactDigest]
+    public let orderingDependencies: [String]
+    public let artifactReferences: [PlannedArtifactReferenceAudit]
+    public let resultReferences: [PlannedResultReferenceAudit]
+    public let inputs: [PlannedInputAudit]
+    public let semanticTools: [PlannedToolAudit]
+    public let operationalTools: [PlannedToolAudit]
+    public let swiftBuildContexts: [PlannedSwiftBuildContextAudit]
+    public let outputs: [PlannedOutputAudit]
+    public let postconditions: [PlannedOutputAudit]
+    public let effects: [PlannedEffectAudit]
+    public let networkAccess: String
+    public let assessmentPolicy: String
+
+    public init(
+        component: ComponentID,
+        actionKind: String?,
+        actionIdentity: ArtifactDigest?,
+        semanticDependencies: [String: ArtifactDigest],
+        orderingDependencies: [String],
+        artifactReferences: [PlannedArtifactReferenceAudit],
+        resultReferences: [PlannedResultReferenceAudit],
+        inputs: [PlannedInputAudit],
+        semanticTools: [PlannedToolAudit],
+        operationalTools: [PlannedToolAudit],
+        swiftBuildContexts: [PlannedSwiftBuildContextAudit],
+        outputs: [PlannedOutputAudit],
+        postconditions: [PlannedOutputAudit],
+        effects: [PlannedEffectAudit],
+        networkAccess: String,
+        assessmentPolicy: String
+    ) {
+        self.component = component
+        self.actionKind = actionKind
+        self.actionIdentity = actionIdentity
+        self.semanticDependencies = semanticDependencies
+        self.orderingDependencies = orderingDependencies
+        self.artifactReferences = artifactReferences
+        self.resultReferences = resultReferences
+        self.inputs = inputs
+        self.semanticTools = semanticTools
+        self.operationalTools = operationalTools
+        self.swiftBuildContexts = swiftBuildContexts
+        self.outputs = outputs
+        self.postconditions = postconditions
+        self.effects = effects
+        self.networkAccess = networkAccess
+        self.assessmentPolicy = assessmentPolicy
+    }
+}
+
+public struct PlannedArtifactReferenceAudit: Codable, Sendable {
+    public let producer: TaskID
+    public let slot: OutputSlotID
+    public let kind: ArtifactValueKind
+    public let path: String
+
+    public init(
+        producer: TaskID,
+        slot: OutputSlotID,
+        kind: ArtifactValueKind,
+        path: String
+    ) {
+        self.producer = producer
+        self.slot = slot
+        self.kind = kind
+        self.path = path
+    }
+}
+
+public struct PlannedResultReferenceAudit: Codable, Sendable {
+    public let producer: TaskID
+    public let slot: OutputSlotID
+    public let valueType: String
+
+    public init(producer: TaskID, slot: OutputSlotID, valueType: String) {
+        self.producer = producer
+        self.slot = slot
+        self.valueType = valueType
+    }
+}
+
+public struct PlannedInputAudit: Codable, Sendable {
+    public let kind: String
+    public let name: String?
+    public let path: String?
+    public let digest: ArtifactDigest
+
+    public init(
+        kind: String,
+        name: String? = nil,
+        path: String? = nil,
+        digest: ArtifactDigest
+    ) {
+        self.kind = kind
+        self.name = name
+        self.path = path
+        self.digest = digest
+    }
+}
+
+public struct PlannedToolAudit: Codable, Sendable {
+    public let name: String
+    public let executable: String
+    public let path: String?
+    public let digest: ArtifactDigest?
+    public let producer: TaskID?
+    public let slot: OutputSlotID?
+
+    public init(
+        name: String,
+        executable: String,
+        path: String? = nil,
+        digest: ArtifactDigest? = nil,
+        producer: TaskID? = nil,
+        slot: OutputSlotID? = nil
+    ) {
+        self.name = name
+        self.executable = executable
+        self.path = path
+        self.digest = digest
+        self.producer = producer
+        self.slot = slot
+    }
+}
+
+public struct PlannedSwiftBuildContextAudit: Codable, Sendable {
+    public let role: String
+    public let product: String
+    public let identity: ArtifactDigest
+
+    public init(role: String, product: String, identity: ArtifactDigest) {
+        self.role = role
+        self.product = product
+        self.identity = identity
+    }
+}
+
+public struct PlannedOutputAudit: Codable, Sendable {
+    public let slot: OutputSlotID?
+    public let kind: ArtifactValueKind?
+    public let path: String
+    public let validation: PathValidation
+
+    public init(
+        slot: OutputSlotID? = nil,
+        kind: ArtifactValueKind? = nil,
+        path: String,
+        validation: PathValidation
+    ) {
+        self.slot = slot
+        self.kind = kind
+        self.path = path
+        self.validation = validation
+    }
+}
+
+public struct PlannedEffectAudit: Codable, Sendable {
+    public let access: String
+    public let scope: String
+    public let root: String
+
+    public init(access: String, scope: String, root: String) {
+        self.access = access
+        self.scope = scope
+        self.root = root
     }
 }
 
