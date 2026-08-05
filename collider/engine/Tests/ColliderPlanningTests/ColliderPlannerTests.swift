@@ -197,8 +197,8 @@ import Testing
             == identity(dependencies: [second.id, first.id]))
 }
 
-@Test func portableEligibilityRejectsUnauditedCapabilities() throws {
-    let output = FilePath("/fixture/portable-output")
+@Test func artifactCacheEligibilityRejectsUnauditedCapabilities() throws {
+    let output = FilePath("/fixture/artifact-cache-output")
     let cases: [(String, ActionRequirements)] = [
         (
             "ambient-semantic-tool",
@@ -251,16 +251,16 @@ import Testing
 
     for (name, requirements) in cases {
         var builder = TaskBuilder(
-            id: TaskID(rawValue: "fixture.portable-\(name)"),
+            id: TaskID(rawValue: "fixture.artifact-cached-\(name)"),
             component: ComponentID(rawValue: "fixture"))
         let _: ArtifactReference<FileArtifact> = try builder.output(
             "output",
             path: output,
             validation: .regularFile)
         let task = builder.build(
-            assessmentPolicy: .portable,
+            assessmentPolicy: .artifactCached,
             action: try AnyColliderAction(
-                PortableEligibilityAction(requirements: requirements)))
+                ArtifactCacheEligibilityAction(requirements: requirements)))
 
         #expect(throws: ColliderPlanningFailure.self) {
             _ = try ColliderPlanner().plan(
@@ -273,7 +273,7 @@ import Testing
     }
 }
 
-@Test func contentAddressedNetworkAccessRemainsPortableEligible() throws {
+@Test func contentAddressedNetworkAccessRemainsArtifactCacheEligible() throws {
     let output = FilePath("/fixture/content-addressed-output")
     var builder = TaskBuilder(
         id: TaskID(rawValue: "fixture.content-addressed"),
@@ -283,9 +283,9 @@ import Testing
         path: output,
         validation: .regularFile)
     let task = builder.build(
-        assessmentPolicy: .portable,
+        assessmentPolicy: .artifactCached,
         action: try AnyColliderAction(
-            PortableEligibilityAction(
+            ArtifactCacheEligibilityAction(
                 requirements: ActionRequirements(
                     effects: [ActionEffect(.write, scope: .output(output))],
                     networkAccess: .contentAddressed,
@@ -353,14 +353,14 @@ private struct RelocatableIdentityAction: ColliderAction {
     func execute(in _: ActionContext) async throws {}
 }
 
-private struct PortableEligibilityAction: ColliderAction {
+private struct ArtifactCacheEligibilityAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: "portable-eligibility")
+            encoder.append(tag: 1, string: "artifact-cache-eligibility")
         }
     }
 
-    static let kind: ActionKind = "fixture.portable-eligibility"
+    static let kind: ActionKind = "fixture.artifact-cache-eligibility"
 
     let requirements: ActionRequirements
     var identity: Identity { Identity() }

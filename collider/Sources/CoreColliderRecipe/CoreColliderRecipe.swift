@@ -208,7 +208,7 @@ public enum CoreColliderRecipe: ColliderComponent {
             validation: .regularFile)
         let download = downloadBuilder.build(
             locks: [.checkout("core-sources")],
-            assessmentPolicy: .portable,
+            assessmentPolicy: .artifactCached,
             action:
                 try AnyColliderAction(
                     DownloadSkiaGNAction(
@@ -246,7 +246,7 @@ public enum CoreColliderRecipe: ColliderComponent {
             validation: .executableFile)
         let install = installBuilder.build(
             locks: [.checkout("core-sources")],
-            assessmentPolicy: .portable,
+            assessmentPolicy: .artifactCached,
             action:
                 try AnyColliderAction(
                     InstallSkiaGNAction(

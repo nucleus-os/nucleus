@@ -93,20 +93,20 @@ public struct RunTaskRecord: Codable, Sendable {
     public let plan: TaskPlanEntry
     public var outcome: TaskRunOutcome?
     public var durationNanoseconds: UInt64?
-    public var outputSnapshotDigests: [String: ArtifactDigest]?
+    public var artifactSnapshotDigests: [String: ArtifactDigest]?
     public var observations: TaskExecutionObservations?
 
     public init(
         plan: TaskPlanEntry,
         outcome: TaskRunOutcome? = nil,
         durationNanoseconds: UInt64? = nil,
-        outputSnapshotDigests: [String: ArtifactDigest]? = nil,
+        artifactSnapshotDigests: [String: ArtifactDigest]? = nil,
         observations: TaskExecutionObservations? = nil
     ) {
         self.plan = plan
         self.outcome = outcome
         self.durationNanoseconds = durationNanoseconds
-        self.outputSnapshotDigests = outputSnapshotDigests
+        self.artifactSnapshotDigests = artifactSnapshotDigests
         self.observations = observations
     }
 }

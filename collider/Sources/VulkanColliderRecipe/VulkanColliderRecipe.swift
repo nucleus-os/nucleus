@@ -72,7 +72,7 @@ public enum VulkanColliderRecipe: ColliderComponent {
                 .file(root.appending("third-party/vk.xml"))
             ],
             locks: [.checkout("vulkan")],
-            assessmentPolicy: .portable,
+            assessmentPolicy: .artifactCached,
             action:
                 try AnyColliderAction(
                     GenerateVulkanBindingsAction(

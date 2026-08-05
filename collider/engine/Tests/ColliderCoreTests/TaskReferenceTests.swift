@@ -267,8 +267,8 @@ private func inertActionFileSystem() -> ActionFileSystem {
     let incremental = try await identity(
         consumer(after: nil, policy: .incremental),
         includingAnchor: false)
-    let portable = try await identity(
-        consumer(after: nil, policy: .portable),
+    let artifactCached = try await identity(
+        consumer(after: nil, policy: .artifactCached),
         includingAnchor: false)
     let ordered = try await identity(
         consumer(
@@ -276,6 +276,6 @@ private func inertActionFileSystem() -> ActionFileSystem {
             policy: .incremental),
         includingAnchor: true)
 
-    #expect(incremental == portable)
+    #expect(incremental == artifactCached)
     #expect(incremental == ordered)
 }

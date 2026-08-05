@@ -515,7 +515,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             validation: .regularFile)
         let task = builder.build(
             locks: [.checkout("swift-target-sdk-downloads")],
-            assessmentPolicy: .portable,
+            assessmentPolicy: .artifactCached,
             action:
                 try AnyColliderAction(
                     DownloadSwiftTargetSDKInputAction(

@@ -29,14 +29,14 @@ private actor ParallelismProbe {
     func maximum() -> Int { maximumActive }
 }
 
-private actor PortableExecutionProbe {
+private actor ArtifactCacheExecutionProbe {
     private var executions = 0
 
     func record() { executions += 1 }
     func count() -> Int { executions }
 }
 
-private struct PortableTreeAction: ColliderAction {
+private struct ArtifactCachedTreeAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let output: FilePath
 
@@ -45,10 +45,10 @@ private struct PortableTreeAction: ColliderAction {
         }
     }
 
-    static let kind: ActionKind = "fixture.portable-tree"
+    static let kind: ActionKind = "fixture.artifact-cached-tree"
 
     let output: FilePath
-    let probe: PortableExecutionProbe
+    let probe: ArtifactCacheExecutionProbe
 
     var identity: Identity { Identity(output: output) }
 
@@ -75,33 +75,33 @@ private struct PortableTreeAction: ColliderAction {
     }
 }
 
-private func portableTreeTask(
+private func artifactCachedTreeTask(
     output: FilePath,
-    probe: PortableExecutionProbe
+    probe: ArtifactCacheExecutionProbe
 ) throws -> TaskDeclaration {
     var builder = TaskBuilder(
-        id: TaskID(rawValue: "fixture.portable-tree"),
+        id: TaskID(rawValue: "fixture.artifact-cached-tree"),
         component: ComponentID(rawValue: "fixture"))
     let _: ArtifactReference<DirectoryArtifact> = try builder.output(
         "tree",
         path: output,
         validation: .nonEmptyDirectory)
     return builder.build(
-        assessmentPolicy: .portable,
+        assessmentPolicy: .artifactCached,
         action: try AnyColliderAction(
-            PortableTreeAction(output: output, probe: probe)))
+            ArtifactCachedTreeAction(output: output, probe: probe)))
 }
 
-@Test func portableTaskRestoresAcrossRelocationAndRebuildsCorruption() async throws {
+@Test func artifactCachedTaskRestoresAcrossRelocationAndRebuildsCorruption() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-portable-engine-\(UUID().uuidString)")
+        "collider-artifact-cache-engine-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
     let stateRoot = FilePath(directory.appendingPathComponent("state").path)
-    let probe = PortableExecutionProbe()
+    let probe = ArtifactCacheExecutionProbe()
 
     func run(at name: String) async throws -> TaskExecutionReport {
         let workspace = FilePath(directory.appendingPathComponent(name).path)
-        let task = try portableTreeTask(
+        let task = try artifactCachedTreeTask(
             output: workspace.appending("generated"),
             probe: probe)
         return try await ColliderEngine(runtime: ColliderRuntime()).execute(
@@ -114,13 +114,13 @@ private func portableTreeTask(
     }
 
     let first = try await run(at: "first")
-    #expect(first.executed == [TaskID(rawValue: "fixture.portable-tree")])
+    #expect(first.executed == [TaskID(rawValue: "fixture.artifact-cached-tree")])
     #expect(first.restored.isEmpty)
     #expect(await probe.count() == 1)
 
     let second = try await run(at: "second")
     #expect(second.executed.isEmpty)
-    #expect(second.restored == [TaskID(rawValue: "fixture.portable-tree")])
+    #expect(second.restored == [TaskID(rawValue: "fixture.artifact-cached-tree")])
     #expect(await probe.count() == 1)
     #expect(
         try FileManager.default.destinationOfSymbolicLink(
@@ -130,16 +130,16 @@ private func portableTreeTask(
     let identity = try #require(first.plan.first).identity
     try Data("corrupt".utf8).write(
         to: directory.appendingPathComponent(
-            "state/portable-artifacts/sha256-\(identity.hexadecimal)/"
+            "state/artifact-snapshots/sha256-\(identity.hexadecimal)/"
                 + "payload/000000/script"))
     let third = try await run(at: "third")
-    #expect(third.executed == [TaskID(rawValue: "fixture.portable-tree")])
+    #expect(third.executed == [TaskID(rawValue: "fixture.artifact-cached-tree")])
     #expect(third.restored.isEmpty)
     #expect(await probe.count() == 2)
     #expect(
         try FileManager.default.contentsOfDirectory(
             at: directory.appendingPathComponent(
-                "state/portable-artifacts/quarantine"),
+                "state/artifact-snapshots/quarantine"),
             includingPropertiesForKeys: nil
         ).count == 1)
 }

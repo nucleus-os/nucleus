@@ -9,7 +9,7 @@ public struct TaskPlanEntry: Codable, Sendable {
     public let coordinates: TaskExecutionCoordinates?
     public let resources: PlannedTaskResources
     public let claims: [PlannedTaskClaim]
-    public let portableSnapshot: PlannedPortableSnapshot?
+    public let artifactSnapshot: PlannedArtifactSnapshot?
     public let audit: PlannedTaskAudit
     public let logicalOwners: [TaskID]
     public let attribution: String?
@@ -23,7 +23,7 @@ public struct TaskPlanEntry: Codable, Sendable {
         coordinates: TaskExecutionCoordinates?,
         resources: PlannedTaskResources = .lightweight,
         claims: [PlannedTaskClaim] = [],
-        portableSnapshot: PlannedPortableSnapshot? = nil,
+        artifactSnapshot: PlannedArtifactSnapshot? = nil,
         audit: PlannedTaskAudit,
         logicalOwners: [TaskID] = [],
         attribution: String? = nil
@@ -36,7 +36,7 @@ public struct TaskPlanEntry: Codable, Sendable {
         self.coordinates = coordinates
         self.resources = resources
         self.claims = claims
-        self.portableSnapshot = portableSnapshot
+        self.artifactSnapshot = artifactSnapshot
         self.audit = audit
         self.logicalOwners = logicalOwners
         self.attribution = attribution
@@ -216,13 +216,13 @@ public struct PlannedEffectAudit: Codable, Sendable {
     }
 }
 
-public enum PortableSnapshotState: Sendable {
+public enum ArtifactSnapshotState: Sendable {
     case missing
     case available
     case corrupt
 }
 
-public enum PlannedPortableSnapshot: String, Codable, Hashable, Sendable {
+public enum PlannedArtifactSnapshot: String, Codable, Hashable, Sendable {
     case restore
     case quarantine
 }
@@ -323,16 +323,16 @@ public struct TaskExecutionCoordinates: Codable, Hashable, Sendable {
 public struct TaskAssessment: Sendable {
     public let isClean: Bool
     public let explanation: String
-    public let portableSnapshot: PlannedPortableSnapshot?
+    public let artifactSnapshot: PlannedArtifactSnapshot?
 
     public init(
         isClean: Bool,
         explanation: String,
-        portableSnapshot: PlannedPortableSnapshot? = nil
+        artifactSnapshot: PlannedArtifactSnapshot? = nil
     ) {
         self.isClean = isClean
         self.explanation = explanation
-        self.portableSnapshot = portableSnapshot
+        self.artifactSnapshot = artifactSnapshot
     }
 }
 
@@ -392,7 +392,7 @@ public struct TaskPlanningServices {
         (CommandSpec.Executable, [String: String]) throws -> ToolIdentitySnapshot
     public let taskState: (TaskID) -> PlanningTaskState
     public let validateOutputs: (TaskDeclaration) throws -> Void
-    public let portableSnapshotState: (TaskID, ArtifactDigest) -> PortableSnapshotState
+    public let artifactSnapshotState: (TaskID, ArtifactDigest) -> ArtifactSnapshotState
 
     public init(
         resourceCapacity: TaskResourceCapacity,
@@ -406,8 +406,8 @@ public struct TaskPlanningServices {
             @escaping (CommandSpec.Executable, [String: String]) throws -> ToolIdentitySnapshot,
         taskState: @escaping (TaskID) -> PlanningTaskState,
         validateOutputs: @escaping (TaskDeclaration) throws -> Void,
-        portableSnapshotState:
-            @escaping (TaskID, ArtifactDigest) -> PortableSnapshotState = {
+        artifactSnapshotState:
+            @escaping (TaskID, ArtifactDigest) -> ArtifactSnapshotState = {
                 _, _ in .missing
             }
     ) {
@@ -421,6 +421,6 @@ public struct TaskPlanningServices {
         self.semanticToolIdentity = semanticToolIdentity
         self.taskState = taskState
         self.validateOutputs = validateOutputs
-        self.portableSnapshotState = portableSnapshotState
+        self.artifactSnapshotState = artifactSnapshotState
     }
 }

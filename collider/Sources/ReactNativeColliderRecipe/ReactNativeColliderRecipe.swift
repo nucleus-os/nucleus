@@ -215,7 +215,7 @@ public enum ReactNativeColliderRecipe {
             validation: .regularFile)
         let downloadTask = downloadBuilder.build(
             locks: [.checkout("rn-boost")],
-            assessmentPolicy: .portable,
+            assessmentPolicy: .artifactCached,
             action:
                 try AnyColliderAction(
                     DownloadBoostAction(

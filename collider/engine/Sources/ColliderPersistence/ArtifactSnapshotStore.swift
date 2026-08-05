@@ -9,7 +9,7 @@ import Glibc
 import Darwin
 #endif
 
-public struct PortableArtifactStore: Sendable {
+public struct ArtifactSnapshotStore: Sendable {
     public struct Limits: Hashable, Sendable {
         public let maximumSnapshotBytes: UInt64
         public let maximumTotalBytes: UInt64
@@ -50,7 +50,7 @@ public struct PortableArtifactStore: Sendable {
     public func state(
         task: TaskID,
         identity: ArtifactDigest
-    ) -> PortableSnapshotState {
+    ) -> ArtifactSnapshotState {
         let snapshot = snapshotPath(identity)
         guard pathExists(snapshot) else { return .missing }
         guard pathExists(snapshot.appending("manifest.json")) else {
@@ -89,7 +89,7 @@ public struct PortableArtifactStore: Sendable {
                         task: task,
                         identity: identity)
                     return try snapshotDigests(manifest)
-                } catch let failure as PortableArtifactStoreFailure
+                } catch let failure as ArtifactSnapshotStoreFailure
                     where failure.isSnapshotCorruption
                 {
                     try quarantineUnlocked(identity)
@@ -156,7 +156,7 @@ public struct PortableArtifactStore: Sendable {
                         to: candidate)
                     let restoredEntries = try snapshotEntries(at: candidate).entries
                     guard restoredEntries == manifest.outputs[index].entries else {
-                        throw PortableArtifactStoreFailure.corruptSnapshot(
+                        throw ArtifactSnapshotStoreFailure.corruptSnapshot(
                             task: task.id,
                             reason: "restored payload does not match its manifest")
                     }
@@ -179,25 +179,6 @@ public struct PortableArtifactStore: Sendable {
             }
             return try snapshotDigests(manifest)
         }
-    }
-
-    /// Digests the complete declared output-slot state without making a
-    /// portability claim. Unlike a portable snapshot, this audit may describe
-    /// absolute or escaping symlink targets because it is never restored.
-    public func auditOutputDigests(
-        task: TaskDeclaration
-    ) throws -> [String: ArtifactDigest] {
-        let outputs = try sortedOutputSlots(task).map { slot in
-            PortableArtifactOutput(
-                slot: slot.id,
-                validation: slot.validation,
-                kind: slot.kind,
-                entries: try snapshotEntries(
-                    at: slot.path,
-                    enforcePortableSymlinks: false
-                ).entries)
-        }
-        return try snapshotDigests(outputs)
     }
 
     public func quarantine(identity: ArtifactDigest) throws {
@@ -241,20 +222,20 @@ public struct PortableArtifactStore: Sendable {
         task: TaskDeclaration,
         identity: ArtifactDigest,
         at candidate: FilePath
-    ) throws -> PortableArtifactManifest {
+    ) throws -> ArtifactSnapshotManifest {
         let slots = try eligibleOutputSlots(task)
         let payload = candidate.appending("payload")
         try FileManager.default.createDirectory(
             atPath: payload.string,
             withIntermediateDirectories: true)
-        var outputs: [PortableArtifactOutput] = []
+        var outputs: [ArtifactSnapshotOutput] = []
         var totalBytes: UInt64 = 0
         for (index, slot) in slots.enumerated() {
             let snapshot = try snapshotEntries(at: slot.path)
             guard snapshot.totalBytes <= limits.maximumSnapshotBytes,
                 totalBytes <= limits.maximumSnapshotBytes - snapshot.totalBytes
             else {
-                throw PortableArtifactStoreFailure.snapshotTooLarge(
+                throw ArtifactSnapshotStoreFailure.snapshotTooLarge(
                     task: task.id,
                     maximumBytes: limits.maximumSnapshotBytes)
             }
@@ -264,13 +245,13 @@ public struct PortableArtifactStore: Sendable {
                 atPath: slot.path.string,
                 toPath: destination.string)
             outputs.append(
-                PortableArtifactOutput(
+                ArtifactSnapshotOutput(
                     slot: slot.id,
                     validation: slot.validation,
                     kind: slot.kind,
                     entries: snapshot.entries))
         }
-        return PortableArtifactManifest(
+        return ArtifactSnapshotManifest(
             task: task.id,
             identity: identity,
             capturedAt: ISO8601DateFormatter().string(from: Date()),
@@ -283,28 +264,28 @@ public struct PortableArtifactStore: Sendable {
         at snapshot: FilePath,
         task: TaskDeclaration,
         identity: ArtifactDigest
-    ) throws -> PortableArtifactManifest {
-        let manifest: PortableArtifactManifest
+    ) throws -> ArtifactSnapshotManifest {
+        let manifest: ArtifactSnapshotManifest
         guard pathExists(snapshot.appending("manifest.json")) else {
-            throw PortableArtifactStoreFailure.corruptSnapshot(
+            throw ArtifactSnapshotStoreFailure.corruptSnapshot(
                 task: task.id,
                 reason: "manifest is missing")
         }
         do {
             manifest = try loadManifest(at: snapshot)
         } catch let error as DecodingError {
-            throw PortableArtifactStoreFailure.corruptSnapshot(
+            throw ArtifactSnapshotStoreFailure.corruptSnapshot(
                 task: task.id,
                 reason: "manifest cannot be decoded: \(error)")
         }
         guard manifest.task == task.id, manifest.identity == identity else {
-            throw PortableArtifactStoreFailure.corruptSnapshot(
+            throw ArtifactSnapshotStoreFailure.corruptSnapshot(
                 task: task.id,
                 reason: "manifest task or identity does not match its storage key")
         }
         let slots = try eligibleOutputSlots(task)
         guard manifest.outputs.count == slots.count else {
-            throw PortableArtifactStoreFailure.corruptSnapshot(
+            throw ArtifactSnapshotStoreFailure.corruptSnapshot(
                 task: task.id,
                 reason: "manifest output count does not match the task declaration")
         }
@@ -315,14 +296,14 @@ public struct PortableArtifactStore: Sendable {
                 output.validation == slot.validation,
                 output.kind == slot.kind
             else {
-                throw PortableArtifactStoreFailure.corruptSnapshot(
+                throw ArtifactSnapshotStoreFailure.corruptSnapshot(
                     task: task.id,
                     reason: "manifest output contract does not match slot '\(slot.id)'")
             }
             let stored = payloadPath(snapshot: snapshot, index: index)
             let actual = try snapshotEntries(at: stored)
             guard actual.entries == output.entries else {
-                throw PortableArtifactStoreFailure.corruptSnapshot(
+                throw ArtifactSnapshotStoreFailure.corruptSnapshot(
                     task: task.id,
                     reason: "payload for slot '\(slot.id)' does not match its manifest")
             }
@@ -331,7 +312,7 @@ public struct PortableArtifactStore: Sendable {
         guard totalBytes == manifest.totalBytes,
             totalBytes <= limits.maximumSnapshotBytes
         else {
-            throw PortableArtifactStoreFailure.corruptSnapshot(
+            throw ArtifactSnapshotStoreFailure.corruptSnapshot(
                 task: task.id,
                 reason: "manifest byte count is invalid")
         }
@@ -343,9 +324,9 @@ public struct PortableArtifactStore: Sendable {
     ) throws -> [AnyTaskOutputSlot] {
         let slots = sortedOutputSlots(task)
         guard !slots.isEmpty, slots.count == task.outputs.count else {
-            throw PortableArtifactStoreFailure.invalidDeclaration(
+            throw ArtifactSnapshotStoreFailure.invalidDeclaration(
                 task: task.id,
-                reason: "portable tasks require typed output slots for every output")
+                reason: "artifact-cached tasks require typed output slots for every output")
         }
         for slot in slots {
             guard
@@ -353,7 +334,7 @@ public struct PortableArtifactStore: Sendable {
                     $0.path == slot.path && $0.validation == slot.validation
                 })
             else {
-                throw PortableArtifactStoreFailure.invalidDeclaration(
+                throw ArtifactSnapshotStoreFailure.invalidDeclaration(
                     task: task.id,
                     reason: "output slot '\(slot.id)' has no matching declaration")
             }
@@ -369,10 +350,10 @@ public struct PortableArtifactStore: Sendable {
 
     private func snapshotEntries(
         at root: FilePath,
-        enforcePortableSymlinks: Bool = true
-    ) throws -> (entries: [PortableArtifactEntry], totalBytes: UInt64) {
+        enforceRelocatableSymlinks: Bool = true
+    ) throws -> (entries: [ArtifactSnapshotEntry], totalBytes: UInt64) {
         guard pathExists(root) else {
-            throw PortableArtifactStoreFailure.corruptSnapshot(
+            throw ArtifactSnapshotStoreFailure.corruptSnapshot(
                 task: TaskID(rawValue: "unknown"),
                 reason: "snapshot payload is missing at \(root)")
         }
@@ -386,7 +367,7 @@ public struct PortableArtifactStore: Sendable {
             }
         }
         paths.sort { $0.relative.utf8.lexicographicallyPrecedes($1.relative.utf8) }
-        var entries: [PortableArtifactEntry] = []
+        var entries: [ArtifactSnapshotEntry] = []
         var totalBytes: UInt64 = 0
         for value in paths {
             let metadata = try value.path.stat(followTargetSymlink: false)
@@ -396,11 +377,11 @@ public struct PortableArtifactStore: Sendable {
             case .regular:
                 let size = UInt64(max(0, metadata.size))
                 guard totalBytes <= UInt64.max - size else {
-                    throw PortableArtifactStoreFailure.invalidSize(value.path)
+                    throw ArtifactSnapshotStoreFailure.invalidSize(value.path)
                 }
                 totalBytes += size
                 entries.append(
-                    PortableArtifactEntry(
+                    ArtifactSnapshotEntry(
                         relativePath: value.relative,
                         type: .file,
                         permissions: permissions,
@@ -408,7 +389,7 @@ public struct PortableArtifactStore: Sendable {
                         symlinkTarget: nil))
             case .directory:
                 entries.append(
-                    PortableArtifactEntry(
+                    ArtifactSnapshotEntry(
                         relativePath: value.relative,
                         type: .directory,
                         permissions: permissions,
@@ -417,17 +398,17 @@ public struct PortableArtifactStore: Sendable {
             case .symbolicLink:
                 let target = try FileManager.default.destinationOfSymbolicLink(
                     atPath: value.path.string)
-                guard !enforcePortableSymlinks || !FilePath(target).isAbsolute else {
-                    throw PortableArtifactStoreFailure.absoluteSymlink(
+                guard !enforceRelocatableSymlinks || !FilePath(target).isAbsolute else {
+                    throw ArtifactSnapshotStoreFailure.absoluteSymlink(
                         path: value.path,
                         target: target)
                 }
-                guard !enforcePortableSymlinks || !value.relative.isEmpty else {
-                    throw PortableArtifactStoreFailure.escapingSymlink(
+                guard !enforceRelocatableSymlinks || !value.relative.isEmpty else {
+                    throw ArtifactSnapshotStoreFailure.escapingSymlink(
                         path: value.path,
                         target: target)
                 }
-                if enforcePortableSymlinks {
+                if enforceRelocatableSymlinks {
                     let resolved = value.path.removingLastComponent()
                         .appending(target).lexicallyNormalized()
                     let normalizedRoot = root.lexicallyNormalized()
@@ -435,27 +416,27 @@ public struct PortableArtifactStore: Sendable {
                         resolved == normalizedRoot
                             || contains(resolved.string, in: normalizedRoot.string)
                     else {
-                        throw PortableArtifactStoreFailure.escapingSymlink(
+                        throw ArtifactSnapshotStoreFailure.escapingSymlink(
                             path: value.path,
                             target: target)
                     }
                 }
                 entries.append(
-                    PortableArtifactEntry(
+                    ArtifactSnapshotEntry(
                         relativePath: value.relative,
                         type: .symlink,
                         permissions: permissions,
                         digest: nil,
                         symlinkTarget: target))
             default:
-                throw PortableArtifactStoreFailure.unsupportedFileType(value.path)
+                throw ArtifactSnapshotStoreFailure.unsupportedFileType(value.path)
             }
         }
         return (entries, totalBytes)
     }
 
     private func applyPermissions(
-        _ entries: [PortableArtifactEntry],
+        _ entries: [ArtifactSnapshotEntry],
         to root: FilePath
     ) throws {
         for entry in entries where entry.type != .symlink {
@@ -546,8 +527,8 @@ public struct PortableArtifactStore: Sendable {
         }
     }
 
-    private func snapshotRecords() throws -> [PortableSnapshotRecord] {
-        var records: [PortableSnapshotRecord] = []
+    private func snapshotRecords() throws -> [ArtifactSnapshotRecord] {
+        var records: [ArtifactSnapshotRecord] = []
         for name in try FileManager.default.contentsOfDirectory(atPath: root.string)
         where name.hasPrefix("sha256-") {
             let path = root.appending(name)
@@ -561,7 +542,7 @@ public struct PortableArtifactStore: Sendable {
                     try quarantineUnlocked(identity)
                     return
                 }
-                let manifest: PortableArtifactManifest
+                let manifest: ArtifactSnapshotManifest
                 do {
                     manifest = try loadManifest(at: path)
                 } catch let error as DecodingError {
@@ -576,7 +557,7 @@ public struct PortableArtifactStore: Sendable {
                     return
                 }
                 records.append(
-                    PortableSnapshotRecord(
+                    ArtifactSnapshotRecord(
                         identity: identity,
                         path: path,
                         capturedAt: ISO8601DateFormatter().date(
@@ -631,7 +612,7 @@ public struct PortableArtifactStore: Sendable {
             let size = UInt64(max(0, metadata.size))
             let (sum, overflow) = total.addingReportingOverflow(size)
             guard !overflow else {
-                throw PortableArtifactStoreFailure.invalidSize(item)
+                throw ArtifactSnapshotStoreFailure.invalidSize(item)
             }
             total = sum
         }
@@ -646,22 +627,22 @@ public struct PortableArtifactStore: Sendable {
 
     private func loadManifest(
         at snapshot: FilePath
-    ) throws -> PortableArtifactManifest {
+    ) throws -> ArtifactSnapshotManifest {
         try JSONDecoder().decode(
-            PortableArtifactManifest.self,
+            ArtifactSnapshotManifest.self,
             from: Data(
                 contentsOf: URL(
                     fileURLWithPath: snapshot.appending("manifest.json").string)))
     }
 
     private func snapshotDigests(
-        _ manifest: PortableArtifactManifest
+        _ manifest: ArtifactSnapshotManifest
     ) throws -> [String: ArtifactDigest] {
         try snapshotDigests(manifest.outputs)
     }
 
     private func snapshotDigests(
-        _ outputs: [PortableArtifactOutput]
+        _ outputs: [ArtifactSnapshotOutput]
     ) throws -> [String: ArtifactDigest] {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -701,13 +682,13 @@ public struct PortableArtifactStore: Sendable {
         path: FilePath,
         _ body: () throws -> Result
     ) throws -> Result {
-        let lock = try PortableStoreLock(path: path)
+        let lock = try ArtifactSnapshotStoreLock(path: path)
         defer { withExtendedLifetime(lock) {} }
         return try body()
     }
 }
 
-public enum PortableArtifactStoreFailure: Error, CustomStringConvertible, Sendable {
+public enum ArtifactSnapshotStoreFailure: Error, CustomStringConvertible, Sendable {
     case absoluteSymlink(path: FilePath, target: String)
     case corruptSnapshot(task: TaskID, reason: String)
     case escapingSymlink(path: FilePath, target: String)
@@ -719,19 +700,19 @@ public enum PortableArtifactStoreFailure: Error, CustomStringConvertible, Sendab
     public var description: String {
         switch self {
         case .absoluteSymlink(let path, let target):
-            "portable snapshot contains absolute symlink '\(path)' -> '\(target)'"
+            "artifact snapshot contains absolute symlink '\(path)' -> '\(target)'"
         case .corruptSnapshot(let task, let reason):
-            "portable snapshot for '\(task)' is corrupt: \(reason)"
+            "artifact snapshot for '\(task)' is corrupt: \(reason)"
         case .escapingSymlink(let path, let target):
-            "portable snapshot contains escaping symlink '\(path)' -> '\(target)'"
+            "artifact snapshot contains escaping symlink '\(path)' -> '\(target)'"
         case .invalidDeclaration(let task, let reason):
-            "task '\(task)' is not eligible for portable caching: \(reason)"
+            "task '\(task)' is not eligible for Collider artifact caching: \(reason)"
         case .invalidSize(let path):
-            "portable snapshot size overflows at '\(path)'"
+            "artifact snapshot size overflows at '\(path)'"
         case .snapshotTooLarge(let task, let maximumBytes):
-            "portable snapshot for '\(task)' exceeds \(maximumBytes) bytes"
+            "artifact snapshot for '\(task)' exceeds \(maximumBytes) bytes"
         case .unsupportedFileType(let path):
-            "portable snapshot cannot represent the file type at '\(path)'"
+            "artifact snapshot cannot represent the file type at '\(path)'"
         }
     }
 
@@ -746,22 +727,22 @@ public enum PortableArtifactStoreFailure: Error, CustomStringConvertible, Sendab
     }
 }
 
-private struct PortableArtifactManifest: Codable, Equatable, Sendable {
+private struct ArtifactSnapshotManifest: Codable, Equatable, Sendable {
     let task: TaskID
     let identity: ArtifactDigest
     let capturedAt: String
     let totalBytes: UInt64
-    let outputs: [PortableArtifactOutput]
+    let outputs: [ArtifactSnapshotOutput]
 }
 
-private struct PortableArtifactOutput: Codable, Equatable, Sendable {
+private struct ArtifactSnapshotOutput: Codable, Equatable, Sendable {
     let slot: OutputSlotID
     let validation: PathValidation
     let kind: ArtifactValueKind
-    let entries: [PortableArtifactEntry]
+    let entries: [ArtifactSnapshotEntry]
 }
 
-private struct PortableArtifactEntry: Codable, Equatable, Sendable {
+private struct ArtifactSnapshotEntry: Codable, Equatable, Sendable {
     enum FileType: String, Codable, Sendable {
         case file
         case directory
@@ -775,14 +756,14 @@ private struct PortableArtifactEntry: Codable, Equatable, Sendable {
     let symlinkTarget: String?
 }
 
-private struct PortableSnapshotRecord: Sendable {
+private struct ArtifactSnapshotRecord: Sendable {
     let identity: ArtifactDigest
     let path: FilePath
     let capturedAt: Date
     let totalBytes: UInt64
 }
 
-private final class PortableStoreLock: @unchecked Sendable {
+private final class ArtifactSnapshotStoreLock: @unchecked Sendable {
     private let descriptor: FileDescriptor
 
     init(path: FilePath) throws {

@@ -73,7 +73,7 @@ public struct ColliderPlanner {
                         for: task.action,
                         capacity: services.resourceCapacity),
                     claims: normalizedClaims(for: task),
-                    portableSnapshot: assessment.portableSnapshot,
+                    artifactSnapshot: assessment.artifactSnapshot,
                     audit: evidence.audit))
         }
 
@@ -91,7 +91,7 @@ public struct ColliderPlanner {
                 coordinates: entry.coordinates,
                 resources: entry.resources,
                 claims: entry.claims,
-                portableSnapshot: nil,
+                artifactSnapshot: nil,
                 audit: entry.audit,
                 logicalOwners: entry.logicalOwners,
                 attribution: entry.attribution)
@@ -147,7 +147,7 @@ public struct ColliderPlanner {
                     for: lowered.task.action,
                     capacity: services.resourceCapacity),
                 claims: normalizedClaims(for: lowered.task),
-                portableSnapshot: assessment.portableSnapshot,
+                artifactSnapshot: assessment.artifactSnapshot,
                 audit: evidence.audit,
                 logicalOwners: lowered.logicalOwners.sorted {
                     $0.rawValue < $1.rawValue
@@ -265,22 +265,22 @@ public struct ColliderPlanner {
         explanation: String,
         services: TaskPlanningServices
     ) -> TaskAssessment {
-        guard task.assessmentPolicy == .portable else {
+        guard task.assessmentPolicy == .artifactCached else {
             return TaskAssessment(isClean: false, explanation: explanation)
         }
-        switch services.portableSnapshotState(task.id, identity) {
+        switch services.artifactSnapshotState(task.id, identity) {
         case .missing:
             return TaskAssessment(isClean: false, explanation: explanation)
         case .available:
             return TaskAssessment(
                 isClean: false,
-                explanation: "portable snapshot will restore invalid local output",
-                portableSnapshot: .restore)
+                explanation: "artifact snapshot will restore invalid local output",
+                artifactSnapshot: .restore)
         case .corrupt:
             return TaskAssessment(
                 isClean: false,
-                explanation: "corrupt portable snapshot will be quarantined and rebuilt",
-                portableSnapshot: .quarantine)
+                explanation: "corrupt artifact snapshot will be quarantined and rebuilt",
+                artifactSnapshot: .quarantine)
         }
     }
 
@@ -440,8 +440,8 @@ public struct ColliderPlanner {
 
         var implementationsByKind: [ActionKind: String] = [:]
         for task in tasks {
-            if task.assessmentPolicy == .portable {
-                try validatePortableEligibility(task)
+            if task.assessmentPolicy == .artifactCached {
+                try validateArtifactCacheEligibility(task)
             }
             guard let action = task.action else { continue }
             guard action.kind.rawValue.hasPrefix(task.component.rawValue + ".") else {
@@ -462,18 +462,18 @@ public struct ColliderPlanner {
         }
     }
 
-    private func validatePortableEligibility(
+    private func validateArtifactCacheEligibility(
         _ task: TaskDeclaration
     ) throws {
         guard let action = task.action else {
-            throw ColliderPlanningFailure.ineligiblePortableTask(
+            throw ColliderPlanningFailure.ineligibleArtifactCacheTask(
                 task: task.id,
-                reason: "portable tasks require one executable action")
+                reason: "artifact-cached tasks require one executable action")
         }
         guard action.requirements.networkAccess != .unrestricted else {
-            throw ColliderPlanningFailure.ineligiblePortableTask(
+            throw ColliderPlanningFailure.ineligibleArtifactCacheTask(
                 task: task.id,
-                reason: "unrestricted network access is not portable")
+                reason: "unrestricted network access is not eligible for artifact caching")
         }
         guard !task.outputSlots.isEmpty,
             task.outputSlots.count == task.outputs.count,
@@ -483,7 +483,7 @@ public struct ColliderPlanner {
                 }
             })
         else {
-            throw ColliderPlanningFailure.ineligiblePortableTask(
+            throw ColliderPlanningFailure.ineligibleArtifactCacheTask(
                 task: task.id,
                 reason: "every output must be a typed output slot")
         }
@@ -492,7 +492,7 @@ public struct ColliderPlanner {
             task.swiftProducts.isEmpty,
             task.swiftTests.isEmpty
         else {
-            throw ColliderPlanningFailure.ineligiblePortableTask(
+            throw ColliderPlanningFailure.ineligibleArtifactCacheTask(
                 task: task.id,
                 reason:
                     "results, shared postconditions, and SwiftPM scratch trees are not snapshots")
@@ -504,37 +504,37 @@ public struct ColliderPlanner {
                     !contains(paths[first], in: paths[second]),
                     !contains(paths[second], in: paths[first])
                 else {
-                    throw ColliderPlanningFailure.ineligiblePortableTask(
+                    throw ColliderPlanningFailure.ineligibleArtifactCacheTask(
                         task: task.id,
-                        reason: "portable output slots must not overlap")
+                        reason: "artifact-cache output slots must not overlap")
                 }
             }
         }
         for tool in action.requirements.tools {
             if tool.role == .operational {
-                throw ColliderPlanningFailure.ineligiblePortableTask(
+                throw ColliderPlanningFailure.ineligibleArtifactCacheTask(
                     task: task.id,
-                    reason: "operational tools require a separate portability audit")
+                    reason: "operational tools require a separate artifact-cache audit")
             }
             switch tool.executable {
             case .artifact:
                 break
             case .named, .operationalNamed, .path, .taskOutput:
-                throw ColliderPlanningFailure.ineligiblePortableTask(
+                throw ColliderPlanningFailure.ineligibleArtifactCacheTask(
                     task: task.id,
-                    reason: "ambient semantic tools are not portable")
+                    reason: "ambient semantic tools are not eligible for artifact caching")
             }
         }
         for effect in action.requirements.effects {
             switch effect.scope {
             case .unrestricted:
-                throw ColliderPlanningFailure.ineligiblePortableTask(
+                throw ColliderPlanningFailure.ineligibleArtifactCacheTask(
                     task: task.id,
-                    reason: "unrestricted effects are not portable")
+                    reason: "unrestricted effects are not eligible for artifact caching")
             case .checkout where effect.access != .read:
-                throw ColliderPlanningFailure.ineligiblePortableTask(
+                throw ColliderPlanningFailure.ineligibleArtifactCacheTask(
                     task: task.id,
-                    reason: "mutable source checkouts are not portable")
+                    reason: "mutable source checkouts are not eligible for artifact caching")
             case .input, .checkout, .scratch, .output, .publication:
                 break
             }
@@ -582,7 +582,7 @@ public enum ColliderPlanningFailure: Error, CustomStringConvertible, Sendable {
     case overlappingOutput(first: TaskID, second: TaskID, path: FilePath)
     case rawGeneratedOutputConsumption(
         consumer: TaskID, producer: TaskID, path: FilePath)
-    case ineligiblePortableTask(task: TaskID, reason: String)
+    case ineligibleArtifactCacheTask(task: TaskID, reason: String)
 
     public var description: String {
         switch self {
@@ -616,8 +616,8 @@ public enum ColliderPlanningFailure: Error, CustomStringConvertible, Sendable {
         case .rawGeneratedOutputConsumption(let consumer, let producer, let path):
             "task '\(consumer)' consumes generated output '\(path)' from '\(producer)' "
                 + "through a raw path instead of its typed artifact reference"
-        case .ineligiblePortableTask(let task, let reason):
-            "task '\(task)' is not eligible for portable caching: \(reason)"
+        case .ineligibleArtifactCacheTask(let task, let reason):
+            "task '\(task)' is not eligible for Collider artifact caching: \(reason)"
         }
     }
 }

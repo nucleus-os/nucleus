@@ -51,17 +51,17 @@ private func selectedTestTasks(
     return try ColliderPlanner().selectedTasks(in: catalog, requests: requests)
 }
 
-@Test func portablePromotionManifestIsExplicitAndFullyAudited() throws {
+@Test func artifactCachePromotionManifestIsExplicitAndFullyAudited() throws {
     let root = try #require(
         discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
     let catalog = try ComponentRegistry(
         context: WorkspaceContext(root: root, environment: [:])
     ).componentCatalog()
-    let portableTasks = catalog.tasks.filter {
-        $0.assessmentPolicy == .portable
+    let artifactCachedTasks = catalog.tasks.filter {
+        $0.assessmentPolicy == .artifactCached
     }
-    let actions = try portableTasks.map { task in
-        try #require(task.action, "portable task \(task.id) must own one action")
+    let actions = try artifactCachedTasks.map { task in
+        try #require(task.action, "artifact-cached task \(task.id) must own one action")
     }
 
     #expect(
@@ -74,7 +74,7 @@ private func selectedTestTasks(
             ActionKind(rawValue: "vulkan.generate-bindings"),
             ActionKind(rawValue: "wayland.generate-swift-sources"),
         ])
-    #expect(portableTasks.allSatisfy { !$0.outputs.isEmpty })
+    #expect(artifactCachedTasks.allSatisfy { !$0.outputs.isEmpty })
     #expect(
         actions.allSatisfy {
             $0.requirements.networkAccess != .unrestricted
@@ -589,7 +589,7 @@ private func fixtureReactNativeNodeModules(
         vulkan.tasks.flatMap(\.swiftProducts).map(\.qualifiedProduct) == [
             "swift-vulkan:VulkanGen"
         ])
-    #expect(vulkan.task.assessmentPolicy == .portable)
+    #expect(vulkan.task.assessmentPolicy == .artifactCached)
     #expect(
         vulkanAction.kind == ActionKind(rawValue: "vulkan.generate-bindings"))
     let vulkanTools = vulkanAction.requirements.tools
@@ -688,7 +688,7 @@ private func fixtureReactNativeNodeModules(
             "swift-wayland:SwiftWaylandGen"
         ])
     #expect(task.swiftProducts.isEmpty)
-    #expect(task.assessmentPolicy == .portable)
+    #expect(task.assessmentPolicy == .artifactCached)
     #expect(
         action.kind == ActionKind(rawValue: "wayland.generate-swift-sources"))
     #expect(generationContainers.count == 3)
@@ -740,7 +740,7 @@ private func fixtureReactNativeNodeModules(
             CoreTaskIDs.gnDownload,
             TaskID(rawValue: "native.builder"),
         ])
-    #expect(gnInstall.assessmentPolicy == .portable)
+    #expect(gnInstall.assessmentPolicy == .artifactCached)
     let gnExecutions = try await ociExecutions(in: gnInstall.action)
     #expect(gnExecutions.count == 1)
     #expect(gnExecutions[0].command == ["extract-gn"])

@@ -42,7 +42,7 @@ action validates a content-addressed result independently of that tool. Ambient
 host tools are therefore limited to host-only source materialization whose
 outputs are validated against exact revisions or content digests and which
 declares no target artifact. An ambient tool is never silently treated as an
-operational tool merely to make state portable.
+operational tool merely to make state artifact-cacheable.
 
 **One environment name has one meaning.** A path exported to both host and
 container execution resolves to the same logical level in both. The native SDK
@@ -79,8 +79,8 @@ identity state.
 identity covers semantic inputs, semantic dependency identities, output slots,
 action identity, and execution properties that can affect results. Ordering
 edges, diagnostic metadata, declaration order, locks, concurrency limits,
-incremental-versus-portable policy, and other scheduling or reuse data do not
-cause rebuilds.
+incremental-versus-artifact-cached policy, and other scheduling or reuse data
+do not cause rebuilds.
 
 **Ordering and semantic dependencies are distinct.** An ordering edge constrains
 execution and contributes nothing to identity. An artifact or result reference
@@ -101,7 +101,7 @@ derived-state reset.
 **Artifact identity is independent of placement.** Recipes exchange typed
 producer/output-slot references. Absolute host paths, container paths, and
 generation destinations are resolved during planning and execution and never
-become portable artifact identity.
+enter artifact identity.
 
 **Every effect crosses a narrow capability seam.** Component actions depend on
 `ColliderCore` contracts only. They do not import runtime actors, persistence
@@ -124,10 +124,10 @@ machine requirements, and cross-process locks are satisfied. A single root
 SwiftPM invocation may reserve most execution capacity; concurrency never
 means blindly running multiple build systems against one scratch database.
 
-**Incrementality and portability are separate promises.** Incremental tasks may
-reuse validated local outputs. Portable tasks additionally provide complete,
-relocatable, content-verified snapshots. No task becomes portable merely
-because its identity is content-addressed.
+**Incrementality and artifact caching are separate promises.** Incremental tasks
+may reuse validated local outputs. Artifact-cached tasks additionally provide
+complete, relocatable, content-verified snapshots. No task becomes
+artifact-cached merely because its identity is content-addressed.
 
 
 ## Current Foundation
@@ -415,7 +415,7 @@ runtime actors.
 - tool identity snapshots;
 - action-result records;
 - run manifests and event storage;
-- portable artifact manifests and storage;
+- artifact snapshot manifests and storage;
 - atomic file replacement;
 - bounded retention of artifacts and generations.
 
@@ -558,7 +558,7 @@ It excludes:
 - task execution and artifact-reuse policy;
 - `--jobs` and scheduler capacity;
 - log presentation settings;
-- absolute resolved output paths for portable artifacts;
+- absolute resolved output paths for artifact-cached outputs;
 - physical checkout, cache, and container-instance placement for any task whose
   execution environment and artifact target are otherwise identical.
 
@@ -687,7 +687,7 @@ The filesystem facade resolves only declared capabilities:
 Large external build systems receive a scoped tree handle. They are not
 misrepresented as touching only one typed file. Unrestricted absolute-path
 access is an audited capability with an explicit reason, is recorded in the run
-manifest, and disqualifies the task from portable caching.
+manifest, and disqualifies the task from Collider artifact caching.
 
 The context never exposes:
 
@@ -741,7 +741,7 @@ subprocess. Scoped tree capabilities declare the actual mutation boundary.
 
 `Command.unsafeShell` is restricted to workflows that genuinely require shell
 syntax. It must declare its effect scopes, is recorded prominently, and cannot
-use portable caching.
+use Collider artifact caching.
 
 ## Component and Selection Model
 
@@ -854,9 +854,9 @@ capability, and other physical host properties.
 `PrivilegeRequirement` covers binderfs, mount delegation, BPF delegation, and
 other kernel or container privileges.
 
-Network access is a policy, not hardware. Portable tasks declare whether
+Network access is a policy, not hardware. Artifact-cached tasks declare whether
 network is forbidden or restricted to content-addressed fetches. Unrestricted
-network access disqualifies portable caching.
+network access disqualifies Collider artifact caching.
 
 Planning resolves the action's tool requirements and derives container mounts
 from its scoped filesystem capabilities. Neither is repeated in
@@ -1028,7 +1028,7 @@ and execution durations for critical-path analysis.
 public enum TaskExecutionPolicy: Hashable, Sendable {
     case always
     case incremental
-    case portable
+    case artifactCached
 }
 ```
 
@@ -1046,7 +1046,7 @@ Uses canonical local state, task identity, and validated outputs. Most builds,
 checkouts, generated trees, AOSP products, Chromium products, and SwiftPM
 scratch-backed work remain incremental.
 
-### `portable`
+### `artifactCached`
 
 May restore a verified artifact snapshot. It requires:
 
@@ -1060,8 +1060,9 @@ May restore a verified artifact snapshot. It requires:
 - representable permissions, symlinks, and file types;
 - an audited execution environment.
 
-Portable manifests contain output-slot names, content digests or directory
-Merkle roots, permissions, symlink targets, and archive/chunk identities.
+Artifact snapshot manifests contain output-slot names, content digests or
+directory Merkle roots, permissions, symlink targets, and archive/chunk
+identities.
 Restoration materializes into a temporary sibling, validates the entire
 snapshot, and atomically publishes it. Existence and non-emptiness never prove
 cache validity.
@@ -1080,7 +1081,7 @@ Run manifests record:
 - scoped effect roots;
 - hardware probe results;
 - policy and assessment;
-- output snapshot digests;
+- artifact snapshot digests when the task is artifact-cached;
 - local-clean, restored, or executed outcome;
 - logical-to-physical SwiftPM attribution.
 
@@ -1556,9 +1557,9 @@ Complete the existing action seam with:
 - cancellation, logger, filesystem, command, and download capabilities;
 - typed ordering, artifact, and result references;
 - output slots and scoped checkout, scratch, output, and publication effects;
-- the final `always`, `incremental`, and `portable` assessment-policy names,
+- the final `always`, `incremental`, and `artifactCached` assessment-policy names,
   with every currently reusable task mapped to `incremental` and no task yet
-  granted portable restoration.
+  granted artifact restoration.
 
 `ActionRequirements` is authoritative for intrinsic tools and effects.
 `TaskDeclaration` adds placement, machine, privilege, network, reuse, and
@@ -1584,7 +1585,7 @@ for ordering.
 Change command arguments, working directories, and environment path values to
 typed references. Large external build systems receive scoped tree
 capabilities. Remaining unrestricted absolute-path or shell access is explicit,
-audited in the run manifest, and ineligible for portable caching.
+audited in the run manifest, and ineligible for Collider artifact caching.
 
 Convert `TaskOperation` cases in strict order:
 
@@ -1809,8 +1810,12 @@ Vulkan generation consumes one directly, and Wayland generation now builds its
 Linux/arm64 generator separately and runs the generator, produced scanner, and
 client/server generation exclusively inside one pinned OCI action. Each frozen
 physical task has one durable record containing its complete plan audit, logical
-owners and lowering attribution, outcome, duration, output-tree digests, actual
-OCI image digest and execution policy, and hardware-probe observations.
+owners and lowering attribution, outcome, duration, artifact snapshot digests
+when applicable, actual OCI image digest and execution policy, and
+hardware-probe observations. Incremental tasks defer file-level dependency and
+output-content tracking to their underlying build systems; Collider records
+their task identity and validates only their declared boundary outputs and
+postconditions.
 `ColliderTesting` owns the shared action-recording seam used by recipe tests.
 The engine-source terminology audit contains only generic platform and SwiftPM
 SDK vocabulary, and the complete engine and outer Collider acceptance suites
@@ -1863,33 +1868,33 @@ The kernel refactor is complete only when:
 - every mutable effect is scoped and recorded;
 - concurrency is safe across tasks and Collider processes.
 
-## Phase 9 — Add audited portable caching
+## Phase 9 — Add audited Collider artifact caching
 
-Portable caching builds on the completed kernel; it does not shape or delay the
-kernel migration.
+Collider artifact caching builds on the completed kernel; it does not shape or
+delay the kernel migration.
 
-**Progress: complete.** `ColliderPersistence` owns verified portable
+**Progress: complete.** `ColliderPersistence` owns verified artifact
 snapshots, atomic per-slot restoration, corruption quarantine, bounded sharded
 locking, retention synchronized against restoration, physical-size accounting,
 and rejection of escaping symlinks. Runtime distinguishes cache corruption from
 transient I/O failures so a good snapshot is never destroyed by an unrelated
-restore failure. Planning rejects portable tasks with ambient semantic or
+restore failure. Planning rejects artifact-cached tasks with ambient semantic or
 operational tools, unrestricted effects or network, mutable checkouts, shared
 postconditions, result slots, or SwiftPM scratch state. Content-addressed
 downloads declare restricted network access. Vulkan and Wayland deterministic
 generated-source actions consume typed first-party tools and are promoted recipe
-outputs. The complete catalog has an explicit portable promotion manifest
+outputs. The complete catalog has an explicit artifact-cache promotion manifest
 covering the AOSP Repo launcher, Skia GN download and installation, React Native
 Boost download, Swift target SDK inputs, Vulkan bindings, and Wayland sources.
 The run manifest records every promoted task's plan and complete output-slot
 digests. Generic relocation, deletion, restoration, corruption, quarantine,
-permissions, and symlink replay tests exercise the portable-store contract,
-while the corresponding recipe suites audit each promoted action and output
-declaration.
+permissions, and symlink replay tests exercise the artifact-snapshot-store
+contract, while the corresponding recipe suites audit each promoted action and
+output declaration.
 
-Keep `always`, `incremental`, and `portable` as assessment policies excluded
-from task identity. Migrating an action from incremental to portable never
-changes its output-equivalence identity.
+Keep `always`, `incremental`, and `artifactCached` as assessment policies
+excluded from task identity. Migrating an action from incremental to
+artifact-cached never changes its output-equivalence identity.
 
 Implement verified snapshots, restoration, quarantine, and bounded storage in
 `ColliderPersistence`. Promote bounded actions in strict order:
@@ -1902,18 +1907,18 @@ Implement verified snapshots, restoration, quarantine, and bounded storage in
 
 Keep SwiftPM scratch trees, mutable source checkouts, AOSP build trees, Chromium
 build trees, hardware qualification, unrestricted shell workflows, and
-unrestricted network workflows nonportable unless a later complete audit proves
-otherwise. A task with an ambient semantic tool, unrestricted effect, or
-unverified operational tool is ineligible.
+unrestricted network workflows incremental unless a later complete audit proves
+them eligible for artifact caching. A task with an ambient semantic tool,
+unrestricted effect, or unverified operational tool is ineligible.
 
 ### Verification gate
 
-Deleting a portable local output and restoring it reproduces the complete
+Deleting an artifact-cached local output and restoring it reproduces the complete
 validated tree, metadata, permissions, and symlinks. Corrupt snapshots are
 quarantined and rebuilt. Relocation between independent checkout and cache roots
 on the supported macOS runner proves absolute placement is absent from artifact
 identity and allows every promoted container-executed artifact to be reused.
-Incremental and portable assessment of the same task use the same
+Incremental and artifact-cached assessment of the same task use the same
 output-equivalence identity.
 
 ## Non-Goals
@@ -1930,7 +1935,7 @@ This architecture does not add:
 - a second dependency resolver;
 - a host execution fallback for target workloads;
 - compiler-macro authoring layers for declarations that are already explicit;
-- portable caching claims for opaque external build trees.
+- Collider artifact caching claims for opaque external build trees.
 
 Collider remains a compiled, explicit, deterministic Nucleus meta-build system:
 

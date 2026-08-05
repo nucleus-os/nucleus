@@ -321,7 +321,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .file(root.appending("aosp.lock.json"))
             ],
             locks: [.checkout("android-runtime-aosp-downloads")],
-            assessmentPolicy: .portable,
+            assessmentPolicy: .artifactCached,
             action:
                 try AnyColliderAction(
                     DownloadAOSPRepoLauncherAction(

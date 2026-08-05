@@ -170,7 +170,7 @@ public actor RunRegistry {
         }
     }
 
-    public func recordOutputSnapshotDigests(
+    public func recordArtifactSnapshotDigests(
         _ digests: [String: ArtifactDigest],
         task: TaskID,
         in run: RunHandle
@@ -179,7 +179,7 @@ public actor RunRegistry {
             guard var record = $0.tasks?[task.rawValue] else {
                 throw RunRegistryFailure.unplannedTaskMetadata(task)
             }
-            record.outputSnapshotDigests = digests
+            record.artifactSnapshotDigests = digests
             $0.tasks?[task.rawValue] = record
         }
     }

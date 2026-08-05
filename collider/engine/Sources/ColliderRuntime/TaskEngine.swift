@@ -488,14 +488,14 @@ extension ColliderRuntime {
                 task: task.id,
                 in: eventRun)
         }
-        let portableArtifacts = PortableArtifactStore(
-            root: stateRoot.appending("portable-artifacts"))
+        let artifactSnapshots = ArtifactSnapshotStore(
+            root: stateRoot.appending("artifact-snapshots"))
         do {
-            if plan.portableSnapshot == .quarantine {
-                try portableArtifacts.quarantine(identity: plan.identity)
-            } else if plan.portableSnapshot == .restore {
+            if plan.artifactSnapshot == .quarantine {
+                try artifactSnapshots.quarantine(identity: plan.identity)
+            } else if plan.artifactSnapshot == .restore {
                 do {
-                    let outputDigests = try portableArtifacts.restore(
+                    let outputDigests = try artifactSnapshots.restore(
                         task: task,
                         identity: plan.identity)
                     try TaskOutputValidator(fileSystem: actionFileSystem()).validate(task)
@@ -514,7 +514,7 @@ extension ColliderRuntime {
                             .restored,
                             task: task.id,
                             in: eventRun)
-                        try await eventRegistry.recordOutputSnapshotDigests(
+                        try await eventRegistry.recordArtifactSnapshotDigests(
                             outputDigests,
                             task: task.id,
                             in: eventRun)
@@ -524,10 +524,10 @@ extension ColliderRuntime {
                             in: eventRun)
                     }
                     return .restored
-                } catch let failure as PortableArtifactStoreFailure
+                } catch let failure as ArtifactSnapshotStoreFailure
                     where failure.isSnapshotCorruption
                 {
-                    try portableArtifacts.quarantine(identity: plan.identity)
+                    try artifactSnapshots.quarantine(identity: plan.identity)
                 }
             }
             let observations = try await perform(
@@ -535,13 +535,13 @@ extension ColliderRuntime {
                 stage: task.id,
                 options: options)
             try TaskOutputValidator(fileSystem: actionFileSystem()).validate(task)
-            let outputDigests: [String: ArtifactDigest]
-            if task.assessmentPolicy == .portable {
-                outputDigests = try portableArtifacts.capture(
+            let artifactSnapshotDigests: [String: ArtifactDigest]?
+            if task.assessmentPolicy == .artifactCached {
+                artifactSnapshotDigests = try artifactSnapshots.capture(
                     task: task,
                     identity: plan.identity)
             } else {
-                outputDigests = try portableArtifacts.auditOutputDigests(task: task)
+                artifactSnapshotDigests = nil
             }
             try stateStore.persist(
                 TaskStateRecord(
@@ -562,10 +562,12 @@ extension ColliderRuntime {
                     observations,
                     task: task.id,
                     in: eventRun)
-                try await eventRegistry.recordOutputSnapshotDigests(
-                    outputDigests,
-                    task: task.id,
-                    in: eventRun)
+                if let artifactSnapshotDigests {
+                    try await eventRegistry.recordArtifactSnapshotDigests(
+                        artifactSnapshotDigests,
+                        task: task.id,
+                        in: eventRun)
+                }
                 if recordsActiveArtifact, task.recordsActiveArtifact {
                     try await eventRegistry.recordActiveArtifact(
                         plan.identity,

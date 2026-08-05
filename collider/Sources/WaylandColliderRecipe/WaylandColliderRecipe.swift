@@ -302,7 +302,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
                 .file(waylandXML),
             ],
             locks: [.checkout("wayland")],
-            assessmentPolicy: .portable,
+            assessmentPolicy: .artifactCached,
             action:
                 try AnyColliderAction(
                     GenerateWaylandSwiftSourcesAction(

@@ -268,7 +268,7 @@ public enum TaskLock: Hashable, Sendable {
 public enum TaskAssessmentPolicy: String, Hashable, Codable, Sendable {
     case always
     case incremental
-    case portable
+    case artifactCached
 }
 
 public struct TaskDeclaration: Hashable, Sendable {

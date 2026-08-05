@@ -85,8 +85,8 @@ public struct ColliderEngine: Sendable {
             digestIndex: stateRoot.appending("artifact-digests.json"))
         let outputValidator = TaskOutputValidator(
             fileSystem: runtime.actionFileSystem())
-        let portableArtifacts = PortableArtifactStore(
-            root: stateRoot.appending("portable-artifacts"))
+        let artifactSnapshots = ArtifactSnapshotStore(
+            root: stateRoot.appending("artifact-snapshots"))
         let services = TaskPlanningServices(
             resourceCapacity: hostResourceCapacity(),
             identityPathMap: identityPathMap,
@@ -97,7 +97,7 @@ public struct ColliderEngine: Sendable {
             semanticToolIdentity: planningInputs.semanticToolIdentity,
             taskState: state.lookup,
             validateOutputs: outputValidator.validate,
-            portableSnapshotState: portableArtifacts.state)
+            artifactSnapshotState: artifactSnapshots.state)
         let planningStart = ContinuousClock().now
         let plan = try planning(services)
         let planningDuration = elapsedNanoseconds(since: planningStart)

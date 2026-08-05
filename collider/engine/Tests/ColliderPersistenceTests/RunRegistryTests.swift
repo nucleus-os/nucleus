@@ -62,7 +62,7 @@ import Testing
     try await registry.recordPlan([plan], in: run)
     try await registry.recordTaskDuration(88, task: task, in: run)
     try await registry.recordTaskOutcome(.executed, task: task, in: run)
-    try await registry.recordOutputSnapshotDigests(
+    try await registry.recordArtifactSnapshotDigests(
         ["product": identity],
         task: task,
         in: run)
@@ -83,7 +83,7 @@ import Testing
     #expect(record.plan.identity == identity)
     #expect(record.outcome == .executed)
     #expect(record.durationNanoseconds == 88)
-    #expect(record.outputSnapshotDigests == ["product": identity])
+    #expect(record.artifactSnapshotDigests == ["product": identity])
     #expect(record.observations?.hardwareProbes.first?.result == "present")
 }
 
@@ -171,7 +171,7 @@ import Testing
             plan: plan,
             outcome: .executed,
             durationNanoseconds: 123,
-            outputSnapshotDigests: ["product": digest],
+            artifactSnapshotDigests: ["product": digest],
             observations: TaskExecutionObservations(
                 containerExecutions: [
                     OCIExecutionObservation(
@@ -221,7 +221,7 @@ import Testing
     #expect(decodedTask.plan.attribution == "runtime release")
     #expect(decodedTask.outcome == .executed)
     #expect(decodedTask.durationNanoseconds == 123)
-    #expect(decodedTask.outputSnapshotDigests == ["product": digest])
+    #expect(decodedTask.artifactSnapshotDigests == ["product": digest])
     #expect(decodedTask.observations?.containerExecutions.first?.imageDigest == digest)
     #expect(
         decodedTask.observations?.containerExecutions.first?
