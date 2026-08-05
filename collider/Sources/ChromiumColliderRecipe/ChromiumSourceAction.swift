@@ -22,7 +22,8 @@ package struct PrepareChromiumSourceAction: ColliderAction {
                 tag: 10,
                 string: preparation.sourceLock.depotTools.commit)
 
-            var repositories = CanonicalDigestEncoder()
+            var repositories = CanonicalDigestEncoder(
+                identityPathMap: encoder.identityPathMap)
             for repository in preparation.sourceLock.repositories {
                 repositories.append(tag: 1, string: repository.name)
                 repositories.append(tag: 2, string: repository.checkoutPath)

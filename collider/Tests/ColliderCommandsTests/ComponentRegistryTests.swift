@@ -5,6 +5,7 @@ import CompositorColliderRecipe
 import CoreColliderRecipe
 import Foundation
 import ReactNativeColliderRecipe
+import ReleaseGateColliderRecipe
 import SystemPackage
 import Testing
 import VulkanColliderRecipe
@@ -663,7 +664,8 @@ private func fixtureReactNativeNodeModules(
     let linuxARM64 = NativeLinuxTarget(architecture: .arm64)
     let sources = try CoreColliderRecipe.prepareSkiaDependencies(
         root: root,
-        environment: environment)
+        environment: environment,
+        builder: builder.base)
     let sourceTask = try #require(
         sources.tasks.first { $0.id == CoreTaskIDs.sources })
     guard let sourceAction = sourceTask.action else {
@@ -678,7 +680,17 @@ private func fixtureReactNativeNodeModules(
         return
     }
     #expect(gnAction.kind == "core.install-skia-gn")
-    #expect(gnInstall.dependencies == [CoreTaskIDs.gnDownload])
+    #expect(
+        Set(gnInstall.dependencies) == [
+            CoreTaskIDs.gnDownload,
+            TaskID(rawValue: "native.builder"),
+        ])
+    #expect(gnInstall.assessmentPolicy == .portable)
+    let gnExecutions = try await ociExecutions(in: gnInstall.action)
+    #expect(gnExecutions.count == 1)
+    #expect(gnExecutions[0].command == ["extract-gn"])
+    #expect(gnExecutions[0].executionPlatform == .linuxARM64OCI)
+    #expect(gnExecutions[0].artifactTarget == .linuxARM64)
     for task in [
         try CoreColliderRecipe.buildSkiaLinux(
             root: root,
@@ -738,7 +750,8 @@ private func fixtureReactNativeNodeModules(
     let x8664 = NativeLinuxTarget(architecture: .x86_64)
     let skiaSources = try CoreColliderRecipe.prepareSkiaDependencies(
         root: coreRoot,
-        environment: environment)
+        environment: environment,
+        builder: builder.base)
     let boost = try ReactNativeColliderRecipe.provisionBoost(
         root: reactNativeRoot,
         environment: environment

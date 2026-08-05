@@ -29,6 +29,121 @@ private actor ParallelismProbe {
     func maximum() -> Int { maximumActive }
 }
 
+private actor PortableExecutionProbe {
+    private var executions = 0
+
+    func record() { executions += 1 }
+    func count() -> Int { executions }
+}
+
+private struct PortableTreeAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let output: FilePath
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: output.string)
+        }
+    }
+
+    static let kind: ActionKind = "fixture.portable-tree"
+
+    let output: FilePath
+    let probe: PortableExecutionProbe
+
+    var identity: Identity { Identity(output: output) }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            effects: [
+                ActionEffect(.readWrite, scope: .output(output))
+            ],
+            executionPlatform: .macOSARM64Native)
+    }
+
+    func execute(in context: ActionContext) async throws {
+        await probe.record()
+        try context.files.remove(output)
+        try context.files.createDirectory(output.appending("empty"))
+        let script = output.appending("script")
+        try context.files.write(
+            Array("#!/bin/sh\necho restored\n".utf8),
+            to: script)
+        try context.files.setPermissions(0o751, for: script)
+        try context.files.replaceSymlink(
+            at: output.appending("current"),
+            target: "script")
+    }
+}
+
+private func portableTreeTask(
+    output: FilePath,
+    probe: PortableExecutionProbe
+) throws -> TaskDeclaration {
+    var builder = TaskBuilder(
+        id: TaskID(rawValue: "fixture.portable-tree"),
+        component: ComponentID(rawValue: "fixture"))
+    let _: ArtifactReference<DirectoryArtifact> = try builder.output(
+        "tree",
+        path: output,
+        validation: .nonEmptyDirectory)
+    return builder.build(
+        assessmentPolicy: .portable,
+        action: try AnyColliderAction(
+            PortableTreeAction(output: output, probe: probe)))
+}
+
+@Test func portableTaskRestoresAcrossRelocationAndRebuildsCorruption() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-portable-engine-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let stateRoot = FilePath(directory.appendingPathComponent("state").path)
+    let probe = PortableExecutionProbe()
+
+    func run(at name: String) async throws -> TaskExecutionReport {
+        let workspace = FilePath(directory.appendingPathComponent(name).path)
+        let task = try portableTreeTask(
+            output: workspace.appending("generated"),
+            probe: probe)
+        return try await ColliderEngine(runtime: ColliderRuntime()).execute(
+            graph: TaskGraph([task]),
+            selected: [task.id],
+            stateRoot: stateRoot,
+            identityPathMap: IdentityPathMap(roots: [
+                IdentityPathRoot(name: "workspace", path: workspace)
+            ]))
+    }
+
+    let first = try await run(at: "first")
+    #expect(first.executed == [TaskID(rawValue: "fixture.portable-tree")])
+    #expect(first.restored.isEmpty)
+    #expect(await probe.count() == 1)
+
+    let second = try await run(at: "second")
+    #expect(second.executed.isEmpty)
+    #expect(second.restored == [TaskID(rawValue: "fixture.portable-tree")])
+    #expect(await probe.count() == 1)
+    #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+            atPath: directory.appendingPathComponent("second/generated/current").path)
+            == "script")
+
+    let identity = try #require(first.plan.first).identity
+    try Data("corrupt".utf8).write(
+        to: directory.appendingPathComponent(
+            "state/portable-artifacts/sha256-\(identity.hexadecimal)/"
+                + "payload/000000/script"))
+    let third = try await run(at: "third")
+    #expect(third.executed == [TaskID(rawValue: "fixture.portable-tree")])
+    #expect(third.restored.isEmpty)
+    #expect(await probe.count() == 2)
+    #expect(
+        try FileManager.default.contentsOfDirectory(
+            at: directory.appendingPathComponent(
+                "state/portable-artifacts/quarantine"),
+            includingPropertiesForKeys: nil
+        ).count == 1)
+}
+
 private struct ParallelismProbeAction: ColliderAction {
     static let kind: ActionKind = "fixture.parallelism-probe"
 

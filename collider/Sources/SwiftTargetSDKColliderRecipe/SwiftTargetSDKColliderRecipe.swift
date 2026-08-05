@@ -515,6 +515,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             validation: .regularFile)
         let task = builder.build(
             locks: [.checkout("swift-target-sdk-downloads")],
+            assessmentPolicy: .portable,
             action:
                 try AnyColliderAction(
                     DownloadSwiftTargetSDKInputAction(
@@ -661,7 +662,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                 .file(
                     configuration.inputsFile.removingLastComponent().appending(
                         "nucleus-target-runtime-presets.ini")),
-                .value(name: "swift-source-gitlinks", bytes: Array(configuration.sourceID.utf8)),
+                .string(name: "swift-source-gitlinks", value: configuration.sourceID),
             ],
             locks: [.checkout("swift-linux-\(architecture.rawValue)-runtime")],
             assessmentPolicy: .incremental,

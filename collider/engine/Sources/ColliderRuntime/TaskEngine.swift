@@ -34,6 +34,7 @@ public struct TaskExecutionOptions: Sendable {
 public struct TaskExecutionReport: Codable, Sendable {
     public let plan: [TaskPlanEntry]
     public let executed: [TaskID]
+    public let restored: [TaskID]
     public let planningDurationNanoseconds: UInt64
     public let selectedInputHashingDurationNanoseconds: UInt64
     public let swiftPMInvocationCount: Int
@@ -44,6 +45,7 @@ public struct TaskExecutionReport: Codable, Sendable {
     public init(
         plan: [TaskPlanEntry],
         executed: [TaskID],
+        restored: [TaskID] = [],
         planningDurationNanoseconds: UInt64,
         selectedInputHashingDurationNanoseconds: UInt64,
         swiftPMInvocationCount: Int,
@@ -53,6 +55,7 @@ public struct TaskExecutionReport: Codable, Sendable {
     ) {
         self.plan = plan
         self.executed = executed
+        self.restored = restored
         self.planningDurationNanoseconds = planningDurationNanoseconds
         self.selectedInputHashingDurationNanoseconds =
             selectedInputHashingDurationNanoseconds
@@ -79,6 +82,12 @@ private struct ScheduledTaskExecution: Sendable {
 private struct ScheduledTaskResult: Sendable {
     let scheduledTask: ScheduledTask
     let durationNanoseconds: UInt64
+    let outcome: TaskExecutionOutcome
+}
+
+private enum TaskExecutionOutcome: Equatable, Sendable {
+    case executed
+    case restored
 }
 
 private func canSchedule(
@@ -195,6 +204,7 @@ extension ColliderRuntime {
             return TaskExecutionReport(
                 plan: reportedPlan,
                 executed: [],
+                restored: [],
                 planningDurationNanoseconds: planningDurationNanoseconds,
                 selectedInputHashingDurationNanoseconds:
                     selectedInputHashingDurationNanoseconds,
@@ -248,6 +258,7 @@ extension ColliderRuntime {
             !plan[$0].isClean && !plan[$0].isSubsumed
         }
         var executed: [TaskID] = []
+        var restored: [TaskID] = []
         let resourceCapacity = frozenPlan.resourceCapacity
         var running: [ScheduledTask: PlannedTaskResources] = [:]
         var runningClaims: [ScheduledTask: [PlannedTaskClaim]] = [:]
@@ -337,7 +348,7 @@ extension ColliderRuntime {
                         let taskStart = ContinuousClock().now
                         if let attribution = execution.swiftBuildAttribution {
                             do {
-                                try await self.executePlannedTask(
+                                let outcome = try await self.executePlannedTask(
                                     execution.task,
                                     plan: execution.plan,
                                     stateRoot: stateRoot,
@@ -346,13 +357,18 @@ extension ColliderRuntime {
                                     eventRegistry: eventRegistry,
                                     options: options,
                                     recordsActiveArtifact: false)
+                                return ScheduledTaskResult(
+                                    scheduledTask: execution.scheduledTask,
+                                    durationNanoseconds: elapsedNanoseconds(
+                                        since: taskStart),
+                                    outcome: outcome)
                             } catch {
                                 throw RuntimeFailure.swiftBuildFailed(
                                     attribution: attribution,
                                     reason: String(describing: error))
                             }
                         } else {
-                            try await self.executePlannedTask(
+                            let outcome = try await self.executePlannedTask(
                                 execution.task,
                                 plan: execution.plan,
                                 stateRoot: stateRoot,
@@ -361,10 +377,12 @@ extension ColliderRuntime {
                                 eventRegistry: eventRegistry,
                                 options: options,
                                 recordsActiveArtifact: execution.recordsActiveArtifact)
+                            return ScheduledTaskResult(
+                                scheduledTask: execution.scheduledTask,
+                                durationNanoseconds: elapsedNanoseconds(
+                                    since: taskStart),
+                                outcome: outcome)
                         }
-                        return ScheduledTaskResult(
-                            scheduledTask: execution.scheduledTask,
-                            durationNanoseconds: elapsedNanoseconds(since: taskStart))
                     }
                 }
 
@@ -399,6 +417,10 @@ extension ColliderRuntime {
                     completed.insert(task.id)
                     completed.formUnion(task.subsumedDependencies)
                 }
+                if finished.outcome == .restored {
+                    executed.removeAll { $0 == taskID }
+                    restored.append(taskID)
+                }
                 let dependencyPath =
                     criticalDependencies.compactMap {
                         criticalPathByTask[$0]
@@ -431,6 +453,7 @@ extension ColliderRuntime {
         return TaskExecutionReport(
             plan: reportedPlan,
             executed: executed,
+            restored: restored,
             planningDurationNanoseconds: planningDurationNanoseconds,
             selectedInputHashingDurationNanoseconds:
                 selectedInputHashingDurationNanoseconds,
@@ -449,7 +472,7 @@ extension ColliderRuntime {
         eventRegistry: RunRegistry?,
         options: TaskExecutionOptions,
         recordsActiveArtifact: Bool
-    ) async throws {
+    ) async throws -> TaskExecutionOutcome {
         let taskStart = ContinuousClock().now
         let heldLocks = try await acquireTaskLocks(
             task.locks,
@@ -465,9 +488,45 @@ extension ColliderRuntime {
                 task: task.id,
                 in: eventRun)
         }
+        let portableArtifacts = PortableArtifactStore(
+            root: stateRoot.appending("portable-artifacts"))
         do {
+            if plan.portableSnapshot == .quarantine {
+                try portableArtifacts.quarantine(identity: plan.identity)
+            } else if plan.portableSnapshot == .restore {
+                do {
+                    try portableArtifacts.restore(
+                        task: task,
+                        identity: plan.identity)
+                    try TaskOutputValidator(fileSystem: actionFileSystem()).validate(task)
+                    try stateStore.persist(
+                        TaskStateRecord(
+                            task: task.id,
+                            identity: plan.identity,
+                            outputs: task.outputs.map { $0.path.string },
+                            completedAt: ISO8601DateFormatter().string(from: Date())))
+                    if let eventRun, let eventRegistry {
+                        try await eventRegistry.recordTaskDuration(
+                            elapsedNanoseconds(since: taskStart),
+                            task: task.id,
+                            in: eventRun)
+                        try await eventRegistry.record(
+                            kind: .taskRestored,
+                            task: task.id,
+                            in: eventRun)
+                    }
+                    return .restored
+                } catch {
+                    try portableArtifacts.quarantine(identity: plan.identity)
+                }
+            }
             try await perform(task, stage: task.id, options: options)
             try TaskOutputValidator(fileSystem: actionFileSystem()).validate(task)
+            if task.assessmentPolicy == .portable {
+                try portableArtifacts.capture(
+                    task: task,
+                    identity: plan.identity)
+            }
             try stateStore.persist(
                 TaskStateRecord(
                     task: task.id,
@@ -490,6 +549,7 @@ extension ColliderRuntime {
                     task: task.id,
                     in: eventRun)
             }
+            return .executed
         } catch {
             if let eventRun, let eventRegistry {
                 try? await eventRegistry.recordTaskDuration(

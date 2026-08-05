@@ -65,11 +65,14 @@ public struct ColliderPlanner {
                     identity: identity,
                     isClean: assessment.isClean,
                     explanation: assessment.explanation,
-                    coordinates: try executionCoordinates(for: task.action),
+                    coordinates: try executionCoordinates(
+                        for: task.action,
+                        runner: services.runnerPlatform),
                     resources: try normalizedResources(
                         for: task.action,
                         capacity: services.resourceCapacity),
-                    claims: normalizedClaims(for: task)))
+                    claims: normalizedClaims(for: task),
+                    portableSnapshot: assessment.portableSnapshot))
         }
 
         let subsumed = subsumedTasks(in: ordered, entries: entries)
@@ -85,7 +88,8 @@ public struct ColliderPlanner {
                 explanation: "action is subsumed by a selected dirty task",
                 coordinates: entry.coordinates,
                 resources: entry.resources,
-                claims: entry.claims)
+                claims: entry.claims,
+                portableSnapshot: nil)
         }
 
         let assessed = zip(ordered, entries).map {
@@ -122,11 +126,14 @@ public struct ColliderPlanner {
                 identity: identity,
                 isClean: assessment.isClean,
                 explanation: assessment.explanation,
-                coordinates: try executionCoordinates(for: lowered.task.action),
+                coordinates: try executionCoordinates(
+                    for: lowered.task.action,
+                    runner: services.runnerPlatform),
                 resources: try normalizedResources(
                     for: lowered.task.action,
                     capacity: services.resourceCapacity),
-                claims: normalizedClaims(for: lowered.task))
+                claims: normalizedClaims(for: lowered.task),
+                portableSnapshot: assessment.portableSnapshot)
         }
         return ExecutionPlan(
             resourceCapacity: services.resourceCapacity,
@@ -197,19 +204,27 @@ public struct ColliderPlanner {
         let record: TaskStateRecord
         switch services.taskState(task.id) {
         case .missing:
-            return TaskAssessment(isClean: false, explanation: "no prior task state")
+            return reusableAssessment(
+                of: task,
+                identity: identity,
+                explanation: "no prior task state",
+                services: services)
         case .corrupt:
-            return TaskAssessment(
-                isClean: false,
-                explanation: "prior task state is corrupt")
+            return reusableAssessment(
+                of: task,
+                identity: identity,
+                explanation: "prior task state is corrupt",
+                services: services)
         case .record(let value):
             record = value
         }
         guard record.identity == identity else {
-            return TaskAssessment(
-                isClean: false,
+            return reusableAssessment(
+                of: task,
+                identity: identity,
                 explanation:
-                    "input identity changed (recorded \(record.identity), planned \(identity))")
+                    "input identity changed (recorded \(record.identity), planned \(identity))",
+                services: services)
         }
         do {
             try services.validateOutputs(task)
@@ -217,18 +232,45 @@ public struct ColliderPlanner {
                 isClean: true,
                 explanation: "identity and outputs are valid")
         } catch {
+            return reusableAssessment(
+                of: task,
+                identity: identity,
+                explanation: "output validation failed: \(error)",
+                services: services)
+        }
+    }
+
+    private func reusableAssessment(
+        of task: TaskDeclaration,
+        identity: ArtifactDigest,
+        explanation: String,
+        services: TaskPlanningServices
+    ) -> TaskAssessment {
+        guard task.assessmentPolicy == .portable else {
+            return TaskAssessment(isClean: false, explanation: explanation)
+        }
+        switch services.portableSnapshotState(task.id, identity) {
+        case .missing:
+            return TaskAssessment(isClean: false, explanation: explanation)
+        case .available:
             return TaskAssessment(
                 isClean: false,
-                explanation: "output validation failed: \(error)")
+                explanation: "portable snapshot will restore invalid local output",
+                portableSnapshot: .restore)
+        case .corrupt:
+            return TaskAssessment(
+                isClean: false,
+                explanation: "corrupt portable snapshot will be quarantined and rebuilt",
+                portableSnapshot: .quarantine)
         }
     }
 
     private func executionCoordinates(
-        for action: AnyColliderAction?
+        for action: AnyColliderAction?,
+        runner: RunnerPlatform
     ) throws -> TaskExecutionCoordinates? {
         guard let action else { return nil }
         let execution = action.requirements.executionPlatform
-        let runner = RunnerPlatform.current
         let backend: ExecutionBackend
         switch execution.environment {
         case .native:
@@ -379,6 +421,9 @@ public struct ColliderPlanner {
 
         var implementationsByKind: [ActionKind: String] = [:]
         for task in tasks {
+            if task.assessmentPolicy == .portable {
+                try validatePortableEligibility(task)
+            }
             guard let action = task.action else { continue }
             guard action.kind.rawValue.hasPrefix(task.component.rawValue + ".") else {
                 throw ColliderPlanningFailure.actionNamespaceMismatch(
@@ -398,13 +443,88 @@ public struct ColliderPlanner {
         }
     }
 
+    private func validatePortableEligibility(
+        _ task: TaskDeclaration
+    ) throws {
+        guard let action = task.action else {
+            throw ColliderPlanningFailure.ineligiblePortableTask(
+                task: task.id,
+                reason: "portable tasks require one executable action")
+        }
+        guard !task.outputSlots.isEmpty,
+            task.outputSlots.count == task.outputs.count,
+            task.outputSlots.allSatisfy({ slot in
+                task.outputs.contains {
+                    $0.path == slot.path && $0.validation == slot.validation
+                }
+            })
+        else {
+            throw ColliderPlanningFailure.ineligiblePortableTask(
+                task: task.id,
+                reason: "every output must be a typed output slot")
+        }
+        guard task.resultSlots.isEmpty,
+            task.postconditions.isEmpty,
+            task.swiftProducts.isEmpty,
+            task.swiftTests.isEmpty
+        else {
+            throw ColliderPlanningFailure.ineligiblePortableTask(
+                task: task.id,
+                reason:
+                    "results, shared postconditions, and SwiftPM scratch trees are not snapshots")
+        }
+        let paths = task.outputSlots.map { $0.path.lexicallyNormalized().string }
+        for first in paths.indices {
+            for second in paths.indices where first < second {
+                guard paths[first] != paths[second],
+                    !contains(paths[first], in: paths[second]),
+                    !contains(paths[second], in: paths[first])
+                else {
+                    throw ColliderPlanningFailure.ineligiblePortableTask(
+                        task: task.id,
+                        reason: "portable output slots must not overlap")
+                }
+            }
+        }
+        for tool in action.requirements.tools {
+            if tool.role == .operational {
+                throw ColliderPlanningFailure.ineligiblePortableTask(
+                    task: task.id,
+                    reason: "operational tools require a separate portability audit")
+            }
+            switch tool.executable {
+            case .taskOutput:
+                break
+            case .named, .operationalNamed, .path:
+                throw ColliderPlanningFailure.ineligiblePortableTask(
+                    task: task.id,
+                    reason: "ambient semantic tools are not portable")
+            }
+        }
+        for effect in action.requirements.effects {
+            switch effect.scope {
+            case .unrestricted:
+                throw ColliderPlanningFailure.ineligiblePortableTask(
+                    task: task.id,
+                    reason: "unrestricted effects are not portable")
+            case .checkout where effect.access != .read:
+                throw ColliderPlanningFailure.ineligiblePortableTask(
+                    task: task.id,
+                    reason: "mutable source checkouts are not portable")
+            case .input, .checkout, .scratch, .output, .publication:
+                break
+            }
+        }
+    }
+
     private func rawInputPath(_ input: ArtifactInput) -> FilePath? {
         switch input {
         case .file(let path), .tree(let path), .optionalTree(let path, _):
             path
         case .tool(.taskOutput(let path)), .tool(.path(let path)):
             path
-        case .value, .environment, .tool(.named), .tool(.operationalNamed):
+        case .value, .string, .environment, .swiftBuildContext, .tool(.named),
+            .tool(.operationalNamed):
             nil
         }
     }
@@ -436,6 +556,7 @@ public enum ColliderPlanningFailure: Error, CustomStringConvertible, Sendable {
     case overlappingOutput(first: TaskID, second: TaskID, path: FilePath)
     case rawGeneratedOutputConsumption(
         consumer: TaskID, producer: TaskID, path: FilePath)
+    case ineligiblePortableTask(task: TaskID, reason: String)
 
     public var description: String {
         switch self {
@@ -469,6 +590,8 @@ public enum ColliderPlanningFailure: Error, CustomStringConvertible, Sendable {
         case .rawGeneratedOutputConsumption(let consumer, let producer, let path):
             "task '\(consumer)' consumes generated output '\(path)' from '\(producer)' "
                 + "through a raw path instead of its typed artifact reference"
+        case .ineligiblePortableTask(let task, let reason):
+            "task '\(task)' is not eligible for portable caching: \(reason)"
         }
     }
 }

@@ -39,11 +39,16 @@ public struct ActionIdentityEncoder: Sendable {
 
     private var fields: [UInt64: Value] = [:]
     private var failure: ActionIdentityEncodingFailure?
+    public let identityPathMap: IdentityPathMap
 
-    public init() {}
+    public init(identityPathMap: IdentityPathMap = .empty) {
+        self.identityPathMap = identityPathMap
+    }
 
     public mutating func append(tag: UInt64, string: String) {
-        append(tag: tag, value: .string(string))
+        append(
+            tag: tag,
+            value: .string(identityPathMap.canonicalize(string)))
     }
 
     public mutating func append(tag: UInt64, bytes: [UInt8]) {
@@ -58,7 +63,7 @@ public struct ActionIdentityEncoder: Sendable {
         tag: UInt64,
         nested identity: Identity
     ) {
-        var nested = ActionIdentityEncoder()
+        var nested = ActionIdentityEncoder(identityPathMap: identityPathMap)
         identity.encode(into: &nested)
         if let failure = nested.failure {
             self.failure = failure
@@ -134,7 +139,8 @@ public struct DownloadActionIdentity: ColliderActionIdentity {
         encoder.append(tag: 2, bytes: specification.expectedDigest.bytes)
         encoder.append(tag: 3, string: destination.string)
 
-        var redirectOrigins = CanonicalDigestEncoder()
+        var redirectOrigins = CanonicalDigestEncoder(
+            identityPathMap: encoder.identityPathMap)
         for origin in specification.permittedRedirectOrigins.sorted() {
             redirectOrigins.append(tag: 1, string: origin)
         }
@@ -143,7 +149,8 @@ public struct DownloadActionIdentity: ColliderActionIdentity {
             tag: 5,
             integer: UInt64(specification.maximumResponseSize))
 
-        var mediaTypes = CanonicalDigestEncoder()
+        var mediaTypes = CanonicalDigestEncoder(
+            identityPathMap: encoder.identityPathMap)
         for mediaType in specification.acceptedMediaTypes.map({ $0.lowercased() }).sorted() {
             mediaTypes.append(tag: 1, string: mediaType)
         }
@@ -352,7 +359,8 @@ public struct OCIExecutionActionIdentity: ColliderActionIdentity {
         encoder.append(tag: 10, string: execution.workingDirectory)
         encoder.append(tag: 11, string: execution.hostWorkingDirectory.string)
 
-        var mounts = CanonicalDigestEncoder()
+        var mounts = CanonicalDigestEncoder(
+            identityPathMap: encoder.identityPathMap)
         for mount in execution.mounts {
             mounts.append(tag: 1, string: mount.source.string)
             mounts.append(tag: 2, string: mount.target)
@@ -371,7 +379,8 @@ public struct OCIExecutionActionIdentity: ColliderActionIdentity {
         encoder.append(tag: 22, integer: execution.resourceLimits.memoryBytes ?? 0)
         encoder.append(tag: 23, integer: UInt64(execution.resourceLimits.processCount))
 
-        var containerEnvironment = CanonicalDigestEncoder()
+        var containerEnvironment = CanonicalDigestEncoder(
+            identityPathMap: encoder.identityPathMap)
         for (name, value) in execution.containerEnvironment.sorted(by: {
             $0.key < $1.key
         }) {
@@ -380,7 +389,8 @@ public struct OCIExecutionActionIdentity: ColliderActionIdentity {
         }
         encoder.append(tag: 24, bytes: containerEnvironment.bytes)
 
-        var command = CanonicalDigestEncoder()
+        var command = CanonicalDigestEncoder(
+            identityPathMap: encoder.identityPathMap)
         for argument in execution.command {
             command.append(tag: 1, string: argument)
         }
@@ -668,6 +678,7 @@ public struct AnyColliderAction: Hashable, Sendable {
 
     private let body: @Sendable (ActionContext) async throws -> Void
     private let validationBody: @Sendable (ActionFileSystem) throws -> Void
+    private let identityBody: @Sendable (IdentityPathMap) throws -> [UInt8]
 
     public init<Action: ColliderAction>(_ action: Action) throws {
         try Self.validate(kind: Action.kind, requirements: action.requirements)
@@ -676,6 +687,11 @@ public struct AnyColliderAction: Hashable, Sendable {
         kind = Action.kind
         implementationType = String(reflecting: Action.self)
         identity = try encoder.encodedBytes()
+        identityBody = { pathMap in
+            var encoder = ActionIdentityEncoder(identityPathMap: pathMap)
+            action.identity.encode(into: &encoder)
+            return try encoder.encodedBytes()
+        }
         requirements = action.requirements
         environment = action.environment
         body = { context in
@@ -721,6 +737,10 @@ public struct AnyColliderAction: Hashable, Sendable {
 
     public func validateOutputs(using files: ActionFileSystem) throws {
         try validationBody(files)
+    }
+
+    public func identity(using pathMap: IdentityPathMap) throws -> [UInt8] {
+        try identityBody(pathMap)
     }
 
     public static func == (

@@ -9,6 +9,7 @@ public struct TaskPlanEntry: Codable, Sendable {
     public let coordinates: TaskExecutionCoordinates?
     public let resources: PlannedTaskResources
     public let claims: [PlannedTaskClaim]
+    public let portableSnapshot: PlannedPortableSnapshot?
 
     public init(
         task: TaskID,
@@ -18,7 +19,8 @@ public struct TaskPlanEntry: Codable, Sendable {
         explanation: String,
         coordinates: TaskExecutionCoordinates?,
         resources: PlannedTaskResources = .lightweight,
-        claims: [PlannedTaskClaim] = []
+        claims: [PlannedTaskClaim] = [],
+        portableSnapshot: PlannedPortableSnapshot? = nil
     ) {
         self.task = task
         self.identity = identity
@@ -28,7 +30,19 @@ public struct TaskPlanEntry: Codable, Sendable {
         self.coordinates = coordinates
         self.resources = resources
         self.claims = claims
+        self.portableSnapshot = portableSnapshot
     }
+}
+
+public enum PortableSnapshotState: Sendable {
+    case missing
+    case available
+    case corrupt
+}
+
+public enum PlannedPortableSnapshot: String, Codable, Hashable, Sendable {
+    case restore
+    case quarantine
 }
 
 public struct TaskResourceCapacity: Codable, Hashable, Sendable {
@@ -127,10 +141,16 @@ public struct TaskExecutionCoordinates: Codable, Hashable, Sendable {
 public struct TaskAssessment: Sendable {
     public let isClean: Bool
     public let explanation: String
+    public let portableSnapshot: PlannedPortableSnapshot?
 
-    public init(isClean: Bool, explanation: String) {
+    public init(
+        isClean: Bool,
+        explanation: String,
+        portableSnapshot: PlannedPortableSnapshot? = nil
+    ) {
         self.isClean = isClean
         self.explanation = explanation
+        self.portableSnapshot = portableSnapshot
     }
 }
 
@@ -180,6 +200,8 @@ public struct ToolIdentitySnapshot: Sendable {
 
 public struct TaskPlanningServices {
     public let resourceCapacity: TaskResourceCapacity
+    public let runnerPlatform: RunnerPlatform
+    public let identityPathMap: IdentityPathMap
     public let digestBytes: ([UInt8]) -> ArtifactDigest
     public let digestFile: (FilePath) throws -> ArtifactDigest
     public let digestTree: (FilePath) throws -> ArtifactDigest
@@ -188,9 +210,12 @@ public struct TaskPlanningServices {
         (CommandSpec.Executable, [String: String]) throws -> ToolIdentitySnapshot
     public let taskState: (TaskID) -> PlanningTaskState
     public let validateOutputs: (TaskDeclaration) throws -> Void
+    public let portableSnapshotState: (TaskID, ArtifactDigest) -> PortableSnapshotState
 
     public init(
         resourceCapacity: TaskResourceCapacity,
+        runnerPlatform: RunnerPlatform = .current,
+        identityPathMap: IdentityPathMap = .empty,
         digestBytes: @escaping ([UInt8]) -> ArtifactDigest,
         digestFile: @escaping (FilePath) throws -> ArtifactDigest,
         digestTree: @escaping (FilePath) throws -> ArtifactDigest,
@@ -198,9 +223,15 @@ public struct TaskPlanningServices {
         semanticToolIdentity:
             @escaping (CommandSpec.Executable, [String: String]) throws -> ToolIdentitySnapshot,
         taskState: @escaping (TaskID) -> PlanningTaskState,
-        validateOutputs: @escaping (TaskDeclaration) throws -> Void
+        validateOutputs: @escaping (TaskDeclaration) throws -> Void,
+        portableSnapshotState:
+            @escaping (TaskID, ArtifactDigest) -> PortableSnapshotState = {
+                _, _ in .missing
+            }
     ) {
         self.resourceCapacity = resourceCapacity
+        self.runnerPlatform = runnerPlatform
+        self.identityPathMap = identityPathMap
         self.digestBytes = digestBytes
         self.digestFile = digestFile
         self.digestTree = digestTree
@@ -208,5 +239,6 @@ public struct TaskPlanningServices {
         self.semanticToolIdentity = semanticToolIdentity
         self.taskState = taskState
         self.validateOutputs = validateOutputs
+        self.portableSnapshotState = portableSnapshotState
     }
 }

@@ -16,6 +16,7 @@ public struct ColliderEngine: Sendable {
         graph: TaskGraph,
         selected: [TaskID],
         stateRoot: FilePath,
+        identityPathMap: IdentityPathMap = .empty,
         workflowLocks: [TaskLock] = [],
         lowerings: [any TaskPlanLowering] = [],
         run: RunHandle? = nil,
@@ -24,6 +25,7 @@ public struct ColliderEngine: Sendable {
     ) async throws -> TaskExecutionReport {
         try await execute(
             stateRoot: stateRoot,
+            identityPathMap: identityPathMap,
             workflowLocks: workflowLocks,
             run: run,
             registry: registry,
@@ -42,6 +44,7 @@ public struct ColliderEngine: Sendable {
         catalog: ComponentCatalog,
         requests: [ComponentEntrypointRequest],
         stateRoot: FilePath,
+        identityPathMap: IdentityPathMap = .empty,
         workflowLocks: [TaskLock] = [],
         lowerings: [any TaskPlanLowering] = [],
         run: RunHandle? = nil,
@@ -50,6 +53,7 @@ public struct ColliderEngine: Sendable {
     ) async throws -> TaskExecutionReport {
         try await execute(
             stateRoot: stateRoot,
+            identityPathMap: identityPathMap,
             workflowLocks: workflowLocks,
             run: run,
             registry: registry,
@@ -66,6 +70,7 @@ public struct ColliderEngine: Sendable {
 
     private func execute(
         stateRoot: FilePath,
+        identityPathMap: IdentityPathMap,
         workflowLocks: [TaskLock],
         run: RunHandle?,
         registry: RunRegistry?,
@@ -80,15 +85,19 @@ public struct ColliderEngine: Sendable {
             digestIndex: stateRoot.appending("artifact-digests.json"))
         let outputValidator = TaskOutputValidator(
             fileSystem: runtime.actionFileSystem())
+        let portableArtifacts = PortableArtifactStore(
+            root: stateRoot.appending("portable-artifacts"))
         let services = TaskPlanningServices(
             resourceCapacity: hostResourceCapacity(),
+            identityPathMap: identityPathMap,
             digestBytes: planningInputs.digest(bytes:),
             digestFile: planningInputs.digest(file:),
             digestTree: planningInputs.digest(tree:),
             optionalTreeDigest: planningInputs.optionalTreeDigest,
             semanticToolIdentity: planningInputs.semanticToolIdentity,
             taskState: state.lookup,
-            validateOutputs: outputValidator.validate)
+            validateOutputs: outputValidator.validate,
+            portableSnapshotState: portableArtifacts.state)
         let planningStart = ContinuousClock().now
         let plan = try planning(services)
         let planningDuration = elapsedNanoseconds(since: planningStart)

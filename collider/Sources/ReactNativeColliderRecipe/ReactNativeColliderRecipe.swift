@@ -212,6 +212,7 @@ public enum ReactNativeColliderRecipe {
             validation: .regularFile)
         let downloadTask = downloadBuilder.build(
             locks: [.checkout("rn-boost")],
+            assessmentPolicy: .portable,
             action:
                 try AnyColliderAction(
                     DownloadBoostAction(
@@ -232,9 +233,9 @@ public enum ReactNativeColliderRecipe {
             validation: .symlinkTarget)
         let boostTask = boostBuilder.build(
             inputs: [
-                .value(
+                .string(
                     name: "boost-version",
-                    bytes: Array(boostVersion.utf8)),
+                    value: boostVersion),
                 .tool(.named("tar")),
             ],
             locks: [.checkout("rn-boost")],
@@ -651,9 +652,9 @@ public enum ReactNativeColliderRecipe {
         }
         let task = builder.build(
             inputs: links.map {
-                .value(
+                .string(
                     name: $0.0,
-                    bytes: Array($0.1.string.utf8))
+                    value: $0.1.string)
             },
             locks: [
                 .shared(sdkRoot.appending(".rn.lock"))

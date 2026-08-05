@@ -79,6 +79,7 @@ public struct ColliderEvent: Codable, Sendable {
         case runStarted
         case taskStarted
         case taskSkipped
+        case taskRestored
         case taskSucceeded
         case taskFailed
         case runFinished

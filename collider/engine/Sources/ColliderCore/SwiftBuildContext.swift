@@ -132,7 +132,11 @@ public struct SwiftBuildContext: Hashable, Sendable {
     /// Stable canonical bytes used both in task identity and to derive the
     /// package scratch directory.
     public var identityBytes: [UInt8] {
-        var encoder = CanonicalDigestEncoder()
+        identityBytes(identityPathMap: .empty)
+    }
+
+    public func identityBytes(identityPathMap: IdentityPathMap) -> [UInt8] {
+        var encoder = CanonicalDigestEncoder(identityPathMap: identityPathMap)
         encoder.append(tag: 13, string: packageRoot.string)
         encoder.append(tag: 1, string: configuration.rawValue)
         switch target {
@@ -209,7 +213,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
     }
 
     public var identityInput: ArtifactInput {
-        .value(name: "swift-build-context", bytes: context.identityBytes)
+        .swiftBuildContext(context)
     }
 
     public var postcondition: PathPostcondition {

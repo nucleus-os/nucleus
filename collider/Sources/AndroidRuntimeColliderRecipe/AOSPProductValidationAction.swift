@@ -33,7 +33,8 @@ struct ValidateAOSPProductAction: ColliderAction {
             encoder.append(tag: 9, integer: buildTimestamp)
             encoder.append(tag: 10, integer: UInt64(expectedPlatformSDK))
             encoder.append(tag: 11, integer: UInt64(expectedVendorAPILevel))
-            var overlays = CanonicalDigestEncoder()
+            var overlays = CanonicalDigestEncoder(
+                identityPathMap: encoder.identityPathMap)
             for overlay in sourceOverlays.sorted(by: {
                 $0.relativeDestination < $1.relativeDestination
             }) {

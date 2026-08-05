@@ -146,6 +146,10 @@ extension WorkspaceContext {
             catalog: catalog,
             requests: requests,
             stateRoot: stateRoot,
+            identityPathMap: IdentityPathMap(roots: [
+                IdentityPathRoot(name: "workspace", path: root),
+                IdentityPathRoot(name: "cache", path: cacheRoot),
+            ]),
             workflowLocks: workflowLocks,
             lowerings: [SwiftPMLowering()],
             options: controls.executionOptions)

@@ -318,6 +318,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .file(root.appending("aosp.lock.json"))
             ],
             locks: [.checkout("android-runtime-aosp-downloads")],
+            assessmentPolicy: .portable,
             action:
                 try AnyColliderAction(
                     DownloadAOSPRepoLauncherAction(
@@ -389,9 +390,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             validation: .nonEmptyDirectory)
         let task = builder.build(
             inputs: [
-                .value(
+                .string(
                     name: "subject",
-                    bytes: Array(aospSigningSubject.utf8)),
+                    value: aospSigningSubject),
                 .tool(.named("openssl")),
             ],
             locks: [.checkout("android-runtime-aosp-signing")],

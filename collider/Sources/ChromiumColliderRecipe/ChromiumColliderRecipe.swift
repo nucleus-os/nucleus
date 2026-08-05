@@ -159,7 +159,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
         ]) { _, required in required }
         let commonInputs: [ArtifactInput] =
             [
-                .value(name: "source-id", bytes: Array(layout.sourceID.utf8)),
+                .string(name: "source-id", value: layout.sourceID),
                 .file(sourceLockFile),
                 .file(chromium.appending("launcher/nucleus-browser")),
                 .file(
@@ -180,9 +180,9 @@ public enum ChromiumColliderRecipe: ColliderComponent {
                 validation: .executableFile)
         let depotToolsTask = depotToolsBuilder.build(
             inputs: [
-                .value(
+                .string(
                     name: "depot-tools-revision",
-                    bytes: Array(sourceLock.depotTools.commit.utf8)),
+                    value: sourceLock.depotTools.commit),
                 .tool(.named("git")),
             ],
             locks: [.shared(cache.appending("locks/depot-tools.lock"))],

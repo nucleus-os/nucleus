@@ -122,9 +122,7 @@ private let fixturePackageRoot = FilePath("/workspace")
                     + "GeneratedModuleMaps-linux-aarch64/Fixture-Swift.h"))
     #expect(
         invocation.identityInput
-            == .value(
-                name: "swift-build-context",
-                bytes: context.identityBytes))
+            == .swiftBuildContext(context))
 
     #expect(
         invocation.commandArguments(

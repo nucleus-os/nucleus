@@ -238,9 +238,9 @@ public enum SanitizerColliderRecipe: ColliderComponent {
         targetArtifacts: ArtifactReferenceSet
     ) throws -> TaskDeclaration {
         let id = TaskID(rawValue: "sanitize.\(sanitizer.rawValue).\(invocation.id)")
-        let prerequisiteIdentity = ArtifactInput.value(
+        let prerequisiteIdentity = ArtifactInput.string(
             name: "prerequisite-targets",
-            bytes: Array(invocation.prerequisiteTargets.joined(separator: "\u{0}").utf8))
+            value: invocation.prerequisiteTargets.joined(separator: "\u{0}"))
         switch invocation.workload {
         case .test(let suite):
             let requirement = swiftPM.testProduct(

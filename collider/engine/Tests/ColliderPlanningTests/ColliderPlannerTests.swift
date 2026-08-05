@@ -113,6 +113,58 @@ import Testing
     #expect(armExecution != armArtifact)
 }
 
+@Test func taskIdentityIsStableAcrossWorkspaceAndCacheRelocation() throws {
+    func plannedIdentity(
+        workspace: FilePath,
+        cache: FilePath
+    ) throws -> ArtifactDigest {
+        let input = workspace.appending("Sources/input.txt")
+        let output = cache.appending("generated/result.json")
+        var builder = TaskBuilder(
+            id: TaskID(rawValue: "fixture.relocatable"),
+            component: ComponentID(rawValue: "fixture"))
+        let _: ArtifactReference<JSONArtifact> = try builder.output(
+            "result",
+            path: output,
+            validation: .json)
+        let task = builder.build(
+            inputs: [
+                .file(input),
+                .environment(
+                    name: "FIXTURE_PATH",
+                    value: workspace.appending("configuration").string),
+            ],
+            action: try AnyColliderAction(
+                RelocatableIdentityAction(
+                    input: input,
+                    output: output,
+                    environment: [
+                        "FIXTURE_CACHE": cache.appending("objects").string
+                    ])))
+        let services = deterministicHashingServices(
+            identityPathMap: IdentityPathMap(roots: [
+                IdentityPathRoot(name: "workspace", path: workspace),
+                IdentityPathRoot(name: "cache", path: cache),
+            ]))
+        let plan = try ColliderPlanner().plan(
+            graph: TaskGraph([task]),
+            selected: [task.id],
+            rebuildSelected: false,
+            lowerings: [],
+            services: services)
+        return try #require(plan.declaredEntries.first).identity
+    }
+
+    let first = try plannedIdentity(
+        workspace: FilePath("/first/checkout"),
+        cache: FilePath("/first/cache"))
+    let second = try plannedIdentity(
+        workspace: FilePath("/second/nucleus"),
+        cache: FilePath("/second/cache"))
+
+    #expect(first == second)
+}
+
 private struct PlacementIdentityAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         func encode(into encoder: inout ActionIdentityEncoder) {
@@ -136,6 +188,37 @@ private struct PlacementIdentityAction: ColliderAction {
     func execute(in _: ActionContext) async throws {}
 }
 
+private struct RelocatableIdentityAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let input: FilePath
+        let output: FilePath
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: input.string)
+            encoder.append(tag: 2, string: "--output=\(output)")
+        }
+    }
+
+    static let kind: ActionKind = "fixture.relocatable"
+
+    let input: FilePath
+    let output: FilePath
+    let environment: [String: String]
+
+    var identity: Identity { Identity(input: input, output: output) }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            effects: [
+                ActionEffect(.read, scope: .input(input)),
+                ActionEffect(.write, scope: .output(output)),
+            ],
+            executionPlatform: .macOSARM64Native)
+    }
+
+    func execute(in _: ActionContext) async throws {}
+}
+
 private func deterministicServices(digest: ArtifactDigest) -> TaskPlanningServices {
     TaskPlanningServices(
         resourceCapacity: fixtureCapacity,
@@ -150,10 +233,13 @@ private func deterministicServices(digest: ArtifactDigest) -> TaskPlanningServic
         validateOutputs: { _ in })
 }
 
-private func deterministicHashingServices() -> TaskPlanningServices {
+private func deterministicHashingServices(
+    identityPathMap: IdentityPathMap = .empty
+) -> TaskPlanningServices {
     let digest = ArtifactDigest(bytes: Array(repeating: 17, count: 32))
     return TaskPlanningServices(
         resourceCapacity: fixtureCapacity,
+        identityPathMap: identityPathMap,
         digestBytes: { ArtifactDigest.sha256(Data($0)) },
         digestFile: { _ in digest },
         digestTree: { _ in digest },

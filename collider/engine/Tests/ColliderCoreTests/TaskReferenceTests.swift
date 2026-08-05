@@ -207,6 +207,10 @@ private func inertActionFileSystem() -> ActionFileSystem {
     ) throws -> TaskDeclaration {
         var builder = TaskBuilder(id: consumerID, component: component)
         if let ordering { builder.after(ordering) }
+        let _: ArtifactReference<PathArtifact> = try builder.output(
+            "directory",
+            path: root.appending("consumer"),
+            validation: .exists)
         return builder.build(
             assessmentPolicy: policy,
             action: try fixtureCreateDirectoryAction(root.appending("consumer")))

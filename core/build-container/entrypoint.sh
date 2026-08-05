@@ -23,6 +23,18 @@ case "${1:-}" in
     fi
     shift
     ;;
+  extract-gn)
+    if [[ "$#" -ne 1 \
+        || ! -f /archive/gn.zip \
+        || ! -d /output \
+        || ! -w /output ]]; then
+      echo "error: extract-gn requires /archive/gn.zip and writable /output" >&2
+      exit 64
+    fi
+    unzip -o /archive/gn.zip gn -d /output
+    chmod 0755 /output/gn
+    exit 0
+    ;;
   skia-linux | skia-android)
     if [[ ! -d /build || ! -w /build ]]; then
       echo "error: /build is not the writable external native build root" >&2
@@ -92,7 +104,7 @@ case "${1:-}" in
     shift
     ;;
   *)
-    echo "error: expected builder mode: swiftpm, javascript, wayland-generate, skia-linux, skia-android, react-native, gfxstream, or wayland" >&2
+    echo "error: expected builder mode: swiftpm, javascript, wayland-generate, extract-gn, skia-linux, skia-android, react-native, gfxstream, or wayland" >&2
     exit 64
     ;;
 esac

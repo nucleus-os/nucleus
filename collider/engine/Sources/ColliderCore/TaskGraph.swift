@@ -3,7 +3,9 @@ import SystemPackage
 
 public enum ArtifactInput: Hashable, Sendable {
     case value(name: String, bytes: [UInt8])
+    case string(name: String, value: String)
     case environment(name: String, value: String?)
+    case swiftBuildContext(SwiftBuildContext)
     case file(FilePath)
     case tree(FilePath)
     /// Hashes a source tree when checked out and otherwise uses the repository
@@ -631,11 +633,16 @@ public struct TaskGraph: Sendable {
 
 public struct CanonicalDigestEncoder: Sendable {
     public private(set) var bytes: [UInt8] = []
+    private let identityPathMap: IdentityPathMap
 
-    public init() {}
+    public init(identityPathMap: IdentityPathMap = .empty) {
+        self.identityPathMap = identityPathMap
+    }
 
     public mutating func append(tag: UInt8, string: String) {
-        append(tag: tag, bytes: Array(string.utf8))
+        append(
+            tag: tag,
+            bytes: Array(identityPathMap.canonicalize(string).utf8))
     }
 
     public mutating func append(tag: UInt8, bytes value: [UInt8]) {

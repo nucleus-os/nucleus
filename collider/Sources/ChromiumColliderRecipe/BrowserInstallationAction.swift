@@ -12,7 +12,8 @@ package struct InstallBrowserAction: ColliderAction {
             encoder.append(
                 tag: 3,
                 string: installation.systemSandboxDirectory.string)
-            var candidates = CanonicalDigestEncoder()
+            var candidates = CanonicalDigestEncoder(
+                identityPathMap: encoder.identityPathMap)
             for candidate in installation.widevineCandidates {
                 candidates.append(tag: 1, string: candidate.string)
             }

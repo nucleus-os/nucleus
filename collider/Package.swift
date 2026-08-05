@@ -150,6 +150,7 @@ let package = Package(
                     package: "Nucleus",
                     condition: .when(platforms: [.linux])),
                 "ReactNativeColliderRecipe",
+                "ReleaseGateColliderRecipe",
                 "SwiftTargetSDKColliderRecipe",
                 "VulkanColliderRecipe",
                 "WaylandColliderRecipe",

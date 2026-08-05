@@ -6,7 +6,8 @@ struct TaskIdentityBuilder {
         dependencies: [ArtifactDigest],
         services: TaskPlanningServices
     ) throws -> ArtifactDigest {
-        var encoder = CanonicalDigestEncoder()
+        var encoder = CanonicalDigestEncoder(
+            identityPathMap: services.identityPathMap)
         encoder.append(tag: 1, string: task.id.rawValue)
         encoder.append(tag: 2, string: task.component.rawValue)
         for dependency in dependencies {
@@ -21,7 +22,8 @@ struct TaskIdentityBuilder {
             ($0.producer.rawValue, $0.slot.rawValue, $0.path.string)
                 < ($1.producer.rawValue, $1.slot.rawValue, $1.path.string)
         }) {
-            var referenceEncoder = ActionIdentityEncoder()
+            var referenceEncoder = ActionIdentityEncoder(
+                identityPathMap: services.identityPathMap)
             referenceEncoder.append(tag: 1, string: reference.producer.rawValue)
             referenceEncoder.append(tag: 2, string: reference.slot.rawValue)
             referenceEncoder.append(tag: 3, string: reference.path.string)
@@ -36,7 +38,8 @@ struct TaskIdentityBuilder {
             ($0.producer.rawValue, $0.slot.rawValue)
                 < ($1.producer.rawValue, $1.slot.rawValue)
         }) {
-            var referenceEncoder = ActionIdentityEncoder()
+            var referenceEncoder = ActionIdentityEncoder(
+                identityPathMap: services.identityPathMap)
             referenceEncoder.append(tag: 1, string: reference.producer.rawValue)
             referenceEncoder.append(tag: 2, string: reference.slot.rawValue)
             referenceEncoder.append(tag: 3, string: reference.valueType)
@@ -47,7 +50,8 @@ struct TaskIdentityBuilder {
 
         var outputSlotBytes: [UInt8] = []
         for slot in task.outputSlots.sorted(by: { $0.id.rawValue < $1.id.rawValue }) {
-            var slotEncoder = ActionIdentityEncoder()
+            var slotEncoder = ActionIdentityEncoder(
+                identityPathMap: services.identityPathMap)
             slotEncoder.append(tag: 1, string: slot.id.rawValue)
             slotEncoder.append(tag: 2, string: slot.path.string)
             slotEncoder.append(tag: 3, string: slot.validation.rawValue)
@@ -59,7 +63,8 @@ struct TaskIdentityBuilder {
 
         var resultSlotBytes: [UInt8] = []
         for slot in task.resultSlots.sorted(by: { $0.id.rawValue < $1.id.rawValue }) {
-            var slotEncoder = ActionIdentityEncoder()
+            var slotEncoder = ActionIdentityEncoder(
+                identityPathMap: services.identityPathMap)
             slotEncoder.append(tag: 1, string: slot.id.rawValue)
             slotEncoder.append(tag: 2, string: slot.valueType)
             let bytes = try slotEncoder.encodedBytes()
@@ -71,7 +76,10 @@ struct TaskIdentityBuilder {
             $0.qualifiedProduct < $1.qualifiedProduct
         }) {
             encoder.append(tag: 221, string: requirement.qualifiedProduct)
-            encoder.append(tag: 222, bytes: requirement.invocation.context.identityBytes)
+            encoder.append(
+                tag: 222,
+                bytes: requirement.invocation.context.identityBytes(
+                    identityPathMap: services.identityPathMap))
             for target in requirement.prebuildTargets {
                 encoder.append(tag: 109, string: target)
             }
@@ -84,7 +92,10 @@ struct TaskIdentityBuilder {
             $0.qualifiedProduct < $1.qualifiedProduct
         }) {
             encoder.append(tag: 225, string: requirement.qualifiedProduct)
-            encoder.append(tag: 226, bytes: requirement.invocation.context.identityBytes)
+            encoder.append(
+                tag: 226,
+                bytes: requirement.invocation.context.identityBytes(
+                    identityPathMap: services.identityPathMap))
             for argument in requirement.arguments {
                 encoder.append(tag: 227, string: argument)
             }
@@ -99,9 +110,18 @@ struct TaskIdentityBuilder {
             case .value(let name, let bytes):
                 encoder.append(tag: 10, string: name)
                 encoder.append(tag: 11, bytes: bytes)
+            case .string(let name, let value):
+                encoder.append(tag: 77, string: name)
+                encoder.append(tag: 78, string: value)
             case .environment(let name, let value):
                 encoder.append(tag: 12, string: name)
                 encoder.append(tag: 13, string: value ?? "<unset>")
+            case .swiftBuildContext(let context):
+                encoder.append(tag: 75, string: "swift-build-context")
+                encoder.append(
+                    tag: 76,
+                    bytes: context.identityBytes(
+                        identityPathMap: services.identityPathMap))
             case .file(let path):
                 encoder.append(tag: 14, string: path.string)
                 encoder.append(tag: 15, bytes: try services.digestFile(path).bytes)
@@ -165,7 +185,9 @@ struct TaskIdentityBuilder {
             return
         }
         encoder.append(tag: 235, string: action.kind.rawValue)
-        encoder.append(tag: 236, bytes: action.identity)
+        encoder.append(
+            tag: 236,
+            bytes: try action.identity(using: services.identityPathMap))
         let execution = action.requirements.executionPlatform
         encoder.append(tag: 249, string: execution.environment.rawValue)
         encoder.append(tag: 250, string: execution.operatingSystem.rawValue)

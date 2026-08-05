@@ -83,7 +83,8 @@ public enum CoreColliderRecipe: ColliderComponent {
         let root = context.componentRoot(descriptor)
         let sources = try prepareSkiaDependencies(
             root: root,
-            environment: context.environment)
+            environment: context.environment,
+            builder: context.nativeBuilder.base)
         var tasks = sources.tasks
         var roots: Set<TaskID> = []
         var linuxICULibraries: [NativeLinuxTarget: ArtifactReference<FileArtifact>] = [:]
@@ -169,7 +170,8 @@ public enum CoreColliderRecipe: ColliderComponent {
 
     package static func prepareSkiaDependencies(
         root: FilePath,
-        environment: [String: String]
+        environment: [String: String],
+        builder: NativeOCIBaseConfiguration
     ) throws -> SkiaSourceArtifacts {
         let skia = root.appending("third-party/skia")
         let gnArchive = root.appending(".skia-build/downloads/gn-linux-arm64.zip")
@@ -203,6 +205,7 @@ public enum CoreColliderRecipe: ColliderComponent {
             validation: .regularFile)
         let download = downloadBuilder.build(
             locks: [.checkout("core-sources")],
+            assessmentPolicy: .portable,
             action:
                 try AnyColliderAction(
                     DownloadSkiaGNAction(
@@ -233,18 +236,20 @@ public enum CoreColliderRecipe: ColliderComponent {
             id: CoreTaskIDs.gnInstall,
             component: ComponentID(rawValue: "core"))
         installBuilder.consume(archive)
+        installBuilder.consume(builder.image)
         let gn: ArtifactReference<ExecutableArtifact> = try installBuilder.output(
             "gn",
             path: skia.appending("bin/gn"),
             validation: .executableFile)
         let install = installBuilder.build(
             locks: [.checkout("core-sources")],
+            assessmentPolicy: .portable,
             action:
                 try AnyColliderAction(
                     InstallSkiaGNAction(
                         archive: gnArchive,
                         executable: skia.appending("bin/gn"),
-                        environment: environment)))
+                        builder: builder)))
         return SkiaSourceArtifacts(
             tasks: [download, sources, install],
             externalSources: externalSources,
@@ -468,9 +473,9 @@ public enum CoreColliderRecipe: ColliderComponent {
         }
         let task = builder.build(
             inputs: links.map {
-                .value(
+                .string(
                     name: $0.0,
-                    bytes: Array($0.1.string.utf8))
+                    value: $0.1.string)
             },
             locks: [
                 .shared(sdkRoot.appending(".render.lock"))
@@ -510,7 +515,7 @@ public enum CoreColliderRecipe: ColliderComponent {
         }
         let task = builder.build(
             inputs: links.map {
-                .value(name: $0.0, bytes: Array($0.1.string.utf8))
+                .string(name: $0.0, value: $0.1.string)
             },
             locks: [.shared(sdkRoot.appending(".render.lock"))],
             action:
@@ -950,53 +955,86 @@ private struct MaterializeSkiaDependenciesAction: ColliderAction {
 
 private struct InstallSkiaGNAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
-        let archive: FilePath
+        let execution: OCIExecution
         let executable: FilePath
 
         func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: archive.string)
+            encoder.append(
+                tag: 1,
+                nested: OCIExecutionActionIdentity(execution))
             encoder.append(tag: 2, string: executable.string)
-            encoder.append(tag: 3, string: "gn")
-            encoder.append(tag: 4, integer: 0o755)
         }
     }
 
     static let kind: ActionKind = "core.install-skia-gn"
 
-    let archive: FilePath
+    let execution: OCIExecution
     let executable: FilePath
-    let environment: [String: String]
 
-    var identity: Identity { Identity(archive: archive, executable: executable) }
-
-    var requirements: ActionRequirements {
-        ActionRequirements(
-            tools: [
-                ActionToolRequirement(
-                    "unzip", executable: .named("unzip"), role: .operational)
+    init(
+        archive: FilePath,
+        executable: FilePath,
+        builder: NativeOCIBaseConfiguration
+    ) {
+        self.executable = executable
+        execution = OCIExecution(
+            executionPlatform: .linuxARM64OCI,
+            artifactTarget: .linuxARM64,
+            imageID: builder.imageID,
+            hostname: "native-gn-extract",
+            workingDirectory: "/output",
+            hostWorkingDirectory: executable.removingLastComponent(),
+            mounts: [
+                OCIMount(
+                    source: archive.removingLastComponent(),
+                    target: "/archive",
+                    access: .readOnly),
+                OCIMount(
+                    source: executable.removingLastComponent(),
+                    target: "/output",
+                    access: .readWrite),
             ],
-            effects: [
-                ActionEffect(.read, scope: .input(archive)),
-                ActionEffect(
-                    .readWrite,
-                    scope: .output(executable.removingLastComponent())),
-            ],
-            executionPlatform: .macOSARM64Native)
+            networkPolicy: .externalDisabled,
+            userPolicy: .builder,
+            capabilityPolicy: .dropAll,
+            privilegePolicy: .prohibitAcquisition,
+            processFilesystemPolicy: .standard,
+            intelBinaryTranslationPolicy: .disabled,
+            resourceLimits: OCIResourceLimits(
+                cpuCount: 1,
+                memoryBytes: 1 * 1_024 * 1_024 * 1_024,
+                processCount: 64),
+            containerEnvironment: [:],
+            command: ["extract-gn"],
+            environment: builder.environment,
+            output: .logged)
     }
 
+    var identity: Identity {
+        Identity(execution: execution, executable: executable)
+    }
+
+    var requirements: ActionRequirements {
+        let container = ociActionRequirements(execution: execution)
+        return ActionRequirements(
+            effects: container.effects + [
+                ActionEffect(
+                    .readWrite,
+                    scope: .output(executable.removingLastComponent()))
+            ],
+            resources: container.resources,
+            executionPlatform: container.executionPlatform,
+            artifactTarget: container.artifactTarget)
+    }
+
+    var environment: [String: String] { execution.environment }
+
     func execute(in context: ActionContext) async throws {
-        let destination = executable.removingLastComponent()
-        try context.files.createDirectory(destination)
-        let result = try await context.commands.execute(
-            CommandSpec(
-                executable: .named("unzip"),
-                arguments: ["-o", archive.string, "gn", "-d", destination.string],
-                workingDirectory: destination,
-                environment: environment))
+        try context.files.createDirectory(executable.removingLastComponent())
+        let result = try await context.containers.run(execution)
         guard result.status == 0 else {
             throw SkiaDependencyFailure.unzipFailed(result.status)
         }
-        try context.files.setPermissions(0o755, for: executable)
     }
 }
 
@@ -1161,9 +1199,9 @@ private func skiaTask(
     }
     let declaration = task.build(
         inputs: [
-            .value(
+            .string(
                 name: "gn-arguments",
-                bytes: Array(gnArguments.joined(separator: "\u{0}").utf8))
+                value: gnArguments.joined(separator: "\u{0}"))
         ],
         locks: [.checkout(id.rawValue)],
         action:

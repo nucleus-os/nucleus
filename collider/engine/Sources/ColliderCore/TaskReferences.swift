@@ -1,6 +1,6 @@
 import SystemPackage
 
-public struct OutputSlotID: RawRepresentable, Hashable, Sendable,
+public struct OutputSlotID: RawRepresentable, Hashable, Codable, Sendable,
     ExpressibleByStringLiteral, CustomStringConvertible
 {
     public let rawValue: String
@@ -16,7 +16,7 @@ public struct OutputSlotID: RawRepresentable, Hashable, Sendable,
     public var description: String { rawValue }
 }
 
-public enum ArtifactValueKind: String, Hashable, Sendable {
+public enum ArtifactValueKind: String, Hashable, Codable, Sendable {
     case file
     case directory
     case executable

@@ -13,7 +13,8 @@ package struct BuildChromiumProductAction: ColliderAction {
             encoder.append(tag: 4, string: build.depotTools.string)
             encoder.append(tag: 5, string: build.containerImageID.string)
             encoder.append(tag: 6, string: build.gnArguments ?? "")
-            var targets = CanonicalDigestEncoder()
+            var targets = CanonicalDigestEncoder(
+                identityPathMap: encoder.identityPathMap)
             for target in build.targets {
                 targets.append(tag: 1, string: target)
             }

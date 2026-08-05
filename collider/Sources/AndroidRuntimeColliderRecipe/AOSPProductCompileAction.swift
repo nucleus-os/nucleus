@@ -25,7 +25,8 @@ struct CompileAOSPProductAction: ColliderAction {
             encoder.append(tag: 12, integer: build.buildTimestamp)
             encoder.append(tag: 13, integer: UInt64(build.expectedPlatformSDK))
             encoder.append(tag: 14, integer: UInt64(build.expectedVendorAPILevel))
-            var overlays = CanonicalDigestEncoder()
+            var overlays = CanonicalDigestEncoder(
+                identityPathMap: encoder.identityPathMap)
             for overlay in build.sourceOverlays.sorted(by: {
                 $0.relativeDestination < $1.relativeDestination
             }) {
