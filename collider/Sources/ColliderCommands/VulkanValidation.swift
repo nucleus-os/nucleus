@@ -1,6 +1,6 @@
 import Foundation
 
-struct VulkanValidationLayer: Codable, Equatable {
+struct VulkanValidationLayer: Equatable {
     let manifest: String
     let directory: String
 
@@ -14,17 +14,19 @@ struct VulkanValidationLayer: Codable, Equatable {
             homeDirectory: homeDirectory,
             includeSystemDirectories: includeSystemDirectories)
         where FileManager.default.fileExists(atPath: directory.path) {
-            let entries = (try? FileManager.default.contentsOfDirectory(
-                at: directory,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles])) ?? []
-            for manifest in entries
+            let entries =
+                (try? FileManager.default.contentsOfDirectory(
+                    at: directory,
+                    includingPropertiesForKeys: nil,
+                    options: [.skipsHiddenFiles])) ?? []
+            for manifest
+                in entries
                 .filter({ $0.pathExtension.lowercased() == "json" })
                 .sorted(by: { $0.path < $1.path })
             {
                 guard let data = try? Data(contentsOf: manifest),
-                      let object = try? JSONSerialization.jsonObject(with: data),
-                      containsValidationLayer(object)
+                    let object = try? JSONSerialization.jsonObject(with: data),
+                    containsValidationLayer(object)
                 else { continue }
                 return VulkanValidationLayer(
                     manifest: manifest.path,
@@ -56,21 +58,26 @@ struct VulkanValidationLayer: Codable, Equatable {
             }
         }
         appendLayerPathList(environment["VK_LAYER_PATH"])
-        let dataHome = environment["XDG_DATA_HOME"].flatMap {
-            $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true)
-        } ?? homeDirectory.appendingPathComponent(".local/share", isDirectory: true)
-        directories.append(dataHome.appendingPathComponent(
-            "vulkan/explicit_layer.d", isDirectory: true))
+        let dataHome =
+            environment["XDG_DATA_HOME"].flatMap {
+                $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true)
+            } ?? homeDirectory.appendingPathComponent(".local/share", isDirectory: true)
+        directories.append(
+            dataHome.appendingPathComponent(
+                "vulkan/explicit_layer.d", isDirectory: true))
         if includeSystemDirectories {
-            directories.append(URL(
-                fileURLWithPath: "/usr/local/share/vulkan/explicit_layer.d",
-                isDirectory: true))
-            directories.append(URL(
-                fileURLWithPath: "/usr/share/vulkan/explicit_layer.d",
-                isDirectory: true))
-            let dataDirectories = environment["XDG_DATA_DIRS"].flatMap {
-                $0.isEmpty ? nil : $0
-            } ?? "/usr/local/share:/usr/share"
+            directories.append(
+                URL(
+                    fileURLWithPath: "/usr/local/share/vulkan/explicit_layer.d",
+                    isDirectory: true))
+            directories.append(
+                URL(
+                    fileURLWithPath: "/usr/share/vulkan/explicit_layer.d",
+                    isDirectory: true))
+            let dataDirectories =
+                environment["XDG_DATA_DIRS"].flatMap {
+                    $0.isEmpty ? nil : $0
+                } ?? "/usr/local/share:/usr/share"
             appendDataPathList(dataDirectories)
         } else {
             appendDataPathList(environment["XDG_DATA_DIRS"])
@@ -88,40 +95,6 @@ struct VulkanValidationLayer: Codable, Equatable {
         environment["VK_LAYER_PATH"] = [directory, existing]
             .compactMap { $0 }
             .joined(separator: ":")
-    }
-}
-
-struct VulkanValidationReport: Codable {
-    let status: String
-    let manifest: String?
-    let directory: String?
-    let searchDirectories: [String]
-}
-
-struct VulkanValidation {
-    let context: WorkspaceContext
-
-    func run(dryRun: Bool, json: Bool) throws {
-        let directories = VulkanValidationLayer.searchDirectories(
-            environment: context.environment).map(\.path)
-        let layer = dryRun ? nil : try VulkanValidationLayer.resolve(
-            environment: context.environment)
-        let report = VulkanValidationReport(
-            status: dryRun ? "planned" : "passed",
-            manifest: layer?.manifest,
-            directory: layer?.directory,
-            searchDirectories: directories)
-        if json {
-            print(String(
-                decoding: try JSONEncoder.sorted.encode(report), as: UTF8.self))
-            return
-        }
-        if let layer {
-            print("vulkan validation layer: \(layer.manifest)")
-        } else {
-            print("vulkan validation search plan:")
-            for directory in directories { print("  \(directory)") }
-        }
     }
 }
 

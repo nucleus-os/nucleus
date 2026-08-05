@@ -249,7 +249,7 @@ private func fixtureReactNativeNodeModules(
     }
 }
 
-@Test func unselectedDRMWorkDoesNotProbeHardware() throws {
+@Test func unselectedWorkDoesNotRequireDRMHardware() throws {
     let root = try #require(
         discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
     let registry = ComponentRegistry(

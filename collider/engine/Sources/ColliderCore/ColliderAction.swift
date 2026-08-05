@@ -283,23 +283,6 @@ public struct ActionDownloader: Sendable {
     }
 }
 
-public struct ActionObservationRecorder: Sendable {
-    private let recordHardwareProbeBody: @Sendable (HardwareProbeObservation) -> Void
-
-    public init(
-        recordHardwareProbe: @escaping @Sendable (HardwareProbeObservation) -> Void = {
-            _ in
-        }
-    ) {
-        recordHardwareProbeBody = recordHardwareProbe
-    }
-
-    public func recordHardwareProbe(name: String, result: String) {
-        recordHardwareProbeBody(
-            HardwareProbeObservation(name: name, result: result))
-    }
-}
-
 public struct ActionContainerExecutor: Sendable {
     private let prepareImageBody: @Sendable (OCIImagePreparation) async throws -> Void
     private let runBody: @Sendable (OCIExecution) async throws -> CommandResult
@@ -811,7 +794,6 @@ public struct ActionContext: Sendable {
     public let commands: ActionCommandExecutor
     public let downloads: ActionDownloader
     public let containers: ActionContainerExecutor
-    public let observations: ActionObservationRecorder
 
     public init(
         files: ActionFileSystem,
@@ -819,8 +801,7 @@ public struct ActionContext: Sendable {
         logger: ActionLogger,
         commands: ActionCommandExecutor,
         downloads: ActionDownloader,
-        containers: ActionContainerExecutor = ActionContainerExecutor(),
-        observations: ActionObservationRecorder = ActionObservationRecorder()
+        containers: ActionContainerExecutor = ActionContainerExecutor()
     ) {
         self.files = files
         self.cancellation = cancellation
@@ -828,7 +809,6 @@ public struct ActionContext: Sendable {
         self.commands = commands
         self.downloads = downloads
         self.containers = containers
-        self.observations = observations
     }
 }
 

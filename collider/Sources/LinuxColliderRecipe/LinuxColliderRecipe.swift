@@ -118,80 +118,31 @@ public enum LinuxColliderRecipe: ColliderComponent {
             postconditions: [swiftPM.postcondition],
             locks: [.checkout("linux-\(name)")],
             assessmentPolicy: .incremental)
-        switch architecture {
-        case .arm64:
-            return [
-                build,
-                TaskDeclaration(
-                    id: LinuxTaskIDs.test(architecture),
-                    component: ComponentID(rawValue: "linux"),
-                    dependencies: [buildID],
-                    subsumedDependencies: [buildID],
-                    swiftTests: [testRequirement],
-                    inputs: sharedInputs,
-                    postconditions: [swiftPM.postcondition],
-                    locks: [.checkout("linux-\(name)")],
-                    assessmentPolicy: .always),
-                laneTestTask(
-                    id: LinuxTaskIDs.testLoader(architecture),
-                    buildID: buildID,
-                    requirement: loaderRequirement,
-                    sharedInputs: sharedInputs,
-                    lockName: "linux-\(name)"),
-                laneTestTask(
-                    id: LinuxTaskIDs.testGPUHeadless(architecture),
-                    buildID: buildID,
-                    requirement: headlessRequirement,
-                    sharedInputs: sharedInputs,
-                    lockName: "linux-\(name)"),
-            ]
-        case .x86_64:
-            let probeRequirement = swiftPM.product(
-                package: "nucleus",
-                product: "NucleusVulkanLaneProbe",
-                packageRoot: root,
-                environment: environment,
-                expectedOutputs: [
-                    PathPostcondition(
-                        path: swiftPM.executable("NucleusVulkanLaneProbe"),
-                        validation: .executableFile)
-                ])
-            return [
-                build,
-                try translatedExecutableTask(
-                    id: LinuxTaskIDs.test(architecture),
-                    buildID: buildID,
-                    requirements: [buildRequirement, probeRequirement],
-                    inputs: sharedInputs,
-                    swiftPM: swiftPM,
-                    environment: environment,
-                    operations: [
-                        (swiftPM.executable("NucleusVulkanLaneProbe"), ["loader"]),
-                        (swiftPM.executable("NucleusVulkanLaneProbe"), ["gpu-headless"]),
-                        (swiftPM.executable("NucleusSessionSupervisor"), ["--help"]),
-                    ]),
-                try translatedExecutableTask(
-                    id: LinuxTaskIDs.testLoader(architecture),
-                    buildID: buildID,
-                    requirements: [probeRequirement],
-                    inputs: sharedInputs,
-                    swiftPM: swiftPM,
-                    environment: environment,
-                    operations: [
-                        (swiftPM.executable("NucleusVulkanLaneProbe"), ["loader"])
-                    ]),
-                try translatedExecutableTask(
-                    id: LinuxTaskIDs.testGPUHeadless(architecture),
-                    buildID: buildID,
-                    requirements: [probeRequirement],
-                    inputs: sharedInputs,
-                    swiftPM: swiftPM,
-                    environment: environment,
-                    operations: [
-                        (swiftPM.executable("NucleusVulkanLaneProbe"), ["gpu-headless"])
-                    ]),
-            ]
-        }
+        return [
+            build,
+            TaskDeclaration(
+                id: LinuxTaskIDs.test(architecture),
+                component: ComponentID(rawValue: "linux"),
+                dependencies: [buildID],
+                subsumedDependencies: [buildID],
+                swiftTests: [testRequirement],
+                inputs: sharedInputs,
+                postconditions: [swiftPM.postcondition],
+                locks: [.checkout("linux-\(name)")],
+                assessmentPolicy: .always),
+            laneTestTask(
+                id: LinuxTaskIDs.testLoader(architecture),
+                buildID: buildID,
+                requirement: loaderRequirement,
+                sharedInputs: sharedInputs,
+                lockName: "linux-\(name)"),
+            laneTestTask(
+                id: LinuxTaskIDs.testGPUHeadless(architecture),
+                buildID: buildID,
+                requirement: headlessRequirement,
+                sharedInputs: sharedInputs,
+                lockName: "linux-\(name)"),
+        ]
     }
 
 }
@@ -213,67 +164,4 @@ private func laneTestTask(
         postconditions: [requirement.invocation.postcondition],
         locks: [.checkout(lockName)],
         assessmentPolicy: .always)
-}
-
-private func translatedExecutableTask(
-    id: TaskID,
-    buildID: TaskID,
-    requirements: [SwiftProductRequirement],
-    inputs: [ArtifactInput],
-    swiftPM: SwiftPMInvocation,
-    environment: [String: String],
-    operations: [(FilePath, [String])]
-) throws -> TaskDeclaration {
-    TaskDeclaration(
-        id: id,
-        component: ComponentID(rawValue: "linux"),
-        dependencies: [buildID],
-        subsumedDependencies: requirements.contains(where: {
-            $0.product == "NucleusSessionSupervisor"
-        }) ? [buildID] : [],
-        swiftProducts: requirements,
-        inputs: inputs,
-        postconditions: [swiftPM.postcondition],
-        locks: [.checkout("linux-x86_64")],
-        assessmentPolicy: .always,
-        action:
-            try AnyColliderAction(
-                RunLinuxLaneExecutablesAction(
-                    executions: try operations.map { executable, arguments in
-                        try swiftPM.ociExecutableExecution(
-                            executable: executable,
-                            arguments: arguments,
-                            workingDirectory: swiftPM.context.packageRoot,
-                            environment: environment)
-                    },
-                    probeNames: operations.compactMap { executable, arguments in
-                        guard executable.lastComponent?.string == "NucleusVulkanLaneProbe"
-                        else { return nil }
-                        return arguments.first.map { "linux.\($0)" }
-                    })))
-}
-
-private struct RunLinuxLaneExecutablesAction: ColliderAction {
-    static let kind: ActionKind = "linux.run-lane-executables"
-
-    let pipeline: OCIExecutionPipeline
-    let probeNames: [String]
-
-    init(executions: [OCIExecution], probeNames: [String]) throws {
-        pipeline = try OCIExecutionPipeline(executions)
-        self.probeNames = probeNames
-    }
-
-    var identity: OCIExecutionPipelineIdentity { pipeline.identity }
-    var requirements: ActionRequirements { pipeline.requirements }
-    var environment: [String: String] { pipeline.environment }
-
-    func execute(in context: ActionContext) async throws {
-        try await pipeline.execute(in: context)
-        for probeName in probeNames {
-            context.observations.recordHardwareProbe(
-                name: probeName,
-                result: "passed")
-        }
-    }
 }

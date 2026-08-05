@@ -333,8 +333,8 @@ Linux behavior must continue to satisfy the same runtime contracts.
 
 Baseline capture reuses the existing runtime interfaces. It does not introduce
 a baseline schema, a second capability model, or a baseline-specific Collider
-command. On the physical Linux qualifier, preserve one Collider run containing
-`collider test gpu-drm --verbose`, the existing Vulkan lane-probe output,
+command. On physical Linux hardware, preserve one Collider run containing
+`collider test gpu-drm --verbose`, the existing Vulkan behavioral test output,
 `vulkaninfo` and `drm_info` output, the installed-product ELF and symbol
 inventory, and one bounded `collider run --tracy` capture with Android enabled.
 The Collider run record, compositor log, Tracy event and plot exports, and
@@ -635,7 +635,7 @@ The complete first-party Linux closure gains Linux/arm64 artifacts:
 - compositor library and executable;
 - shell, window client, configuration, session, and IPC processes;
 - Android runtime host and LXC orchestration;
-- headless tools, lane probes, test fixtures, and all test targets.
+- headless tools, test fixtures, and all test targets.
 
 Architecture defects are fixed at their source for both Linux targets. This
 includes native-layout assumptions, atomic widths, endian or alignment
@@ -687,7 +687,7 @@ link dependency, allocation structs, and tests once no caller remains. Android's
 bare-metal local gfxstream broker keeps its own GBM dependency because it is a
 different resource producer.
 
-The lane probe replaces the GBM round-trip with a behavioral
+The behavioral Vulkan tests replace the GBM round-trip with a
 Vulkan-export-to-DRM round-trip. It creates the image, exports the dma-buf,
 imports it into DRM, creates and removes a framebuffer, and verifies lifetime
 and synchronization behavior. Source-shape assertions are not used.
@@ -701,8 +701,8 @@ advertises only measured optional acceleration.
 
 Phase gate:
 
-1. The new allocator and lane probe pass on the physical Linux qualifier.
-2. The same lane probe passes through the Phase 3 virtio-gpu device.
+1. The new allocator and behavioral Vulkan tests pass on physical Linux hardware.
+2. The same tests pass through the Phase 3 virtio-gpu device.
 3. Graphite renders into the original Vulkan image without an import copy.
 4. Client dma-buf import and explicit synchronization behavior remain intact.
 5. No compositor-owned output allocation calls GBM.

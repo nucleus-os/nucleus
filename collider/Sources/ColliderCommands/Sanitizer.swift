@@ -1,6 +1,5 @@
 import ArgumentParser
 import ColliderCore
-import QualificationColliderRecipe
 
 extension SanitizerKind: ExpressibleByArgument {}
 

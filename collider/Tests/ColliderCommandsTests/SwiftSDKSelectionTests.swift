@@ -34,6 +34,8 @@ import Testing
             "--package-path", packageRoot.string,
             "--swift-sdk", "fixture-sdk",
             "--triple", "aarch64-unknown-linux-android24",
+            "-Xcxx",
+            "-I/workspace/.nucleus/swiftpm/android/out/Intermediates.noindex/GeneratedModuleMaps-android-aarch64",
         ])
     #expect(
         amd64.commandArguments(["build"]) == [
@@ -44,6 +46,8 @@ import Testing
             "--package-path", packageRoot.string,
             "--swift-sdk", "fixture-sdk",
             "--triple", "x86_64-unknown-linux-android24",
+            "-Xcxx",
+            "-I/workspace/.nucleus/swiftpm/android/out/Intermediates.noindex/GeneratedModuleMaps-android-x86_64",
         ])
     #expect(arm64.context.identityBytes != amd64.context.identityBytes)
     #expect(

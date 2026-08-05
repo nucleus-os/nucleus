@@ -19,7 +19,9 @@ boundaries through manifest-time environment lookup.
 Exact compiler, `--swift-sdk`, `--triple`, native SDK, and scratch selection is
 implemented. Native location, Linux system-library discovery, and host
 environment state are no longer manifest concerns. The remaining work is
-fresh-clone bootstrap and destination qualification.
+running the ordinary bootstrap and build/test workflows from a fresh clone
+across every supported destination. This plan adds no separate probe,
+qualification, or validation layer around those workflows.
 
 ## Phase 1 — Make the declaration graph unconditional
 
@@ -144,15 +146,21 @@ bootstrap native SDK artifacts, then build and test the runtime graph. Collider
 and `collider/engine` remain separate tooling packages; neither depends on
 manifest-time provisioned runtime artifacts.
 
+Use the existing setup, doctor, bootstrap, build, and test commands directly.
+Do not add a second workflow that records successful execution or reproduces
+the build graph under qualification terminology.
+
 Gate: `./collider-setup.sh`, `collider doctor`, `collider bootstrap`, `collider
 build`, and `collider test` pass from a recursive fresh clone and from an
 unchanged incremental checkout.
 
-## Phase 6 — Qualify every destination
+## Phase 6 — Run every destination
 
-Build and test Linux/arm64 and Linux/x86_64, compile and link Android/arm64 and
-Android/x86_64, run generated Swift-to-C++ bridge tests from clean scratch, and
-validate artifact provenance, relocation, exported symbols, and libc++ closure.
+Run the same real Swift test products for Linux/arm64 and Linux/x86_64. Compile
+and link Android/arm64 and Android/x86_64, and run the generated Swift-to-C++
+bridge tests from clean scratch. Retain producer-owned artifact checks for
+provenance, relocation, exported symbols, and the libc++ closure because those
+properties are not guaranteed by successful compilation alone.
 
 Gate: every runtime compilation consumes only its declared immutable SDK and no
 supported workflow requires `source tools/host-env.sh` before SwiftPM planning.

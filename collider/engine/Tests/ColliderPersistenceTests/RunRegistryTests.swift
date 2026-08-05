@@ -66,13 +66,6 @@ import Testing
         ["product": identity],
         task: task,
         in: run)
-    try await registry.recordTaskObservations(
-        TaskExecutionObservations(
-            hardwareProbes: [
-                HardwareProbeObservation(name: "fixture.device", result: "present")
-            ]),
-        task: task,
-        in: run)
 
     let manifest = try JSONDecoder().decode(
         RunManifest.self,
@@ -84,7 +77,7 @@ import Testing
     #expect(record.outcome == .executed)
     #expect(record.durationNanoseconds == 88)
     #expect(record.artifactSnapshotDigests == ["product": identity])
-    #expect(record.observations?.hardwareProbes.first?.result == "present")
+    #expect(record.observations == nil)
 }
 
 @Test func runRegistryLeavesReclamationToTheExplicitLifecycleCommand() async throws {
@@ -186,11 +179,6 @@ import Testing
                         intelBinaryTranslationPolicy: .required,
                         resourceLimits: .parallelBuild,
                         status: 0)
-                ],
-                hardwareProbes: [
-                    HardwareProbeObservation(
-                        name: "vulkan.gpu-headless",
-                        result: "passed")
                 ]))
     ]
     manifest.resumedAt = ["2026-07-22T00:00:00.5Z"]
@@ -226,9 +214,6 @@ import Testing
     #expect(
         decodedTask.observations?.containerExecutions.first?
             .intelBinaryTranslationPolicy == .required)
-    #expect(
-        decodedTask.observations?.hardwareProbes
-            == [HardwareProbeObservation(name: "vulkan.gpu-headless", result: "passed")])
     #expect(decoded.resumedAt == manifest.resumedAt)
     #expect(decoded.resumeCount == manifest.resumeCount)
 }
@@ -321,15 +306,6 @@ private func fixtureAudit(component: ComponentID) -> PlannedTaskAudit {
                 audit: fixtureAudit(component: ComponentID(rawValue: "fixture")))
         ],
         in: run)
-    try await registry.recordTaskObservations(
-        TaskExecutionObservations(
-            hardwareProbes: [
-                HardwareProbeObservation(
-                    name: "probe?token=observation-name-secret",
-                    result: "Authorization: Bearer observation-result-secret")
-            ]),
-        task: task,
-        in: run)
     try await registry.record(
         kind: .taskFailed,
         message: "Authorization: Bearer event-secret",
@@ -353,7 +329,6 @@ private func fixtureAudit(component: ComponentID) -> PlannedTaskAudit {
     let durableRecords = manifest + events + log
     for secret in [
         "command-secret", "query-secret", "event-secret", "log-secret",
-        "observation-name-secret", "observation-result-secret",
     ] {
         #expect(!durableRecords.contains(secret))
     }

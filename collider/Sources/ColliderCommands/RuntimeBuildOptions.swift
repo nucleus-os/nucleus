@@ -1,5 +1,3 @@
-import QualificationColliderRecipe
-
 struct RuntimeBuildOptions: Equatable {
     var optimization: OptimizationMode = .debug
     var tracy = false

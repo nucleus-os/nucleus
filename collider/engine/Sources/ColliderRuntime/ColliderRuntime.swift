@@ -118,12 +118,7 @@ public actor ColliderRuntime {
                                 status: result.status))
                     }
                     return result
-                }),
-            observations: ActionObservationRecorder { observation in
-                recordedObservations.withLock {
-                    $0.hardwareProbes.append(observation)
-                }
-            }
+                })
         )
         try await action.execute(in: context)
         return recordedObservations.withLock { $0 }

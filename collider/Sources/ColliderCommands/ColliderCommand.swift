@@ -11,7 +11,7 @@ private func colliderCommandSubcommands() -> [ParsableCommand.Type] {
         Install.self, SwiftSDK.self, Android.self, AndroidRuntime.self,
         Browser.self,
         Generate.self, Sanitize.self, Benchmark.self,
-        Validate.self, Cache.self, Logs.self, Status.self,
+        Cache.self, Logs.self, Status.self,
     ]
     #if os(Linux)
     commands.insert(Run.self, at: 4)

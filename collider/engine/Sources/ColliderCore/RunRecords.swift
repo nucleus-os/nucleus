@@ -62,30 +62,15 @@ public struct OCIExecutionObservation: Codable, Hashable, Sendable {
     }
 }
 
-public struct HardwareProbeObservation: Codable, Hashable, Sendable {
-    public let name: String
-    public let result: String
-
-    public init(name: String, result: String) {
-        self.name = name
-        self.result = result
-    }
-}
-
 public struct TaskExecutionObservations: Codable, Hashable, Sendable {
     public var containerExecutions: [OCIExecutionObservation]
-    public var hardwareProbes: [HardwareProbeObservation]
 
-    public init(
-        containerExecutions: [OCIExecutionObservation] = [],
-        hardwareProbes: [HardwareProbeObservation] = []
-    ) {
+    public init(containerExecutions: [OCIExecutionObservation] = []) {
         self.containerExecutions = containerExecutions
-        self.hardwareProbes = hardwareProbes
     }
 
     public var isEmpty: Bool {
-        containerExecutions.isEmpty && hardwareProbes.isEmpty
+        containerExecutions.isEmpty
     }
 }
 

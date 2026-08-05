@@ -1,5 +1,4 @@
 import ColliderCore
-import QualificationColliderRecipe
 
 struct BenchmarkCommand {
     let context: WorkspaceContext

@@ -8,7 +8,6 @@ import CoreColliderRecipe
 import Foundation
 import LinuxColliderRecipe
 import NativeBuilderColliderRecipe
-import QualificationColliderRecipe
 import ReactNativeColliderRecipe
 import ReleaseGateColliderRecipe
 import ShellColliderRecipe

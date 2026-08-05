@@ -5,23 +5,19 @@ import SystemPackage
 public struct RecordedActionExecution: Sendable {
     public let imagePreparations: [OCIImagePreparation]
     public let ociExecutions: [OCIExecution]
-    public let hardwareProbes: [HardwareProbeObservation]
 
     public init(
         imagePreparations: [OCIImagePreparation],
-        ociExecutions: [OCIExecution],
-        hardwareProbes: [HardwareProbeObservation]
+        ociExecutions: [OCIExecution]
     ) {
         self.imagePreparations = imagePreparations
         self.ociExecutions = ociExecutions
-        self.hardwareProbes = hardwareProbes
     }
 }
 
 private struct ActionExecutionRecording: Sendable {
     var imagePreparations: [OCIImagePreparation] = []
     var ociExecutions: [OCIExecution] = []
-    var hardwareProbes: [HardwareProbeObservation] = []
 }
 
 public func recordActionExecution(
@@ -37,8 +33,7 @@ public func recordActionExecution(
     guard let action else {
         return RecordedActionExecution(
             imagePreparations: [],
-            ociExecutions: [],
-            hardwareProbes: [])
+            ociExecutions: [])
     }
     try await action.execute(
         in: ActionContext(
@@ -58,17 +53,11 @@ public func recordActionExecution(
                         $0.ociExecutions.append(execution)
                     }
                     return try await containerResult(execution)
-                }),
-            observations: ActionObservationRecorder { observation in
-                recording.withLock {
-                    $0.hardwareProbes.append(observation)
-                }
-            }))
+                })))
     return recording.withLock {
         RecordedActionExecution(
             imagePreparations: $0.imagePreparations,
-            ociExecutions: $0.ociExecutions,
-            hardwareProbes: $0.hardwareProbes)
+            ociExecutions: $0.ociExecutions)
     }
 }
 
@@ -86,8 +75,7 @@ public func recordOCIActionExecution(
     else {
         return RecordedActionExecution(
             imagePreparations: [],
-            ociExecutions: [],
-            hardwareProbes: [])
+            ociExecutions: [])
     }
     return try await recordActionExecution(
         action,

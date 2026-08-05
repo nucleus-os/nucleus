@@ -2,16 +2,16 @@ import ColliderCore
 import NativeBuilderColliderRecipe
 import SystemPackage
 
-package enum BenchmarkEntrypoints {
-    package static let run = ComponentEntrypointID(rawValue: "benchmark")
+enum BenchmarkEntrypoints {
+    static let run = ComponentEntrypointID(rawValue: "benchmark")
 }
 
-public enum SanitizerKind: String, CaseIterable, Equatable, Sendable {
+enum SanitizerKind: String, CaseIterable, Equatable, Sendable {
     case address
     case undefined
     case thread
 
-    public var entrypoint: ComponentEntrypointID {
+    var entrypoint: ComponentEntrypointID {
         switch self {
         case .address: ComponentEntrypointID(rawValue: "sanitize.address")
         case .undefined: ComponentEntrypointID(rawValue: "sanitize.undefined")
@@ -41,13 +41,13 @@ public enum SanitizerKind: String, CaseIterable, Equatable, Sendable {
     }
 }
 
-public enum BenchmarkColliderRecipe: ColliderComponent {
-    public static let descriptor = ComponentDescriptor(
+enum BenchmarkColliderRecipe: ColliderComponent {
+    static let descriptor = ComponentDescriptor(
         id: ComponentID(rawValue: "benchmark"),
         canonicalName: "benchmark",
         directoryName: "core/benchmarks")
 
-    public static func makeComponent(
+    static func makeComponent(
         in context: RecipeContext
     ) throws -> ComponentDefinition {
         let native = try context.configuration(
@@ -156,13 +156,13 @@ private struct RunBenchmarkAction: ColliderAction {
     }
 }
 
-public enum SanitizerColliderRecipe: ColliderComponent {
-    public static let descriptor = ComponentDescriptor(
+enum SanitizerColliderRecipe: ColliderComponent {
+    static let descriptor = ComponentDescriptor(
         id: ComponentID(rawValue: "sanitize"),
         canonicalName: "sanitize",
         directoryName: "integration-tests/sanitizers")
 
-    public static func makeComponent(
+    static func makeComponent(
         in context: RecipeContext
     ) throws -> ComponentDefinition {
         let native = try context.configuration(

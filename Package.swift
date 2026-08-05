@@ -23,7 +23,6 @@ let products: [Product] = [
         name: "NucleusAndroidThreadSanitizerHarness",
         targets: ["NucleusAndroidThreadSanitizerHarness"]),
     .library(name: "NucleusRenderServer", type: .dynamic, targets: ["NucleusRenderServer"]),
-    .executable(name: "NucleusVulkanLaneProbe", targets: ["NucleusVulkanLaneProbe"]),
     .executable(
         name: "NucleusRenderServerThreadSanitizerHarness",
         targets: ["NucleusRenderServerThreadSanitizerHarness"]),
@@ -534,15 +533,6 @@ let targets: [Target] = [
         path:
             "compositor/compositor-core/SanitizerHarnesses/NucleusRenderServerThreadSanitizerHarness"
     ),
-    .executableTarget(
-        name: "NucleusVulkanLaneProbe",
-        dependencies: [
-            "Nucleus", "NucleusApp", "NucleusAppHostBundle", "NucleusLayers", "NucleusRenderHost",
-            "NucleusRenderModel", "NucleusRenderer", "NucleusSkiaGraphiteBridge",
-            "NucleusTextBackend",
-            "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder", "Vulkan", "VulkanC",
-            "NucleusCompositorDrmC",
-        ], path: "compositor/compositor-core/Sources/NucleusVulkanLaneProbe"),
     .testTarget(
         name: "NucleusCompositorRenderSessionTests",
         dependencies: ["NucleusCompositorRenderSession"],
