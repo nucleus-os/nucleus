@@ -80,11 +80,14 @@ public enum CoreColliderRecipe: ColliderComponent {
     package static func prepare(
         in context: RecipeContext
     ) throws -> ComponentArtifacts {
+        let native = try context.configuration(
+            NativeBuilderGraphConfiguration.self,
+            for: NativeBuilderColliderRecipe.descriptor.id)
         let root = context.componentRoot(descriptor)
         let sources = try prepareSkiaDependencies(
             root: root,
             environment: context.environment,
-            builder: context.nativeBuilder.base)
+            builder: native.builder.base)
         var tasks = sources.tasks
         var roots: Set<TaskID> = []
         var linuxICULibraries: [NativeLinuxTarget: ArtifactReference<FileArtifact>] = [:]
@@ -96,10 +99,10 @@ public enum CoreColliderRecipe: ColliderComponent {
                 environment: context.environment,
                 target: target,
                 sources: sources,
-                builder: context.nativeBuilder)
+                builder: native.builder)
             let sdk = try publishLinuxRenderSDK(
                 root: root,
-                sdkRoot: context.nativeSDK(for: target),
+                sdkRoot: native.nativeSDK(for: target),
                 target: target,
                 skia: skia.buildDirectory)
             tasks += [skia.task, sdk.task]
@@ -113,7 +116,7 @@ public enum CoreColliderRecipe: ColliderComponent {
             environment: context.environment,
             validate: false,
             fallbackHome: context.cacheRoot.appending("nucleus/unconfigured-home"))
-        let androidSDKRoot = context.nativeSDKRoot.appending("android-arm64")
+        let androidSDKRoot = native.nativeSDKRoot.appending("android-arm64")
         var androidEnvironment = context.environment
         androidEnvironment["NUCLEUS_NATIVE_SDK_ROOT"] = androidSDKRoot.string
         let androidSkia = try buildSkiaAndroid(
@@ -121,7 +124,7 @@ public enum CoreColliderRecipe: ColliderComponent {
             minimumAndroidAPI: androidToolchain.minimumSDK,
             environment: androidEnvironment,
             sources: sources,
-            builder: context.nativeBuilder)
+            builder: native.builder)
         let androidNativeSDK = try publishAndroidRenderSDK(
             root: root,
             sdkRoot: androidSDKRoot,
@@ -672,7 +675,9 @@ private struct DownloadSkiaGNAction: ColliderAction {
         ActionRequirements(
             effects: [
                 ActionEffect(.readWrite, scope: .output(identity.destination))
-            ], executionPlatform: .macOSARM64Native)
+            ],
+            networkAccess: .contentAddressed,
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {

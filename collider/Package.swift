@@ -76,7 +76,8 @@ let package = Package(
         .target(
             name: "LinuxColliderRecipe",
             dependencies: [
-                .product(name: "ColliderCore", package: "engine")
+                .product(name: "ColliderCore", package: "engine"),
+                "NativeBuilderColliderRecipe",
             ]),
         .target(
             name: "NativeBuilderColliderRecipe",
@@ -84,7 +85,8 @@ let package = Package(
         .target(
             name: "QualificationColliderRecipe",
             dependencies: [
-                .product(name: "ColliderCore", package: "engine")
+                .product(name: "ColliderCore", package: "engine"),
+                "NativeBuilderColliderRecipe",
             ]),
         .target(
             name: "ReactNativeColliderRecipe",
@@ -95,7 +97,8 @@ let package = Package(
         .target(
             name: "ReleaseGateColliderRecipe",
             dependencies: [
-                .product(name: "ColliderCore", package: "engine")
+                .product(name: "ColliderCore", package: "engine"),
+                "NativeBuilderColliderRecipe",
             ]),
         .target(
             name: "ShellColliderRecipe",

@@ -46,7 +46,7 @@ public struct ColliderPlanner {
                 guard let identity = identities[$0] else {
                     throw TaskGraphFailure.missing(task: task.id, dependency: $0)
                 }
-                return identity
+                return (task: $0, identity: identity)
             }
             let identity = try identityBuilder.identity(
                 of: task,
@@ -113,9 +113,17 @@ public struct ColliderPlanner {
         }
 
         let loweredEntries = try lowered.map { lowered in
+            let dependencyIdentities = try lowered.task.dependencies.map {
+                guard let identity = identities[$0] else {
+                    throw TaskGraphFailure.missing(
+                        task: lowered.task.id,
+                        dependency: $0)
+                }
+                return (task: $0, identity: identity)
+            }
             let identity = try identityBuilder.identity(
                 of: lowered.task,
-                dependencies: [],
+                dependencies: dependencyIdentities,
                 services: services)
             let assessment = assessment(
                 of: lowered.task,
@@ -451,6 +459,11 @@ public struct ColliderPlanner {
                 task: task.id,
                 reason: "portable tasks require one executable action")
         }
+        guard action.requirements.networkAccess != .unrestricted else {
+            throw ColliderPlanningFailure.ineligiblePortableTask(
+                task: task.id,
+                reason: "unrestricted network access is not portable")
+        }
         guard !task.outputSlots.isEmpty,
             task.outputSlots.count == task.outputs.count,
             task.outputSlots.allSatisfy({ slot in
@@ -493,9 +506,9 @@ public struct ColliderPlanner {
                     reason: "operational tools require a separate portability audit")
             }
             switch tool.executable {
-            case .taskOutput:
+            case .artifact:
                 break
-            case .named, .operationalNamed, .path:
+            case .named, .operationalNamed, .path, .taskOutput:
                 throw ColliderPlanningFailure.ineligiblePortableTask(
                     task: task.id,
                     reason: "ambient semantic tools are not portable")
@@ -523,6 +536,8 @@ public struct ColliderPlanner {
             path
         case .tool(.taskOutput(let path)), .tool(.path(let path)):
             path
+        case .tool(.artifact):
+            nil
         case .value, .string, .environment, .swiftBuildContext, .tool(.named),
             .tool(.operationalNamed):
             nil

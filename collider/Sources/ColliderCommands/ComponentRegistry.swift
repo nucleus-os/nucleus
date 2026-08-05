@@ -76,7 +76,11 @@ struct ComponentRegistry {
                     "aarch64-unknown-linux-android\(androidToolchain.minimumSDK)"),
             toolchainIdentity: "target-sdk-\(targetSDKInputs.snapshot)-android")
         var configurations: [ComponentID: any RecipeConfiguration] = [
-            SwiftTargetSDKColliderRecipe.descriptor.id: swiftSDKConfiguration
+            SwiftTargetSDKColliderRecipe.descriptor.id: swiftSDKConfiguration,
+            NativeBuilderColliderRecipe.descriptor.id:
+                NativeBuilderGraphConfiguration(
+                    builder: nativeConfiguration,
+                    nativeSDKRoot: context.nativeSDKRoot.removingLastComponent()),
         ]
         if let androidAddonConfiguration {
             configurations[AndroidRuntimeColliderRecipe.descriptor.id] =
@@ -95,8 +99,6 @@ struct ComponentRegistry {
         let baseRecipeContext = RecipeContext(
             repositoryRoot: context.root,
             cacheRoot: context.cacheRoot,
-            nativeSDKRoot: context.nativeSDKRoot.removingLastComponent(),
-            nativeBuilder: nativeConfiguration,
             environment: recipeEnvironment,
             buildContexts: buildContexts,
             configurations: configurations)
@@ -130,15 +132,17 @@ struct ComponentRegistry {
             targetArtifacts[target, default: ArtifactReferenceSet()]
                 .append(swiftTargetSDK.activeSDK)
         }
+        configurations[NativeBuilderColliderRecipe.descriptor.id] =
+            NativeBuilderGraphConfiguration(
+                builder: nativeConfiguration,
+                nativeSDKRoot: context.nativeSDKRoot.removingLastComponent(),
+                targetArtifacts: targetArtifacts)
         let recipeContext = RecipeContext(
             repositoryRoot: context.root,
             cacheRoot: context.cacheRoot,
-            nativeSDKRoot: context.nativeSDKRoot.removingLastComponent(),
-            nativeBuilder: nativeConfiguration,
             environment: recipeEnvironment,
             buildContexts: buildContexts,
-            configurations: configurations,
-            targetArtifacts: targetArtifacts)
+            configurations: configurations)
         let componentTypes: [any ColliderComponent.Type] = [
             BenchmarkColliderRecipe.self,
             ChromiumColliderRecipe.self,

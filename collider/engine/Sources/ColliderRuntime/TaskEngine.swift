@@ -516,7 +516,9 @@ extension ColliderRuntime {
                             in: eventRun)
                     }
                     return .restored
-                } catch {
+                } catch let failure as PortableArtifactStoreFailure
+                    where failure.isSnapshotCorruption
+                {
                     try portableArtifacts.quarantine(identity: plan.identity)
                 }
             }
@@ -582,6 +584,7 @@ private func rendered(_ command: CommandSpec) -> String {
         case .named(let name): name
         case .operationalNamed(let name): name
         case .path(let path): path.string
+        case .artifact(let reference): reference.path.string
         case .taskOutput(let path): path.string
         }
     return ([executable] + command.arguments).map { argument in

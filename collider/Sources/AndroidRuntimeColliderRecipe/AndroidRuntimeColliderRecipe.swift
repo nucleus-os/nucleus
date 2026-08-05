@@ -102,6 +102,9 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
     package static func prepare(
         in context: RecipeContext
     ) throws -> PreparedComponent {
+        let native = try context.configuration(
+            NativeBuilderGraphConfiguration.self,
+            for: NativeBuilderColliderRecipe.descriptor.id)
         let root = context.componentRoot(descriptor)
         let aosp = try aospImageTasks(
             root: root,
@@ -116,7 +119,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 repositoryRoot: context.repositoryRoot,
                 environment: context.environment,
                 target: target,
-                builder: context.nativeBuilder)
+                builder: native.builder)
             tasks.append(artifacts.task)
             gfxstreamRoots.insert(artifacts.task.id)
             gfxstreamArtifacts[target] = artifacts
@@ -877,6 +880,7 @@ private struct DownloadAOSPRepoLauncherAction: ColliderAction {
             effects: [
                 ActionEffect(.readWrite, scope: .output(identity.destination))
             ],
+            networkAccess: .contentAddressed,
             executionPlatform: .macOSARM64Native)
     }
 

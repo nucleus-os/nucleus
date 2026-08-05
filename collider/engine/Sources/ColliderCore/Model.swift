@@ -107,6 +107,9 @@ public struct CommandSpec: Hashable, Sendable {
         /// materialized content. Its name is operational, not task identity.
         case operationalNamed(String)
         case path(FilePath)
+        /// A semantic executable produced by a typed task output. Its producer
+        /// identity and slot contract replace a planning-time binary digest.
+        case artifact(AnyArtifactReference)
         /// An executable built earlier in the same task action.
         ///
         /// Its producing command and sources define the task identity, so the

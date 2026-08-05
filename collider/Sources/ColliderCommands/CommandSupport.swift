@@ -4,6 +4,7 @@ import ColliderPersistence
 import ColliderRuntime
 import ColliderSwiftPM
 import Foundation
+import NativeBuilderColliderRecipe
 import QualificationColliderRecipe
 import SystemPackage
 

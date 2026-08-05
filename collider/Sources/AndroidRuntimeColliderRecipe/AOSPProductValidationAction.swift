@@ -480,6 +480,7 @@ private struct AOSPProductValidationWorkflow {
             switch executable {
             case .named(let name), .operationalNamed(let name): name
             case .path(let path), .taskOutput(let path): containerPath(path.string)
+            case .artifact(let reference): containerPath(reference.path.string)
             }
         return try await context.containers.run(
             aospProductOCIExecution(

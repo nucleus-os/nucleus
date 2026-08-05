@@ -486,6 +486,9 @@ public struct OCIExecutionPipeline: Sendable {
                 cpuCount: cpuCount,
                 memoryBytes: memoryBytes,
                 exclusive: false),
+            networkAccess: executions.contains {
+                $0.networkPolicy == .externalEnabled
+            } ? .unrestricted : .none,
             executionPlatform: first.executionPlatform,
             artifactTarget: first.artifactTarget)
         environment = first.environment
@@ -532,6 +535,8 @@ public func ociActionRequirements(
             cpuCount: execution.resourceLimits.cpuCount,
             memoryBytes: execution.resourceLimits.memoryBytes,
             exclusive: false),
+        networkAccess:
+            execution.networkPolicy == .externalEnabled ? .unrestricted : .none,
         executionPlatform: execution.executionPlatform,
         artifactTarget: execution.artifactTarget)
 }
@@ -545,6 +550,7 @@ public func ociImagePreparationActionRequirements(
             ActionEffect(.readWrite, scope: .output(preparation.imageID)),
         ],
         resources: .fullHostExclusive,
+        networkAccess: .unrestricted,
         executionPlatform: preparation.executionPlatform)
 }
 
@@ -579,6 +585,7 @@ public struct ActionRequirements: Hashable, Sendable {
     public let tools: [ActionToolRequirement]
     public let effects: [ActionEffect]
     public let resources: ActionResourceRequest
+    public let networkAccess: ActionNetworkAccess
     public let executionPlatform: ExecutionPlatform
     public let artifactTarget: ArtifactTarget?
 
@@ -586,15 +593,25 @@ public struct ActionRequirements: Hashable, Sendable {
         tools: [ActionToolRequirement] = [],
         effects: [ActionEffect] = [],
         resources: ActionResourceRequest = .lightweight,
+        networkAccess: ActionNetworkAccess = .none,
         executionPlatform: ExecutionPlatform,
         artifactTarget: ArtifactTarget? = nil
     ) {
         self.tools = tools
         self.effects = effects
         self.resources = resources
+        self.networkAccess = networkAccess
         self.executionPlatform = executionPlatform
         self.artifactTarget = artifactTarget
     }
+}
+
+public enum ActionNetworkAccess: String, Hashable, Sendable {
+    case none
+    /// External access is permitted only to materialize bytes verified against
+    /// an exact content digest declared by the action.
+    case contentAddressed
+    case unrestricted
 }
 
 public struct ActionResourceRequest: Hashable, Sendable {

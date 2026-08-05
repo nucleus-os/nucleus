@@ -1,4 +1,5 @@
 import ColliderCore
+import NativeBuilderColliderRecipe
 
 package enum ReleaseGateEntrypoints {
     package static let test = ComponentEntrypointID(rawValue: "test.release-gate")
@@ -36,9 +37,12 @@ public enum ReleaseGateColliderRecipe: ColliderComponent {
     public static func makeComponent(
         in context: RecipeContext
     ) throws -> ComponentDefinition {
+        let native = try context.configuration(
+            NativeBuilderGraphConfiguration.self,
+            for: NativeBuilderColliderRecipe.descriptor.id)
         let swiftPM = try context.swiftPM(
             .linux(.arm64, configuration: .release))
-        let targetArtifacts = try context.targetArtifacts(
+        let targetArtifacts = try native.artifacts(
             for: NativeLinuxTarget(architecture: .arm64))
         let tasks = ReleaseGateTaskIDs.suites.map { suite in
             let requirement = swiftPM.testProduct(

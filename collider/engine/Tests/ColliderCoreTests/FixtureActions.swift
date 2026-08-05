@@ -37,7 +37,7 @@ struct FixtureCommandAction: ColliderAction {
             switch command.executable {
             case .named(let name):
                 ActionToolRequirement(name, executable: command.executable, role: .semantic)
-            case .path:
+            case .path, .artifact:
                 ActionToolRequirement("command", executable: command.executable, role: .semantic)
             case .operationalNamed(let name):
                 ActionToolRequirement(name, executable: command.executable, role: .operational)

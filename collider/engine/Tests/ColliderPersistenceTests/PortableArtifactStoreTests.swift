@@ -105,6 +105,80 @@ import Testing
     #expect(snapshots.count == 2)
 }
 
+@Test func transientRestoreFailurePreservesTheSnapshot() throws {
+    let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-portable-transient-restore-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    let output = FilePath(temporary.appendingPathComponent("output").path)
+    let storeRoot = FilePath(temporary.appendingPathComponent("store").path)
+    try materializePortableFixture(at: output)
+    let task = try portableDirectoryTask(output: output)
+    let identity = ArtifactDigest(bytes: Array(repeating: 0x63, count: 32))
+    let store = PortableArtifactStore(root: storeRoot)
+    try store.capture(task: task, identity: identity)
+
+    let blockedParent = temporary.appendingPathComponent("blocked")
+    try Data("not-a-directory".utf8).write(to: blockedParent)
+    let relocated = try portableDirectoryTask(
+        output: FilePath(blockedParent.appendingPathComponent("output").path))
+    #expect(throws: (any Error).self) {
+        try store.restore(task: relocated, identity: identity)
+    }
+
+    #expect(store.state(task: task.id, identity: identity) == .available)
+}
+
+@Test func retentionQuarantinesUndecodableSnapshotsAndAbandonedCandidates() throws {
+    let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-portable-corrupt-retention-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    let storeRoot = FilePath(temporary.appendingPathComponent("store").path)
+    try FileManager.default.createDirectory(
+        atPath: storeRoot.string,
+        withIntermediateDirectories: true)
+    let identity = ArtifactDigest(bytes: Array(repeating: 0x74, count: 32))
+    let corrupt = storeRoot.appending("sha256-\(identity.hexadecimal)")
+    try FileManager.default.createDirectory(
+        atPath: corrupt.string,
+        withIntermediateDirectories: true)
+    try Data("not-json".utf8).write(
+        to: URL(fileURLWithPath: corrupt.appending("manifest.json").string))
+    let abandoned = storeRoot.appending(".candidate-invalid")
+    try FileManager.default.createDirectory(
+        atPath: abandoned.string,
+        withIntermediateDirectories: true)
+
+    try PortableArtifactStore(root: storeRoot).prune()
+
+    #expect(!FileManager.default.fileExists(atPath: corrupt.string))
+    #expect(!FileManager.default.fileExists(atPath: abandoned.string))
+    #expect(
+        try FileManager.default.contentsOfDirectory(
+            atPath: storeRoot.appending("quarantine").string
+        ).count == 2)
+}
+
+@Test func portableSnapshotsRejectSymlinksThatEscapeTheOutputTree() throws {
+    let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-portable-escaping-symlink-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    let output = FilePath(temporary.appendingPathComponent("output").path)
+    try FileManager.default.createDirectory(
+        atPath: output.string,
+        withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(
+        atPath: output.appending("escape").string,
+        withDestinationPath: "../outside")
+    let task = try portableDirectoryTask(output: output)
+    let identity = ArtifactDigest(bytes: Array(repeating: 0x85, count: 32))
+
+    #expect(throws: PortableArtifactStoreFailure.self) {
+        try PortableArtifactStore(
+            root: FilePath(temporary.appendingPathComponent("store").path)
+        ).capture(task: task, identity: identity)
+    }
+}
+
 private func portableDirectoryTask(
     id: TaskID = TaskID(rawValue: "fixture.portable"),
     output: FilePath

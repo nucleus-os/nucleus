@@ -130,39 +130,26 @@ public struct RecipeBuildContextID: RawRepresentable, Hashable, Codable, Sendabl
 public struct RecipeContext: Sendable {
     public let repositoryRoot: FilePath
     public let cacheRoot: FilePath
-    public let nativeSDKRoot: FilePath
-    public let nativeBuilder: NativeOCIConfiguration
     public let environment: [String: String]
     public let buildContexts: [RecipeBuildContextID: SwiftPMInvocation]
     private let configurations: [ComponentID: any RecipeConfiguration]
-    public let targetArtifacts: [NativeLinuxTarget: ArtifactReferenceSet]
 
     public init(
         repositoryRoot: FilePath,
         cacheRoot: FilePath,
-        nativeSDKRoot: FilePath,
-        nativeBuilder: NativeOCIConfiguration,
         environment: [String: String],
         buildContexts: [RecipeBuildContextID: SwiftPMInvocation] = [:],
-        configurations: [ComponentID: any RecipeConfiguration] = [:],
-        targetArtifacts: [NativeLinuxTarget: ArtifactReferenceSet] = [:]
+        configurations: [ComponentID: any RecipeConfiguration] = [:]
     ) {
         self.repositoryRoot = repositoryRoot
         self.cacheRoot = cacheRoot
-        self.nativeSDKRoot = nativeSDKRoot
-        self.nativeBuilder = nativeBuilder
         self.environment = environment
         self.buildContexts = buildContexts
         self.configurations = configurations
-        self.targetArtifacts = targetArtifacts
     }
 
     public func componentRoot(_ descriptor: ComponentDescriptor) -> FilePath {
         repositoryRoot.appending(descriptor.directoryName)
-    }
-
-    public func nativeSDK(for target: NativeLinuxTarget) -> FilePath {
-        nativeSDKRoot.appending(target.identifier)
     }
 
     public func swiftPM(
@@ -198,21 +185,12 @@ public struct RecipeContext: Sendable {
         return typed
     }
 
-    public func targetArtifacts(
-        for target: NativeLinuxTarget
-    ) throws -> ArtifactReferenceSet {
-        guard let artifacts = targetArtifacts[target] else {
-            throw RecipeContextFailure.missingTargetArtifacts(target)
-        }
-        return artifacts
-    }
 }
 
 public enum RecipeContextFailure: Error, CustomStringConvertible, Sendable {
     case missingBuildContext(RecipeBuildContextID)
     case missingConfiguration(ComponentID)
     case invalidConfigurationType(ComponentID)
-    case missingTargetArtifacts(NativeLinuxTarget)
 
     public var description: String {
         switch self {
@@ -222,8 +200,6 @@ public enum RecipeContextFailure: Error, CustomStringConvertible, Sendable {
             "recipe configuration for component '\(component)' is not declared"
         case .invalidConfigurationType(let component):
             "recipe configuration for component '\(component)' has the wrong type"
-        case .missingTargetArtifacts(let target):
-            "target artifacts for '\(target.identifier)' are not declared"
         }
     }
 }

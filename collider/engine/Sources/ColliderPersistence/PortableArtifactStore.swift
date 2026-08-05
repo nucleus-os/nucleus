@@ -53,14 +53,22 @@ public struct PortableArtifactStore: Sendable {
     ) -> PortableSnapshotState {
         let snapshot = snapshotPath(identity)
         guard pathExists(snapshot) else { return .missing }
+        guard pathExists(snapshot.appending("manifest.json")) else {
+            return .corrupt
+        }
         do {
             let manifest = try loadManifest(at: snapshot)
             guard manifest.task == task, manifest.identity == identity else {
                 return .corrupt
             }
             return .available
-        } catch {
+        } catch is DecodingError {
             return .corrupt
+        } catch {
+            // Planning is read-only and cannot surface an availability error.
+            // Let execution attempt the restore so transient I/O failures do
+            // not classify a good snapshot as corrupt and destroy it.
+            return .available
         }
     }
 
@@ -80,7 +88,9 @@ public struct PortableArtifactStore: Sendable {
                         task: task,
                         identity: identity)
                     return
-                } catch {
+                } catch let failure as PortableArtifactStoreFailure
+                    where failure.isSnapshotCorruption
+                {
                     try quarantineUnlocked(identity)
                 }
             }
@@ -176,18 +186,24 @@ public struct PortableArtifactStore: Sendable {
     public func prune() throws {
         try withLock(path: root.appending("locks/retention.lock")) {
             guard pathExists(root) else { return }
+            try removeAbandonedCandidates()
             let snapshots = try snapshotRecords().sorted {
                 $0.capturedAt < $1.capturedAt
             }
-            var totalBytes = snapshots.reduce(UInt64(0)) {
-                $0 &+ $1.totalBytes
+            var totalBytes = snapshots.reduce(UInt64(0)) { total, snapshot in
+                let (sum, overflow) = total.addingReportingOverflow(
+                    snapshot.totalBytes)
+                return overflow ? UInt64.max : sum
             }
             var retained = snapshots.count
             for snapshot in snapshots
             where retained > limits.maximumSnapshots
                 || totalBytes > limits.maximumTotalBytes
             {
-                try FileManager.default.removeItem(atPath: snapshot.path.string)
+                try withSnapshotLock(snapshot.identity) {
+                    guard pathExists(snapshot.path) else { return }
+                    try FileManager.default.removeItem(atPath: snapshot.path.string)
+                }
                 totalBytes =
                     totalBytes >= snapshot.totalBytes
                     ? totalBytes - snapshot.totalBytes : 0
@@ -245,9 +261,14 @@ public struct PortableArtifactStore: Sendable {
         identity: ArtifactDigest
     ) throws -> PortableArtifactManifest {
         let manifest: PortableArtifactManifest
+        guard pathExists(snapshot.appending("manifest.json")) else {
+            throw PortableArtifactStoreFailure.corruptSnapshot(
+                task: task.id,
+                reason: "manifest is missing")
+        }
         do {
             manifest = try loadManifest(at: snapshot)
-        } catch {
+        } catch let error as DecodingError {
             throw PortableArtifactStoreFailure.corruptSnapshot(
                 task: task.id,
                 reason: "manifest cannot be decoded: \(error)")
@@ -371,8 +392,24 @@ public struct PortableArtifactStore: Sendable {
             case .symbolicLink:
                 let target = try FileManager.default.destinationOfSymbolicLink(
                     atPath: value.path.string)
-                guard !target.hasPrefix("/") else {
+                guard !FilePath(target).isAbsolute else {
                     throw PortableArtifactStoreFailure.absoluteSymlink(
+                        path: value.path,
+                        target: target)
+                }
+                guard !value.relative.isEmpty else {
+                    throw PortableArtifactStoreFailure.escapingSymlink(
+                        path: value.path,
+                        target: target)
+                }
+                let resolved = value.path.removingLastComponent()
+                    .appending(target).lexicallyNormalized()
+                let normalizedRoot = root.lexicallyNormalized()
+                guard
+                    resolved == normalizedRoot
+                        || contains(resolved.string, in: normalizedRoot.string)
+                else {
+                    throw PortableArtifactStoreFailure.escapingSymlink(
                         path: value.path,
                         target: target)
                 }
@@ -428,10 +465,12 @@ public struct PortableArtifactStore: Sendable {
                 entry.relativePath.isEmpty
                 ? root : root.appending(entry.relativePath)
             let descriptor = try FileDescriptor.open(path, .readOnly)
-            defer { try? descriptor.close() }
             guard collider_sync_file(descriptor.rawValue) == 0 else {
-                throw Errno(rawValue: errno)
+                let code = errno
+                try? descriptor.close()
+                throw Errno(rawValue: code)
             }
+            try descriptor.close()
         }
         let directories = snapshot.entries.filter { $0.type == .directory }
             .sorted { $0.relativePath.count > $1.relativePath.count }
@@ -444,7 +483,10 @@ public struct PortableArtifactStore: Sendable {
     }
 
     private func quarantineUnlocked(_ identity: ArtifactDigest) throws {
-        let snapshot = snapshotPath(identity)
+        try quarantinePathUnlocked(snapshotPath(identity))
+    }
+
+    private func quarantinePathUnlocked(_ snapshot: FilePath) throws {
         guard pathExists(snapshot) else { return }
         let quarantine = root.appending("quarantine")
         try FileManager.default.createDirectory(
@@ -478,17 +520,101 @@ public struct PortableArtifactStore: Sendable {
     }
 
     private func snapshotRecords() throws -> [PortableSnapshotRecord] {
-        try FileManager.default.contentsOfDirectory(atPath: root.string)
-            .filter { $0.hasPrefix("sha256-") }
-            .compactMap { name in
-                let path = root.appending(name)
-                guard let manifest = try? loadManifest(at: path) else { return nil }
-                return PortableSnapshotRecord(
-                    path: path,
-                    capturedAt: ISO8601DateFormatter().date(
-                        from: manifest.capturedAt) ?? .distantPast,
-                    totalBytes: manifest.totalBytes)
+        var records: [PortableSnapshotRecord] = []
+        for name in try FileManager.default.contentsOfDirectory(atPath: root.string)
+        where name.hasPrefix("sha256-") {
+            let path = root.appending(name)
+            guard let identity = snapshotIdentity(name) else {
+                try quarantinePathUnlocked(path)
+                continue
             }
+            try withSnapshotLock(identity) {
+                guard pathExists(path) else { return }
+                guard pathExists(path.appending("manifest.json")) else {
+                    try quarantineUnlocked(identity)
+                    return
+                }
+                let manifest: PortableArtifactManifest
+                do {
+                    manifest = try loadManifest(at: path)
+                } catch let error as DecodingError {
+                    _ = error
+                    try quarantineUnlocked(identity)
+                    return
+                }
+                guard manifest.identity == identity,
+                    manifest.totalBytes <= limits.maximumSnapshotBytes
+                else {
+                    try quarantineUnlocked(identity)
+                    return
+                }
+                records.append(
+                    PortableSnapshotRecord(
+                        identity: identity,
+                        path: path,
+                        capturedAt: ISO8601DateFormatter().date(
+                            from: manifest.capturedAt) ?? .distantPast,
+                        totalBytes: try diskUsage(of: path)))
+            }
+        }
+        return records
+    }
+
+    private func removeAbandonedCandidates() throws {
+        for name in try FileManager.default.contentsOfDirectory(atPath: root.string)
+        where name.hasPrefix(".candidate-") {
+            let path = root.appending(name)
+            let digestStart = name.index(name.startIndex, offsetBy: ".candidate-".count)
+            let digestEnd = name.index(
+                digestStart,
+                offsetBy: 64,
+                limitedBy: name.endIndex)
+            guard let digestEnd,
+                digestEnd < name.endIndex,
+                name[digestEnd] == "-",
+                let identity = ArtifactDigest(
+                    sha256Hex: String(name[digestStart..<digestEnd]))
+            else {
+                try quarantinePathUnlocked(path)
+                continue
+            }
+            try withSnapshotLock(identity) {
+                if pathExists(path) {
+                    try FileManager.default.removeItem(atPath: path.string)
+                }
+            }
+        }
+    }
+
+    private func diskUsage(of path: FilePath) throws -> UInt64 {
+        var paths = [path]
+        if try path.stat(followTargetSymlink: false).type == .directory {
+            guard let enumerator = FileManager.default.enumerator(atPath: path.string)
+            else {
+                throw CocoaError(.fileReadUnknown)
+            }
+            paths += enumerator.compactMap { value in
+                (value as? String).map(path.appending)
+            }
+        }
+        var total: UInt64 = 0
+        for item in paths {
+            let metadata = try item.stat(followTargetSymlink: false)
+            guard metadata.type == .regular else { continue }
+            let size = UInt64(max(0, metadata.size))
+            let (sum, overflow) = total.addingReportingOverflow(size)
+            guard !overflow else {
+                throw PortableArtifactStoreFailure.invalidSize(item)
+            }
+            total = sum
+        }
+        return total
+    }
+
+    private func snapshotIdentity(_ name: String) -> ArtifactDigest? {
+        let prefix = "sha256-"
+        guard name.hasPrefix(prefix) else { return nil }
+        return ArtifactDigest(sha256Hex: String(name.dropFirst(prefix.count)))
     }
 
     private func loadManifest(
@@ -518,9 +644,9 @@ public struct PortableArtifactStore: Sendable {
         _ identity: ArtifactDigest,
         _ body: () throws -> Result
     ) throws -> Result {
-        try withLock(
-            path: root.appending(
-                "locks/\(identity.algorithm.rawValue)-\(identity.hexadecimal).lock"),
+        let shard = String(identity.hexadecimal.prefix(2))
+        return try withLock(
+            path: root.appending("locks/snapshot-\(shard).lock"),
             body)
     }
 
@@ -537,6 +663,7 @@ public struct PortableArtifactStore: Sendable {
 public enum PortableArtifactStoreFailure: Error, CustomStringConvertible, Sendable {
     case absoluteSymlink(path: FilePath, target: String)
     case corruptSnapshot(task: TaskID, reason: String)
+    case escapingSymlink(path: FilePath, target: String)
     case invalidDeclaration(task: TaskID, reason: String)
     case invalidSize(FilePath)
     case snapshotTooLarge(task: TaskID, maximumBytes: UInt64)
@@ -548,6 +675,8 @@ public enum PortableArtifactStoreFailure: Error, CustomStringConvertible, Sendab
             "portable snapshot contains absolute symlink '\(path)' -> '\(target)'"
         case .corruptSnapshot(let task, let reason):
             "portable snapshot for '\(task)' is corrupt: \(reason)"
+        case .escapingSymlink(let path, let target):
+            "portable snapshot contains escaping symlink '\(path)' -> '\(target)'"
         case .invalidDeclaration(let task, let reason):
             "task '\(task)' is not eligible for portable caching: \(reason)"
         case .invalidSize(let path):
@@ -556,6 +685,16 @@ public enum PortableArtifactStoreFailure: Error, CustomStringConvertible, Sendab
             "portable snapshot for '\(task)' exceeds \(maximumBytes) bytes"
         case .unsupportedFileType(let path):
             "portable snapshot cannot represent the file type at '\(path)'"
+        }
+    }
+
+    package var isSnapshotCorruption: Bool {
+        switch self {
+        case .absoluteSymlink, .corruptSnapshot, .escapingSymlink,
+            .invalidSize, .unsupportedFileType:
+            true
+        case .invalidDeclaration, .snapshotTooLarge:
+            false
         }
     }
 }
@@ -590,6 +729,7 @@ private struct PortableArtifactEntry: Codable, Equatable, Sendable {
 }
 
 private struct PortableSnapshotRecord: Sendable {
+    let identity: ArtifactDigest
     let path: FilePath
     let capturedAt: Date
     let totalBytes: UInt64
@@ -622,4 +762,9 @@ private final class PortableStoreLock: @unchecked Sendable {
 
 private func pathExists(_ path: FilePath) -> Bool {
     (try? path.stat(followTargetSymlink: false)) != nil
+}
+
+private func contains(_ child: String, in parent: String) -> Bool {
+    let prefix = parent.hasSuffix("/") ? parent : parent + "/"
+    return child.hasPrefix(prefix)
 }

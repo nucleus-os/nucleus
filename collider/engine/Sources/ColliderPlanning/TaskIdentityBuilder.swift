@@ -3,15 +3,23 @@ import ColliderCore
 struct TaskIdentityBuilder {
     func identity(
         of task: TaskDeclaration,
-        dependencies: [ArtifactDigest],
+        dependencies: [(task: TaskID, identity: ArtifactDigest)],
         services: TaskPlanningServices
     ) throws -> ArtifactDigest {
         var encoder = CanonicalDigestEncoder(
             identityPathMap: services.identityPathMap)
         encoder.append(tag: 1, string: task.id.rawValue)
         encoder.append(tag: 2, string: task.component.rawValue)
-        for dependency in dependencies {
-            encoder.append(tag: 3, bytes: dependency.bytes)
+        for dependency in dependencies.sorted(by: {
+            $0.task.rawValue < $1.task.rawValue
+        }) {
+            var dependencyEncoder = ActionIdentityEncoder(
+                identityPathMap: services.identityPathMap)
+            dependencyEncoder.append(tag: 1, string: dependency.task.rawValue)
+            dependencyEncoder.append(tag: 2, bytes: dependency.identity.bytes)
+            encoder.append(
+                tag: 3,
+                bytes: try dependencyEncoder.encodedBytes())
         }
         for dependency in task.subsumedDependencies {
             encoder.append(tag: 220, string: dependency.rawValue)
@@ -205,12 +213,20 @@ struct TaskIdentityBuilder {
         for tool in action.requirements.tools.filter({
             $0.role == .semantic
         }).sorted(by: { $0.name < $1.name }) {
-            let identity = try services.semanticToolIdentity(
-                tool.executable,
-                action.environment)
-            encoder.append(tag: 239, string: tool.name)
-            encoder.append(tag: 240, string: identity.path.string)
-            encoder.append(tag: 241, bytes: identity.digest.bytes)
+            switch tool.executable {
+            case .artifact(let reference):
+                encoder.append(tag: 239, string: tool.name)
+                encoder.append(tag: 240, string: reference.producer.rawValue)
+                encoder.append(tag: 241, string: reference.slot.rawValue)
+                encoder.append(tag: 238, string: reference.kind.rawValue)
+            case .named, .operationalNamed, .path, .taskOutput:
+                let identity = try services.semanticToolIdentity(
+                    tool.executable,
+                    action.environment)
+                encoder.append(tag: 239, string: tool.name)
+                encoder.append(tag: 240, string: identity.path.string)
+                encoder.append(tag: 241, bytes: identity.digest.bytes)
+            }
         }
         let effects = action.requirements.effects.sorted {
             let left = $0.scope.root.string + "\u{0}" + $0.access.rawValue

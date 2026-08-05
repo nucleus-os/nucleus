@@ -242,7 +242,9 @@ public struct SwiftPMLowering: TaskPlanLowering {
                 environment: first.environment,
                 arguments: prebuildTargets.map {
                     ["build", "--target", $0]
-                } + [buildArguments]))
+                } + [buildArguments])
+        )
+        .addingDependencies(owners.flatMap(\.dependencies))
     }
 
     private func testTask(
@@ -312,7 +314,9 @@ public struct SwiftPMLowering: TaskPlanLowering {
                 environment: environment,
                 arguments: prebuildTargets.map {
                     ["build", "--target", $0]
-                } + [["test"] + first.arguments]))
+                } + [["test"] + first.arguments])
+        )
+        .addingDependencies(owners.flatMap(\.dependencies))
     }
 
     private func consumeOwnerReferences(

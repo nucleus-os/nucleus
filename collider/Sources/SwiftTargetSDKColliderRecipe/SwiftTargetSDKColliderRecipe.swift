@@ -1116,7 +1116,9 @@ private struct DownloadSwiftTargetSDKInputAction: ColliderAction {
         ActionRequirements(
             effects: [
                 ActionEffect(.readWrite, scope: .output(identity.destination))
-            ], executionPlatform: .macOSARM64Native)
+            ],
+            networkAccess: .contentAddressed,
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {

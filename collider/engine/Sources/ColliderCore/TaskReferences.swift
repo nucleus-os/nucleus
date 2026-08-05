@@ -70,10 +70,16 @@ public struct ArtifactReference<Value: TaskArtifactValue>: Hashable, Sendable {
     }
 }
 
+extension ArtifactReference where Value == ExecutableArtifact {
+    public var executable: CommandSpec.Executable {
+        .artifact(AnyArtifactReference(self))
+    }
+}
+
 public struct AnyArtifactReference: Hashable, Sendable {
     package let producer: TaskID
     package let slot: OutputSlotID
-    package let path: FilePath
+    public let path: FilePath
     package let kind: ArtifactValueKind
 
     fileprivate init<Value>(_ reference: ArtifactReference<Value>) {

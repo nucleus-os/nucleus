@@ -372,6 +372,7 @@ public actor ColliderRuntime {
             case .named(let name): .name(name)
             case .operationalNamed(let name): .name(name)
             case .path(let path): .path(.init(path.string))
+            case .artifact(let reference): .path(.init(reference.path.string))
             case .taskOutput(let path): .path(.init(path.string))
             }
         let environment = Subprocess.Environment.custom(

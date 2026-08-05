@@ -1,4 +1,5 @@
 import ColliderCore
+import NativeBuilderColliderRecipe
 import SystemPackage
 
 package enum LinuxEntrypoints {
@@ -33,6 +34,9 @@ public enum LinuxColliderRecipe: ColliderComponent {
     public static func makeComponent(
         in context: RecipeContext
     ) throws -> ComponentDefinition {
+        let native = try context.configuration(
+            NativeBuilderGraphConfiguration.self,
+            for: NativeBuilderColliderRecipe.descriptor.id)
         var tasks: [TaskDeclaration] = []
         var buildRoots: Set<TaskID> = []
         var testRoots: Set<TaskID> = []
@@ -45,7 +49,7 @@ public enum LinuxColliderRecipe: ColliderComponent {
                 root: context.repositoryRoot,
                 environment: context.environment,
                 swiftPM: try context.swiftPM(.linux(architecture)),
-                targetArtifacts: try context.targetArtifacts(for: target))
+                targetArtifacts: try native.artifacts(for: target))
             buildRoots.insert(LinuxTaskIDs.build(architecture))
             testRoots.insert(LinuxTaskIDs.test(architecture))
             loaderRoots.insert(LinuxTaskIDs.testLoader(architecture))

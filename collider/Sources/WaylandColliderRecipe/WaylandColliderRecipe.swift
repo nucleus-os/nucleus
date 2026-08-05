@@ -35,33 +35,36 @@ public enum WaylandColliderRecipe: ColliderComponent {
     package static func prepare(
         in context: RecipeContext
     ) throws -> ComponentArtifacts {
+        let native = try context.configuration(
+            NativeBuilderGraphConfiguration.self,
+            for: NativeBuilderColliderRecipe.descriptor.id)
         let root = context.componentRoot(descriptor)
         let armTarget = NativeLinuxTarget(architecture: .arm64)
         let armSDK = try buildNativeSDK(
             root: root,
-            sdkRoot: context.nativeSDK(for: armTarget),
+            sdkRoot: native.nativeSDK(for: armTarget),
             environment: context.environment,
             target: armTarget,
             nativeScanner: nil,
-            builder: context.nativeBuilder)
+            builder: native.builder)
         guard let scanner = armSDK.scanner else {
             preconditionFailure("the native Wayland SDK must produce wayland-scanner")
         }
         let x86Target = NativeLinuxTarget(architecture: .x86_64)
         let x86SDK = try buildNativeSDK(
             root: root,
-            sdkRoot: context.nativeSDK(for: x86Target),
+            sdkRoot: native.nativeSDK(for: x86Target),
             environment: context.environment,
             target: x86Target,
             nativeScanner: scanner,
-            builder: context.nativeBuilder)
+            builder: native.builder)
         var tasks = [armSDK.task, x86SDK.task]
         let bootstrapRoots: Set<TaskID> = [armSDK.task.id, x86SDK.task.id]
         let generation = try generate(
             root: root,
             environment: context.environment,
             swiftPM: context.swiftPM(.linux(.arm64)),
-            builder: context.nativeBuilder,
+            builder: native.builder,
             scanner: scanner)
         tasks.append(generation)
         let component = try ComponentDefinition(
@@ -207,7 +210,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
             outputs: outputs)
     }
 
-    public static func generate(
+    package static func generate(
         root: FilePath,
         environment: [String: String],
         swiftPM: SwiftPMInvocation,

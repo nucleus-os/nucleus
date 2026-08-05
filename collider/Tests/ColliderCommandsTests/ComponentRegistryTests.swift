@@ -4,6 +4,7 @@ import ColliderPlanning
 import CompositorColliderRecipe
 import CoreColliderRecipe
 import Foundation
+import NativeBuilderColliderRecipe
 import ReactNativeColliderRecipe
 import ReleaseGateColliderRecipe
 import SystemPackage
@@ -550,23 +551,26 @@ private func fixtureReactNativeNodeModules(
         root: root.appending("swift-vulkan"),
         environment: environment,
         swiftPM: swiftPM)
-    guard let vulkanAction = vulkan.action else {
+    guard let vulkanAction = vulkan.task.action else {
         Issue.record("Vulkan generation must be a recipe-owned action")
         return
     }
     #expect(
-        vulkan.swiftProducts.map(\.qualifiedProduct) == [
+        vulkan.tasks.flatMap(\.swiftProducts).map(\.qualifiedProduct) == [
             "swift-vulkan:VulkanGen"
         ])
+    #expect(vulkan.task.assessmentPolicy == .portable)
     #expect(
         vulkanAction.kind == ActionKind(rawValue: "vulkan.generate-bindings"))
-    #expect(
-        vulkanAction.requirements.tools == [
-            ActionToolRequirement(
-                "vulkan-generator",
-                executable: .taskOutput(swiftPM.executable("VulkanGen")),
-                role: .operational)
-        ])
+    let vulkanTools = vulkanAction.requirements.tools
+    #expect(vulkanTools.count == 1)
+    let vulkanTool = try #require(vulkanTools.first)
+    #expect(vulkanTool.name == "vulkan-generator")
+    #expect(vulkanTool.role == .semantic)
+    guard case .artifact = vulkanTool.executable else {
+        Issue.record("Vulkan generator must be a typed artifact executable")
+        return
+    }
 
     let reactNative = try ReactNativeColliderRecipe.generate(
         root: root.appending("react-native"),

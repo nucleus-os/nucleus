@@ -47,6 +47,10 @@ package final class PlanningInputProvider: @unchecked Sendable {
         switch executable {
         case .path(let value):
             path = value
+        case .artifact(let reference):
+            throw PersistenceFailure.invalidPlanningTool(
+                "typed task-produced executable is identified by its producer: "
+                    + "\(reference.path)")
         case .taskOutput(let value):
             throw PersistenceFailure.invalidPlanningTool(
                 "task-produced executable cannot be declared as an external tool: \(value)")

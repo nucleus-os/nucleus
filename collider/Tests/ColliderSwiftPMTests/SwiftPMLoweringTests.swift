@@ -61,6 +61,7 @@ private func executeWithSwiftPM(
     #expect(lowered.count == 1)
     #expect(lowered[0].logicalOwners == [owner.id])
     #expect(lowered[0].prerequisites == [prerequisite.id])
+    #expect(lowered[0].task.dependencies == [prerequisite.id])
 }
 
 @Test func synthesizedSwiftTestForwardsSelectionArguments() async throws {

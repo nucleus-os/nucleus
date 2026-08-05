@@ -66,16 +66,19 @@ public enum ReactNativeColliderRecipe {
         skiaExternalSources: ArtifactReference<DirectoryArtifact>,
         icuLibraries: [NativeLinuxTarget: ArtifactReference<FileArtifact>]
     ) throws -> PreparedComponent {
+        let native = try context.configuration(
+            NativeBuilderGraphConfiguration.self,
+            for: NativeBuilderColliderRecipe.descriptor.id)
         let root = context.componentRoot(descriptor)
         let javascript = try installJavaScriptDependencies(
             root: root,
             environment: context.environment,
-            builder: context.nativeBuilder)
+            builder: native.builder)
         let generation = try generate(
             root: root,
             environment: context.environment,
             dependencies: javascript.nodeModules,
-            builder: context.nativeBuilder)
+            builder: native.builder)
         let boost = try provisionBoost(
             root: root,
             environment: context.environment)
@@ -93,12 +96,12 @@ public enum ReactNativeColliderRecipe {
                 target: target,
                 skiaExternalSources: skiaExternalSources,
                 icuLibrary: icuLibrary,
-                builder: context.nativeBuilder)
+                builder: native.builder)
             let support = try buildSupportLibraries(
                 root: root,
                 environment: context.environment,
                 target: target,
-                builder: context.nativeBuilder)
+                builder: native.builder)
             let cxx = try buildCxxRuntime(
                 root: root,
                 environment: context.environment,
@@ -107,10 +110,10 @@ public enum ReactNativeColliderRecipe {
                 generated: generation.spec,
                 hermes: hermes,
                 support: support,
-                builder: context.nativeBuilder)
+                builder: native.builder)
             let sdk = try publishNativeSDK(
                 root: root,
-                sdkRoot: context.nativeSDK(for: target),
+                sdkRoot: native.nativeSDK(for: target),
                 target: target,
                 runtime: cxx)
             tasks += [hermes.task, support.task, cxx.task, sdk.task]
@@ -683,7 +686,9 @@ private struct DownloadBoostAction: ColliderAction {
         ActionRequirements(
             effects: [
                 ActionEffect(.readWrite, scope: .output(identity.destination))
-            ], executionPlatform: .macOSARM64Native)
+            ],
+            networkAccess: .contentAddressed,
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -857,11 +862,11 @@ private let boostArchiveName = "boost_1_84_0.tar.gz"
 private let boostArchiveSHA256 =
     "a5800f405508f5df8114558ca9855d2640a2de8f0445f051fa1c7c3383045724"
 
-public enum ReactNativeRecipeFailure: Error, CustomStringConvertible {
+package enum ReactNativeRecipeFailure: Error, CustomStringConvertible {
     case invalidBoostSpecification
     case missingICULibrary(NativeLinuxTarget)
 
-    public var description: String {
+    package var description: String {
         switch self {
         case .invalidBoostSpecification:
             "the pinned Boost download specification is invalid"

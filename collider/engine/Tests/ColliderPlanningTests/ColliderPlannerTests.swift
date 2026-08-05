@@ -165,6 +165,140 @@ import Testing
     #expect(first == second)
 }
 
+@Test func semanticDependencyOrderDoesNotAffectTaskIdentity() throws {
+    let first = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.first"),
+        component: ComponentID(rawValue: "fixture"),
+        inputs: [.string(name: "value", value: "first")])
+    let second = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.second"),
+        component: ComponentID(rawValue: "fixture"),
+        inputs: [.string(name: "value", value: "second")])
+    let consumerID = TaskID(rawValue: "fixture.consumer")
+
+    func identity(dependencies: [TaskID]) throws -> ArtifactDigest {
+        let consumer = TaskDeclaration(
+            id: consumerID,
+            component: ComponentID(rawValue: "fixture"),
+            dependencies: dependencies)
+        let plan = try ColliderPlanner().plan(
+            graph: TaskGraph([first, second, consumer]),
+            selected: [consumerID],
+            rebuildSelected: false,
+            lowerings: [],
+            services: deterministicHashingServices())
+        return try #require(
+            plan.declaredEntries.first { $0.task == consumerID }
+        ).identity
+    }
+
+    #expect(
+        try identity(dependencies: [first.id, second.id])
+            == identity(dependencies: [second.id, first.id]))
+}
+
+@Test func portableEligibilityRejectsUnauditedCapabilities() throws {
+    let output = FilePath("/fixture/portable-output")
+    let cases: [(String, ActionRequirements)] = [
+        (
+            "ambient-semantic-tool",
+            ActionRequirements(
+                tools: [
+                    ActionToolRequirement(
+                        "tool",
+                        executable: .named("tool"),
+                        role: .semantic)
+                ],
+                effects: [ActionEffect(.write, scope: .output(output))],
+                executionPlatform: .macOSARM64Native)
+        ),
+        (
+            "operational-tool",
+            ActionRequirements(
+                tools: [
+                    ActionToolRequirement(
+                        "tool",
+                        executable: .operationalNamed("tool"),
+                        role: .operational)
+                ],
+                effects: [ActionEffect(.write, scope: .output(output))],
+                executionPlatform: .macOSARM64Native)
+        ),
+        (
+            "unrestricted-effect",
+            ActionRequirements(
+                effects: [
+                    ActionEffect(.readWrite, scope: .unrestricted(FilePath("/fixture")))
+                ],
+                executionPlatform: .macOSARM64Native)
+        ),
+        (
+            "mutable-checkout",
+            ActionRequirements(
+                effects: [
+                    ActionEffect(.readWrite, scope: .checkout(FilePath("/fixture/source")))
+                ],
+                executionPlatform: .macOSARM64Native)
+        ),
+        (
+            "unrestricted-network",
+            ActionRequirements(
+                effects: [ActionEffect(.write, scope: .output(output))],
+                networkAccess: .unrestricted,
+                executionPlatform: .macOSARM64Native)
+        ),
+    ]
+
+    for (name, requirements) in cases {
+        var builder = TaskBuilder(
+            id: TaskID(rawValue: "fixture.portable-\(name)"),
+            component: ComponentID(rawValue: "fixture"))
+        let _: ArtifactReference<FileArtifact> = try builder.output(
+            "output",
+            path: output,
+            validation: .regularFile)
+        let task = builder.build(
+            assessmentPolicy: .portable,
+            action: try AnyColliderAction(
+                PortableEligibilityAction(requirements: requirements)))
+
+        #expect(throws: ColliderPlanningFailure.self) {
+            _ = try ColliderPlanner().plan(
+                graph: TaskGraph([task]),
+                selected: [task.id],
+                rebuildSelected: false,
+                lowerings: [],
+                services: deterministicHashingServices())
+        }
+    }
+}
+
+@Test func contentAddressedNetworkAccessRemainsPortableEligible() throws {
+    let output = FilePath("/fixture/content-addressed-output")
+    var builder = TaskBuilder(
+        id: TaskID(rawValue: "fixture.content-addressed"),
+        component: ComponentID(rawValue: "fixture"))
+    let _: ArtifactReference<FileArtifact> = try builder.output(
+        "output",
+        path: output,
+        validation: .regularFile)
+    let task = builder.build(
+        assessmentPolicy: .portable,
+        action: try AnyColliderAction(
+            PortableEligibilityAction(
+                requirements: ActionRequirements(
+                    effects: [ActionEffect(.write, scope: .output(output))],
+                    networkAccess: .contentAddressed,
+                    executionPlatform: .macOSARM64Native))))
+
+    _ = try ColliderPlanner().plan(
+        graph: TaskGraph([task]),
+        selected: [task.id],
+        rebuildSelected: false,
+        lowerings: [],
+        services: deterministicHashingServices())
+}
+
 private struct PlacementIdentityAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         func encode(into encoder: inout ActionIdentityEncoder) {
@@ -215,6 +349,21 @@ private struct RelocatableIdentityAction: ColliderAction {
             ],
             executionPlatform: .macOSARM64Native)
     }
+
+    func execute(in _: ActionContext) async throws {}
+}
+
+private struct PortableEligibilityAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: "portable-eligibility")
+        }
+    }
+
+    static let kind: ActionKind = "fixture.portable-eligibility"
+
+    let requirements: ActionRequirements
+    var identity: Identity { Identity() }
 
     func execute(in _: ActionContext) async throws {}
 }

@@ -1,4 +1,5 @@
 import ColliderCore
+import NativeBuilderColliderRecipe
 import SystemPackage
 
 package enum BenchmarkEntrypoints {
@@ -49,7 +50,10 @@ public enum BenchmarkColliderRecipe: ColliderComponent {
     public static func makeComponent(
         in context: RecipeContext
     ) throws -> ComponentDefinition {
-        let targetArtifacts = try context.targetArtifacts(
+        let native = try context.configuration(
+            NativeBuilderGraphConfiguration.self,
+            for: NativeBuilderColliderRecipe.descriptor.id)
+        let targetArtifacts = try native.artifacts(
             for: NativeLinuxTarget(architecture: .arm64))
         let swiftPM = try context.swiftPM(
             .linux(.arm64, configuration: .release))
@@ -161,7 +165,10 @@ public enum SanitizerColliderRecipe: ColliderComponent {
     public static func makeComponent(
         in context: RecipeContext
     ) throws -> ComponentDefinition {
-        let targetArtifacts = try context.targetArtifacts(
+        let native = try context.configuration(
+            NativeBuilderGraphConfiguration.self,
+            for: NativeBuilderColliderRecipe.descriptor.id)
+        let targetArtifacts = try native.artifacts(
             for: NativeLinuxTarget(architecture: .arm64))
         var tasks: [TaskDeclaration] = []
         var entrypoints: [ComponentEntrypoint] = []

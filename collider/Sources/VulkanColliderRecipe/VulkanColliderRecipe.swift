@@ -10,32 +10,36 @@ public enum VulkanColliderRecipe: ColliderComponent {
     public static func makeComponent(
         in context: RecipeContext
     ) throws -> ComponentDefinition {
-        let task = try generate(
+        let generation = try generate(
             root: context.componentRoot(descriptor),
             environment: context.environment,
             swiftPM: try context.swiftPM(.hostDebug))
         return try ComponentDefinition(
             descriptor: descriptor,
-            tasks: [task],
+            tasks: generation.tasks,
             entrypoints: [
-                ComponentEntrypoint(id: .generate, roots: [task.id])
+                ComponentEntrypoint(id: .generate, roots: [generation.task.id])
             ])
     }
 
-    public static func generate(
+    package struct Generation: Sendable {
+        package let tasks: [TaskDeclaration]
+        package let task: TaskDeclaration
+    }
+
+    package static func generate(
         root: FilePath,
         environment: [String: String],
         swiftPM: SwiftPMInvocation
-    ) throws -> TaskDeclaration {
-        let output = root.appending("Sources/Vulkan/Vulkan.swift")
-        var builder = TaskBuilder(
-            id: TaskID(rawValue: "vulkan.generate"),
-            component: ComponentID(rawValue: "vulkan"))
-        let _: ArtifactReference<FileArtifact> = try builder.output(
-            "bindings",
-            path: output,
-            validation: .regularFile)
-        return builder.build(
+    ) throws -> Generation {
+        var toolBuilder = TaskBuilder(
+            id: TaskID(rawValue: "vulkan.generator"),
+            component: descriptor.id)
+        let generator: ArtifactReference<ExecutableArtifact> = try toolBuilder.output(
+            "executable",
+            path: swiftPM.executable("VulkanGen"),
+            validation: .executableFile)
+        let tool = toolBuilder.build(
             swiftProducts: [
                 swiftPM.product(
                     package: "swift-vulkan",
@@ -44,24 +48,40 @@ public enum VulkanColliderRecipe: ColliderComponent {
                     environment: environment,
                     expectedOutputs: [
                         PathPostcondition(
-                            path: swiftPM.executable("VulkanGen"),
+                            path: generator.path,
                             validation: .executableFile)
                     ])
             ],
             inputs: [
                 .tree(root.appending("Tools/VulkanGen")),
-                .file(root.appending("third-party/vk.xml")),
                 swiftPM.identityInput,
             ],
+            locks: [.checkout("vulkan")])
+
+        let output = root.appending("Sources/Vulkan/Vulkan.swift")
+        var builder = TaskBuilder(
+            id: TaskID(rawValue: "vulkan.generate"),
+            component: descriptor.id)
+        builder.consume(generator)
+        let _: ArtifactReference<FileArtifact> = try builder.output(
+            "bindings",
+            path: output,
+            validation: .regularFile)
+        let task = builder.build(
+            inputs: [
+                .file(root.appending("third-party/vk.xml"))
+            ],
             locks: [.checkout("vulkan")],
+            assessmentPolicy: .portable,
             action:
                 try AnyColliderAction(
                     GenerateVulkanBindingsAction(
-                        generator: swiftPM.executable("VulkanGen"),
+                        generator: generator,
                         registry: root.appending("third-party/vk.xml"),
                         output: output,
                         workingDirectory: root,
                         environment: environment)))
+        return Generation(tasks: [tool, task], task: task)
     }
 }
 
@@ -81,14 +101,14 @@ private struct GenerateVulkanBindingsAction: ColliderAction {
 
     static let kind: ActionKind = "vulkan.generate-bindings"
 
-    let generator: FilePath
+    let generator: ArtifactReference<ExecutableArtifact>
     let registry: FilePath
     let output: FilePath
     let workingDirectory: FilePath
     let environment: [String: String]
 
     var identity: Identity {
-        Identity(generator: generator, registry: registry, output: output)
+        Identity(generator: generator.path, registry: registry, output: output)
     }
 
     var requirements: ActionRequirements {
@@ -96,8 +116,8 @@ private struct GenerateVulkanBindingsAction: ColliderAction {
             tools: [
                 ActionToolRequirement(
                     "vulkan-generator",
-                    executable: .taskOutput(generator),
-                    role: .operational)
+                    executable: generator.executable,
+                    role: .semantic)
             ],
             effects: [
                 ActionEffect(.read, scope: .input(registry)),
@@ -109,7 +129,7 @@ private struct GenerateVulkanBindingsAction: ColliderAction {
     func execute(in context: ActionContext) async throws {
         let result = try await context.commands.execute(
             CommandSpec(
-                executable: .taskOutput(generator),
+                executable: generator.executable,
                 arguments: [registry.string, output.string, "1"],
                 workingDirectory: workingDirectory,
                 environment: environment))

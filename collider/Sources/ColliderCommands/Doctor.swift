@@ -2,6 +2,7 @@ import ArgumentParser
 import ColliderCore
 import ColliderRuntime
 import Foundation
+import NativeBuilderColliderRecipe
 import SystemPackage
 
 enum DoctorScope: String, CaseIterable, ExpressibleByArgument {
