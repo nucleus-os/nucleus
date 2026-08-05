@@ -40,6 +40,53 @@ import Testing
     #expect(events.split(separator: "\n").count == 3)
 }
 
+@Test func runRegistryPersistsOneUnifiedRecordPerPlannedTask() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-task-record-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let registry = RunRegistry(root: FilePath(directory.path))
+    let run = try await registry.begin(command: ["collider", "build", "fixture"])
+    let task = TaskID(rawValue: "fixture.build")
+    let identity = ArtifactDigest(bytes: [UInt8](repeating: 19, count: 32))
+    let plan = TaskPlanEntry(
+        task: task,
+        identity: identity,
+        isClean: false,
+        explanation: "no prior task state",
+        coordinates: TaskExecutionCoordinates(
+            runner: .current,
+            execution: .linuxARM64OCI,
+            backend: .appleContainer,
+            artifact: .linuxARM64),
+        audit: fixtureAudit(component: ComponentID(rawValue: "fixture")))
+    try await registry.recordPlan([plan], in: run)
+    try await registry.recordTaskDuration(88, task: task, in: run)
+    try await registry.recordTaskOutcome(.executed, task: task, in: run)
+    try await registry.recordOutputSnapshotDigests(
+        ["product": identity],
+        task: task,
+        in: run)
+    try await registry.recordTaskObservations(
+        TaskExecutionObservations(
+            hardwareProbes: [
+                HardwareProbeObservation(name: "fixture.device", result: "present")
+            ]),
+        task: task,
+        in: run)
+
+    let manifest = try JSONDecoder().decode(
+        RunManifest.self,
+        from: Data(
+            contentsOf: directory.appendingPathComponent(
+                "runs/\(run.id.rawValue)/manifest.json")))
+    let record = try #require(manifest.tasks?[task.rawValue])
+    #expect(record.plan.identity == identity)
+    #expect(record.outcome == .executed)
+    #expect(record.durationNanoseconds == 88)
+    #expect(record.outputSnapshotDigests == ["product": identity])
+    #expect(record.observations?.hardwareProbes.first?.result == "present")
+}
+
 @Test func runRegistryLeavesReclamationToTheExplicitLifecycleCommand() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-retention-\(UUID().uuidString)")
@@ -107,10 +154,45 @@ import Testing
     manifest.selectedInputHashingDurationNanoseconds = 17
     manifest.swiftPMInvocationCount = 2
     manifest.executionDurationNanoseconds = 99
-    manifest.taskDurationsNanoseconds = ["runtime.build": 123]
     let digest = ArtifactDigest(bytes: [UInt8](repeating: 7, count: 32))
     manifest.activeArtifacts = ["runtime": digest]
-    manifest.plannedTasks = ["runtime.build": digest]
+    let task = TaskID(rawValue: "runtime.build")
+    let plan = TaskPlanEntry(
+        task: task,
+        identity: digest,
+        isClean: false,
+        explanation: "fixture",
+        coordinates: nil,
+        audit: fixtureAudit(component: ComponentID(rawValue: "runtime")),
+        logicalOwners: [TaskID(rawValue: "runtime.logical")],
+        attribution: "runtime release")
+    manifest.tasks = [
+        task.rawValue: RunTaskRecord(
+            plan: plan,
+            outcome: .executed,
+            durationNanoseconds: 123,
+            outputSnapshotDigests: ["product": digest],
+            observations: TaskExecutionObservations(
+                containerExecutions: [
+                    OCIExecutionObservation(
+                        imageDigest: digest,
+                        executionPlatform: .linuxARM64OCI,
+                        artifactTarget: .linuxX86_64,
+                        networkPolicy: .externalDisabled,
+                        userPolicy: .builder,
+                        capabilityPolicy: .dropAll,
+                        privilegePolicy: .prohibitAcquisition,
+                        processFilesystemPolicy: .standard,
+                        intelBinaryTranslationPolicy: .required,
+                        resourceLimits: .parallelBuild,
+                        status: 0)
+                ],
+                hardwareProbes: [
+                    HardwareProbeObservation(
+                        name: "vulkan.gpu-headless",
+                        result: "passed")
+                ]))
+    ]
     manifest.resumedAt = ["2026-07-22T00:00:00.5Z"]
     manifest.resumeCount = 1
 
@@ -132,11 +214,21 @@ import Testing
     #expect(
         decoded.executionDurationNanoseconds
             == manifest.executionDurationNanoseconds)
-    #expect(
-        decoded.taskDurationsNanoseconds
-            == manifest.taskDurationsNanoseconds)
     #expect(decoded.activeArtifacts == manifest.activeArtifacts)
-    #expect(decoded.plannedTasks == manifest.plannedTasks)
+    let decodedTask = try #require(decoded.tasks?[task.rawValue])
+    #expect(decodedTask.plan.identity == digest)
+    #expect(decodedTask.plan.logicalOwners == [TaskID(rawValue: "runtime.logical")])
+    #expect(decodedTask.plan.attribution == "runtime release")
+    #expect(decodedTask.outcome == .executed)
+    #expect(decodedTask.durationNanoseconds == 123)
+    #expect(decodedTask.outputSnapshotDigests == ["product": digest])
+    #expect(decodedTask.observations?.containerExecutions.first?.imageDigest == digest)
+    #expect(
+        decodedTask.observations?.containerExecutions.first?
+            .intelBinaryTranslationPolicy == .required)
+    #expect(
+        decodedTask.observations?.hardwareProbes
+            == [HardwareProbeObservation(name: "vulkan.gpu-headless", result: "passed")])
     #expect(decoded.resumedAt == manifest.resumedAt)
     #expect(decoded.resumeCount == manifest.resumeCount)
 }
@@ -156,7 +248,8 @@ func unfinishedRunResumptionReusesOnlyMatchingCleanTaskIdentities(
             identity: ArtifactDigest(bytes: [UInt8](repeating: 1, count: 32)),
             isClean: false,
             explanation: "no prior task state",
-            coordinates: nil)
+            coordinates: nil,
+            audit: fixtureAudit(component: ComponentID(rawValue: "core")))
     ]
     try await registry.recordPlan(original, in: run)
     try await registry.finish(run, status: status)
@@ -169,7 +262,8 @@ func unfinishedRunResumptionReusesOnlyMatchingCleanTaskIdentities(
             identity: ArtifactDigest(bytes: [UInt8](repeating: 2, count: 32)),
             isClean: false,
             explanation: "input identity changed",
-            coordinates: nil)
+            coordinates: nil,
+            audit: fixtureAudit(component: ComponentID(rawValue: "core")))
     ]
     try await registry.recordPlan(changed, in: resumed)
     let incorrectlyClean = [
@@ -178,11 +272,32 @@ func unfinishedRunResumptionReusesOnlyMatchingCleanTaskIdentities(
             identity: ArtifactDigest(bytes: [UInt8](repeating: 3, count: 32)),
             isClean: true,
             explanation: "fixture incorrectly claims reusable state",
-            coordinates: nil)
+            coordinates: nil,
+            audit: fixtureAudit(component: ComponentID(rawValue: "core")))
     ]
     await #expect(throws: RunRegistryFailure.self) {
         try await registry.recordPlan(incorrectlyClean, in: resumed)
     }
+}
+
+private func fixtureAudit(component: ComponentID) -> PlannedTaskAudit {
+    PlannedTaskAudit(
+        component: component,
+        actionKind: nil,
+        actionIdentity: nil,
+        semanticDependencies: [:],
+        orderingDependencies: [],
+        artifactReferences: [],
+        resultReferences: [],
+        inputs: [],
+        semanticTools: [],
+        operationalTools: [],
+        swiftBuildContexts: [],
+        outputs: [],
+        postconditions: [],
+        effects: [],
+        networkAccess: "none",
+        assessmentPolicy: "incremental")
 }
 
 @Test func runRegistryScrubsCredentialsFromDurableRecords() async throws {
@@ -194,6 +309,27 @@ func unfinishedRunResumptionReusesOnlyMatchingCleanTaskIdentities(
         "collider", "build", "--token", "command-secret",
         "https://example.invalid/archive?token=query-secret",
     ])
+    let task = TaskID(rawValue: "fixture.redaction")
+    try await registry.recordPlan(
+        [
+            TaskPlanEntry(
+                task: task,
+                identity: ArtifactDigest(bytes: [UInt8](repeating: 7, count: 32)),
+                isClean: false,
+                explanation: "credential redaction fixture",
+                coordinates: nil,
+                audit: fixtureAudit(component: ComponentID(rawValue: "fixture")))
+        ],
+        in: run)
+    try await registry.recordTaskObservations(
+        TaskExecutionObservations(
+            hardwareProbes: [
+                HardwareProbeObservation(
+                    name: "probe?token=observation-name-secret",
+                    result: "Authorization: Bearer observation-result-secret")
+            ]),
+        task: task,
+        in: run)
     try await registry.record(
         kind: .taskFailed,
         message: "Authorization: Bearer event-secret",
@@ -217,6 +353,7 @@ func unfinishedRunResumptionReusesOnlyMatchingCleanTaskIdentities(
     let durableRecords = manifest + events + log
     for secret in [
         "command-secret", "query-secret", "event-secret", "log-secret",
+        "observation-name-secret", "observation-result-secret",
     ] {
         #expect(!durableRecords.contains(secret))
     }

@@ -22,6 +22,95 @@ public enum TaskRunOutcome: String, Codable, Sendable {
     case executed
 }
 
+public struct OCIExecutionObservation: Codable, Hashable, Sendable {
+    public let imageDigest: ArtifactDigest
+    public let executionPlatform: ExecutionPlatform
+    public let artifactTarget: ArtifactTarget
+    public let networkPolicy: OCINetworkPolicy
+    public let userPolicy: OCIUserPolicy
+    public let capabilityPolicy: OCICapabilityPolicy
+    public let privilegePolicy: OCIPrivilegePolicy
+    public let processFilesystemPolicy: OCIProcessFilesystemPolicy
+    public let intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy
+    public let resourceLimits: OCIResourceLimits
+    public let status: Int32
+
+    public init(
+        imageDigest: ArtifactDigest,
+        executionPlatform: ExecutionPlatform,
+        artifactTarget: ArtifactTarget,
+        networkPolicy: OCINetworkPolicy,
+        userPolicy: OCIUserPolicy,
+        capabilityPolicy: OCICapabilityPolicy,
+        privilegePolicy: OCIPrivilegePolicy,
+        processFilesystemPolicy: OCIProcessFilesystemPolicy,
+        intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy,
+        resourceLimits: OCIResourceLimits,
+        status: Int32
+    ) {
+        self.imageDigest = imageDigest
+        self.executionPlatform = executionPlatform
+        self.artifactTarget = artifactTarget
+        self.networkPolicy = networkPolicy
+        self.userPolicy = userPolicy
+        self.capabilityPolicy = capabilityPolicy
+        self.privilegePolicy = privilegePolicy
+        self.processFilesystemPolicy = processFilesystemPolicy
+        self.intelBinaryTranslationPolicy = intelBinaryTranslationPolicy
+        self.resourceLimits = resourceLimits
+        self.status = status
+    }
+}
+
+public struct HardwareProbeObservation: Codable, Hashable, Sendable {
+    public let name: String
+    public let result: String
+
+    public init(name: String, result: String) {
+        self.name = name
+        self.result = result
+    }
+}
+
+public struct TaskExecutionObservations: Codable, Hashable, Sendable {
+    public var containerExecutions: [OCIExecutionObservation]
+    public var hardwareProbes: [HardwareProbeObservation]
+
+    public init(
+        containerExecutions: [OCIExecutionObservation] = [],
+        hardwareProbes: [HardwareProbeObservation] = []
+    ) {
+        self.containerExecutions = containerExecutions
+        self.hardwareProbes = hardwareProbes
+    }
+
+    public var isEmpty: Bool {
+        containerExecutions.isEmpty && hardwareProbes.isEmpty
+    }
+}
+
+public struct RunTaskRecord: Codable, Sendable {
+    public let plan: TaskPlanEntry
+    public var outcome: TaskRunOutcome?
+    public var durationNanoseconds: UInt64?
+    public var outputSnapshotDigests: [String: ArtifactDigest]?
+    public var observations: TaskExecutionObservations?
+
+    public init(
+        plan: TaskPlanEntry,
+        outcome: TaskRunOutcome? = nil,
+        durationNanoseconds: UInt64? = nil,
+        outputSnapshotDigests: [String: ArtifactDigest]? = nil,
+        observations: TaskExecutionObservations? = nil
+    ) {
+        self.plan = plan
+        self.outcome = outcome
+        self.durationNanoseconds = durationNanoseconds
+        self.outputSnapshotDigests = outputSnapshotDigests
+        self.observations = observations
+    }
+}
+
 public struct RunManifest: Codable, Sendable {
     public let runID: RunID
     public let command: [String]
@@ -35,12 +124,8 @@ public struct RunManifest: Codable, Sendable {
     public var executionDurationNanoseconds: UInt64?
     public var criticalPathDurationNanoseconds: UInt64?
     public var resourceWaitDurationNanoseconds: UInt64?
-    public var taskDurationsNanoseconds: [String: UInt64]
     public var activeArtifacts: [String: ArtifactDigest]
-    public var plannedTasks: [String: ArtifactDigest]?
-    public var plannedTaskAudits: [String: PlannedTaskAudit]?
-    public var taskOutcomes: [String: TaskRunOutcome]?
-    public var outputSnapshotDigests: [String: [String: ArtifactDigest]]?
+    public var tasks: [String: RunTaskRecord]?
     public var resumedAt: [String]?
     public var resumeCount: Int?
 
@@ -57,12 +142,8 @@ public struct RunManifest: Codable, Sendable {
         executionDurationNanoseconds = nil
         criticalPathDurationNanoseconds = nil
         resourceWaitDurationNanoseconds = nil
-        taskDurationsNanoseconds = [:]
         activeArtifacts = [:]
-        plannedTasks = nil
-        plannedTaskAudits = nil
-        taskOutcomes = nil
-        outputSnapshotDigests = nil
+        tasks = nil
         resumedAt = nil
         resumeCount = nil
     }

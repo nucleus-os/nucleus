@@ -92,7 +92,9 @@ public struct ColliderPlanner {
                 resources: entry.resources,
                 claims: entry.claims,
                 portableSnapshot: nil,
-                audit: entry.audit)
+                audit: entry.audit,
+                logicalOwners: entry.logicalOwners,
+                attribution: entry.attribution)
         }
 
         let assessed = zip(ordered, entries).map {
@@ -146,7 +148,11 @@ public struct ColliderPlanner {
                     capacity: services.resourceCapacity),
                 claims: normalizedClaims(for: lowered.task),
                 portableSnapshot: assessment.portableSnapshot,
-                audit: evidence.audit)
+                audit: evidence.audit,
+                logicalOwners: lowered.logicalOwners.sorted {
+                    $0.rawValue < $1.rawValue
+                },
+                attribution: lowered.attribution)
         }
         return ExecutionPlan(
             resourceCapacity: services.resourceCapacity,

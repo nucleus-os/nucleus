@@ -530,15 +530,18 @@ extension ColliderRuntime {
                     try portableArtifacts.quarantine(identity: plan.identity)
                 }
             }
-            try await perform(task, stage: task.id, options: options)
+            let observations = try await perform(
+                task,
+                stage: task.id,
+                options: options)
             try TaskOutputValidator(fileSystem: actionFileSystem()).validate(task)
-            let outputDigests: [String: ArtifactDigest]?
+            let outputDigests: [String: ArtifactDigest]
             if task.assessmentPolicy == .portable {
                 outputDigests = try portableArtifacts.capture(
                     task: task,
                     identity: plan.identity)
             } else {
-                outputDigests = nil
+                outputDigests = try portableArtifacts.auditOutputDigests(task: task)
             }
             try stateStore.persist(
                 TaskStateRecord(
@@ -555,12 +558,14 @@ extension ColliderRuntime {
                     .executed,
                     task: task.id,
                     in: eventRun)
-                if let outputDigests {
-                    try await eventRegistry.recordOutputSnapshotDigests(
-                        outputDigests,
-                        task: task.id,
-                        in: eventRun)
-                }
+                try await eventRegistry.recordTaskObservations(
+                    observations,
+                    task: task.id,
+                    in: eventRun)
+                try await eventRegistry.recordOutputSnapshotDigests(
+                    outputDigests,
+                    task: task.id,
+                    in: eventRun)
                 if recordsActiveArtifact, task.recordsActiveArtifact {
                     try await eventRegistry.recordActiveArtifact(
                         plan.identity,
@@ -593,9 +598,9 @@ extension ColliderRuntime {
         _ task: TaskDeclaration,
         stage: TaskID,
         options _: TaskExecutionOptions
-    ) async throws {
-        guard let action = task.action else { return }
-        try await execute(action, stage: stage)
+    ) async throws -> TaskExecutionObservations {
+        guard let action = task.action else { return TaskExecutionObservations() }
+        return try await execute(action, stage: stage)
     }
 }
 

@@ -103,7 +103,8 @@ private func preflightTask(
                         executable: swiftPM.executable("NucleusVulkanLaneProbe"),
                         arguments: [lane],
                         workingDirectory: root,
-                        environment: environment))))
+                        environment: environment),
+                    probeName: "vulkan.\(lane)")))
 }
 
 private struct CompositorLanePreflightAction: ColliderAction {
@@ -120,6 +121,7 @@ private struct CompositorLanePreflightAction: ColliderAction {
     static let kind: ActionKind = "compositor.preflight-lane"
 
     let execution: OCIExecution
+    let probeName: String
 
     var identity: Identity {
         Identity(execution: execution)
@@ -136,6 +138,9 @@ private struct CompositorLanePreflightAction: ColliderAction {
         guard result.status == 0 else {
             throw CompositorPreflightFailure.commandFailed(result.status)
         }
+        context.observations.recordHardwareProbe(
+            name: probeName,
+            result: "passed")
     }
 }
 

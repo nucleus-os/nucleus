@@ -245,6 +245,11 @@ private func translatedExecutableTask(
                             arguments: arguments,
                             workingDirectory: swiftPM.context.packageRoot,
                             environment: environment)
+                    },
+                    probeNames: operations.compactMap { executable, arguments in
+                        guard executable.lastComponent?.string == "NucleusVulkanLaneProbe"
+                        else { return nil }
+                        return arguments.first.map { "linux.\($0)" }
                     })))
 }
 
@@ -252,9 +257,11 @@ private struct RunLinuxLaneExecutablesAction: ColliderAction {
     static let kind: ActionKind = "linux.run-lane-executables"
 
     let pipeline: OCIExecutionPipeline
+    let probeNames: [String]
 
-    init(executions: [OCIExecution]) throws {
+    init(executions: [OCIExecution], probeNames: [String]) throws {
         pipeline = try OCIExecutionPipeline(executions)
+        self.probeNames = probeNames
     }
 
     var identity: OCIExecutionPipelineIdentity { pipeline.identity }
@@ -263,5 +270,10 @@ private struct RunLinuxLaneExecutablesAction: ColliderAction {
 
     func execute(in context: ActionContext) async throws {
         try await pipeline.execute(in: context)
+        for probeName in probeNames {
+            context.observations.recordHardwareProbe(
+                name: probeName,
+                result: "passed")
+        }
     }
 }

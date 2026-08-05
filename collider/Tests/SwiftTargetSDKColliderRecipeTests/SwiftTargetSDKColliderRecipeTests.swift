@@ -1,5 +1,6 @@
 import ColliderCore
 import ColliderRuntime
+import ColliderTesting
 import Foundation
 import SwiftTargetSDKColliderRecipe
 import SystemPackage
@@ -260,57 +261,8 @@ import Testing
     #expect(!FileManager.default.fileExists(atPath: displaced.path))
 }
 
-private actor OCIExecutionRecorder {
-    private var recorded: [OCIExecution] = []
-
-    func append(_ execution: OCIExecution) {
-        recorded.append(execution)
-    }
-
-    func executions() -> [OCIExecution] {
-        recorded
-    }
-}
-
 private func ociExecutions(
     in action: AnyColliderAction?
 ) async throws -> [OCIExecution] {
-    let recorder = OCIExecutionRecorder()
-    try await executeContainerAction(action, recorder: recorder)
-    return await recorder.executions()
-}
-
-private func executeContainerAction(
-    _ action: AnyColliderAction?,
-    recorder: OCIExecutionRecorder
-) async throws {
-    guard let action,
-        action.requirements.executionPlatform.environment == .oci
-    else { return }
-    try await action.execute(
-        in: ActionContext(
-            files: inertActionFileSystem(),
-            cancellation: ActionCancellation {},
-            logger: ActionLogger { _ in },
-            commands: ActionCommandExecutor { _ in
-                throw ActionContainerExecutorFailure.unavailable
-            },
-            downloads: ActionDownloader { _, _ in },
-            containers: ActionContainerExecutor(
-                prepareImage: { _ in },
-                run: { execution in
-                    await recorder.append(execution)
-                    return CommandResult(status: 0)
-                })))
-}
-
-private func inertActionFileSystem() -> ActionFileSystem {
-    ActionFileSystem(
-        metadata: { _ in nil },
-        contentsEqual: { _, _ in true },
-        createDirectory: { _ in },
-        copy: { _, _ in },
-        remove: { _ in },
-        setPermissions: { _, _ in },
-        write: { _, _ in })
+    try await recordOCIActionExecution(action).ociExecutions
 }

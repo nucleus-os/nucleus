@@ -1782,7 +1782,7 @@ difference from the Phase 1 makespan baseline.
 
 ## Phase 8 — Remove superseded architecture and validate the kernel
 
-**Progress: in progress.** The command-layer placement diagnostic and its
+**Progress: complete.** The command-layer placement diagnostic and its
 source-shape test are deleted; target placement is validated from the complete
 catalog and frozen plan. The obsolete raw `dependencyOutput` input case and its
 identity branch are deleted. ColliderRuntime no longer bundles or implements
@@ -1807,9 +1807,14 @@ of declaration order, and synthesized SwiftPM work retains owner dependency
 identity and execution edges. First-party executable artifacts are typed tools;
 Vulkan generation consumes one directly, and Wayland generation now builds its
 Linux/arm64 generator separately and runs the generator, produced scanner, and
-client/server generation exclusively inside one pinned OCI action. The complete
-run-manifest audit contract, final engine terminology audit, and complete kernel
-matrix remain open.
+client/server generation exclusively inside one pinned OCI action. Each frozen
+physical task has one durable record containing its complete plan audit, logical
+owners and lowering attribution, outcome, duration, output-tree digests, actual
+OCI image digest and execution policy, and hardware-probe observations.
+`ColliderTesting` owns the shared action-recording seam used by recipe tests.
+The engine-source terminology audit contains only generic platform and SwiftPM
+SDK vocabulary, and the complete engine and outer Collider acceptance suites
+pass on the supported macOS runner.
 
 Delete:
 
@@ -1863,7 +1868,7 @@ The kernel refactor is complete only when:
 Portable caching builds on the completed kernel; it does not shape or delay the
 kernel migration.
 
-**Progress: in progress.** `ColliderPersistence` owns verified portable
+**Progress: complete.** `ColliderPersistence` owns verified portable
 snapshots, atomic per-slot restoration, corruption quarantine, bounded sharded
 locking, retention synchronized against restoration, physical-size accounting,
 and rejection of escaping symlinks. Runtime distinguishes cache corruption from
@@ -1872,9 +1877,15 @@ restore failure. Planning rejects portable tasks with ambient semantic or
 operational tools, unrestricted effects or network, mutable checkouts, shared
 postconditions, result slots, or SwiftPM scratch state. Content-addressed
 downloads declare restricted network access. Vulkan and Wayland deterministic
-generated-source actions consume typed first-party tools and are the first
-promoted recipe outputs. Manifest-level audit records and behavioral replay of
-every promoted recipe remain open.
+generated-source actions consume typed first-party tools and are promoted recipe
+outputs. The complete catalog has an explicit portable promotion manifest
+covering the AOSP Repo launcher, Skia GN download and installation, React Native
+Boost download, Swift target SDK inputs, Vulkan bindings, and Wayland sources.
+The run manifest records every promoted task's plan and complete output-slot
+digests. Generic relocation, deletion, restoration, corruption, quarantine,
+permissions, and symlink replay tests exercise the portable-store contract,
+while the corresponding recipe suites audit each promoted action and output
+declaration.
 
 Keep `always`, `incremental`, and `portable` as assessment policies excluded
 from task identity. Migrating an action from incremental to portable never

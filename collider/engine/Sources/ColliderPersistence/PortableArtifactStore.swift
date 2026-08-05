@@ -181,6 +181,25 @@ public struct PortableArtifactStore: Sendable {
         }
     }
 
+    /// Digests the complete declared output-slot state without making a
+    /// portability claim. Unlike a portable snapshot, this audit may describe
+    /// absolute or escaping symlink targets because it is never restored.
+    public func auditOutputDigests(
+        task: TaskDeclaration
+    ) throws -> [String: ArtifactDigest] {
+        let outputs = try sortedOutputSlots(task).map { slot in
+            PortableArtifactOutput(
+                slot: slot.id,
+                validation: slot.validation,
+                kind: slot.kind,
+                entries: try snapshotEntries(
+                    at: slot.path,
+                    enforcePortableSymlinks: false
+                ).entries)
+        }
+        return try snapshotDigests(outputs)
+    }
+
     public func quarantine(identity: ArtifactDigest) throws {
         try withSnapshotLock(identity) {
             try quarantineUnlocked(identity)
@@ -349,7 +368,8 @@ public struct PortableArtifactStore: Sendable {
     }
 
     private func snapshotEntries(
-        at root: FilePath
+        at root: FilePath,
+        enforcePortableSymlinks: Bool = true
     ) throws -> (entries: [PortableArtifactEntry], totalBytes: UInt64) {
         guard pathExists(root) else {
             throw PortableArtifactStoreFailure.corruptSnapshot(
@@ -397,26 +417,28 @@ public struct PortableArtifactStore: Sendable {
             case .symbolicLink:
                 let target = try FileManager.default.destinationOfSymbolicLink(
                     atPath: value.path.string)
-                guard !FilePath(target).isAbsolute else {
+                guard !enforcePortableSymlinks || !FilePath(target).isAbsolute else {
                     throw PortableArtifactStoreFailure.absoluteSymlink(
                         path: value.path,
                         target: target)
                 }
-                guard !value.relative.isEmpty else {
+                guard !enforcePortableSymlinks || !value.relative.isEmpty else {
                     throw PortableArtifactStoreFailure.escapingSymlink(
                         path: value.path,
                         target: target)
                 }
-                let resolved = value.path.removingLastComponent()
-                    .appending(target).lexicallyNormalized()
-                let normalizedRoot = root.lexicallyNormalized()
-                guard
-                    resolved == normalizedRoot
-                        || contains(resolved.string, in: normalizedRoot.string)
-                else {
-                    throw PortableArtifactStoreFailure.escapingSymlink(
-                        path: value.path,
-                        target: target)
+                if enforcePortableSymlinks {
+                    let resolved = value.path.removingLastComponent()
+                        .appending(target).lexicallyNormalized()
+                    let normalizedRoot = root.lexicallyNormalized()
+                    guard
+                        resolved == normalizedRoot
+                            || contains(resolved.string, in: normalizedRoot.string)
+                    else {
+                        throw PortableArtifactStoreFailure.escapingSymlink(
+                            path: value.path,
+                            target: target)
+                    }
                 }
                 entries.append(
                     PortableArtifactEntry(
@@ -635,10 +657,16 @@ public struct PortableArtifactStore: Sendable {
     private func snapshotDigests(
         _ manifest: PortableArtifactManifest
     ) throws -> [String: ArtifactDigest] {
+        try snapshotDigests(manifest.outputs)
+    }
+
+    private func snapshotDigests(
+        _ outputs: [PortableArtifactOutput]
+    ) throws -> [String: ArtifactDigest] {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         return try Dictionary(
-            uniqueKeysWithValues: manifest.outputs.map { output in
+            uniqueKeysWithValues: outputs.map { output in
                 (
                     output.slot.rawValue,
                     ArtifactDigest.sha256(try encoder.encode(output))

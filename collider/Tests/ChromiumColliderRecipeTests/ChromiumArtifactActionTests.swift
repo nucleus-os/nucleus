@@ -355,29 +355,12 @@ import Testing
             ofItemAtPath: executable.path)
     }
     let prefix = directory.appendingPathComponent("prefix")
-    let task = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.install-browser"),
-        component: ComponentID(rawValue: "browser"),
-        outputs: [
-            OutputDeclaration(
-                path: FilePath(
-                    prefix.appendingPathComponent(
-                        "lib/nucleus-browser/current"
-                    ).path),
-                validation: .exists)
-        ],
-        assessmentPolicy: .always,
-        action:
-            try AnyColliderAction(
-                InstallBrowserAction(
-                    installation: BrowserInstallation(
-                        distributionRoot: FilePath(distribution.path),
-                        prefix: FilePath(prefix.path),
-                        environment: ["PATH": tools.path]))))
-    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
-        graph: TaskGraph([task]),
-        selected: [task.id],
-        stateRoot: FilePath(directory.appendingPathComponent("state").path))
+    try await ColliderRuntime().execute(
+        InstallBrowserAction(
+            installation: BrowserInstallation(
+                distributionRoot: FilePath(distribution.path),
+                prefix: FilePath(prefix.path),
+                environment: ["PATH": tools.path])))
     let current = prefix.appendingPathComponent(
         "lib/nucleus-browser/current")
     let target = try FileManager.default.destinationOfSymbolicLink(

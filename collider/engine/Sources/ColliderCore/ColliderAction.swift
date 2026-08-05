@@ -283,6 +283,23 @@ public struct ActionDownloader: Sendable {
     }
 }
 
+public struct ActionObservationRecorder: Sendable {
+    private let recordHardwareProbeBody: @Sendable (HardwareProbeObservation) -> Void
+
+    public init(
+        recordHardwareProbe: @escaping @Sendable (HardwareProbeObservation) -> Void = {
+            _ in
+        }
+    ) {
+        recordHardwareProbeBody = recordHardwareProbe
+    }
+
+    public func recordHardwareProbe(name: String, result: String) {
+        recordHardwareProbeBody(
+            HardwareProbeObservation(name: name, result: result))
+    }
+}
+
 public struct ActionContainerExecutor: Sendable {
     private let prepareImageBody: @Sendable (OCIImagePreparation) async throws -> Void
     private let runBody: @Sendable (OCIExecution) async throws -> CommandResult
@@ -421,6 +438,7 @@ public enum OCIExecutionPipelineFailure: Error, CustomStringConvertible, Sendabl
     case mixedExecutionPlatforms
     case mixedArtifactTargets
     case mixedEnvironments
+    case commandFailed(index: Int, status: Int32)
 
     public var description: String {
         switch self {
@@ -432,6 +450,8 @@ public enum OCIExecutionPipelineFailure: Error, CustomStringConvertible, Sendabl
             "all OCI executions in one action must produce the same artifact target"
         case .mixedEnvironments:
             "all OCI executions in one action must use the same host environment"
+        case .commandFailed(let index, let status):
+            "OCI pipeline command \(index) failed with status \(status)"
         }
     }
 }
@@ -495,9 +515,14 @@ public struct OCIExecutionPipeline: Sendable {
     }
 
     public func execute(in context: ActionContext) async throws {
-        for execution in executions {
+        for (index, execution) in executions.enumerated() {
             try context.cancellation.check()
-            try await context.containers.run(execution)
+            let result = try await context.containers.run(execution)
+            guard result.status == 0 else {
+                throw OCIExecutionPipelineFailure.commandFailed(
+                    index: index,
+                    status: result.status)
+            }
         }
     }
 }
@@ -785,6 +810,7 @@ public struct ActionContext: Sendable {
     public let commands: ActionCommandExecutor
     public let downloads: ActionDownloader
     public let containers: ActionContainerExecutor
+    public let observations: ActionObservationRecorder
 
     public init(
         files: ActionFileSystem,
@@ -792,7 +818,8 @@ public struct ActionContext: Sendable {
         logger: ActionLogger,
         commands: ActionCommandExecutor,
         downloads: ActionDownloader,
-        containers: ActionContainerExecutor = ActionContainerExecutor()
+        containers: ActionContainerExecutor = ActionContainerExecutor(),
+        observations: ActionObservationRecorder = ActionObservationRecorder()
     ) {
         self.files = files
         self.cancellation = cancellation
@@ -800,6 +827,7 @@ public struct ActionContext: Sendable {
         self.commands = commands
         self.downloads = downloads
         self.containers = containers
+        self.observations = observations
     }
 }
 

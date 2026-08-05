@@ -131,12 +131,12 @@ public struct OCIMount: Hashable, Sendable {
     }
 }
 
-public enum OCINetworkPolicy: String, Hashable, Sendable {
+public enum OCINetworkPolicy: String, Codable, Hashable, Sendable {
     case externalDisabled = "external-disabled"
     case externalEnabled = "external-enabled"
 }
 
-public struct OCIUserPolicy: Hashable, Sendable {
+public struct OCIUserPolicy: Codable, Hashable, Sendable {
     public let userID: UInt32
     public let groupID: UInt32
 
@@ -148,15 +148,15 @@ public struct OCIUserPolicy: Hashable, Sendable {
     public static let builder = OCIUserPolicy(userID: 1000, groupID: 1000)
 }
 
-public enum OCICapabilityPolicy: String, Hashable, Sendable {
+public enum OCICapabilityPolicy: String, Codable, Hashable, Sendable {
     case dropAll
 }
 
-public enum OCIPrivilegePolicy: String, Hashable, Sendable {
+public enum OCIPrivilegePolicy: String, Codable, Hashable, Sendable {
     case prohibitAcquisition
 }
 
-public enum OCIProcessFilesystemPolicy: String, Hashable, Sendable {
+public enum OCIProcessFilesystemPolicy: String, Codable, Hashable, Sendable {
     case standard
     case unmasked
 }
@@ -165,12 +165,12 @@ public enum OCIProcessFilesystemPolicy: String, Hashable, Sendable {
 /// This is independent of the OCI image architecture: Nucleus always boots an
 /// ARM64 Linux image on Apple silicon and enables translation only for tasks
 /// that execute x86_64 artifacts.
-public enum OCIIntelBinaryTranslationPolicy: String, Hashable, Sendable {
+public enum OCIIntelBinaryTranslationPolicy: String, Codable, Hashable, Sendable {
     case disabled
     case required
 }
 
-public struct OCIResourceLimits: Hashable, Sendable {
+public struct OCIResourceLimits: Codable, Hashable, Sendable {
     public let cpuCount: UInt32?
     public let memoryBytes: UInt64?
     public let processCount: UInt32

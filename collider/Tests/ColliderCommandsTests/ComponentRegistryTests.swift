@@ -51,6 +51,36 @@ private func selectedTestTasks(
     return try ColliderPlanner().selectedTasks(in: catalog, requests: requests)
 }
 
+@Test func portablePromotionManifestIsExplicitAndFullyAudited() throws {
+    let root = try #require(
+        discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
+    let catalog = try ComponentRegistry(
+        context: WorkspaceContext(root: root, environment: [:])
+    ).componentCatalog()
+    let portableTasks = catalog.tasks.filter {
+        $0.assessmentPolicy == .portable
+    }
+    let actions = try portableTasks.map { task in
+        try #require(task.action, "portable task \(task.id) must own one action")
+    }
+
+    #expect(
+        Set(actions.map(\.kind)) == [
+            ActionKind(rawValue: "android-runtime.download-aosp-repo-launcher"),
+            ActionKind(rawValue: "core.download-skia-gn"),
+            ActionKind(rawValue: "core.install-skia-gn"),
+            ActionKind(rawValue: "rn.download-boost"),
+            ActionKind(rawValue: "swift-sdk.download-input"),
+            ActionKind(rawValue: "vulkan.generate-bindings"),
+            ActionKind(rawValue: "wayland.generate-swift-sources"),
+        ])
+    #expect(portableTasks.allSatisfy { !$0.outputs.isEmpty })
+    #expect(
+        actions.allSatisfy {
+            $0.requirements.networkAccess != .unrestricted
+        })
+}
+
 private func fixtureNativeBuilder(
     context: FilePath,
     imageID: FilePath,

@@ -10,6 +10,7 @@ let package = Package(
         .library(name: "ColliderPersistence", targets: ["ColliderPersistence"]),
         .library(name: "ColliderPlanning", targets: ["ColliderPlanning"]),
         .library(name: "ColliderRuntime", targets: ["ColliderRuntime"]),
+        .library(name: "ColliderTesting", targets: ["ColliderTesting"]),
     ],
     dependencies: [
         .package(path: "../../third-party/container"),
@@ -94,6 +95,9 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "SystemPackage", package: "swift-system"),
             ]),
+        .target(
+            name: "ColliderTesting",
+            dependencies: ["ColliderCore"]),
         .testTarget(
             name: "ColliderCoreTests",
             dependencies: [

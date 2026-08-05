@@ -210,7 +210,7 @@ extension ColliderRuntime {
 }
 #endif
 
-private func validOCIImageDigest(in identifier: String) -> String? {
+func validOCIImageDigest(in identifier: String) -> String? {
     let digest = identifier.split(whereSeparator: \.isNewline).last.map(String.init)
     guard let digest, digest.hasPrefix("sha256:"), digest.count == 71 else {
         return nil

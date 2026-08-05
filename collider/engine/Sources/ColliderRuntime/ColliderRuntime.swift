@@ -55,13 +55,14 @@ public actor ColliderRuntime {
     public func execute<Action: ColliderAction>(
         _ action: Action
     ) async throws {
-        try await execute(try AnyColliderAction(action), stage: nil)
+        _ = try await execute(try AnyColliderAction(action), stage: nil)
     }
 
     func execute(
         _ action: AnyColliderAction,
         stage: TaskID?
-    ) async throws {
+    ) async throws -> TaskExecutionObservations {
+        let recordedObservations = Mutex(TaskExecutionObservations())
         let context = ActionContext(
             files: actionFileSystem().scoped(to: action.requirements.effects),
             cancellation: ActionCancellation {
@@ -85,10 +86,47 @@ public actor ColliderRuntime {
                     try await self.prepareOCIImage(preparation, stage: stage)
                 },
                 run: { execution in
-                    try await self.executeOCI(execution, stage: stage)
-                })
+                    let result = try await self.executeOCI(execution, stage: stage)
+                    let imageIdentifier = try String(
+                        contentsOfFile: execution.imageID.string,
+                        encoding: .utf8)
+                    guard
+                        let labelledDigest = validOCIImageDigest(
+                            in: imageIdentifier),
+                        let imageDigest = ArtifactDigest(
+                            sha256Hex: String(
+                                labelledDigest.dropFirst("sha256:".count)))
+                    else {
+                        throw RuntimeFailure.invalidOutput(
+                            "builder image ID is missing or invalid")
+                    }
+                    recordedObservations.withLock {
+                        $0.containerExecutions.append(
+                            OCIExecutionObservation(
+                                imageDigest: imageDigest,
+                                executionPlatform: execution.executionPlatform,
+                                artifactTarget: execution.artifactTarget,
+                                networkPolicy: execution.networkPolicy,
+                                userPolicy: execution.userPolicy,
+                                capabilityPolicy: execution.capabilityPolicy,
+                                privilegePolicy: execution.privilegePolicy,
+                                processFilesystemPolicy:
+                                    execution.processFilesystemPolicy,
+                                intelBinaryTranslationPolicy:
+                                    execution.intelBinaryTranslationPolicy,
+                                resourceLimits: execution.resourceLimits,
+                                status: result.status))
+                    }
+                    return result
+                }),
+            observations: ActionObservationRecorder { observation in
+                recordedObservations.withLock {
+                    $0.hardwareProbes.append(observation)
+                }
+            }
         )
         try await action.execute(in: context)
+        return recordedObservations.withLock { $0 }
     }
 
     public func download(

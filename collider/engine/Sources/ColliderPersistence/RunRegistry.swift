@@ -96,33 +96,29 @@ public actor RunRegistry {
         var manifest = try JSONDecoder().decode(
             RunManifest.self,
             from: Data(contentsOf: URL(fileURLWithPath: path.string)))
-        let identities = Dictionary(
-            uniqueKeysWithValues: plan.map {
-                ($0.task.rawValue, $0.identity)
-            })
         if (manifest.resumeCount ?? 0) > 0,
-            let recorded = manifest.plannedTasks
+            let recorded = manifest.tasks
         {
             for entry in plan where entry.isClean {
-                guard recorded[entry.task.rawValue] == entry.identity else {
+                guard recorded[entry.task.rawValue]?.plan.identity == entry.identity else {
                     throw RunRegistryFailure.resumptionIdentityChanged(run.id)
                 }
             }
         }
-        manifest.plannedTasks = identities
-        manifest.plannedTaskAudits = Dictionary(
-            uniqueKeysWithValues: plan.compactMap { entry in
-                entry.audit.map { (entry.task.rawValue, $0) }
-            })
-        manifest.taskOutcomes = Dictionary(
-            uniqueKeysWithValues: plan.compactMap { entry in
+        manifest.tasks = Dictionary(
+            uniqueKeysWithValues: plan.map { entry in
+                let outcome: TaskRunOutcome?
                 if entry.isClean {
-                    return (entry.task.rawValue, TaskRunOutcome.localClean)
+                    outcome = .localClean
+                } else if entry.isSubsumed {
+                    outcome = .subsumed
+                } else {
+                    outcome = nil
                 }
-                if entry.isSubsumed {
-                    return (entry.task.rawValue, TaskRunOutcome.subsumed)
-                }
-                return nil
+                return (
+                    entry.task.rawValue,
+                    RunTaskRecord(plan: entry, outcome: outcome)
+                )
             })
         try writeJSON(manifest, to: path)
     }
@@ -152,7 +148,11 @@ public actor RunRegistry {
         in run: RunHandle
     ) throws {
         try updateManifest(run) {
-            $0.taskDurationsNanoseconds[task.rawValue] = nanoseconds
+            guard var record = $0.tasks?[task.rawValue] else {
+                throw RunRegistryFailure.unplannedTaskMetadata(task)
+            }
+            record.durationNanoseconds = nanoseconds
+            $0.tasks?[task.rawValue] = record
         }
     }
 
@@ -162,9 +162,11 @@ public actor RunRegistry {
         in run: RunHandle
     ) throws {
         try updateManifest(run) {
-            var outcomes = $0.taskOutcomes ?? [:]
-            outcomes[task.rawValue] = outcome
-            $0.taskOutcomes = outcomes
+            guard var record = $0.tasks?[task.rawValue] else {
+                throw RunRegistryFailure.unplannedTaskMetadata(task)
+            }
+            record.outcome = outcome
+            $0.tasks?[task.rawValue] = record
         }
     }
 
@@ -174,9 +176,33 @@ public actor RunRegistry {
         in run: RunHandle
     ) throws {
         try updateManifest(run) {
-            var outputs = $0.outputSnapshotDigests ?? [:]
-            outputs[task.rawValue] = digests
-            $0.outputSnapshotDigests = outputs
+            guard var record = $0.tasks?[task.rawValue] else {
+                throw RunRegistryFailure.unplannedTaskMetadata(task)
+            }
+            record.outputSnapshotDigests = digests
+            $0.tasks?[task.rawValue] = record
+        }
+    }
+
+    public func recordTaskObservations(
+        _ observations: TaskExecutionObservations,
+        task: TaskID,
+        in run: RunHandle
+    ) throws {
+        guard !observations.isEmpty else { return }
+        let scrubbed = TaskExecutionObservations(
+            containerExecutions: observations.containerExecutions,
+            hardwareProbes: observations.hardwareProbes.map {
+                HardwareProbeObservation(
+                    name: CredentialScrubber.text($0.name),
+                    result: CredentialScrubber.text($0.result))
+            })
+        try updateManifest(run) {
+            guard var record = $0.tasks?[task.rawValue] else {
+                throw RunRegistryFailure.unplannedTaskMetadata(task)
+            }
+            record.observations = scrubbed
+            $0.tasks?[task.rawValue] = record
         }
     }
 
@@ -322,13 +348,13 @@ public actor RunRegistry {
 
     private func updateManifest(
         _ run: RunHandle,
-        _ update: (inout RunManifest) -> Void
+        _ update: (inout RunManifest) throws -> Void
     ) throws {
         let path = run.directory.appending("manifest.json")
         var manifest = try JSONDecoder().decode(
             RunManifest.self,
             from: Data(contentsOf: URL(fileURLWithPath: path.string)))
-        update(&manifest)
+        try update(&manifest)
         try writeJSON(manifest, to: path)
     }
 
@@ -362,6 +388,7 @@ public actor RunRegistry {
 public enum RunRegistryFailure: Error, CustomStringConvertible, Sendable {
     case notResumable(RunID, RunStatus)
     case resumptionIdentityChanged(RunID)
+    case unplannedTaskMetadata(TaskID)
 
     public var description: String {
         switch self {
@@ -369,6 +396,8 @@ public enum RunRegistryFailure: Error, CustomStringConvertible, Sendable {
             "run '\(id)' has status '\(status.rawValue)' and cannot be resumed"
         case .resumptionIdentityChanged(let id):
             "run '\(id)' cannot resume because its resolved task identities changed"
+        case .unplannedTaskMetadata(let task):
+            "cannot record execution metadata for unplanned task '\(task)'"
         }
     }
 }

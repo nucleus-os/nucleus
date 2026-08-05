@@ -10,7 +10,9 @@ public struct TaskPlanEntry: Codable, Sendable {
     public let resources: PlannedTaskResources
     public let claims: [PlannedTaskClaim]
     public let portableSnapshot: PlannedPortableSnapshot?
-    public let audit: PlannedTaskAudit?
+    public let audit: PlannedTaskAudit
+    public let logicalOwners: [TaskID]
+    public let attribution: String?
 
     public init(
         task: TaskID,
@@ -22,7 +24,9 @@ public struct TaskPlanEntry: Codable, Sendable {
         resources: PlannedTaskResources = .lightweight,
         claims: [PlannedTaskClaim] = [],
         portableSnapshot: PlannedPortableSnapshot? = nil,
-        audit: PlannedTaskAudit? = nil
+        audit: PlannedTaskAudit,
+        logicalOwners: [TaskID] = [],
+        attribution: String? = nil
     ) {
         self.task = task
         self.identity = identity
@@ -34,6 +38,8 @@ public struct TaskPlanEntry: Codable, Sendable {
         self.claims = claims
         self.portableSnapshot = portableSnapshot
         self.audit = audit
+        self.logicalOwners = logicalOwners
+        self.attribution = attribution
     }
 }
 

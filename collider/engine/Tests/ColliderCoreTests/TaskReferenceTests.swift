@@ -52,6 +52,40 @@ private func inertActionFileSystem() -> ActionFileSystem {
     #expect(try forward.encodedBytes() != differentType.encodedBytes())
 }
 
+@Test func ociExecutionPipelineRejectsANonzeroCommandStatus() async throws {
+    let execution = OCIExecution(
+        executionPlatform: .linuxARM64OCI,
+        artifactTarget: .linuxARM64,
+        imageID: FilePath("/fixture/image-id"),
+        hostname: "fixture",
+        workingDirectory: "/workspace",
+        hostWorkingDirectory: FilePath("/fixture"),
+        mounts: [],
+        networkPolicy: .externalDisabled,
+        userPolicy: .builder,
+        capabilityPolicy: .dropAll,
+        privilegePolicy: .prohibitAcquisition,
+        processFilesystemPolicy: .standard,
+        resourceLimits: .parallelBuild,
+        containerEnvironment: [:],
+        command: ["false"],
+        environment: [:],
+        output: .captured(limit: 1_024))
+    let pipeline = try OCIExecutionPipeline([execution])
+    let context = ActionContext(
+        files: inertActionFileSystem(),
+        cancellation: ActionCancellation(check: {}),
+        logger: ActionLogger(log: { _ in }),
+        commands: ActionCommandExecutor(execute: { _ in CommandResult(status: 0) }),
+        downloads: ActionDownloader(download: { _, _ in }),
+        containers: ActionContainerExecutor(
+            run: { _ in CommandResult(status: 7) }))
+
+    await #expect(throws: OCIExecutionPipelineFailure.self) {
+        try await pipeline.execute(in: context)
+    }
+}
+
 @Test func actionFileSystemRejectsUndeclaredAndEscapingEffects() throws {
     let files = inertActionFileSystem().scoped(to: [
         ActionEffect(.read, scope: .input(FilePath("/inputs"))),

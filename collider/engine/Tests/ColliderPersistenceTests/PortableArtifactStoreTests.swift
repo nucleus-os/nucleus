@@ -179,6 +179,33 @@ import Testing
     }
 }
 
+@Test func outputAuditDigestsDescribeNonportableAbsoluteSymlinks() throws {
+    let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-output-audit-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    let output = FilePath(temporary.appendingPathComponent("output").path)
+    try FileManager.default.createDirectory(
+        atPath: output.string,
+        withIntermediateDirectories: true)
+    let link = output.appending("active")
+    try FileManager.default.createSymbolicLink(
+        atPath: link.string,
+        withDestinationPath: "/first/absolute/target")
+    let task = try portableDirectoryTask(output: output)
+    let store = PortableArtifactStore(
+        root: FilePath(temporary.appendingPathComponent("unused-store").path))
+
+    let first = try store.auditOutputDigests(task: task)
+    try FileManager.default.removeItem(atPath: link.string)
+    try FileManager.default.createSymbolicLink(
+        atPath: link.string,
+        withDestinationPath: "/second/absolute/target")
+    let second = try store.auditOutputDigests(task: task)
+
+    #expect(Set(first.keys) == ["tree"])
+    #expect(first["tree"] != second["tree"])
+}
+
 private func portableDirectoryTask(
     id: TaskID = TaskID(rawValue: "fixture.portable"),
     output: FilePath
