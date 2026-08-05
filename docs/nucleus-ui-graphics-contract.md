@@ -23,6 +23,26 @@ pre-transformed fast paths.
   zero; a non-finite radius becomes zero.
 - Alpha and image saturation are clamped to `0...1`.
 
+## Shared render values
+
+The in-process render path uses semantic Swift values rather than an internal
+binary protocol. `NucleusTypes` owns geometry, color, transform, handles,
+animation values, layer values, paint commands, paint payloads, coordinate
+spaces, and host values that retain the same meaning across stages.
+
+`NucleusLayers` commits `LayerTransactionBatch` directly to a Swift
+`CommitSink`. `NucleusUI` exposes the shared geometry and color vocabulary and
+retains only UI-specific semantics. `NucleusRenderModel` owns values whose
+meaning changes during lowering; conversions such as layer animation keys to
+render animation keys are exhaustive semantic conversions rather than raw-value
+casts. `RenderTransactionLowering` is the single lowering surface from retained
+layer transactions into renderer state.
+
+Encoded representations remain local to genuine boundaries such as Wayland,
+session IPC, D-Bus, kernel structures, paint payload storage, and C/C++ entry
+points. An in-process module boundary alone does not justify a packet-shaped
+duplicate of a shared value.
+
 ## Transforms, paths, and clips
 
 The current affine transform is snapshotted on each paint or clip command,

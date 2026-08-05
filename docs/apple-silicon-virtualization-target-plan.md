@@ -1,6 +1,6 @@
 # Apple Silicon Virtualization Target Plan
 
-Status: active.
+Status: deferred.
 
 ## Invariant
 
@@ -266,10 +266,11 @@ returns a Linux fd to Android. The arm64 VM product instead needs Android
 gralloc and Mesa to allocate a virtio-gpu GEM/blob resource through the guest
 render node. PRIME and `SCM_RIGHTS` then keep all fd exchange inside the guest.
 
-Collider's typed platform model contains the Linux/arm64 execution and artifact
-primitives introduced by the target-SDK work, but it does not yet admit the
-complete Linux/arm64 Nucleus product, the macOS host product, or the distinct
-x86_64 Apple-guest runtime assembly. The AOSP product remains rooted under
+Collider's typed platform model now contains Linux/arm64 and Linux/x86_64
+artifact targets, native macOS/arm64 and Linux/arm64 OCI execution, exact SDK
+and triple selection, and complete dual-architecture runtime build/test graphs.
+It does not yet admit a macOS runtime artifact target or the distinct x86_64
+Apple-guest runtime assembly. The AOSP product remains rooted under
 `device/nucleus/nucleus_x86_64`. The existing
 [`SwiftTargetSDKColliderRecipe.swift`](../collider/Sources/SwiftTargetSDKColliderRecipe/SwiftTargetSDKColliderRecipe.swift)
 already establishes the correct target-SDK ownership: it uses signed Swift.org
@@ -441,20 +442,19 @@ Phase gate:
 6. The Linux qualifier emits the copy, queue, lifetime, and latency telemetry
    that later VM gates consume.
 
-## Phase 2 — Admit the Target Coordinates
+## Phase 2 — Complete the Target Coordinates
 
 This phase begins after Phase 4 of
-[Manifest Portability and Swift SDK Plan](manifest-portability-and-swift-sdk-plan.md)
-has made Swift SDK generations immutable and every runtime compilation declares
-its `--swift-sdk` and `--triple`.
+[Manifest Portability Plan](manifest-portability-plan.md)
+has removed manifest-time environment selection. Immutable Swift SDK generations
+and exact `--swift-sdk` plus `--triple` selection are already implemented.
 
-`ColliderCore` completes and admits:
-
-- `ArtifactTarget.linuxARM64`;
-- `ArtifactTarget.macOSARM64`;
-- `ExecutionPlatform.linuxARM64OCI`;
-- the exact target triple, OCI platform, Debian multiarch name, architecture
-  name, and artifact identity for each coordinate.
+`ArtifactTarget.linuxARM64`, `ArtifactTarget.linuxX86_64`,
+`ExecutionPlatform.linuxARM64OCI`, `ExecutionPlatform.macOSARM64Native`, exact
+target triples, OCI platform names, Debian multiarch names, architecture names,
+and dual-architecture runtime task identities are implemented. Complete this
+model by adding `ArtifactTarget.macOSARM64` and a distinct assembled-product role
+for the translated x86_64 Apple-guest runtime.
 
 The translated application payload continues to use the Linux/x86_64 artifact
 coordinate because its ELF ABI is x86_64 glibc. Collider gives its assembled
@@ -472,8 +472,8 @@ and
 [`VulkanTestLanes.swift`](../collider/Sources/ColliderCommands/VulkanTestLanes.swift)
 switch on the declared coordinate and reject every unlisted combination.
 
-`SwiftTargetSDKColliderRecipe` publishes one immutable Linux Swift SDK with
-arm64 and amd64 entries. It:
+`SwiftTargetSDKColliderRecipe` already publishes one immutable Linux Swift SDK
+with arm64 and amd64 entries. It:
 
 - download the signed Swift.org macOS host package and exact target-system
   package closure;
@@ -489,7 +489,7 @@ artifact target, not an execution-platform alias and not a Linux cross-compile.
 
 Phase gate:
 
-1. Collider plans distinct task identities for Linux/amd64, Linux/arm64, and
+1. Collider plans distinct task identities for Linux/x86_64, Linux/arm64, and
    macOS/arm64 artifacts.
 2. The x86_64 Apple-guest runtime and Linux/amd64 Nucleus product have distinct
    assembly and deployment identities despite sharing an ELF architecture.
@@ -1196,7 +1196,7 @@ The AOSP device tree organization established by Phase 1 supplies:
 
 The exact Repo manifest continues to own the AOSP source graph. Shared source is
 not copied between product directories. The parameterized
-[`AOSPProductWorkflow.swift`](../collider/engine/Sources/ColliderRuntime/AOSPProductWorkflow.swift),
+[`AndroidRuntimeColliderRecipe.swift`](../collider/Sources/AndroidRuntimeColliderRecipe/AndroidRuntimeColliderRecipe.swift),
 artifact validation, product locks, and
 [`AndroidRuntimeColliderRecipe.swift`](../collider/Sources/AndroidRuntimeColliderRecipe/AndroidRuntimeColliderRecipe.swift)
 consume the declared product and architecture.
@@ -1561,7 +1561,7 @@ same source revision; none substitutes for another.
 [Remote Development, macOS Builder, and Self-Hosted Runner Plan](github-actions-macos-builder-and-self-hosted-runner-plan.md)
 is updated to distinguish the shipping virtualization qualifier from the
 physical Linux qualifier.
-[Manifest Portability and Swift SDK Plan](manifest-portability-and-swift-sdk-plan.md)
+[Manifest Portability Plan](manifest-portability-plan.md)
 is updated with Linux/amd64, Linux/arm64, Android/amd64, Android/arm64, and
 macOS/arm64 artifact destinations plus the distinct x86_64 Apple-guest runtime
 assembly role.

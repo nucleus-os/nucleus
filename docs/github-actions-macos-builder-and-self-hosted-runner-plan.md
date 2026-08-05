@@ -41,7 +41,7 @@ privileged self-hosted runner. Build workers contain no signing identities,
 publication credentials, personal credentials, or access to unrelated host
 data.
 
-Status: active
+Status: deferred
 
 ## Current Progress
 

@@ -34,10 +34,10 @@ Across every phase boundary:
 9. **There is one shipped UI.** The current Chromium Views browser remains a bring-up and diagnostic
    reference only until feature parity. It is not retained as a runtime fallback after cutover.
 10. **The source tree is shared.** The custom browser, reference Chromium browser, and CEF build from
-    the same pinned Chromium checkout and common patch foundation. Product UI work does not create a
+    the same pinned Chromium checkout and commit-backed source foundation. Product UI work does not create a
     second Chromium build system or source fork.
 
-Status: active
+Status: deferred
 
 ## Context
 
@@ -247,14 +247,14 @@ incomplete.
 
 - Keep the working Graphite/Dawn/Vulkan, Wayland, sandbox, VA-API, Widevine, and installer paths.
 - Stop adding product design to Chromium Views.
-- Limit Views patches to correctness required by the reference executable.
+- Limit Views fork changes to correctness required by the reference executable.
 - Record the browser behaviors that the native client must replace: window lifecycle, navigation,
   tabs, profile restoration, downloads, permissions, extensions, DevTools, fullscreen, PiP,
   dialogs, accessibility, input methods, drag and drop, and crash recovery.
-- Add a separate custom-shell build target using the same checkout and common patch foundation.
+- Add a separate custom-shell build target using the same checkout and commit-backed source foundation.
 
 **Lands with:** the reference browser and custom-shell target build from one source preparation and
-one set of engine patches.
+one set of engine commits.
 
 ### Phase 1 — Establish the native product and ABI
 
@@ -411,11 +411,11 @@ adds no persistent copy to the page frame path.
 Make NucleusUI the only product shell.
 
 - Install and launch the custom executable as Nucleus Browser.
-- Remove the remaining vertical-tab defaults and branding behavior implemented by patching
+- Remove the remaining vertical-tab defaults and branding behavior implemented in
   Chromium Views; the experimental glass styling was retired before this phase.
 - Remove custom-shell dependencies on `BrowserView` and Views bubble implementations.
 - Retain the unmodified reference Chromium target only as a developer engine diagnostic.
-- Update `docs/nucleus-browser-plan.md` so the engine plan points to this document for product UI.
+- Update `docs/nucleus-browser-qualification-plan.md` so engine qualification points to this document for product UI.
 - Document the final ABI ownership, surface transaction, shutdown, and recovery contracts.
 
 **Final acceptance:** Nucleus Browser presents a complete native Swift/NucleusUI product shell,
@@ -442,10 +442,10 @@ Every phase adds behavioral coverage at the owning layer:
 
 ## Relationship to existing plans
 
-- `docs/nucleus-browser-plan.md` remains authoritative for Chromium engine configuration,
+- `chromium/README.md` remains authoritative for Chromium engine configuration,
   Graphite/Dawn/Vulkan, Ozone Wayland presentation, GPU selection, sandboxing, and hardware video.
 - `core/docs/appkit-api-plan.md` remains authoritative for the public NucleusUI authoring contract.
-- `shell/docs/noctalia-migration-plan.md` remains authoritative for the native desktop shell port.
+- `shell/docs/native-shell-completion-plan.md` remains authoritative for the native desktop shell.
 - This document owns the browser product shell, Chromium-to-Swift boundary, hosted page surface,
   and removal of Chromium Views from the shipped Nucleus Browser UI.
 

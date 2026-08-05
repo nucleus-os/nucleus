@@ -2,15 +2,14 @@
 
 ## Invariant
 
-Architecture and contract documents describe the current system. An implementation plan begins with one lifecycle status: `active`, `complete`, or `superseded by <document>`. Completed migration diaries are deleted once their durable invariants have moved into an architecture or contract document.
+Architecture and contract documents describe the current system. An implementation plan begins with one lifecycle status: `active`, `deferred`, `complete`, or `superseded by <document>`. Deferred plans are valid future work but do not participate in the current execution sequence. Completed migration diaries are deleted once their durable invariants have moved into an architecture or contract document.
 
 ## Current architecture and contracts
 
-- [Runtime architecture](nucleus-runtime-architecture-master-plan.md)
+- [Runtime architecture](nucleus-runtime-architecture.md)
 - [Single-root SwiftPM architecture](single-root-swiftpm-architecture.md)
 - [NucleusUI API contract](nucleus-ui-api-contract.md)
 - [NucleusUI graphics contract](nucleus-ui-graphics-contract.md)
-- [Apple Silicon virtualization target](apple-silicon-virtualization-target-plan.md)
 - [Core and compositor documentation](../core/docs/README.md)
 - [Shell architecture](../shell/docs/shell-architecture.md)
 - [Direct scanout](../compositor/compositor-core/docs/direct-scanout.md)
@@ -18,32 +17,34 @@ Architecture and contract documents describe the current system. An implementati
 
 ## Active execution plans
 
-Execute prerequisite work before dependent product work:
+Execute the implementation plans in this order:
 
-1. [Swift target-SDK workspace](swift-sdk-incremental-workspace-plan.md)
-2. [Swift target SDK and Skia fork qualification](swift-sdk-and-skia-fork-commit-migration-plan.md)
-3. [Manifest portability and Swift SDK](manifest-portability-and-swift-sdk-plan.md)
-4. [Visibility and seam native verification](visibility-and-seam-contract-plan.md)
-5. [Wayland dispatch isolation](wayland-dispatch-isolation-and-handler-binding-plan.md)
-6. [Collider kernel, planning, and execution](collider-kernel-boundary-refactor.md)
-7. [Collider storage lifecycle](collider-storage-lifecycle-plan.md)
-8. [Collider CLI and terminal UX](collider-cli-ux-plan.md)
-9. [Remote development and build hosts](github-actions-macos-builder-and-self-hosted-runner-plan.md)
-10. [Collider ratatui TUI](collider-ratatui-tui-plan.md)
-11. [Wayland compositor hardening re-audit](nucleus-wayland-compositor-hardening-plan.md)
-12. [Android container security qualification](android-container-security-boundary-plan.md)
-13. [Android application integration](android-application-integration-plan.md)
-14. [Chromium and CEF fork qualification](chromium-cef-fork-commit-migration-plan.md)
-15. [Browser engine and presentation](nucleus-browser-plan.md)
-16. [Browser custom UI](nucleus-browser-custom-ui-plan.md)
+1. [Manifest portability](manifest-portability-plan.md)
+2. [Wayland dispatch isolation](wayland-dispatch-isolation-and-handler-binding-plan.md)
+3. [Collider storage lifecycle](collider-storage-lifecycle-plan.md)
+4. [Collider CLI and terminal UX](collider-cli-ux-plan.md)
+5. [Android application integration](android-application-integration-plan.md)
 
-Component-level active plans are indexed in [core/docs/README.md](../core/docs/README.md) and [shell/docs](../shell/docs/shell-architecture.md).
+Component implementation plans continue in the dependency order in
+[core/docs/README.md](../core/docs/README.md).
 
-## Completed migrations awaiting contract consolidation
+Complete the remaining qualification plans after their corresponding
+implementation inputs are available:
 
-- [Render value vocabulary](render-value-vocabulary-unification-plan.md)
+1. [Swift target SDK and Skia](swift-sdk-and-skia-qualification-plan.md)
+2. [Visibility and native linking](visibility-and-native-link-qualification-plan.md)
+3. [Wayland compositor residual behavior](wayland-compositor-residual-qualification-plan.md)
+4. [Android container security](android-container-security-qualification-plan.md)
+5. [Chromium and CEF products](chromium-cef-product-qualification-plan.md)
+6. [Nucleus Browser](nucleus-browser-qualification-plan.md)
+
+## Deferred product plans
+
+- [Remote development and build hosts](github-actions-macos-builder-and-self-hosted-runner-plan.md)
+- [Collider ratatui TUI](collider-ratatui-tui-plan.md)
+- [Browser custom UI](nucleus-browser-custom-ui-plan.md)
 
 ## Research and qualification
 
-- [Apple Silicon virtualization](apple-silicon-virtualization-target-plan.md) defines the macOS 27+ target and its prerequisite investigations.
+- [Apple Silicon virtualization](apple-silicon-virtualization-target-plan.md) defines the macOS 27+ target and its prerequisite investigations. It is not part of the current implementation sequence.
 - [Chromium/CEF](../chromium/README.md), [CEF](../cef/README.md), and [Android runtime](../android-runtime/README.md) contain component qualification commands and current runtime contracts.

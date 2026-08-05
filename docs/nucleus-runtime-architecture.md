@@ -63,6 +63,25 @@ the user cache.
 
 Collider owns declared task graphs, planning, execution, artifact identity, locks, and records. Underlying build systems retain their own incremental state. Source submodules are validated pinned inputs and are never mutated by Collider.
 
+Collider recipes declare typed actions, inputs, outputs, execution placement,
+resource claims, and locks. Planning lowers those declarations into one
+deterministic DAG. The runtime schedules ready tasks by critical path while
+respecting host capacity and exclusive resources, emits structured run records,
+and restores content-addressed artifact snapshots only after validating every
+declared output. Actions cannot construct nested execution graphs or bypass the
+runtime's process, container, lock, record, or artifact ownership.
+
+The Swift target-SDK workspace is one immutable generation graph. Collider
+validates the pinned source gitlinks, prepares exact Linux sysroots, builds the
+Linux/arm64 target runtime natively in the Apple-container builder, cross-builds
+the Linux/amd64 target runtime in that same arm64 environment, and assembles one
+relocatable Linux Swift SDK with both target variants. It also installs the
+official Android Swift SDK artifact and validates Linux and Android consumers
+for both architectures. Unchanged tasks reuse their declared outputs or a
+validated artifact snapshot; source identity changes invalidate only dependent
+tasks. Every C++ closure links libc++, and validation rejects `libstdc++` and
+`GLIBCXX` dependencies.
+
 ## Verification boundary
 
 Agent-runnable verification uses Collider and direct host tests after sourcing `tools/host-env.sh`. Hardware qualification, device installation, compositor launch, and interactive sessions remain explicit user-run handoffs. Current execution plans and their dependency order are indexed in [README.md](README.md).

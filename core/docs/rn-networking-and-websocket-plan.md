@@ -1,50 +1,61 @@
-# RN networking, WebSocket, and Blob native modules
+# React Native networking, WebSocket, and Blob plan
 
 Status: active.
 
-**Invariant: networking is a portable Swift service owned by the RN platform. JavaScript callbacks enter Hermes only through the runtime executor, all transfers are cancellable and bounded, and desktop and Android share one behavioral implementation.**
+## Invariant
 
-## Current disposition
+Nucleus uses React Native's portable C++ `NetworkingModule` and
+`WebSocketModule` from `ReactCxxPlatform`. It does not maintain parallel Swift
+implementations of RN's request, response, event, and socket semantics. Nucleus
+owns the platform client factories, loader integration, missing Blob contract,
+and qualification required by its Linux and Android products.
 
-`RuntimeJSCallInvoker` already provides thread-safe asynchronous dispatch, is
-owned by `ReactRuntimeHost`, is shared with C++ TurboModules, and clears queued
-work during shutdown. Networking is not blocked on creating a second executor.
+Callbacks enter Hermes only through the runtime's existing `CallInvoker`.
+Network threads never mutate JS, UI, Fabric, or renderer state directly. Every
+request, stream, socket, callback, and retained buffer has cancellation and
+shutdown ownership.
 
-## Phase 1 — Qualify and expose the existing asynchronous JS dispatch seam
+## Phase 1 — Admit the upstream portable modules
 
-Use the existing runtime-owned call invoker for TurboModule callbacks, promise
-resolution, and event delivery. Add only the ownership or interface exposure
-needed by the networking modules. Cancellation makes queued work inert after
-runtime teardown.
+Compile the selected RN `react/http`, `react/io`, and runtime-provider sources
+in the RN native SDK. Register `NetworkingModule` and `WebSocketModule` through
+the existing Nucleus TurboModule provider and `RuntimeJSCallInvoker`.
 
-Gate: behavioral tests prove ordering, cancellation, executor affinity, and teardown under concurrent completion.
+Gate: upstream RN module tests and Nucleus registry/lifecycle tests instantiate,
+invoke, and destroy both modules without a platform network implementation.
 
-## Phase 2 — Implement HTTP
+## Phase 2 — Supply production HTTP and WebSocket clients
 
-Implement the React Native networking contract over `URLSession` where available and the selected Linux Foundation transport elsewhere. Support request headers, redirects, cancellation, timeout, text, binary, and file-backed bodies. Bound in-memory buffering and stream large payloads.
+Implement the `IHttpClient` and `IWebSocketClient` factories with one portable
+production backend supporting TLS verification, redirects, cookies, headers,
+streaming request/response bodies, cancellation, binary frames, ping/pong,
+close handshakes, bounded buffering, and deterministic teardown.
 
-Gate: a local fixture server covers redirects, cancellation, malformed responses, upload/download streaming, and runtime destruction.
+Keep the backend behind RN's existing interfaces. Do not patch vendored React
+Native and do not expose backend types to Swift domain models.
 
-## Phase 3 — Implement Blob storage
+Gate: local HTTP/HTTPS and WebSocket fixtures cover success, malformed peers,
+redirects, cancellation, backpressure, disconnect, runtime shutdown, and
+reconnect behavior.
 
-Add a runtime-scoped blob registry backed by bounded memory and private temporary files. Blob handles are opaque, reference-counted, and invalid after runtime teardown. Networking and WebSocket modules consume the same registry.
+## Phase 3 — Complete Blob integration
 
-Gate: tests cover slicing, reference release, file cleanup, limit enforcement, and rejected stale handles.
+Inventory the JS Blob/File/FormData contract not supplied by the portable C++
+modules. Implement only the missing store, slice, URI, request-body, response,
+and socket-binary integration through first-party TurboModule code. Bound blob
+memory and temporary storage and cancel all transfers when either the blob or
+runtime retires.
 
-## Phase 4 — Implement WebSocket
+Gate: RN compatibility tests cover text, binary, multipart, upload/download
+progress, blob slicing, blob-backed requests, blob responses, and WebSocket
+binary delivery.
 
-Implement connection lifecycle, headers, protocols, text/binary messages, ping/pong, close codes, bounded send queues, and deterministic cancellation. Deliver events through the executor seam only.
+## Phase 4 — Qualify Linux and Android
 
-Gate: fixture tests cover fragmentation, binary blobs, backpressure, peer failure, reconnect, and teardown races.
+Run one contract suite on Linux/arm64, Linux/x86_64, and Android/arm64. Measure
+large-transfer memory, callback latency, idle wakeups, cancellation latency, and
+teardown cleanliness.
 
-## Phase 5 — Register the platform modules
-
-Register the modules in the current `NucleusReactRuntimeHostCxx` TurboModule provider and generated RN specification. Keep native implementation in first-party targets and do not patch vendored React Native.
-
-Gate: Fabric headless tests resolve each module and execute an end-to-end request and WebSocket exchange.
-
-## Phase 6 — Qualify both platforms
-
-Run the same contract suite on Linux/amd64 and Android/arm64, then measure large-transfer memory, callback tail latency, idle wakeups, and teardown cleanliness.
-
-Gate: both platforms pass identical observable behavior with bounded resource use and no leaked worker, descriptor, or temporary file.
+Gate: all targets expose the same RN behavior, use libc++, validate TLS through
+their declared trust store, and leave no worker, socket, request, callback, or
+temporary blob resource after runtime shutdown.

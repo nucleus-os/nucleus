@@ -111,7 +111,7 @@ express the easier problem.
 ## Phases
 
 Phases 1 and 2 are complete. Phases 3 through 6 are superseded by
-[`../../shell/docs/noctalia-migration-plan.md`](../../shell/docs/noctalia-migration-plan.md),
+[`../../shell/docs/native-shell-completion-plan.md`](../../shell/docs/native-shell-completion-plan.md),
 which orders any remaining controls and product surfaces around the native
 shell services that consume them.
 
@@ -131,7 +131,7 @@ sugar over the property and never the only way to reach it.
 control, collection, and popup vocabulary has landed, including toggles,
 sliders, checkboxes, radio groups, select and segmented controls, progress
 indicators, scrolling, lists, grids, virtual grids, popovers, and menus. Add a
-missing primitive only when the Noctalia migration has a current consumer.
+missing primitive only when the native shell or another supported product has a current consumer.
 
 **Phase 3 — The control kit — superseded.** `Toggle`, `Slider`, `Checkbox`, `RadioButton`, `Select`,
 `Segmented`, `Stepper`, `ProgressBar`, `Spinner`, `Separator`, `Spacer`, built on `Control` and
