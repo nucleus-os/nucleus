@@ -1,5 +1,5 @@
 import ColliderCore
-import ColliderPlanning
+import ColliderPersistence
 import Foundation
 import SystemPackage
 
@@ -70,66 +70,25 @@ private struct ScheduledTaskExecution: Sendable {
     let recordsActiveArtifact: Bool
 }
 
-private struct ScheduledTaskResources: Sendable {
-    let cpuCount: UInt32
-    let memoryBytes: UInt64
-    let exclusive: Bool
-
-    static let lightweight = ScheduledTaskResources(
-        cpuCount: 1,
-        memoryBytes: 512 * 1_024 * 1_024,
-        exclusive: false)
-}
-
-private struct TaskSchedulerBudget: Sendable {
-    let cpuCount: UInt32
-    let memoryBytes: UInt64
-
-    static var host: TaskSchedulerBudget {
-        let processors = UInt32(ProcessInfo.processInfo.activeProcessorCount)
-        let memory = ProcessInfo.processInfo.physicalMemory
-        let reservedMemory: UInt64 = 16 * 1_024 * 1_024 * 1_024
-        return TaskSchedulerBudget(
-            cpuCount: processors > 2 ? processors - 2 : 1,
-            memoryBytes: memory > reservedMemory ? memory - reservedMemory : memory)
-    }
-}
-
-private func scheduledResources(
-    for action: AnyColliderAction?,
-    budget: TaskSchedulerBudget
-) -> ScheduledTaskResources {
-    guard let action else { return .lightweight }
-    return ScheduledTaskResources(
-        cpuCount: action.requirements.resources.cpuCount ?? budget.cpuCount,
-        memoryBytes: action.requirements.resources.memoryBytes ?? budget.memoryBytes,
-        exclusive: action.requirements.resources.exclusive)
-}
-
-private func scheduledResources(
-    for build: LoweredExecutionTask,
-    budget: TaskSchedulerBudget
-) -> ScheduledTaskResources {
-    scheduledResources(for: build.task.action, budget: budget)
-}
-
 private func canSchedule(
     _ candidate: ScheduledTask,
     swiftBuilds: [LoweredExecutionTask],
+    swiftBuildPlans: [TaskPlanEntry],
     declaredTasks: [TaskDeclaration],
-    running: [ScheduledTask: ScheduledTaskResources],
+    declaredPlans: [TaskPlanEntry],
+    running: [ScheduledTask: PlannedTaskResources],
     runningLocks: [ScheduledTask: Set<TaskLock>],
-    budget: TaskSchedulerBudget
+    capacity: TaskResourceCapacity
 ) -> Bool {
-    let resources: ScheduledTaskResources
+    let resources: PlannedTaskResources
     let locks: Set<TaskLock>
     switch candidate {
     case .swiftBuild(let index):
-        resources = scheduledResources(for: swiftBuilds[index], budget: budget)
+        resources = swiftBuildPlans[index].resources
         locks = Set(swiftBuilds[index].task.locks)
     case .declared(let index):
         let task = declaredTasks[index]
-        resources = scheduledResources(for: task.action, budget: budget)
+        resources = declaredPlans[index].resources
         locks = Set(task.locks)
     }
 
@@ -143,20 +102,20 @@ private func canSchedule(
 
     let usedCPU = running.values.reduce(UInt32(0)) { $0 + $1.cpuCount }
     let usedMemory = running.values.reduce(UInt64(0)) { $0 + $1.memoryBytes }
-    return usedCPU + resources.cpuCount <= budget.cpuCount
-        && usedMemory + resources.memoryBytes <= budget.memoryBytes
+    return usedCPU + resources.cpuCount <= capacity.cpuCount
+        && usedMemory + resources.memoryBytes <= capacity.memoryBytes
 }
 
 extension ColliderRuntime {
     public func execute(
-        graph: TaskGraph,
-        selected: [TaskID],
+        plan frozenPlan: ExecutionPlan,
         stateRoot: FilePath,
         workflowLocks: [TaskLock] = [],
-        lowerings: [any TaskPlanLowering] = [],
         run: RunHandle? = nil,
         registry: RunRegistry? = nil,
-        options: TaskExecutionOptions = TaskExecutionOptions()
+        options: TaskExecutionOptions = TaskExecutionOptions(),
+        planningDurationNanoseconds: UInt64,
+        selectedInputHashingDurationNanoseconds: UInt64
     ) async throws -> TaskExecutionReport {
         let previousOutputPresentation = taskOutputPresentation
         taskOutputPresentation =
@@ -165,6 +124,7 @@ extension ColliderRuntime {
 
         try FileManager.default.createDirectory(
             atPath: stateRoot.string, withIntermediateDirectories: true)
+        let taskStateStore = TaskStateStore(root: stateRoot)
         let eventRegistry = registry ?? logging?.registry
         let eventRun = run ?? logging?.run
         let workflowHeldLocks: [ColliderFileLock]
@@ -179,48 +139,20 @@ extension ColliderRuntime {
         }
         defer { withExtendedLifetime(workflowHeldLocks) {} }
 
-        let planningStart = ContinuousClock().now
-        let digestCache = PlanningArtifactDigestCache(
-            persistentFile: stateRoot.appending("artifact-digests.json"))
-        let planningServices = TaskPlanningServices(
-            identity: { task, dependencies in
-                try self.identity(
-                    of: task,
-                    dependencies: dependencies,
-                    digestCache: digestCache)
-            },
-            assessment: { task, identity in
-                let assessment = self.assess(
-                    task,
-                    identity: identity,
-                    stateRoot: stateRoot)
-                return TaskAssessment(
-                    isClean: assessment.clean,
-                    explanation: assessment.reason)
-            },
-            coordinates: executionCoordinates)
-        let frozenPlan = try ColliderPlanner().plan(
-            graph: graph,
-            selected: selected,
-            rebuildSelected: options.rebuildSelected,
-            lowerings: lowerings,
-            services: planningServices)
         let ordered = frozenPlan.declaredTasks
         let plan = frozenPlan.declaredEntries
         let swiftBuilds = frozenPlan.loweredTasks
         let swiftBuildPlans = frozenPlan.loweredEntries
         let reportedPlan = swiftBuildPlans + plan
-        let planningDuration = elapsedNanoseconds(since: planningStart)
-        let selectedInputHashingDuration = digestCache.hashingDurationNanoseconds
         let swiftPMInvocationCount = swiftBuildPlans.count
-        try? digestCache.persist()
         if let eventRun, let eventRegistry {
             try await eventRegistry.recordPlan(reportedPlan, in: eventRun)
             try await eventRegistry.recordPlanningDuration(
-                planningDuration,
+                planningDurationNanoseconds,
                 in: eventRun)
             try await eventRegistry.recordPlanningMetrics(
-                selectedInputHashingDurationNanoseconds: selectedInputHashingDuration,
+                selectedInputHashingDurationNanoseconds:
+                    selectedInputHashingDurationNanoseconds,
                 swiftPMInvocationCount: swiftPMInvocationCount,
                 in: eventRun)
         }
@@ -228,8 +160,9 @@ extension ColliderRuntime {
             return TaskExecutionReport(
                 plan: reportedPlan,
                 executed: [],
-                planningDurationNanoseconds: planningDuration,
-                selectedInputHashingDurationNanoseconds: selectedInputHashingDuration,
+                planningDurationNanoseconds: planningDurationNanoseconds,
+                selectedInputHashingDurationNanoseconds:
+                    selectedInputHashingDurationNanoseconds,
                 swiftPMInvocationCount: swiftPMInvocationCount,
                 executionDurationNanoseconds: 0)
         }
@@ -278,8 +211,8 @@ extension ColliderRuntime {
             !plan[$0].isClean && !plan[$0].isSubsumed
         }
         var executed: [TaskID] = []
-        let schedulerBudget = TaskSchedulerBudget.host
-        var running: [ScheduledTask: ScheduledTaskResources] = [:]
+        let resourceCapacity = frozenPlan.resourceCapacity
+        var running: [ScheduledTask: PlannedTaskResources] = [:]
         var runningLocks: [ScheduledTask: Set<TaskLock>] = [:]
 
         try await withThrowingTaskGroup(of: ScheduledTask.self) { group in
@@ -294,10 +227,12 @@ extension ColliderRuntime {
                             canSchedule(
                                 candidate,
                                 swiftBuilds: swiftBuilds,
+                                swiftBuildPlans: swiftBuildPlans,
                                 declaredTasks: ordered,
+                                declaredPlans: plan,
                                 running: running,
                                 runningLocks: runningLocks,
-                                budget: schedulerBudget)
+                                capacity: resourceCapacity)
                         })
                         ?? pendingTasks.compactMap { index -> ScheduledTask? in
                             let task = ordered[index]
@@ -314,23 +249,23 @@ extension ColliderRuntime {
                             canSchedule(
                                 candidate,
                                 swiftBuilds: swiftBuilds,
+                                swiftBuildPlans: swiftBuildPlans,
                                 declaredTasks: ordered,
+                                declaredPlans: plan,
                                 running: running,
                                 runningLocks: runningLocks,
-                                budget: schedulerBudget)
+                                capacity: resourceCapacity)
                         })
 
                     guard let candidate else { break }
                     let task: TaskDeclaration
-                    let resources: ScheduledTaskResources
+                    let resources: PlannedTaskResources
                     let execution: ScheduledTaskExecution
                     switch candidate {
                     case .swiftBuild(let index):
                         pendingBuilds.removeAll { $0 == index }
                         task = swiftBuilds[index].task
-                        resources = scheduledResources(
-                            for: swiftBuilds[index],
-                            budget: schedulerBudget)
+                        resources = swiftBuildPlans[index].resources
                         execution = ScheduledTaskExecution(
                             scheduledTask: candidate,
                             task: task,
@@ -340,9 +275,7 @@ extension ColliderRuntime {
                     case .declared(let index):
                         pendingTasks.removeAll { $0 == index }
                         task = ordered[index]
-                        resources = scheduledResources(
-                            for: task.action,
-                            budget: schedulerBudget)
+                        resources = plan[index].resources
                         execution = ScheduledTaskExecution(
                             scheduledTask: candidate,
                             task: task,
@@ -361,6 +294,7 @@ extension ColliderRuntime {
                                     execution.task,
                                     plan: execution.plan,
                                     stateRoot: stateRoot,
+                                    stateStore: taskStateStore,
                                     eventRun: eventRun,
                                     eventRegistry: eventRegistry,
                                     options: options,
@@ -375,6 +309,7 @@ extension ColliderRuntime {
                                 execution.task,
                                 plan: execution.plan,
                                 stateRoot: stateRoot,
+                                stateStore: taskStateStore,
                                 eventRun: eventRun,
                                 eventRegistry: eventRegistry,
                                 options: options,
@@ -412,14 +347,13 @@ extension ColliderRuntime {
 
         for (index, task) in ordered.enumerated()
         where plan[index].isSubsumed {
-            try validate(task)
-            try persist(
+            try TaskOutputValidator(fileSystem: actionFileSystem()).validate(task)
+            try taskStateStore.persist(
                 TaskStateRecord(
                     task: task.id,
                     identity: plan[index].identity,
                     outputs: task.outputs.map { $0.path.string },
-                    completedAt: ISO8601DateFormatter().string(from: Date())),
-                stateRoot: stateRoot)
+                    completedAt: ISO8601DateFormatter().string(from: Date())))
         }
         let executionDuration = elapsedNanoseconds(since: executionStart)
         if let eventRun, let eventRegistry {
@@ -430,8 +364,9 @@ extension ColliderRuntime {
         return TaskExecutionReport(
             plan: reportedPlan,
             executed: executed,
-            planningDurationNanoseconds: planningDuration,
-            selectedInputHashingDurationNanoseconds: selectedInputHashingDuration,
+            planningDurationNanoseconds: planningDurationNanoseconds,
+            selectedInputHashingDurationNanoseconds:
+                selectedInputHashingDurationNanoseconds,
             swiftPMInvocationCount: swiftPMInvocationCount,
             executionDurationNanoseconds: executionDuration)
     }
@@ -440,6 +375,7 @@ extension ColliderRuntime {
         _ task: TaskDeclaration,
         plan: TaskPlanEntry,
         stateRoot: FilePath,
+        stateStore: TaskStateStore,
         eventRun: RunHandle?,
         eventRegistry: RunRegistry?,
         options: TaskExecutionOptions,
@@ -461,14 +397,13 @@ extension ColliderRuntime {
         }
         do {
             try await perform(task, stage: task.id, options: options)
-            try validate(task)
-            try persist(
+            try TaskOutputValidator(fileSystem: actionFileSystem()).validate(task)
+            try stateStore.persist(
                 TaskStateRecord(
                     task: task.id,
                     identity: plan.identity,
                     outputs: task.outputs.map { $0.path.string },
-                    completedAt: ISO8601DateFormatter().string(from: Date())),
-                stateRoot: stateRoot)
+                    completedAt: ISO8601DateFormatter().string(from: Date())))
             if let eventRun, let eventRegistry {
                 try await eventRegistry.recordTaskDuration(
                     elapsedNanoseconds(since: taskStart),
@@ -501,265 +436,6 @@ extension ColliderRuntime {
         }
     }
 
-    private func identity(
-        of task: TaskDeclaration,
-        dependencies: [ArtifactDigest],
-        digestCache: PlanningArtifactDigestCache
-    ) throws -> ArtifactDigest {
-        var encoder = CanonicalDigestEncoder()
-        encoder.append(tag: 1, string: task.id.rawValue)
-        encoder.append(tag: 2, string: task.component.rawValue)
-        for dependency in dependencies {
-            encoder.append(tag: 3, bytes: dependency.bytes)
-        }
-        for dependency in task.subsumedDependencies {
-            encoder.append(tag: 220, string: dependency.rawValue)
-        }
-        var artifactReferenceBytes: [UInt8] = []
-        for reference in task.artifactReferences.sorted(by: {
-            ($0.producer.rawValue, $0.slot.rawValue, $0.path.string)
-                < ($1.producer.rawValue, $1.slot.rawValue, $1.path.string)
-        }) {
-            var referenceEncoder = ActionIdentityEncoder()
-            referenceEncoder.append(tag: 1, string: reference.producer.rawValue)
-            referenceEncoder.append(tag: 2, string: reference.slot.rawValue)
-            referenceEncoder.append(tag: 3, string: reference.path.string)
-            referenceEncoder.append(tag: 4, string: reference.kind.rawValue)
-            let bytes = try referenceEncoder.encodedBytes()
-            artifactReferenceBytes += identityLengthPrefix(bytes.count) + bytes
-        }
-        encoder.append(tag: 245, bytes: artifactReferenceBytes)
-        var resultReferenceBytes: [UInt8] = []
-        for reference in task.resultReferences.sorted(by: {
-            ($0.producer.rawValue, $0.slot.rawValue)
-                < ($1.producer.rawValue, $1.slot.rawValue)
-        }) {
-            var referenceEncoder = ActionIdentityEncoder()
-            referenceEncoder.append(tag: 1, string: reference.producer.rawValue)
-            referenceEncoder.append(tag: 2, string: reference.slot.rawValue)
-            referenceEncoder.append(tag: 3, string: reference.valueType)
-            let bytes = try referenceEncoder.encodedBytes()
-            resultReferenceBytes += identityLengthPrefix(bytes.count) + bytes
-        }
-        encoder.append(tag: 246, bytes: resultReferenceBytes)
-        var outputSlotBytes: [UInt8] = []
-        for slot in task.outputSlots.sorted(by: { $0.id.rawValue < $1.id.rawValue }) {
-            var slotEncoder = ActionIdentityEncoder()
-            slotEncoder.append(tag: 1, string: slot.id.rawValue)
-            slotEncoder.append(tag: 2, string: slot.path.string)
-            slotEncoder.append(tag: 3, string: slot.validation.rawValue)
-            slotEncoder.append(tag: 4, string: slot.kind.rawValue)
-            let bytes = try slotEncoder.encodedBytes()
-            outputSlotBytes += identityLengthPrefix(bytes.count) + bytes
-        }
-        encoder.append(tag: 247, bytes: outputSlotBytes)
-        var resultSlotBytes: [UInt8] = []
-        for slot in task.resultSlots.sorted(by: { $0.id.rawValue < $1.id.rawValue }) {
-            var slotEncoder = ActionIdentityEncoder()
-            slotEncoder.append(tag: 1, string: slot.id.rawValue)
-            slotEncoder.append(tag: 2, string: slot.valueType)
-            let bytes = try slotEncoder.encodedBytes()
-            resultSlotBytes += identityLengthPrefix(bytes.count) + bytes
-        }
-        encoder.append(tag: 248, bytes: resultSlotBytes)
-        for requirement in task.swiftProducts.sorted(by: {
-            $0.qualifiedProduct < $1.qualifiedProduct
-        }) {
-            encoder.append(tag: 221, string: requirement.qualifiedProduct)
-            encoder.append(
-                tag: 222,
-                bytes: requirement.invocation.context.identityBytes)
-            for target in requirement.prebuildTargets {
-                encoder.append(tag: 109, string: target)
-            }
-            for output in requirement.expectedOutputs {
-                encoder.append(tag: 223, string: output.path.string)
-                encoder.append(tag: 224, string: output.validation.rawValue)
-            }
-        }
-        for requirement in task.swiftTests.sorted(by: {
-            $0.qualifiedProduct < $1.qualifiedProduct
-        }) {
-            encoder.append(tag: 225, string: requirement.qualifiedProduct)
-            encoder.append(
-                tag: 226,
-                bytes: requirement.invocation.context.identityBytes)
-            for argument in requirement.arguments {
-                encoder.append(tag: 227, string: argument)
-            }
-            for output in requirement.expectedBuildOutputs {
-                encoder.append(tag: 107, string: output.path.string)
-                encoder.append(tag: 108, string: output.validation.rawValue)
-            }
-        }
-        var identityInputs = task.inputs
-        for requirement in task.swiftProducts.sorted(by: {
-            $0.qualifiedProduct < $1.qualifiedProduct
-        }) {
-            for input in requirement.inputs where !identityInputs.contains(input) {
-                identityInputs.append(input)
-            }
-        }
-        for requirement in task.swiftTests.sorted(by: {
-            $0.qualifiedProduct < $1.qualifiedProduct
-        }) {
-            for input in requirement.inputs where !identityInputs.contains(input) {
-                identityInputs.append(input)
-            }
-        }
-        for input in identityInputs {
-            switch input {
-            case .value(let name, let bytes):
-                encoder.append(tag: 10, string: name)
-                encoder.append(tag: 11, bytes: bytes)
-            case .environment(let name, let value):
-                encoder.append(tag: 12, string: name)
-                encoder.append(tag: 13, string: value ?? "<unset>")
-            case .file(let path):
-                encoder.append(tag: 14, string: path.string)
-                encoder.append(
-                    tag: 15,
-                    bytes: try digestCache.digest(file: path).bytes)
-            case .tree(let path):
-                encoder.append(tag: 16, string: path.string)
-                encoder.append(
-                    tag: 17,
-                    bytes: try digestCache.digest(tree: path).bytes)
-            case .optionalTree(let path, let fallback):
-                encoder.append(tag: 72, string: path.string)
-                if FileManager.default.fileExists(atPath: path.string) {
-                    encoder.append(
-                        tag: 73,
-                        bytes: try digestCache.digest(tree: path).bytes)
-                } else {
-                    encoder.append(tag: 74, bytes: fallback)
-                }
-            case .dependencyOutput(let path):
-                encoder.append(tag: 71, string: path.string)
-            case .tool(let executable):
-                let tool = try resolvedToolIdentity(
-                    executable,
-                    environment: task.swiftProducts.first?.environment
-                        ?? actionEnvironment(task.action))
-                encoder.append(tag: 18, string: tool.path.string)
-                encoder.append(tag: 19, bytes: tool.digest.bytes)
-            }
-        }
-        for output in task.outputs {
-            encoder.append(tag: 40, string: output.path.string)
-            encoder.append(tag: 41, string: output.validation.rawValue)
-        }
-        for postcondition in task.postconditions {
-            encoder.append(tag: 218, string: postcondition.path.string)
-            encoder.append(tag: 219, string: postcondition.validation.rawValue)
-        }
-        try encode(action: task.action, into: &encoder)
-        return ArtifactHasher.digest(bytes: encoder.bytes)
-    }
-    private func encode(
-        action: AnyColliderAction?,
-        into encoder: inout CanonicalDigestEncoder
-    ) throws {
-        guard let action else {
-            encoder.append(tag: 235, string: "no-action")
-            return
-        }
-        encoder.append(tag: 235, string: action.kind.rawValue)
-        encoder.append(tag: 236, bytes: action.identity)
-        for tool in action.requirements.tools.filter({
-            $0.role == .semantic
-        }).sorted(by: { $0.name < $1.name }) {
-            let identity = try resolvedToolIdentity(
-                tool.executable,
-                environment: action.environment)
-            encoder.append(tag: 239, string: tool.name)
-            encoder.append(tag: 240, string: identity.path.string)
-            encoder.append(tag: 241, bytes: identity.digest.bytes)
-        }
-        let effects = action.requirements.effects.sorted {
-            let left = $0.scope.root.string + "\u{0}" + $0.access.rawValue
-            let right = $1.scope.root.string + "\u{0}" + $1.access.rawValue
-            return left.utf8.lexicographicallyPrecedes(right.utf8)
-        }
-        for effect in effects {
-            encoder.append(tag: 242, string: effect.access.rawValue)
-            let scope: String
-            switch effect.scope {
-            case .input: scope = "input"
-            case .checkout: scope = "checkout"
-            case .scratch: scope = "scratch"
-            case .output: scope = "output"
-            case .publication: scope = "publication"
-            case .unrestricted: scope = "unrestricted"
-            }
-            encoder.append(tag: 243, string: scope)
-            encoder.append(tag: 244, string: effect.scope.root.string)
-        }
-        for (name, value) in artifactEnvironment(action.environment) {
-            encoder.append(tag: 237, string: name)
-            encoder.append(tag: 238, string: value)
-        }
-    }
-
-    private func resolvedToolIdentity(
-        _ executable: CommandSpec.Executable,
-        environment: [String: String]
-    ) throws -> (path: FilePath, digest: ArtifactDigest) {
-        let cacheKey =
-            String(describing: executable) + "\u{0}"
-            + (environment["PATH"] ?? "")
-        if let cached = toolIdentityCache[cacheKey] {
-            return (cached.0, cached.1)
-        }
-        let path: FilePath
-        switch executable {
-        case .path(let value):
-            path = value
-        case .taskOutput(let value):
-            throw RuntimeFailure.invalidOutput(
-                "task-produced executable cannot be declared as an external tool: \(value)")
-        case .operationalNamed(let name):
-            throw RuntimeFailure.invalidOutput(
-                "operational executable cannot be declared as a semantic tool: \(name)")
-        case .named(let name):
-            guard let resolved = resolveExecutable(name, path: environment["PATH"]) else {
-                throw RuntimeFailure.toolNotFound(name)
-            }
-            path = FilePath(
-                URL(fileURLWithPath: resolved.string)
-                    .resolvingSymlinksInPath().path)
-        }
-        let digest = try ArtifactHasher.digest(file: path)
-        toolIdentityCache[cacheKey] = (path, digest)
-        return (path, digest)
-    }
-
-    private func assess(
-        _ task: TaskDeclaration,
-        identity: ArtifactDigest,
-        stateRoot: FilePath
-    ) -> (clean: Bool, reason: String) {
-        if task.assessmentPolicy == .always {
-            return (false, "task is declared to run every time")
-        }
-        let path = statePath(task.id, root: stateRoot)
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path.string)),
-            let record = try? JSONDecoder().decode(TaskStateRecord.self, from: data)
-        else { return (false, "no prior task state") }
-        guard record.identity == identity else {
-            return (
-                false,
-                "input identity changed (recorded \(record.identity), planned \(identity))"
-            )
-        }
-        do {
-            try validate(task)
-            return (true, "identity and outputs are valid")
-        } catch {
-            return (false, "output validation failed: \(error)")
-        }
-    }
-
     private func perform(
         _ task: TaskDeclaration,
         stage: TaskID,
@@ -768,88 +444,6 @@ extension ColliderRuntime {
         guard let action = task.action else { return }
         try await execute(action, stage: stage)
     }
-
-    private func validate(
-        _ paths: [(path: FilePath, validation: PathValidation)]
-    ) throws {
-        for path in paths {
-            switch path.validation {
-            case .exists:
-                _ = try path.path.stat(followTargetSymlink: false)
-            case .symlinkTarget:
-                let metadata = try path.path.stat(followTargetSymlink: false)
-                guard metadata.type == .symbolicLink else {
-                    throw RuntimeFailure.invalidOutput(path.path.string)
-                }
-                _ = try path.path.stat(followTargetSymlink: true)
-            case .regularFile, .json:
-                let metadata = try path.path.stat()
-                guard metadata.type == .regular else {
-                    throw RuntimeFailure.invalidOutput(path.path.string)
-                }
-                if path.validation == .json {
-                    _ = try JSONSerialization.jsonObject(
-                        with: Data(contentsOf: URL(fileURLWithPath: path.path.string)))
-                }
-            case .executableFile:
-                let metadata = try path.path.stat()
-                guard metadata.type == .regular,
-                    metadata.permissions.contains(.ownerExecute)
-                else { throw RuntimeFailure.invalidOutput(path.path.string) }
-            case .nonEmptyDirectory:
-                let metadata = try path.path.stat()
-                guard metadata.type == .directory,
-                    !(try FileManager.default.contentsOfDirectory(
-                        atPath: path.path.string)).isEmpty
-                else { throw RuntimeFailure.invalidOutput(path.path.string) }
-            }
-        }
-    }
-
-    private func validate(_ outputs: [OutputDeclaration]) throws {
-        try validate(outputs.map { ($0.path, $0.validation) })
-    }
-
-    private func validate(_ postconditions: [PathPostcondition]) throws {
-        try validate(postconditions.map { ($0.path, $0.validation) })
-    }
-
-    private func validate(_ task: TaskDeclaration) throws {
-        try validate(task.outputs)
-        try validate(task.postconditions)
-        try validate(task.swiftProducts.flatMap(\.expectedOutputs))
-        try validateActionOutput(task.action)
-    }
-
-    private func validateActionOutput(_ action: AnyColliderAction?) throws {
-        guard let action else { return }
-        try action.validateOutputs(
-            using: actionFileSystem().scoped(to: action.requirements.effects))
-    }
-
-    private func persist(_ record: TaskStateRecord, stateRoot: FilePath) throws {
-        let path = statePath(record.task, root: stateRoot)
-        try DurableFile.writeJSON(record, to: path)
-    }
-}
-
-private func artifactEnvironment(
-    _ environment: [String: String]
-) -> [(key: String, value: String)] {
-    let volatile = Set([
-        "NUCLEUS_RUN_DIR",
-        "NUCLEUS_RUN_LOG",
-        "TERM",
-        // A task identity records the resolved path and content digest of every
-        // tool it declares, so the search path used to find them adds nothing.
-        // It does vary: the workspace Node.js activation puts a per-invocation
-        // directory on PATH, which would leave every task permanently dirty.
-        "PATH",
-    ])
-    return
-        environment
-        .filter { !volatile.contains($0.key) }
-        .sorted { $0.key < $1.key }
 }
 
 private func rendered(_ command: CommandSpec) -> String {
@@ -869,150 +463,6 @@ private func rendered(_ command: CommandSpec) -> String {
     }.joined(separator: " ")
 }
 
-/// Mutable only during one synchronous planning call. The closures handed to
-/// `ColliderPlanning` do not escape or invoke concurrently.
-final class PlanningArtifactDigestCache: @unchecked Sendable {
-    private struct FileSignature: Codable, Equatable {
-        let device: String
-        let inode: String
-        let size: Int64
-        let modificationSeconds: Int64
-        let modificationNanoseconds: Int64
-        let statusChangeSeconds: Int64
-        let statusChangeNanoseconds: Int64
-
-        init(_ metadata: Stat) {
-            device = String(describing: metadata.deviceID.rawValue)
-            inode = String(describing: metadata.inode.rawValue)
-            size = metadata.size
-            modificationSeconds = Int64(metadata.st_mtim.tv_sec)
-            modificationNanoseconds = Int64(metadata.st_mtim.tv_nsec)
-            statusChangeSeconds = Int64(metadata.st_ctim.tv_sec)
-            statusChangeNanoseconds = Int64(metadata.st_ctim.tv_nsec)
-        }
-    }
-
-    private struct FileEntry: Codable {
-        let signature: FileSignature
-        let digest: ArtifactDigest
-    }
-
-    private struct TreeKey: Hashable {
-        let root: FilePath
-        let excludedRelativePaths: [String]
-    }
-
-    private let persistentFile: FilePath?
-    private var files: [String: FileEntry]
-    private var trees: [TreeKey: ArtifactDigest] = [:]
-    private var persistentStateChanged = false
-    private var measurementDepth = 0
-    private(set) var fileMissCount = 0
-    private(set) var treeMissCount = 0
-    private(set) var hashingDurationNanoseconds: UInt64 = 0
-
-    init(persistentFile: FilePath? = nil) {
-        self.persistentFile = persistentFile
-        guard let persistentFile,
-            let data = try? Data(
-                contentsOf: URL(
-                    fileURLWithPath: persistentFile.string)),
-            let decoded = try? JSONDecoder().decode(
-                [String: FileEntry].self,
-                from: data)
-        else {
-            files = [:]
-            return
-        }
-        files = decoded
-    }
-
-    func digest(
-        file path: FilePath,
-        metadata suppliedMetadata: Stat? = nil
-    ) throws -> ArtifactDigest {
-        try measured {
-            try digestFile(path, metadata: suppliedMetadata)
-        }
-    }
-
-    private func digestFile(
-        _ path: FilePath,
-        metadata suppliedMetadata: Stat?
-    ) throws -> ArtifactDigest {
-        let metadata =
-            try suppliedMetadata
-            ?? path.stat(followTargetSymlink: true)
-        let signature = FileSignature(metadata)
-        if let entry = files[path.string],
-            entry.signature == signature
-        {
-            return entry.digest
-        }
-        let digest = try ArtifactHasher.digest(file: path)
-        files[path.string] = FileEntry(
-            signature: signature,
-            digest: digest)
-        persistentStateChanged = true
-        fileMissCount += 1
-        return digest
-    }
-
-    func digest(
-        tree root: FilePath,
-        excluding excludedRelativePaths: Set<String> = []
-    ) throws -> ArtifactDigest {
-        try measured {
-            try digestTree(root, excluding: excludedRelativePaths)
-        }
-    }
-
-    private func digestTree(
-        _ root: FilePath,
-        excluding excludedRelativePaths: Set<String>
-    ) throws -> ArtifactDigest {
-        let key = TreeKey(
-            root: root,
-            excludedRelativePaths: excludedRelativePaths.sorted())
-        if let digest = trees[key] {
-            return digest
-        }
-        let digest = try ArtifactHasher.digest(
-            tree: root,
-            excluding: excludedRelativePaths,
-            digestFile: { try self.digest(file: $0, metadata: $1) })
-        trees[key] = digest
-        treeMissCount += 1
-        return digest
-    }
-
-    private func measured<Result>(
-        _ operation: () throws -> Result
-    ) rethrows -> Result {
-        let recordsDuration = measurementDepth == 0
-        let start = recordsDuration ? ContinuousClock().now : nil
-        measurementDepth += 1
-        defer {
-            measurementDepth -= 1
-            if let start {
-                hashingDurationNanoseconds &+= elapsedNanoseconds(since: start)
-            }
-        }
-        return try operation()
-    }
-
-    func persist() throws {
-        guard persistentStateChanged, let persistentFile else { return }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        let data = try encoder.encode(files)
-        try data.write(
-            to: URL(fileURLWithPath: persistentFile.string),
-            options: .atomic)
-        persistentStateChanged = false
-    }
-}
-
 private func elapsedNanoseconds(
     since start: ContinuousClock.Instant
 ) -> UInt64 {
@@ -1022,17 +472,9 @@ private func elapsedNanoseconds(
     return seconds &* 1_000_000_000 &+ nanoseconds
 }
 
-private func identityLengthPrefix(_ count: Int) -> [UInt8] {
-    let value = UInt64(count)
-    return (0..<8).reversed().map { shift in
-        UInt8(truncatingIfNeeded: value >> UInt64(shift * 8))
-    }
-}
-
 public enum RuntimeFailure: Error, CustomStringConvertible, Sendable {
     case commandFailed(status: Int32)
     case invalidOutput(String)
-    case toolNotFound(String)
     case outputLimitExceeded(Int)
     case swiftBuildFailed(attribution: String, reason: String)
     case unschedulableTaskPlan([String])
@@ -1041,7 +483,6 @@ public enum RuntimeFailure: Error, CustomStringConvertible, Sendable {
         switch self {
         case .commandFailed(let status): "child command failed with status \(status)"
         case .invalidOutput(let path): "task produced an invalid output at \(path)"
-        case .toolNotFound(let name): "declared task tool '\(name)' was not found"
         case .outputLimitExceeded(let limit): "captured output exceeded \(limit) bytes"
         case .swiftBuildFailed(let attribution, let reason):
             "Swift package build failed for \(attribution): \(reason)"
@@ -1050,45 +491,6 @@ public enum RuntimeFailure: Error, CustomStringConvertible, Sendable {
                 + tasks.joined(separator: ", ")
         }
     }
-}
-
-private func actionEnvironment(_ action: AnyColliderAction?) -> [String: String] {
-    action?.environment ?? [:]
-}
-
-private func executionCoordinates(
-    _ action: AnyColliderAction?
-) throws -> TaskExecutionCoordinates? {
-    guard let action,
-        let executionPlatform = action.requirements.executionPlatform
-    else { return nil }
-    let runner = RunnerPlatform.current
-    let executor = try OCIExecutorResolver.resolve(
-        runner: runner,
-        executionPlatform: executionPlatform)
-    return TaskExecutionCoordinates(
-        runner: runner,
-        execution: executionPlatform,
-        backend: executor.backend,
-        artifact: action.requirements.artifactTarget)
-}
-
-private func resolveExecutable(_ name: String, path: String?) -> FilePath? {
-    guard let path else { return nil }
-    for directory in path.split(separator: ":", omittingEmptySubsequences: false) {
-        let candidate = FilePath(String(directory)).appending(name)
-        if FileManager.default.isExecutableFile(atPath: candidate.string) {
-            return candidate
-        }
-    }
-    return nil
-}
-
-private func statePath(_ task: TaskID, root: FilePath) -> FilePath {
-    root.appending(
-        task.rawValue.map {
-            $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" ? $0 : "-"
-        }.reduce(into: "") { $0.append($1) } + ".json")
 }
 
 private func safeLockName(_ value: String) -> String {

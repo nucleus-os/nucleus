@@ -1,5 +1,6 @@
 #if os(Linux)
 import ColliderCore
+import ColliderPersistence
 import ColliderRuntime
 import Foundation
 import NucleusAndroidRuntimeCore

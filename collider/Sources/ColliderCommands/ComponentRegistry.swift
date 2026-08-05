@@ -1,6 +1,7 @@
 import AndroidRuntimeColliderRecipe
 import ChromiumColliderRecipe
 import ColliderCore
+import ColliderPersistence
 import ColliderRuntime
 import CompositorColliderRecipe
 import CoreColliderRecipe

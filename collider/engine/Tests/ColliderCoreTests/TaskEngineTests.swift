@@ -1,8 +1,10 @@
 import ColliderCore
+import ColliderEngine
 import Foundation
 import SystemPackage
 import Testing
 
+@testable import ColliderPersistence
 @testable import ColliderRuntime
 
 private struct ParallelismProbeIdentity: ColliderActionIdentity {
@@ -68,7 +70,7 @@ private struct ParallelismProbeAction: ColliderAction {
                         output: output)))
     }
 
-    let report = try await ColliderRuntime().execute(
+    let report = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph(tasks),
         selected: tasks.map(\.id),
         stateRoot: root.appending("state"),
@@ -103,7 +105,7 @@ private struct ParallelismProbeAction: ColliderAction {
                         output: output)))
     }
 
-    _ = try await ColliderRuntime().execute(
+    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph(tasks),
         selected: tasks.map(\.id),
         stateRoot: root.appending("state"),
@@ -147,12 +149,12 @@ private struct ParallelismProbeAction: ColliderAction {
                 imageName: "unselected-fixture",
                 environment: [:])))
 
-    let first = try await ColliderRuntime().execute(
+    let first = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph([selected, unselected, unselectedContainer]),
         selected: [selected.id],
         stateRoot: root.appending("state"),
         options: TaskExecutionOptions(dryRun: true))
-    let second = try await ColliderRuntime().execute(
+    let second = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph([unselectedContainer, unselected, selected]),
         selected: [selected.id],
         stateRoot: root.appending("state"),
@@ -200,7 +202,7 @@ private struct ParallelismProbeAction: ColliderAction {
                     environment: ["PATH": searchPath, "LANG": language])))
     }
     func identity(of task: TaskDeclaration) async throws -> ArtifactDigest {
-        try await ColliderRuntime().execute(
+        try await ColliderEngine(runtime: ColliderRuntime()).execute(
             graph: TaskGraph([task]),
             selected: [task.id],
             stateRoot: FilePath(directory.appendingPathComponent("state").path),
@@ -255,7 +257,7 @@ private struct ParallelismProbeAction: ColliderAction {
                     arguments: [],
                     workingDirectory: FilePath(directory.path),
                     environment: ["PATH": searchRoot.path])))
-        return try await ColliderRuntime().execute(
+        return try await ColliderEngine(runtime: ColliderRuntime()).execute(
             graph: TaskGraph([task]),
             selected: [task.id],
             stateRoot: FilePath(directory.appendingPathComponent("state").path),
@@ -285,7 +287,7 @@ private struct ParallelismProbeAction: ColliderAction {
                     arguments: ["--verify-exact-revision"],
                     workingDirectory: FilePath(directory.path),
                     environment: ["PATH": path, "LANG": "C"])))
-        return try await ColliderRuntime().execute(
+        return try await ColliderEngine(runtime: ColliderRuntime()).execute(
             graph: TaskGraph([task]),
             selected: [task.id],
             stateRoot: FilePath(directory.appendingPathComponent("state").path),
@@ -314,7 +316,7 @@ private struct ParallelismProbeAction: ColliderAction {
             OutputDeclaration(path: output, validation: .regularFile)
         ],
         action: try fixtureWriteAction(output, bytes: Array("payload\n".utf8)))
-    let report = try await ColliderRuntime().execute(
+    let report = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path),
@@ -345,15 +347,15 @@ private struct ParallelismProbeAction: ColliderAction {
     let graph = try TaskGraph([task])
     let runtime = ColliderRuntime()
     let state = FilePath(directory.appendingPathComponent("state").path)
-    let first = try await runtime.execute(
+    let first = try await ColliderEngine(runtime: runtime).execute(
         graph: graph, selected: [task.id], stateRoot: state)
     #expect(first.executed == [task.id])
     #expect(first.plan[0].explanation == "no prior task state")
-    let second = try await runtime.execute(
+    let second = try await ColliderEngine(runtime: runtime).execute(
         graph: graph, selected: [task.id], stateRoot: state)
     #expect(second.executed.isEmpty)
     #expect(second.plan[0].isClean)
-    let rebuilt = try await runtime.execute(
+    let rebuilt = try await ColliderEngine(runtime: runtime).execute(
         graph: graph,
         selected: [task.id],
         stateRoot: state,
@@ -402,7 +404,7 @@ private struct ParallelismProbeAction: ColliderAction {
     let runtime = ColliderRuntime()
     let state = root.appending("state")
 
-    let first = try await runtime.execute(
+    let first = try await ColliderEngine(runtime: runtime).execute(
         graph: graph, selected: [test.id], stateRoot: state)
     #expect(first.executed == [preparation.id, test.id])
     #expect(first.plan.first { $0.task == build.id }?.isSubsumed == true)
@@ -410,7 +412,7 @@ private struct ParallelismProbeAction: ColliderAction {
     #expect(!FileManager.default.fileExists(atPath: buildOutput.string))
     #expect(FileManager.default.fileExists(atPath: testOutput.string))
 
-    let second = try await runtime.execute(
+    let second = try await ColliderEngine(runtime: runtime).execute(
         graph: graph, selected: [test.id], stateRoot: state)
     #expect(second.executed.isEmpty)
     #expect(second.plan.allSatisfy { $0.isClean })
@@ -445,7 +447,7 @@ private struct ParallelismProbeAction: ColliderAction {
         dependencies: [build.id],
         action: try fixtureCreateDirectoryAction(root.appending("consumer")))
 
-    let report = try await ColliderRuntime().execute(
+    let report = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph([build, superset, consumer]),
         selected: [superset.id, consumer.id],
         stateRoot: root.appending("state"))
@@ -486,11 +488,11 @@ private struct ParallelismProbeAction: ColliderAction {
                     "PATH": ProcessInfo.processInfo.environment["PATH"]
                         ?? "/usr/bin:/bin"
                 ])))
-    _ = try await ColliderRuntime().execute(
+    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
-    _ = try await ColliderRuntime().execute(
+    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
@@ -533,10 +535,10 @@ private struct ParallelismProbeAction: ColliderAction {
 
     let runtime = ColliderRuntime()
     let first = try task(runDirectory: "/runs/first")
-    _ = try await runtime.execute(
+    _ = try await ColliderEngine(runtime: runtime).execute(
         graph: TaskGraph([first]), selected: [first.id], stateRoot: state)
     let second = try task(runDirectory: "/runs/second")
-    let report = try await runtime.execute(
+    let report = try await ColliderEngine(runtime: runtime).execute(
         graph: TaskGraph([second]), selected: [second.id], stateRoot: state)
     #expect(report.executed.isEmpty)
     #expect(report.plan[0].isClean)
@@ -572,10 +574,10 @@ private struct ParallelismProbeAction: ColliderAction {
 
     let runtime = ColliderRuntime()
     let first = try task(validation: .exists)
-    _ = try await runtime.execute(
+    _ = try await ColliderEngine(runtime: runtime).execute(
         graph: TaskGraph([first]), selected: [first.id], stateRoot: state)
     let changed = try task(validation: .regularFile)
-    let report = try await runtime.execute(
+    let report = try await ColliderEngine(runtime: runtime).execute(
         graph: TaskGraph([changed]), selected: [changed.id], stateRoot: state)
     #expect(report.executed == [changed.id])
     #expect(report.plan[0].explanation.hasPrefix("input identity changed "))
@@ -612,11 +614,11 @@ private struct ParallelismProbeAction: ColliderAction {
     let runtime = ColliderRuntime()
     let graph = try TaskGraph([task])
     let state = FilePath(directory.appendingPathComponent("state").path)
-    _ = try await runtime.execute(
+    _ = try await ColliderEngine(runtime: runtime).execute(
         graph: graph, selected: [task.id], stateRoot: state)
     try Data("second".utf8).write(to: source)
 
-    let report = try await runtime.execute(
+    let report = try await ColliderEngine(runtime: runtime).execute(
         graph: graph, selected: [task.id], stateRoot: state)
     #expect(report.executed == [task.id])
     #expect(report.plan[0].explanation.hasPrefix("input identity changed "))
@@ -647,7 +649,7 @@ private struct ParallelismProbeAction: ColliderAction {
             bytes: Array("fresh".utf8),
             reset: true))
 
-    let report = try await ColliderRuntime().execute(
+    let report = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
@@ -699,7 +701,7 @@ private struct ParallelismProbeAction: ColliderAction {
                         retain: 1,
                         naming: .contentIdentity)
                 ])))
-    _ = try await ColliderRuntime().execute(
+    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
@@ -742,7 +744,7 @@ private struct ParallelismProbeAction: ColliderAction {
                         retain: 0,
                         naming: .swiftSDKCandidate)
                 ])))
-    _ = try await ColliderRuntime().execute(
+    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
@@ -781,7 +783,7 @@ private struct ParallelismProbeAction: ColliderAction {
             active: FilePath(active.path)))
 
     await #expect(throws: (any Error).self) {
-        try await ColliderRuntime().execute(
+        try await ColliderEngine(runtime: ColliderRuntime()).execute(
             graph: TaskGraph([task]),
             selected: [task.id],
             stateRoot: FilePath(directory.appendingPathComponent("state").path))
@@ -818,7 +820,7 @@ private struct ParallelismProbeAction: ColliderAction {
             generation: FilePath(generation.path),
             active: FilePath(active.path)))
 
-    let report = try await ColliderRuntime().execute(
+    let report = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))

@@ -1,3 +1,5 @@
+import SystemPackage
+
 public struct TaskPlanEntry: Codable, Sendable {
     public let task: TaskID
     public let identity: ArtifactDigest
@@ -5,6 +7,7 @@ public struct TaskPlanEntry: Codable, Sendable {
     public let isSubsumed: Bool
     public let explanation: String
     public let coordinates: TaskExecutionCoordinates?
+    public let resources: PlannedTaskResources
 
     public init(
         task: TaskID,
@@ -12,7 +15,8 @@ public struct TaskPlanEntry: Codable, Sendable {
         isClean: Bool,
         isSubsumed: Bool = false,
         explanation: String,
-        coordinates: TaskExecutionCoordinates?
+        coordinates: TaskExecutionCoordinates?,
+        resources: PlannedTaskResources = .lightweight
     ) {
         self.task = task
         self.identity = identity
@@ -20,7 +24,37 @@ public struct TaskPlanEntry: Codable, Sendable {
         self.isSubsumed = isSubsumed
         self.explanation = explanation
         self.coordinates = coordinates
+        self.resources = resources
     }
+}
+
+public struct TaskResourceCapacity: Codable, Hashable, Sendable {
+    public let cpuCount: UInt32
+    public let memoryBytes: UInt64
+
+    public init(cpuCount: UInt32, memoryBytes: UInt64) {
+        precondition(cpuCount > 0)
+        precondition(memoryBytes > 0)
+        self.cpuCount = cpuCount
+        self.memoryBytes = memoryBytes
+    }
+}
+
+public struct PlannedTaskResources: Codable, Hashable, Sendable {
+    public let cpuCount: UInt32
+    public let memoryBytes: UInt64
+    public let exclusive: Bool
+
+    public init(cpuCount: UInt32, memoryBytes: UInt64, exclusive: Bool) {
+        self.cpuCount = cpuCount
+        self.memoryBytes = memoryBytes
+        self.exclusive = exclusive
+    }
+
+    public static let lightweight = PlannedTaskResources(
+        cpuCount: 1,
+        memoryBytes: 512 * 1_024 * 1_024,
+        exclusive: false)
 }
 
 public struct TaskExecutionCoordinates: Codable, Hashable, Sendable {
@@ -52,13 +86,21 @@ public struct TaskAssessment: Sendable {
     }
 }
 
+public enum PlanningTaskState: Sendable {
+    case missing
+    case corrupt
+    case record(TaskStateRecord)
+}
+
 public struct ExecutionPlan: Sendable {
+    public let resourceCapacity: TaskResourceCapacity
     public let declaredTasks: [TaskDeclaration]
     public let declaredEntries: [TaskPlanEntry]
     public let loweredTasks: [LoweredExecutionTask]
     public let loweredEntries: [TaskPlanEntry]
 
     public init(
+        resourceCapacity: TaskResourceCapacity,
         declaredTasks: [TaskDeclaration],
         declaredEntries: [TaskPlanEntry],
         loweredTasks: [LoweredExecutionTask],
@@ -66,6 +108,7 @@ public struct ExecutionPlan: Sendable {
     ) {
         precondition(declaredTasks.count == declaredEntries.count)
         precondition(loweredTasks.count == loweredEntries.count)
+        self.resourceCapacity = resourceCapacity
         self.declaredTasks = declaredTasks
         self.declaredEntries = declaredEntries
         self.loweredTasks = loweredTasks
@@ -77,18 +120,45 @@ public struct ExecutionPlan: Sendable {
     }
 }
 
+public struct ToolIdentitySnapshot: Sendable {
+    public let path: FilePath
+    public let digest: ArtifactDigest
+
+    public init(path: FilePath, digest: ArtifactDigest) {
+        self.path = path
+        self.digest = digest
+    }
+}
+
 public struct TaskPlanningServices {
-    public let identity: (TaskDeclaration, [ArtifactDigest]) throws -> ArtifactDigest
-    public let assessment: (TaskDeclaration, ArtifactDigest) -> TaskAssessment
-    public let coordinates: (AnyColliderAction?) throws -> TaskExecutionCoordinates?
+    public let resourceCapacity: TaskResourceCapacity
+    public let digestBytes: ([UInt8]) -> ArtifactDigest
+    public let digestFile: (FilePath) throws -> ArtifactDigest
+    public let digestTree: (FilePath) throws -> ArtifactDigest
+    public let optionalTreeDigest: (FilePath) throws -> ArtifactDigest?
+    public let semanticToolIdentity:
+        (CommandSpec.Executable, [String: String]) throws -> ToolIdentitySnapshot
+    public let taskState: (TaskID) -> PlanningTaskState
+    public let validateOutputs: (TaskDeclaration) throws -> Void
 
     public init(
-        identity: @escaping (TaskDeclaration, [ArtifactDigest]) throws -> ArtifactDigest,
-        assessment: @escaping (TaskDeclaration, ArtifactDigest) -> TaskAssessment,
-        coordinates: @escaping (AnyColliderAction?) throws -> TaskExecutionCoordinates?
+        resourceCapacity: TaskResourceCapacity,
+        digestBytes: @escaping ([UInt8]) -> ArtifactDigest,
+        digestFile: @escaping (FilePath) throws -> ArtifactDigest,
+        digestTree: @escaping (FilePath) throws -> ArtifactDigest,
+        optionalTreeDigest: @escaping (FilePath) throws -> ArtifactDigest?,
+        semanticToolIdentity:
+            @escaping (CommandSpec.Executable, [String: String]) throws -> ToolIdentitySnapshot,
+        taskState: @escaping (TaskID) -> PlanningTaskState,
+        validateOutputs: @escaping (TaskDeclaration) throws -> Void
     ) {
-        self.identity = identity
-        self.assessment = assessment
-        self.coordinates = coordinates
+        self.resourceCapacity = resourceCapacity
+        self.digestBytes = digestBytes
+        self.digestFile = digestFile
+        self.digestTree = digestTree
+        self.optionalTreeDigest = optionalTreeDigest
+        self.semanticToolIdentity = semanticToolIdentity
+        self.taskState = taskState
+        self.validateOutputs = validateOutputs
     }
 }

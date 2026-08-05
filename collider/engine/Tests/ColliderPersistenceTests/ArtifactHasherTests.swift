@@ -3,7 +3,7 @@ import Foundation
 import SystemPackage
 import Testing
 
-@testable import ColliderRuntime
+@testable import ColliderPersistence
 
 @Test func fileDigestStreamsExactContents() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(

@@ -1,5 +1,7 @@
 import ChromiumColliderRecipe
 import ColliderCore
+import ColliderEngine
+import ColliderPersistence
 import ColliderRuntime
 import Foundation
 import SystemPackage
@@ -183,7 +185,7 @@ import Testing
                         sourceLockFile: FilePath(lockFile.path),
                         sourceLock: sourceLock,
                         environment: environment))))
-    _ = try await runtime.execute(
+    _ = try await ColliderEngine(runtime: runtime).execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))

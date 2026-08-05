@@ -33,7 +33,7 @@ public enum ArtifactHasher {
             digestFile: { path, _ in try digest(file: path) })
     }
 
-    static func digest(
+    package static func digest(
         tree root: FilePath,
         excluding excludedRelativePaths: Set<String> = [],
         digestFile: (FilePath, Stat) throws -> ArtifactDigest

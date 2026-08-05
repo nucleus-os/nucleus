@@ -1,6 +1,8 @@
+import ColliderPersistence
 import ColliderPlatformC
 import Foundation
 import SystemPackage
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Darwin)
@@ -35,9 +37,10 @@ public final class ColliderFileLock: @unchecked Sendable {
             .readWrite,
             options: .create,
             permissions: [.ownerReadWrite, .groupRead, .otherRead])
-        guard collider_lock_exclusive(
-            descriptor.rawValue,
-            waitForExistingOwner ? 1 : 0) == 0
+        guard
+            collider_lock_exclusive(
+                descriptor.rawValue,
+                waitForExistingOwner ? 1 : 0) == 0
         else {
             let code = errno
             try? descriptor.close()
@@ -46,12 +49,13 @@ public final class ColliderFileLock: @unchecked Sendable {
             }
             throw RuntimeLockFailure.system(purpose: purpose, code: code)
         }
-        let record = [
-            "pid=\(getpid())",
-            "run=\(owner.run ?? "unknown")",
-            "task=\(owner.task ?? "unknown")",
-            "started=\(ISO8601DateFormatter().string(from: Date()))",
-        ].joined(separator: "\n") + "\n"
+        let record =
+            [
+                "pid=\(getpid())",
+                "run=\(owner.run ?? "unknown")",
+                "task=\(owner.task ?? "unknown")",
+                "started=\(ISO8601DateFormatter().string(from: Date()))",
+            ].joined(separator: "\n") + "\n"
         let ownerRecord = FilePath(path.string + ".owner")
         do {
             try DurableFile.write(Data(record.utf8), to: ownerRecord)

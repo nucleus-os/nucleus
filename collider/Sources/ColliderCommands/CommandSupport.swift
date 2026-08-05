@@ -1,4 +1,6 @@
 import ColliderCore
+import ColliderEngine
+import ColliderPersistence
 import ColliderRuntime
 import ColliderSwiftPM
 import Foundation
@@ -134,7 +136,7 @@ extension WorkspaceContext {
     ) async throws -> TaskExecutionReport {
         let graph = try TaskGraph(tasks)
         let stateRoot = layout.tasks
-        let report = try await runtime.execute(
+        let report = try await ColliderEngine(runtime: runtime).execute(
             graph: graph,
             selected: selected,
             stateRoot: stateRoot,

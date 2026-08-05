@@ -1,4 +1,5 @@
 import ColliderCore
+import ColliderEngine
 import ColliderRuntime
 import CoreColliderRecipe
 import Foundation
@@ -63,7 +64,7 @@ import Testing
         environment: [
             "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
         ])
-    let report = try await ColliderRuntime().execute(
+    let report = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph([producer, validation.task]),
         selected: [validation.task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))

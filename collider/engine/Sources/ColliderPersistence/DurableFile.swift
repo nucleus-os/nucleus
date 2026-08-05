@@ -1,14 +1,15 @@
 import ColliderPlatformC
 import Foundation
 import SystemPackage
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Darwin)
 import Darwin
 #endif
 
-enum DurableFile {
-    static func copy(from source: FilePath, to path: FilePath) throws {
+package enum DurableFile {
+    package static func copy(from source: FilePath, to path: FilePath) throws {
         try FileManager.default.createDirectory(
             atPath: path.removingLastComponent().string,
             withIntermediateDirectories: true)
@@ -38,7 +39,7 @@ enum DurableFile {
         }
     }
 
-    static func writeJSON<T: Encodable>(_ value: T, to path: FilePath) throws {
+    package static func writeJSON<T: Encodable>(_ value: T, to path: FilePath) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         var data = try encoder.encode(value)
@@ -46,7 +47,7 @@ enum DurableFile {
         try write(data, to: path)
     }
 
-    static func write(_ data: Data, to path: FilePath) throws {
+    package static func write(_ data: Data, to path: FilePath) throws {
         try FileManager.default.createDirectory(
             atPath: path.removingLastComponent().string,
             withIntermediateDirectories: true)
@@ -73,7 +74,7 @@ enum DurableFile {
         }
     }
 
-    static func synchronizeDirectory(_ path: FilePath) throws {
+    package static func synchronizeDirectory(_ path: FilePath) throws {
         let descriptor = try FileDescriptor.open(path, .readOnly)
         defer { try? descriptor.close() }
         guard collider_sync_directory(descriptor.rawValue) == 0 else {

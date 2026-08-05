@@ -1,4 +1,5 @@
 import ColliderCore
+import ColliderEngine
 import Foundation
 import SystemPackage
 import Testing
@@ -229,7 +230,7 @@ import Testing
             action: try fixtureOCIExecutionAction(execution))
     ])
 
-    let report = try await ColliderRuntime().execute(
+    let report = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: graph,
         selected: [taskID],
         stateRoot: FilePath(root.appendingPathComponent("state").path),

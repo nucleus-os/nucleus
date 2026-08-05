@@ -21,6 +21,8 @@ let package = Package(
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "ColliderCore", package: "engine"),
+                .product(name: "ColliderEngine", package: "engine"),
+                .product(name: "ColliderPersistence", package: "engine"),
                 .product(name: "ColliderRuntime", package: "engine"),
                 "ColliderSwiftPM",
                 .product(
@@ -116,6 +118,8 @@ let package = Package(
             name: "ChromiumColliderRecipeTests",
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
+                .product(name: "ColliderEngine", package: "engine"),
+                .product(name: "ColliderPersistence", package: "engine"),
                 .product(name: "ColliderRuntime", package: "engine"),
                 "ChromiumColliderRecipe",
             ]),
@@ -127,6 +131,8 @@ let package = Package(
                 "ChromiumColliderRecipe",
                 "CompositorColliderRecipe",
                 .product(name: "ColliderCore", package: "engine"),
+                .product(name: "ColliderEngine", package: "engine"),
+                .product(name: "ColliderPersistence", package: "engine"),
                 .product(name: "ColliderRuntime", package: "engine"),
                 "CoreColliderRecipe",
                 "NativeBuilderColliderRecipe",
@@ -147,6 +153,7 @@ let package = Package(
             name: "CoreColliderRecipeTests",
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
+                .product(name: "ColliderEngine", package: "engine"),
                 .product(name: "ColliderRuntime", package: "engine"),
                 "CoreColliderRecipe",
             ]),
@@ -155,12 +162,14 @@ let package = Package(
             dependencies: [
                 "ColliderSwiftPM",
                 .product(name: "ColliderCore", package: "engine"),
+                .product(name: "ColliderEngine", package: "engine"),
                 .product(name: "ColliderRuntime", package: "engine"),
             ]),
         .testTarget(
             name: "SwiftTargetSDKColliderRecipeTests",
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
+                .product(name: "ColliderEngine", package: "engine"),
                 .product(name: "ColliderRuntime", package: "engine"),
                 "SwiftTargetSDKColliderRecipe",
             ]),

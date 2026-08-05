@@ -1,5 +1,6 @@
 import ColliderCore
 import ColliderDownloads
+import ColliderPersistence
 import ColliderPlatformC
 import Foundation
 import Subprocess
@@ -25,7 +26,6 @@ public struct CommandLogging: Sendable {
 public actor ColliderRuntime {
     let logging: CommandLogging?
     let downloads: ColliderDownloads
-    var toolIdentityCache: [String: (FilePath, ArtifactDigest)] = [:]
     var taskOutputPresentation: TaskOutputPresentation?
     public let cancellation: RuntimeCancellation
 
@@ -149,7 +149,7 @@ public actor ColliderRuntime {
         }
     }
 
-    nonisolated func actionFileSystem() -> ActionFileSystem {
+    public nonisolated func actionFileSystem() -> ActionFileSystem {
         let inspect:
             @Sendable (
                 FilePath, Bool

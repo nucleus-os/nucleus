@@ -1,5 +1,6 @@
 import ChromiumColliderRecipe
 import ColliderCore
+import ColliderEngine
 import ColliderRuntime
 import Foundation
 import SystemPackage
@@ -79,7 +80,7 @@ import Testing
         action:
             try AnyColliderAction(
                 AssembleBrowserArtifactAction(assembly: assembly)))
-    _ = try await ColliderRuntime().execute(
+    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
@@ -219,7 +220,7 @@ import Testing
         action:
             try AnyColliderAction(
                 AssembleCEFArtifactAction(assembly: assembly)))
-    _ = try await ColliderRuntime().execute(
+    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
@@ -332,7 +333,7 @@ import Testing
                         distributionRoot: FilePath(distribution.path),
                         prefix: FilePath(prefix.path),
                         environment: ["PATH": tools.path]))))
-    _ = try await ColliderRuntime().execute(
+    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(directory.appendingPathComponent("state").path))

@@ -12,6 +12,7 @@ public struct ColliderPlanner {
     ) throws -> ExecutionPlan {
         let ordered = try graph.orderedTasks(selecting: selected)
         let explicitlySelected = Set(selected)
+        let identityBuilder = TaskIdentityBuilder()
         var identities: [TaskID: ArtifactDigest] = [:]
         var entries: [TaskPlanEntry] = []
 
@@ -22,21 +23,27 @@ public struct ColliderPlanner {
                 }
                 return identity
             }
-            let identity = try services.identity(task, dependencyIdentities)
+            let identity = try identityBuilder.identity(
+                of: task,
+                dependencies: dependencyIdentities,
+                services: services)
             identities[task.id] = identity
             let assessment =
                 rebuildSelected && explicitlySelected.contains(task.id)
                 ? TaskAssessment(
                     isClean: false,
                     explanation: "rebuild requested for selected task")
-                : services.assessment(task, identity)
+                : assessment(of: task, identity: identity, services: services)
             entries.append(
                 TaskPlanEntry(
                     task: task.id,
                     identity: identity,
                     isClean: assessment.isClean,
                     explanation: assessment.explanation,
-                    coordinates: try services.coordinates(task.action)))
+                    coordinates: try executionCoordinates(for: task.action),
+                    resources: try normalizedResources(
+                        for: task.action,
+                        capacity: services.resourceCapacity)))
         }
 
         let subsumed = subsumedTasks(in: ordered, entries: entries)
@@ -50,7 +57,8 @@ public struct ColliderPlanner {
                 isClean: false,
                 isSubsumed: true,
                 explanation: "action is subsumed by a selected dirty task",
-                coordinates: entry.coordinates)
+                coordinates: entry.coordinates,
+                resources: entry.resources)
         }
 
         let assessed = zip(ordered, entries).map {
@@ -74,16 +82,26 @@ public struct ColliderPlanner {
         }
 
         let loweredEntries = try lowered.map { lowered in
-            let identity = try services.identity(lowered.task, [])
-            let assessment = services.assessment(lowered.task, identity)
+            let identity = try identityBuilder.identity(
+                of: lowered.task,
+                dependencies: [],
+                services: services)
+            let assessment = assessment(
+                of: lowered.task,
+                identity: identity,
+                services: services)
             return TaskPlanEntry(
                 task: lowered.task.id,
                 identity: identity,
                 isClean: assessment.isClean,
                 explanation: assessment.explanation,
-                coordinates: try services.coordinates(lowered.task.action))
+                coordinates: try executionCoordinates(for: lowered.task.action),
+                resources: try normalizedResources(
+                    for: lowered.task.action,
+                    capacity: services.resourceCapacity))
         }
         return ExecutionPlan(
+            resourceCapacity: services.resourceCapacity,
             declaredTasks: ordered,
             declaredEntries: entries,
             loweredTasks: lowered,
@@ -137,16 +155,114 @@ public struct ColliderPlanner {
             .flatMap(\.expectedOutputs)
             .allSatisfy(coveredOutputs.contains)
     }
+
+    private func assessment(
+        of task: TaskDeclaration,
+        identity: ArtifactDigest,
+        services: TaskPlanningServices
+    ) -> TaskAssessment {
+        if task.assessmentPolicy == .always {
+            return TaskAssessment(
+                isClean: false,
+                explanation: "task is declared to run every time")
+        }
+        let record: TaskStateRecord
+        switch services.taskState(task.id) {
+        case .missing:
+            return TaskAssessment(isClean: false, explanation: "no prior task state")
+        case .corrupt:
+            return TaskAssessment(
+                isClean: false,
+                explanation: "prior task state is corrupt")
+        case .record(let value):
+            record = value
+        }
+        guard record.identity == identity else {
+            return TaskAssessment(
+                isClean: false,
+                explanation:
+                    "input identity changed (recorded \(record.identity), planned \(identity))")
+        }
+        do {
+            try services.validateOutputs(task)
+            return TaskAssessment(
+                isClean: true,
+                explanation: "identity and outputs are valid")
+        } catch {
+            return TaskAssessment(
+                isClean: false,
+                explanation: "output validation failed: \(error)")
+        }
+    }
+
+    private func executionCoordinates(
+        for action: AnyColliderAction?
+    ) throws -> TaskExecutionCoordinates? {
+        guard let action,
+            let execution = action.requirements.executionPlatform
+        else { return nil }
+        guard execution.environment == .oci,
+            execution.operatingSystem == .linux
+        else {
+            throw ColliderPlanningFailure.unsupportedExecutionPlatform(execution)
+        }
+        let runner = RunnerPlatform.current
+        guard runner.operatingSystem == .macOS, runner.architecture == .arm64 else {
+            throw ColliderPlanningFailure.unsupportedRunner(runner)
+        }
+        return TaskExecutionCoordinates(
+            runner: runner,
+            execution: execution,
+            backend: .appleContainer,
+            artifact: action.requirements.artifactTarget)
+    }
+
+    private func normalizedResources(
+        for action: AnyColliderAction?,
+        capacity: TaskResourceCapacity
+    ) throws -> PlannedTaskResources {
+        let request = action?.requirements.resources ?? .lightweight
+        let cpuCount = request.cpuCount ?? capacity.cpuCount
+        let memoryBytes = request.memoryBytes ?? capacity.memoryBytes
+        guard cpuCount > 0, memoryBytes > 0,
+            cpuCount <= capacity.cpuCount,
+            memoryBytes <= capacity.memoryBytes
+        else {
+            throw ColliderPlanningFailure.resourceRequestExceedsCapacity(
+                cpuCount: cpuCount,
+                memoryBytes: memoryBytes,
+                capacity: capacity)
+        }
+        return PlannedTaskResources(
+            cpuCount: cpuCount,
+            memoryBytes: memoryBytes,
+            exclusive: request.exclusive)
+    }
 }
 
 public enum ColliderPlanningFailure: Error, CustomStringConvertible, Sendable {
     case unloweredLogicalRequirements([TaskID])
+    case unsupportedExecutionPlatform(ExecutionPlatform)
+    case unsupportedRunner(RunnerPlatform)
+    case resourceRequestExceedsCapacity(
+        cpuCount: UInt32,
+        memoryBytes: UInt64,
+        capacity: TaskResourceCapacity)
 
     public var description: String {
         switch self {
         case .unloweredLogicalRequirements(let tasks):
             "selected logical tasks have no installed lowering: "
                 + tasks.map(\.rawValue).joined(separator: ", ")
+        case .unsupportedExecutionPlatform(let platform):
+            "unsupported execution platform: \(platform.environment.rawValue)/"
+                + "\(platform.operatingSystem.rawValue)/\(platform.architecture.rawValue)"
+        case .unsupportedRunner(let runner):
+            "unsupported execution runner: \(runner.operatingSystem.rawValue)/"
+                + runner.architecture.rawValue
+        case .resourceRequestExceedsCapacity(let cpu, let memory, let capacity):
+            "task resource request \(cpu) CPU/\(memory) bytes exceeds planning capacity "
+                + "\(capacity.cpuCount) CPU/\(capacity.memoryBytes) bytes"
         }
     }
 }

@@ -1,4 +1,5 @@
 import ColliderCore
+import ColliderEngine
 import Foundation
 import SystemPackage
 import Testing
@@ -216,7 +217,7 @@ private func inertActionFileSystem() -> ActionFileSystem {
         includingAnchor: Bool
     ) async throws -> ArtifactDigest {
         let tasks = includingAnchor ? [anchor, task] : [task]
-        let report = try await ColliderRuntime().execute(
+        let report = try await ColliderEngine(runtime: ColliderRuntime()).execute(
             graph: TaskGraph(tasks),
             selected: [consumerID],
             stateRoot: root.appending(UUID().uuidString),

@@ -1,4 +1,5 @@
 import ColliderCore
+import ColliderEngine
 import Foundation
 import SystemPackage
 import Testing
@@ -22,7 +23,7 @@ import Testing
             target: "missing-target"))
 
     await #expect(throws: (any Error).self) {
-        _ = try await ColliderRuntime().execute(
+        _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
             graph: TaskGraph([task]),
             selected: [task.id],
             stateRoot: root.appending("state"))
@@ -52,17 +53,17 @@ import Testing
     let runtime = ColliderRuntime()
     let state = FilePath(directory.appendingPathComponent("state").path)
 
-    let first = try await runtime.execute(
+    let first = try await ColliderEngine(runtime: runtime).execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: state)
-    let clean = try await runtime.execute(
+    let clean = try await ColliderEngine(runtime: runtime).execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: state,
         options: TaskExecutionOptions(dryRun: true))
     try FileManager.default.removeItem(atPath: marker.string)
-    let missing = try await runtime.execute(
+    let missing = try await ColliderEngine(runtime: runtime).execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: state,
@@ -74,7 +75,7 @@ import Testing
             PathPostcondition(path: shared, validation: .exists)
         ],
         action: task.action)
-    let changedPlan = try await runtime.execute(
+    let changedPlan = try await ColliderEngine(runtime: runtime).execute(
         graph: TaskGraph([changed]),
         selected: [changed.id],
         stateRoot: state,

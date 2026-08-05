@@ -1,5 +1,6 @@
 import ArgumentParser
 import ColliderCore
+import ColliderPersistence
 import ColliderRuntime
 import CoreColliderRecipe
 import Foundation

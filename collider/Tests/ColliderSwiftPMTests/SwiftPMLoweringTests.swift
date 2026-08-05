@@ -1,4 +1,5 @@
 import ColliderCore
+import ColliderEngine
 import ColliderRuntime
 import Foundation
 import SystemPackage
@@ -12,7 +13,7 @@ private func executeWithSwiftPM(
     stateRoot: FilePath,
     options: TaskExecutionOptions = TaskExecutionOptions()
 ) async throws -> TaskExecutionReport {
-    try await ColliderRuntime().execute(
+    try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: graph,
         selected: selected,
         stateRoot: stateRoot,

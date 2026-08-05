@@ -1,5 +1,6 @@
 import ChromiumColliderRecipe
 import ColliderCore
+import ColliderEngine
 import ColliderRuntime
 import Foundation
 import SystemPackage
@@ -49,7 +50,7 @@ import Testing
                     environment: environment)))
 
     let runtime = ColliderRuntime()
-    _ = try await runtime.execute(
+    _ = try await ColliderEngine(runtime: runtime).execute(
         graph: TaskGraph([depotTask]),
         selected: [depotTask.id],
         stateRoot: FilePath(fixture.appendingPathComponent("state").path),
@@ -62,7 +63,7 @@ import Testing
     try Data("modified\n".utf8).write(
         to: depotCheckout.appendingPathComponent("marker.txt"))
     await #expect(throws: (any Error).self) {
-        try await runtime.execute(
+        try await ColliderEngine(runtime: runtime).execute(
             graph: TaskGraph([depotTask]),
             selected: [depotTask.id],
             stateRoot: FilePath(fixture.appendingPathComponent("state").path),

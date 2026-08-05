@@ -1,4 +1,6 @@
 import ColliderCore
+import ColliderEngine
+import ColliderPersistence
 import Foundation
 import Synchronization
 import SystemPackage
@@ -79,7 +81,7 @@ import Testing
                         report: FilePath(report.path),
                         environment: fixture.environment))))
 
-    let execution = try await ColliderRuntime().execute(
+    let execution = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(
@@ -202,7 +204,7 @@ import Testing
                         retryFetches: 3,
                         environment: environment))))
 
-    let execution = try await ColliderRuntime().execute(
+    let execution = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(
@@ -303,11 +305,11 @@ import Testing
     let graph = try TaskGraph([task])
     let stateRoot = FilePath(
         fixture.root.appendingPathComponent("state").path)
-    _ = try await runtime.execute(
+    _ = try await ColliderEngine(runtime: runtime).execute(
         graph: graph,
         selected: [task.id],
         stateRoot: stateRoot)
-    _ = try await runtime.execute(
+    _ = try await ColliderEngine(runtime: runtime).execute(
         graph: graph,
         selected: [task.id],
         stateRoot: stateRoot)
@@ -633,7 +635,7 @@ import Testing
         action:
             try AnyColliderAction(PublishAOSPProductAction(build: build)))
 
-    _ = try await ColliderRuntime().execute(
+    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph([task]),
         selected: [task.id],
         stateRoot: FilePath(fixture.root.appendingPathComponent("state").path))

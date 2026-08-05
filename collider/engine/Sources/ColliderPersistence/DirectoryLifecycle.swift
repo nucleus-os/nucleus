@@ -27,7 +27,7 @@ public enum DirectoryLifecycle {
                 let metadata = try? link.stat(followTargetSymlink: false),
                 metadata.type != .symbolicLink
             {
-                throw RuntimeFailure.invalidOutput(
+                throw PersistenceFailure.invalidPath(
                     "activation path is not a symbolic link: \(link)")
             }
             guard unsafe collider_replace(candidate.string, link.string) == 0 else {
@@ -43,13 +43,13 @@ public enum DirectoryLifecycle {
     public static func prune(_ plan: DirectoryRetentionPlan) throws {
         let safetyRoot = standardized(plan.safetyRoot)
         guard safetyRoot != "/" else {
-            throw RuntimeFailure.invalidOutput(
+            throw PersistenceFailure.invalidPath(
                 "retention safety root must not be the filesystem root")
         }
         for rule in plan.rules {
             let root = standardized(rule.root)
             guard isDescendant(root, of: safetyRoot) else {
-                throw RuntimeFailure.invalidOutput(
+                throw PersistenceFailure.invalidPath(
                     "refusing to prune outside \(safetyRoot): \(root)")
             }
             try prune(rule, root: FilePath(root))
@@ -64,7 +64,7 @@ public enum DirectoryLifecycle {
         guard manager.fileExists(atPath: root.string) else { return }
         let metadata = try root.stat(followTargetSymlink: false)
         guard metadata.type == .directory else {
-            throw RuntimeFailure.invalidOutput(
+            throw PersistenceFailure.invalidPath(
                 "retention root is not a real directory: \(root)")
         }
         let protectedName = try rule.current.flatMap { link -> String? in

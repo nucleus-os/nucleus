@@ -6,6 +6,8 @@ let package = Package(
     platforms: [.macOS("27")],
     products: [
         .library(name: "ColliderCore", targets: ["ColliderCore"]),
+        .library(name: "ColliderEngine", targets: ["ColliderEngine"]),
+        .library(name: "ColliderPersistence", targets: ["ColliderPersistence"]),
         .library(name: "ColliderPlanning", targets: ["ColliderPlanning"]),
         .library(name: "ColliderRuntime", targets: ["ColliderRuntime"]),
     ],
@@ -28,12 +30,28 @@ let package = Package(
             name: "ColliderPlanning",
             dependencies: ["ColliderCore"]),
         .target(
+            name: "ColliderPersistence",
+            dependencies: [
+                "ColliderCore",
+                "ColliderPlatformC",
+                .product(name: "Crypto", package: "swift-crypto"),
+                .product(name: "SystemPackage", package: "swift-system"),
+            ]),
+        .target(
             name: "ColliderDownloads",
             dependencies: [
                 "ColliderCore",
                 "ColliderPlatformC",
                 .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "SystemPackage", package: "swift-system"),
+            ]),
+        .target(
+            name: "ColliderEngine",
+            dependencies: [
+                "ColliderCore",
+                "ColliderPersistence",
+                "ColliderPlanning",
+                "ColliderRuntime",
             ]),
         .target(
             name: "ColliderPlatformC",
@@ -47,7 +65,7 @@ let package = Package(
             dependencies: [
                 "ColliderCore",
                 "ColliderDownloads",
-                "ColliderPlanning",
+                "ColliderPersistence",
                 "ColliderPlatformC",
                 .product(
                     name: "ContainerAPIClient",
@@ -82,7 +100,16 @@ let package = Package(
         .testTarget(
             name: "ColliderCoreTests",
             dependencies: [
-                "ColliderCore", "ColliderDownloads", "ColliderRuntime",
+                "ColliderCore", "ColliderDownloads", "ColliderEngine",
+                "ColliderPersistence", "ColliderPlanning", "ColliderRuntime",
+            ]),
+        .testTarget(
+            name: "ColliderPersistenceTests",
+            dependencies: ["ColliderCore", "ColliderPersistence"]),
+        .testTarget(
+            name: "ColliderPlanningTests",
+            dependencies: [
+                "ColliderCore", "ColliderPersistence", "ColliderPlanning",
             ]),
     ]
 )

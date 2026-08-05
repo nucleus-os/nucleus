@@ -1677,17 +1677,31 @@ legacy state remains.
 ## Phase 6 — Extract deterministic planning, persistence, and SwiftPM lowering
 
 **Progress: in progress.** The deterministic lowering protocol and immutable
-assessed/lowered task values now live in `ColliderCore`. `ColliderSwiftPM` owns
+assessed/lowered task values live in `ColliderCore`. `ColliderSwiftPM` owns
 grouping by complete build context, filter-preserving test grouping,
 output-aware test-over-build subsumption, physical task identity and
 construction, semantic-reference propagation, logical attribution, and
 non-Swift prerequisite discovery. The composition root installs that lowering.
-`ColliderRuntime` consumes only generic lowered tasks and no longer names,
-groups, or synthesizes Swift build contexts. Swift-specific invocation-count,
-selection, subsumption, context-separation, and prerequisite tests moved beside
-the lowering. Extracting `ColliderPlanning` and `ColliderPersistence`, freezing
-the full `ExecutionPlan`, and reducing runtime to execution over that plan
-remain open.
+`ColliderPlanning` now owns lowering, canonical task identity, selected-input
+digest requests, semantic-tool snapshots, state assessment, execution
+placement, resource normalization, and frozen plan construction.
+`ColliderPersistence` owns artifact hashing, the persistent planning digest
+index, task-state snapshots and publication, output validation, durable file
+replacement, run records, directory lifecycle, and generation publication.
+The thin `ColliderEngine` composition root snapshots capacity and persistence
+state, invokes planning, publishes the completed digest index, and hands the
+immutable `ExecutionPlan` to `ColliderRuntime`. Runtime no longer depends on
+planning, constructs task identities, assesses local state, resolves semantic
+tools, or derives scheduler resources from actions; it schedules and executes
+only the tasks and resources in the frozen plan. Dedicated planning and
+persistence test targets prove deterministic plan encoding, selection-scoped
+observations, corrupt-state handling, hashing, and run-record behavior.
+
+Component expansion and entrypoint selection still occur before the planner,
+and complete-catalog output ownership validation still lives in the component
+catalog. Moving those operations into `ColliderPlanning`, deleting their old
+command/core paths, and completing the interrupted-write and bounded-retention
+acceptance coverage remain open.
 
 Create `ColliderPlanning` and move component expansion, selection, graph
 normalization, semantic-edge identity, placement validation, output ownership,
