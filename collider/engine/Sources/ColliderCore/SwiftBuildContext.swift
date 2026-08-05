@@ -322,7 +322,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             executable: swiftExecutable,
             arguments: commandArguments(arguments),
             workingDirectory: workingDirectory,
-            environment: commandEnvironment(environment))
+            environment: environment)
     }
 
     public func ociExecution(
@@ -334,7 +334,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             throw SwiftPMInvocationExecutionFailure.requiresOCIContext
         }
         var containerEnvironment: [String: String] = [:]
-        for (name, value) in commandEnvironment(environment)
+        for (name, value) in environment
         where containerEnvironmentVariable(name) {
             containerEnvironment[name] = value
         }
@@ -389,7 +389,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         configuration: SwiftPMOCIExecution
     ) -> OCIExecution {
         var containerEnvironment: [String: String] = [:]
-        for (name, value) in commandEnvironment(environment)
+        for (name, value) in environment
         where containerEnvironmentVariable(name) {
             containerEnvironment[name] = value
         }
@@ -429,21 +429,6 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             return contextArguments
         }
         return [subcommand] + contextArguments + arguments.dropFirst()
-    }
-
-    public func commandEnvironment(
-        _ environment: [String: String]
-    ) -> [String: String] {
-        var environment = environment
-        environment["NUCLEUS_SWIFTPM_SCRATCH_PATH"] = scratchPath.string
-        environment["NUCLEUS_SWIFTPM_GENERATED_MODULE_MAPS_PATH"] =
-            generatedModuleMaps.string
-        if let sanitizer = context.sanitizer {
-            environment["NUCLEUS_SWIFTPM_SANITIZER"] = sanitizer
-        } else {
-            environment.removeValue(forKey: "NUCLEUS_SWIFTPM_SANITIZER")
-        }
-        return environment
     }
 
     private var capitalizedConfiguration: String {
@@ -614,7 +599,10 @@ private func targetProductsSuffix(forTriple triple: String) -> String {
 }
 
 private func containerEnvironmentVariable(_ name: String) -> Bool {
-    name.hasPrefix("NUCLEUS_")
+    if name == "NUCLEUS_NATIVE_SDK_ROOT" {
+        return false
+    }
+    return name.hasPrefix("NUCLEUS_")
         || name.hasPrefix("SWIFTPM_")
         || name.hasPrefix("CCACHE_")
         || ["LANG", "LC_ALL", "TZ", "TERM"].contains(name)

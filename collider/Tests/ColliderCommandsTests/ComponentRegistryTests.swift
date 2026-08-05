@@ -442,20 +442,6 @@ private func fixtureReactNativeNodeModules(
     #expect(firstSwiftPM["workspacePlan"] == nil)
     #expect(first["backgroundPreparationMode"] as? String == "build")
 
-    // Manifests that need SwiftPM's generated header directory read it from the
-    // host environment, which has to name the same directory a build names.
-    let shell = try String(
-        contentsOf: workspace.appendingPathComponent(".nucleus/swiftpm/environment.sh"),
-        encoding: .utf8)
-    #expect(
-        shell.contains(
-            "export NUCLEUS_SWIFTPM_SCRATCH_PATH='\(invocation("first").scratchPath.string)'"))
-    #expect(
-        shell.contains(
-            "export NUCLEUS_SWIFTPM_GENERATED_MODULE_MAPS_PATH='"
-                + invocation("first").generatedModuleMaps.string + "'"))
-    #expect(!shell.contains("NUCLEUS_SWIFTPM_WORKSPACE_PLAN"))
-
     // A build context that resolves somewhere new republishes rather than
     // leaving the language server pointed at a directory nothing maintains.
     try context.publishLanguageServerConfiguration(invocation("second"))

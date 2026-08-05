@@ -119,12 +119,10 @@ public enum CoreColliderRecipe: ColliderComponent {
             validate: false,
             fallbackHome: context.cacheRoot.appending("nucleus/unconfigured-home"))
         let androidSDKRoot = native.nativeSDKRoot.appending("android-arm64")
-        var androidEnvironment = context.environment
-        androidEnvironment["NUCLEUS_NATIVE_SDK_ROOT"] = androidSDKRoot.string
         let androidSkia = try buildSkiaAndroid(
             root: root,
             minimumAndroidAPI: androidToolchain.minimumSDK,
-            environment: androidEnvironment,
+            environment: context.environment,
             sources: sources,
             builder: native.builder)
         let androidNativeSDK = try publishAndroidRenderSDK(
@@ -135,17 +133,17 @@ public enum CoreColliderRecipe: ColliderComponent {
             .androidARM64(apiLevel: androidToolchain.minimumSDK))
         let androidHost = try buildAndroidHost(
             root: root,
-            environment: androidEnvironment,
+            environment: context.environment,
             swiftPM: androidSwiftPM,
             nativeSDK: androidNativeSDK.outputs)
         let androidValidation = try validateAndroidHost(
             root: root,
             library: androidHost.library,
             ndk: ndk,
-            environment: androidEnvironment)
+            environment: context.environment)
         let androidBuild = try buildAndroidProject(
             root: root,
-            environment: androidEnvironment,
+            environment: context.environment,
             validation: androidValidation.result,
             host: androidHost,
             ndk: ndk)

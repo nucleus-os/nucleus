@@ -68,21 +68,6 @@ export SWIFT_BACKTRACE
 : "${NUCLEUS_NATIVE_SDK_ROOT:=${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/nucleus-native-sdk/linux-$(uname -m | sed 's/aarch64/arm64/; s/amd64/x86_64/')}"
 export NUCLEUS_NATIVE_SDK_ROOT
 
-# swift-java exposes this explicit override for workspace integrators. Nucleus
-# always resolves its paired JNI ABI fork from the pinned root submodule; this is
-# a declared build-environment choice, not conditional sibling discovery.
-
-# The workspace build directory, published by Collider when it resolves the
-# default build context. A manifest that needs SwiftPM's generated header
-# directory reads it here, so a language server build and a Collider build name
-# the same directory instead of recompiling each other. Absent before the first
-# build, which is the same as a checkout that has never been built.
-if [[ -r "$nucleus_workspace_root/.nucleus/swiftpm/environment.sh" ]]; then
-  source "$nucleus_workspace_root/.nucleus/swiftpm/environment.sh"
-fi
-: "${NUCLEUS_SWIFTPM_GENERATED_MODULE_MAPS_PATH:=$nucleus_workspace_root/.nucleus/swiftpm/generated-module-maps}"
-export NUCLEUS_SWIFTPM_GENERATED_MODULE_MAPS_PATH
-
 unset nucleus_host_env_source nucleus_workspace_root
 unset nucleus_fnm_environment nucleus_source_index nucleus_source_digest
 unset nucleus_toolchain nucleus_swiftc nucleus_source_id nucleus_platform_id

@@ -728,7 +728,6 @@ struct ComponentRegistry {
                     "NUCLEUS_GFXSTREAM_BUILD_ROOT":
                         root.appending("android-runtime/.gfxstream-build/\(target.identifier)")
                         .string,
-                    "NUCLEUS_NATIVE_SDK_ROOT": nativeSDK.string,
                     "LD_LIBRARY_PATH": [
                         "/opt/nucleus-vulkan-loader/\(target.gnuArchitecture)/lib",
                         guestTargetSDK + "/usr/lib/swift/linux",
@@ -739,7 +738,6 @@ struct ComponentRegistry {
                         guestTargetSDK + "/usr/lib/\(target.gnuArchitecture)/pkgconfig"
                         + ":" + guestTargetSDK + "/usr/share/pkgconfig",
                     "PKG_CONFIG_SYSROOT_DIR": guestTargetSDK,
-                    "SWIFT_TOOLCHAIN": "/opt/swift/usr",
                     "VK_DRIVER_FILES": "/usr/share/vulkan/icd.d/lvp_icd.json",
                     "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json",
                 ]))

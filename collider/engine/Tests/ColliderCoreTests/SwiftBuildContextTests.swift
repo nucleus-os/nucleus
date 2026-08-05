@@ -94,7 +94,7 @@ private let fixturePackageRoot = FilePath("/workspace")
             "-Xlinker", "-lfixture",
         ])
     #expect(command.executable == .path(FilePath("/toolchain/bin/swift")))
-    #expect(command.environment["NUCLEUS_SWIFTPM_SANITIZER"] == "address")
+    #expect(command.environment == ["PATH": "/toolchain/bin"])
     #expect(
         invocation.postcondition
             == PathPostcondition(
@@ -287,7 +287,5 @@ private let fixturePackageRoot = FilePath("/workspace")
             "swiftpm", "taskset", "--cpu-list", "0-9", "swift", "test",
         ]))
     #expect(operation.containerEnvironment["PATH"] == nil)
-    #expect(
-        operation.containerEnvironment["NUCLEUS_NATIVE_SDK_ROOT"]
-            == "/cache/native-sdk")
+    #expect(operation.containerEnvironment["NUCLEUS_NATIVE_SDK_ROOT"] == nil)
 }

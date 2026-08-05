@@ -17,9 +17,9 @@ and generated build headers. No configuration value crosses those ownership
 boundaries through manifest-time environment lookup.
 
 Exact compiler, `--swift-sdk`, `--triple`, native SDK, and scratch selection is
-implemented. Native location and Linux system-library discovery are no longer
-manifest concerns. The remaining work is isolated manifest qualification and
-fresh-clone qualification.
+implemented. Native location, Linux system-library discovery, and host
+environment state are no longer manifest concerns. The remaining work is
+fresh-clone bootstrap and destination qualification.
 
 ## Phase 1 — Make the declaration graph unconditional
 
@@ -120,14 +120,22 @@ and Android architectures.
 
 ## Phase 4 — Delete manifest environment access
 
+Status: complete.
+
 The Foundation import, `#filePath` repository-root derivation, `ProcessInfo`
 access, Nucleus-variable guard, HOME lookup, and derived absolute paths are
 already gone. Remove any corresponding manifest-only exports that remain in
 `tools/host-env.sh` or Collider child environments.
 
-Gate: `swift package dump-package` for the root and `swift package
-show-dependencies` for Collider pass with an isolated HOME and only the selected
-Swift binary on PATH.
+Collider no longer publishes or injects SwiftPM scratch, generated-module-map,
+sanitizer, native-SDK, or toolchain variables for manifest consumption.
+SourceKit-LSP receives its scratch directory through its own configuration, and
+the generated shell environment bridge is gone. Host setup no longer requires
+or exports Homebrew ICU pkg-config metadata for SwiftPM planning.
+
+Gate: complete. `swift package dump-package` for the root and `swift package
+show-dependencies` for Collider pass with an empty inherited environment, an
+isolated HOME, and only the selected Swift executable on PATH.
 
 ## Phase 5 — Linearize fresh-clone bootstrap
 
