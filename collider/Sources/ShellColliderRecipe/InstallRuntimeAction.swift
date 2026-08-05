@@ -78,7 +78,15 @@ struct InstallRuntimeAction: ColliderAction {
                     executable: .named("systemd-analyze"),
                     role: .operational),
             ],
-            effects: effects)
+            effects: effects,
+            executionPlatform: ExecutionPlatform(
+                environment: .native,
+                operatingSystem: .linux,
+                architecture: RunnerPlatform.current.architecture),
+            artifactTarget: ArtifactTarget(
+                operatingSystem: .linux,
+                architecture: RunnerPlatform.current.architecture,
+                abi: "glibc"))
     }
 
     init(configuration: ShellRuntimeInstallConfiguration) {

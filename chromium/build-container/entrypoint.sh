@@ -4,6 +4,19 @@ set -euo pipefail
 mkdir -p "$HOME"
 
 case "${1:-}" in
+  run-test)
+    if [[ $# -lt 2 ]]; then
+      echo "error: run-test requires an executable under /build" >&2
+      exit 64
+    fi
+    executable="$2"
+    shift 2
+    case "${executable}" in
+      /build/*) ;;
+      *) echo "error: Chromium test executable must be under /build" >&2; exit 64 ;;
+    esac
+    exec "${executable}" "$@"
+    ;;
   clang-version)
     if [[ $# -ne 1 \
         || ! -x /source/chromium/src/third_party/llvm-build/Release+Asserts/bin/clang ]]; then

@@ -1,6 +1,18 @@
 import ColliderCore
 import SystemPackage
 
+extension NativeLinuxTarget {
+    package var containerSwiftSDKRoot: String {
+        "/swift-sdk/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
+            + targetTriple + "/ubuntu-noble.sdk"
+    }
+
+    package var containerRuntimeLibraryPath: String {
+        "\(containerSwiftSDKRoot)/usr/lib/\(gnuArchitecture):"
+            + "\(containerSwiftSDKRoot)/lib/\(gnuArchitecture)"
+    }
+}
+
 package enum NativeBuilderTaskIDs {
     package static let prepare = TaskID(rawValue: "native.builder")
 }

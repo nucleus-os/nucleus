@@ -44,7 +44,9 @@ struct FixtureCommandAction: ColliderAction {
             case .taskOutput:
                 nil
             }
-        requirements = ActionRequirements(tools: tool.map { [$0] } ?? [])
+        requirements = ActionRequirements(
+            tools: tool.map { [$0] } ?? [],
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -99,9 +101,11 @@ struct FixtureWriteAction: ColliderAction {
 
     init(path: FilePath, bytes: [UInt8]) {
         identity = Identity(path: path, bytes: bytes)
-        requirements = ActionRequirements(effects: [
-            ActionEffect(.write, scope: .output(path))
-        ])
+        requirements = ActionRequirements(
+            effects: [
+                ActionEffect(.write, scope: .output(path))
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -132,9 +136,11 @@ struct FixtureCreateDirectoryAction: ColliderAction {
     var identity: Identity { Identity(path: path) }
 
     var requirements: ActionRequirements {
-        ActionRequirements(effects: [
-            ActionEffect(.write, scope: .output(path))
-        ])
+        ActionRequirements(
+            effects: [
+                ActionEffect(.write, scope: .output(path))
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -162,9 +168,11 @@ struct FixturePrepareDirectoryAction: ColliderAction {
     var identity: Identity { Identity(path: path) }
 
     var requirements: ActionRequirements {
-        ActionRequirements(effects: [
-            ActionEffect(.readWrite, scope: .output(path))
-        ])
+        ActionRequirements(
+            effects: [
+                ActionEffect(.readWrite, scope: .output(path))
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -196,9 +204,11 @@ struct FixturePrepareAndWriteAction: ColliderAction {
 
     let identity: Identity
     var requirements: ActionRequirements {
-        ActionRequirements(effects: [
-            ActionEffect(.readWrite, scope: .output(identity.root))
-        ])
+        ActionRequirements(
+            effects: [
+                ActionEffect(.readWrite, scope: .output(identity.root))
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -244,9 +254,11 @@ struct FixtureReplaceSymlinkAction: ColliderAction {
     var identity: Identity { Identity(path: path, target: target) }
 
     var requirements: ActionRequirements {
-        ActionRequirements(effects: [
-            ActionEffect(.write, scope: .output(path))
-        ])
+        ActionRequirements(
+            effects: [
+                ActionEffect(.write, scope: .output(path))
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -297,7 +309,8 @@ struct FixturePruneDirectoriesAction: ColliderAction {
                     rule.current.map {
                         ActionEffect(.read, scope: .input($0))
                     }
-                })
+                },
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -335,11 +348,13 @@ struct FixtureActivateGenerationAction: ColliderAction {
     }
 
     var requirements: ActionRequirements {
-        ActionRequirements(effects: [
-            ActionEffect(.readWrite, scope: .output(candidate)),
-            ActionEffect(.write, scope: .output(generation)),
-            ActionEffect(.write, scope: .publication(active)),
-        ])
+        ActionRequirements(
+            effects: [
+                ActionEffect(.readWrite, scope: .output(candidate)),
+                ActionEffect(.write, scope: .output(generation)),
+                ActionEffect(.write, scope: .publication(active)),
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {

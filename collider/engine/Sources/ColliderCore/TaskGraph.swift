@@ -44,24 +44,28 @@ public struct PathPostcondition: Hashable, Sendable {
     }
 }
 
-public struct DirectoryRetentionRule: Hashable, Sendable {
-    public enum Naming: String, Hashable, Sendable {
-        case contentIdentity
-        case swiftBuildContext
-        case swiftSDKCandidate
-        case aospProduct
+public struct DirectoryNamePattern: RawRepresentable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
     }
+
+    public static let contentIdentity = Self(rawValue: #"^[0-9a-f]{24}$"#)
+}
+
+public struct DirectoryRetentionRule: Hashable, Sendable {
 
     public let root: FilePath
     public let current: FilePath?
     public let retain: UInt32
-    public let naming: Naming
+    public let naming: DirectoryNamePattern
 
     public init(
         root: FilePath,
         current: FilePath? = nil,
         retain: UInt32,
-        naming: Naming
+        naming: DirectoryNamePattern
     ) {
         self.root = root
         self.current = current
@@ -342,19 +346,6 @@ public struct NativeLinuxTarget: Hashable, Sendable {
         architecture == .x86_64 ? .required : .disabled
     }
 
-    public var skiaCPU: String {
-        architecture == .arm64 ? "arm64" : "x64"
-    }
-
-    public var containerSwiftSDKRoot: String {
-        "/swift-sdk/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
-            + targetTriple + "/ubuntu-noble.sdk"
-    }
-
-    public var containerRuntimeLibraryPath: String {
-        let root = containerSwiftSDKRoot
-        return "\(root)/usr/lib/\(gnuArchitecture):\(root)/lib/\(gnuArchitecture)"
-    }
 }
 
 public enum TaskLock: Hashable, Sendable {

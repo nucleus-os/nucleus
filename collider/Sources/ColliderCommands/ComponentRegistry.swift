@@ -263,7 +263,7 @@ struct ComponentRegistry {
                 destinations: [
                     ComponentEntrypointReference(
                         component: core,
-                        entrypoint: .androidBuild)
+                        entrypoint: CoreEntrypoints.androidBuild)
                 ]),
             ComponentEntrypointRoute(
                 spelling: "android",
@@ -271,7 +271,7 @@ struct ComponentRegistry {
                 destinations: [
                     ComponentEntrypointReference(
                         component: core,
-                        entrypoint: .androidBuild)
+                        entrypoint: CoreEntrypoints.androidBuild)
                 ]),
             ComponentEntrypointRoute(
                 spelling: "gpu-headless",
@@ -279,7 +279,7 @@ struct ComponentRegistry {
                 destinations: [
                     ComponentEntrypointReference(
                         component: linux,
-                        entrypoint: .testGPUHeadless)
+                        entrypoint: LinuxEntrypoints.testGPUHeadless)
                 ]),
             ComponentEntrypointRoute(
                 spelling: "gpu-drm",
@@ -287,7 +287,7 @@ struct ComponentRegistry {
                 destinations: [
                     ComponentEntrypointReference(
                         component: CompositorColliderRecipe.descriptor.id,
-                        entrypoint: .testGPUDRM)
+                        entrypoint: CompositorEntrypoints.testGPUDRM)
                 ]),
             ComponentEntrypointRoute(
                 spelling: "loader",
@@ -362,14 +362,14 @@ struct ComponentRegistry {
         #if os(Linux)
         expose(.install, to: ["shell"])
         #endif
-        expose(.benchmark, to: ["benchmark"])
-        expose(.sanitizeAddress, to: ["sanitize"])
-        expose(.sanitizeUndefined, to: ["sanitize"])
-        expose(.sanitizeThread, to: ["sanitize"])
-        expose(.testReleaseGate, to: ["release-gate"])
-        expose(.androidBuild, to: ["core"])
-        expose(.androidNative, to: ["core"])
-        expose(.androidVerify, to: ["core"])
+        expose(BenchmarkEntrypoints.run, to: ["benchmark"])
+        expose(SanitizerKind.address.entrypoint, to: ["sanitize"])
+        expose(SanitizerKind.undefined.entrypoint, to: ["sanitize"])
+        expose(SanitizerKind.thread.entrypoint, to: ["sanitize"])
+        expose(ReleaseGateEntrypoints.test, to: ["release-gate"])
+        expose(CoreEntrypoints.androidBuild, to: ["core"])
+        expose(CoreEntrypoints.androidNative, to: ["core"])
+        expose(CoreEntrypoints.androidVerify, to: ["core"])
         expose(
             ComponentEntrypointID(rawValue: "aosp.source-lock"),
             to: ["android-runtime"])
@@ -381,7 +381,7 @@ struct ComponentRegistry {
             to: ["android-runtime"])
         expose(.build, to: ["swift-sdk"])
         if includeAndroidAddon {
-            expose(.packageAndroidAddon, to: ["android-runtime"])
+            expose(AndroidRuntimeEntrypoints.packageAddon, to: ["android-runtime"])
         }
         return requests
     }
@@ -429,7 +429,7 @@ struct ComponentRegistry {
         if selection == nil || selection == "all" {
             requests.append(
                 ComponentEntrypointRequest(
-                    entrypoint: .testReleaseGate,
+                    entrypoint: ReleaseGateEntrypoints.test,
                     selection: ReleaseGateColliderRecipe.descriptor.canonicalName))
         }
         try await context.execute(
@@ -567,7 +567,7 @@ struct ComponentRegistry {
             catalog: catalog,
             requests: [
                 ComponentEntrypointRequest(
-                    entrypoint: .packageAndroidAddon,
+                    entrypoint: AndroidRuntimeEntrypoints.packageAddon,
                     selection: AndroidRuntimeColliderRecipe.descriptor.canonicalName)
             ],
             controls: controls)

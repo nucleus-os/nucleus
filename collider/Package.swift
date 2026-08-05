@@ -54,6 +54,7 @@ let package = Package(
             name: "AndroidRuntimeColliderRecipe",
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
+                "NativeBuilderColliderRecipe",
                 "ShellColliderRecipe",
                 .product(
                     name: "NucleusAndroidRuntimeCore",
@@ -69,7 +70,8 @@ let package = Package(
         .target(
             name: "CoreColliderRecipe",
             dependencies: [
-                .product(name: "ColliderCore", package: "engine")
+                .product(name: "ColliderCore", package: "engine"),
+                "NativeBuilderColliderRecipe",
             ]),
         .target(
             name: "LinuxColliderRecipe",
@@ -87,7 +89,8 @@ let package = Package(
         .target(
             name: "ReactNativeColliderRecipe",
             dependencies: [
-                .product(name: "ColliderCore", package: "engine")
+                .product(name: "ColliderCore", package: "engine"),
+                "NativeBuilderColliderRecipe",
             ]),
         .target(
             name: "ReleaseGateColliderRecipe",
@@ -112,7 +115,8 @@ let package = Package(
         .target(
             name: "WaylandColliderRecipe",
             dependencies: [
-                .product(name: "ColliderCore", package: "engine")
+                .product(name: "ColliderCore", package: "engine"),
+                "NativeBuilderColliderRecipe",
             ]),
         .testTarget(
             name: "ChromiumColliderRecipeTests",

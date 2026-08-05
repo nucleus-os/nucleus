@@ -12,19 +12,7 @@ public struct ComponentEntrypointID: RawRepresentable, Hashable, Codable, Sendab
     public static let bootstrap = Self(rawValue: "bootstrap")
     public static let generate = Self(rawValue: "generate")
     public static let install = Self(rawValue: "install")
-    public static let benchmark = Self(rawValue: "benchmark")
-    public static let qualify = Self(rawValue: "qualify")
     public static let testDefault = Self(rawValue: "test.default")
-    public static let testGPUHeadless = Self(rawValue: "test.gpu-headless")
-    public static let testGPUDRM = Self(rawValue: "test.gpu-drm")
-    public static let testReleaseGate = Self(rawValue: "test.release-gate")
-    public static let androidBuild = Self(rawValue: "android.build")
-    public static let androidNative = Self(rawValue: "android.native")
-    public static let androidVerify = Self(rawValue: "android.verify")
-    public static let packageAndroidAddon = Self(rawValue: "package.android-addon")
-    public static let sanitizeAddress = Self(rawValue: "sanitize.address")
-    public static let sanitizeUndefined = Self(rawValue: "sanitize.undefined")
-    public static let sanitizeThread = Self(rawValue: "sanitize.thread")
 }
 
 public struct ComponentDescriptor: Hashable, Sendable {

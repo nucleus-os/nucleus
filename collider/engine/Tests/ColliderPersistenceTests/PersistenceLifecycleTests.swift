@@ -75,7 +75,9 @@ import Testing
                 DirectoryRetentionRule(
                     root: FilePath(generations.path),
                     retain: 0,
-                    naming: .swiftSDKCandidate)
+                    naming: DirectoryNamePattern(
+                        rawValue:
+                            #"^\.candidate-[0-9a-f]{24}-[0-9TZ-]+-[0-9]+$"#))
             ]))
 
     #expect(!FileManager.default.fileExists(atPath: candidate.path))

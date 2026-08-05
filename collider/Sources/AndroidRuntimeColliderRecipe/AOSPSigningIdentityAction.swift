@@ -41,7 +41,8 @@ struct PrepareAOSPSigningIdentityAction: ColliderAction {
                 ActionEffect(
                     .readWrite,
                     scope: .output(preparation.destination.removingLastComponent()))
-            ])
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     var environment: [String: String] { preparation.environment }

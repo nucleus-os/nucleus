@@ -80,17 +80,7 @@ public enum DirectoryLifecycle {
             )
             .standardizedFileURL.lastPathComponent
         }
-        let pattern =
-            switch rule.naming {
-            case .contentIdentity: #"^[0-9a-f]{24}$"#
-            case .swiftBuildContext:
-                #"^sha256-[0-9a-f]{64}$"#
-            case .swiftSDKCandidate:
-                #"^\.candidate-[0-9a-f]{24}-[0-9TZ-]+-[0-9]+$"#
-            case .aospProduct:
-                #"^[0-9]+-[a-z0-9][a-z0-9._-]*$"#
-            }
-        let expression = try NSRegularExpression(pattern: pattern)
+        let expression = try NSRegularExpression(pattern: rule.naming.rawValue)
         let candidates = try manager.contentsOfDirectory(
             at: URL(fileURLWithPath: root.string),
             includingPropertiesForKeys: [

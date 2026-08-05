@@ -1,5 +1,9 @@
 import ColliderCore
 
+package enum ReleaseGateEntrypoints {
+    package static let test = ComponentEntrypointID(rawValue: "test.release-gate")
+}
+
 package enum ReleaseGateTaskIDs {
     package static let all: [TaskID] = suites.map {
         TaskID(rawValue: "test.release-gate.\($0.id)")
@@ -58,7 +62,7 @@ public enum ReleaseGateColliderRecipe: ColliderComponent {
             tasks: tasks,
             entrypoints: [
                 ComponentEntrypoint(
-                    id: .testReleaseGate,
+                    id: ReleaseGateEntrypoints.test,
                     roots: Set(tasks.map(\.id)))
             ])
     }

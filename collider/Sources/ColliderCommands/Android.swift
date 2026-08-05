@@ -1,4 +1,5 @@
 import ArgumentParser
+import CoreColliderRecipe
 
 enum AndroidOperation: Equatable, ExpressibleByArgument {
     case build
@@ -37,11 +38,17 @@ struct AndroidCommand {
         let registry = ComponentRegistry(context: context)
         switch operation {
         case .build:
-            try await registry.runAndroid(.androidBuild, controls: controls)
+            try await registry.runAndroid(
+                CoreEntrypoints.androidBuild,
+                controls: controls)
         case .native:
-            try await registry.runAndroid(.androidNative, controls: controls)
+            try await registry.runAndroid(
+                CoreEntrypoints.androidNative,
+                controls: controls)
         case .verify:
-            try await registry.runAndroid(.androidVerify, controls: controls)
+            try await registry.runAndroid(
+                CoreEntrypoints.androidVerify,
+                controls: controls)
         }
     }
 }

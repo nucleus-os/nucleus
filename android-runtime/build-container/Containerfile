@@ -14,7 +14,6 @@ RUN apt-get update \
         fontconfig \
         git-core \
         gnupg \
-        lib32z1-dev \
         libelf-dev \
         libgl1-mesa-dev \
         lz4 \
@@ -22,7 +21,6 @@ RUN apt-get update \
         libssl-dev \
         libxml2-utils \
         libx11-dev \
-        libc6-dev-i386 \
         openssl \
         python3 \
         rsync \
@@ -31,6 +29,18 @@ RUN apt-get update \
         xsltproc \
         zip \
         zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# AOSP's checked-in Linux host tools are x86_64 executables. The VM and base
+# image remain arm64; macOS supplies Intel binary translation, while these
+# runtime libraries satisfy dynamically linked prebuilts inside the guest.
+RUN dpkg --add-architecture amd64 \
+    && apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        libc6:amd64 \
+        libgcc-s1:amd64 \
+        libstdc++6:amd64 \
+        zlib1g:amd64 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN usermod \

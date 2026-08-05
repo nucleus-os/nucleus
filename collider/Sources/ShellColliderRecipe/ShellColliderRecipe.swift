@@ -198,7 +198,15 @@ private struct BuildTracyReceiversAction: ColliderAction {
             effects: [
                 ActionEffect(.read, scope: .checkout(source)),
                 ActionEffect(.readWrite, scope: .output(build)),
-            ])
+            ],
+            executionPlatform: ExecutionPlatform(
+                environment: .native,
+                operatingSystem: .linux,
+                architecture: RunnerPlatform.current.architecture),
+            artifactTarget: ArtifactTarget(
+                operatingSystem: .linux,
+                architecture: RunnerPlatform.current.architecture,
+                abi: "glibc"))
     }
 
     func execute(in context: ActionContext) async throws {

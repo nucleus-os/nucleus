@@ -33,19 +33,13 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
 
     var requirements: ActionRequirements {
         ActionRequirements(
-            tools: [
-                ActionToolRequirement(
-                    "unzip",
-                    executable: .named("unzip"),
-                    role: .semantic)
-            ],
             effects: [
                 ActionEffect(.read, scope: .input(build.source)),
                 ActionEffect(.read, scope: .input(build.containerImageID)),
                 ActionEffect(.readWrite, scope: .scratch(build.buildRoot)),
             ],
             resources: .lightweight,
-            executionPlatform: .linuxAMD64OCI,
+            executionPlatform: .linuxARM64OCI,
             artifactTarget: .androidX86_64(
                 apiLevel: build.expectedPlatformSDK))
     }
@@ -87,15 +81,17 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
         try context.files.remove(imageCandidate)
         defer { try? context.files.remove(imageCandidate) }
         try context.files.createDirectory(imageCandidate)
-        let extraction = try await context.commands.execute(
-            CommandSpec(
-                executable: .named("unzip"),
-                arguments: [
-                    "-q", imageArchiveCandidate.string,
-                    "-d", imageCandidate.string,
+        let extraction = try await context.containers.run(
+            aospProductOCIExecution(
+                build: build,
+                writableMounts: [(build.buildRoot, "/build")],
+                readOnlyMounts: [(build.source, "/src")],
+                command: [
+                    "/usr/bin/unzip", "-q",
+                    "/build/staged/\(imageArchiveCandidate.lastComponent?.string ?? "")",
+                    "-d", "/build/.images-candidate",
                 ],
-                workingDirectory: build.buildRoot,
-                environment: build.environment,
+                workingDirectory: "/build",
                 output: .combined(limit: 4 * 1_024 * 1_024)))
         guard extraction.status == 0 else {
             throw AOSPProductAssemblyFailure.commandFailed(
@@ -188,15 +184,16 @@ func aospProductOCIExecution(
     writableMounts: [(FilePath, String)],
     readOnlyMounts: [(FilePath, String)],
     command: [String],
+    workingDirectory: String = "/src",
     containerEnvironment: [String: String] = aospProductContainerToolEnvironment(),
     output: CommandSpec.Output = .logged
 ) -> OCIExecution {
     OCIExecution(
-        executionPlatform: .linuxAMD64OCI,
+        executionPlatform: .linuxARM64OCI,
         artifactTarget: .androidX86_64(apiLevel: build.expectedPlatformSDK),
         imageID: build.containerImageID,
         hostname: "android-build",
-        workingDirectory: "/src",
+        workingDirectory: workingDirectory,
         hostWorkingDirectory: build.source,
         mounts: readOnlyMounts.map {
             OCIMount(source: $0.0, target: $0.1, access: .readOnly)
@@ -209,6 +206,7 @@ func aospProductOCIExecution(
         capabilityPolicy: .dropAll,
         privilegePolicy: .prohibitAcquisition,
         processFilesystemPolicy: .unmasked,
+        intelBinaryTranslationPolicy: .required,
         resourceLimits: .build,
         containerEnvironment: containerEnvironment,
         command: command,

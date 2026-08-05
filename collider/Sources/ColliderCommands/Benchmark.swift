@@ -10,7 +10,7 @@ struct BenchmarkCommand {
             catalog: catalog,
             requests: [
                 ComponentEntrypointRequest(
-                    entrypoint: .benchmark,
+                    entrypoint: BenchmarkEntrypoints.run,
                     selection: BenchmarkColliderRecipe.descriptor.canonicalName)
             ],
             controls: controls)

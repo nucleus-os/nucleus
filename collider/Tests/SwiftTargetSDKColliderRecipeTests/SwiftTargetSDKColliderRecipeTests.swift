@@ -285,7 +285,7 @@ private func executeContainerAction(
     recorder: OCIExecutionRecorder
 ) async throws {
     guard let action,
-        action.requirements.executionPlatform?.environment == .oci
+        action.requirements.executionPlatform.environment == .oci
     else { return }
     try await action.execute(
         in: ActionContext(

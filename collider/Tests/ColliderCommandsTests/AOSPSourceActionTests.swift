@@ -418,22 +418,23 @@ import Testing
             files: ColliderRuntime().actionFileSystem(),
             cancellation: ActionCancellation {},
             logger: ActionLogger { _ in },
-            commands: ActionCommandExecutor { command in
-                #expect(command.executable == .named("unzip"))
-                for name in aospRequiredProductImages {
-                    let bytes: [UInt8] =
-                        name == "system.img"
-                        ? [0x3a, 0xff, 0x26, 0xed]
-                        : Array("raw-image".utf8)
-                    try Data(bytes).write(
-                        to: imageCandidate.appendingPathComponent(name))
-                }
-                return CommandResult(status: 0)
+            commands: ActionCommandExecutor { _ in
+                Issue.record("AOSP assembly escaped through the host executor")
+                return CommandResult(status: 1)
             },
             downloads: ActionDownloader { _, _ in },
             containers: ActionContainerExecutor(run: { execution in
                 executions.withLock { $0.append(execution) }
-                if execution.command.first?.hasSuffix("simg2img") == true {
+                if execution.command.first == "/usr/bin/unzip" {
+                    for name in aospRequiredProductImages {
+                        let bytes: [UInt8] =
+                            name == "system.img"
+                            ? [0x3a, 0xff, 0x26, 0xed]
+                            : Array("raw-image".utf8)
+                        try Data(bytes).write(
+                            to: imageCandidate.appendingPathComponent(name))
+                    }
+                } else if execution.command.first?.hasSuffix("simg2img") == true {
                     try Data("normalized-image".utf8).write(
                         to: imageCandidate.appendingPathComponent("system.img.raw"))
                 } else {
@@ -457,12 +458,13 @@ import Testing
                 atPath: staged.appendingPathComponent("images/\(name)").path))
     }
     let recorded = executions.withLock { $0 }
-    #expect(recorded.count == 2)
-    #expect(recorded.allSatisfy { $0.executionPlatform == .linuxAMD64OCI })
+    #expect(recorded.count == 3)
+    #expect(recorded.allSatisfy { $0.executionPlatform == .linuxARM64OCI })
     #expect(
         recorded.allSatisfy {
             $0.artifactTarget == .androidX86_64(apiLevel: 37)
                 && $0.networkPolicy == .externalDisabled
+                && $0.intelBinaryTranslationPolicy == .required
         })
 }
 

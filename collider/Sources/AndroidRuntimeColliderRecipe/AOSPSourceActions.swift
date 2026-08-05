@@ -74,13 +74,14 @@ struct VerifyAOSPSourceLockAction: ColliderAction {
                 ActionToolRequirement(
                     "git",
                     executable: .named("git"),
-                    role: .semantic)
+                    role: .operational)
             ],
             effects: [
                 ActionEffect(.read, scope: .input(verification.launcher)),
                 ActionEffect(.readWrite, scope: .scratch(scratch)),
                 ActionEffect(.write, scope: .output(verification.report)),
-            ])
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     var environment: [String: String] { verification.environment }
@@ -128,16 +129,17 @@ struct PrepareAOSPSourceAction: ColliderAction {
                 ActionToolRequirement(
                     "git",
                     executable: .named("git"),
-                    role: .semantic),
+                    role: .operational),
                 ActionToolRequirement(
                     "python3",
                     executable: .named("python3"),
-                    role: .semantic),
+                    role: .operational),
             ],
             effects: [
                 ActionEffect(.read, scope: .input(preparation.launcher)),
                 ActionEffect(.readWrite, scope: .checkout(preparation.source)),
-            ])
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     var environment: [String: String] { preparation.environment }

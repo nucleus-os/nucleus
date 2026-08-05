@@ -1,6 +1,13 @@
 import ColliderCore
 import Foundation
+import NativeBuilderColliderRecipe
 import SystemPackage
+
+package enum CoreEntrypoints {
+    package static let androidBuild = ComponentEntrypointID(rawValue: "android.build")
+    package static let androidNative = ComponentEntrypointID(rawValue: "android.native")
+    package static let androidVerify = ComponentEntrypointID(rawValue: "android.verify")
+}
 
 package enum CoreTaskIDs {
     package static let gnDownload = TaskID(rawValue: "core.gn-download")
@@ -143,12 +150,14 @@ public enum CoreColliderRecipe: ColliderComponent {
             tasks: tasks,
             entrypoints: [
                 ComponentEntrypoint(id: .bootstrap, roots: roots),
-                ComponentEntrypoint(id: .androidBuild, roots: [androidBuild.id]),
                 ComponentEntrypoint(
-                    id: .androidNative,
+                    id: CoreEntrypoints.androidBuild,
+                    roots: [androidBuild.id]),
+                ComponentEntrypoint(
+                    id: CoreEntrypoints.androidNative,
                     roots: [androidValidation.task.id]),
                 ComponentEntrypoint(
-                    id: .androidVerify,
+                    id: CoreEntrypoints.androidVerify,
                     roots: [androidValidation.task.id]),
             ])
         return ComponentArtifacts(
@@ -1033,7 +1042,7 @@ private func linuxGNArguments(_ target: NativeLinuxTarget) -> [String] {
     let sysroot = target.containerSwiftSDKRoot
     return [
         #"target_os="linux""#,
-        #"target_cpu="\#(target.skiaCPU)""#,
+        #"target_cpu="\#(target.architecture == .arm64 ? "arm64" : "x64")""#,
         "skia_use_partition_alloc=false",
         "skia_use_fontconfig=true",
         #"extra_cflags=["--target=\#(target.targetTriple)","--sysroot=\#(sysroot)","-idirafter/usr/include","-idirafter/usr/include/\#(target.gnuArchitecture)"]"#,

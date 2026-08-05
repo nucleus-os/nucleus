@@ -7,6 +7,13 @@ import Foundation
 import QualificationColliderRecipe
 import SystemPackage
 
+extension DirectoryNamePattern {
+    package static let swiftBuildContext = Self(
+        rawValue: #"^sha256-[0-9a-f]{64}$"#)
+    package static let swiftSDKCandidate = Self(
+        rawValue: #"^\.candidate-[0-9a-f]{24}-[0-9TZ-]+-[0-9]+$"#)
+}
+
 extension WorkspaceContext {
     func pruneSanitizerBuildContexts() throws {
         let swiftPM = layout.state.appending("swiftpm")

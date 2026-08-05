@@ -64,7 +64,8 @@ private struct ParallelismProbeAction: ColliderAction {
                 cpuCount: 1,
                 memoryBytes: 512 * 1_024 * 1_024,
                 ioWeight: ioWeight,
-                exclusive: false))
+                exclusive: false),
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -83,9 +84,11 @@ private struct FailAfterWriteAction: ColliderAction {
     let output: FilePath
 
     var requirements: ActionRequirements {
-        ActionRequirements(effects: [
-            ActionEffect(.write, scope: .output(output))
-        ])
+        ActionRequirements(
+            effects: [
+                ActionEffect(.write, scope: .output(output))
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {
@@ -544,7 +547,7 @@ private struct FailAfterWriteAction: ColliderAction {
 
     #expect(
         report.plan[0].identity.description
-            == "sha256:3a6e894e0ed83e324a340088e7e0f1ee10c8e6e5997bdd97ef3917b1582fa8e6")
+            == "sha256:80a72ce622885715ba8ed03fa72a03adec90127c8793f94614484fb5086652af")
 }
 
 @Test func taskEngineExplainsInvalidationAndThenSkipsCleanWork() async throws {

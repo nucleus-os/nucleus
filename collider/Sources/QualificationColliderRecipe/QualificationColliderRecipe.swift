@@ -1,6 +1,10 @@
 import ColliderCore
 import SystemPackage
 
+package enum BenchmarkEntrypoints {
+    package static let run = ComponentEntrypointID(rawValue: "benchmark")
+}
+
 public enum SanitizerKind: String, CaseIterable, Equatable, Sendable {
     case address
     case undefined
@@ -8,9 +12,9 @@ public enum SanitizerKind: String, CaseIterable, Equatable, Sendable {
 
     public var entrypoint: ComponentEntrypointID {
         switch self {
-        case .address: .sanitizeAddress
-        case .undefined: .sanitizeUndefined
-        case .thread: .sanitizeThread
+        case .address: ComponentEntrypointID(rawValue: "sanitize.address")
+        case .undefined: ComponentEntrypointID(rawValue: "sanitize.undefined")
+        case .thread: ComponentEntrypointID(rawValue: "sanitize.thread")
         }
     }
 
@@ -101,7 +105,9 @@ public enum BenchmarkColliderRecipe: ColliderComponent {
             descriptor: descriptor,
             tasks: tasks,
             entrypoints: [
-                ComponentEntrypoint(id: .benchmark, roots: Set(tasks.map(\.id)))
+                ComponentEntrypoint(
+                    id: BenchmarkEntrypoints.run,
+                    roots: Set(tasks.map(\.id)))
             ])
     }
 }

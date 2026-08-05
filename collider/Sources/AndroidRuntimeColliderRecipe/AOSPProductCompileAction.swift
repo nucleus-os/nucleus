@@ -57,15 +57,9 @@ struct CompileAOSPProductAction: ColliderAction {
             if !effects.contains(effect) { effects.append(effect) }
         }
         return ActionRequirements(
-            tools: [
-                ActionToolRequirement(
-                    "python3",
-                    executable: .named("python3"),
-                    role: .semantic)
-            ],
             effects: effects,
             resources: .fullHostExclusive,
-            executionPlatform: .linuxAMD64OCI,
+            executionPlatform: .linuxARM64OCI,
             artifactTarget: .androidX86_64(
                 apiLevel: build.expectedPlatformSDK))
     }
@@ -102,7 +96,6 @@ private struct AOSPProductCompileWorkflow {
         }
         let clean = try await command(
             [
-                build.repoLauncher.string,
                 "forall",
                 "-c",
                 "git update-index -q --refresh"
@@ -123,7 +116,6 @@ private struct AOSPProductCompileWorkflow {
         let manifest =
             try await captured(
                 [
-                    build.repoLauncher.string,
                     "manifest",
                     "--revision-as-HEAD",
                 ],
@@ -425,12 +417,16 @@ private struct AOSPProductCompileWorkflow {
         in directory: FilePath,
         output: CommandSpec.Output
     ) async throws -> CommandResult {
-        try await context.commands.execute(
-            CommandSpec(
-                executable: .named("python3"),
-                arguments: arguments,
-                workingDirectory: directory,
-                environment: build.environment,
+        precondition(directory == build.source)
+        return try await context.containers.run(
+            aospProductOCIExecution(
+                build: build,
+                writableMounts: [],
+                readOnlyMounts: [
+                    (build.source, "/src"),
+                    (build.repoLauncher, "/repo/repo"),
+                ],
+                command: ["/usr/bin/python3", "/repo/repo"] + arguments,
                 output: output))
     }
 

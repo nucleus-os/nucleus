@@ -1787,7 +1787,17 @@ lives under `swift-sdk/validation`, while C++ interop and SourceKit-LSP fixture
 materialization is test-only. Duplicate native-SDK forwarding in the composition
 root is removed. Workspace planning and download persistence now resolve
 `XDG_CACHE_HOME` and `HOME` through one `ColliderCacheLayout`. The focused
-engine acceptance tests pass; the complete kernel matrix remains open.
+engine acceptance tests pass. Every action now declares a nonoptional execution
+platform, and planning rejects native execution or artifacts that do not match
+the runner. Chromium build, test, browser-artifact, and CEF subprocesses execute
+inside the pinned ARM64 OCI guest; x86_64 test and artifact lanes require Intel
+binary translation. The AOSP builder uses the same ARM64-guest contract, and
+Repo verification, product compilation, image assembly, signing, and validation
+no longer escape through host commands. Compositor DRM preflight and execution
+use the declared Linux/ARM64 OCI lane. Duplicate AOSP cache ownership is removed.
+Specialized component entrypoint names, directory-retention formats, and
+native-builder Swift-SDK/Skia helpers no longer live in engine targets. The
+complete kernel matrix remains open.
 
 Delete:
 

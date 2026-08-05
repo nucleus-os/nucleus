@@ -1,5 +1,6 @@
 import ColliderCore
 import Foundation
+import NativeBuilderColliderRecipe
 import SystemPackage
 
 package enum ReactNativeTaskIDs {

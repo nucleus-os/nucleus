@@ -166,6 +166,20 @@ struct TaskIdentityBuilder {
         }
         encoder.append(tag: 235, string: action.kind.rawValue)
         encoder.append(tag: 236, bytes: action.identity)
+        let execution = action.requirements.executionPlatform
+        encoder.append(tag: 249, string: execution.environment.rawValue)
+        encoder.append(tag: 250, string: execution.operatingSystem.rawValue)
+        encoder.append(tag: 251, string: execution.architecture.rawValue)
+        if let artifact = action.requirements.artifactTarget {
+            encoder.append(tag: 252, string: artifact.operatingSystem.rawValue)
+            encoder.append(tag: 253, string: artifact.architecture.rawValue)
+            encoder.append(tag: 254, string: artifact.abi ?? "")
+            encoder.append(
+                tag: 255,
+                integer: UInt64(artifact.androidAPILevel ?? 0))
+        } else {
+            encoder.append(tag: 252, string: "no-artifact-target")
+        }
         for tool in action.requirements.tools.filter({
             $0.role == .semantic
         }).sorted(by: { $0.name < $1.name }) {

@@ -106,7 +106,8 @@ import Testing
         name: try executor.containerName(for: execution),
         temporaryDirectory: nil)
 
-    #expect(execution.executionPlatform == .linuxAMD64OCI)
+    #expect(execution.executionPlatform == .linuxARM64OCI)
+    #expect(execution.intelBinaryTranslationPolicy == .required)
     #expect(execution.artifactTarget == .androidX86_64(apiLevel: 37))
     #expect(execution.processFilesystemPolicy == .unmasked)
     #expect(flags.management.networks == [OCIBackendContract.appleOfflineNetwork])

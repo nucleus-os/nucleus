@@ -424,20 +424,32 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             action:
                 try AnyColliderAction(
                     RunChromiumTestsAction(
-                        execution: chromiumBuildExecution(
-                            imageID: builderImageID,
-                            source: source,
-                            depotTools: depotTools,
-                            output: browserOutput,
-                            jobs: layout.jobs,
-                            targets: [
-                                "ui/ozone:ozone_unittests",
-                                "components/viz/service:"
-                                    + "output_presenter_ozone_unittests",
-                            ],
-                            environment: childEnvironment),
-                        output: browserOutput,
-                        environment: childEnvironment)))
+                        executions: [
+                            chromiumBuildExecution(
+                                imageID: builderImageID,
+                                source: source,
+                                depotTools: depotTools,
+                                output: browserOutput,
+                                jobs: layout.jobs,
+                                targets: [
+                                    "ui/ozone:ozone_unittests",
+                                    "components/viz/service:"
+                                        + "output_presenter_ozone_unittests",
+                                ],
+                                environment: childEnvironment),
+                            chromiumTestExecution(
+                                imageID: builderImageID,
+                                output: browserOutput,
+                                executable: "ozone_unittests",
+                                filter: "*OzonePresenter*",
+                                environment: childEnvironment),
+                            chromiumTestExecution(
+                                imageID: builderImageID,
+                                output: browserOutput,
+                                executable: "output_presenter_ozone_unittests",
+                                filter: "OutputPresenterOzoneTest.*",
+                                environment: childEnvironment),
+                        ])))
         var installBuilder = TaskBuilder(
             id: ChromiumTaskIDs.install,
             component: ComponentID(rawValue: "browser"))
@@ -557,82 +569,31 @@ private struct PrepareChromiumBuilderImageAction: ColliderAction {
 
 private struct RunChromiumTestsAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
-        let execution: OCIExecution
-        let output: FilePath
+        let pipeline: OCIExecutionPipelineIdentity
 
         func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(
-                tag: 1,
-                nested: OCIExecutionActionIdentity(execution))
-            encoder.append(tag: 2, string: output.string)
-            encoder.append(tag: 3, string: "*OzonePresenter*")
-            encoder.append(tag: 4, string: "OutputPresenterOzoneTest.*")
-            encoder.append(tag: 5, string: "single-process-tests")
+            encoder.append(tag: 1, nested: pipeline)
         }
     }
 
     static let kind: ActionKind = "browser.run-tests"
 
-    let execution: OCIExecution
-    let output: FilePath
-    let environment: [String: String]
+    let pipeline: OCIExecutionPipeline
+
+    init(executions: [OCIExecution]) throws {
+        pipeline = try OCIExecutionPipeline(executions)
+    }
 
     var identity: Identity {
-        Identity(execution: execution, output: output)
+        Identity(pipeline: pipeline.identity)
     }
 
-    var requirements: ActionRequirements {
-        let executionRequirements = ociActionRequirements(execution: execution)
-        return ActionRequirements(
-            tools: [
-                ActionToolRequirement(
-                    "ozone-tests",
-                    executable: .taskOutput(output.appending("ozone_unittests")),
-                    role: .operational),
-                ActionToolRequirement(
-                    "output-presenter-tests",
-                    executable: .taskOutput(
-                        output.appending("output_presenter_ozone_unittests")),
-                    role: .operational),
-            ],
-            effects: executionRequirements.effects,
-            resources: executionRequirements.resources,
-            executionPlatform: executionRequirements.executionPlatform,
-            artifactTarget: executionRequirements.artifactTarget)
-    }
+    var requirements: ActionRequirements { pipeline.requirements }
+
+    var environment: [String: String] { pipeline.environment }
 
     func execute(in context: ActionContext) async throws {
-        try await context.containers.run(execution)
-        try await run(
-            executable: output.appending("ozone_unittests"),
-            arguments: [
-                "--gtest_filter=*OzonePresenter*",
-                "--single-process-tests",
-            ],
-            context: context)
-        try await run(
-            executable: output.appending("output_presenter_ozone_unittests"),
-            arguments: [
-                "--gtest_filter=OutputPresenterOzoneTest.*",
-                "--single-process-tests",
-            ],
-            context: context)
-    }
-
-    private func run(
-        executable: FilePath,
-        arguments: [String],
-        context: ActionContext
-    ) async throws {
-        let result = try await context.commands.execute(
-            CommandSpec(
-                executable: .taskOutput(executable),
-                arguments: arguments,
-                workingDirectory: output,
-                environment: environment))
-        guard result.status == 0 else {
-            throw ChromiumOzoneTestFailure.commandFailed(result.status)
-        }
+        try await pipeline.execute(in: context)
     }
 }
 
@@ -878,10 +839,6 @@ private enum ChromiumBootstrapFailure: Error {
     case commandFailed(Int32)
 }
 
-private enum ChromiumOzoneTestFailure: Error {
-    case commandFailed(Int32)
-}
-
 private func chromiumBuildExecution(
     imageID: FilePath,
     source: FilePath,
@@ -936,6 +893,30 @@ private func chromiumBuildExecution(
         command: ["build", String(jobs)] + targets,
         environment: environment,
         output: .logged)
+}
+
+private func chromiumTestExecution(
+    imageID: FilePath,
+    output: FilePath,
+    executable: String,
+    filter: String,
+    environment: [String: String]
+) -> OCIExecution {
+    chromiumToolExecution(
+        imageID: imageID,
+        hostname: "chromium-test",
+        workingDirectory: "/build",
+        hostWorkingDirectory: output,
+        mounts: [
+            OCIMount(source: output, target: "/build", access: .readOnly)
+        ],
+        temporaryDirectory: output.removingLastComponent().appending(
+            ".test-temporary"),
+        command: [
+            "run-test", "/build/\(executable)",
+            "--gtest_filter=\(filter)", "--single-process-tests",
+        ],
+        environment: environment)
 }
 
 private enum ChromiumRecipeFailure: Error {

@@ -1,6 +1,11 @@
 import ColliderCore
 import SystemPackage
 
+extension DirectoryNamePattern {
+    fileprivate static let aospProduct = Self(
+        rawValue: #"^[0-9]+-[a-z0-9][a-z0-9._-]*$"#)
+}
+
 struct PublishAOSPProductAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let buildRoot: FilePath
@@ -24,7 +29,8 @@ struct PublishAOSPProductAction: ColliderAction {
         ActionRequirements(
             effects: [
                 ActionEffect(.readWrite, scope: .publication(aospBuildRoot))
-            ])
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     private var generations: FilePath {

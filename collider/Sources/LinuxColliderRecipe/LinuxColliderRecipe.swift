@@ -1,6 +1,11 @@
 import ColliderCore
 import SystemPackage
 
+package enum LinuxEntrypoints {
+    package static let testGPUHeadless = ComponentEntrypointID(
+        rawValue: "test.gpu-headless")
+}
+
 package enum LinuxTaskIDs {
     package static func build(_ architecture: PlatformArchitecture) -> TaskID {
         TaskID(rawValue: "linux.\(architecture.rawValue).build")
@@ -52,7 +57,9 @@ public enum LinuxColliderRecipe: ColliderComponent {
             entrypoints: [
                 ComponentEntrypoint(id: .build, roots: buildRoots),
                 ComponentEntrypoint(id: .testDefault, roots: testRoots),
-                ComponentEntrypoint(id: .testGPUHeadless, roots: headlessRoots),
+                ComponentEntrypoint(
+                    id: LinuxEntrypoints.testGPUHeadless,
+                    roots: headlessRoots),
                 ComponentEntrypoint(
                     id: ComponentEntrypointID(rawValue: "test.loader"),
                     roots: loaderRoots),

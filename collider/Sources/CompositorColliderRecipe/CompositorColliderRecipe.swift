@@ -1,6 +1,11 @@
 import ColliderCore
 import SystemPackage
 
+package enum CompositorEntrypoints {
+    package static let testGPUDRM = ComponentEntrypointID(
+        rawValue: "test.gpu-drm")
+}
+
 package enum CompositorTaskIDs {
     package static let testGPUDRM = TaskID(rawValue: "compositor-core.test-gpu-drm")
     package static let preflightGPUDRM = TaskID(
@@ -30,7 +35,9 @@ public enum CompositorColliderRecipe: ColliderComponent {
             descriptor: descriptor,
             tasks: [preflight, test],
             entrypoints: [
-                ComponentEntrypoint(id: .testGPUDRM, roots: [test.id])
+                ComponentEntrypoint(
+                    id: CompositorEntrypoints.testGPUDRM,
+                    roots: [test.id])
             ])
     }
 

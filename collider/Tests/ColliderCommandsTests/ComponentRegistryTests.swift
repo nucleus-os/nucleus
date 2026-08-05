@@ -44,7 +44,7 @@ private func selectedTestTasks(
         requests.append(
             ComponentEntrypointRequest(
                 spelling: "release-gate",
-                entrypoint: .testReleaseGate))
+                entrypoint: ReleaseGateEntrypoints.test))
     }
     return try ColliderPlanner().selectedTasks(in: catalog, requests: requests)
 }
@@ -486,7 +486,7 @@ private func fixtureReactNativeNodeModules(
                 selection: "all")
                 + selectedTasks(
                     in: catalog,
-                    entrypoint: .testReleaseGate,
+                    entrypoint: ReleaseGateEntrypoints.test,
                     selection: "release-gate")))
     #expect(releaseTasks.count == 6)
     #expect(

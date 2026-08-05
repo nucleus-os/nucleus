@@ -1,4 +1,5 @@
 import ColliderCore
+import Foundation
 import SystemPackage
 
 struct SignAOSPProductAction: ColliderAction {
@@ -39,12 +40,6 @@ struct SignAOSPProductAction: ColliderAction {
 
     var requirements: ActionRequirements {
         ActionRequirements(
-            tools: [
-                ActionToolRequirement(
-                    "openssl",
-                    executable: .named("openssl"),
-                    role: .semantic)
-            ],
             effects: [
                 ActionEffect(.read, scope: .input(build.source)),
                 ActionEffect(.read, scope: .input(build.containerImageID)),
@@ -52,7 +47,7 @@ struct SignAOSPProductAction: ColliderAction {
                 ActionEffect(.readWrite, scope: .scratch(build.buildRoot)),
             ],
             resources: .lightweight,
-            executionPlatform: .linuxAMD64OCI,
+            executionPlatform: .linuxARM64OCI,
             artifactTarget: .androidX86_64(
                 apiLevel: build.expectedPlatformSDK))
     }
@@ -60,9 +55,7 @@ struct SignAOSPProductAction: ColliderAction {
     var environment: [String: String] { build.environment }
 
     func execute(in context: ActionContext) async throws {
-        _ = try await AOSPSigningIdentityWorkflow(context: context).validate(
-            at: build.signingIdentity,
-            environment: build.environment)
+        try validateSigningIdentityMetadata(files: context.files)
         let output = build.buildRoot.appending("out")
         let unsigned = build.buildRoot.appending("unsigned")
         let staged = build.buildRoot.appending("staged")
@@ -135,18 +128,53 @@ struct SignAOSPProductAction: ColliderAction {
         try context.files.remove(destination)
         try context.files.move(from: candidate, to: destination)
     }
+
+    private func validateSigningIdentityMetadata(files: ActionFileSystem) throws {
+        let identity = try JSONDecoder().decode(
+            AOSPSigningIdentity.self,
+            from: Data(
+                try files.read(
+                    build.signingIdentity.appending("signing-identity.json"))))
+        guard identity.purpose == "local-development",
+            identity.certificates.map(\.alias) == aospSigningAliases
+        else {
+            throw AOSPProductSigningFailure.invalidSigningIdentity
+        }
+        for certificate in identity.certificates {
+            let base = build.signingIdentity.appending(certificate.alias)
+            let certificatePath = FilePath(base.string + ".x509.pem")
+            for path in [
+                FilePath(base.string + ".pem"),
+                certificatePath,
+                FilePath(base.string + ".pk8"),
+            ] {
+                guard try files.metadata(for: path)?.type == .regular else {
+                    throw AOSPProductSigningFailure.missingInput(path)
+                }
+            }
+            guard
+                try files.digest(file: certificatePath).hexadecimal
+                    == certificate.x509SHA256
+            else {
+                throw AOSPProductSigningFailure.invalidSigningIdentity
+            }
+        }
+    }
 }
 
 let aospContainerReleaseKey = "/keys/releasekey"
 let aospContainerReleasePEM = "\(aospContainerReleaseKey).pem"
 
 private enum AOSPProductSigningFailure: Error, CustomStringConvertible {
+    case invalidSigningIdentity
     case missingExecutable(FilePath)
     case missingInput(FilePath)
     case missingOutput(FilePath)
 
     var description: String {
         switch self {
+        case .invalidSigningIdentity:
+            "AOSP signing identity metadata or certificate digest is invalid"
         case .missingExecutable(let path):
             "AOSP host signing executable is missing: \(path)"
         case .missingInput(let path):

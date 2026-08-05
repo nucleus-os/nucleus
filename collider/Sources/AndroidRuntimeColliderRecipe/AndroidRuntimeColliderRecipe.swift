@@ -1,6 +1,12 @@
 import ColliderCore
 import Foundation
+import NativeBuilderColliderRecipe
 import SystemPackage
+
+package enum AndroidRuntimeEntrypoints {
+    package static let packageAddon = ComponentEntrypointID(
+        rawValue: "package.android-addon")
+}
 
 package enum AndroidRuntimeTaskIDs {
     package static let aospSourceLock = TaskID(
@@ -139,7 +145,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             tasks.append(package)
             entrypoints.append(
                 ComponentEntrypoint(
-                    id: .packageAndroidAddon,
+                    id: AndroidRuntimeEntrypoints.packageAddon,
                     roots: [package.id]))
         }
         #endif
@@ -425,7 +431,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 try AnyColliderAction(
                     PrepareAOSPBuilderImageAction(
                         preparation: OCIImagePreparation(
-                            executionPlatform: .linuxAMD64OCI,
+                            executionPlatform: .linuxARM64OCI,
                             context: context,
                             containerFile: containerFile,
                             imageID: imageID,
@@ -866,9 +872,11 @@ private struct DownloadAOSPRepoLauncherAction: ColliderAction {
     }
 
     var requirements: ActionRequirements {
-        ActionRequirements(effects: [
-            ActionEffect(.readWrite, scope: .output(identity.destination))
-        ])
+        ActionRequirements(
+            effects: [
+                ActionEffect(.readWrite, scope: .output(identity.destination))
+            ],
+            executionPlatform: .macOSARM64Native)
     }
 
     func execute(in context: ActionContext) async throws {

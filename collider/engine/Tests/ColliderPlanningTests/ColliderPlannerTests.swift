@@ -76,10 +76,85 @@ import Testing
     #expect(validations.withLock { $0 } == 0)
 }
 
+@Test func executionAndArtifactCoordinatesAffectTaskIdentity() throws {
+    func identity(
+        execution: ExecutionPlatform,
+        artifact: ArtifactTarget
+    ) throws -> ArtifactDigest {
+        let action = try AnyColliderAction(
+            PlacementIdentityAction(
+                executionPlatform: execution,
+                artifactTarget: artifact))
+        let task = TaskDeclaration(
+            id: TaskID(rawValue: "fixture.placement"),
+            component: ComponentID(rawValue: "fixture"),
+            action: action)
+        let services = deterministicHashingServices()
+        let plan = try ColliderPlanner().plan(
+            graph: TaskGraph([task]),
+            selected: [task.id],
+            rebuildSelected: false,
+            lowerings: [],
+            services: services)
+        return try #require(plan.declaredEntries.first).identity
+    }
+
+    let armExecution = try identity(
+        execution: .linuxARM64OCI,
+        artifact: .linuxX86_64)
+    let amdExecution = try identity(
+        execution: .linuxAMD64OCI,
+        artifact: .linuxX86_64)
+    let armArtifact = try identity(
+        execution: .linuxARM64OCI,
+        artifact: .linuxARM64)
+
+    #expect(armExecution != amdExecution)
+    #expect(armExecution != armArtifact)
+}
+
+private struct PlacementIdentityAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(tag: 1, string: "stable-action")
+        }
+    }
+
+    static let kind: ActionKind = "fixture.placement"
+
+    let executionPlatform: ExecutionPlatform
+    let artifactTarget: ArtifactTarget
+
+    var identity: Identity { Identity() }
+
+    var requirements: ActionRequirements {
+        ActionRequirements(
+            executionPlatform: executionPlatform,
+            artifactTarget: artifactTarget)
+    }
+
+    func execute(in _: ActionContext) async throws {}
+}
+
 private func deterministicServices(digest: ArtifactDigest) -> TaskPlanningServices {
     TaskPlanningServices(
         resourceCapacity: fixtureCapacity,
         digestBytes: { _ in digest },
+        digestFile: { _ in digest },
+        digestTree: { _ in digest },
+        optionalTreeDigest: { _ in nil },
+        semanticToolIdentity: { _, _ in
+            ToolIdentitySnapshot(path: FilePath("/fixture/tool"), digest: digest)
+        },
+        taskState: { _ in .missing },
+        validateOutputs: { _ in })
+}
+
+private func deterministicHashingServices() -> TaskPlanningServices {
+    let digest = ArtifactDigest(bytes: Array(repeating: 17, count: 32))
+    return TaskPlanningServices(
+        resourceCapacity: fixtureCapacity,
+        digestBytes: { ArtifactDigest.sha256(Data($0)) },
         digestFile: { _ in digest },
         digestTree: { _ in digest },
         optionalTreeDigest: { _ in nil },
