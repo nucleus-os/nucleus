@@ -38,7 +38,7 @@ and `wayland` ownership. Linux/amd64 and Android/arm64 use sibling target roots.
 
 ## Setup and verification
 
-Clone with submodules, then provision the checkout once:
+Clone with submodules, then install Collider once:
 
 ```sh
 git clone --recurse-submodules git@github.com:nucleus-os/nucleus.git
@@ -46,7 +46,8 @@ cd nucleus
 ./collider-setup.sh
 ```
 
-Thereafter run Collider from any directory inside the clone:
+Setup does not build workspace artifacts. Thereafter run Collider from any
+directory inside the clone; each command materializes its own prerequisite graph:
 
 ```sh
 collider doctor

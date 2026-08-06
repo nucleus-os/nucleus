@@ -414,11 +414,16 @@ private func writeJSON<T: Encodable>(_ value: T, to path: FilePath) throws {
     do {
         try descriptor.writeAll(data)
         guard collider_sync_file(descriptor.rawValue) == 0 else { throw Errno(rawValue: errno) }
-        try descriptor.close()
+    } catch {
+        try? descriptor.close()
+        try? FileManager.default.removeItem(atPath: candidate.string)
+        throw error
+    }
+    try descriptor.close()
+    do {
         try replace(candidate, with: path)
         try synchronizeDirectory(path.removingLastComponent())
     } catch {
-        try? descriptor.close()
         try? FileManager.default.removeItem(atPath: candidate.string)
         throw error
     }

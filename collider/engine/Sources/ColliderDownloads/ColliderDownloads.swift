@@ -973,7 +973,13 @@ private func writeJSON<T: Encodable>(_ value: T, to path: FilePath) throws {
         guard collider_sync_file(descriptor.rawValue) == 0 else {
             throw Errno(rawValue: errno)
         }
-        try descriptor.close()
+    } catch {
+        try? descriptor.close()
+        try? FileManager.default.removeItem(atPath: temporary.string)
+        throw error
+    }
+    try descriptor.close()
+    do {
         guard unsafe collider_replace(temporary.string, path.string) == 0 else {
             throw Errno(rawValue: errno)
         }
@@ -983,7 +989,6 @@ private func writeJSON<T: Encodable>(_ value: T, to path: FilePath) throws {
             throw Errno(rawValue: errno)
         }
     } catch {
-        try? descriptor.close()
         try? FileManager.default.removeItem(atPath: temporary.string)
         throw error
     }

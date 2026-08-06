@@ -278,22 +278,14 @@ struct WorkspaceDoctor {
 
     private func nativeSDKLayout(scope: String) -> HostPrerequisite {
         let root = context.nativeSDKRoot
-        let base = root.removingLastComponent()
         return HostPrerequisite(
             id: "native-sdk:per-target-layout",
             scope: scope,
-            description: "per-target native SDK ownership",
-            remediation:
-                "run ./collider-setup.sh to reset the obsolete untargeted native SDK slots"
+            description: "per-target native SDK ownership"
         ) {
             let expected = "linux-\(RunnerPlatform.current.architecture.rawValue)"
-            guard root.lastComponent?.string == expected,
-                !FileManager.default.fileExists(
-                    atPath: base.appending("render").string),
-                !FileManager.default.fileExists(
-                    atPath: base.appending("rn").string)
-            else { return nil }
-            return "\(root.string); no untargeted render or rn slots"
+            guard root.lastComponent?.string == expected else { return nil }
+            return root.string
         }
     }
 

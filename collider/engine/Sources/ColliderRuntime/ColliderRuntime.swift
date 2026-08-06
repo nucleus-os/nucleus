@@ -834,11 +834,11 @@ actor CommandOutputSink {
             guard collider_sync_file(file.rawValue) == 0 else {
                 throw Errno(rawValue: errno)
             }
-            try file.close()
         } catch {
             try? file.close()
             throw error
         }
+        try file.close()
     }
 }
 

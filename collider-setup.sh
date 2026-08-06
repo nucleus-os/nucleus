@@ -3,11 +3,10 @@
 #
 #   ./collider-setup.sh
 #
-# It selects Xcode on macOS or provisions the generated Swift toolchain on
-# Linux, builds the optimized `collider` binary, installs the `collider`
-# launcher on your PATH, and provisions the workspace. Re-run it any time to
-# verify and repair the installation. This script performs setup only; use the
-# installed `collider` command for everything else.
+# It selects Xcode on macOS or provisions the generated host toolchain on Linux,
+# builds the optimized `collider` binary, and installs the `collider` launcher
+# on your PATH. Re-run it any time to repair the tool installation. Workspace
+# readiness and build artifacts belong to Collider itself.
 set -euo pipefail
 
 case "${1:-}" in
@@ -27,28 +26,6 @@ pkg="$root/collider"
 bin="$pkg/.build/release/collider"
 
 source "$root/tools/host-platform-env.sh"
-: "${NUCLEUS_NATIVE_SDK_ROOT:=${XDG_CACHE_HOME:-$HOME/.cache}/nucleus/nucleus-native-sdk/linux-$(uname -m | sed 's/aarch64/arm64/; s/amd64/x86_64/')}"
-export NUCLEUS_NATIVE_SDK_ROOT
-
-# Phase 2 made this variable unconditionally per-target. Remove the two exact
-# obsolete publication slots once; every current producer writes beneath a
-# linux-<architecture> or android-arm64 directory.
-native_sdk_leaf="${NUCLEUS_NATIVE_SDK_ROOT##*/}"
-case "$native_sdk_leaf" in
-  linux-arm64 | linux-x86_64) ;;
-  *)
-    echo "error: NUCLEUS_NATIVE_SDK_ROOT must name a per-target linux-* directory" >&2
-    exit 2
-    ;;
-esac
-native_sdk_base="${NUCLEUS_NATIVE_SDK_ROOT%/*}"
-for obsolete_native_sdk_slot in "$native_sdk_base/render" "$native_sdk_base/rn"; do
-  if [[ -e "$obsolete_native_sdk_slot" || -L "$obsolete_native_sdk_slot" ]]; then
-    echo "collider-setup: removing obsolete native SDK slot $obsolete_native_sdk_slot" >&2
-    rm -rf -- "$obsolete_native_sdk_slot"
-  fi
-done
-unset native_sdk_leaf native_sdk_base obsolete_native_sdk_slot
 
 # Collider builds a complete monorepo checkout. Initialize only absent
 # submodules before compiling Collider itself. Existing checkouts are user
@@ -194,8 +171,4 @@ LAUNCHER
 }
 install_launcher
 
-# 4. Provision native SDKs and workspace state.
-echo "collider-setup: provisioning workspace (collider bootstrap)..." >&2
-"$bin" bootstrap
-
-echo "collider-setup: done. Run 'collider' from any directory inside the clone." >&2
+echo "collider-setup: done. Run 'collider doctor', then 'collider build'." >&2

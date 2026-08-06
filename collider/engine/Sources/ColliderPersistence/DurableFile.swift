@@ -24,11 +24,11 @@ package enum DurableFile {
                 guard collider_sync_file(descriptor.rawValue) == 0 else {
                     throw Errno(rawValue: errno)
                 }
-                try descriptor.close()
             } catch {
                 try? descriptor.close()
                 throw error
             }
+            try descriptor.close()
             guard unsafe collider_replace(candidate.string, path.string) == 0 else {
                 throw Errno(rawValue: errno)
             }
@@ -62,13 +62,18 @@ package enum DurableFile {
             guard collider_sync_file(descriptor.rawValue) == 0 else {
                 throw Errno(rawValue: errno)
             }
-            try descriptor.close()
+        } catch {
+            try? descriptor.close()
+            try? FileManager.default.removeItem(atPath: candidate.string)
+            throw error
+        }
+        try descriptor.close()
+        do {
             guard unsafe collider_replace(candidate.string, path.string) == 0 else {
                 throw Errno(rawValue: errno)
             }
             try synchronizeDirectory(path.removingLastComponent())
         } catch {
-            try? descriptor.close()
             try? FileManager.default.removeItem(atPath: candidate.string)
             throw error
         }

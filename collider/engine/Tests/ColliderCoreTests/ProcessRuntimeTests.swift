@@ -188,6 +188,41 @@ import Testing
     #expect(result.status == 0)
 }
 
+@Test func runtimeOwnsStreamsAcrossConcurrentProcesses() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-concurrent-streams-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(
+        at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    try await withThrowingTaskGroup(of: Int32.self) { group in
+        for index in 0..<32 {
+            group.addTask {
+                let result = try await ColliderRuntime().execute(
+                    CommandSpec(
+                        executable: .named("sh"),
+                        arguments: [
+                            "-c",
+                            "printf 'stdout-%s' \"$1\"; printf 'stderr-%s' \"$1\" >&2",
+                            "collider-concurrent-streams",
+                            String(index),
+                        ],
+                        workingDirectory: FilePath(directory.path),
+                        environment: [
+                            "PATH": ProcessInfo.processInfo.environment["PATH"]
+                                ?? "/usr/bin:/bin"
+                        ],
+                        output: .logged))
+                return result.status
+            }
+        }
+
+        for try await status in group {
+            #expect(status == 0)
+        }
+    }
+}
+
 @Test func runtimeRetainsUnboundedCommandOutputInAFile() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-file-output-\(UUID().uuidString)")
