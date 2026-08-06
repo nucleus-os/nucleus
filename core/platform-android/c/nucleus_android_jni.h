@@ -27,6 +27,37 @@ int32_t nucleus_android_window_get_width(void *window);
 int32_t nucleus_android_window_get_height(void *window);
 int32_t nucleus_android_window_get_format(void *window);
 
+// Vulkan Android WSI. Keep the platform-only ABI behind opaque pointers so the
+// Android host core remains type-checkable by Linux host-side tests without
+// importing Android-gated Vulkan declarations.
+typedef int32_t (*nucleus_vk_create_android_surface_fn)(
+    void *instance,
+    const void *create_info,
+    const void *allocator,
+    void **surface);
+
+struct nucleus_vk_android_surface_create_info {
+    int32_t s_type;
+    const void *p_next;
+    uint32_t flags;
+    void *window;
+};
+
+static inline int32_t nucleus_vk_create_android_surface(
+    void *function,
+    void *instance,
+    void *window,
+    void **surface) {
+    struct nucleus_vk_android_surface_create_info info = {
+        .s_type = 1000008000,
+        .p_next = 0,
+        .flags = 0,
+        .window = window,
+    };
+    return ((nucleus_vk_create_android_surface_fn)function)(
+        instance, &info, 0, surface);
+}
+
 // Owner-thread identity and directed diagnostics for the Swift host boundary.
 int64_t nucleus_android_current_thread_id(void);
 void nucleus_android_log_thread_violation(const char *operation);

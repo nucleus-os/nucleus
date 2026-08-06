@@ -69,9 +69,12 @@ Container lifecycle is an in-process Swift boundary. Collider builds against
 the root-owned `apple/container`, `apple/containerization`, and `apple/swift-log`
 upstream-main gitlinks, constructs the same typed configuration as Apple's CLI, and calls
 `ContainerClient` for create, bootstrap, process start/wait, forced deletion,
-and exact-name deletion verification. Cancellation shares the same idempotent
-cleanup transaction. The CLI remains only for image build and inspection and
-for the host-only network probe. Clone-local SwiftPM mirrors make every
+and exact-name deletion verification. It uses the upstream build library plus
+image, network, health, and disk-usage clients directly for image build and
+identity, network inspection, cache reporting, pruning, and backend health. Cancellation shares
+the same idempotent cleanup transaction. The installed CLI remains only in the
+privileged login-session bootstrap script, which runs before the API service is
+available. Clone-local SwiftPM mirrors make every
 transitive dependency edge resolve to the root-owned gitlink without modifying
 Apple's manifests. Doctor exercises the typed XPC health request, so an
 installed CLI alone cannot satisfy the backend contract.

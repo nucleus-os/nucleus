@@ -1,4 +1,8 @@
+internal import NucleusAndroidC
 internal import NucleusAppHostProtocols
+internal import NucleusRenderModel
+internal import NucleusRenderer
+import Synchronization
 
 // The Android renderer: lifecycle bookkeeping over the shared render stack. Each
 // live-surface frame drives the `@MainActor` `AndroidRenderEngine` (the `RenderCore`
@@ -8,11 +12,6 @@ internal import NucleusAppHostProtocols
 // The engine is created lazily on the first frame with a live
 // surface and torn down on detach; the swapchain is (re)created whenever the surface
 // generation changes (resize / rotation / re-create). There is no CPU rendering path.
-
-import NucleusAndroidC
-internal import NucleusRenderModel
-internal import NucleusRenderer
-import Synchronization
 
 /// Android already owns a continuously posted Choreographer callback while the
 /// surface is live. The renderer wake records demand across the pthread boundary;

@@ -291,25 +291,17 @@ import Testing
         imageID: root.appending("image-id"),
         imageName: "localhost/nucleus-build",
         environment: ["PATH": "/usr/bin"])
-    let executor = AppleContainerExecutor()
-    let build = try executor.buildImageCommand(
-        preparation,
-        candidate: root.appending("candidate"))
-    #expect(build.executable == .named("container"))
-    #expect(build.arguments.contains("linux/arm64"))
-    #expect(build.arguments.contains("--pull"))
-    #expect(!build.arguments.contains("--iidfile"))
+    let buildArguments = appleContainerBuildArguments(preparation)
+    #expect(buildArguments.contains("linux/arm64"))
+    #expect(buildArguments.contains("--pull"))
+    #expect(buildArguments.contains("plain"))
+    #expect(buildArguments.contains(preparation.imageName))
+    #expect(buildArguments.contains(preparation.containerFile.string))
+    #expect(buildArguments.last == preparation.context.string)
 
+    let executor = AppleContainerExecutor()
     let digest = "sha256:" + String(repeating: "d", count: 64)
     let name = "localhost/nucleus-build:latest"
-    let inspection = """
-        [{"configuration":{"descriptor":{"digest":"\(digest)"},"name":"\(name)"}}]
-        """
-    #expect(
-        try executor.imageIdentifier(
-            candidate: root.appending("candidate"),
-            inspectionOutput: inspection) == "\(name)\n\(digest)")
-    #expect(executor.removeImageCommand(digest, preparation: preparation) == nil)
 
     let execution = OCIExecution(
         executionPlatform: .linuxARM64OCI,

@@ -466,10 +466,10 @@ platform, or permission to emit an amd64 kernel.
 All existing single-value checks in
 [`PlatformContract.swift`](../collider/engine/Sources/ColliderCore/PlatformContract.swift),
 [`OCIExecutor.swift`](../collider/engine/Sources/ColliderRuntime/OCIExecutor.swift),
-[`Doctor.swift`](../collider/Sources/ColliderCommands/Doctor.swift),
-[`CommandSupport.swift`](../collider/Sources/ColliderCommands/CommandSupport.swift),
+[`Doctor.swift`](../collider/Sources/ColliderWorkspaceCommands/Doctor.swift),
+[`CommandSupport.swift`](../collider/Sources/ColliderWorkspaceCommands/CommandSupport.swift),
 and
-[`VulkanTestLanes.swift`](../collider/Sources/ColliderCommands/VulkanTestLanes.swift)
+[`VulkanTestLanes.swift`](../collider/Sources/ColliderWorkspaceCommands/VulkanTestLanes.swift)
 switch on the declared coordinate and reject every unlisted combination.
 
 `SwiftTargetSDKColliderRecipe` already publishes one immutable Linux Swift SDK

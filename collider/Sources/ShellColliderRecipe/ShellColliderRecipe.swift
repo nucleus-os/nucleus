@@ -45,7 +45,7 @@ public enum ShellColliderRecipe: ColliderComponent {
         let configuration = try context.configuration(
             ShellRuntimeInstallConfiguration.self,
             for: descriptor.id)
-        let task = installTask(
+        let task = try installTask(
             configuration: configuration,
             repositoryRoot: context.repositoryRoot)
         let tracy = try tracyReceiversTask(in: context)
@@ -68,7 +68,7 @@ public enum ShellColliderRecipe: ColliderComponent {
     private static func installTask(
         configuration: ShellRuntimeInstallConfiguration,
         repositoryRoot: FilePath
-    ) -> TaskDeclaration {
+    ) throws -> TaskDeclaration {
         let products = [
             "NucleusCompositor",
             "NucleusSessionSupervisor",

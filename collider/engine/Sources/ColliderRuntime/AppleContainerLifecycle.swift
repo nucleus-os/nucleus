@@ -7,6 +7,7 @@ import SystemPackage
 import ContainerAPIClient
 import ContainerCommands
 import ContainerResource
+import ContainerizationOCI
 import Darwin
 #endif
 
@@ -17,6 +18,66 @@ public struct AppleContainerBackendHealth: Sendable {
     public let apiServerCommit: String
     public let apiServerBuild: String
     public let apiServerAppName: String
+
+    public init(
+        appRoot: URL,
+        installRoot: URL,
+        apiServerVersion: String,
+        apiServerCommit: String,
+        apiServerBuild: String,
+        apiServerAppName: String
+    ) {
+        self.appRoot = appRoot
+        self.installRoot = installRoot
+        self.apiServerVersion = apiServerVersion
+        self.apiServerCommit = apiServerCommit
+        self.apiServerBuild = apiServerBuild
+        self.apiServerAppName = apiServerAppName
+    }
+}
+
+public struct AppleContainerNetworkState: Equatable, Sendable {
+    public let name: String
+    public let mode: String
+
+    public init(name: String, mode: String) {
+        self.name = name
+        self.mode = mode
+    }
+}
+
+public struct AppleContainerResourceUsage: Codable, Equatable, Sendable {
+    public let active: Int
+    public let reclaimable: UInt64
+    public let sizeInBytes: UInt64
+    public let total: Int
+
+    public init(active: Int, reclaimable: UInt64, sizeInBytes: UInt64, total: Int) {
+        self.active = active
+        self.reclaimable = reclaimable
+        self.sizeInBytes = sizeInBytes
+        self.total = total
+    }
+}
+
+public struct AppleContainerDiskUsage: Codable, Equatable, Sendable {
+    public let containers: AppleContainerResourceUsage
+    public let images: AppleContainerResourceUsage
+    public let volumes: AppleContainerResourceUsage
+
+    public init(
+        containers: AppleContainerResourceUsage,
+        images: AppleContainerResourceUsage,
+        volumes: AppleContainerResourceUsage
+    ) {
+        self.containers = containers
+        self.images = images
+        self.volumes = volumes
+    }
+
+    public var reclaimableBytes: UInt64 {
+        containers.reclaimable &+ images.reclaimable &+ volumes.reclaimable
+    }
 }
 
 #if os(macOS)
@@ -31,6 +92,41 @@ public func appleContainerBackendHealth() async throws
         apiServerCommit: health.apiServerCommit,
         apiServerBuild: health.apiServerBuild,
         apiServerAppName: health.apiServerAppName)
+}
+
+public func appleContainerNetwork(named name: String) async throws
+    -> AppleContainerNetworkState
+{
+    let network = try await NetworkClient().get(id: name)
+    return AppleContainerNetworkState(
+        name: network.configuration.name,
+        mode: network.configuration.mode.rawValue)
+}
+
+public func appleContainerDiskUsage() async throws -> AppleContainerDiskUsage {
+    let usage = try await ClientDiskUsage.get()
+    func project(_ value: ResourceUsage) -> AppleContainerResourceUsage {
+        AppleContainerResourceUsage(
+            active: value.active,
+            reclaimable: value.reclaimable,
+            sizeInBytes: value.sizeInBytes,
+            total: value.total)
+    }
+    return AppleContainerDiskUsage(
+        containers: project(usage.containers),
+        images: project(usage.images),
+        volumes: project(usage.volumes))
+}
+
+public func pruneAppleContainerImages() async throws {
+    for image in try await ClientImage.list() {
+        let reference = try ContainerizationOCI.Reference.parse(image.reference)
+        guard reference.tag == nil else { continue }
+        try await ClientImage.delete(
+            reference: image.reference,
+            garbageCollect: false)
+    }
+    _ = try await ClientImage.cleanUpOrphanedBlobs()
 }
 
 struct AppleContainerLifecycle: Sendable {
@@ -615,6 +711,20 @@ private func collectAppleContainerOutput(
 public func appleContainerBackendHealth() async throws
     -> AppleContainerBackendHealth
 {
+    throw OCIExecutorFailure.unsupportedRunner(.current)
+}
+
+public func appleContainerNetwork(named name: String) async throws
+    -> AppleContainerNetworkState
+{
+    throw OCIExecutorFailure.unsupportedRunner(.current)
+}
+
+public func appleContainerDiskUsage() async throws -> AppleContainerDiskUsage {
+    throw OCIExecutorFailure.unsupportedRunner(.current)
+}
+
+public func pruneAppleContainerImages() async throws {
     throw OCIExecutorFailure.unsupportedRunner(.current)
 }
 #endif

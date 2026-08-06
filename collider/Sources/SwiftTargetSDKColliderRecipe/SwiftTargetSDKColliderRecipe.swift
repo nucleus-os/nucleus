@@ -169,7 +169,6 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
     public let swiftExecutable: FilePath
     public let sdkDiscoveryRoot: FilePath
     public let displacedRoot: FilePath
-    public let rebuildLock: FilePath
     public let environment: [String: String]
 
     public init(
@@ -195,7 +194,6 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
         swiftExecutable: FilePath,
         sdkDiscoveryRoot: FilePath,
         displacedRoot: FilePath,
-        rebuildLock: FilePath,
         environment: [String: String]
     ) {
         self.inputs = inputs
@@ -220,7 +218,6 @@ public struct SwiftTargetSDKGenerationConfiguration: RecipeConfiguration {
         self.swiftExecutable = swiftExecutable
         self.sdkDiscoveryRoot = sdkDiscoveryRoot
         self.displacedRoot = displacedRoot
-        self.rebuildLock = rebuildLock
         self.environment = environment
     }
 }
@@ -384,9 +381,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             + [generator.task, assembly.task, validation.task, activation.task]
             + discoveries.map(\.task)
         return SwiftTargetSDKTaskSet(
-            tasks: tasks.map {
-                $0.addingLocks([.shared(configuration.rebuildLock)])
-            },
+            tasks: tasks,
             selected: discoveries.map(\.task.id),
             activeSDK: activation.activeSDK,
             activeSwift: activation.activeSwift)

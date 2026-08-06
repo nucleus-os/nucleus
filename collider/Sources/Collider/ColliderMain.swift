@@ -1,4 +1,4 @@
-import ColliderCommands
+import ColliderCLI
 
 @main
 struct ColliderMain {

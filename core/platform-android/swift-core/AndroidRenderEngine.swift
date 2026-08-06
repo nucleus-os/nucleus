@@ -1,4 +1,9 @@
+internal import NucleusAndroidC
 internal import NucleusAppHostProtocols
+internal import NucleusRenderModel
+internal import NucleusRenderer
+internal import NucleusTextRenderingBridge
+internal import VulkanC
 
 // The Android render engine: the `@MainActor` owner of the shared render stack on
 // Android. It holds the platform-agnostic `RenderCore` (Vulkan instance/device +
@@ -15,11 +20,6 @@ internal import NucleusAppHostProtocols
 // isolated like the compositor's (the retained store + layers commit sink are).
 // The thread the JNI frame callback runs on is treated as the main actor; that
 // binding is part of the deferred on-device validation.
-
-internal import NucleusRenderModel
-internal import NucleusRenderer
-internal import NucleusTextRenderingBridge
-internal import VulkanC
 
 @MainActor
 final class AndroidRenderEngine {
@@ -58,19 +58,21 @@ final class AndroidRenderEngine {
                 else {
                     return nil
                 }
-                let create = unsafe unsafeBitCast(
+                let function = unsafe unsafeBitCast(
                     raw,
-                    to: PFN_vkCreateAndroidSurfaceKHR.self)
-                var info = unsafe VkAndroidSurfaceCreateInfoKHR()
-                unsafe info.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR
-                unsafe info.window = OpaquePointer(window)
-                var surface: VkSurfaceKHR? = nil
-                guard unsafe create(instance, &info, nil, &surface) == VK_SUCCESS,
+                    to: UnsafeMutableRawPointer.self)
+                var surface: UnsafeMutableRawPointer?
+                let result = unsafe nucleus_vk_create_android_surface(
+                    function,
+                    UnsafeMutableRawPointer(instance),
+                    window,
+                    &surface)
+                guard result == VK_SUCCESS.rawValue,
                     let surface = unsafe surface
                 else {
                     return nil
                 }
-                return unsafe VulkanSurfaceHandle(surface)
+                return unsafe VulkanSurfaceHandle(OpaquePointer(surface))
             }),
             let core = RenderCore.create(
                 bootstrap: bootstrap,

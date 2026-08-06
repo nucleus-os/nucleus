@@ -24,7 +24,7 @@ Every name belongs to one of these classes before it changes.
 | Other source or binary contract | Keep or rename only through an explicit API/ABI migration | `NucleusConfig`, `NucleusControlProtocol`, `dev.nucleus.android`, `libnucleus-android.so` |
 | User-facing product identity | Keep the branded spelling, but obtain it from the identity catalog | `Nucleus`, the `nucleus` control command, desktop and accessibility application names |
 | Installed component identity | Centralize exact basenames and relative install locations | `NucleusCompositor`, `NucleusShell`, `NucleusSessionSupervisor`, `nucleus-session`, systemd units, `share/nucleus` |
-| Developer-tool identity | Keep as its own intentional product contract | `collider`, `collider-setup.sh`, `ColliderCommands` |
+| Developer-tool identity | Keep as its own intentional product contract | `collider`, `collider-setup.sh`, `ColliderCLI`, `ColliderWorkspaceCommands`, `ColliderLinuxOperations` |
 | Internal implementation name | Prefer a domain name when touching or moving the declaration | process, storage, transport, parsing, staging, and lifecycle helpers |
 | Specification or upstream name | Preserve exactly | XDG variables, D-Bus and Wayland names, Vulkan names, upstream paths and artifacts |
 

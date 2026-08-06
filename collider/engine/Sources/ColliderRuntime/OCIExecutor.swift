@@ -1,6 +1,5 @@
 import ColliderCore
 import Foundation
-import SystemPackage
 
 enum OCIExecutorResolver {
     static func resolve(
@@ -25,62 +24,6 @@ enum OCIExecutorResolver {
 
 struct AppleContainerExecutor: Sendable {
     let backend = ExecutionBackend.appleContainer
-    let executable = CommandSpec.Executable.named("container")
-
-    func buildImageCommand(
-        _ preparation: OCIImagePreparation,
-        candidate: FilePath
-    ) throws -> CommandSpec {
-        try validateOCIPlatform(preparation.executionPlatform)
-        return CommandSpec(
-            executable: executable,
-            arguments: [
-                "build",
-                "--platform", ociPlatformName(preparation.executionPlatform),
-                "--pull",
-                "--tag", preparation.imageName,
-                "--file", preparation.containerFile.string,
-                preparation.context.string,
-            ],
-            workingDirectory: preparation.context,
-            environment: preparation.environment,
-            output: .logged)
-    }
-
-    func inspectImageCommand(
-        _ preparation: OCIImagePreparation
-    ) -> CommandSpec? {
-        CommandSpec(
-            executable: executable,
-            arguments: ["image", "inspect", preparation.imageName],
-            workingDirectory: preparation.context,
-            environment: preparation.environment,
-            output: .captured(limit: 4 * 1_024 * 1_024))
-    }
-
-    func imageIdentifier(
-        candidate: FilePath,
-        inspectionOutput: String?
-    ) throws -> String {
-        guard let inspectionOutput,
-            let data = inspectionOutput.data(using: .utf8),
-            let images = try? JSONDecoder().decode(
-                [AppleImageInspection].self,
-                from: data),
-            images.count == 1
-        else {
-            throw OCIExecutorFailure.invalidAppleImageInspection
-        }
-        let image = images[0].configuration
-        return image.name + "\n" + image.descriptor.digest
-    }
-
-    func removeImageCommand(
-        _ imageID: String,
-        preparation: OCIImagePreparation
-    ) -> CommandSpec? {
-        nil
-    }
 
     func containerName(for execution: OCIExecution) throws -> String {
         try validateExecutionPolicies(execution)
@@ -90,24 +33,11 @@ struct AppleContainerExecutor: Sendable {
     }
 }
 
-private struct AppleImageInspection: Decodable {
-    struct Configuration: Decodable {
-        struct Descriptor: Decodable {
-            let digest: String
-        }
-
-        let descriptor: Descriptor
-        let name: String
-    }
-
-    let configuration: Configuration
-}
-
 func appleImageReference(_ identifier: String) -> String {
     String(identifier.split(separator: "\n", maxSplits: 1)[0])
 }
 
-private func validateOCIPlatform(
+func validateOCIPlatform(
     _ platform: ExecutionPlatform
 ) throws {
     guard platform.environment == .oci,
@@ -134,7 +64,7 @@ private func validateExecutionPolicies(
     }
 }
 
-private func ociPlatformName(_ platform: ExecutionPlatform) -> String {
+func ociPlatformName(_ platform: ExecutionPlatform) -> String {
     let architecture =
         switch platform.architecture {
         case .arm64: "arm64"
@@ -147,7 +77,7 @@ enum OCIExecutorFailure: Error, CustomStringConvertible {
     case containerBuilderReleaseFailed(operation: String, cleanup: String)
     case containerCleanupFailed(name: String, reason: String)
     case containerSuspensionFailed(name: String, reason: String)
-    case invalidAppleImageInspection
+    case invalidAppleImageDigest
     case invalidIntelBinaryTranslationContract
     case unsupportedTerminalOutput
     case unsupportedExecutionPlatform(ExecutionPlatform)
@@ -163,8 +93,8 @@ enum OCIExecutorFailure: Error, CustomStringConvertible {
             "Apple container cleanup failed for \(name): \(reason)"
         case .containerSuspensionFailed(let name, let reason):
             "Apple container suspension failed for \(name): \(reason)"
-        case .invalidAppleImageInspection:
-            "Apple container image inspection did not return one OCI digest"
+        case .invalidAppleImageDigest:
+            "Apple container image API did not return one OCI digest"
         case .invalidIntelBinaryTranslationContract:
             "Intel Linux binary translation requires an ARM64 Linux OCI execution platform"
         case .unsupportedTerminalOutput:

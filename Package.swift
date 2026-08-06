@@ -1438,9 +1438,11 @@ let targets: [Target] = [
         name: "SwiftWaylandGen", dependencies: ["SwiftWaylandGenerator"],
         path: "swift-wayland/Sources/SwiftWaylandGen"),
     .systemLibrary(
-        name: "WaylandServerC", path: "swift-wayland/Sources/WaylandServerC"),
+        name: "WaylandServerC", path: "swift-wayland/Sources/WaylandServerC",
+        pkgConfig: "wayland-server"),
     .systemLibrary(
-        name: "WaylandClientC", path: "swift-wayland/Sources/WaylandClientC"),
+        name: "WaylandClientC", path: "swift-wayland/Sources/WaylandClientC",
+        pkgConfig: "wayland-client"),
     .target(
         name: "WaylandServer",
         dependencies: [

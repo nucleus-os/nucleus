@@ -79,6 +79,7 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
 /// reused by another task.
 public struct SwiftBuildContext: Hashable, Sendable {
     public static let defaultMaximumParallelism: UInt32 = 10
+    public static let concurrentOCIMaximumParallelism: UInt32 = 8
 
     public let packageRoot: FilePath
     public let configuration: SwiftBuildConfiguration

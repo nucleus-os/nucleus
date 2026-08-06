@@ -57,7 +57,6 @@ import Testing
         swiftExecutable: FilePath("/usr/bin/swift"),
         sdkDiscoveryRoot: temporary.appending("swift-sdks"),
         displacedRoot: temporary.appending("displaced"),
-        rebuildLock: temporary.appending("rebuild.lock"),
         environment: [:])
 
     let result = try SwiftTargetSDKColliderRecipe.generation(configuration)
@@ -84,6 +83,14 @@ import Testing
         result.tasks.contains { $0.id.rawValue == "swift-sdk.build-linux-arm64-runtime" })
     #expect(
         result.tasks.contains { $0.id.rawValue == "swift-sdk.build-linux-x86_64-runtime" })
+    let runtimeTasks = result.tasks.filter {
+        $0.id.rawValue.hasPrefix("swift-sdk.build-linux-")
+    }
+    #expect(
+        runtimeTasks.map(\.locks) == [
+            [.checkout("swift-linux-arm64-runtime")],
+            [.checkout("swift-linux-x86_64-runtime")],
+        ])
     #expect(result.tasks.contains { $0.id.rawValue == "swift-sdk.assemble-target-sdks" })
     #expect(result.tasks.contains { $0.id.rawValue == "swift-sdk.validate-target-sdks" })
     var executions: [OCIExecution] = []
@@ -133,12 +140,11 @@ import Testing
             == ActionKind(rawValue: "swift-sdk.build-generator"))
     let generatorLock = TaskLock.shared(
         configuration.generatorScratch.appending(".collider.lock"))
-    let rebuildLock = TaskLock.shared(configuration.rebuildLock)
-    #expect(generator.locks == [generatorLock, rebuildLock])
+    #expect(generator.locks == [generatorLock])
 
     let assembly = try #require(
         result.tasks.first { $0.id.rawValue == "swift-sdk.assemble-target-sdks" })
-    #expect(assembly.locks == [generatorLock, rebuildLock])
+    #expect(assembly.locks == [generatorLock])
     guard let assemblyAction = assembly.action else {
         Issue.record("SDK assembly must be a recipe-owned action")
         return

@@ -1,5 +1,7 @@
 #include "nucleus_android_jni.h"
 
+#if defined(__ANDROID__)
+
 #include <jni.h>
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
@@ -86,3 +88,5 @@ int64_t nucleus_android_asset_get_length64(void *asset) {
 int32_t nucleus_android_asset_read(void *asset, void *buffer, size_t count) {
     return AAsset_read((AAsset *)asset, buffer, count);
 }
+
+#endif

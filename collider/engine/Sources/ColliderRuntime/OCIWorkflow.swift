@@ -18,7 +18,7 @@ extension ColliderRuntime {
             client: ContainerClient(),
             name: Builder.builderContainerId)
         do {
-            try await prepareOCIImageKeepingBuilder(preparation, stage: stage)
+            try await prepareOCIImageKeepingBuilder(preparation)
         } catch {
             let preparationError = error
             do {
@@ -34,11 +34,8 @@ extension ColliderRuntime {
     }
 
     private func prepareOCIImageKeepingBuilder(
-        _ preparation: OCIImagePreparation,
-        stage: TaskID?
+        _ preparation: OCIImagePreparation
     ) async throws {
-        let executor = try OCIExecutorResolver.resolve(
-            executionPlatform: preparation.executionPlatform)
         let contents = try String(
             contentsOfFile: preparation.containerFile.string,
             encoding: .utf8)
@@ -54,49 +51,12 @@ extension ColliderRuntime {
         try FileManager.default.createDirectory(
             atPath: parent.string,
             withIntermediateDirectories: true)
-        let candidate = parent.appending(
-            ".image-id.candidate-\(UUID().uuidString)")
-        let previousImageID = try? String(
-            contentsOfFile: preparation.imageID.string,
-            encoding: .utf8
-        ).trimmingCharacters(in: .whitespacesAndNewlines)
-        defer { try? FileManager.default.removeItem(atPath: candidate.string) }
-
-        let result = try await execute(
-            try executor.buildImageCommand(
-                preparation,
-                candidate: candidate),
-            stage: stage)
-        guard result.status == 0 else {
-            throw RuntimeFailure.commandFailed(status: result.status)
-        }
-        let inspectionOutput: String?
-        if let command = executor.inspectImageCommand(preparation) {
-            let inspection = try await execute(command, stage: stage)
-            guard inspection.status == 0 else {
-                throw RuntimeFailure.commandFailed(status: inspection.status)
-            }
-            inspectionOutput = inspection.standardOutput
-        } else {
-            inspectionOutput = nil
-        }
-        let imageID = try executor.imageIdentifier(
-            candidate: candidate,
-            inspectionOutput: inspectionOutput)
+        let imageID = try await AppleContainerImageBuilder().build(preparation)
         guard validOCIImageDigest(in: imageID) != nil else {
             throw RuntimeFailure.invalidOutput(
                 "OCI executor did not produce a content-addressed builder image ID")
         }
         try DurableFile.write(Data("\(imageID)\n".utf8), to: preparation.imageID)
-        if let previousImageID,
-            previousImageID != imageID,
-            validOCIImageDigest(in: previousImageID) != nil,
-            let remove = executor.removeImageCommand(
-                previousImageID,
-                preparation: preparation)
-        {
-            _ = try? await execute(remove, stage: stage)
-        }
     }
 
     func runOCI(

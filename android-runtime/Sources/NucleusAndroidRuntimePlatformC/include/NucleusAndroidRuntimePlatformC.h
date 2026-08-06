@@ -4,6 +4,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int32_t nucleus_android_runtime_open_raw_pseudo_terminal(
     char *slave_path,
     size_t slave_path_capacity);
@@ -54,5 +58,9 @@ int32_t nucleus_android_runtime_android_bpf_delegation_broker(
 int32_t nucleus_android_runtime_android_bpf_delegation_mount(
     const char *socket_path,
     const char *target_path);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

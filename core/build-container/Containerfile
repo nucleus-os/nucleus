@@ -259,8 +259,6 @@ RUN usermod \
         nucleus-build
 
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/nucleus-build
-RUN install --directory --mode=0755 /opt/nucleus-swiftpm-libcxx
-COPY --chmod=0644 libcxx-swiftpm.ld /opt/nucleus-swiftpm-libcxx/libstdc++.so
 
 USER nucleus-build
 WORKDIR /src

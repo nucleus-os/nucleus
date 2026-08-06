@@ -21,7 +21,7 @@ teardown, artifact reuse, and cache diagnostics already exist.
 
 ## Phase 1 — Centralize output policy
 
-Add one injected console in `ColliderCommands` for human stdout/stderr,
+Add one injected console in `ColliderCLI` for human stdout/stderr,
 terminal-capability detection, color, append-only CI output, progress rendering,
 failure blocks, and safe command/path rendering. Move command-side printing
 behind typed report renderers. Preserve direct descriptors for terminal-owned

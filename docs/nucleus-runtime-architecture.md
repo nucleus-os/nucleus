@@ -63,6 +63,38 @@ the user cache.
 
 Collider owns declared task graphs, planning, execution, artifact identity, locks, and records. Underlying build systems retain their own incremental state. Source submodules are validated pinned inputs and are never mutated by Collider.
 
+Collider installs one executable on macOS and Linux. `ColliderCLI` owns the
+single root grammar and process lifecycle, `ColliderWorkspaceCommands` owns
+checkout-oriented commands and catalog construction, and
+`ColliderLinuxOperations` owns installed-session and Android add-on operations.
+The CLI composes the Linux module only in Linux builds; workspace commands do
+not import runtime products or expose installed-host behavior conditionally.
+Recipe modules continue to own Linux-native artifact actions.
+
+```text
+Collider executable
+  └─ ColliderCLI
+       ├─ ColliderWorkspaceCommands
+       └─ ColliderLinuxOperations [Linux only]
+            └─ ColliderWorkspaceCommands
+```
+
+There is no reverse dependency, runtime command registration, or second
+platform-specific executable. macOS exposes only checkout operations. Linux
+adds `run`, session and Android add-on installation, and Android add-on
+packaging through the compile-time `ColliderCLI` composition.
+
+On macOS, Collider talks to Apple container services in process through the
+upstream Swift APIs for health, networks, image build/inspection/pruning, disk
+usage, container creation, process execution, and cleanup. Only the privileged
+login-session bootstrap script invokes the installed `container` executable,
+because it must establish and verify the service before Collider can use its
+API. SwiftPM may still print missing pkg-config-file warnings while planning the
+Collider package on macOS: the single root runtime package contains Linux
+system-library targets, but those targets are not compiled into the macOS CLI.
+Linux target builds resolve their system libraries from the selected Swift
+SDK's architecture-specific pkg-config paths.
+
 Collider recipes declare typed actions, inputs, outputs, execution placement,
 resource claims, and locks. Planning lowers those declarations into one
 deterministic DAG. The runtime schedules ready tasks by critical path while

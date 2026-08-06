@@ -299,6 +299,8 @@ public enum ReactNativeColliderRecipe {
         builder: NativeOCIConfiguration
     ) throws -> HermesArtifacts {
         let source = root.appending("third-party/hermes")
+        let reactNativeJSI = root.appending(
+            "third-party/react-native/packages/react-native/ReactCommon/jsi")
         let build = root.appending(".rn-build/\(target.identifier)/hermes")
         let combined = build.appending("libhermes_lean_combined.a")
         let hermesc = build.appending("bin/hermesc")
@@ -325,6 +327,7 @@ public enum ReactNativeColliderRecipe {
         let task = taskBuilder.build(
             inputs: [
                 .tree(source),
+                .tree(reactNativeJSI),
                 .file(root.appending("../tools/merge-static-archives.sh")),
             ],
             locks: [.checkout("rn-native-\(target.identifier)")],
@@ -342,6 +345,7 @@ public enum ReactNativeColliderRecipe {
                                 "-DHERMES_BUILD_APPLE_FRAMEWORK=OFF",
                                 "-DHERMES_ENABLE_DEBUGGER=OFF",
                                 "-DHERMES_ENABLE_INTL=ON",
+                                "-DJSI_DIR=\(nativePath(reactNativeJSI, "/src/third-party/react-native/packages/react-native/ReactCommon/jsi"))",
                                 "-DICU_FOUND=ON",
                                 "-DICU_INCLUDE_DIRS=/icu/common;/icu/i18n",
                                 "-DICU_LIBRARIES=/icu/lib/libicu.a",

@@ -89,6 +89,10 @@ let package = Package(
                     package: "containerization",
                     condition: .when(platforms: [.macOS])),
                 .product(
+                    name: "ContainerizationOCI",
+                    package: "containerization",
+                    condition: .when(platforms: [.macOS])),
+                .product(
                     name: "Subprocess",
                     package: "swift-subprocess"),
                 .product(name: "Crypto", package: "swift-crypto"),

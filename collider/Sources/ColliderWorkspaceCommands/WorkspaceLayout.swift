@@ -1,0 +1,63 @@
+import ColliderCore
+import ColliderPersistence
+import ColliderRuntime
+import SystemPackage
+
+/// The single authoritative map from a Nucleus checkout root to paths owned or
+/// consumed by Collider. Package recipes receive these resolved roots and own
+/// their internal build layouts.
+package struct WorkspaceLayout: Sendable {
+    package let root: FilePath
+
+    package init(root: FilePath) {
+        self.root = root
+    }
+
+    package var state: FilePath { root.appending(".nucleus") }
+    var runs: FilePath { state.appending("runs") }
+    var tasks: FilePath { state.appending("tasks") }
+    package var runtimeState: FilePath { state.appending("runtime") }
+    package var androidAddonStore: FilePath { runtimeState.appending("android-addon") }
+    package var androidPersistentState: FilePath { runtimeState.appending("android-state") }
+    var locks: FilePath { state.appending("locks") }
+    package var work: FilePath { state.appending("work") }
+    func swiftScratch(for context: SwiftBuildContext) -> FilePath {
+        let identity = ArtifactHasher.digest(bytes: context.identityBytes)
+            .description
+            .replacingOccurrences(of: ":", with: "-")
+        return state.appending("swiftpm")
+            .appending(context.sanitizer ?? "unsanitized")
+            .appending(identity)
+    }
+    var benchmarkBuilds: FilePath { state.appending("benchmarks") }
+    var nativeSanitizerBuilds: FilePath { state.appending("native-sanitizers") }
+    package var installPrefix: FilePath { root.appending(".install") }
+
+    var swiftSDK: FilePath { root.appending("swift-sdk") }
+    var swiftTracy: FilePath { root.appending("swift-tracy") }
+    var swiftVulkan: FilePath { root.appending("swift-vulkan") }
+    var swiftWayland: FilePath { root.appending("swift-wayland") }
+    var core: FilePath { root.appending("core") }
+    var config: FilePath { root.appending("config") }
+    var ipc: FilePath { root.appending("ipc") }
+    var reactNative: FilePath { root.appending("react-native") }
+    package var androidRuntime: FilePath { root.appending("android-runtime") }
+    var chromium: FilePath { root.appending("chromium") }
+    var platformLinux: FilePath { root.appending("platform-linux") }
+    var platformLinuxDesktop: FilePath { platformLinux.appending("desktop") }
+    var platformLinuxSession: FilePath { platformLinux.appending("session") }
+    package var compositor: FilePath { root.appending("compositor") }
+    var compositorCore: FilePath { compositor.appending("compositor-core") }
+    var compositorApp: FilePath { compositor.appending("compositor") }
+    package var compositorSessionPackage: FilePath {
+        compositor.appending("packages").appending("session")
+    }
+    var shell: FilePath { root.appending("shell") }
+    var tools: FilePath { root.appending("tools") }
+
+    var tracyBuild: FilePath { compositor.appending(".tracy-build") }
+}
+
+extension WorkspaceContext {
+    package var layout: WorkspaceLayout { WorkspaceLayout(root: root) }
+}

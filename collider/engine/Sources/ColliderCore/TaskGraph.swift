@@ -195,7 +195,7 @@ public struct OCIResourceLimits: Codable, Hashable, Sendable {
         openFileCount: 131_072)
 
     public static let parallelBuild = OCIResourceLimits(
-        cpuCount: 11,
+        cpuCount: 8,
         memoryBytes: 56 * 1_024 * 1_024 * 1_024,
         processCount: 16_384,
         openFileCount: 65_536)
