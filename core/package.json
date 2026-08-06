@@ -41,7 +41,7 @@
     "@babel/eslint-parser": "^7.28.5",
     "@babel/plugin-syntax-flow": "^7.27.1",
     "@babel/plugin-transform-flow-strip-types": "^7.27.1",
-    "@react-native/babel-preset": "0.87.0-rc.3",
+    "@react-native/babel-preset": "0.87.0-rc.4",
     "@rnx-kit/metro-config": "^2.2.1",
     "@rnx-kit/metro-resolver-symlinks": "^0.2.8",
     "@types/node": "^25.0.0",

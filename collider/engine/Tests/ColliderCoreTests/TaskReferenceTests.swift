@@ -86,6 +86,35 @@ private func inertActionFileSystem() -> ActionFileSystem {
     }
 }
 
+@Test func containerRunRejectsNonzeroWhileExecuteReturnsTheResult() async throws {
+    let execution = OCIExecution(
+        executionPlatform: .linuxARM64OCI,
+        artifactTarget: .linuxARM64,
+        imageID: FilePath("/fixture/image-id"),
+        hostname: "fixture",
+        workingDirectory: "/workspace",
+        hostWorkingDirectory: FilePath("/fixture"),
+        mounts: [],
+        networkPolicy: .externalDisabled,
+        userPolicy: .builder,
+        capabilityPolicy: .dropAll,
+        privilegePolicy: .prohibitAcquisition,
+        processFilesystemPolicy: .standard,
+        resourceLimits: .parallelBuild,
+        containerEnvironment: [:],
+        command: ["false"],
+        environment: [:],
+        output: .captured(limit: 1_024))
+    let executor = ActionContainerExecutor(
+        run: { _ in CommandResult(status: 19) })
+
+    await #expect(throws: ActionContainerExecutorFailure.self) {
+        try await executor.run(execution)
+    }
+    let result = try await executor.execute(execution)
+    #expect(result.status == 19)
+}
+
 @Test func actionFileSystemRejectsUndeclaredAndEscapingEffects() throws {
     let files = inertActionFileSystem().scoped(to: [
         ActionEffect(.read, scope: .input(FilePath("/inputs"))),

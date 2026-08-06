@@ -86,6 +86,7 @@ public func recordOCIActionExecution(
 public func inertActionFileSystem() -> ActionFileSystem {
     ActionFileSystem(
         metadata: { _ in nil },
+        metadataNoFollow: { _ in nil },
         contentsEqual: { _, _ in true },
         createDirectory: { _ in },
         copy: { _, _ in },

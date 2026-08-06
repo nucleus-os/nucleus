@@ -1118,7 +1118,7 @@ private struct InstallSkiaGNAction: ColliderAction {
 
     func execute(in context: ActionContext) async throws {
         try context.files.createDirectory(executable.removingLastComponent())
-        let result = try await context.containers.run(execution)
+        let result = try await context.containers.execute(execution)
         guard result.status == 0 else {
             throw SkiaDependencyFailure.unzipFailed(result.status)
         }

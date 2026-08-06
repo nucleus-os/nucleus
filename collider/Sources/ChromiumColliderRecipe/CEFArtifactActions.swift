@@ -271,7 +271,7 @@ private func validateCEFSDK(
     try context.files.remove(smoke)
     try context.files.createDirectory(smoke)
     defer { try? context.files.remove(smoke) }
-    let validation = try await context.containers.run(
+    let validation = try await context.containers.execute(
         chromiumToolExecution(
             imageID: assembly.containerImageID,
             hostname: "chromium-cef-validation",
@@ -321,7 +321,7 @@ private func requireCEFContainerSuccess(
     assembly: CEFArtifactAssembly,
     context: ActionContext
 ) async throws {
-    let result = try await context.containers.run(
+    let result = try await context.containers.execute(
         chromiumToolExecution(
             imageID: assembly.containerImageID,
             hostname: "chromium-cef-artifact",

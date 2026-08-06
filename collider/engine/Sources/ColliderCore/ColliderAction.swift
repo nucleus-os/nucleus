@@ -303,14 +303,30 @@ public struct ActionContainerExecutor: Sendable {
         try await prepareImageBody(preparation)
     }
 
-    @discardableResult
-    public func run(_ execution: OCIExecution) async throws -> CommandResult {
+    public func run(_ execution: OCIExecution) async throws {
+        let result = try await execute(execution)
+        guard result.status == 0 else {
+            throw ActionContainerExecutorFailure.commandFailed(result.status)
+        }
+    }
+
+    public func execute(_ execution: OCIExecution) async throws -> CommandResult {
         try await runBody(execution)
     }
 }
 
-public enum ActionContainerExecutorFailure: Error, Sendable {
+public enum ActionContainerExecutorFailure: Error, CustomStringConvertible, Sendable {
     case unavailable
+    case commandFailed(Int32)
+
+    public var description: String {
+        switch self {
+        case .unavailable:
+            "container execution is unavailable"
+        case .commandFailed(let status):
+            "container command failed with status \(status)"
+        }
+    }
 }
 
 public struct OCIImagePreparationActionIdentity: ColliderActionIdentity {
@@ -501,7 +517,7 @@ public struct OCIExecutionPipeline: Sendable {
     public func execute(in context: ActionContext) async throws {
         for (index, execution) in executions.enumerated() {
             try context.cancellation.check()
-            let result = try await context.containers.run(execution)
+            let result = try await context.containers.execute(execution)
             guard result.status == 0 else {
                 throw OCIExecutionPipelineFailure.commandFailed(
                     index: index,

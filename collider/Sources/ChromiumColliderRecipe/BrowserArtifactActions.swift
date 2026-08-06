@@ -216,7 +216,7 @@ private func validateBrowserGeneration(
     context: ActionContext
 ) async throws {
     try validateBrowserGenerationStructure(generation, files: context.files)
-    let validation = try await context.containers.run(
+    let validation = try await context.containers.execute(
         chromiumToolExecution(
             imageID: assembly.containerImageID,
             hostname: "chromium-browser-validation",

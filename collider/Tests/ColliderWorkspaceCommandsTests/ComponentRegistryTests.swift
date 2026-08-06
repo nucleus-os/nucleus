@@ -1,6 +1,7 @@
 import AndroidRuntimeColliderRecipe
 import ColliderCore
 import ColliderPlanning
+import ColliderTesting
 import CompositorColliderRecipe
 import CoreColliderRecipe
 import Foundation
@@ -182,6 +183,27 @@ private func fixtureReactNativeNodeModules(
         "node-modules",
         path: root.appending("third-party/react-native/node_modules"),
         validation: .nonEmptyDirectory)
+}
+
+@Test func reactNativeDependencyInstallRejectsContainerFailure() async throws {
+    let root = FilePath("/workspace/react-native")
+    let task = try ReactNativeColliderRecipe.installJavaScriptDependencies(
+        root: root,
+        environment: ["PATH": "/usr/bin"],
+        builder: try fixtureNativeBuilder(
+            context: FilePath("/workspace/core/build-container"),
+            imageID: FilePath("/cache/native/image-id"),
+            ccache: FilePath("/cache/native/ccache"),
+            swiftSDKRoot: FilePath("/cache/swift-sdks"),
+            environment: ["PATH": "/usr/bin"])
+    ).task
+    let action = try #require(task.action)
+
+    await #expect(throws: ActionContainerExecutorFailure.self) {
+        _ = try await recordActionExecution(
+            action,
+            containerResult: { _ in CommandResult(status: 1) })
+    }
 }
 
 @Test func androidToolchainCatalogDrivesColliderVersionsAndNDKSelection() throws {

@@ -217,7 +217,7 @@ package struct BuildChromiumProductAction: ColliderAction {
         guard try context.files.metadata(for: clang)?.type == .regular else {
             throw failure("Chromium clang is missing: \(clang)")
         }
-        let versionResult = try await context.containers.run(
+        let versionResult = try await context.containers.execute(
             containerExecution(
                 command: ["clang-version"],
                 output: .captured(limit: 64 * 1_024)))

@@ -137,41 +137,48 @@ public enum ReactNativeColliderRecipe {
         environment: [String: String],
         builder: NativeOCIConfiguration
     ) throws -> JavaScriptDependencyArtifacts {
+        let checkout = root.appending("third-party/react-native")
+        let packageManifest = checkout.appending("package.json")
+        let reactNativeManifest = checkout.appending(
+            "packages/react-native/package.json")
+        let lockfile = checkout.appending("yarn.lock")
+        let active = checkout.appending("node_modules")
+        let candidate = checkout.appending(".node_modules.candidate")
+        let previous = checkout.appending(".node_modules.previous")
         var task = TaskBuilder(
             id: TaskID(rawValue: "rn.javascript-dependencies"),
             component: ComponentID(rawValue: "rn"))
         task.consume(builder.image)
         let nodeModules: ArtifactReference<DirectoryArtifact> = try task.output(
             "node-modules",
-            path: root.appending(
-                "third-party/react-native/node_modules"),
+            path: active,
             validation: .nonEmptyDirectory)
+        let execution = javascriptExecution(
+            root: root,
+            builder: builder,
+            networkPolicy: .externalEnabled,
+            command: [
+                "/opt/node/bin/corepack", "yarn", "install", "--pure-lockfile",
+                "--modules-folder", candidate.string,
+            ],
+            environment: environment)
         let declaration = task.build(
             inputs: [
-                .file(
-                    root.appending(
-                        "third-party/react-native/yarn.lock")),
-                .file(
-                    root.appending(
-                        "third-party/react-native/package.json")),
-                .file(
-                    root.appending(
-                        "third-party/react-native/packages/react-native/package.json")),
+                .file(lockfile),
+                .file(packageManifest),
+                .file(reactNativeManifest),
             ],
             locks: [.checkout("rn-javascript")],
-            action: try javascriptAction(
-                root: root,
-                builder: builder,
-                networkPolicy: .externalEnabled,
-                command: [
-                    // The upstream 0.87 RC pins an exact Hermes compiler newer
-                    // than its committed lock entry. Preserve the source lock
-                    // while resolving that dependency; the package has no
-                    // transitive dependencies and the exact version remains
-                    // part of this task's identity above.
-                    "/opt/node/bin/corepack", "yarn", "install", "--pure-lockfile",
-                ],
-                environment: environment))
+            action:
+                try AnyColliderAction(
+                    InstallReactNativeJavaScriptDependenciesAction(
+                        execution: execution,
+                        candidate: candidate,
+                        previous: previous,
+                        active: active,
+                        packageManifest: packageManifest,
+                        reactNativeManifest: reactNativeManifest,
+                        lockfile: lockfile)))
         return JavaScriptDependencyArtifacts(
             task: declaration,
             nodeModules: nodeModules)
@@ -832,7 +839,24 @@ private func javascriptAction(
     command: [String],
     environment: [String: String]
 ) throws -> AnyColliderAction {
-    let execution = OCIExecution(
+    try AnyColliderAction(
+        RunReactNativeJavaScriptAction(
+            execution: javascriptExecution(
+                root: root,
+                builder: builder,
+                networkPolicy: networkPolicy,
+                command: command,
+                environment: environment)))
+}
+
+private func javascriptExecution(
+    root: FilePath,
+    builder: NativeOCIConfiguration,
+    networkPolicy: OCINetworkPolicy,
+    command: [String],
+    environment: [String: String]
+) -> OCIExecution {
+    OCIExecution(
         executionPlatform: .linuxARM64OCI,
         artifactTarget: .linuxARM64,
         imageID: builder.imageID,
@@ -856,9 +880,6 @@ private func javascriptAction(
         command: ["javascript"] + command,
         environment: environment,
         output: .logged)
-    return
-        try AnyColliderAction(
-            RunReactNativeJavaScriptAction(execution: execution))
 }
 
 private let boostVersion = "1.84.0"
@@ -1052,6 +1073,149 @@ private struct RunReactNativeJavaScriptAction: ColliderAction {
 
     func execute(in context: ActionContext) async throws {
         try await context.containers.run(execution)
+    }
+}
+
+private struct InstallReactNativeJavaScriptDependenciesAction: ColliderAction {
+    struct Identity: ColliderActionIdentity {
+        let execution: OCIExecution
+        let candidate: FilePath
+        let previous: FilePath
+        let active: FilePath
+        let packageManifest: FilePath
+        let reactNativeManifest: FilePath
+        let lockfile: FilePath
+
+        func encode(into encoder: inout ActionIdentityEncoder) {
+            encoder.append(
+                tag: 1,
+                nested: OCIExecutionActionIdentity(execution))
+            encoder.append(tag: 2, string: candidate.string)
+            encoder.append(tag: 3, string: previous.string)
+            encoder.append(tag: 4, string: active.string)
+            encoder.append(tag: 5, string: packageManifest.string)
+            encoder.append(tag: 6, string: reactNativeManifest.string)
+            encoder.append(tag: 7, string: lockfile.string)
+        }
+    }
+
+    static let kind: ActionKind = "rn.install-javascript-dependencies"
+
+    let execution: OCIExecution
+    let candidate: FilePath
+    let previous: FilePath
+    let active: FilePath
+    let packageManifest: FilePath
+    let reactNativeManifest: FilePath
+    let lockfile: FilePath
+
+    var identity: Identity {
+        Identity(
+            execution: execution,
+            candidate: candidate,
+            previous: previous,
+            active: active,
+            packageManifest: packageManifest,
+            reactNativeManifest: reactNativeManifest,
+            lockfile: lockfile)
+    }
+
+    var requirements: ActionRequirements {
+        ociActionRequirements(execution: execution)
+    }
+
+    var environment: [String: String] { execution.environment }
+
+    func execute(in context: ActionContext) async throws {
+        try recoverInterruptedPublication(using: context.files)
+        try context.files.remove(candidate)
+        do {
+            try await context.containers.run(execution)
+            try validateCandidate(using: context.files)
+            try publishCandidate(using: context.files)
+        } catch {
+            try? context.files.remove(candidate)
+            throw error
+        }
+    }
+
+    private func recoverInterruptedPublication(
+        using files: ActionFileSystem
+    ) throws {
+        guard try files.metadataWithoutFollowingSymlinks(for: previous) != nil else {
+            return
+        }
+        if try files.metadataWithoutFollowingSymlinks(for: active) == nil {
+            try files.move(from: previous, to: active)
+        } else {
+            try files.remove(previous)
+        }
+    }
+
+    private func publishCandidate(using files: ActionFileSystem) throws {
+        let hadActive = try files.metadataWithoutFollowingSymlinks(for: active) != nil
+        if hadActive {
+            try files.move(from: active, to: previous)
+        }
+        do {
+            try files.move(from: candidate, to: active)
+        } catch {
+            if hadActive {
+                try? files.move(from: previous, to: active)
+            }
+            throw error
+        }
+        try? files.remove(previous)
+    }
+
+    private func validateCandidate(using files: ActionFileSystem) throws {
+        let requested = try JSONDecoder().decode(
+            ReactNativePackageManifest.self,
+            from: Data(try files.read(reactNativeManifest)))
+        guard let expectedHermes = requested.dependencies?["hermes-compiler"] else {
+            throw JavaScriptDependencyFailure.missingHermesRequirement
+        }
+        let installedHermesManifest = candidate.appending(
+            "hermes-compiler/package.json")
+        let installed = try JSONDecoder().decode(
+            InstalledJavaScriptPackage.self,
+            from: Data(try files.read(installedHermesManifest)))
+        guard installed.version == expectedHermes else {
+            throw JavaScriptDependencyFailure.wrongHermesVersion(
+                expected: expectedHermes,
+                actual: installed.version)
+        }
+        let codegenManifest = candidate.appending(
+            "@react-native/codegen/package.json")
+        guard try files.metadata(for: codegenManifest)?.type == .regular else {
+            throw JavaScriptDependencyFailure.missingCodegen
+        }
+    }
+
+}
+
+private struct ReactNativePackageManifest: Decodable {
+    let dependencies: [String: String]?
+}
+
+private struct InstalledJavaScriptPackage: Decodable {
+    let version: String
+}
+
+private enum JavaScriptDependencyFailure: Error, CustomStringConvertible {
+    case missingHermesRequirement
+    case wrongHermesVersion(expected: String, actual: String)
+    case missingCodegen
+
+    var description: String {
+        switch self {
+        case .missingHermesRequirement:
+            "React Native does not declare a Hermes compiler dependency"
+        case .wrongHermesVersion(let expected, let actual):
+            "installed Hermes compiler version \(actual) does not match \(expected)"
+        case .missingCodegen:
+            "React Native codegen was not installed"
+        }
     }
 }
 

@@ -482,7 +482,7 @@ private struct AOSPProductValidationWorkflow {
             case .path(let path), .taskOutput(let path): containerPath(path.string)
             case .artifact(let reference): containerPath(reference.path.string)
             }
-        return try await context.containers.run(
+        return try await context.containers.execute(
             aospProductOCIExecution(
                 build: build,
                 writableMounts: [(build.buildRoot, "/build")],

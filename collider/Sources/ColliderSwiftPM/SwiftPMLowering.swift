@@ -504,7 +504,7 @@ private struct SwiftPMAction: ColliderAction {
             case .host(let command):
                 result = try await context.commands.execute(command)
             case .oci(let execution):
-                result = try await context.containers.run(execution)
+                result = try await context.containers.execute(execution)
             }
             guard result.status == 0 else {
                 throw SwiftPMLoweringFailure.commandFailed(result.status)

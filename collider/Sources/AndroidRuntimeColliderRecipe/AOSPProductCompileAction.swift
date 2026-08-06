@@ -163,7 +163,7 @@ private struct AOSPProductCompileWorkflow {
             writableMounts + [
                 (build.ccacheDirectory, "/src/out/nucleus/.ccache")
             ]
-        let cleanResult = try await context.containers.run(
+        let cleanResult = try await context.containers.execute(
             aospProductOCIExecution(
                 build: build,
                 writableMounts: allWritableMounts,
@@ -179,7 +179,7 @@ private struct AOSPProductCompileWorkflow {
             cleanResult.standardOutput,
             status: cleanResult.status)
 
-        let result = try await context.containers.run(
+        let result = try await context.containers.execute(
             aospProductOCIExecution(
                 build: build,
                 writableMounts: allWritableMounts,
@@ -344,7 +344,7 @@ private struct AOSPProductCompileWorkflow {
                 sys.exit(result.returncode)
             print("NUCLEUS_NSJAIL_ISOLATION_OK")
             """
-        let isolation = try await context.containers.run(
+        let isolation = try await context.containers.execute(
             aospProductOCIExecution(
                 build: build,
                 writableMounts: writableMounts + [(validation, "/validation")],
@@ -356,7 +356,7 @@ private struct AOSPProductCompileWorkflow {
             isolation.standardOutput,
             status: isolation.status)
 
-        let broken = try await context.containers.run(
+        let broken = try await context.containers.execute(
             aospProductOCIExecution(
                 build: build,
                 writableMounts: writableMounts,
@@ -419,7 +419,7 @@ private struct AOSPProductCompileWorkflow {
         output: CommandSpec.Output
     ) async throws -> CommandResult {
         precondition(directory == build.source)
-        return try await context.containers.run(
+        return try await context.containers.execute(
             aospProductOCIExecution(
                 build: build,
                 writableMounts: [],

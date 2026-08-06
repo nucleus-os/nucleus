@@ -316,6 +316,7 @@ func appleContainerFlags(
         kernel: nil,
         kernelArgs: [],
         labels: ["dev.nucleus.collider.managed=true"],
+        maskedPaths: [],
         mounts: mounts,
         name: name,
         networks: execution.networkPolicy == .externalDisabled
@@ -325,6 +326,7 @@ func appleContainerFlags(
         publishPorts: [],
         publishSockets: [],
         readOnly: true,
+        readonlyPaths: [],
         remove: false,
         rosetta: execution.intelBinaryTranslationPolicy == .required,
         runtime: nil,

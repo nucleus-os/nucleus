@@ -81,7 +81,7 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
         try context.files.remove(imageCandidate)
         defer { try? context.files.remove(imageCandidate) }
         try context.files.createDirectory(imageCandidate)
-        let extraction = try await context.containers.run(
+        let extraction = try await context.containers.execute(
             aospProductOCIExecution(
                 build: build,
                 writableMounts: [(build.buildRoot, "/build")],

@@ -106,7 +106,7 @@
 	url = https://gitlab.freedesktop.org/wayland/wayland.git
 [submodule "third-party/container"]
 	path = third-party/container
-	url = https://github.com/apple/container.git
+	url = git@github.com:nucleus-os/container.git
 	branch = main
 [submodule "third-party/containerization"]
 	path = third-party/containerization

@@ -71,7 +71,7 @@ struct FixtureOCIExecutionAction: ColliderAction {
     var environment: [String: String] { identity.execution.environment }
 
     func execute(in context: ActionContext) async throws {
-        let result = try await context.containers.run(identity.execution)
+        let result = try await context.containers.execute(identity.execution)
         guard result.status == 0 else {
             throw FixtureActionFailure.commandFailed(result.status)
         }
