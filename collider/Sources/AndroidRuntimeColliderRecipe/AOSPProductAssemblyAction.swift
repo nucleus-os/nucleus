@@ -38,7 +38,6 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
                 ActionEffect(.read, scope: .input(build.containerImageID)),
                 ActionEffect(.readWrite, scope: .scratch(build.buildRoot)),
             ],
-            resources: .lightweight,
             executionPlatform: .linuxARM64OCI,
             artifactTarget: .androidX86_64(
                 apiLevel: build.expectedPlatformSDK))

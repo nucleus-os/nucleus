@@ -26,7 +26,7 @@ struct SwiftSDK: AsyncParsableCommand {
     struct Status: AsyncParsableCommand {
         @OptionGroup var reportOptions: ReportOptions
         mutating func run() async throws {
-            try SwiftSDKStatus(context: context()).run(
+            try await SwiftSDKStatus(context: context()).run(
                 json: reportOptions.json)
         }
     }

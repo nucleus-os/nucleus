@@ -78,10 +78,6 @@ package struct PrepareChromiumSourceAction: ColliderAction {
                     .readWrite,
                     scope: .scratch(repositoryCache)),
             ],
-            resources: ActionResourceRequest(
-                cpuCount: 1,
-                memoryBytes: 2 * 1_024 * 1_024 * 1_024,
-                exclusive: false),
             executionPlatform: .macOSARM64Native)
     }
 

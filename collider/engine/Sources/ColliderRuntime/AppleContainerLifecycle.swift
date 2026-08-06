@@ -8,7 +8,6 @@ import ContainerAPIClient
 import ContainerCommands
 import ContainerResource
 import ContainerizationOCI
-import Darwin
 #endif
 
 public struct AppleContainerBackendHealth: Sendable {
@@ -484,7 +483,6 @@ actor AppleContainerSuspension {
 private final class AppleContainerOutputSession: @unchecked Sendable {
     let stdio: [FileHandle?]
 
-    private let writers: [FileHandle]
     private let pipes: [AppleContainerPipe]
     private let outputTask: Task<[UInt8], any Error>
     private let errorTask: Task<[UInt8], any Error>?
@@ -508,9 +506,8 @@ private final class AppleContainerOutputSession: @unchecked Sendable {
             file: file)
 
         if case .combined(let limit) = output {
-            let pipe = AppleContainerPipe()
+            let pipe = try AppleContainerPipe()
             stdio = [nil, pipe.writer, pipe.writer]
-            writers = [pipe.writer]
             pipes = [pipe]
             outputTask = Task {
                 try await collectAppleContainerOutput(
@@ -523,10 +520,9 @@ private final class AppleContainerOutputSession: @unchecked Sendable {
             return
         }
 
-        let stdout = AppleContainerPipe()
-        let stderr = AppleContainerPipe()
+        let stdout = try AppleContainerPipe()
+        let stderr = try AppleContainerPipe()
         stdio = [nil, stdout.writer, stderr.writer]
-        writers = [stdout.writer, stderr.writer]
         pipes = [stdout, stderr]
         let captureLimit: Int? =
             switch output {
@@ -551,8 +547,8 @@ private final class AppleContainerOutputSession: @unchecked Sendable {
     }
 
     func closeWriters() throws {
-        for writer in writers {
-            try writer.close()
+        for pipe in pipes {
+            try pipe.closeWriter()
         }
     }
 
@@ -629,21 +625,26 @@ private final class AppleContainerPipe: @unchecked Sendable {
     let writer: FileHandle
     let stream: AsyncStream<Data>
 
-    private let reader: FileHandle
+    private let reader: FileDescriptor
+    private let writerDescriptor: FileDescriptor
     private let continuation: AsyncStream<Data>.Continuation
     private let lock = NSLock()
     private var finished = false
+    private var writerClosed = false
     private var readSource: (any DispatchSourceRead)!
 
-    init() {
-        let pipe = Pipe()
-        reader = pipe.fileHandleForReading
-        writer = pipe.fileHandleForWriting
+    init() throws {
+        let pipe = try FileDescriptor.pipe(options: [.closeOnExec])
+        reader = pipe.readEnd
+        writerDescriptor = pipe.writeEnd
+        writer = FileHandle(
+            fileDescriptor: pipe.writeEnd.rawValue,
+            closeOnDealloc: false)
         let pair = AsyncStream<Data>.makeStream()
         stream = pair.stream
         continuation = pair.continuation
         readSource = DispatchSource.makeReadSource(
-            fileDescriptor: reader.fileDescriptor,
+            fileDescriptor: reader.rawValue,
             queue: DispatchQueue.global(qos: .utility))
         readSource.setEventHandler { [weak self] in
             self?.readAvailableBytes()
@@ -651,7 +652,21 @@ private final class AppleContainerPipe: @unchecked Sendable {
         continuation.onTermination = { [weak self] _ in
             self?.finish()
         }
+        readSource.setCancelHandler { [reader] in
+            try? reader.close()
+        }
         readSource.resume()
+    }
+
+    func closeWriter() throws {
+        lock.lock()
+        guard !writerClosed else {
+            lock.unlock()
+            return
+        }
+        writerClosed = true
+        lock.unlock()
+        try writerDescriptor.close()
     }
 
     func finish() {
@@ -669,17 +684,21 @@ private final class AppleContainerPipe: @unchecked Sendable {
     private func readAvailableBytes() {
         let byteCount = max(1, min(Int(readSource.data), 64 * 1_024))
         var bytes = [UInt8](repeating: 0, count: byteCount)
-        let count = bytes.withUnsafeMutableBytes { buffer in
-            unsafe Darwin.read(
-                reader.fileDescriptor,
-                buffer.baseAddress,
-                buffer.count)
+        let count: Int
+        do {
+            count = try bytes.withUnsafeMutableBytes {
+                try unsafe reader.read(into: $0, retryOnInterrupt: false)
+            }
+        } catch let error as Errno
+            where error == .interrupted || error == .wouldBlock
+        {
+            return
+        } catch {
+            finish()
+            return
         }
         if count > 0 {
             continuation.yield(Data(bytes.prefix(count)))
-            return
-        }
-        if count == -1, errno == EAGAIN || errno == EINTR {
             return
         }
         finish()

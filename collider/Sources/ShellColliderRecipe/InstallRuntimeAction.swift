@@ -90,7 +90,7 @@ struct InstallRuntimeAction: ColliderAction {
     }
 
     init(configuration: ShellRuntimeInstallConfiguration) {
-        products = configuration.swiftPM.configurationProducts
+        products = configuration.swiftPM.productsDirectory
         prefix = configuration.prefix
         generationsRoot = configuration.generationsRoot
         sessionPackage = configuration.sessionPackage

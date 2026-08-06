@@ -99,7 +99,7 @@ private struct SwiftSDKStatusRecord: Codable {
 struct SwiftSDKStatus {
     let context: WorkspaceContext
 
-    func run(json: Bool) throws {
+    func run(json: Bool) async throws {
         let paths = SwiftTargetSDKStoragePaths(cacheRoot: context.cacheRoot)
         let activeLink = paths.artifactRoot.appending("current")
         let active = resolvedSymlink(activeLink)
@@ -125,19 +125,23 @@ struct SwiftSDKStatus {
             hostSwift.flatMap {
                 FileManager.default.isExecutableFile(atPath: $0.string) ? $0 : nil
             }
+        let hostSwiftVersion: String?
+        if let executable {
+            hostSwiftVersion = try? await commandOutput(
+                executable: executable,
+                arguments: ["--version"],
+                context: context)
+        } else {
+            hostSwiftVersion = nil
+        }
         let record = SwiftSDKStatusRecord(
             cacheRoot: paths.cacheRoot.string,
             artifactRoot: paths.artifactRoot.string,
-            xcodeIdentity: try selectedXcodeIdentity(environment: context.environment),
+            xcodeIdentity: try await selectedXcodeIdentity(context: context),
             activeGeneration: active?.lastComponent?.string,
             activeGenerationPath: active?.string,
             hostSwiftExecutable: executable?.string,
-            hostSwiftVersion: executable.flatMap {
-                try? commandOutput(
-                    executable: $0,
-                    arguments: ["--version"],
-                    environment: context.environment)
-            },
+            hostSwiftVersion: hostSwiftVersion,
             swiftSDKs: sdkNames,
             generations: generations)
         if json {
@@ -190,33 +194,30 @@ struct SwiftSDKCommand {
 }
 
 private func selectedXcodeIdentity(
-    environment: [String: String]
-) throws -> String {
-    try commandOutput(
+    context: WorkspaceContext
+) async throws -> String {
+    try await commandOutput(
         executable: FilePath("/usr/bin/xcodebuild"),
         arguments: ["-version"],
-        environment: environment
+        context: context
     ).replacing("\n", with: " ")
 }
 
 private func commandOutput(
     executable: FilePath,
     arguments: [String],
-    environment: [String: String]
-) throws -> String {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: executable.string)
-    process.arguments = arguments
-    process.environment = environment
-    let output = Pipe()
-    process.standardOutput = output
-    process.standardError = output
-    try process.run()
-    process.waitUntilExit()
-    let data = output.fileHandleForReading.readDataToEndOfFile()
-    let text = String(decoding: data, as: UTF8.self)
+    context: WorkspaceContext
+) async throws -> String {
+    let result = try await context.runtime.execute(
+        CommandSpec(
+            executable: .path(executable),
+            arguments: arguments,
+            workingDirectory: context.root,
+            environment: context.environment,
+            output: .combined(limit: 64 * 1_024)))
+    let text = result.standardOutput
         .trimmingCharacters(in: .whitespacesAndNewlines)
-    guard process.terminationStatus == 0 else {
+    guard result.status == 0 else {
         throw WorkspaceFailure.message(
             "\(executable.lastComponent?.string ?? executable.string) failed: \(text)")
     }

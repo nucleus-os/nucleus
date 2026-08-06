@@ -12,10 +12,6 @@ public struct TaskOutputValidator: Sendable {
     public func validate(_ task: TaskDeclaration) throws {
         try validate(task.outputs.map { ($0.path, $0.validation) })
         try validate(task.postconditions.map { ($0.path, $0.validation) })
-        try validate(
-            task.swiftProducts.flatMap(\.expectedOutputs).map {
-                ($0.path, $0.validation)
-            })
         if let action = task.action {
             try action.validateOutputs(
                 using: fileSystem.scoped(to: action.requirements.effects))

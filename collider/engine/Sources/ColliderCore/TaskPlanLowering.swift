@@ -1,16 +1,13 @@
 public struct AssessedTaskDeclaration: Sendable {
     public let task: TaskDeclaration
     public let isClean: Bool
-    public let isSubsumed: Bool
 
     public init(
         task: TaskDeclaration,
-        isClean: Bool,
-        isSubsumed: Bool
+        isClean: Bool
     ) {
         self.task = task
         self.isClean = isClean
-        self.isSubsumed = isSubsumed
     }
 }
 

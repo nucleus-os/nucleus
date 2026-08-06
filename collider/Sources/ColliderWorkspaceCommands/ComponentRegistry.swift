@@ -553,13 +553,11 @@ package struct ComponentRegistry {
     }
 
     private func runtimeGenerationKey(for prefix: FilePath) -> String {
-        let standardized = URL(fileURLWithPath: prefix.string)
-            .standardizedFileURL.path
-        let root = URL(fileURLWithPath: context.root.string)
-            .standardizedFileURL.path
+        let standardized = prefix.normalizedForComparison()
+        let root = context.root.normalizedForComparison()
         if standardized == root { return "root" }
-        if standardized.hasPrefix(root + "/") {
-            let relative = String(standardized.dropFirst(root.count + 1))
+        if let subpath = standardized.relativeSubpath(from: root) {
+            let relative = subpath.string
             let sanitized = String(
                 relative.map { character in
                     character.isLetter || character.isNumber ? character : "-"
@@ -568,7 +566,7 @@ package struct ComponentRegistry {
             .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
             if !sanitized.isEmpty { return sanitized }
         }
-        let digest = ArtifactHasher.digest(bytes: Array(standardized.utf8))
+        let digest = ArtifactHasher.digest(bytes: Array(standardized.string.utf8))
         return "external-" + hex(digest.bytes.prefix(8))
     }
 

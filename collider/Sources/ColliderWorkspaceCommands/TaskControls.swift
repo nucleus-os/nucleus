@@ -13,7 +13,6 @@ extension JSONEncoder {
 package struct TaskControls: Sendable {
     package var dryRun = false
     var rebuild = false
-    var explain = false
     var verbose = false
     var quiet = false
     var json = false
@@ -21,14 +20,12 @@ package struct TaskControls: Sendable {
     package init(
         dryRun: Bool = false,
         rebuild: Bool = false,
-        explain: Bool = false,
         verbose: Bool = false,
         quiet: Bool = false,
         json: Bool = false
     ) {
         self.dryRun = dryRun
         self.rebuild = rebuild
-        self.explain = explain
         self.verbose = verbose
         self.quiet = quiet
         self.json = json
@@ -38,7 +35,6 @@ package struct TaskControls: Sendable {
         TaskExecutionOptions(
             dryRun: dryRun,
             rebuildSelected: rebuild,
-            explain: explain,
             verbose: verbose,
             quiet: quiet,
             machineReadable: json)
@@ -47,7 +43,7 @@ package struct TaskControls: Sendable {
     func render(_ report: TaskExecutionReport) throws {
         if json {
             print(String(decoding: try JSONEncoder.sorted.encode(report), as: UTF8.self))
-        } else if dryRun || explain {
+        } else if dryRun {
             let planningMicroseconds = report.planningDurationNanoseconds / 1_000
             let fractionalMilliseconds = String(planningMicroseconds % 1_000)
             let paddedFraction =
@@ -60,7 +56,7 @@ package struct TaskControls: Sendable {
                     + "\(report.selectedInputHashingDurationNanoseconds / 1_000) us")
             print("SwiftPM invocations  \(report.swiftPMInvocationCount)")
             for entry in report.plan {
-                let state = entry.isClean ? "clean" : entry.isSubsumed ? "subsumed" : "dirty"
+                let state = entry.isClean ? "clean" : "dirty"
                 print(
                     "\(state)  \(entry.task.rawValue)"
                         + executionCoordinateSummary(entry.coordinates)

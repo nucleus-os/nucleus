@@ -1,6 +1,6 @@
 # Collider Architecture Simplification Plan
 
-Status: active.
+Status: complete.
 
 ## Invariant
 
@@ -238,7 +238,7 @@ pair combinations, or prefix trimming at graph sizes this small.
 
 ## Sequential Implementation Plan
 
-### Phase 1 — Remove dead and unobserved surface
+### Phase 1 — Remove dead and unobserved surface (complete)
 
 Delete `SwiftPackageRequirementBuilder` and its tests. Delete `LoadedLibrary`,
 `LoadedLibraryFailure`, and the associated platform-C function and declaration.
@@ -253,7 +253,11 @@ reader for an obsolete internal manifest shape.
 Phase 1 is complete when planning, dry-run rendering, normal execution, and run
 inspection work without any replacement audit model.
 
-### Phase 2 — Correct identities
+Completed: the dead SwiftPM builder and loaded-library slice, `--explain`, the
+planning audit model, its manifest payload, and output-derived scheduler claims
+are removed. Explicit locks and action effects remain the scheduler authorities.
+
+### Phase 2 — Correct identities (complete)
 
 Remove `NUCLEUS_SWIFT_SOURCE_ID` from host SwiftPM context identity. Keep the
 resolved Xcode Swift executable as the host toolchain input. Remove
@@ -265,7 +269,12 @@ complete when changing target-SDK source gitlinks or host job count does not
 change the host scratch directory, while changing the selected Swift compiler
 does.
 
-### Phase 3 — Remove duplicate cache and subsumption systems
+Completed: host SwiftPM contexts derive their toolchain identity from the
+resolved compiler executable, target-SDK source identity is excluded from host
+SwiftPM commands, and job count remains an invocation argument without entering
+artifact or scratch identity.
+
+### Phase 3 — Remove duplicate cache and subsumption systems (complete)
 
 Delete `ArtifactSnapshotStore`, its tests, `.artifactCached`, eligibility
 validation, snapshot plan records, and snapshot planning services. Connect
@@ -281,7 +290,13 @@ Phase 3 is complete when a fresh checkout can restore downloads from the digest
 cache, regenerate derived sources, and run Linux tests without either concept in
 the task model.
 
-### Phase 4 — Hand host Swift work fully to SwiftPM
+Completed: artifact snapshots and their cache-only policy are deleted; downloads
+remain digest-addressed through `ColliderDownloads`; deterministic generators use
+ordinary task inputs and outputs; and task subsumption is deleted across the
+declaration, identity, plan, runtime, persistence, and CLI layers. Linux test
+entrypoints invoke `swift test` directly without a redundant build prerequisite.
+
+### Phase 4 — Hand host Swift work fully to SwiftPM (complete)
 
 Make host SwiftPM actions always invoke SwiftPM and remove host source-tree
 hashing from Collider. Retain OCI input assessment. Narrow output validation to
@@ -297,7 +312,16 @@ Phase 4 is complete when a warm host build reaches SwiftPM and exits as SwiftPM'
 own no-op, target builds still avoid unnecessary container startup, and no
 Collider code names `Intermediates.noindex`.
 
-### Phase 5 — Simplify scheduling and storage lifecycle
+Completed: host SwiftPM work always reaches the explicit `swiftbuild` build
+system and carries no Collider source-tree assessment. OCI SwiftPM work retains
+its outer input gate so an unchanged target build does not start a container.
+SwiftPM's public `--show-bin-path` result is published through a stable
+Collider-owned products link; production consumers and target-SDK validation no
+longer reconstruct product or generated-module-map paths. Output validation now
+applies to lowered artifact boundaries instead of repeating logical Swift
+product checks.
+
+### Phase 5 — Simplify scheduling and storage lifecycle (complete)
 
 Replace weighted CPU, memory, and I/O claims with explicit concurrency lanes and
 filesystem effect conflicts. Delete normalized resource weights, host capacity
@@ -312,7 +336,17 @@ Phase 5 is complete when independent arm64 and x86_64 OCI work can overlap withi
 the configured OCI cap, conflicting paths cannot overlap, host-exclusive work
 remains serialized, and repeated runs keep bounded diagnostic storage.
 
-### Phase 6 — Apply targeted safety cleanup
+Completed: the scheduler uses fixed lightweight-host and OCI concurrency limits
+plus a single host-exclusive barrier. Action filesystem reads become shared claims
+and writes become exclusive claims across every lane. Host-capacity probing,
+normalized CPU/memory/I/O weights, and impossible-capacity planning failures are
+deleted; concrete OCI limits and guest job counts remain execution inputs.
+Terminalizing a run now applies the same retention selection used by explicit
+cache pruning: all running records, the configured newest terminal records, and
+the newest failed record are preserved. Scheduling delay records lane and
+filesystem-claim waiting rather than obsolete resource-bin-packing time.
+
+### Phase 6 — Apply targeted safety cleanup (complete)
 
 Adopt the component-aware path helper everywhere, validate environment keys
 without force unwraps, route the Xcode probe through `ColliderRuntime`, migrate
@@ -328,9 +362,20 @@ Phase 6 is complete when the focused engine and command tests pass, the complete
 Collider test suites pass, and one complete bootstrap/build run exercises both
 target architectures without obsolete code paths or compatibility layers.
 
+Completed: one shared component-aware `FilePath` implementation now owns path
+normalization, containment, overlap, and relative-subpath semantics. Runtime
+environment construction validates names and values without force unwraps, and
+the Xcode and host-Swift probes execute through `ColliderRuntime` with bounded
+output. Apple-container pipes own Swift System file descriptors while retaining
+dispatch-source readiness and expose `FileHandle` only at the Apple API adapter.
+Elapsed-time conversion is centralized, static patterns use checked Regex
+literals, and persisted file signatures retain the pinned Swift System
+`DeviceID` and `Inode` types directly. The focused tests, 97-test engine suite,
+complete Collider suites, bootstrap, and complete arm64/x86_64 build all pass.
+
 ## Completion State
 
-The plan is complete when Collider contains one orchestration path for each
-operation, delegates incrementality to the build system that owns it, preserves
-only boundary-level caching and validation, and has no compatibility wrappers
-for the deleted task-model concepts.
+Collider now contains one orchestration path for each operation, delegates
+incrementality to the build system that owns it, preserves only boundary-level
+caching and validation, and has no compatibility wrappers for the deleted
+task-model concepts.

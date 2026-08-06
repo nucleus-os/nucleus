@@ -16,7 +16,7 @@ import Testing
     try await registry.appendLog(Array("diagnostic\n".utf8), in: run)
     try await registry.recordExecutionMetrics(
         criticalPathDurationNanoseconds: 123,
-        resourceWaitDurationNanoseconds: 45,
+        schedulingWaitDurationNanoseconds: 45,
         in: run)
     try await registry.finish(run, status: .succeeded)
 
@@ -28,7 +28,7 @@ import Testing
                 .appendingPathComponent("runs/\(run.id.rawValue)/manifest.json")))
     #expect(manifest.status == .succeeded)
     #expect(manifest.criticalPathDurationNanoseconds == 123)
-    #expect(manifest.resourceWaitDurationNanoseconds == 45)
+    #expect(manifest.schedulingWaitDurationNanoseconds == 45)
     #expect(
         try FileManager.default.destinationOfSymbolicLink(
             atPath: directory.appendingPathComponent("latest").path)
@@ -57,15 +57,10 @@ import Testing
             runner: .current,
             execution: .linuxARM64OCI,
             backend: .appleContainer,
-            artifact: .linuxARM64),
-        audit: fixtureAudit(component: ComponentID(rawValue: "fixture")))
+            artifact: .linuxARM64))
     try await registry.recordPlan([plan], in: run)
     try await registry.recordTaskDuration(88, task: task, in: run)
     try await registry.recordTaskOutcome(.executed, task: task, in: run)
-    try await registry.recordArtifactSnapshotDigests(
-        ["product": identity],
-        task: task,
-        in: run)
 
     let manifest = try JSONDecoder().decode(
         RunManifest.self,
@@ -76,11 +71,10 @@ import Testing
     #expect(record.plan.identity == identity)
     #expect(record.outcome == .executed)
     #expect(record.durationNanoseconds == 88)
-    #expect(record.artifactSnapshotDigests == ["product": identity])
     #expect(record.observations == nil)
 }
 
-@Test func runRegistryLeavesReclamationToTheExplicitLifecycleCommand() async throws {
+@Test func runRetentionPreservesActiveRecentAndNewestFailedRuns() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-retention-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -108,7 +102,7 @@ import Testing
         let paddedMilliseconds =
             String(repeating: "0", count: max(0, 3 - milliseconds.count))
             + milliseconds
-        // The oldest run of all did not succeed, so it outlives newer successes.
+        // The newest failed run is preserved in addition to recent terminal runs.
         try record(
             id,
             startedAt: "2026-01-01T00:00:00.\(paddedMilliseconds)Z",
@@ -127,11 +121,44 @@ import Testing
     #expect(remaining.contains(run.id.rawValue))
     #expect(remaining.contains("2020-01-01T00-00-00Z-7"))
     #expect(remaining.contains(oldest[0]))
-    for id in oldest[1...overflow] {
+    for id in oldest[1..<overflow] {
         #expect(remaining.contains(id))
         #expect(reclaimable.contains(id))
     }
+    #expect(!reclaimable.contains(oldest[overflow]))
     #expect(remaining.contains(oldest[oldest.count - 1]))
+}
+
+@Test func terminalizingARunAppliesRunRetention() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-terminal-retention-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let runs = directory.appendingPathComponent("runs")
+    try FileManager.default.createDirectory(at: runs, withIntermediateDirectories: true)
+    let oldIDs = ["oldest", "newer"]
+    for (index, id) in oldIDs.enumerated() {
+        let runDirectory = runs.appendingPathComponent(id)
+        try FileManager.default.createDirectory(
+            at: runDirectory,
+            withIntermediateDirectories: true)
+        var manifest = RunManifest(
+            runID: RunID(rawValue: id),
+            command: ["collider", "fixture"],
+            startedAt: "2026-01-01T00:00:0\(index)Z")
+        manifest.status = .succeeded
+        try JSONEncoder().encode(manifest).write(
+            to: runDirectory.appendingPathComponent("manifest.json"))
+    }
+    let registry = RunRegistry(root: FilePath(directory.path))
+    let current = try await registry.begin(command: ["collider", "fixture"])
+    try await registry.finish(
+        current,
+        status: .succeeded,
+        retainingRuns: 2)
+
+    #expect(!FileManager.default.fileExists(atPath: runs.appendingPathComponent(oldIDs[0]).path))
+    #expect(FileManager.default.fileExists(atPath: runs.appendingPathComponent(oldIDs[1]).path))
+    #expect(FileManager.default.fileExists(atPath: current.directory.string))
 }
 
 @Test func runManifestRoundTripsAllDurableTaskMetadata() throws {
@@ -156,7 +183,6 @@ import Testing
         isClean: false,
         explanation: "fixture",
         coordinates: nil,
-        audit: fixtureAudit(component: ComponentID(rawValue: "runtime")),
         logicalOwners: [TaskID(rawValue: "runtime.logical")],
         attribution: "runtime release")
     manifest.tasks = [
@@ -164,7 +190,6 @@ import Testing
             plan: plan,
             outcome: .executed,
             durationNanoseconds: 123,
-            artifactSnapshotDigests: ["product": digest],
             observations: TaskExecutionObservations(
                 containerExecutions: [
                     OCIExecutionObservation(
@@ -209,7 +234,6 @@ import Testing
     #expect(decodedTask.plan.attribution == "runtime release")
     #expect(decodedTask.outcome == .executed)
     #expect(decodedTask.durationNanoseconds == 123)
-    #expect(decodedTask.artifactSnapshotDigests == ["product": digest])
     #expect(decodedTask.observations?.containerExecutions.first?.imageDigest == digest)
     #expect(
         decodedTask.observations?.containerExecutions.first?
@@ -233,8 +257,7 @@ func unfinishedRunResumptionReusesOnlyMatchingCleanTaskIdentities(
             identity: ArtifactDigest(bytes: [UInt8](repeating: 1, count: 32)),
             isClean: false,
             explanation: "no prior task state",
-            coordinates: nil,
-            audit: fixtureAudit(component: ComponentID(rawValue: "core")))
+            coordinates: nil)
     ]
     try await registry.recordPlan(original, in: run)
     try await registry.finish(run, status: status)
@@ -247,8 +270,7 @@ func unfinishedRunResumptionReusesOnlyMatchingCleanTaskIdentities(
             identity: ArtifactDigest(bytes: [UInt8](repeating: 2, count: 32)),
             isClean: false,
             explanation: "input identity changed",
-            coordinates: nil,
-            audit: fixtureAudit(component: ComponentID(rawValue: "core")))
+            coordinates: nil)
     ]
     try await registry.recordPlan(changed, in: resumed)
     let incorrectlyClean = [
@@ -257,32 +279,11 @@ func unfinishedRunResumptionReusesOnlyMatchingCleanTaskIdentities(
             identity: ArtifactDigest(bytes: [UInt8](repeating: 3, count: 32)),
             isClean: true,
             explanation: "fixture incorrectly claims reusable state",
-            coordinates: nil,
-            audit: fixtureAudit(component: ComponentID(rawValue: "core")))
+            coordinates: nil)
     ]
     await #expect(throws: RunRegistryFailure.self) {
         try await registry.recordPlan(incorrectlyClean, in: resumed)
     }
-}
-
-private func fixtureAudit(component: ComponentID) -> PlannedTaskAudit {
-    PlannedTaskAudit(
-        component: component,
-        actionKind: nil,
-        actionIdentity: nil,
-        semanticDependencies: [:],
-        orderingDependencies: [],
-        artifactReferences: [],
-        resultReferences: [],
-        inputs: [],
-        semanticTools: [],
-        operationalTools: [],
-        swiftBuildContexts: [],
-        outputs: [],
-        postconditions: [],
-        effects: [],
-        networkAccess: "none",
-        assessmentPolicy: "incremental")
 }
 
 @Test func runRegistryScrubsCredentialsFromDurableRecords() async throws {
@@ -302,8 +303,7 @@ private func fixtureAudit(component: ComponentID) -> PlannedTaskAudit {
                 identity: ArtifactDigest(bytes: [UInt8](repeating: 7, count: 32)),
                 isClean: false,
                 explanation: "credential redaction fixture",
-                coordinates: nil,
-                audit: fixtureAudit(component: ComponentID(rawValue: "fixture")))
+                coordinates: nil)
         ],
         in: run)
     try await registry.record(

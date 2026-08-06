@@ -210,7 +210,6 @@ public enum CoreColliderRecipe: ColliderComponent {
             validation: .regularFile)
         let download = downloadBuilder.build(
             locks: [.checkout("core-sources")],
-            assessmentPolicy: .artifactCached,
             action:
                 try AnyColliderAction(
                     DownloadSkiaGNAction(
@@ -248,7 +247,6 @@ public enum CoreColliderRecipe: ColliderComponent {
             validation: .executableFile)
         let install = installBuilder.build(
             locks: [.checkout("core-sources")],
-            assessmentPolicy: .artifactCached,
             action:
                 try AnyColliderAction(
                     InstallSkiaGNAction(
@@ -267,19 +265,14 @@ public enum CoreColliderRecipe: ColliderComponent {
         let source = try String(
             contentsOf: URL(fileURLWithPath: deps.string),
             encoding: .utf8)
-        let expression = try NSRegularExpression(
-            pattern:
-                #"(?m)^  ["']([^"']+)["']\s*:\s*["'](https://[^"']+)@([0-9a-f]{40})["']\s*,?\s*$"#)
-        let range = NSRange(source.startIndex..., in: source)
+        let expression =
+            #/(?m)^  ["']([^"']+)["']\s*:\s*["'](https://[^"']+)@([0-9a-f]{40})["']\s*,?\s*$/#
         var paths: Set<String> = []
-        let dependencies = expression.matches(in: source, range: range).map { match in
-            func capture(_ index: Int) -> String {
-                String(source[Range(match.range(at: index), in: source)!])
-            }
+        let dependencies = source.matches(of: expression).map { match in
             return SkiaGitDependency(
-                relativePath: capture(1),
-                remote: capture(2),
-                commit: capture(3))
+                relativePath: String(match.1),
+                remote: String(match.2),
+                commit: String(match.3))
         }.sorted { $0.relativePath < $1.relativePath }
         guard !dependencies.isEmpty else {
             throw SkiaDependencyFailure.noGitDependencies(deps)
@@ -355,9 +348,9 @@ public enum CoreColliderRecipe: ColliderComponent {
         nativeSDK: ArtifactReferenceSet
     ) throws -> AndroidHostArtifacts {
         let package = root.appending("platform-android")
-        let product = swiftPM.configurationProducts.appending(
+        let product = swiftPM.productsDirectory.appending(
             "libnucleus-android.so")
-        let swiftJavaProduct = swiftPM.configurationProducts.appending(
+        let swiftJavaProduct = swiftPM.productsDirectory.appending(
             "libSwiftJava.so")
         let generatedJava = swiftPM.scratchPath.appending(
             "plugins/outputs/nucleus/NucleusAndroidJNI/destination/"
@@ -667,14 +660,8 @@ private struct ValidateAndroidHostAction: ColliderAction {
             throw AndroidHostValidationFailure.invalidOutput(
                 "Android Kotlin JNI contract is not UTF-8")
         }
-        let expression = try NSRegularExpression(
-            pattern: #"external\s+fun\s+([A-Za-z0-9_]+)"#)
-        let range = NSRange(source.startIndex..., in: source)
-        let functions = expression.matches(in: source, range: range).compactMap {
-            match -> String? in
-            guard let value = Range(match.range(at: 1), in: source) else { return nil }
-            return String(source[value])
-        }
+        let functions = source.matches(of: /external\s+fun\s+([A-Za-z0-9_]+)/)
+            .map { String($0.1) }
         require(!functions.isEmpty, "Kotlin contract declares no external functions")
         for function in functions {
             require(
@@ -1109,7 +1096,7 @@ private struct InstallSkiaGNAction: ColliderAction {
                     .readWrite,
                     scope: .output(executable.removingLastComponent()))
             ],
-            resources: container.resources,
+            lane: container.lane,
             executionPlatform: container.executionPlatform,
             artifactTarget: container.artifactTarget)
     }

@@ -17,8 +17,6 @@ public enum RunStatus: String, Codable, Sendable {
 
 public enum TaskRunOutcome: String, Codable, Sendable {
     case localClean
-    case subsumed
-    case restored
     case executed
 }
 
@@ -78,20 +76,17 @@ public struct RunTaskRecord: Codable, Sendable {
     public let plan: TaskPlanEntry
     public var outcome: TaskRunOutcome?
     public var durationNanoseconds: UInt64?
-    public var artifactSnapshotDigests: [String: ArtifactDigest]?
     public var observations: TaskExecutionObservations?
 
     public init(
         plan: TaskPlanEntry,
         outcome: TaskRunOutcome? = nil,
         durationNanoseconds: UInt64? = nil,
-        artifactSnapshotDigests: [String: ArtifactDigest]? = nil,
         observations: TaskExecutionObservations? = nil
     ) {
         self.plan = plan
         self.outcome = outcome
         self.durationNanoseconds = durationNanoseconds
-        self.artifactSnapshotDigests = artifactSnapshotDigests
         self.observations = observations
     }
 }
@@ -108,7 +103,7 @@ public struct RunManifest: Codable, Sendable {
     public var swiftPMInvocationCount: Int?
     public var executionDurationNanoseconds: UInt64?
     public var criticalPathDurationNanoseconds: UInt64?
-    public var resourceWaitDurationNanoseconds: UInt64?
+    public var schedulingWaitDurationNanoseconds: UInt64?
     public var activeArtifacts: [String: ArtifactDigest]
     public var tasks: [String: RunTaskRecord]?
     public var resumedAt: [String]?
@@ -126,7 +121,7 @@ public struct RunManifest: Codable, Sendable {
         swiftPMInvocationCount = nil
         executionDurationNanoseconds = nil
         criticalPathDurationNanoseconds = nil
-        resourceWaitDurationNanoseconds = nil
+        schedulingWaitDurationNanoseconds = nil
         activeArtifacts = [:]
         tasks = nil
         resumedAt = nil
@@ -158,7 +153,6 @@ public struct ColliderEvent: Codable, Sendable {
         case runStarted
         case taskStarted
         case taskSkipped
-        case taskRestored
         case taskSucceeded
         case taskFailed
         case runFinished

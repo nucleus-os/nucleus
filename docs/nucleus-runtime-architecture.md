@@ -96,12 +96,30 @@ Linux target builds resolve their system libraries from the selected Swift
 SDK's architecture-specific pkg-config paths.
 
 Collider recipes declare typed actions, inputs, outputs, execution placement,
-resource claims, and locks. Planning lowers those declarations into one
-deterministic DAG. The runtime schedules ready tasks by critical path while
-respecting host capacity and exclusive resources, emits structured run records,
-and restores content-addressed artifact snapshots only after validating every
-declared output. Actions cannot construct nested execution graphs or bypass the
-runtime's process, container, lock, record, or artifact ownership.
+filesystem effects, and locks. Planning lowers those declarations into one
+deterministic DAG. The runtime schedules ready tasks through bounded lightweight
+host and OCI lanes plus one host-exclusive barrier that runs without other work.
+Shared reads and exclusive
+writes prevent overlapping filesystem effects across every lane. Concrete OCI
+CPU and memory limits remain properties of the container execution rather than
+inputs to a fictional aggregate host-capacity model. The runtime emits
+structured run records and validates declared outputs before recording
+successful task state. Actions
+cannot construct nested execution graphs or bypass the runtime's process,
+container, lock, record, or artifact ownership. Content-addressed downloads live
+only in the `ColliderDownloads` cache; Collider does not snapshot generated or
+extracted outputs into a second cache.
+
+Run terminalization retains the newest 20 terminal records and the newest failed
+record in addition, while never treating an active run as reclaimable. Explicit
+cache pruning uses the same selection policy with its requested retention count.
+
+Host Swift actions always invoke SwiftPM with the `swiftbuild` build system;
+SwiftPM and llbuild exclusively own source-level incrementality. Collider asks
+SwiftPM for its public bin path and exposes it to downstream tasks through a
+stable Collider-owned products link rather than reconstructing SwiftPM's private
+scratch layout. Target Swift actions retain a declared-input gate outside the
+container so unchanged work avoids container startup.
 
 The Swift target-SDK workspace is one immutable generation graph. Collider
 validates the pinned source gitlinks, prepares exact Linux sysroots, builds the
@@ -109,10 +127,9 @@ Linux/arm64 target runtime natively in the Apple-container builder, cross-builds
 the Linux/amd64 target runtime in that same arm64 environment, and assembles one
 relocatable Linux Swift SDK with both target variants. It also installs the
 official Android Swift SDK artifact and validates Linux and Android consumers
-for both architectures. Unchanged tasks reuse their declared outputs or a
-validated artifact snapshot; source identity changes invalidate only dependent
-tasks. Every C++ closure links libc++, and validation rejects `libstdc++` and
-`GLIBCXX` dependencies.
+for both architectures. Unchanged tasks reuse their declared outputs; source
+identity changes invalidate only dependent tasks. Every C++ closure links
+libc++, and validation rejects `libstdc++` and `GLIBCXX` dependencies.
 
 ## Verification boundary
 

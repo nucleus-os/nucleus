@@ -143,6 +143,18 @@ import Testing
     #expect(result.standardOutput == "declared|unset")
 }
 
+@Test func runtimeRejectsInvalidEnvironmentKeys() async {
+    await #expect(throws: RuntimeFailure.self) {
+        try await ColliderRuntime().execute(
+            CommandSpec(
+                executable: .named("true"),
+                arguments: [],
+                workingDirectory: FilePath("/"),
+                environment: ["INVALID=KEY": "value"],
+                output: .captured(limit: 1_024)))
+    }
+}
+
 @Test func runtimePreservesNonzeroChildStatus() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-status-\(UUID().uuidString)")

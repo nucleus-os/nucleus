@@ -567,7 +567,6 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             validation: .regularFile)
         let task = builder.build(
             locks: [.checkout("swift-target-sdk-downloads")],
-            assessmentPolicy: .artifactCached,
             action:
                 try AnyColliderAction(
                     DownloadSwiftTargetSDKInputAction(
@@ -939,18 +938,11 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             "schemaVersion": "1.0",
             "linker": ["path": hostLinker.string],
         ])
-        let linuxARM64Build = validationRoot.appending("linux-arm64")
-        let linuxAMD64Build = validationRoot.appending("linux-x86_64")
-        let androidARM64Build = validationRoot.appending("android-arm64")
-        let androidAMD64Build = validationRoot.appending("android-amd64")
-        let linuxARM64Executable = linuxARM64Build.appending(
-            "out/Products/Debug-linux-aarch64/hello")
-        let linuxAMD64Executable = linuxAMD64Build.appending(
-            "out/Products/Debug-linux-x86_64/hello")
-        let androidARM64Executable = androidARM64Build.appending(
-            "out/Products/Debug-android-aarch64/hello")
-        let androidAMD64Executable = androidAMD64Build.appending(
-            "out/Products/Debug-android-x86_64/hello")
+        let productsRoot = validationRoot.appending("products")
+        let linuxARM64Executable = productsRoot.appending("linux-arm64/hello")
+        let linuxAMD64Executable = productsRoot.appending("linux-x86_64/hello")
+        let androidARM64Executable = productsRoot.appending("android-arm64/hello")
+        let androidAMD64Executable = productsRoot.appending("android-amd64/hello")
         var environment = configuration.environment
         environment["ANDROID_NDK_HOME"] = configuration.ndkRoot.string
 
@@ -1144,7 +1136,7 @@ private struct BuildSwiftLinuxRuntimeAction: ColliderAction {
                 ActionEffect(.write, scope: .scratch(workspace)),
                 ActionEffect(.write, scope: .scratch(compilerCache)),
             ],
-            resources: executionRequirements.resources,
+            lane: executionRequirements.lane,
             executionPlatform: executionRequirements.executionPlatform,
             artifactTarget: executionRequirements.artifactTarget)
     }
@@ -1728,38 +1720,51 @@ private struct ValidateSwiftTargetSDKsAction: ColliderAction {
             (
                 validationRoot.appending("linux-arm64"),
                 linuxBundleID,
-                "aarch64-unknown-linux-gnu"
+                "aarch64-unknown-linux-gnu",
+                executablePaths[0]
             ),
             (
                 validationRoot.appending("linux-x86_64"),
                 linuxBundleID,
-                "x86_64-unknown-linux-gnu"
+                "x86_64-unknown-linux-gnu",
+                executablePaths[1]
             ),
             (
                 validationRoot.appending("android-arm64"),
                 androidBundleID,
-                "aarch64-unknown-linux-android\(androidAPILevel)"
+                "aarch64-unknown-linux-android\(androidAPILevel)",
+                executablePaths[2]
             ),
             (
                 validationRoot.appending("android-amd64"),
                 androidBundleID,
-                "x86_64-unknown-linux-android\(androidAPILevel)"
+                "x86_64-unknown-linux-android\(androidAPILevel)",
+                executablePaths[3]
             ),
         ]
-        for (scratch, sdk, triple) in builds {
+        for (scratch, sdk, triple, executable) in builds {
+            let buildArguments = [
+                "--package-path", fixture.string,
+                "--scratch-path", scratch.string,
+                "--swift-sdks-path", sdkRoot.string,
+                "--swift-sdk", sdk,
+                "--triple", triple,
+                "--toolset", hostToolset.string,
+                "--build-system", "swiftbuild",
+            ]
             try await run(
                 executable: .taskOutput(hostSwift),
-                arguments: [
-                    "build",
-                    "--package-path", fixture.string,
-                    "--scratch-path", scratch.string,
-                    "--swift-sdks-path", sdkRoot.string,
-                    "--swift-sdk", sdk,
-                    "--triple", triple,
-                    "--toolset", hostToolset.string,
-                ],
+                arguments: ["build"] + buildArguments,
                 workingDirectory: fixture,
                 context: context)
+            let binPath = try await queryBinPath(
+                arguments: buildArguments,
+                scratch: scratch,
+                context: context)
+            try context.files.createDirectory(executable.removingLastComponent())
+            try context.files.copy(
+                from: binPath.appending("hello"),
+                to: executable)
         }
         try await run(
             executable: .path(validator),
@@ -1784,6 +1789,30 @@ private struct ValidateSwiftTargetSDKsAction: ColliderAction {
         guard result.status == 0 else {
             throw SwiftSDKValidationFailure.commandFailed(result.status)
         }
+    }
+
+    private func queryBinPath(
+        arguments: [String],
+        scratch: FilePath,
+        context: ActionContext
+    ) async throws -> FilePath {
+        let result = try await context.commands.execute(
+            CommandSpec(
+                executable: .taskOutput(hostSwift),
+                arguments: ["build", "--show-bin-path"] + arguments,
+                workingDirectory: fixture,
+                environment: environment,
+                output: .captured(limit: 64 * 1_024)))
+        guard result.status == 0 else {
+            throw SwiftSDKValidationFailure.commandFailed(result.status)
+        }
+        let value = result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let path = FilePath(value).lexicallyNormalized()
+        guard !value.isEmpty, path.isAbsolute, path.isContained(in: scratch)
+        else {
+            throw SwiftSDKValidationFailure.invalidBinPath(value)
+        }
+        return path
     }
 }
 
@@ -1860,6 +1889,7 @@ private enum SwiftSDKGeneratorBuildFailure: Error {
 
 private enum SwiftSDKValidationFailure: Error {
     case commandFailed(Int32)
+    case invalidBinPath(String)
 }
 
 private enum SwiftSDKAssemblyFailure: Error {

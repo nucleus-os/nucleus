@@ -11,10 +11,9 @@ systems retain ownership of their incremental databases; Collider selects their
 bounded roots but does not reproduce their dependency graphs.
 
 Publication validates a complete candidate before one atomic activation.
-Interrupted candidates are recoverable generated data. Artifact snapshots,
-downloads, published generations, incremental roots, and run records participate
-in one ownership inventory without forcing unrelated components into one storage
-implementation.
+Interrupted candidates are recoverable generated data. Downloads, published
+generations, incremental roots, and run records participate in one ownership
+inventory without forcing unrelated components into one storage implementation.
 
 Storage declarations, APFS volume validation, cache status, pruning foundations,
 and safety tests exist. Recipe-derived ownership and uniform user commands remain.
@@ -25,7 +24,7 @@ Attach storage class, safety root, producer tasks, workflow lock, clean
 eligibility, prune eligibility, active link, and rollback count to the task or
 component declaration that owns each root. Include SwiftPM scratch directories,
 Skia/RN/CMake outputs, AOSP and Chromium outputs, Swift/native SDK generations,
-browser/CEF/Android publications, downloads, artifact snapshots, and run records.
+browser/CEF/Android publications, downloads, and run records.
 
 Reject workspace roots, home directories, broad cache roots, paths outside a
 safety root, conflicting overlaps, source or identity descendants, and removable
@@ -38,9 +37,9 @@ hand-maintained global cleanup inventory remains.
 
 Keep source and identity data indefinitely. Keep each active published
 generation and its declared rollback generations. Keep incremental build roots
-until explicit component cleaning. Keep downloads and artifact snapshots while
-referenced by the current graph or retention policy. Keep run records under the
-existing run-retention policy.
+until explicit component cleaning. Keep downloads while referenced by the current
+graph or retention policy. Keep run records under the existing run-retention
+policy.
 
 Use a common candidate/activation helper only for components that share the same
 validated-generation lifecycle. Preserve specialized source materialization and

@@ -143,7 +143,7 @@ private struct RunBenchmarkAction: ColliderAction {
         if !effects.contains(outputEffect) { effects.append(outputEffect) }
         return ActionRequirements(
             effects: effects,
-            resources: executionRequirements.resources,
+            lane: executionRequirements.lane,
             executionPlatform: executionRequirements.executionPlatform,
             artifactTarget: executionRequirements.artifactTarget)
     }

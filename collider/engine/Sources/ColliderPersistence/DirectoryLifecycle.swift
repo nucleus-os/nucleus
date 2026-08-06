@@ -41,18 +41,18 @@ public enum DirectoryLifecycle {
     }
 
     public static func prune(_ plan: DirectoryRetentionPlan) throws {
-        let safetyRoot = standardized(plan.safetyRoot)
-        guard safetyRoot != "/" else {
+        let safetyRoot = plan.safetyRoot.normalizedForComparison()
+        guard safetyRoot != FilePath("/") else {
             throw PersistenceFailure.invalidPath(
                 "retention safety root must not be the filesystem root")
         }
         for rule in plan.rules {
-            let root = standardized(rule.root)
-            guard isDescendant(root, of: safetyRoot) else {
+            let root = rule.root.normalizedForComparison()
+            guard root.isContained(in: safetyRoot) else {
                 throw PersistenceFailure.invalidPath(
                     "refusing to prune outside \(safetyRoot): \(root)")
             }
-            try prune(rule, root: FilePath(root))
+            try prune(rule, root: root)
         }
     }
 
@@ -118,11 +118,4 @@ public enum DirectoryLifecycle {
         }
     }
 
-    private static func standardized(_ path: FilePath) -> String {
-        URL(fileURLWithPath: path.string).standardizedFileURL.path
-    }
-
-    private static func isDescendant(_ path: String, of root: String) -> Bool {
-        path == root || path.hasPrefix(root.hasSuffix("/") ? root : root + "/")
-    }
 }

@@ -7,8 +7,8 @@ import SystemPackage
 /// the updated index only after planning has produced a complete plan.
 package final class PlanningArtifactDigestCache: @unchecked Sendable {
     private struct FileSignature: Codable, Equatable {
-        let device: String
-        let inode: String
+        let device: DeviceID
+        let inode: Inode
         let size: Int64
         let modificationSeconds: Int64
         let modificationNanoseconds: Int64
@@ -16,8 +16,8 @@ package final class PlanningArtifactDigestCache: @unchecked Sendable {
         let statusChangeNanoseconds: Int64
 
         init(_ metadata: Stat) {
-            device = String(describing: metadata.deviceID.rawValue)
-            inode = String(describing: metadata.inode.rawValue)
+            device = metadata.deviceID
+            inode = metadata.inode
             size = metadata.size
             modificationSeconds = Int64(metadata.st_mtim.tv_sec)
             modificationNanoseconds = Int64(metadata.st_mtim.tv_nsec)
@@ -133,13 +133,4 @@ package final class PlanningArtifactDigestCache: @unchecked Sendable {
         try DurableFile.writeJSON(files, to: persistentFile)
         persistentStateChanged = false
     }
-}
-
-private func elapsedNanoseconds(
-    since start: ContinuousClock.Instant
-) -> UInt64 {
-    let components = start.duration(to: ContinuousClock().now).components
-    let seconds = UInt64(max(0, components.seconds))
-    let nanoseconds = UInt64(max(0, components.attoseconds / 1_000_000_000))
-    return seconds &* 1_000_000_000 &+ nanoseconds
 }

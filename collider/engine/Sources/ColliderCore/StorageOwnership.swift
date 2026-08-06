@@ -18,6 +18,7 @@ public enum StorageCleanupPolicy: String, Codable, Hashable, Sendable {
     case protected
     case explicitClean
     case explicitPrune
+    case automaticRetention
 }
 
 public struct StorageDeclaration: Hashable, Sendable {
@@ -60,8 +61,8 @@ public enum StorageCatalog {
         forbiddenRemovalRoots: [FilePath]
     ) throws {
         var identifiers = Set<String>()
-        var roots: [(StorageDeclaration, String)] = []
-        let forbidden = Set(forbiddenRemovalRoots.map(standardized))
+        var roots: [(StorageDeclaration, FilePath)] = []
+        let forbidden = Set(forbiddenRemovalRoots.map { $0.normalizedForComparison() })
 
         for declaration in declarations {
             guard !declaration.id.isEmpty, identifiers.insert(declaration.id).inserted else {
@@ -73,14 +74,14 @@ public enum StorageCatalog {
                 throw StorageCatalogFailure.invalid(
                     "storage declaration owner is empty: \(declaration.id)")
             }
-            let root = standardized(declaration.root)
-            let safetyRoot = standardized(declaration.safetyRoot)
-            guard root.hasPrefix("/"), safetyRoot.hasPrefix("/"), safetyRoot != "/" else {
+            let root = declaration.root.normalizedForComparison()
+            let safetyRoot = declaration.safetyRoot.normalizedForComparison()
+            guard root.isAbsolute, safetyRoot.isAbsolute, safetyRoot != FilePath("/") else {
                 throw StorageCatalogFailure.invalid(
                     "storage roots must be absolute and the safety root cannot be /: \(declaration.id)"
                 )
             }
-            guard isDescendant(root, of: safetyRoot) else {
+            guard root.isContained(in: safetyRoot) else {
                 throw StorageCatalogFailure.invalid(
                     "storage root escapes its safety root: \(declaration.id)")
             }
@@ -108,7 +109,7 @@ public enum StorageCatalog {
             for rightIndex in roots.indices where rightIndex > leftIndex {
                 let left = roots[leftIndex]
                 let right = roots[rightIndex]
-                guard pathsOverlap(left.1, right.1) else { continue }
+                guard left.1.overlaps(right.1) else { continue }
                 if left.0.cleanupPolicy != .protected,
                     right.0.cleanupPolicy != .protected
                 {
@@ -119,17 +120,6 @@ public enum StorageCatalog {
         }
     }
 
-    private static func standardized(_ path: FilePath) -> String {
-        URL(fileURLWithPath: path.string).standardizedFileURL.path
-    }
-
-    private static func isDescendant(_ path: String, of root: String) -> Bool {
-        path == root || path.hasPrefix(root.hasSuffix("/") ? root : root + "/")
-    }
-
-    private static func pathsOverlap(_ left: String, _ right: String) -> Bool {
-        isDescendant(left, of: right) || isDescendant(right, of: left)
-    }
 }
 
 public enum StorageCatalogFailure: Error, CustomStringConvertible, Sendable {

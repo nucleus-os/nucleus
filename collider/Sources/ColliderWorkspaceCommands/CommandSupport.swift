@@ -92,9 +92,14 @@ extension WorkspaceContext {
         if let toolchainIdentity {
             resolvedToolchainIdentity = toolchainIdentity
         } else {
-            let sourceID = environment["NUCLEUS_SWIFT_SOURCE_ID"] ?? "xcode"
+            let compiler = try swiftCompilerPath()
+            // The selected compiler path chooses the reusable scratch context.
+            // Its contents remain a semantic tool input resolved only when a
+            // selected host SwiftPM task is planned.
+            let compilerSelection = ArtifactHasher.digest(
+                bytes: Array(compiler.string.utf8))
             resolvedToolchainIdentity =
-                "host-swift-\(sourceID)-\(hostSwiftTarget)"
+                "host-swift-\(hostSwiftTarget)-\(compilerSelection)"
         }
         let maximumParallelism: UInt32
         switch execution {

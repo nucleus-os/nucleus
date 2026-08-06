@@ -7,6 +7,24 @@ import Testing
 
 @testable import ColliderSwiftPM
 
+private let fakeSwiftBinPathResponse = """
+    scratch=
+    query=false
+    previous=
+    for argument in "$@"; do
+      if [ "$previous" = "--scratch-path" ]; then scratch="$argument"; fi
+      if [ "$argument" = "--show-bin-path" ]; then query=true; fi
+      previous="$argument"
+    done
+    if [ "$query" = true ]; then
+      bin="$scratch/.fixture-bin"
+      mkdir -p "$bin"
+      printf fixture > "$bin/.fixture"
+      printf '%s\n' "$bin"
+      exit 0
+    fi
+    """
+
 private func executeWithSwiftPM(
     graph: TaskGraph,
     selected: [TaskID],
@@ -50,12 +68,10 @@ private func executeWithSwiftPM(
     let lowered = try SwiftPMLowering().lower([
         AssessedTaskDeclaration(
             task: prerequisite,
-            isClean: false,
-            isSubsumed: false),
+            isClean: false),
         AssessedTaskDeclaration(
             task: owner,
-            isClean: false,
-            isSubsumed: false),
+            isClean: false),
     ])
 
     #expect(lowered.count == 1)
@@ -100,12 +116,10 @@ private func executeWithSwiftPM(
     let lowered = try SwiftPMLowering().lower([
         AssessedTaskDeclaration(
             task: compilerTask,
-            isClean: false,
-            isSubsumed: false),
+            isClean: false),
         AssessedTaskDeclaration(
             task: owner,
-            isClean: false,
-            isSubsumed: false),
+            isClean: false),
     ])
 
     #expect(lowered.count == 1)
@@ -134,6 +148,7 @@ private func executeWithSwiftPM(
     let script = """
         #!/bin/sh
         set -eu
+        \(fakeSwiftBinPathResponse)
         printf '%s\n' "$@" > "\(arguments.path)"
         mkdir -p "\(scratch.path)"
         printf 'complete\n' > "\(scratch.appendingPathComponent("result").path)"
@@ -177,6 +192,129 @@ private func executeWithSwiftPM(
     #expect(received.suffix(2) == ["--filter", "gpuHeadless_"])
 }
 
+@Test func hostSwiftPMDoesNotReceiveTargetSDKSourceIdentity() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-host-swift-environment-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let package = directory.appendingPathComponent("package")
+    let tools = directory.appendingPathComponent("tools")
+    let scratch = directory.appendingPathComponent("scratch")
+    try FileManager.default.createDirectory(
+        at: package, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        at: tools, withIntermediateDirectories: true)
+    try Data("// swift-tools-version: 6.4\n".utf8).write(
+        to: package.appendingPathComponent("Package.swift"))
+
+    let observed = directory.appendingPathComponent("source-identity")
+    let swift = tools.appendingPathComponent("swift")
+    let script = """
+        #!/bin/sh
+        set -eu
+        \(fakeSwiftBinPathResponse)
+        printf '%s' "${NUCLEUS_SWIFT_SOURCE_ID-unset}" > "\(observed.path)"
+        mkdir -p "\(scratch.path)"
+        """
+    try Data(script.utf8).write(to: swift)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755], ofItemAtPath: swift.path)
+
+    let packageRoot = FilePath(package.path)
+    let invocation = SwiftPMInvocation(
+        context: SwiftBuildContext(
+            packageRoot: packageRoot,
+            configuration: .debug,
+            target: .host(identity: "arm64-macos"),
+            toolchainIdentity: "fixture-toolchain"),
+        scratchPath: FilePath(scratch.path))
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.host-environment"),
+        component: ComponentID(rawValue: "fixture"),
+        swiftProducts: [
+            SwiftProductRequirement(
+                package: "fixture",
+                product: "FixtureProduct",
+                packageRoot: packageRoot,
+                invocation: invocation,
+                inputs: [],
+                environment: [
+                    "PATH": "\(tools.path):/usr/bin:/bin",
+                    "NUCLEUS_SWIFT_SOURCE_ID": "target-sdk-source",
+                ])
+        ])
+
+    _ = try await executeWithSwiftPM(
+        graph: TaskGraph([task]),
+        selected: [task.id],
+        stateRoot: FilePath(directory.appendingPathComponent("state").path))
+
+    #expect(
+        try String(contentsOf: observed, encoding: .utf8)
+            == "unset")
+}
+
+@Test func warmHostBuildStillDelegatesToSwiftPM() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-warm-host-swift-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let package = directory.appendingPathComponent("package")
+    let tools = directory.appendingPathComponent("tools")
+    let scratch = directory.appendingPathComponent("scratch")
+    let commands = directory.appendingPathComponent("commands")
+    try FileManager.default.createDirectory(
+        at: package, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+        at: tools, withIntermediateDirectories: true)
+    try Data("// swift-tools-version: 6.4\n".utf8).write(
+        to: package.appendingPathComponent("Package.swift"))
+    let swift = tools.appendingPathComponent("swift")
+    let script = """
+        #!/bin/sh
+        set -eu
+        \(fakeSwiftBinPathResponse)
+        printf '%s\n' "$1" >> "\(commands.path)"
+        mkdir -p "\(scratch.path)"
+        """
+    try Data(script.utf8).write(to: swift)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755], ofItemAtPath: swift.path)
+
+    let packageRoot = FilePath(package.path)
+    let invocation = SwiftPMInvocation(
+        context: SwiftBuildContext(
+            packageRoot: packageRoot,
+            configuration: .debug,
+            target: .host(identity: "arm64-macos"),
+            toolchainIdentity: "fixture-toolchain"),
+        scratchPath: FilePath(scratch.path))
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.warm-host-build"),
+        component: ComponentID(rawValue: "fixture"),
+        swiftProducts: [
+            invocation.product(
+                package: "fixture",
+                product: "FixtureProduct",
+                packageRoot: packageRoot,
+                environment: ["PATH": "\(tools.path):/usr/bin:/bin"])
+        ])
+    let graph = try TaskGraph([task])
+    let stateRoot = FilePath(directory.appendingPathComponent("state").path)
+
+    _ = try await executeWithSwiftPM(
+        graph: graph,
+        selected: [task.id],
+        stateRoot: stateRoot)
+    _ = try await executeWithSwiftPM(
+        graph: graph,
+        selected: [task.id],
+        stateRoot: stateRoot)
+
+    #expect(
+        try String(contentsOf: commands, encoding: .utf8)
+            .split(whereSeparator: \.isNewline)
+            .map(String.init) == ["build", "build"])
+}
+
 @Test func synthesizedSwiftBuildCoalescesProductsIntoOneRootInvocation() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-swift-product-selection-\(UUID().uuidString)")
@@ -196,6 +334,7 @@ private func executeWithSwiftPM(
     let script = """
         #!/bin/sh
         set -eu
+        \(fakeSwiftBinPathResponse)
         printf '%s ' "$@" >> "\(arguments.path)"
         printf '\n' >> "\(arguments.path)"
         mkdir -p "\(scratch.path)"
@@ -257,7 +396,7 @@ private func executeWithSwiftPM(
     let arguments = directory.appendingPathComponent("arguments")
     let swift = tools.appendingPathComponent("swift")
     try Data(
-        "#!/bin/sh\nset -eu\nprintf '%s ' \"$@\" >> '\(arguments.path)'\nprintf '\\n' >> '\(arguments.path)'\nmkdir -p '\(scratch.path)'\n"
+        "#!/bin/sh\nset -eu\n\(fakeSwiftBinPathResponse)\nprintf '%s ' \"$@\" >> '\(arguments.path)'\nprintf '\\n' >> '\(arguments.path)'\nmkdir -p '\(scratch.path)'\n"
             .utf8
     ).write(to: swift)
     try FileManager.default.setAttributes(
@@ -316,7 +455,7 @@ private func executeWithSwiftPM(
     let arguments = directory.appendingPathComponent("arguments")
     let swift = tools.appendingPathComponent("swift")
     try Data(
-        "#!/bin/sh\nset -eu\nprintf '%s ' \"$@\" >> '\(arguments.path)'\nprintf '\\n' >> '\(arguments.path)'\nmkdir -p '\(scratch.path)'\n"
+        "#!/bin/sh\nset -eu\n\(fakeSwiftBinPathResponse)\nprintf '%s ' \"$@\" >> '\(arguments.path)'\nprintf '\\n' >> '\(arguments.path)'\nmkdir -p '\(scratch.path)'\n"
             .utf8
     ).write(to: swift)
     try FileManager.default.setAttributes(
@@ -361,8 +500,8 @@ private func executeWithSwiftPM(
     #expect(commands[1].contains("FixtureProduct"))
 }
 
-@Test func swiftTestSubsumesOnlyBuildOutputsItDeclares() async throws {
-    func commands(testCoversOutput: Bool) async throws -> [String] {
+@Test func swiftTestDoesNotRequireASeparateBuildTask() async throws {
+    func commands(testDeclaresBuildOutput: Bool) async throws -> [String] {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
             "collider-swift-test-coverage-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -380,13 +519,14 @@ private func executeWithSwiftPM(
 
         let swift = tools.appendingPathComponent("swift")
         let testOutputCommand =
-            testCoversOutput
+            testDeclaresBuildOutput
             ? "mkdir -p \"\(executable.deletingLastPathComponent().path)\"; "
                 + "printf test > \"\(executable.path)\"; chmod 755 \"\(executable.path)\""
             : ":"
         let script = """
             #!/bin/sh
             set -eu
+            \(fakeSwiftBinPathResponse)
             printf '%s\n' "$1" >> "\(arguments.path)"
             mkdir -p "\(scratch.path)"
             if [ "$1" = build ]; then
@@ -427,7 +567,7 @@ private func executeWithSwiftPM(
             invocation: invocation,
             inputs: [],
             environment: environment,
-            expectedBuildOutputs: testCoversOutput ? [output] : [])
+            expectedBuildOutputs: testDeclaresBuildOutput ? [output] : [])
         let buildTask = TaskDeclaration(
             id: TaskID(rawValue: "fixture.build"),
             component: ComponentID(rawValue: "fixture"),
@@ -435,8 +575,6 @@ private func executeWithSwiftPM(
         let testTask = TaskDeclaration(
             id: TaskID(rawValue: "fixture.test"),
             component: ComponentID(rawValue: "fixture"),
-            dependencies: [buildTask.id],
-            subsumedDependencies: [buildTask.id],
             swiftTests: [test])
 
         _ = try await executeWithSwiftPM(
@@ -448,8 +586,8 @@ private func executeWithSwiftPM(
             .map(String.init)
     }
 
-    #expect(try await commands(testCoversOutput: false) == ["build", "test"])
-    #expect(try await commands(testCoversOutput: true) == ["test"])
+    #expect(try await commands(testDeclaresBuildOutput: false) == ["test"])
+    #expect(try await commands(testDeclaresBuildOutput: true) == ["test"])
 }
 
 @Test func incompatibleSwiftContextsUseSeparateInvocationsAndScratchPaths()
@@ -469,7 +607,8 @@ private func executeWithSwiftPM(
         to: package.appendingPathComponent("Package.swift"))
     let swift = tools.appendingPathComponent("swift")
     try Data(
-        "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" >> \"\(arguments.path)\"\n".utf8
+        "#!/bin/sh\nset -eu\n\(fakeSwiftBinPathResponse)\nprintf '%s\\n' \"$*\" >> \"\(arguments.path)\"\n"
+            .utf8
     ).write(to: swift)
     try FileManager.default.setAttributes(
         [.posixPermissions: 0o755], ofItemAtPath: swift.path)

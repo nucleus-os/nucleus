@@ -53,7 +53,6 @@ private func awaitRejectsTaskControls(_ path: [String]) {
     for option in [
         ["--dry-run"],
         ["--rebuild"],
-        ["--explain"],
         ["--verbose"],
         ["--quiet"],
         ["--json"],

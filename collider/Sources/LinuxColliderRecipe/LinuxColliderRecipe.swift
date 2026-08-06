@@ -123,8 +123,6 @@ public enum LinuxColliderRecipe: ColliderComponent {
             TaskDeclaration(
                 id: LinuxTaskIDs.test(architecture),
                 component: ComponentID(rawValue: "linux"),
-                dependencies: [buildID],
-                subsumedDependencies: [buildID],
                 swiftTests: [testRequirement],
                 inputs: sharedInputs,
                 postconditions: [swiftPM.postcondition],
@@ -132,13 +130,11 @@ public enum LinuxColliderRecipe: ColliderComponent {
                 assessmentPolicy: .always),
             laneTestTask(
                 id: LinuxTaskIDs.testLoader(architecture),
-                buildID: buildID,
                 requirement: loaderRequirement,
                 sharedInputs: sharedInputs,
                 lockName: "linux-\(name)"),
             laneTestTask(
                 id: LinuxTaskIDs.testGPUHeadless(architecture),
-                buildID: buildID,
                 requirement: headlessRequirement,
                 sharedInputs: sharedInputs,
                 lockName: "linux-\(name)"),
@@ -149,7 +145,6 @@ public enum LinuxColliderRecipe: ColliderComponent {
 
 private func laneTestTask(
     id: TaskID,
-    buildID: TaskID,
     requirement: SwiftTestRequirement,
     sharedInputs: [ArtifactInput],
     lockName: String
@@ -157,8 +152,6 @@ private func laneTestTask(
     TaskDeclaration(
         id: id,
         component: ComponentID(rawValue: "linux"),
-        dependencies: [buildID],
-        subsumedDependencies: [buildID],
         swiftTests: [requirement],
         inputs: sharedInputs,
         postconditions: [requirement.invocation.postcondition],

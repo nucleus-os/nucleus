@@ -133,11 +133,8 @@ public enum GenerationPublisher {
         {
             return component.string
         }
-        let prefix =
-            parent.string.hasSuffix("/")
-            ? parent.string : parent.string + "/"
-        if generation.string.hasPrefix(prefix) {
-            return String(generation.string.dropFirst(prefix.count))
+        if let relative = generation.relativeSubpath(from: parent), !relative.isEmpty {
+            return relative.string
         }
         return generation.string
     }

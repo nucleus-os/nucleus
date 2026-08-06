@@ -48,11 +48,10 @@ public struct ColliderPlanner {
                 }
                 return (task: $0, identity: identity)
             }
-            let evidence = try identityBuilder.build(
+            let identity = try identityBuilder.build(
                 of: task,
                 dependencies: dependencyIdentities,
                 services: services)
-            let identity = evidence.identity
             identities[task.id] = identity
             let assessment =
                 rebuildSelected && explicitlySelected.contains(task.id)
@@ -69,45 +68,20 @@ public struct ColliderPlanner {
                     coordinates: try executionCoordinates(
                         for: task.action,
                         runner: services.runnerPlatform),
-                    resources: try normalizedResources(
-                        for: task.action,
-                        capacity: services.resourceCapacity),
-                    claims: normalizedClaims(for: task),
-                    artifactSnapshot: assessment.artifactSnapshot,
-                    audit: evidence.audit))
-        }
-
-        let subsumed = subsumedTasks(in: ordered, entries: entries)
-        entries = entries.map { entry in
-            guard !entry.isClean, subsumed.contains(entry.task) else {
-                return entry
-            }
-            return TaskPlanEntry(
-                task: entry.task,
-                identity: entry.identity,
-                isClean: false,
-                isSubsumed: true,
-                explanation: "action is subsumed by a selected dirty task",
-                coordinates: entry.coordinates,
-                resources: entry.resources,
-                claims: entry.claims,
-                artifactSnapshot: nil,
-                audit: entry.audit,
-                logicalOwners: entry.logicalOwners,
-                attribution: entry.attribution)
+                    lane: task.action?.requirements.lane ?? .lightweight,
+                    claims: normalizedClaims(for: task)))
         }
 
         let assessed = zip(ordered, entries).map {
             AssessedTaskDeclaration(
                 task: $0.0,
-                isClean: $0.1.isClean,
-                isSubsumed: $0.1.isSubsumed)
+                isClean: $0.1.isClean)
         }
         let lowered = try lowerings.flatMap { try $0.lower(assessed) }
         _ = try TaskGraph(ordered + lowered.map(\.task))
         let loweredOwners = Set(lowered.flatMap(\.logicalOwners))
         let missingLowering = assessed.compactMap { assessed -> TaskID? in
-            guard !assessed.isClean, !assessed.isSubsumed,
+            guard !assessed.isClean,
                 !assessed.task.swiftProducts.isEmpty || !assessed.task.swiftTests.isEmpty,
                 !loweredOwners.contains(assessed.task.id)
             else { return nil }
@@ -126,11 +100,10 @@ public struct ColliderPlanner {
                 }
                 return (task: $0, identity: identity)
             }
-            let evidence = try identityBuilder.build(
+            let identity = try identityBuilder.build(
                 of: lowered.task,
                 dependencies: dependencyIdentities,
                 services: services)
-            let identity = evidence.identity
             let assessment = assessment(
                 of: lowered.task,
                 identity: identity,
@@ -143,71 +116,18 @@ public struct ColliderPlanner {
                 coordinates: try executionCoordinates(
                     for: lowered.task.action,
                     runner: services.runnerPlatform),
-                resources: try normalizedResources(
-                    for: lowered.task.action,
-                    capacity: services.resourceCapacity),
+                lane: lowered.task.action?.requirements.lane ?? .lightweight,
                 claims: normalizedClaims(for: lowered.task),
-                artifactSnapshot: assessment.artifactSnapshot,
-                audit: evidence.audit,
                 logicalOwners: lowered.logicalOwners.sorted {
                     $0.rawValue < $1.rawValue
                 },
                 attribution: lowered.attribution)
         }
         return ExecutionPlan(
-            resourceCapacity: services.resourceCapacity,
             declaredTasks: ordered,
             declaredEntries: entries,
             loweredTasks: lowered,
             loweredEntries: loweredEntries)
-    }
-
-    private func subsumedTasks(
-        in ordered: [TaskDeclaration],
-        entries: [TaskPlanEntry]
-    ) -> Set<TaskID> {
-        let entriesByID = Dictionary(
-            uniqueKeysWithValues: entries.map { ($0.task, $0) })
-        let tasks = Dictionary(uniqueKeysWithValues: ordered.map { ($0.id, $0) })
-        var subsumed: Set<TaskID> = []
-        for task in ordered where entriesByID[task.id]?.isClean == false {
-            for dependency in task.subsumedDependencies
-            where entriesByID[dependency]?.isClean == false
-                && tasks[dependency].map({ canSubsume($0, with: task) }) == true
-            {
-                subsumed.insert(dependency)
-            }
-        }
-
-        var changed = true
-        while changed {
-            changed = false
-            for task in ordered where !subsumed.contains(task.id) {
-                guard entriesByID[task.id]?.isClean == false else { continue }
-                let declared = Set(task.subsumedDependencies)
-                for dependency in task.dependencies
-                where subsumed.contains(dependency)
-                    && !declared.contains(dependency)
-                {
-                    subsumed.remove(dependency)
-                    changed = true
-                }
-            }
-        }
-        return subsumed
-    }
-
-    private func canSubsume(
-        _ dependency: TaskDeclaration,
-        with task: TaskDeclaration
-    ) -> Bool {
-        guard !dependency.swiftProducts.isEmpty, !task.swiftTests.isEmpty else {
-            return true
-        }
-        let coveredOutputs = Set(task.swiftTests.flatMap(\.expectedBuildOutputs))
-        return dependency.swiftProducts
-            .flatMap(\.expectedOutputs)
-            .allSatisfy(coveredOutputs.contains)
     }
 
     private func assessment(
@@ -215,6 +135,11 @@ public struct ColliderPlanner {
         identity: ArtifactDigest,
         services: TaskPlanningServices
     ) -> TaskAssessment {
+        if ownsHostSwiftRequirement(task) {
+            return TaskAssessment(
+                isClean: false,
+                explanation: "SwiftPM owns host build incrementality")
+        }
         if task.assessmentPolicy == .always {
             return TaskAssessment(
                 isClean: false,
@@ -223,27 +148,17 @@ public struct ColliderPlanner {
         let record: TaskStateRecord
         switch services.taskState(task.id) {
         case .missing:
-            return reusableAssessment(
-                of: task,
-                identity: identity,
-                explanation: "no prior task state",
-                services: services)
+            return TaskAssessment(isClean: false, explanation: "no prior task state")
         case .corrupt:
-            return reusableAssessment(
-                of: task,
-                identity: identity,
-                explanation: "prior task state is corrupt",
-                services: services)
+            return TaskAssessment(isClean: false, explanation: "prior task state is corrupt")
         case .record(let value):
             record = value
         }
         guard record.identity == identity else {
-            return reusableAssessment(
-                of: task,
-                identity: identity,
+            return TaskAssessment(
+                isClean: false,
                 explanation:
-                    "input identity changed (recorded \(record.identity), planned \(identity))",
-                services: services)
+                    "input identity changed (recorded \(record.identity), planned \(identity))")
         }
         do {
             try services.validateOutputs(task)
@@ -251,37 +166,21 @@ public struct ColliderPlanner {
                 isClean: true,
                 explanation: "identity and outputs are valid")
         } catch {
-            return reusableAssessment(
-                of: task,
-                identity: identity,
-                explanation: "output validation failed: \(error)",
-                services: services)
+            return TaskAssessment(
+                isClean: false,
+                explanation: "output validation failed: \(error)")
         }
     }
 
-    private func reusableAssessment(
-        of task: TaskDeclaration,
-        identity: ArtifactDigest,
-        explanation: String,
-        services: TaskPlanningServices
-    ) -> TaskAssessment {
-        guard task.assessmentPolicy == .artifactCached else {
-            return TaskAssessment(isClean: false, explanation: explanation)
+    private func ownsHostSwiftRequirement(_ task: TaskDeclaration) -> Bool {
+        task.swiftProducts.contains {
+            if case .host = $0.invocation.context.execution { return true }
+            return false
         }
-        switch services.artifactSnapshotState(task.id, identity) {
-        case .missing:
-            return TaskAssessment(isClean: false, explanation: explanation)
-        case .available:
-            return TaskAssessment(
-                isClean: false,
-                explanation: "artifact snapshot will restore invalid local output",
-                artifactSnapshot: .restore)
-        case .corrupt:
-            return TaskAssessment(
-                isClean: false,
-                explanation: "corrupt artifact snapshot will be quarantined and rebuilt",
-                artifactSnapshot: .quarantine)
-        }
+            || task.swiftTests.contains {
+                if case .host = $0.invocation.context.execution { return true }
+                return false
+            }
     }
 
     private func executionCoordinates(
@@ -325,32 +224,6 @@ public struct ColliderPlanner {
             artifact: action.requirements.artifactTarget)
     }
 
-    private func normalizedResources(
-        for action: AnyColliderAction?,
-        capacity: TaskResourceCapacity
-    ) throws -> PlannedTaskResources {
-        let request = action?.requirements.resources ?? .lightweight
-        let cpuCount = request.cpuCount ?? capacity.cpuCount
-        let memoryBytes = request.memoryBytes ?? capacity.memoryBytes
-        let ioWeight = request.ioWeight ?? capacity.ioWeight
-        guard cpuCount > 0, memoryBytes > 0, ioWeight > 0,
-            cpuCount <= capacity.cpuCount,
-            memoryBytes <= capacity.memoryBytes,
-            ioWeight <= capacity.ioWeight
-        else {
-            throw ColliderPlanningFailure.resourceRequestExceedsCapacity(
-                cpuCount: cpuCount,
-                memoryBytes: memoryBytes,
-                ioWeight: ioWeight,
-                capacity: capacity)
-        }
-        return PlannedTaskResources(
-            cpuCount: cpuCount,
-            memoryBytes: memoryBytes,
-            ioWeight: ioWeight,
-            exclusive: request.exclusive)
-    }
-
     private func normalizedClaims(
         for task: TaskDeclaration
     ) -> [PlannedTaskClaim] {
@@ -372,37 +245,24 @@ public struct ColliderPlanner {
                     subject: .named(name),
                     access: .exclusive))
         }
-        for output in task.outputs {
+        for effect in task.action?.requirements.effects ?? [] {
             insert(
                 PlannedTaskClaim(
-                    subject: .path(output.path.lexicallyNormalized().string),
-                    access: .exclusive))
-        }
-        for effect in task.action?.requirements.effects ?? []
-        where effect.access != .read {
-            switch effect.scope {
-            case .checkout(let path), .output(let path), .publication(let path):
-                insert(
-                    PlannedTaskClaim(
-                        subject: .path(path.lexicallyNormalized().string),
-                        access: .exclusive))
-            case .input, .scratch, .unrestricted:
-                break
-            }
+                    subject: .path(
+                        effect.scope.root.lexicallyNormalized().string),
+                    access: effect.access == .read ? .shared : .exclusive))
         }
         return claims.values.sorted { $0.canonicalKey < $1.canonicalKey }
     }
 
     private func validateCompleteGraph(_ tasks: [TaskDeclaration]) throws {
-        var owners: [(normalized: String, task: TaskID)] = []
+        var owners: [(normalized: FilePath, task: TaskID)] = []
         for task in tasks {
             for output in task.outputs {
-                let normalized = output.path.lexicallyNormalized().string
+                let normalized = output.path.lexicallyNormalized()
                 for owner in owners
                 where task.id != owner.task
-                    && (normalized == owner.normalized
-                        || contains(normalized, in: owner.normalized)
-                        || contains(owner.normalized, in: normalized))
+                    && normalized.overlaps(owner.normalized)
                 {
                     throw ColliderPlanningFailure.overlappingOutput(
                         first: owner.task,
@@ -417,18 +277,17 @@ public struct ColliderPlanner {
             task.outputs.map {
                 (
                     producer: task.id,
-                    normalized: $0.path.lexicallyNormalized().string
+                    normalized: $0.path.lexicallyNormalized()
                 )
             }
         }
         for task in tasks {
             for input in task.inputs {
                 guard let path = rawInputPath(input) else { continue }
-                let normalized = path.lexicallyNormalized().string
+                let normalized = path.lexicallyNormalized()
                 if let output = outputs.first(where: {
                     $0.producer != task.id
-                        && (normalized == $0.normalized
-                            || contains(normalized, in: $0.normalized))
+                        && normalized.isContained(in: $0.normalized)
                 }) {
                     throw ColliderPlanningFailure.rawGeneratedOutputConsumption(
                         consumer: task.id,
@@ -440,9 +299,6 @@ public struct ColliderPlanner {
 
         var implementationsByKind: [ActionKind: String] = [:]
         for task in tasks {
-            if task.assessmentPolicy == .artifactCached {
-                try validateArtifactCacheEligibility(task)
-            }
             guard let action = task.action else { continue }
             guard action.kind.rawValue.hasPrefix(task.component.rawValue + ".") else {
                 throw ColliderPlanningFailure.actionNamespaceMismatch(
@@ -462,85 +318,6 @@ public struct ColliderPlanner {
         }
     }
 
-    private func validateArtifactCacheEligibility(
-        _ task: TaskDeclaration
-    ) throws {
-        guard let action = task.action else {
-            throw ColliderPlanningFailure.ineligibleArtifactCacheTask(
-                task: task.id,
-                reason: "artifact-cached tasks require one executable action")
-        }
-        guard action.requirements.networkAccess != .unrestricted else {
-            throw ColliderPlanningFailure.ineligibleArtifactCacheTask(
-                task: task.id,
-                reason: "unrestricted network access is not eligible for artifact caching")
-        }
-        guard !task.outputSlots.isEmpty,
-            task.outputSlots.count == task.outputs.count,
-            task.outputSlots.allSatisfy({ slot in
-                task.outputs.contains {
-                    $0.path == slot.path && $0.validation == slot.validation
-                }
-            })
-        else {
-            throw ColliderPlanningFailure.ineligibleArtifactCacheTask(
-                task: task.id,
-                reason: "every output must be a typed output slot")
-        }
-        guard task.resultSlots.isEmpty,
-            task.postconditions.isEmpty,
-            task.swiftProducts.isEmpty,
-            task.swiftTests.isEmpty
-        else {
-            throw ColliderPlanningFailure.ineligibleArtifactCacheTask(
-                task: task.id,
-                reason:
-                    "results, shared postconditions, and SwiftPM scratch trees are not snapshots")
-        }
-        let paths = task.outputSlots.map { $0.path.lexicallyNormalized().string }
-        for first in paths.indices {
-            for second in paths.indices where first < second {
-                guard paths[first] != paths[second],
-                    !contains(paths[first], in: paths[second]),
-                    !contains(paths[second], in: paths[first])
-                else {
-                    throw ColliderPlanningFailure.ineligibleArtifactCacheTask(
-                        task: task.id,
-                        reason: "artifact-cache output slots must not overlap")
-                }
-            }
-        }
-        for tool in action.requirements.tools {
-            if tool.role == .operational {
-                throw ColliderPlanningFailure.ineligibleArtifactCacheTask(
-                    task: task.id,
-                    reason: "operational tools require a separate artifact-cache audit")
-            }
-            switch tool.executable {
-            case .artifact:
-                break
-            case .named, .operationalNamed, .path, .taskOutput:
-                throw ColliderPlanningFailure.ineligibleArtifactCacheTask(
-                    task: task.id,
-                    reason: "ambient semantic tools are not eligible for artifact caching")
-            }
-        }
-        for effect in action.requirements.effects {
-            switch effect.scope {
-            case .unrestricted:
-                throw ColliderPlanningFailure.ineligibleArtifactCacheTask(
-                    task: task.id,
-                    reason: "unrestricted effects are not eligible for artifact caching")
-            case .checkout where effect.access != .read:
-                throw ColliderPlanningFailure.ineligibleArtifactCacheTask(
-                    task: task.id,
-                    reason: "mutable source checkouts are not eligible for artifact caching")
-            case .input, .checkout, .scratch, .output, .publication:
-                break
-            }
-        }
-    }
-
     private func rawInputPath(_ input: ArtifactInput) -> FilePath? {
         switch input {
         case .file(let path), .tree(let path), .optionalTree(let path, _):
@@ -555,10 +332,6 @@ public struct ColliderPlanner {
         }
     }
 
-    private func contains(_ child: String, in parent: String) -> Bool {
-        let prefix = parent.hasSuffix("/") ? parent : parent + "/"
-        return child.hasPrefix(prefix)
-    }
 }
 
 public enum ColliderPlanningFailure: Error, CustomStringConvertible, Sendable {
@@ -571,18 +344,12 @@ public enum ColliderPlanningFailure: Error, CustomStringConvertible, Sendable {
     case unsupportedNativeArtifact(
         artifact: ArtifactTarget,
         runner: RunnerPlatform)
-    case resourceRequestExceedsCapacity(
-        cpuCount: UInt32,
-        memoryBytes: UInt64,
-        ioWeight: UInt32,
-        capacity: TaskResourceCapacity)
     case duplicateActionKind(kind: ActionKind, first: String, second: String)
     case actionNamespaceMismatch(
         task: TaskID, component: ComponentID, kind: ActionKind)
     case overlappingOutput(first: TaskID, second: TaskID, path: FilePath)
     case rawGeneratedOutputConsumption(
         consumer: TaskID, producer: TaskID, path: FilePath)
-    case ineligibleArtifactCacheTask(task: TaskID, reason: String)
 
     public var description: String {
         switch self {
@@ -603,10 +370,6 @@ public enum ColliderPlanningFailure: Error, CustomStringConvertible, Sendable {
             "native execution on \(runner.operatingSystem.rawValue)/"
                 + "\(runner.architecture.rawValue) cannot produce "
                 + "\(artifact.operatingSystem.rawValue)/\(artifact.architecture.rawValue)"
-        case .resourceRequestExceedsCapacity(let cpu, let memory, let io, let capacity):
-            "task resource request \(cpu) CPU/\(memory) bytes/\(io) I/O exceeds "
-                + "planning capacity \(capacity.cpuCount) CPU/"
-                + "\(capacity.memoryBytes) bytes/\(capacity.ioWeight) I/O"
         case .duplicateActionKind(let kind, let first, let second):
             "action kind '\(kind)' is declared by both '\(first)' and '\(second)'"
         case .actionNamespaceMismatch(let task, let component, let kind):
@@ -616,8 +379,6 @@ public enum ColliderPlanningFailure: Error, CustomStringConvertible, Sendable {
         case .rawGeneratedOutputConsumption(let consumer, let producer, let path):
             "task '\(consumer)' consumes generated output '\(path)' from '\(producer)' "
                 + "through a raw path instead of its typed artifact reference"
-        case .ineligibleArtifactCacheTask(let task, let reason):
-            "task '\(task)' is not eligible for Collider artifact caching: \(reason)"
         }
     }
 }

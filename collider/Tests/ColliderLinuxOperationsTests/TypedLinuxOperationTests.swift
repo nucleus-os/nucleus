@@ -11,7 +11,6 @@ import ColliderCore
 private let completeTaskControls = [
     "--dry-run",
     "--rebuild",
-    "--explain",
     "--verbose",
     "--json",
     "--run-id", "linux-operation-capability-test",
@@ -51,7 +50,6 @@ func installedHostPlanningLeavesRejectConflictingOutputControls() {
 private func assertCompleteTaskControls(_ options: TaskControlOptions) {
     #expect(options.dryRun)
     #expect(options.rebuild)
-    #expect(options.explain)
     #expect(options.verbose)
     #expect(!options.quiet)
     #expect(options.json)

@@ -46,7 +46,6 @@ struct SignAOSPProductAction: ColliderAction {
                 ActionEffect(.read, scope: .input(build.signingIdentity)),
                 ActionEffect(.readWrite, scope: .scratch(build.buildRoot)),
             ],
-            resources: .lightweight,
             executionPlatform: .linuxARM64OCI,
             artifactTarget: .androidX86_64(
                 apiLevel: build.expectedPlatformSDK))

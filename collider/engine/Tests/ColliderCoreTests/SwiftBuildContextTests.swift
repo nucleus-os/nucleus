@@ -38,7 +38,7 @@ private let fixturePackageRoot = FilePath("/workspace")
     #expect(first.identityBytes != reorderedFlags.identityBytes)
 }
 
-@Test func swiftBuildContextOwnsMaximumParallelism() {
+@Test func swiftBuildContextKeepsJobCountOutsideArtifactIdentity() {
     let defaultContext = SwiftBuildContext(
         packageRoot: fixturePackageRoot,
         configuration: .debug,
@@ -52,7 +52,8 @@ private let fixturePackageRoot = FilePath("/workspace")
         maximumParallelism: 4)
 
     #expect(defaultContext.maximumParallelism == 10)
-    #expect(defaultContext.identityBytes != narrowerContext.identityBytes)
+    #expect(narrowerContext.maximumParallelism == 4)
+    #expect(defaultContext.identityBytes == narrowerContext.identityBytes)
 }
 
 @Test func swiftPMInvocationOwnsArgumentsOutputAndSharedLock() {
@@ -80,6 +81,7 @@ private let fixturePackageRoot = FilePath("/workspace")
     #expect(
         command.arguments == [
             "test",
+            "--build-system", "swiftbuild",
             "--configuration", "release",
             "--jobs", "10",
             "--scratch-path", scratch.string,
@@ -90,7 +92,6 @@ private let fixturePackageRoot = FilePath("/workspace")
             "-Xswiftc", "-enable-a",
             "-Xcc", "-DC_FEATURE",
             "-Xcxx", "-DCXX_FEATURE",
-            "-Xcxx", "-I\(invocation.generatedModuleMaps.string)",
             "-Xlinker", "-lfixture",
         ])
     #expect(command.executable == .path(FilePath("/toolchain/bin/swift")))
@@ -98,31 +99,18 @@ private let fixturePackageRoot = FilePath("/workspace")
     #expect(
         invocation.postcondition
             == PathPostcondition(
-                path: scratch,
+                path: scratch.appending(".collider/products"),
                 validation: .nonEmptyDirectory))
     #expect(
         invocation.lock
             == .shared(
                 scratch.appending(".collider.lock")))
     #expect(
-        invocation.productsRoot
-            == scratch.appending("out/Products"))
-    #expect(
-        invocation.configurationProducts
-            == scratch.appending("out/Products/Release-linux-aarch64"))
-    #expect(
-        invocation.generatedModuleMaps
-            == scratch.appending(
-                "out/Intermediates.noindex/GeneratedModuleMaps-linux-aarch64"))
+        invocation.productsDirectory
+            == scratch.appending(".collider/products"))
     #expect(
         invocation.executable("Fixture")
-            == scratch.appending(
-                "out/Products/Release-linux-aarch64/Fixture"))
-    #expect(
-        invocation.generatedSwiftHeader("Fixture")
-            == scratch.appending(
-                "out/Intermediates.noindex/"
-                    + "GeneratedModuleMaps-linux-aarch64/Fixture-Swift.h"))
+            == scratch.appending(".collider/products/Fixture"))
     #expect(
         invocation.identityInput
             == .swiftBuildContext(context))
@@ -132,6 +120,7 @@ private let fixturePackageRoot = FilePath("/workspace")
             ["run", "FixtureProbe", "loader"])
             == [
                 "run",
+                "--build-system", "swiftbuild",
                 "--configuration", "release",
                 "--jobs", "10",
                 "--scratch-path", scratch.string,
@@ -142,7 +131,6 @@ private let fixturePackageRoot = FilePath("/workspace")
                 "-Xswiftc", "-enable-a",
                 "-Xcc", "-DC_FEATURE",
                 "-Xcxx", "-DCXX_FEATURE",
-                "-Xcxx", "-I\(invocation.generatedModuleMaps.string)",
                 "-Xlinker", "-lfixture",
                 "FixtureProbe", "loader",
             ])
@@ -164,6 +152,7 @@ private let fixturePackageRoot = FilePath("/workspace")
     #expect(
         invocation.commandArguments(["build"]) == [
             "build",
+            "--build-system", "swiftbuild",
             "--configuration", "release",
             "--jobs", "10",
             "--scratch-path", "/workspace/.nucleus/swiftpm/android",
@@ -172,16 +161,13 @@ private let fixturePackageRoot = FilePath("/workspace")
             "--triple", "aarch64-unknown-linux-android24",
             "--toolset", "/workspace/linux-toolset.json",
             "--static-swift-stdlib",
-            "-Xcxx", "-I\(invocation.generatedModuleMaps.string)",
         ])
     #expect(
-        invocation.configurationProducts
-            == FilePath(
-                "/workspace/.nucleus/swiftpm/android/out/Products/"
-                    + "Release-android-aarch64"))
+        invocation.productsDirectory
+            == FilePath("/workspace/.nucleus/swiftpm/android/.collider/products"))
 }
 
-@Test func swiftSDKTargetTripleSelectsDistinctContextAndProductIdentity() {
+@Test func swiftSDKTargetTripleSelectsDistinctContextIdentity() {
     let arm64 = SwiftBuildContext(
         packageRoot: fixturePackageRoot,
         configuration: .release,
@@ -206,15 +192,11 @@ private let fixturePackageRoot = FilePath("/workspace")
         scratchPath: scratch)
 
     #expect(arm64.identityBytes != amd64.identityBytes)
-    #expect(
-        arm64Invocation.configurationProducts
-            == scratch.appending("out/Products/Release-android-aarch64"))
-    #expect(
-        amd64Invocation.configurationProducts
-            == scratch.appending("out/Products/Release-android-x86_64"))
+    #expect(arm64Invocation.productsDirectory == scratch.appending(".collider/products"))
+    #expect(amd64Invocation.productsDirectory == scratch.appending(".collider/products"))
 }
 
-@Test func hostProductsUseSwiftPMsUnsuffixedXcodeBuildDirectories() {
+@Test func hostProductsUseColliderOwnedBinPathLink() {
     let scratch = FilePath("/workspace/.nucleus/swiftpm/host")
     let invocation = SwiftPMInvocation(
         context: SwiftBuildContext(
@@ -225,15 +207,25 @@ private let fixturePackageRoot = FilePath("/workspace")
         scratchPath: scratch)
 
     #expect(
-        invocation.configurationProducts
-            == scratch.appending("out/Products/Debug"))
-    #expect(
-        invocation.generatedModuleMaps
-            == scratch.appending(
-                "out/Intermediates.noindex/GeneratedModuleMaps"))
+        invocation.productsDirectory
+            == scratch.appending(".collider/products"))
     #expect(
         invocation.executable("Fixture")
-            == scratch.appending("out/Products/Debug/Fixture"))
+            == scratch.appending(".collider/products/Fixture"))
+    #expect(
+        invocation.product(
+            package: "fixture",
+            product: "Fixture",
+            packageRoot: fixturePackageRoot,
+            environment: [:]
+        ).inputs.isEmpty)
+    #expect(
+        invocation.testProduct(
+            package: "fixture",
+            testProduct: "FixtureTests",
+            packageRoot: fixturePackageRoot,
+            environment: [:]
+        ).inputs.isEmpty)
 }
 
 @Test func swiftPMOCIExecutionKeepsGuestArchitectureSeparateFromArtifactArchitecture() throws {
@@ -288,4 +280,15 @@ private let fixturePackageRoot = FilePath("/workspace")
         ]))
     #expect(operation.containerEnvironment["PATH"] == nil)
     #expect(operation.containerEnvironment["NUCLEUS_NATIVE_SDK_ROOT"] == nil)
+    let product = invocation.product(
+        package: "fixture",
+        product: "Fixture",
+        packageRoot: fixturePackageRoot,
+        environment: [:])
+    #expect(product.inputs.contains(.file(fixturePackageRoot.appending("Package.swift"))))
+    #expect(
+        product.inputs.contains(
+            .optionalTree(
+                fixturePackageRoot.appending("Sources"),
+                fallback: Array("no-sources-directory".utf8))))
 }

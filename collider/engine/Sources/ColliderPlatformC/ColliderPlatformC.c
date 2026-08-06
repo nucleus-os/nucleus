@@ -13,7 +13,6 @@
 #include <termios.h>
 #include <unistd.h>
 #if defined(__linux__)
-#include <dlfcn.h>
 #include <linux/android/binderfs.h>
 #include <linux/loop.h>
 #include <linux/mount.h>
@@ -168,33 +167,5 @@ int32_t collider_binderfs_add_device(
     (void)minor;
     errno = ENOTSUP;
     return -1;
-#endif
-}
-
-char *collider_copy_loaded_library_path(const char *symbol) {
-#if defined(__linux__)
-    if (symbol == NULL || symbol[0] == '\0') {
-        errno = EINVAL;
-        return NULL;
-    }
-    (void)dlerror();
-    void *address = dlsym(RTLD_DEFAULT, symbol);
-    const char *symbol_error = dlerror();
-    if (symbol_error != NULL || address == NULL) {
-        errno = ENOENT;
-        return NULL;
-    }
-    Dl_info information = {0};
-    if (dladdr(address, &information) == 0
-        || information.dli_fname == NULL
-        || information.dli_fname[0] != '/') {
-        errno = ENOENT;
-        return NULL;
-    }
-    return strdup(information.dli_fname);
-#else
-    (void)symbol;
-    errno = ENOTSUP;
-    return NULL;
 #endif
 }

@@ -44,10 +44,7 @@ package struct BuildChromiumProductAction: ColliderAction {
                 ActionEffect(.readWrite, scope: .scratch(build.output)),
                 ActionEffect(.readWrite, scope: .scratch(temporaryDirectory)),
             ],
-            resources: ActionResourceRequest(
-                cpuCount: OCIResourceLimits.build.cpuCount,
-                memoryBytes: OCIResourceLimits.build.memoryBytes,
-                exclusive: true),
+            lane: .hostExclusive,
             executionPlatform: .linuxARM64OCI,
             artifactTarget: .linuxX86_64)
     }

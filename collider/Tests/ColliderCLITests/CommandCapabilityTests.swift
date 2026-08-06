@@ -52,7 +52,6 @@ func everyTaskControlledLeafParsesTheCompleteControlSet() throws {
             path + [
                 "--dry-run",
                 "--rebuild",
-                "--explain",
                 "--verbose",
                 "--json",
                 "--run-id", "run-capability-test",
@@ -60,7 +59,6 @@ func everyTaskControlledLeafParsesTheCompleteControlSet() throws {
         let command = try #require(parsed as? any TaskControlledCommand)
         #expect(command.taskOptions.dryRun)
         #expect(command.taskOptions.rebuild)
-        #expect(command.taskOptions.explain)
         #expect(command.taskOptions.verbose)
         #expect(!command.taskOptions.quiet)
         #expect(command.taskOptions.json)
@@ -83,6 +81,15 @@ func taskControlledLeavesAcceptQuietOutput() throws {
 }
 
 @Test
+func removedExplainControlIsRejected() {
+    for path in taskControlledLeaves {
+        #expect(throws: (any Error).self) {
+            try ColliderCommand.parseAsRoot(path + ["--explain"])
+        }
+    }
+}
+
+@Test
 func quietAndVerboseTaskOutputAreMutuallyExclusive() {
     for path in taskControlledLeaves {
         #expect(throws: (any Error).self) {
@@ -100,7 +107,6 @@ func nonTaskLeavesExposeOnlyTheirDeclaredControls() throws {
             options: [
                 "--dry-run",
                 "--rebuild",
-                "--explain",
                 "--verbose",
                 "--quiet",
                 "--run-id", "not-supported",
@@ -113,7 +119,6 @@ func nonTaskLeavesExposeOnlyTheirDeclaredControls() throws {
         awaitRejects(
             path,
             options: [
-                "--explain",
                 "--rebuild",
                 "--verbose",
                 "--quiet",
@@ -127,7 +132,6 @@ func nonTaskLeavesExposeOnlyTheirDeclaredControls() throws {
             options: [
                 "--dry-run",
                 "--rebuild",
-                "--explain",
                 "--verbose",
                 "--quiet",
                 "--json",

@@ -29,121 +29,6 @@ private actor ParallelismProbe {
     func maximum() -> Int { maximumActive }
 }
 
-private actor ArtifactCacheExecutionProbe {
-    private var executions = 0
-
-    func record() { executions += 1 }
-    func count() -> Int { executions }
-}
-
-private struct ArtifactCachedTreeAction: ColliderAction {
-    struct Identity: ColliderActionIdentity {
-        let output: FilePath
-
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: output.string)
-        }
-    }
-
-    static let kind: ActionKind = "fixture.artifact-cached-tree"
-
-    let output: FilePath
-    let probe: ArtifactCacheExecutionProbe
-
-    var identity: Identity { Identity(output: output) }
-
-    var requirements: ActionRequirements {
-        ActionRequirements(
-            effects: [
-                ActionEffect(.readWrite, scope: .output(output))
-            ],
-            executionPlatform: .macOSARM64Native)
-    }
-
-    func execute(in context: ActionContext) async throws {
-        await probe.record()
-        try context.files.remove(output)
-        try context.files.createDirectory(output.appending("empty"))
-        let script = output.appending("script")
-        try context.files.write(
-            Array("#!/bin/sh\necho restored\n".utf8),
-            to: script)
-        try context.files.setPermissions(0o751, for: script)
-        try context.files.replaceSymlink(
-            at: output.appending("current"),
-            target: "script")
-    }
-}
-
-private func artifactCachedTreeTask(
-    output: FilePath,
-    probe: ArtifactCacheExecutionProbe
-) throws -> TaskDeclaration {
-    var builder = TaskBuilder(
-        id: TaskID(rawValue: "fixture.artifact-cached-tree"),
-        component: ComponentID(rawValue: "fixture"))
-    let _: ArtifactReference<DirectoryArtifact> = try builder.output(
-        "tree",
-        path: output,
-        validation: .nonEmptyDirectory)
-    return builder.build(
-        assessmentPolicy: .artifactCached,
-        action: try AnyColliderAction(
-            ArtifactCachedTreeAction(output: output, probe: probe)))
-}
-
-@Test func artifactCachedTaskRestoresAcrossRelocationAndRebuildsCorruption() async throws {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-artifact-cache-engine-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let stateRoot = FilePath(directory.appendingPathComponent("state").path)
-    let probe = ArtifactCacheExecutionProbe()
-
-    func run(at name: String) async throws -> TaskExecutionReport {
-        let workspace = FilePath(directory.appendingPathComponent(name).path)
-        let task = try artifactCachedTreeTask(
-            output: workspace.appending("generated"),
-            probe: probe)
-        return try await ColliderEngine(runtime: ColliderRuntime()).execute(
-            graph: TaskGraph([task]),
-            selected: [task.id],
-            stateRoot: stateRoot,
-            identityPathMap: IdentityPathMap(roots: [
-                IdentityPathRoot(name: "workspace", path: workspace)
-            ]))
-    }
-
-    let first = try await run(at: "first")
-    #expect(first.executed == [TaskID(rawValue: "fixture.artifact-cached-tree")])
-    #expect(first.restored.isEmpty)
-    #expect(await probe.count() == 1)
-
-    let second = try await run(at: "second")
-    #expect(second.executed.isEmpty)
-    #expect(second.restored == [TaskID(rawValue: "fixture.artifact-cached-tree")])
-    #expect(await probe.count() == 1)
-    #expect(
-        try FileManager.default.destinationOfSymbolicLink(
-            atPath: directory.appendingPathComponent("second/generated/current").path)
-            == "script")
-
-    let identity = try #require(first.plan.first).identity
-    try Data("corrupt".utf8).write(
-        to: directory.appendingPathComponent(
-            "state/artifact-snapshots/sha256-\(identity.hexadecimal)/"
-                + "payload/000000/script"))
-    let third = try await run(at: "third")
-    #expect(third.executed == [TaskID(rawValue: "fixture.artifact-cached-tree")])
-    #expect(third.restored.isEmpty)
-    #expect(await probe.count() == 2)
-    #expect(
-        try FileManager.default.contentsOfDirectory(
-            at: directory.appendingPathComponent(
-                "state/artifact-snapshots/quarantine"),
-            includingPropertiesForKeys: nil
-        ).count == 1)
-}
-
 private struct ParallelismProbeAction: ColliderAction {
     static let kind: ActionKind = "fixture.parallelism-probe"
 
@@ -151,20 +36,20 @@ private struct ParallelismProbeAction: ColliderAction {
     let probe: ParallelismProbe
     let output: FilePath
     let publicationClaim: FilePath?
-    let ioWeight: UInt32
+    let lane: TaskExecutionLane
 
     init(
         identity: ParallelismProbeIdentity,
         probe: ParallelismProbe,
         output: FilePath,
         publicationClaim: FilePath? = nil,
-        ioWeight: UInt32 = 1
+        lane: TaskExecutionLane = .lightweight
     ) {
         self.identity = identity
         self.probe = probe
         self.output = output
         self.publicationClaim = publicationClaim
-        self.ioWeight = ioWeight
+        self.lane = lane
     }
 
     var requirements: ActionRequirements {
@@ -175,11 +60,7 @@ private struct ParallelismProbeAction: ColliderAction {
         }
         return ActionRequirements(
             effects: effects,
-            resources: ActionResourceRequest(
-                cpuCount: 1,
-                memoryBytes: 512 * 1_024 * 1_024,
-                ioWeight: ioWeight,
-                exclusive: false),
+            lane: lane,
             executionPlatform: .macOSARM64Native)
     }
 
@@ -238,7 +119,8 @@ private struct FailAfterWriteAction: ColliderAction {
         graph: TaskGraph(tasks),
         selected: tasks.map(\.id),
         stateRoot: root.appending("state"),
-        options: TaskExecutionOptions(maximumParallelism: 2))
+        options: TaskExecutionOptions(
+            laneLimits: TaskLaneLimits(lightweight: 2, oci: 2)))
     let maximumActive = await probe.maximum()
 
     #expect(report.executed == tasks.map(\.id))
@@ -269,7 +151,8 @@ private struct FailAfterWriteAction: ColliderAction {
         graph: graph,
         selected: tasks.map(\.id),
         stateRoot: stateRoot,
-        options: TaskExecutionOptions(maximumParallelism: 1))
+        options: TaskExecutionOptions(
+            laneLimits: TaskLaneLimits(lightweight: 1, oci: 1)))
     let serialOutputs = try tasks.map { task in
         try Data(contentsOf: URL(fileURLWithPath: task.outputs[0].path.string))
     }
@@ -282,7 +165,8 @@ private struct FailAfterWriteAction: ColliderAction {
         graph: graph,
         selected: tasks.map(\.id),
         stateRoot: stateRoot,
-        options: TaskExecutionOptions(maximumParallelism: 2))
+        options: TaskExecutionOptions(
+            laneLimits: TaskLaneLimits(lightweight: 2, oci: 2)))
     let concurrentOutputs = try tasks.map { task in
         try Data(contentsOf: URL(fileURLWithPath: task.outputs[0].path.string))
     }
@@ -321,7 +205,8 @@ private struct FailAfterWriteAction: ColliderAction {
         graph: TaskGraph(tasks),
         selected: tasks.map(\.id),
         stateRoot: root.appending("state"),
-        options: TaskExecutionOptions(maximumParallelism: 2))
+        options: TaskExecutionOptions(
+            laneLimits: TaskLaneLimits(lightweight: 2, oci: 2)))
     let maximumActive = await probe.maximum()
 
     #expect(maximumActive == 1)
@@ -334,7 +219,7 @@ private struct FailAfterWriteAction: ColliderAction {
     let root = FilePath(directory.path)
     let probe = ParallelismProbe()
     let publication = root.appending("published")
-    let tasks = try ["first", "second"].map { name in
+    let tasks = try ["first", "second"].enumerated().map { index, name in
         let output = root.appending(name)
         return TaskDeclaration(
             id: TaskID(rawValue: "fixture.claimed.\(name)"),
@@ -345,22 +230,24 @@ private struct FailAfterWriteAction: ColliderAction {
                     identity: ParallelismProbeIdentity(name: name),
                     probe: probe,
                     output: output,
-                    publicationClaim: publication)))
+                    publicationClaim: publication,
+                    lane: index == 0 ? .lightweight : .oci)))
     }
 
     let report = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph(tasks),
         selected: tasks.map(\.id),
         stateRoot: root.appending("state"),
-        options: TaskExecutionOptions(maximumParallelism: 2))
+        options: TaskExecutionOptions(
+            laneLimits: TaskLaneLimits(lightweight: 2, oci: 2)))
 
     let maximumActive = await probe.maximum()
     #expect(maximumActive == 1)
-    #expect(report.resourceWaitDurationNanoseconds > 0)
+    #expect(report.schedulingWaitDurationNanoseconds > 0)
     #expect(report.criticalPathDurationNanoseconds > 0)
 }
 
-@Test func taskSchedulerBoundsConcurrentIOWeight() async throws {
+@Test func taskSchedulerSerializesHostExclusiveWork() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-engine-io-concurrency-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -377,17 +264,83 @@ private struct FailAfterWriteAction: ColliderAction {
                     identity: ParallelismProbeIdentity(name: name),
                     probe: probe,
                     output: output,
-                    ioWeight: 4)))
+                    lane: .hostExclusive)))
     }
 
     _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
         graph: TaskGraph(tasks),
         selected: tasks.map(\.id),
         stateRoot: root.appending("state"),
-        options: TaskExecutionOptions(maximumParallelism: 2))
+        options: TaskExecutionOptions(
+            laneLimits: TaskLaneLimits(lightweight: 2, oci: 2)))
 
     let maximumActive = await probe.maximum()
     #expect(maximumActive == 1)
+}
+
+@Test func hostExclusiveWorkDoesNotOverlapOtherLanes() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-host-exclusive-barrier-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let probe = ParallelismProbe()
+    let lanes: [(String, TaskExecutionLane)] = [
+        ("exclusive", .hostExclusive),
+        ("lightweight", .lightweight),
+        ("oci", .oci),
+    ]
+    let tasks = try lanes.map { name, lane in
+        let output = root.appending(name)
+        return TaskDeclaration(
+            id: TaskID(rawValue: "fixture.host-exclusive-barrier.\(name)"),
+            component: ComponentID(rawValue: "fixture"),
+            outputs: [OutputDeclaration(path: output, validation: .regularFile)],
+            action: try AnyColliderAction(
+                ParallelismProbeAction(
+                    identity: ParallelismProbeIdentity(name: name),
+                    probe: probe,
+                    output: output,
+                    lane: lane)))
+    }
+
+    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: TaskGraph(tasks),
+        selected: tasks.map(\.id),
+        stateRoot: root.appending("state"),
+        options: TaskExecutionOptions(
+            laneLimits: TaskLaneLimits(lightweight: 2, oci: 2)))
+
+    #expect(await probe.maximum() == 2)
+}
+
+@Test func taskSchedulerRunsIndependentOCIWorkConcurrently() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-oci-concurrency-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let probe = ParallelismProbe()
+    let tasks = try ["arm64", "x86_64"].map { name in
+        let output = root.appending(name)
+        return TaskDeclaration(
+            id: TaskID(rawValue: "fixture.oci.\(name)"),
+            component: ComponentID(rawValue: "fixture"),
+            outputs: [OutputDeclaration(path: output, validation: .regularFile)],
+            action: try AnyColliderAction(
+                ParallelismProbeAction(
+                    identity: ParallelismProbeIdentity(name: name),
+                    probe: probe,
+                    output: output,
+                    lane: .oci)))
+    }
+
+    _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
+        graph: TaskGraph(tasks),
+        selected: tasks.map(\.id),
+        stateRoot: root.appending("state"),
+        options: TaskExecutionOptions(
+            laneLimits: TaskLaneLimits(lightweight: 1, oci: 2)))
+
+    #expect(await probe.maximum() == 2)
 }
 
 @Test func crossProcessLockAdmissionIsCancellationAware() async throws {
@@ -701,96 +654,6 @@ private struct FailAfterWriteAction: ColliderAction {
     #expect(rebuilt.executed == [task.id])
     #expect(!rebuilt.plan[0].isClean)
     #expect(rebuilt.plan[0].explanation == "rebuild requested for selected task")
-}
-
-@Test func selectedSupersetTaskOmitsAndCompletesRedundantDependencyOperation()
-    async throws
-{
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-engine-subsumption-\(UUID().uuidString)")
-    try FileManager.default.createDirectory(
-        at: directory, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let root = FilePath(directory.path)
-    let preparationOutput = root.appending("prepared")
-    let buildOutput = root.appending("built")
-    let testOutput = root.appending("tested")
-    let preparation = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.prepare"),
-        component: ComponentID(rawValue: "fixture"),
-        outputs: [
-            OutputDeclaration(
-                path: preparationOutput,
-                validation: .regularFile)
-        ],
-        action: try fixtureWriteAction(preparationOutput, bytes: Array("ready".utf8)))
-    let build = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.build"),
-        component: ComponentID(rawValue: "fixture"),
-        dependencies: [preparation.id],
-        action: try fixtureWriteAction(buildOutput, bytes: Array("redundant".utf8)))
-    let test = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.test"),
-        component: ComponentID(rawValue: "fixture"),
-        dependencies: [build.id],
-        subsumedDependencies: [build.id],
-        outputs: [
-            OutputDeclaration(path: testOutput, validation: .regularFile)
-        ],
-        action: try fixtureWriteAction(testOutput, bytes: Array("tested".utf8)))
-    let graph = try TaskGraph([preparation, build, test])
-    let runtime = ColliderRuntime()
-    let state = root.appending("state")
-
-    let first = try await ColliderEngine(runtime: runtime).execute(
-        graph: graph, selected: [test.id], stateRoot: state)
-    #expect(first.executed == [preparation.id, test.id])
-    #expect(first.plan.first { $0.task == build.id }?.isSubsumed == true)
-    #expect(FileManager.default.fileExists(atPath: preparationOutput.string))
-    #expect(!FileManager.default.fileExists(atPath: buildOutput.string))
-    #expect(FileManager.default.fileExists(atPath: testOutput.string))
-
-    let second = try await ColliderEngine(runtime: runtime).execute(
-        graph: graph, selected: [test.id], stateRoot: state)
-    #expect(second.executed.isEmpty)
-    #expect(second.plan.allSatisfy { $0.isClean })
-}
-
-@Test func sharedDependencyExecutesWhenAnySelectedConsumerDoesNotSubsumeIt()
-    async throws
-{
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "collider-engine-shared-subsumption-\(UUID().uuidString)")
-    try FileManager.default.createDirectory(
-        at: directory, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let root = FilePath(directory.path)
-    let buildOutput = root.appending("built")
-    let build = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.build"),
-        component: ComponentID(rawValue: "fixture"),
-        outputs: [
-            OutputDeclaration(path: buildOutput, validation: .regularFile)
-        ],
-        action: try fixtureWriteAction(buildOutput, bytes: Array("built".utf8)))
-    let superset = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.superset"),
-        component: ComponentID(rawValue: "fixture"),
-        dependencies: [build.id],
-        subsumedDependencies: [build.id],
-        action: try fixtureCreateDirectoryAction(root.appending("superset")))
-    let consumer = TaskDeclaration(
-        id: TaskID(rawValue: "fixture.consumer"),
-        component: ComponentID(rawValue: "fixture"),
-        dependencies: [build.id],
-        action: try fixtureCreateDirectoryAction(root.appending("consumer")))
-
-    let report = try await ColliderEngine(runtime: ColliderRuntime()).execute(
-        graph: TaskGraph([build, superset, consumer]),
-        selected: [superset.id, consumer.id],
-        stateRoot: root.appending("state"))
-    #expect(report.executed == [build.id, superset.id, consumer.id])
-    #expect(FileManager.default.fileExists(atPath: buildOutput.string))
 }
 
 @Test func executableOutputValidationFollowsTheDeclaredSymlink() async throws {

@@ -2,35 +2,24 @@ import ColliderCore
 import SystemPackage
 
 struct TaskIdentityBuilder {
-    struct Result {
-        let identity: ArtifactDigest
-        let audit: PlannedTaskAudit
-    }
-
     func build(
         of task: TaskDeclaration,
         dependencies: [(task: TaskID, identity: ArtifactDigest)],
         services: TaskPlanningServices
-    ) throws -> Result {
-        var resolutions = PlanningEvidenceResolutions()
-        let identity = try identity(
+    ) throws -> ArtifactDigest {
+        var resolutions = TaskIdentityResolutions()
+        return try identity(
             of: task,
             dependencies: dependencies,
             services: services,
             resolutions: &resolutions)
-        let audit = try audit(
-            of: task,
-            dependencies: dependencies,
-            services: services,
-            resolutions: &resolutions)
-        return Result(identity: identity, audit: audit)
     }
 
     private func identity(
         of task: TaskDeclaration,
         dependencies: [(task: TaskID, identity: ArtifactDigest)],
         services: TaskPlanningServices,
-        resolutions: inout PlanningEvidenceResolutions
+        resolutions: inout TaskIdentityResolutions
     ) throws -> ArtifactDigest {
         var encoder = CanonicalDigestEncoder(
             identityPathMap: services.identityPathMap)
@@ -47,10 +36,6 @@ struct TaskIdentityBuilder {
                 tag: 3,
                 bytes: try dependencyEncoder.encodedBytes())
         }
-        for dependency in task.subsumedDependencies {
-            encoder.append(tag: 220, string: dependency.rawValue)
-        }
-
         var artifactReferenceBytes: [UInt8] = []
         for reference in task.artifactReferences.sorted(by: {
             ($0.producer.rawValue, $0.slot.rawValue, $0.path.string)
@@ -204,206 +189,6 @@ struct TaskIdentityBuilder {
         return services.digestBytes(encoder.bytes)
     }
 
-    private func audit(
-        of task: TaskDeclaration,
-        dependencies: [(task: TaskID, identity: ArtifactDigest)],
-        services: TaskPlanningServices,
-        resolutions: inout PlanningEvidenceResolutions
-    ) throws -> PlannedTaskAudit {
-        var inputs: [PlannedInputAudit] = []
-        for input in identityInputs(of: task) {
-            switch input {
-            case .value(let name, let bytes):
-                inputs.append(
-                    PlannedInputAudit(
-                        kind: "value",
-                        name: name,
-                        digest: services.digestBytes(bytes)))
-            case .string(let name, let value):
-                inputs.append(
-                    PlannedInputAudit(
-                        kind: "string",
-                        name: name,
-                        digest: services.digestBytes(Array(value.utf8))))
-            case .environment(let name, let value):
-                inputs.append(
-                    PlannedInputAudit(
-                        kind: "environment",
-                        name: name,
-                        digest: services.digestBytes(
-                            Array((value ?? "<unset>").utf8))))
-            case .swiftBuildContext(let context):
-                inputs.append(
-                    PlannedInputAudit(
-                        kind: "swift-build-context",
-                        digest: services.digestBytes(
-                            context.identityBytes(
-                                identityPathMap: services.identityPathMap))))
-            case .file(let path):
-                inputs.append(
-                    PlannedInputAudit(
-                        kind: "file",
-                        path: path.string,
-                        digest: try resolutions.fileDigest(path, services: services)))
-            case .tree(let path):
-                inputs.append(
-                    PlannedInputAudit(
-                        kind: "tree",
-                        path: path.string,
-                        digest: try resolutions.treeDigest(path, services: services)))
-            case .optionalTree(let path, let fallback):
-                inputs.append(
-                    PlannedInputAudit(
-                        kind: "optional-tree",
-                        path: path.string,
-                        digest: try resolutions.optionalTreeDigest(
-                            path,
-                            services: services)
-                            ?? services.digestBytes(fallback)))
-            case .tool(let executable):
-                let environment =
-                    task.swiftProducts.first?.environment
-                    ?? task.action?.environment ?? [:]
-                let tool = try resolutions.semanticToolIdentity(
-                    executable,
-                    environment: environment,
-                    services: services)
-                inputs.append(
-                    PlannedInputAudit(
-                        kind: "semantic-tool",
-                        name: executableDescription(executable),
-                        path: tool.path.string,
-                        digest: tool.digest))
-            }
-        }
-
-        var semanticTools: [PlannedToolAudit] = []
-        var operationalTools: [PlannedToolAudit] = []
-        for tool in task.action?.requirements.tools.sorted(by: {
-            ($0.role.rawValue, $0.name) < ($1.role.rawValue, $1.name)
-        }) ?? [] {
-            let audit: PlannedToolAudit
-            switch (tool.role, tool.executable) {
-            case (_, .artifact(let reference)):
-                audit = PlannedToolAudit(
-                    name: tool.name,
-                    executable: "artifact",
-                    path: reference.path.string,
-                    digest: dependencies.first { $0.task == reference.producer }?.identity,
-                    producer: reference.producer,
-                    slot: reference.slot)
-            case (.semantic, .named), (.semantic, .path):
-                let resolved = try resolutions.semanticToolIdentity(
-                    tool.executable,
-                    environment: task.action?.environment ?? [:],
-                    services: services)
-                audit = PlannedToolAudit(
-                    name: tool.name,
-                    executable: executableDescription(tool.executable),
-                    path: resolved.path.string,
-                    digest: resolved.digest)
-            case (.semantic, .operationalNamed), (.semantic, .taskOutput),
-                (.operational, .named), (.operational, .operationalNamed),
-                (.operational, .path), (.operational, .taskOutput):
-                audit = PlannedToolAudit(
-                    name: tool.name,
-                    executable: executableDescription(tool.executable))
-            }
-            switch tool.role {
-            case .semantic: semanticTools.append(audit)
-            case .operational: operationalTools.append(audit)
-            }
-        }
-
-        let actionIdentity = try task.action.map {
-            services.digestBytes(
-                try $0.identity(using: services.identityPathMap))
-        }
-        let swiftBuildContexts =
-            task.swiftProducts.map {
-                PlannedSwiftBuildContextAudit(
-                    role: "build",
-                    product: $0.qualifiedProduct,
-                    identity: services.digestBytes(
-                        $0.invocation.context.identityBytes(
-                            identityPathMap: services.identityPathMap)))
-            }
-            + task.swiftTests.map {
-                PlannedSwiftBuildContextAudit(
-                    role: "test",
-                    product: $0.qualifiedProduct,
-                    identity: services.digestBytes(
-                        $0.invocation.context.identityBytes(
-                            identityPathMap: services.identityPathMap)))
-            }
-        let effects = (task.action?.requirements.effects ?? []).map { effect in
-            PlannedEffectAudit(
-                access: effect.access.rawValue,
-                scope: effectScopeDescription(effect.scope),
-                root: effect.scope.root.string)
-        }.sorted {
-            ($0.scope, $0.root, $0.access) < ($1.scope, $1.root, $1.access)
-        }
-        let outputSlots = task.outputSlots.map {
-            PlannedOutputAudit(
-                slot: $0.id,
-                kind: $0.kind,
-                path: $0.path.string,
-                validation: $0.validation)
-        }
-        let slottedPaths = Set(task.outputSlots.map(\.path))
-        let unslottedOutputs = task.outputs.filter {
-            !slottedPaths.contains($0.path)
-        }.map {
-            PlannedOutputAudit(
-                path: $0.path.string,
-                validation: $0.validation)
-        }
-        return PlannedTaskAudit(
-            component: task.component,
-            actionKind: task.action?.kind.rawValue,
-            actionIdentity: actionIdentity,
-            semanticDependencies: Dictionary(
-                uniqueKeysWithValues: dependencies.map {
-                    ($0.task.rawValue, $0.identity)
-                }),
-            orderingDependencies: task.orderingDependencies.map {
-                $0.producer.rawValue
-            }.sorted(),
-            artifactReferences: task.artifactReferences.map {
-                PlannedArtifactReferenceAudit(
-                    producer: $0.producer,
-                    slot: $0.slot,
-                    kind: $0.kind,
-                    path: $0.path.string)
-            }.sorted {
-                ($0.producer.rawValue, $0.slot.rawValue)
-                    < ($1.producer.rawValue, $1.slot.rawValue)
-            },
-            resultReferences: task.resultReferences.map {
-                PlannedResultReferenceAudit(
-                    producer: $0.producer,
-                    slot: $0.slot,
-                    valueType: $0.valueType)
-            }.sorted {
-                ($0.producer.rawValue, $0.slot.rawValue)
-                    < ($1.producer.rawValue, $1.slot.rawValue)
-            },
-            inputs: inputs,
-            semanticTools: semanticTools,
-            operationalTools: operationalTools,
-            swiftBuildContexts: swiftBuildContexts,
-            outputs: outputSlots + unslottedOutputs,
-            postconditions: task.postconditions.map {
-                PlannedOutputAudit(
-                    path: $0.path.string,
-                    validation: $0.validation)
-            },
-            effects: effects,
-            networkAccess: task.action?.requirements.networkAccess.rawValue ?? "none",
-            assessmentPolicy: task.assessmentPolicy.rawValue)
-    }
-
     private func identityInputs(of task: TaskDeclaration) -> [ArtifactInput] {
         var inputs = task.inputs
         for requirement in task.swiftProducts.sorted(by: {
@@ -427,7 +212,7 @@ struct TaskIdentityBuilder {
         action: AnyColliderAction?,
         into encoder: inout CanonicalDigestEncoder,
         services: TaskPlanningServices,
-        resolutions: inout PlanningEvidenceResolutions
+        resolutions: inout TaskIdentityResolutions
     ) throws {
         guard let action else {
             encoder.append(tag: 235, string: "no-action")
@@ -496,7 +281,7 @@ struct TaskIdentityBuilder {
     }
 }
 
-private struct PlanningEvidenceResolutions {
+private struct TaskIdentityResolutions {
     private enum OptionalTreeResolution {
         case missing
         case digest(ArtifactDigest)
@@ -566,28 +351,6 @@ private struct PlanningEvidenceResolutions {
         let identity = try services.semanticToolIdentity(executable, environment)
         semanticTools[key] = identity
         return identity
-    }
-}
-
-private func executableDescription(_ executable: CommandSpec.Executable) -> String {
-    switch executable {
-    case .named(let name): "named:\(name)"
-    case .operationalNamed(let name): "operational-named:\(name)"
-    case .path(let path): "path:\(path)"
-    case .artifact(let reference):
-        "artifact:\(reference.producer):\(reference.slot)"
-    case .taskOutput(let path): "task-output:\(path)"
-    }
-}
-
-private func effectScopeDescription(_ scope: ActionEffectScope) -> String {
-    switch scope {
-    case .input: "input"
-    case .checkout: "checkout"
-    case .scratch: "scratch"
-    case .output: "output"
-    case .publication: "publication"
-    case .unrestricted: "unrestricted"
     }
 }
 

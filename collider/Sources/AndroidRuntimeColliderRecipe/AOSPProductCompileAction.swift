@@ -59,7 +59,7 @@ struct CompileAOSPProductAction: ColliderAction {
         }
         return ActionRequirements(
             effects: effects,
-            resources: .fullHostExclusive,
+            lane: .hostExclusive,
             executionPlatform: .linuxARM64OCI,
             artifactTarget: .androidX86_64(
                 apiLevel: build.expectedPlatformSDK))

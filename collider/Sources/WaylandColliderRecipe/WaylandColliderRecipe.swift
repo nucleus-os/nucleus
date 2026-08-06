@@ -302,7 +302,6 @@ public enum WaylandColliderRecipe: ColliderComponent {
                 .file(waylandXML),
             ],
             locks: [.checkout("wayland")],
-            assessmentPolicy: .artifactCached,
             action:
                 try AnyColliderAction(
                     GenerateWaylandSwiftSourcesAction(
@@ -462,7 +461,7 @@ private struct GenerateWaylandSwiftSourcesAction: ColliderAction {
                     role: .semantic),
             ],
             effects: effects,
-            resources: pipeline.requirements.resources,
+            lane: pipeline.requirements.lane,
             networkAccess: pipeline.requirements.networkAccess,
             executionPlatform: pipeline.requirements.executionPlatform,
             artifactTarget: pipeline.requirements.artifactTarget)
@@ -687,7 +686,7 @@ private struct RunWaylandNativeBuildAction: ColliderAction {
         }
         return ActionRequirements(
             effects: effects,
-            resources: pipeline.requirements.resources,
+            lane: pipeline.requirements.lane,
             executionPlatform: pipeline.requirements.executionPlatform,
             artifactTarget: pipeline.requirements.artifactTarget)
     }
@@ -726,8 +725,6 @@ private func protocolRecords(
     else {
         throw WaylandRecipeFailure.cannotEnumerate(protocolsRoot)
     }
-    let expression = try NSRegularExpression(
-        pattern: #"<protocol\s+name\s*=\s*"([^"]+)""#)
     var records: [WaylandProtocolRecord] = []
     for case let url as URL in enumerator where url.pathExtension == "xml" {
         if url.lastPathComponent == "wayland.xml"
@@ -736,13 +733,11 @@ private func protocolRecords(
             continue
         }
         let source = try String(contentsOf: url, encoding: .utf8)
-        let range = NSRange(source.startIndex..., in: source)
-        guard let match = expression.firstMatch(in: source, range: range),
-            let nameRange = Range(match.range(at: 1), in: source)
+        guard let match = source.firstMatch(of: /<protocol\s+name\s*=\s*"([^"]+)"/)
         else { continue }
         records.append(
             WaylandProtocolRecord(
-                name: String(source[nameRange]),
+                name: String(match.1),
                 path: FilePath(url.path(percentEncoded: false))))
     }
     return records.sorted { $0.path.string < $1.path.string }

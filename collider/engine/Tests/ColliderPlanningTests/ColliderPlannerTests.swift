@@ -47,7 +47,6 @@ import Testing
     let validations = Mutex(0)
     let digest = ArtifactDigest(bytes: Array(repeating: 13, count: 32))
     let services = TaskPlanningServices(
-        resourceCapacity: fixtureCapacity,
         digestBytes: { _ in digest },
         digestFile: { _ in
             fileReads.withLock { $0 += 1 }
@@ -197,108 +196,6 @@ import Testing
             == identity(dependencies: [second.id, first.id]))
 }
 
-@Test func artifactCacheEligibilityRejectsUnauditedCapabilities() throws {
-    let output = FilePath("/fixture/artifact-cache-output")
-    let cases: [(String, ActionRequirements)] = [
-        (
-            "ambient-semantic-tool",
-            ActionRequirements(
-                tools: [
-                    ActionToolRequirement(
-                        "tool",
-                        executable: .named("tool"),
-                        role: .semantic)
-                ],
-                effects: [ActionEffect(.write, scope: .output(output))],
-                executionPlatform: .macOSARM64Native)
-        ),
-        (
-            "operational-tool",
-            ActionRequirements(
-                tools: [
-                    ActionToolRequirement(
-                        "tool",
-                        executable: .operationalNamed("tool"),
-                        role: .operational)
-                ],
-                effects: [ActionEffect(.write, scope: .output(output))],
-                executionPlatform: .macOSARM64Native)
-        ),
-        (
-            "unrestricted-effect",
-            ActionRequirements(
-                effects: [
-                    ActionEffect(.readWrite, scope: .unrestricted(FilePath("/fixture")))
-                ],
-                executionPlatform: .macOSARM64Native)
-        ),
-        (
-            "mutable-checkout",
-            ActionRequirements(
-                effects: [
-                    ActionEffect(.readWrite, scope: .checkout(FilePath("/fixture/source")))
-                ],
-                executionPlatform: .macOSARM64Native)
-        ),
-        (
-            "unrestricted-network",
-            ActionRequirements(
-                effects: [ActionEffect(.write, scope: .output(output))],
-                networkAccess: .unrestricted,
-                executionPlatform: .macOSARM64Native)
-        ),
-    ]
-
-    for (name, requirements) in cases {
-        var builder = TaskBuilder(
-            id: TaskID(rawValue: "fixture.artifact-cached-\(name)"),
-            component: ComponentID(rawValue: "fixture"))
-        let _: ArtifactReference<FileArtifact> = try builder.output(
-            "output",
-            path: output,
-            validation: .regularFile)
-        let task = builder.build(
-            assessmentPolicy: .artifactCached,
-            action: try AnyColliderAction(
-                ArtifactCacheEligibilityAction(requirements: requirements)))
-
-        #expect(throws: ColliderPlanningFailure.self) {
-            _ = try ColliderPlanner().plan(
-                graph: TaskGraph([task]),
-                selected: [task.id],
-                rebuildSelected: false,
-                lowerings: [],
-                services: deterministicHashingServices())
-        }
-    }
-}
-
-@Test func contentAddressedNetworkAccessRemainsArtifactCacheEligible() throws {
-    let output = FilePath("/fixture/content-addressed-output")
-    var builder = TaskBuilder(
-        id: TaskID(rawValue: "fixture.content-addressed"),
-        component: ComponentID(rawValue: "fixture"))
-    let _: ArtifactReference<FileArtifact> = try builder.output(
-        "output",
-        path: output,
-        validation: .regularFile)
-    let task = builder.build(
-        assessmentPolicy: .artifactCached,
-        action: try AnyColliderAction(
-            ArtifactCacheEligibilityAction(
-                requirements: ActionRequirements(
-                    effects: [ActionEffect(.write, scope: .output(output))],
-                    networkAccess: .contentAddressed,
-                    executionPlatform: .macOSARM64Native))))
-
-    _ = try ColliderPlanner().plan(
-        graph: TaskGraph([task]),
-        selected: [task.id],
-        rebuildSelected: false,
-        lowerings: [],
-        services: deterministicHashingServices())
-}
-
 private struct PlacementIdentityAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         func encode(into encoder: inout ActionIdentityEncoder) {
@@ -353,24 +250,8 @@ private struct RelocatableIdentityAction: ColliderAction {
     func execute(in _: ActionContext) async throws {}
 }
 
-private struct ArtifactCacheEligibilityAction: ColliderAction {
-    struct Identity: ColliderActionIdentity {
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(tag: 1, string: "artifact-cache-eligibility")
-        }
-    }
-
-    static let kind: ActionKind = "fixture.artifact-cache-eligibility"
-
-    let requirements: ActionRequirements
-    var identity: Identity { Identity() }
-
-    func execute(in _: ActionContext) async throws {}
-}
-
 private func deterministicServices(digest: ArtifactDigest) -> TaskPlanningServices {
     TaskPlanningServices(
-        resourceCapacity: fixtureCapacity,
         digestBytes: { _ in digest },
         digestFile: { _ in digest },
         digestTree: { _ in digest },
@@ -387,7 +268,6 @@ private func deterministicHashingServices(
 ) -> TaskPlanningServices {
     let digest = ArtifactDigest(bytes: Array(repeating: 17, count: 32))
     return TaskPlanningServices(
-        resourceCapacity: fixtureCapacity,
         identityPathMap: identityPathMap,
         digestBytes: { ArtifactDigest.sha256(Data($0)) },
         digestFile: { _ in digest },
@@ -399,7 +279,3 @@ private func deterministicHashingServices(
         taskState: { _ in .missing },
         validateOutputs: { _ in })
 }
-
-private let fixtureCapacity = TaskResourceCapacity(
-    cpuCount: 8,
-    memoryBytes: 32 * 1_024 * 1_024 * 1_024)

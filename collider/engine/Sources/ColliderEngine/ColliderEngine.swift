@@ -85,10 +85,7 @@ public struct ColliderEngine: Sendable {
             digestIndex: stateRoot.appending("artifact-digests.json"))
         let outputValidator = TaskOutputValidator(
             fileSystem: runtime.actionFileSystem())
-        let artifactSnapshots = ArtifactSnapshotStore(
-            root: stateRoot.appending("artifact-snapshots"))
         let services = TaskPlanningServices(
-            resourceCapacity: hostResourceCapacity(),
             identityPathMap: identityPathMap,
             digestBytes: planningInputs.digest(bytes:),
             digestFile: planningInputs.digest(file:),
@@ -96,8 +93,7 @@ public struct ColliderEngine: Sendable {
             optionalTreeDigest: planningInputs.optionalTreeDigest,
             semanticToolIdentity: planningInputs.semanticToolIdentity,
             taskState: state.lookup,
-            validateOutputs: outputValidator.validate,
-            artifactSnapshotState: artifactSnapshots.state)
+            validateOutputs: outputValidator.validate)
         let planningStart = ContinuousClock().now
         let plan = try planning(services)
         let planningDuration = elapsedNanoseconds(since: planningStart)
@@ -113,22 +109,4 @@ public struct ColliderEngine: Sendable {
             planningDurationNanoseconds: planningDuration,
             selectedInputHashingDurationNanoseconds: hashingDuration)
     }
-}
-
-private func hostResourceCapacity() -> TaskResourceCapacity {
-    let processors = UInt32(ProcessInfo.processInfo.activeProcessorCount)
-    let memory = ProcessInfo.processInfo.physicalMemory
-    let reservedMemory: UInt64 = 16 * 1_024 * 1_024 * 1_024
-    return TaskResourceCapacity(
-        cpuCount: processors > 2 ? processors - 2 : 1,
-        memoryBytes: memory > reservedMemory ? memory - reservedMemory : memory)
-}
-
-private func elapsedNanoseconds(
-    since start: ContinuousClock.Instant
-) -> UInt64 {
-    let components = start.duration(to: ContinuousClock().now).components
-    let seconds = UInt64(max(0, components.seconds))
-    let nanoseconds = UInt64(max(0, components.attoseconds / 1_000_000_000))
-    return seconds &* 1_000_000_000 &+ nanoseconds
 }

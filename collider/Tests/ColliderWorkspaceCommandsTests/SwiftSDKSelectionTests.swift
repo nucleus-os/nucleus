@@ -28,34 +28,32 @@ import Testing
     #expect(
         arm64.commandArguments(["build"]) == [
             "build",
+            "--build-system", "swiftbuild",
             "--configuration", "release",
             "--jobs", "10",
             "--scratch-path", scratch.string,
             "--package-path", packageRoot.string,
             "--swift-sdk", "fixture-sdk",
             "--triple", "aarch64-unknown-linux-android24",
-            "-Xcxx",
-            "-I/workspace/.nucleus/swiftpm/android/out/Intermediates.noindex/GeneratedModuleMaps-android-aarch64",
         ])
     #expect(
         amd64.commandArguments(["build"]) == [
             "build",
+            "--build-system", "swiftbuild",
             "--configuration", "release",
             "--jobs", "10",
             "--scratch-path", scratch.string,
             "--package-path", packageRoot.string,
             "--swift-sdk", "fixture-sdk",
             "--triple", "x86_64-unknown-linux-android24",
-            "-Xcxx",
-            "-I/workspace/.nucleus/swiftpm/android/out/Intermediates.noindex/GeneratedModuleMaps-android-x86_64",
         ])
     #expect(arm64.context.identityBytes != amd64.context.identityBytes)
     #expect(
-        arm64.configurationProducts
-            == scratch.appending("out/Products/Release-android-aarch64"))
+        arm64.productsDirectory
+            == scratch.appending(".collider/products"))
     #expect(
-        amd64.configurationProducts
-            == scratch.appending("out/Products/Release-android-x86_64"))
+        amd64.productsDirectory
+            == scratch.appending(".collider/products"))
 }
 
 @Test func swiftPMSelectsEachTripleFromOneSDKArtifactID() throws {

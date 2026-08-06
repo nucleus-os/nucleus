@@ -485,27 +485,18 @@ public struct OCIExecutionPipeline: Sendable {
         }
 
         var effects: [ActionEffect] = []
-        var cpuCount: UInt32? = 0
-        var memoryBytes: UInt64? = 0
         for execution in executions {
             for effect in ociActionRequirements(execution: execution).effects
             where !effects.contains(effect) {
                 effects.append(effect)
             }
-            cpuCount = maximumResource(cpuCount, execution.resourceLimits.cpuCount)
-            memoryBytes = maximumResource(
-                memoryBytes,
-                execution.resourceLimits.memoryBytes)
         }
 
         self.executions = executions
         identity = OCIExecutionPipelineIdentity(executions)
         requirements = ActionRequirements(
             effects: effects,
-            resources: ActionResourceRequest(
-                cpuCount: cpuCount,
-                memoryBytes: memoryBytes,
-                exclusive: false),
+            lane: .oci,
             networkAccess: executions.contains {
                 $0.networkPolicy == .externalEnabled
             } ? .unrestricted : .none,
@@ -525,14 +516,6 @@ public struct OCIExecutionPipeline: Sendable {
             }
         }
     }
-}
-
-private func maximumResource<Value: FixedWidthInteger>(
-    _ lhs: Value?,
-    _ rhs: Value?
-) -> Value? {
-    guard let lhs, let rhs else { return nil }
-    return max(lhs, rhs)
 }
 
 public func ociActionRequirements(
@@ -556,10 +539,7 @@ public func ociActionRequirements(
     }
     return ActionRequirements(
         effects: effects,
-        resources: ActionResourceRequest(
-            cpuCount: execution.resourceLimits.cpuCount,
-            memoryBytes: execution.resourceLimits.memoryBytes,
-            exclusive: false),
+        lane: .oci,
         networkAccess:
             execution.networkPolicy == .externalEnabled ? .unrestricted : .none,
         executionPlatform: execution.executionPlatform,
@@ -574,7 +554,7 @@ public func ociImagePreparationActionRequirements(
             ActionEffect(.read, scope: .input(preparation.context)),
             ActionEffect(.readWrite, scope: .output(preparation.imageID)),
         ],
-        resources: .fullHostExclusive,
+        lane: .hostExclusive,
         networkAccess: .unrestricted,
         executionPlatform: preparation.executionPlatform)
 }
@@ -609,7 +589,7 @@ public struct ActionEffect: Hashable, Sendable {
 public struct ActionRequirements: Hashable, Sendable {
     public let tools: [ActionToolRequirement]
     public let effects: [ActionEffect]
-    public let resources: ActionResourceRequest
+    public let lane: TaskExecutionLane
     public let networkAccess: ActionNetworkAccess
     public let executionPlatform: ExecutionPlatform
     public let artifactTarget: ArtifactTarget?
@@ -617,14 +597,16 @@ public struct ActionRequirements: Hashable, Sendable {
     public init(
         tools: [ActionToolRequirement] = [],
         effects: [ActionEffect] = [],
-        resources: ActionResourceRequest = .lightweight,
+        lane: TaskExecutionLane? = nil,
         networkAccess: ActionNetworkAccess = .none,
         executionPlatform: ExecutionPlatform,
         artifactTarget: ArtifactTarget? = nil
     ) {
         self.tools = tools
         self.effects = effects
-        self.resources = resources
+        self.lane =
+            lane
+            ?? (executionPlatform.environment == .oci ? .oci : .lightweight)
         self.networkAccess = networkAccess
         self.executionPlatform = executionPlatform
         self.artifactTarget = artifactTarget
@@ -637,37 +619,6 @@ public enum ActionNetworkAccess: String, Hashable, Sendable {
     /// an exact content digest declared by the action.
     case contentAddressed
     case unrestricted
-}
-
-public struct ActionResourceRequest: Hashable, Sendable {
-    public let cpuCount: UInt32?
-    public let memoryBytes: UInt64?
-    public let ioWeight: UInt32?
-    public let exclusive: Bool
-
-    public init(
-        cpuCount: UInt32?,
-        memoryBytes: UInt64?,
-        ioWeight: UInt32? = 1,
-        exclusive: Bool
-    ) {
-        self.cpuCount = cpuCount
-        self.memoryBytes = memoryBytes
-        self.ioWeight = ioWeight
-        self.exclusive = exclusive
-    }
-
-    public static let lightweight = ActionResourceRequest(
-        cpuCount: 1,
-        memoryBytes: 512 * 1_024 * 1_024,
-        ioWeight: 1,
-        exclusive: false)
-
-    public static let fullHostExclusive = ActionResourceRequest(
-        cpuCount: nil,
-        memoryBytes: nil,
-        ioWeight: nil,
-        exclusive: true)
 }
 
 public enum ActionDeclarationFailure: Error, CustomStringConvertible, Sendable {
@@ -1160,11 +1111,9 @@ public struct ActionFileSystem: Sendable {
         within effects: [ActionEffect]
     ) -> Bool {
         guard path.isAbsolute else { return false }
-        let path = path.lexicallyNormalized().string
         return effects.contains { effect in
             guard effect.access.permits(requested) else { return false }
-            let root = effect.scope.root.lexicallyNormalized().string
-            return path == root || path.hasPrefix(root.hasSuffix("/") ? root : root + "/")
+            return path.isContained(in: effect.scope.root)
         }
     }
 }

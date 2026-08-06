@@ -12,7 +12,7 @@ func chromiumCommandHasOneOpinionatedOperationSurface() throws {
     #expect(
         try Browser.Build.parse(["--dry-run"]).taskOptions.dryRun)
     #expect(
-        try Browser.Test.parse(["--explain"]).taskOptions.explain)
+        try Browser.Test.parse(["--verbose"]).taskOptions.verbose)
     #expect(
         try InstallBrowser.parse(["--prefix", "/browser"]).prefix
             == "/browser")
@@ -73,7 +73,7 @@ func chromiumRecipeOwnsTheTypedConcurrentCefAndBrowserGraph() async throws {
         productActions.allSatisfy {
             $0.requirements.executionPlatform == .linuxARM64OCI
                 && $0.requirements.artifactTarget == .linuxX86_64
-                && $0.requirements.resources.exclusive
+                && $0.requirements.lane == .hostExclusive
         })
 
     let test = try #require(

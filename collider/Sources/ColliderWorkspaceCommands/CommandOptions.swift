@@ -20,9 +20,6 @@ package struct TaskControlOptions: ParsableArguments {
     @Flag(help: "Rebuild the selected tasks while reusing clean prerequisites.")
     package var rebuild = false
 
-    @Flag(help: "Explain why each selected task is clean or dirty.")
-    package var explain = false
-
     @Flag(help: "Print each leaf command before executing it.")
     package var verbose = false
 
@@ -47,7 +44,6 @@ package struct TaskControlOptions: ParsableArguments {
         TaskControls(
             dryRun: dryRun,
             rebuild: rebuild,
-            explain: explain,
             verbose: verbose,
             quiet: quiet,
             json: json)

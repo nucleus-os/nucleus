@@ -28,18 +28,17 @@ import Testing
     }
 }
 
-@Test func taskGraphRejectsSubsumingANonDependency() {
-    let build = TaskDeclaration(
-        id: TaskID(rawValue: "build"),
-        component: ComponentID(rawValue: "core"))
-    let test = TaskDeclaration(
-        id: TaskID(rawValue: "test"),
-        component: ComponentID(rawValue: "core"),
-        subsumedDependencies: [build.id])
-
-    #expect(throws: TaskGraphFailure.self) {
-        _ = try TaskGraph([build, test])
-    }
+@Test func filePathContainmentUsesNormalizedComponents() {
+    let root = FilePath("/workspace/build")
+    #expect(FilePath("/workspace/build").isContained(in: root))
+    #expect(FilePath("/workspace/build/arm64/../x86_64").isContained(in: root))
+    #expect(!FilePath("/workspace/builder").isContained(in: root))
+    #expect(!FilePath("workspace/build").isContained(in: root))
+    #expect(root.overlaps(FilePath("/workspace/build/arm64")))
+    #expect(!root.overlaps(FilePath("/workspace/build-output")))
+    #expect(
+        FilePath("/workspace/build/arm64/bin").relativeSubpath(from: root)
+            == FilePath("arm64/bin"))
 }
 
 @Test func storageCatalogAllowsProtectedParentsWithLockedRemovalBoundaries() throws {

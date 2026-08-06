@@ -88,36 +88,6 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
         })
 }
 
-@Test func artifactCachePromotionManifestIsExplicitAndFullyAudited() throws {
-    let root = try #require(
-        discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
-    let catalog = try ComponentRegistry(
-        context: WorkspaceContext(root: root, environment: [:])
-    ).componentCatalog()
-    let artifactCachedTasks = catalog.tasks.filter {
-        $0.assessmentPolicy == .artifactCached
-    }
-    let actions = try artifactCachedTasks.map { task in
-        try #require(task.action, "artifact-cached task \(task.id) must own one action")
-    }
-
-    #expect(
-        Set(actions.map(\.kind)) == [
-            ActionKind(rawValue: "android-runtime.download-aosp-repo-launcher"),
-            ActionKind(rawValue: "core.download-skia-gn"),
-            ActionKind(rawValue: "core.install-skia-gn"),
-            ActionKind(rawValue: "rn.download-boost"),
-            ActionKind(rawValue: "swift-sdk.download-input"),
-            ActionKind(rawValue: "vulkan.generate-bindings"),
-            ActionKind(rawValue: "wayland.generate-swift-sources"),
-        ])
-    #expect(artifactCachedTasks.allSatisfy { !$0.outputs.isEmpty })
-    #expect(
-        actions.allSatisfy {
-            $0.requirements.networkAccess != .unrestricted
-        })
-}
-
 private func fixtureNativeBuilder(
     context: FilePath,
     imageID: FilePath,
@@ -410,12 +380,57 @@ private func fixtureReactNativeNodeModules(
         configuration: .debug,
         target: .host(identity: "x86_64-linux"),
         toolchainIdentity: "swiftc@second")
+    let otherJobCount = SwiftBuildContext(
+        packageRoot: fixtureSwiftPackageRoot,
+        configuration: .debug,
+        target: .host(identity: "x86_64-linux"),
+        toolchainIdentity: "swiftc@first",
+        maximumParallelism: 4)
 
     #expect(layout.swiftScratch(for: debug) != layout.swiftScratch(for: release))
     #expect(
         layout.swiftScratch(for: debug)
             != layout.swiftScratch(for: otherToolchain))
+    #expect(
+        layout.swiftScratch(for: debug)
+            == layout.swiftScratch(for: otherJobCount))
     #expect(layout.swiftScratch(for: debug) == layout.swiftScratch(for: debug))
+}
+
+@Test func hostScratchIdentityFollowsCompilerInsteadOfTargetSDKSource() throws {
+    let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-host-swift-identity-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: workspace) }
+    try FileManager.default.createDirectory(
+        at: workspace, withIntermediateDirectories: true)
+    try Data("// swift-tools-version: 6.4\n".utf8).write(
+        to: workspace.appendingPathComponent("Package.swift"))
+    let firstCompiler = workspace.appendingPathComponent("first-swiftc")
+    let secondCompiler = workspace.appendingPathComponent("second-swiftc")
+    try Data("first compiler".utf8).write(to: firstCompiler)
+    try Data("second compiler".utf8).write(to: secondCompiler)
+
+    func invocation(sourceID: String, compiler: URL) throws -> SwiftPMInvocation {
+        try WorkspaceContext(
+            root: FilePath(workspace.path),
+            environment: [
+                "HOME": workspace.path,
+                "NUCLEUS_SWIFT_SOURCE_ID": sourceID,
+                "SWIFTC": compiler.path,
+            ]
+        ).swiftPMInvocation()
+    }
+
+    let first = try invocation(sourceID: "target-source-a", compiler: firstCompiler)
+    let changedSource = try invocation(
+        sourceID: "target-source-b", compiler: firstCompiler)
+    let changedCompiler = try invocation(
+        sourceID: "target-source-a", compiler: secondCompiler)
+
+    #expect(first.scratchPath == changedSource.scratchPath)
+    #expect(first.context.identityBytes == changedSource.context.identityBytes)
+    #expect(first.scratchPath != changedCompiler.scratchPath)
+    #expect(first.context.identityBytes != changedCompiler.context.identityBytes)
 }
 
 @Test func workspaceEnvironmentDefinesOneReviewedHostCCachePolicy() {
@@ -633,7 +648,7 @@ private func fixtureReactNativeNodeModules(
         vulkan.tasks.flatMap(\.swiftProducts).map(\.qualifiedProduct) == [
             "swift-vulkan:VulkanGen"
         ])
-    #expect(vulkan.task.assessmentPolicy == .artifactCached)
+    #expect(vulkan.task.assessmentPolicy == .incremental)
     #expect(
         vulkanAction.kind == ActionKind(rawValue: "vulkan.generate-bindings"))
     let vulkanTools = vulkanAction.requirements.tools
@@ -732,7 +747,7 @@ private func fixtureReactNativeNodeModules(
             "swift-wayland:SwiftWaylandGen"
         ])
     #expect(task.swiftProducts.isEmpty)
-    #expect(task.assessmentPolicy == .artifactCached)
+    #expect(task.assessmentPolicy == .incremental)
     #expect(
         action.kind == ActionKind(rawValue: "wayland.generate-swift-sources"))
     #expect(generationContainers.count == 3)
@@ -784,7 +799,7 @@ private func fixtureReactNativeNodeModules(
             CoreTaskIDs.gnDownload,
             TaskID(rawValue: "native.builder"),
         ])
-    #expect(gnInstall.assessmentPolicy == .artifactCached)
+    #expect(gnInstall.assessmentPolicy == .incremental)
     let gnExecutions = try await ociExecutions(in: gnInstall.action)
     #expect(gnExecutions.count == 1)
     #expect(gnExecutions[0].command == ["extract-gn"])

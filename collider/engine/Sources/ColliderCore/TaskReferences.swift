@@ -297,7 +297,6 @@ public struct TaskBuilder: Sendable {
     }
 
     public func build(
-        subsumedDependencies: [TaskID] = [],
         swiftProducts: [SwiftProductRequirement] = [],
         swiftTests: [SwiftTestRequirement] = [],
         inputs: [ArtifactInput] = [],
@@ -316,7 +315,6 @@ public struct TaskBuilder: Sendable {
             resultReferences: resultReferences,
             outputSlots: outputSlots,
             resultSlots: resultSlots,
-            subsumedDependencies: subsumedDependencies,
             swiftProducts: swiftProducts,
             swiftTests: swiftTests,
             inputs: inputs,

@@ -75,8 +75,8 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
     public var imageID: FilePath { image.path }
 }
 
-/// Every setting that determines whether SwiftPM compilation artifacts may be
-/// reused by another task.
+/// The complete SwiftPM invocation context. `identityBytes` contains only the
+/// settings that determine whether compilation artifacts may be reused.
 public struct SwiftBuildContext: Hashable, Sendable {
     public static let defaultMaximumParallelism: UInt32 = 10
     public static let concurrentOCIMaximumParallelism: UInt32 = 8
@@ -165,7 +165,6 @@ public struct SwiftBuildContext: Hashable, Sendable {
         encoder.append(
             tag: 12,
             integer: staticSwiftStandardLibrary ? 1 : 0)
-        encoder.append(tag: 25, integer: UInt64(maximumParallelism))
         switch execution {
         case .host:
             encoder.append(tag: 14, string: "host")
@@ -222,7 +221,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
 
     public var postcondition: PathPostcondition {
         PathPostcondition(
-            path: scratchPath,
+            path: productsDirectory,
             validation: .nonEmptyDirectory)
     }
 
@@ -230,33 +229,15 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         .shared(scratchPath.appending(".collider.lock"))
     }
 
-    public var productsRoot: FilePath {
-        scratchPath.appending("out/Products")
-    }
-
-    public var configurationProducts: FilePath {
-        switch context.target {
-        case .host:
-            productsRoot.appending(capitalizedConfiguration)
-        case .triple, .swiftSDK:
-            productsRoot.appending(
-                "\(capitalizedConfiguration)-\(context.target.productsSuffix)")
-        }
-    }
-
-    public var generatedModuleMaps: FilePath {
-        switch context.target {
-        case .host:
-            scratchPath.appending(
-                "out/Intermediates.noindex/GeneratedModuleMaps")
-        case .triple, .swiftSDK:
-            scratchPath.appending(
-                "out/Intermediates.noindex/GeneratedModuleMaps-\(context.target.productsSuffix)")
-        }
+    /// Stable Collider-owned access to SwiftPM's public binary output path.
+    /// The SwiftPM action replaces this link from `swift build --show-bin-path`
+    /// after every successful invocation.
+    public var productsDirectory: FilePath {
+        scratchPath.appending(".collider/products")
     }
 
     public func executable(_ product: String) -> FilePath {
-        configurationProducts.appending(product)
+        productsDirectory.appending(product)
     }
 
     public func product(
@@ -267,17 +248,24 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         prebuildTargets: [String] = [],
         expectedOutputs: [PathPostcondition] = []
     ) -> SwiftProductRequirement {
-        SwiftProductRequirement(
-            package: package,
-            product: product,
-            packageRoot: context.packageRoot,
-            invocation: self,
-            inputs: [
+        let inputs: [ArtifactInput]
+        switch context.execution {
+        case .host:
+            inputs = []
+        case .oci:
+            inputs = [
                 .file(context.packageRoot.appending("Package.swift")),
                 .optionalTree(
                     packageRoot.appending("Sources"),
                     fallback: Array("no-sources-directory".utf8)),
-            ],
+            ]
+        }
+        return SwiftProductRequirement(
+            package: package,
+            product: product,
+            packageRoot: context.packageRoot,
+            invocation: self,
+            inputs: inputs,
             environment: environment,
             prebuildTargets: prebuildTargets,
             expectedOutputs: expectedOutputs)
@@ -291,12 +279,12 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         arguments: [String] = [],
         expectedBuildOutputs: [PathPostcondition] = []
     ) -> SwiftTestRequirement {
-        SwiftTestRequirement(
-            package: package,
-            testProduct: testProduct,
-            packageRoot: context.packageRoot,
-            invocation: self,
-            inputs: [
+        let inputs: [ArtifactInput]
+        switch context.execution {
+        case .host:
+            inputs = []
+        case .oci:
+            inputs = [
                 .file(context.packageRoot.appending("Package.swift")),
                 .optionalTree(
                     packageRoot.appending("Sources"),
@@ -304,32 +292,38 @@ public struct SwiftPMInvocation: Hashable, Sendable {
                 .optionalTree(
                     packageRoot.appending("Tests"),
                     fallback: Array("no-tests-directory".utf8)),
-            ],
+            ]
+        }
+        return SwiftTestRequirement(
+            package: package,
+            testProduct: testProduct,
+            packageRoot: context.packageRoot,
+            invocation: self,
+            inputs: inputs,
             environment: environment,
             arguments: arguments,
             expectedBuildOutputs: expectedBuildOutputs)
     }
 
-    public func generatedSwiftHeader(_ module: String) -> FilePath {
-        generatedModuleMaps.appending("\(module)-Swift.h")
-    }
-
     public func command(
         arguments: [String],
         workingDirectory: FilePath,
-        environment: [String: String]
+        environment: [String: String],
+        output: CommandSpec.Output = .inherited
     ) -> CommandSpec {
         return CommandSpec(
             executable: swiftExecutable,
             arguments: commandArguments(arguments),
             workingDirectory: workingDirectory,
-            environment: environment)
+            environment: environment,
+            output: output)
     }
 
     public func ociExecution(
         arguments: [String],
         workingDirectory: FilePath,
-        environment: [String: String]
+        environment: [String: String],
+        output: CommandSpec.Output = .logged
     ) throws -> OCIExecution {
         guard case .oci(let configuration) = context.execution else {
             throw SwiftPMInvocationExecutionFailure.requiresOCIContext
@@ -362,7 +356,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             command: configuration.commandPrefix + processorAffinityArguments + ["swift"]
                 + commandArguments(arguments),
             environment: environment,
-            output: .logged)
+            output: output)
     }
 
     public func ociExecutableExecution(
@@ -432,14 +426,9 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         return [subcommand] + contextArguments + arguments.dropFirst()
     }
 
-    private var capitalizedConfiguration: String {
-        let configuration = context.configuration.rawValue
-        return configuration.prefix(1).uppercased()
-            + configuration.dropFirst()
-    }
-
     private var contextArguments: [String] {
         var arguments = [
+            "--build-system", "swiftbuild",
             "--configuration", context.configuration.rawValue,
             "--jobs", String(context.maximumParallelism),
             "--scratch-path", scratchPath.string,
@@ -472,7 +461,6 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         for flag in context.cxxFlags {
             arguments += ["-Xcxx", flag]
         }
-        arguments += ["-Xcxx", "-I\(generatedModuleMaps.string)"]
         for flag in context.linkerFlags {
             arguments += ["-Xlinker", flag]
         }
@@ -564,41 +552,6 @@ public struct SwiftTestRequirement: Hashable, Sendable {
     }
 }
 
-extension SwiftBuildTarget {
-    fileprivate var productsSuffix: String {
-        switch self {
-        case .host(let identity):
-            let parts = identity.split(separator: "-", maxSplits: 1)
-            precondition(
-                parts.count == 2,
-                "host Swift target identity must be <architecture>-<platform>")
-            return "\(productsPlatform(String(parts[1])))-\(parts[0])"
-        case .triple(let triple):
-            return targetProductsSuffix(forTriple: triple)
-        case .swiftSDK(_, let targetTriple):
-            return targetProductsSuffix(forTriple: targetTriple)
-        }
-    }
-}
-
-private func targetProductsSuffix(forTriple triple: String) -> String {
-    let parts = triple.split(separator: "-")
-    precondition(
-        parts.count >= 3,
-        "Swift target triple must contain architecture, vendor, and platform")
-    let platforms = parts.dropFirst(2)
-    let platform: String
-    if platforms.contains(where: { $0.hasPrefix("android") }) {
-        platform = "android"
-    } else if let macOS = platforms.first(where: { $0.hasPrefix("macos") }) {
-        platform = String(macOS)
-    } else {
-        platform = String(
-            platforms.first(where: { $0 == "linux" }) ?? parts[2])
-    }
-    return "\(productsPlatform(platform))-\(parts[0])"
-}
-
 private func containerEnvironmentVariable(_ name: String) -> Bool {
     if name == "NUCLEUS_NATIVE_SDK_ROOT" {
         return false
@@ -607,10 +560,6 @@ private func containerEnvironmentVariable(_ name: String) -> Bool {
         || name.hasPrefix("SWIFTPM_")
         || name.hasPrefix("CCACHE_")
         || ["LANG", "LC_ALL", "TZ", "TERM"].contains(name)
-}
-
-private func productsPlatform(_ platform: String) -> String {
-    platform == "macos" ? "macosx" : platform
 }
 
 private func append(

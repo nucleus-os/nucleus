@@ -155,9 +155,6 @@ private func plan(
         rebuildSelected: false,
         lowerings: [],
         services: TaskPlanningServices(
-            resourceCapacity: TaskResourceCapacity(
-                cpuCount: 8,
-                memoryBytes: 32 * 1_024 * 1_024 * 1_024),
             digestBytes: { _ in digest },
             digestFile: { _ in digest },
             digestTree: { _ in digest },

@@ -213,7 +213,7 @@ struct PackageAndroidAddonAction: ColliderAction {
     }
 
     init(configuration: AndroidAddonPackageConfiguration) {
-        runtimeProducts = configuration.swiftPM.configurationProducts
+        runtimeProducts = configuration.swiftPM.productsDirectory
         runtimeRoot = configuration.runtimeRoot
         runtimeScratch = configuration.runtimeScratch
         aospGeneration = configuration.aospGeneration

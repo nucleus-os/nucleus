@@ -97,7 +97,7 @@ private struct PrepareNativeBuilderImageAction: ColliderAction {
             effects: image.effects + [
                 ActionEffect(.write, scope: .scratch(cache))
             ],
-            resources: image.resources,
+            lane: image.lane,
             executionPlatform: image.executionPlatform)
     }
 

@@ -32,6 +32,8 @@ public struct RecordedRun: Hashable, Sendable {
 }
 
 public actor RunRegistry {
+    public static let defaultRetainedRunCount = 20
+
     private let root: FilePath
     private var sequences: [RunID: UInt64] = [:]
 
@@ -110,8 +112,6 @@ public actor RunRegistry {
                 let outcome: TaskRunOutcome?
                 if entry.isClean {
                     outcome = .localClean
-                } else if entry.isSubsumed {
-                    outcome = .subsumed
                 } else {
                     outcome = nil
                 }
@@ -170,20 +170,6 @@ public actor RunRegistry {
         }
     }
 
-    public func recordArtifactSnapshotDigests(
-        _ digests: [String: ArtifactDigest],
-        task: TaskID,
-        in run: RunHandle
-    ) throws {
-        try updateManifest(run) {
-            guard var record = $0.tasks?[task.rawValue] else {
-                throw RunRegistryFailure.unplannedTaskMetadata(task)
-            }
-            record.artifactSnapshotDigests = digests
-            $0.tasks?[task.rawValue] = record
-        }
-    }
-
     public func recordTaskObservations(
         _ observations: TaskExecutionObservations,
         task: TaskID,
@@ -233,12 +219,12 @@ public actor RunRegistry {
 
     public func recordExecutionMetrics(
         criticalPathDurationNanoseconds: UInt64,
-        resourceWaitDurationNanoseconds: UInt64,
+        schedulingWaitDurationNanoseconds: UInt64,
         in run: RunHandle
     ) throws {
         try updateManifest(run) {
             $0.criticalPathDurationNanoseconds = criticalPathDurationNanoseconds
-            $0.resourceWaitDurationNanoseconds = resourceWaitDurationNanoseconds
+            $0.schedulingWaitDurationNanoseconds = schedulingWaitDurationNanoseconds
         }
     }
 
@@ -253,7 +239,8 @@ public actor RunRegistry {
     public func finish(
         _ run: RunHandle,
         status: RunStatus,
-        failedTask: TaskID? = nil
+        failedTask: TaskID? = nil,
+        retainingRuns: Int = RunRegistry.defaultRetainedRunCount
     ) throws {
         let manifestPath = run.directory.appending("manifest.json")
         var manifest = try JSONDecoder().decode(
@@ -263,6 +250,7 @@ public actor RunRegistry {
         manifest.finishedAt = timestamp()
         try writeJSON(manifest, to: manifestPath)
         try record(kind: .runFinished, task: failedTask, message: status.rawValue, in: run)
+        try remove(reclaimableRuns(keeping: retainingRuns))
     }
 
     /// Captured task output arrives in whatever chunks the task writes, and the
@@ -284,10 +272,9 @@ public actor RunRegistry {
         }
     }
 
-    /// Run history the registry may reclaim, oldest first, once more than
-    /// `keeping` runs are recorded. Only a succeeded run is reclaimable: a run
-    /// that failed, was interrupted, or is still recording is the record someone
-    /// comes back to, including a run another process is writing right now.
+    /// Terminal run history the registry may reclaim, oldest first. The newest
+    /// `keeping` terminal runs and the newest failed run are preserved. Every
+    /// running record is excluded because another process may still own it.
     /// Recency is the recorded start, not directory metadata.
     public func reclaimableRuns(keeping: Int) -> [RecordedRun] {
         let runs = root.appending("runs")
@@ -309,17 +296,29 @@ public actor RunRegistry {
                     manifest
                 )
             }
-            .sorted { $0.1.startedAt > $1.1.startedAt }
-        let retained = Set(recorded.prefix(max(0, keeping)).map(\.0.id))
+            .sorted {
+                if $0.1.startedAt != $1.1.startedAt {
+                    return $0.1.startedAt > $1.1.startedAt
+                }
+                return $0.0.id.rawValue > $1.0.id.rawValue
+            }
+        let terminal = recorded.filter { $0.1.status != .running }
+        var retained = Set(terminal.prefix(max(0, keeping)).map(\.0.id))
+        if let newestFailed = terminal.first(where: { $0.1.status == .failed }) {
+            retained.insert(newestFailed.0.id)
+        }
         return
-            recorded
-            .filter { $0.1.status == .succeeded && !retained.contains($0.0.id) }
+            terminal
+            .filter { !retained.contains($0.0.id) }
+            .reversed()
             .map(\.0)
     }
 
     public func remove(_ runs: [RecordedRun]) throws {
         for run in runs {
-            try FileManager.default.removeItem(atPath: run.directory.string)
+            if FileManager.default.fileExists(atPath: run.directory.string) {
+                try FileManager.default.removeItem(atPath: run.directory.string)
+            }
         }
     }
 

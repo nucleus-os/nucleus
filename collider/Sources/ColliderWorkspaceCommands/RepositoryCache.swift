@@ -39,7 +39,8 @@ struct RepositoryCache {
 
     func status(json: Bool) async throws {
         let declarations = try storageDeclarations()
-        let runs = await runReclamation(keeping: 20)
+        let runs = await runReclamation(
+            keeping: RunRegistry.defaultRetainedRunCount)
         let sdkCandidates = try swiftSDKCandidates()
         let sdkGenerations = try inactiveSwiftSDKGenerations()
         let sdkReclaimableBytes = try allocatedSize(of: sdkCandidates + sdkGenerations)
@@ -78,13 +79,11 @@ struct RepositoryCache {
                 if declaration.storageClass == .container {
                     reclaimableBytes = ociUsage?.reclaimableBytes ?? 0
                 } else {
-                    let mount = URL(fileURLWithPath: declaration.mountPath)
-                        .standardizedFileURL.path
+                    let mount = FilePath(declaration.mountPath).normalizedForComparison()
                     reclaimableBytes = records.reduce(into: UInt64(0)) {
                         total, record in
-                        let path = URL(fileURLWithPath: record.path)
-                            .standardizedFileURL.path
-                        if path == mount || path.hasPrefix(mount + "/") {
+                        let path = FilePath(record.path).normalizedForComparison()
+                        if path.isContained(in: mount) {
                             total &+= record.reclaimableBytes
                         }
                     }
@@ -214,10 +213,12 @@ struct RepositoryCache {
                 storageClass: .runRecord,
                 root: context.layout.runs,
                 safetyRoot: state,
-                cleanupPolicy: .explicitPrune,
+                cleanupPolicy: .automaticRetention,
                 workflowLock: context.layout.locks.appending(
                     "cache-prune.lock"),
-                retention: "the most recent successful and active run records are retained"),
+                retention:
+                    "running records, the 20 newest terminal records, and the newest failed record are retained"
+            ),
             StorageDeclaration(
                 id: "downloads",
                 owner: "collider-downloads",
@@ -352,16 +353,14 @@ struct RepositoryCache {
         let generations = paths.artifactRoot.appending("generations")
         guard FileManager.default.fileExists(atPath: generations.string) else { return [] }
         let activeName = try activeSwiftSDKGenerationName(paths: paths)
-        let pattern = try NSRegularExpression(pattern: #"^[0-9a-f]{24}$"#)
         return try FileManager.default.contentsOfDirectory(
             at: URL(fileURLWithPath: generations.string, isDirectory: true),
             includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]
         )
         .filter { url in
             let name = url.lastPathComponent
-            let range = NSRange(name.startIndex..., in: name)
             guard name != activeName,
-                pattern.firstMatch(in: name, range: range) != nil,
+                name.wholeMatch(of: /^[0-9a-f]{24}$/) != nil,
                 let values = try? url.resourceValues(
                     forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             else { return false }
@@ -486,12 +485,7 @@ struct RepositoryCache {
 }
 
 private func isSwiftSDKCandidateName(_ name: String) -> Bool {
-    let pattern = #"^\.candidate-[0-9a-f]{24}-[0-9TZ-]+-[0-9]+$"#
-    guard let expression = try? NSRegularExpression(pattern: pattern) else {
-        return false
-    }
-    let range = NSRange(name.startIndex..., in: name)
-    return expression.firstMatch(in: name, range: range) != nil
+    name.wholeMatch(of: /^\.candidate-[0-9a-f]{24}-[0-9TZ-]+-[0-9]+$/) != nil
 }
 
 private func allocatedSize(of roots: [URL]) throws -> UInt64 {

@@ -296,15 +296,11 @@ private func inertActionFileSystem() -> ActionFileSystem {
     let incremental = try await identity(
         consumer(after: nil, policy: .incremental),
         includingAnchor: false)
-    let artifactCached = try await identity(
-        consumer(after: nil, policy: .artifactCached),
-        includingAnchor: false)
     let ordered = try await identity(
         consumer(
             after: TaskBuilder(id: anchorID, component: component).ordering,
             policy: .incremental),
         includingAnchor: true)
 
-    #expect(incremental == artifactCached)
     #expect(incremental == ordered)
 }

@@ -321,7 +321,6 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .file(root.appending("aosp.lock.json"))
             ],
             locks: [.checkout("android-runtime-aosp-downloads")],
-            assessmentPolicy: .artifactCached,
             action:
                 try AnyColliderAction(
                     DownloadAOSPRepoLauncherAction(
@@ -981,7 +980,7 @@ private struct RunGfxstreamBuildAction: ColliderAction {
             effects: pipeline.requirements.effects + [
                 ActionEffect(.readWrite, scope: .output(buildRoot))
             ],
-            resources: pipeline.requirements.resources,
+            lane: pipeline.requirements.lane,
             executionPlatform: pipeline.requirements.executionPlatform,
             artifactTarget: pipeline.requirements.artifactTarget)
     }

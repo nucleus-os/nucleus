@@ -219,10 +219,6 @@ private func cefArtifactRequirements(
                 scope: .scratch(
                     assembly.distributionRoot.appending(".consumer-smoke"))),
         ],
-        resources: ActionResourceRequest(
-            cpuCount: chromiumToolResourceLimits.cpuCount,
-            memoryBytes: chromiumToolResourceLimits.memoryBytes,
-            exclusive: false),
         executionPlatform: .linuxARM64OCI,
         artifactTarget: .linuxX86_64)
 }

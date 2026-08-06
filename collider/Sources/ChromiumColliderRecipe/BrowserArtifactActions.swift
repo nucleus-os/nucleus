@@ -173,10 +173,6 @@ private func browserArtifactRequirements(
                     ? .input(assembly.distributionRoot)
                     : .publication(assembly.distributionRoot)),
         ],
-        resources: ActionResourceRequest(
-            cpuCount: chromiumToolResourceLimits.cpuCount,
-            memoryBytes: chromiumToolResourceLimits.memoryBytes,
-            exclusive: false),
         executionPlatform: .linuxARM64OCI,
         artifactTarget: .linuxX86_64)
 }

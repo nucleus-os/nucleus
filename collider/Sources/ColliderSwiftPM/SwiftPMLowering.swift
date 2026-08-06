@@ -7,7 +7,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
     public func lower(
         _ assessed: [AssessedTaskDeclaration]
     ) throws -> [LoweredExecutionTask] {
-        let selected = assessed.filter { !$0.isClean && !$0.isSubsumed }
+        let selected = assessed.filter { !$0.isClean }
         let products = selected.flatMap { assessed in
             assessed.task.swiftProducts.map {
                 ProductEntry(owner: assessed.task, requirement: $0)
@@ -46,46 +46,23 @@ public struct SwiftPMLowering: TaskPlanLowering {
         tests: [TestEntry],
         tasksByID: [TaskID: TaskDeclaration]
     ) throws -> [LoweredExecutionTask] {
-        guard !tests.isEmpty else {
-            return [
-                try loweredBuild(
-                    products,
-                    context: context,
-                    tasksByID: tasksByID)
-            ]
-        }
-
         let groupedTests = Dictionary(grouping: tests) {
             $0.requirement.arguments
         }.sorted {
             $0.key.lexicographicallyPrecedes($1.key)
         }
-        let coveredOutputs = Set(tests.flatMap(\.requirement.expectedBuildOutputs))
-        let coveredProducts = products.filter { entry in
-            entry.requirement.expectedOutputs.allSatisfy {
-                coveredOutputs.contains($0)
-            }
-        }
-        let uncoveredProducts = products.filter { entry in
-            !coveredProducts.contains(where: {
-                $0.owner.id == entry.owner.id
-                    && $0.requirement == entry.requirement
-            })
-        }
         var lowered: [LoweredExecutionTask] = []
-        if !uncoveredProducts.isEmpty {
+        if !products.isEmpty {
             lowered.append(
                 try loweredBuild(
-                    uncoveredProducts,
+                    products,
                     context: context,
                     tasksByID: tasksByID))
         }
-        for (index, grouping) in groupedTests.enumerated() {
-            let groupProducts = index == 0 ? coveredProducts : []
+        for grouping in groupedTests {
             lowered.append(
                 try loweredTest(
                     grouping.value,
-                    products: groupProducts,
                     context: context,
                     tasksByID: tasksByID))
         }
@@ -113,21 +90,16 @@ public struct SwiftPMLowering: TaskPlanLowering {
 
     private func loweredTest(
         _ tests: [TestEntry],
-        products: [ProductEntry],
         context: SwiftBuildContext,
         tasksByID: [TaskID: TaskDeclaration]
     ) throws -> LoweredExecutionTask {
-        let owners = tests.map(\.owner) + products.map(\.owner)
+        let owners = tests.map(\.owner)
         return LoweredExecutionTask(
             task: try testTask(
                 tests.map(\.requirement),
-                products: products.map(\.requirement),
                 owners: owners),
             attribution: attribution(
-                tests.map { ($0.owner, $0.requirement.qualifiedProduct) }
-                    + products.map {
-                        ($0.owner, $0.requirement.qualifiedProduct)
-                    }),
+                tests.map { ($0.owner, $0.requirement.qualifiedProduct) }),
             logicalOwners: Set(owners.map(\.id)),
             prerequisites: prerequisites(
                 for: owners,
@@ -242,6 +214,7 @@ public struct SwiftPMLowering: TaskPlanLowering {
             postconditions: [first.invocation.postcondition]
                 + uniqued(requirements.flatMap(\.expectedOutputs)),
             locks: [first.invocation.lock],
+            assessmentPolicy: assessmentPolicy(for: first.invocation),
             action: try swiftPMAction(
                 invocation: first.invocation,
                 environment: first.environment,
@@ -254,26 +227,23 @@ public struct SwiftPMLowering: TaskPlanLowering {
 
     private func testTask(
         _ requirements: [SwiftTestRequirement],
-        products: [SwiftProductRequirement],
         owners: [TaskDeclaration]
     ) throws -> TaskDeclaration {
         guard let first = requirements.first,
             requirements.allSatisfy({
                 $0.invocation == first.invocation
                     && $0.arguments == first.arguments
-            }),
-            products.allSatisfy({ $0.invocation == first.invocation })
+            })
         else {
             throw SwiftPMLoweringFailure.incompatibleTestContexts
         }
-        let environments = requirements.map(\.environment) + products.map(\.environment)
+        let environments = requirements.map(\.environment)
         let environment = first.environment.filter { name, value in
             environments.allSatisfy { $0[name] == value }
         }
         let testProducts = Array(
             Set(requirements.map(\.qualifiedProduct))
         ).sorted()
-        let buildProducts = Array(Set(products.map(\.qualifiedProduct))).sorted()
         var inputs = [first.invocation.identityInput]
         inputs += first.invocation.context.toolsets.map(ArtifactInput.file)
         if case .host = first.invocation.context.execution,
@@ -290,19 +260,11 @@ public struct SwiftPMLowering: TaskPlanLowering {
                 inputs.append(input)
             }
         }
-        for requirement in products.sorted(by: {
-            $0.qualifiedProduct < $1.qualifiedProduct
-        }) {
-            for input in requirement.inputs where !inputs.contains(input) {
-                inputs.append(input)
-            }
-        }
-        let prebuildTargets = Array(Set(products.flatMap(\.prebuildTargets))).sorted()
         let taskID = physicalTaskID(
             role: "test",
             context: first.invocation.context,
-            products: testProducts + buildProducts,
-            prebuildTargets: prebuildTargets,
+            products: testProducts,
+            prebuildTargets: [],
             arguments: first.arguments)
         var builder = TaskBuilder(
             id: taskID,
@@ -315,16 +277,13 @@ public struct SwiftPMLowering: TaskPlanLowering {
         return builder.build(
             inputs: inputs,
             postconditions: [first.invocation.postcondition]
-                + uniqued(
-                    requirements.flatMap(\.expectedBuildOutputs)
-                        + products.flatMap(\.expectedOutputs)),
+                + uniqued(requirements.flatMap(\.expectedBuildOutputs)),
             locks: [first.invocation.lock],
+            assessmentPolicy: assessmentPolicy(for: first.invocation),
             action: try swiftPMAction(
                 invocation: first.invocation,
                 environment: environment,
-                arguments: prebuildTargets.map {
-                    ["build", "--target", $0]
-                } + [["test"] + first.arguments])
+                arguments: [["test"] + first.arguments])
         )
         .addingDependencies(owners.flatMap(\.dependencies))
     }
@@ -361,12 +320,14 @@ public struct SwiftPMLowering: TaskPlanLowering {
         let processes: [SwiftPMProcess]
         switch invocation.context.execution {
         case .host:
+            var hostEnvironment = environment
+            hostEnvironment.removeValue(forKey: "NUCLEUS_SWIFT_SOURCE_ID")
             processes = arguments.map {
                 .host(
                     invocation.command(
                         arguments: $0,
                         workingDirectory: invocation.context.packageRoot,
-                        environment: environment))
+                        environment: hostEnvironment))
             }
         case .oci:
             processes = try arguments.map {
@@ -377,11 +338,40 @@ public struct SwiftPMLowering: TaskPlanLowering {
                         environment: environment))
             }
         }
+        let binPathQuery: SwiftPMProcess
+        switch invocation.context.execution {
+        case .host:
+            var hostEnvironment = environment
+            hostEnvironment.removeValue(forKey: "NUCLEUS_SWIFT_SOURCE_ID")
+            binPathQuery = .host(
+                invocation.command(
+                    arguments: ["build", "--show-bin-path"],
+                    workingDirectory: invocation.context.packageRoot,
+                    environment: hostEnvironment,
+                    output: .captured(limit: 64 * 1_024)))
+        case .oci:
+            binPathQuery = .oci(
+                try invocation.ociExecution(
+                    arguments: ["build", "--show-bin-path"],
+                    workingDirectory: invocation.context.packageRoot,
+                    environment: environment,
+                    output: .captured(limit: 64 * 1_024)))
+        }
         return try AnyColliderAction(
             SwiftPMAction(
-                processes: processes,
+                processes: processes + [binPathQuery],
                 packageRoot: invocation.context.packageRoot,
-                scratchPath: invocation.scratchPath))
+                scratchPath: invocation.scratchPath,
+                productsDirectory: invocation.productsDirectory))
+    }
+
+    private func assessmentPolicy(
+        for invocation: SwiftPMInvocation
+    ) -> TaskAssessmentPolicy {
+        switch invocation.context.execution {
+        case .host: .always
+        case .oci: .incremental
+        }
     }
 
     private func physicalTaskID(
@@ -431,6 +421,7 @@ private enum SwiftPMProcess: Hashable, Sendable {
 private struct SwiftPMAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let processes: [SwiftPMProcess]
+        let productsDirectory: FilePath
 
         func encode(into encoder: inout ActionIdentityEncoder) {
             encoder.append(tag: 1, integer: UInt64(processes.count))
@@ -447,6 +438,9 @@ private struct SwiftPMAction: ColliderAction {
                         nested: OCIExecutionActionIdentity(execution))
                 }
             }
+            encoder.append(
+                tag: UInt64(processes.count + 2),
+                string: productsDirectory.string)
         }
     }
 
@@ -455,13 +449,20 @@ private struct SwiftPMAction: ColliderAction {
     let identity: Identity
     let requirements: ActionRequirements
     let environment: [String: String]
+    let productsDirectory: FilePath
+    let scratchPath: FilePath
 
     init(
         processes: [SwiftPMProcess],
         packageRoot: FilePath,
-        scratchPath: FilePath
+        scratchPath: FilePath,
+        productsDirectory: FilePath
     ) throws {
-        identity = Identity(processes: processes)
+        identity = Identity(
+            processes: processes,
+            productsDirectory: productsDirectory)
+        self.productsDirectory = productsDirectory
+        self.scratchPath = scratchPath
         environment =
             processes.first.map {
                 switch $0 {
@@ -482,7 +483,7 @@ private struct SwiftPMAction: ColliderAction {
                     ActionEffect(.read, scope: .input(packageRoot)),
                     ActionEffect(.readWrite, scope: .scratch(scratchPath)),
                 ],
-                resources: .fullHostExclusive,
+                lane: .hostExclusive,
                 executionPlatform: .macOSARM64Native)
         case .oci:
             requirements = try OCIExecutionPipeline(
@@ -497,7 +498,7 @@ private struct SwiftPMAction: ColliderAction {
     }
 
     func execute(in context: ActionContext) async throws {
-        for process in identity.processes {
+        for (index, process) in identity.processes.enumerated() {
             try context.cancellation.check()
             let result: CommandResult
             switch process {
@@ -509,7 +510,28 @@ private struct SwiftPMAction: ColliderAction {
             guard result.status == 0 else {
                 throw SwiftPMLoweringFailure.commandFailed(result.status)
             }
+            if index == identity.processes.indices.last {
+                try publishProductsDirectory(
+                    result.standardOutput,
+                    context: context)
+            }
         }
+    }
+
+    private func publishProductsDirectory(
+        _ output: String,
+        context: ActionContext
+    ) throws {
+        let value = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let path = FilePath(value).lexicallyNormalized()
+        guard !value.isEmpty, path.isAbsolute, path.isContained(in: scratchPath)
+        else {
+            throw SwiftPMLoweringFailure.invalidBinPath(value)
+        }
+        try context.files.createDirectory(productsDirectory.removingLastComponent())
+        try context.files.replaceSymlink(
+            at: productsDirectory,
+            target: path.string)
     }
 }
 
@@ -540,6 +562,7 @@ public enum SwiftPMLoweringFailure: Error, CustomStringConvertible, Sendable {
     case incompatibleTestContexts
     case emptyInvocation
     case commandFailed(Int32)
+    case invalidBinPath(String)
 
     public var description: String {
         switch self {
@@ -551,6 +574,8 @@ public enum SwiftPMLoweringFailure: Error, CustomStringConvertible, Sendable {
             "SwiftPM lowering produced an empty physical invocation"
         case .commandFailed(let status):
             "SwiftPM command failed with status \(status)"
+        case .invalidBinPath(let value):
+            "SwiftPM returned an invalid binary output path: \(value)"
         }
     }
 }

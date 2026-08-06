@@ -514,7 +514,6 @@ private func normalizedPath(_ path: String) -> String {
 }
 
 private func isDescendant(_ path: String, of root: String) -> Bool {
-    let path = normalizedPath(path)
-    let root = normalizedPath(root)
-    return path == root || path.hasPrefix(root.hasSuffix("/") ? root : root + "/")
+    FilePath(path).lexicallyNormalized().isContained(
+        in: FilePath(root).lexicallyNormalized())
 }

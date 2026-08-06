@@ -273,7 +273,6 @@ public enum TaskLock: Hashable, Sendable {
 public enum TaskAssessmentPolicy: String, Hashable, Codable, Sendable {
     case always
     case incremental
-    case artifactCached
 }
 
 public struct TaskDeclaration: Hashable, Sendable {
@@ -285,11 +284,6 @@ public struct TaskDeclaration: Hashable, Sendable {
     public let resultReferences: [AnyTaskResultReference]
     public let outputSlots: [AnyTaskOutputSlot]
     public let resultSlots: [AnyTaskResultSlot]
-    /// Direct dependency actions that this task subsumes as a strict superset.
-    /// Their identities still participate in this task's identity, but the
-    /// runtime may omit their redundant execution when this task is dirty and
-    /// selected.
-    public let subsumedDependencies: [TaskID]
     public let swiftProducts: [SwiftProductRequirement]
     public let swiftTests: [SwiftTestRequirement]
     public let inputs: [ArtifactInput]
@@ -309,7 +303,6 @@ public struct TaskDeclaration: Hashable, Sendable {
         resultReferences: [AnyTaskResultReference] = [],
         outputSlots: [AnyTaskOutputSlot] = [],
         resultSlots: [AnyTaskResultSlot] = [],
-        subsumedDependencies: [TaskID] = [],
         swiftProducts: [SwiftProductRequirement] = [],
         swiftTests: [SwiftTestRequirement] = [],
         inputs: [ArtifactInput] = [],
@@ -331,7 +324,6 @@ public struct TaskDeclaration: Hashable, Sendable {
         self.resultReferences = resultReferences
         self.outputSlots = outputSlots
         self.resultSlots = resultSlots
-        self.subsumedDependencies = subsumedDependencies
         self.swiftProducts = swiftProducts
         self.swiftTests = swiftTests
         self.inputs = inputs
@@ -367,7 +359,6 @@ public struct TaskDeclaration: Hashable, Sendable {
             resultReferences: resultReferences,
             outputSlots: outputSlots,
             resultSlots: resultSlots,
-            subsumedDependencies: subsumedDependencies,
             swiftProducts: swiftProducts,
             swiftTests: swiftTests,
             inputs: inputs,
@@ -389,7 +380,6 @@ public struct TaskDeclaration: Hashable, Sendable {
             resultReferences: resultReferences,
             outputSlots: outputSlots,
             resultSlots: resultSlots,
-            subsumedDependencies: subsumedDependencies,
             swiftProducts: swiftProducts,
             swiftTests: swiftTests,
             inputs: inputs,
@@ -405,7 +395,6 @@ public struct TaskDeclaration: Hashable, Sendable {
 public enum TaskGraphFailure: Error, CustomStringConvertible, Sendable {
     case duplicate(TaskID)
     case missing(task: TaskID, dependency: TaskID)
-    case invalidSubsumption(task: TaskID, dependency: TaskID)
     case unknownArtifactReference(
         task: TaskID, producer: TaskID, slot: OutputSlotID)
     case artifactReferenceMismatch(
@@ -429,8 +418,6 @@ public enum TaskGraphFailure: Error, CustomStringConvertible, Sendable {
         case .duplicate(let id): "duplicate task identifier '\(id)'"
         case .missing(let task, let dependency):
             "task '\(task)' has missing dependency '\(dependency)'"
-        case .invalidSubsumption(let task, let dependency):
-            "task '\(task)' cannot subsume non-dependency '\(dependency)'"
         case .unknownArtifactReference(let task, let producer, let slot):
             "task '\(task)' references unknown artifact slot '\(producer).\(slot)'"
         case .artifactReferenceMismatch(
@@ -467,12 +454,6 @@ public struct TaskGraph: Sendable {
             for dependency in declaration.executionDependencies
             where tasks[dependency] == nil {
                 throw TaskGraphFailure.missing(task: declaration.id, dependency: dependency)
-            }
-            for dependency in declaration.subsumedDependencies
-            where !declaration.dependencies.contains(dependency) {
-                throw TaskGraphFailure.invalidSubsumption(
-                    task: declaration.id,
-                    dependency: dependency)
             }
             for reference in declaration.artifactReferences {
                 guard
