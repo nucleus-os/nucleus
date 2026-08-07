@@ -8,17 +8,17 @@ struct Cache: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Inspect and explicitly reclaim Collider-owned generated storage.",
         subcommands: [Status.self, Prune.self])
-    struct Status: AsyncParsableCommand {
+    struct Status: ColliderWorkspaceCommand {
         static let configuration = CommandConfiguration(
             abstract:
                 "Report ownership, retention, allocation, and reclaimability for declared storage.")
         @OptionGroup var reportOptions: ReportOptions
-        mutating func run() async throws {
-            try await RepositoryCache(context: context()).status(
+        mutating func run(in context: WorkspaceContext) async throws {
+            try await RepositoryCache(context: context).status(
                 json: reportOptions.json)
         }
     }
-    struct Prune: AsyncParsableCommand {
+    struct Prune: ColliderWorkspaceCommand {
         static let configuration = CommandConfiguration(
             abstract:
                 "Remove stale run records, abandoned Swift SDK candidates, and dangling OCI images."
@@ -34,8 +34,8 @@ struct Cache: AsyncParsableCommand {
             guard keepRuns >= 0 else { throw ValidationError("--keep-runs must be nonnegative") }
         }
 
-        mutating func run() async throws {
-            try await RepositoryCache(context: context()).prune(
+        mutating func run(in context: WorkspaceContext) async throws {
+            try await RepositoryCache(context: context).prune(
                 keepingRuns: keepRuns,
                 dryRun: dryRun,
                 json: json)

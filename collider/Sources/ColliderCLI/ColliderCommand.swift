@@ -20,12 +20,14 @@ public struct ColliderCommand: AsyncParsableCommand {
     public init() {}
 
     public static func execute(arguments: [String]) async throws {
-        var command = try parseAsRoot(arguments)
-        let environment = ProcessInfo.processInfo.environment
+        let command = try parseAsRoot(arguments)
+        var environment = ProcessInfo.processInfo.environment
         let workspace = try resolveWorkspaceRoot(environment: environment)
+        environment = nucleusWorkspaceEnvironment(
+            root: workspace,
+            environment: environment)
         let layout = WorkspaceLayout(root: workspace)
-        let registry = RunRegistry(
-            root: layout.state)
+        let registry = RunRegistry(root: layout.state)
         let requestedRunID = requestedRunID(for: command)
         let run =
             if let requestedRunID {
@@ -36,6 +38,8 @@ public struct ColliderCommand: AsyncParsableCommand {
             }
         let cancellation = RuntimeCancellation()
         let logging = CommandLogging(registry: registry, run: run)
+        environment["NUCLEUS_RUN_DIR"] = run.directory.string
+        environment["NUCLEUS_RUN_LOG"] = run.directory.appending("run.log").string
         let cacheLayout = nucleusCacheLayout(environment: environment)
         #if os(macOS)
         let ociBackend: (any OCIRuntimeBackend)? = AppleContainerRuntimeBackend()
@@ -49,42 +53,60 @@ public struct ColliderCommand: AsyncParsableCommand {
             ociConfiguration: nucleusOCIRuntimeConfiguration,
             ociBackend: ociBackend)
         let signals = RuntimeSignalHandlers(cancellation: cancellation)
-        setActiveCommandRuntime(
+        let application = ColliderApplicationComposition(
+            registry: registry,
+            run: run,
             logging: logging,
             cancellation: cancellation,
-            runtime: runtime)
+            runtime: runtime,
+            workspace: WorkspaceContext(
+                root: workspace,
+                environment: environment,
+                runtime: runtime),
+            signals: signals)
         defer {
-            signals.cancel()
-            setActiveCommandRuntime(
-                logging: nil,
-                cancellation: nil,
-                runtime: nil)
+            application.signals.cancel()
         }
         do {
-            if var asyncCommand = command as? any AsyncParsableCommand {
-                try await asyncCommand.run()
-            } else {
-                try command.run()
+            guard var workspaceCommand = command as? any ColliderWorkspaceCommand
+            else {
+                throw WorkspaceFailure.message(
+                    "parsed Collider leaf does not accept application composition")
             }
-            await runtime.shutdown()
-            try await registry.finish(run, status: .succeeded)
+            try await workspaceCommand.run(in: application.workspace)
+            await application.runtime.shutdown()
+            try await application.registry.finish(application.run, status: .succeeded)
         } catch let cleanExit as CleanExit {
-            await runtime.shutdown()
-            try? await registry.finish(run, status: .succeeded)
+            await application.runtime.shutdown()
+            try? await application.registry.finish(
+                application.run,
+                status: .succeeded)
             throw cleanExit
         } catch {
-            await runtime.shutdown()
-            let wasInterrupted = await cancellation.wasInterrupted()
-            try? await registry.appendLog(
+            await application.runtime.shutdown()
+            let wasInterrupted = await application.cancellation.wasInterrupted()
+            try? await application.registry.appendLog(
                 Array("Error: \(error)\n".utf8),
-                in: run)
+                in: application.run)
             let status = commandFailureStatus(
                 error,
                 wasInterrupted: wasInterrupted)
-            try? await registry.finish(run, status: status)
+            try? await application.registry.finish(
+                application.run,
+                status: status)
             throw error
         }
     }
+}
+
+private struct ColliderApplicationComposition {
+    let registry: RunRegistry
+    let run: RunHandle
+    let logging: CommandLogging
+    let cancellation: RuntimeCancellation
+    let runtime: ColliderRuntime
+    let workspace: WorkspaceContext
+    let signals: RuntimeSignalHandlers
 }
 
 func commandFailureStatus(

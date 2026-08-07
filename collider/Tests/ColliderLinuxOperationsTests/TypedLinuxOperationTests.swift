@@ -4,6 +4,7 @@ import SystemPackage
 import Testing
 
 import ColliderCore
+import ColliderRuntime
 
 @testable import ColliderLinuxOperations
 @testable import ColliderWorkspaceCommands
@@ -97,7 +98,8 @@ func runtimeInstallationNormalizesTheTypedLeafPrefix() throws {
     let command = InstallCommand(
         context: WorkspaceContext(
             root: FilePath("/workspace"),
-            environment: [:]))
+            environment: [:],
+            runtime: ColliderRuntime()))
 
     #expect(
         command.resolvedPrefix(explicit: "out/runtime").path

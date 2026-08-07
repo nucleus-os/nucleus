@@ -120,7 +120,8 @@ func ciMacOSBuilderDoctorScopeDryRunsWithoutHostMutation() async throws {
     try await WorkspaceDoctor(
         context: WorkspaceContext(
             root: FilePath(root.path),
-            environment: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin"])
+            environment: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin"],
+            runtime: ColliderRuntime())
     ).run(
         scope: .ciMacOSBuilder,
         dryRun: true,

@@ -54,7 +54,18 @@ package protocol ResumableRun {
     var requestedRunID: RunID? { get }
 }
 
-package protocol TaskControlledCommand: AsyncParsableCommand, ResumableRun {
+package protocol ColliderWorkspaceCommand: AsyncParsableCommand {
+    mutating func run(in context: WorkspaceContext) async throws
+}
+
+extension ColliderWorkspaceCommand {
+    package mutating func run() async throws {
+        throw WorkspaceFailure.message(
+            "Collider command execution requires application composition")
+    }
+}
+
+package protocol TaskControlledCommand: ColliderWorkspaceCommand, ResumableRun {
     var taskOptions: TaskControlOptions { get set }
 }
 
@@ -70,5 +81,3 @@ struct ReportOptions: ParsableArguments {
     @Flag(help: "Emit stable machine-readable records.")
     var json = false
 }
-
-package func context() throws -> WorkspaceContext { try WorkspaceContext.load() }

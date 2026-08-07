@@ -4,11 +4,10 @@ import ColliderRuntime
 import Foundation
 import SystemPackage
 
-struct Status: AsyncParsableCommand {
+struct Status: ColliderWorkspaceCommand {
     @OptionGroup var reportOptions: ReportOptions
-    mutating func run() async throws {
-        let workspace = try context()
-        try RepositoryState(context: workspace).printStatus(
+    mutating func run(in context: WorkspaceContext) async throws {
+        try RepositoryState(context: context).printStatus(
             json: reportOptions.json)
     }
 }

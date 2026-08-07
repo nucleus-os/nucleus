@@ -129,7 +129,8 @@ private let testAOSPProduct = "nucleus_x86_64"
     let signature = artifact.appendingPathComponent("addon-manifest.json.sig")
     let context = WorkspaceContext(
         root: FilePath(temporary.path),
-        environment: ["HOME": temporary.path])
+        environment: ["HOME": temporary.path],
+        runtime: ColliderRuntime())
     try await context.run(
         "openssl",
         [
@@ -294,7 +295,8 @@ private let testAOSPProduct = "nucleus_x86_64"
     let addonPublicKey = temporary.appendingPathComponent("addon-public.pem")
     let context = WorkspaceContext(
         root: FilePath(temporary.path),
-        environment: ["HOME": temporary.path])
+        environment: ["HOME": temporary.path],
+        runtime: ColliderRuntime())
     for key in [aospKey, addonKey] {
         try await context.run(
             "openssl",

@@ -6,8 +6,8 @@ struct AndroidRuntimeSourceLock: TaskControlledCommand {
         abstract: "Verify the pinned AOSP and Repo identities.")
     @OptionGroup var taskOptions: TaskControlOptions
 
-    mutating func run() async throws {
-        try await ComponentRegistry(context: context())
+    mutating func run(in context: WorkspaceContext) async throws {
+        try await ComponentRegistry(context: context)
             .verifyAndroidRuntimeSourceLock(controls: taskOptions.controls)
     }
 }
@@ -18,8 +18,8 @@ struct AndroidRuntimeSource: TaskControlledCommand {
         abstract: "Materialize the exact AOSP source checkout.")
     @OptionGroup var taskOptions: TaskControlOptions
 
-    mutating func run() async throws {
-        try await ComponentRegistry(context: context())
+    mutating func run(in context: WorkspaceContext) async throws {
+        try await ComponentRegistry(context: context)
             .prepareAndroidRuntimeSource(controls: taskOptions.controls)
     }
 }
@@ -30,8 +30,8 @@ struct AndroidRuntimeImage: TaskControlledCommand {
         abstract: "Build and release-sign the Nucleus Android images.")
     @OptionGroup var taskOptions: TaskControlOptions
 
-    mutating func run() async throws {
-        try await ComponentRegistry(context: context())
+    mutating func run(in context: WorkspaceContext) async throws {
+        try await ComponentRegistry(context: context)
             .buildAndroidRuntimeImage(controls: taskOptions.controls)
     }
 }

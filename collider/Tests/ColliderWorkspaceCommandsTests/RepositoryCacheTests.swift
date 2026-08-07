@@ -1,3 +1,4 @@
+import ColliderRuntime
 import Foundation
 import SystemPackage
 import Testing
@@ -44,7 +45,8 @@ import Testing
                 "nucleus/nucleus-native-sdk/linux-arm64"
             ).path,
             "ANDROID_SDK_ROOT": cache.appendingPathComponent("android-sdk").path,
-        ])
+        ],
+        runtime: ColliderRuntime())
 
     try await RepositoryCache(context: context).prune(
         keepingRuns: 0,

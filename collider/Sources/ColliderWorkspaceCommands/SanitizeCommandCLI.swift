@@ -6,10 +6,9 @@ import SystemPackage
 
 struct Sanitize: TaskControlledCommand {
     @Argument var selection: SanitizerSelection = .all
-    mutating func run() async throws {
-        let workspace = try context()
-        try await workspace.withExclusiveVerification {
-            try await SanitizerCommand(context: workspace).run(
+    mutating func run(in context: WorkspaceContext) async throws {
+        try await context.withExclusiveVerification {
+            try await SanitizerCommand(context: context).run(
                 selection, controls: taskOptions.controls)
         }
     }

@@ -1,5 +1,6 @@
 import ColliderCore
 import ColliderEngine
+import ColliderPersistence
 import Foundation
 import Synchronization
 import SystemPackage
@@ -256,6 +257,90 @@ import Testing
     #expect(try await runtime.ociRuntimeDiskUsage().reclaimableBytes == 6)
     try await runtime.pruneOCIImages()
     #expect(await backend.pruned)
+}
+
+@Test func externalCatalogPlansExecutesAndRecordsHostAndOCIWork() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-external-catalog-\(UUID().uuidString)",
+        isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let imageID = root.appending("image-id")
+    let hostTaskID = TaskID(rawValue: "external.prepare-image")
+    let ociTaskID = TaskID(rawValue: "external.execute-container")
+    let componentID = ComponentID(rawValue: "fixture")
+    let imageDigest = "sha256:" + String(repeating: "c", count: 64)
+    let execution = OCIExecution(
+        executionPlatform: .linuxARM64OCI,
+        artifactTarget: .linuxARM64,
+        imageID: imageID,
+        hostname: "external-catalog",
+        workingDirectory: "/work",
+        hostWorkingDirectory: root,
+        mounts: [],
+        networkPolicy: .externalDisabled,
+        userPolicy: .builder,
+        capabilityPolicy: .dropAll,
+        privilegePolicy: .prohibitAcquisition,
+        processFilesystemPolicy: .standard,
+        resourceLimits: .build,
+        containerEnvironment: [:],
+        command: ["true"],
+        environment: [:],
+        output: .logged)
+    let component = try ComponentDefinition(
+        descriptor: ComponentDescriptor(
+            id: componentID,
+            canonicalName: "external",
+            directoryName: "external"),
+        tasks: [
+            TaskDeclaration(
+                id: hostTaskID,
+                component: componentID,
+                outputs: [OutputDeclaration(path: imageID, validation: .regularFile)],
+                action: try fixtureWriteAction(imageID, bytes: Array(imageDigest.utf8))),
+            TaskDeclaration(
+                id: ociTaskID,
+                component: componentID,
+                dependencies: [hostTaskID],
+                action: try fixtureOCIExecutionAction(execution)),
+        ],
+        entrypoints: [
+            ComponentEntrypoint(id: .build, roots: [ociTaskID])
+        ])
+    let request = ComponentEntrypointRequest(spelling: "external", entrypoint: .build)
+    let catalog = ComponentCatalog(
+        components: [component],
+        publicEntrypoints: [request])
+    let registry = RunRegistry(root: root.appending("history"))
+    let run = try await registry.begin(command: ["external-collider", "build"])
+    let backend = RecordingOCIBackend()
+    let runtime = ColliderRuntime(
+        logging: CommandLogging(registry: registry, run: run),
+        downloadCacheRoot: root.appending("downloads"),
+        ociConfiguration: .engineDefault,
+        ociBackend: backend)
+
+    let report = try await ColliderEngine(runtime: runtime).execute(
+        catalog: catalog,
+        requests: [request],
+        stateRoot: root.appending("state"),
+        run: run,
+        registry: registry)
+    try await registry.finish(run, status: .succeeded)
+
+    #expect(report.executed == [hostTaskID, ociTaskID])
+    #expect(try String(contentsOfFile: imageID.string, encoding: .utf8) == imageDigest)
+    #expect(await backend.request?.execution.command == ["true"])
+    let manifest = try JSONDecoder().decode(
+        RunManifest.self,
+        from: Data(
+            contentsOf: URL(fileURLWithPath: run.directory.appending("manifest.json").string)))
+    #expect(manifest.status == .succeeded)
+    #expect(manifest.tasks?[hostTaskID.rawValue]?.outcome == .executed)
+    #expect(manifest.tasks?[ociTaskID.rawValue]?.outcome == .executed)
+    #expect(
+        manifest.tasks?[ociTaskID.rawValue]?.observations?.containerExecutions.count == 1)
 }
 
 @Test func appleContainerCleanupDeletesAndVerifiesTheExactName() async throws {

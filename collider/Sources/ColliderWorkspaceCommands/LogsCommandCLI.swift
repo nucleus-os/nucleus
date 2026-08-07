@@ -6,30 +6,27 @@ import SystemPackage
 
 struct Logs: AsyncParsableCommand {
     static let configuration = CommandConfiguration(subcommands: [List.self, Show.self, Tail.self])
-    struct List: AsyncParsableCommand {
+    struct List: ColliderWorkspaceCommand {
         @OptionGroup var reportOptions: ReportOptions
         @Option var kind: String?
-        mutating func run() async throws {
-            let workspace = try context()
-            try RepositoryState(context: workspace).list(
+        mutating func run(in context: WorkspaceContext) async throws {
+            try RepositoryState(context: context).list(
                 kind: kind,
                 json: reportOptions.json)
         }
     }
-    struct Show: AsyncParsableCommand {
+    struct Show: ColliderWorkspaceCommand {
         @Argument var runID: String?
         @Option var kind: String?
-        mutating func run() async throws {
-            let workspace = try context()
-            try RepositoryState(context: workspace).show(runID, kind: kind)
+        mutating func run(in context: WorkspaceContext) async throws {
+            try RepositoryState(context: context).show(runID, kind: kind)
         }
     }
-    struct Tail: AsyncParsableCommand {
+    struct Tail: ColliderWorkspaceCommand {
         @Argument var runID: String?
         @Option var kind: String?
-        mutating func run() async throws {
-            let workspace = try context()
-            try await RepositoryState(context: workspace).tail(
+        mutating func run(in context: WorkspaceContext) async throws {
+            try await RepositoryState(context: context).tail(
                 runID,
                 kind: kind)
         }

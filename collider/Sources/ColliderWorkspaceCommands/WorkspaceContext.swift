@@ -1,12 +1,7 @@
 import ColliderCore
 import ColliderRuntime
 import Foundation
-import Synchronization
 import SystemPackage
-
-private let activeCommandLogging = Mutex<CommandLogging?>(nil)
-private let activeCancellation = Mutex<RuntimeCancellation?>(nil)
-private let activeRuntime = Mutex<ColliderRuntime?>(nil)
 
 package let nucleusOCIRuntimeConfiguration = OCIRuntimeConfiguration(
     externalNetwork: "default",
@@ -38,16 +33,6 @@ package func nucleusCacheLayout(
         downloadNamespace: FilePath("nucleus/downloads"))
 }
 
-package func setActiveCommandRuntime(
-    logging: CommandLogging?,
-    cancellation: RuntimeCancellation?,
-    runtime: ColliderRuntime?
-) {
-    activeCommandLogging.withLock { $0 = logging }
-    activeCancellation.withLock { $0 = cancellation }
-    activeRuntime.withLock { $0 = runtime }
-}
-
 package struct WorkspaceContext: Sendable {
     package let root: FilePath
     package let environment: [String: String]
@@ -59,7 +44,7 @@ package struct WorkspaceContext: Sendable {
     package init(
         root: FilePath,
         environment: [String: String],
-        runtime: ColliderRuntime? = nil,
+        runtime: ColliderRuntime,
         ociConfiguration: OCIRuntimeConfiguration = nucleusOCIRuntimeConfiguration
     ) {
         self.root = root
@@ -76,55 +61,8 @@ package struct WorkspaceContext: Sendable {
         self.environment = normalizedEnvironment
         self.cacheRoot = resolvedCacheRoot
         self.nativeSDKRoot = resolvedNativeSDKRoot
-        self.runtime =
-            runtime
-            ?? ColliderRuntime(
-                downloadCacheRoot: cacheLayout.downloads,
-                ociConfiguration: ociConfiguration)
+        self.runtime = runtime
         self.ociConfiguration = ociConfiguration
-    }
-
-    package static func load() throws -> WorkspaceContext {
-        var environment = ProcessInfo.processInfo.environment
-        let root = try resolveWorkspaceRoot(environment: environment)
-        environment["NUCLEUS_WORKSPACE_ROOT"] = root.string
-        #if os(macOS)
-        if let contract = try? MacOSBuilderContract.load(root: root) {
-            if environment["XDG_CACHE_HOME"]?.isEmpty != false {
-                environment["XDG_CACHE_HOME"] = contract.environment.xdgCacheHome
-            }
-            if environment["NUCLEUS_NATIVE_SDK_ROOT"]?.isEmpty != false {
-                environment["NUCLEUS_NATIVE_SDK_ROOT"] =
-                    contract.environment.nativeSDKRoot
-            }
-            if environment["ANDROID_SDK_ROOT"]?.isEmpty != false {
-                environment["ANDROID_SDK_ROOT"] = contract.environment.androidSDKRoot
-            }
-            if environment["ANDROID_HOME"]?.isEmpty != false {
-                environment["ANDROID_HOME"] = contract.environment.androidSDKRoot
-            }
-        }
-        #endif
-        let logging = activeCommandLogging.withLock { $0 }
-        let cancellation = activeCancellation.withLock { $0 } ?? RuntimeCancellation()
-        let cacheLayout = nucleusCacheLayout(environment: environment)
-        let runtime =
-            activeRuntime.withLock { $0 }
-            ?? ColliderRuntime(
-                logging: logging,
-                cancellation: cancellation,
-                downloadCacheRoot: cacheLayout.downloads,
-                ociConfiguration: nucleusOCIRuntimeConfiguration)
-        if let logging {
-            environment["NUCLEUS_RUN_DIR"] = logging.run.directory.string
-            environment["NUCLEUS_RUN_LOG"] =
-                logging.run.directory
-                .appending("run.log").string
-        }
-        return WorkspaceContext(
-            root: root,
-            environment: environment,
-            runtime: runtime)
     }
 
     func repository(_ name: String) -> FilePath { root.appending(name) }
@@ -143,4 +81,29 @@ package struct WorkspaceContext: Sendable {
         environment["BuildDescriptionOnDiskCacheSize"] = "64"
         return environment
     }
+}
+
+package func nucleusWorkspaceEnvironment(
+    root: FilePath,
+    environment: [String: String]
+) -> [String: String] {
+    var resolved = environment
+    resolved["NUCLEUS_WORKSPACE_ROOT"] = root.string
+    #if os(macOS)
+    if let contract = try? MacOSBuilderContract.load(root: root) {
+        if resolved["XDG_CACHE_HOME"]?.isEmpty != false {
+            resolved["XDG_CACHE_HOME"] = contract.environment.xdgCacheHome
+        }
+        if resolved["NUCLEUS_NATIVE_SDK_ROOT"]?.isEmpty != false {
+            resolved["NUCLEUS_NATIVE_SDK_ROOT"] = contract.environment.nativeSDKRoot
+        }
+        if resolved["ANDROID_SDK_ROOT"]?.isEmpty != false {
+            resolved["ANDROID_SDK_ROOT"] = contract.environment.androidSDKRoot
+        }
+        if resolved["ANDROID_HOME"]?.isEmpty != false {
+            resolved["ANDROID_HOME"] = contract.environment.androidSDKRoot
+        }
+    }
+    #endif
+    return resolved
 }

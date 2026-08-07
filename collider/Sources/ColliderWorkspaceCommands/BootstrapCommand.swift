@@ -9,9 +9,8 @@ struct Bootstrap: TaskControlledCommand {
     @Argument(help: "all, runtime, browser, or a component name.")
     var component: String?
 
-    mutating func run() async throws {
-        let workspace = try context()
-        try await ComponentRegistry(context: workspace).bootstrap(
+    mutating func run(in context: WorkspaceContext) async throws {
+        try await ComponentRegistry(context: context).bootstrap(
             selection: component, controls: taskOptions.controls)
     }
 }

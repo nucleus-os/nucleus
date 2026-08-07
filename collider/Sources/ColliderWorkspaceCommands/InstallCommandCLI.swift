@@ -6,8 +6,8 @@ struct InstallBrowser: TaskControlledCommand {
     @OptionGroup var taskOptions: TaskControlOptions
     @Option var prefix: String?
 
-    mutating func run() async throws {
-        try await ChromiumCommand(context: context()).run(
+    mutating func run(in context: WorkspaceContext) async throws {
+        try await ChromiumCommand(context: context).run(
             .install,
             controls: taskOptions.controls,
             installPrefix: prefix)

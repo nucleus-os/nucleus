@@ -5,7 +5,7 @@ import ColliderWorkspaceCommands
 import Foundation
 import SystemPackage
 
-struct Run: AsyncParsableCommand {
+struct Run: ColliderWorkspaceCommand {
     static let configuration = CommandConfiguration(
         abstract: "Build, install, and launch a compositor session.")
     @OptionGroup var options: RunOptions
@@ -18,8 +18,8 @@ struct Run: AsyncParsableCommand {
         }
     }
 
-    mutating func run() async throws {
-        try await RunCommand(context: context()).run(
+    mutating func run(in context: WorkspaceContext) async throws {
+        try await RunCommand(context: context).run(
             try options.validated())
     }
 

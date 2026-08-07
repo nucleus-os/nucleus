@@ -12,8 +12,8 @@ struct Android: AsyncParsableCommand {
         @OptionGroup var taskOptions: TaskControlOptions
         var operation: AndroidOperation { .build }
 
-        mutating func run() async throws {
-            try await AndroidCommand(context: context()).run(
+        mutating func run(in context: WorkspaceContext) async throws {
+            try await AndroidCommand(context: context).run(
                 operation,
                 controls: taskOptions.controls)
         }
@@ -23,8 +23,8 @@ struct Android: AsyncParsableCommand {
 
         var operation: AndroidOperation { .native }
 
-        mutating func run() async throws {
-            try await AndroidCommand(context: context()).run(
+        mutating func run(in context: WorkspaceContext) async throws {
+            try await AndroidCommand(context: context).run(
                 operation,
                 controls: taskOptions.controls)
         }
@@ -33,8 +33,8 @@ struct Android: AsyncParsableCommand {
         @OptionGroup var taskOptions: TaskControlOptions
         var operation: AndroidOperation { .verify }
 
-        mutating func run() async throws {
-            try await AndroidCommand(context: context()).run(
+        mutating func run(in context: WorkspaceContext) async throws {
+            try await AndroidCommand(context: context).run(
                 operation,
                 controls: taskOptions.controls)
         }

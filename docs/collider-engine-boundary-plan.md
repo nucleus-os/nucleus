@@ -1,6 +1,6 @@
 # Collider Engine Boundary Plan
 
-Status: active.
+Status: complete.
 
 ## Invariant
 
@@ -52,7 +52,7 @@ The engine modules under `collider/engine/Sources/` already own the reusable
 graph, identity, planning, persistence, download, and execution machinery. The
 Nucleus recipe modules live under `collider/Sources/`.
 
-Phases 1 and 2 are complete. Cache namespaces, OCI resource policy, logger
+All three phases are complete. Cache namespaces, OCI resource policy, logger
 labels, and SwiftPM container environment projection are explicit configuration
 supplied by the Nucleus application. Nucleus run-directory variables no longer
 enter task environments or engine identity policy. AOSP cache ownership receives
@@ -65,9 +65,17 @@ container and containerization packages. The Nucleus CLI injects that
 implementation, while runtime tests use a deterministic backend without starting
 a container.
 
-The remaining boundary violation is isolated to phase 3. `ComponentRegistry` is
-correctly Nucleus-specific, but reusable planning and execution entry points must
-accept its assembled catalog without importing recipe modules.
+`ColliderCommand` constructs one explicit application composition for each
+invocation. Every command leaf receives its `WorkspaceContext` directly; no
+mutable command globals or fallback runtime construction remain. Nucleus-owned
+commands use `ComponentRegistry` to assemble only the catalog required by the
+selected operation immediately before passing it to the reusable engine. This
+preserves the rule that unselected components are not configured or inspected.
+
+A direct engine test constructs a synthetic external catalog, executes ordered
+host and OCI work through an injected deterministic backend, validates the host
+artifact, and verifies the durable run record without importing a Nucleus recipe
+or workspace module.
 
 The Android API level and Android execution-platform cases remain engine data.
 They describe an artifact target rather than Nucleus product identity.
@@ -149,6 +157,8 @@ only `ColliderAppleContainer` imports Apple container modules.
 
 ## Phase 3 — Make application composition explicit
 
+Status: complete.
+
 Keep CLI grammar and process lifecycle in the Nucleus-owned `collider`
 application.
 
@@ -157,7 +167,8 @@ composition value that supplies:
 
 - the resolved engine workspace values from phase 1;
 - the Apple-container implementation from phase 2;
-- the assembled `ComponentCatalog`;
+- the Nucleus workspace context from which the selected command assembles its
+  `ComponentCatalog`;
 - the run registry and command logging configuration.
 
 `ComponentRegistry` remains the Nucleus composition mechanism. It may continue
@@ -168,8 +179,10 @@ or Nucleus command routes.
 
 Remove global runtime construction where explicit ownership can flow from the
 application composition through command execution. One application invocation
-owns one runtime, cancellation domain, run registry handle, and component
-catalog.
+owns one runtime, cancellation domain, run registry handle, and workspace
+context. The selected command assembles one catalog at the last responsible
+point, after parsing its operation-specific controls. Eager catalog construction
+is incorrect because it would configure unselected work.
 
 Add direct engine tests that construct a small synthetic catalog with two
 coarse-grained tasks, plan it, execute it through deterministic host and OCI
@@ -181,6 +194,12 @@ Gate: the synthetic catalog executes without importing any Nucleus recipe or
 workspace module; the Nucleus CLI supplies all application-specific composition;
 and the complete Nucleus build and test entrypoints retain their current
 behavior.
+
+The gate is satisfied. `ColliderWorkspaceCommand.run(in:)` is the sole leaf
+execution path, `WorkspaceContext` requires its runtime explicitly, and
+`ColliderCommand` owns composition, shutdown, signals, logging, and run
+finalization. The synthetic external catalog and complete engine and Collider
+test suites pass.
 
 ## Completion boundary
 

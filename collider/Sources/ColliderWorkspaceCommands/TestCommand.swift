@@ -13,10 +13,9 @@ struct Test: TaskControlledCommand {
             """)
     var component: String?
 
-    mutating func run() async throws {
-        let workspace = try context()
-        try await workspace.withExclusiveVerification {
-            try await ComponentRegistry(context: workspace).test(
+    mutating func run(in context: WorkspaceContext) async throws {
+        try await context.withExclusiveVerification {
+            try await ComponentRegistry(context: context).test(
                 selection: component, controls: taskOptions.controls)
         }
     }

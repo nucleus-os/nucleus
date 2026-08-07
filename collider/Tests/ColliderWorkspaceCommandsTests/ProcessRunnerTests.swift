@@ -20,7 +20,8 @@ import Testing
 func capturedCommandsKeepDiagnosticsOutOfMachineReadableOutput() async throws {
     let context = WorkspaceContext(
         root: FilePath(FileManager.default.currentDirectoryPath),
-        environment: ProcessInfo.processInfo.environment)
+        environment: ProcessInfo.processInfo.environment,
+        runtime: ColliderRuntime())
 
     let output = try await context.run(
         "sh",
@@ -35,7 +36,8 @@ func capturedCommandsKeepDiagnosticsOutOfMachineReadableOutput() async throws {
 func commandEnvironmentPreservesExplicitWaylandDisplay() async throws {
     let context = WorkspaceContext(
         root: FilePath(FileManager.default.currentDirectoryPath),
-        environment: ProcessInfo.processInfo.environment)
+        environment: ProcessInfo.processInfo.environment,
+        runtime: ColliderRuntime())
 
     let output = try await context.run(
         "sh",
@@ -51,7 +53,8 @@ func commandEnvironmentPreservesExplicitWaylandDisplay() async throws {
 func commandRunnerCanAcceptInteractiveSIGINTTermination() async throws {
     let context = WorkspaceContext(
         root: FilePath(FileManager.default.currentDirectoryPath),
-        environment: ProcessInfo.processInfo.environment)
+        environment: ProcessInfo.processInfo.environment,
+        runtime: ColliderRuntime())
 
     try await context.run(
         "sh",
@@ -259,7 +262,8 @@ private struct RunningCommandFixture: Sendable {
             environment: [
                 "PATH": ProcessInfo.processInfo.environment["PATH"]
                     ?? "/usr/bin:/bin"
-            ])
+            ],
+            runtime: ColliderRuntime())
     }
 
     func ready(_ name: String) -> URL {

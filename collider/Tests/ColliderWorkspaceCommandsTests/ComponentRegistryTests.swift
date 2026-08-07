@@ -1,6 +1,7 @@
 import AndroidRuntimeColliderRecipe
 import ColliderCore
 import ColliderPlanning
+import ColliderRuntime
 import ColliderTesting
 import CompositorColliderRecipe
 import CoreColliderRecipe
@@ -57,7 +58,10 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
     let root = try #require(
         discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
     let registry = ComponentRegistry(
-        context: WorkspaceContext(root: root, environment: [:]))
+        context: WorkspaceContext(
+            root: root,
+            environment: [:],
+            runtime: ColliderRuntime()))
     let shellConfiguration = try registry.shellRuntimeInstallConfiguration(
         prefix: FilePath("/nucleus-runtime"),
         selection: RuntimeBuildSelection())
@@ -160,7 +164,8 @@ private func fixtureReactNativeNodeModules(
     let registry = ComponentRegistry(
         context: WorkspaceContext(
             root: fixtureRepositoryRoot,
-            environment: environment))
+            environment: environment,
+            runtime: ColliderRuntime()))
     let builder = try fixtureNativeBuilder(
         context: fixtureRepositoryRoot.appending("core/build-container"),
         imageID: FilePath("/cache/native/image-id"),
@@ -296,7 +301,8 @@ private func fixtureReactNativeNodeModules(
     let registry = ComponentRegistry(
         context: WorkspaceContext(
             root: root,
-            environment: [:]))
+            environment: [:],
+            runtime: ColliderRuntime()))
     let catalog = try registry.componentCatalog()
     let nativeTest = try #require(
         catalog.tasks.first { $0.id == TaskID(rawValue: "linux.arm64.test") })
@@ -360,7 +366,8 @@ private func fixtureReactNativeNodeModules(
     let registry = ComponentRegistry(
         context: WorkspaceContext(
             root: root,
-            environment: ["SWIFTC": "/definitely/unavailable/swiftc"]))
+            environment: ["SWIFTC": "/definitely/unavailable/swiftc"],
+            runtime: ColliderRuntime()))
     let catalog = try registry.componentCatalog()
     let declared = Set(catalog.tasks.map(\.id))
     for selection in [
@@ -494,7 +501,8 @@ private func fixtureReactNativeNodeModules(
                 "HOME": workspace.path,
                 "NUCLEUS_SWIFT_SOURCE_ID": sourceID,
                 "SWIFTC": compiler.path,
-            ]
+            ],
+            runtime: ColliderRuntime()
         ).swiftPMInvocation()
     }
 
@@ -516,7 +524,8 @@ private func fixtureReactNativeNodeModules(
         environment: [
             "HOME": "/home/fixture",
             "XDG_CACHE_HOME": "/cache",
-        ])
+        ],
+        runtime: ColliderRuntime())
 
     #expect(context.taskEnvironment["CCACHE_BASEDIR"] == "/workspace")
     #expect(
@@ -537,7 +546,8 @@ private func fixtureReactNativeNodeModules(
             "XDG_CACHE_HOME": "/cache",
             "NUCLEUS_RUN_DIR": "/runs/current",
             "NUCLEUS_RUN_LOG": "/runs/current/run.log",
-        ])
+        ],
+        runtime: ColliderRuntime())
 
     #expect(context.cacheRoot == FilePath("/cache"))
     #expect(
@@ -551,7 +561,8 @@ private func fixtureReactNativeNodeModules(
 @Test func workspaceEnvironmentRetainsEveryPackageBuildDescription() {
     let context = WorkspaceContext(
         root: FilePath("/workspace"),
-        environment: ["HOME": "/home/fixture"])
+        environment: ["HOME": "/home/fixture"],
+        runtime: ColliderRuntime())
 
     // Every workspace package plans one Swift Build description for `build` and
     // one for `test` against the shared scratch directory. Retaining fewer than
@@ -575,7 +586,8 @@ private func fixtureReactNativeNodeModules(
         at: workspace, withIntermediateDirectories: true)
     let context = WorkspaceContext(
         root: FilePath(workspace.path),
-        environment: ["HOME": "/home/fixture"])
+        environment: ["HOME": "/home/fixture"],
+        runtime: ColliderRuntime())
     func invocation(_ digest: String) -> SwiftPMInvocation {
         return SwiftPMInvocation(
             context: SwiftBuildContext(
@@ -643,7 +655,8 @@ private func fixtureReactNativeNodeModules(
 
     let context = WorkspaceContext(
         root: FilePath(workspace.path),
-        environment: ["HOME": "/home/fixture"])
+        environment: ["HOME": "/home/fixture"],
+        runtime: ColliderRuntime())
     try context.reclaimSwiftBuildContexts()
 
     for stale in contexts {
@@ -658,7 +671,8 @@ private func fixtureReactNativeNodeModules(
     let registry = ComponentRegistry(
         context: WorkspaceContext(
             root: root,
-            environment: [:]))
+            environment: [:],
+            runtime: ColliderRuntime()))
     let catalog = try registry.componentCatalog()
     let allTasks = catalog.tasks
     let releaseTasks = allTasks.filter {
@@ -702,7 +716,10 @@ private func fixtureReactNativeNodeModules(
         environment: [:],
         swiftPM: swiftPM)
     let registry = ComponentRegistry(
-        context: WorkspaceContext(root: repositoryRoot, environment: [:]))
+        context: WorkspaceContext(
+            root: repositoryRoot,
+            environment: [:],
+            runtime: ColliderRuntime()))
 
     #expect(task.id == CompositorTaskIDs.testGPUDRM)
     #expect(try selectedTestTasks(in: registry, selection: "gpu-drm") == [task.id])

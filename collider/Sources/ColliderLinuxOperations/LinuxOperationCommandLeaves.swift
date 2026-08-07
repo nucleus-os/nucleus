@@ -9,8 +9,8 @@ struct InstallSession: TaskControlledCommand {
     @OptionGroup var taskOptions: TaskControlOptions
     @Option var prefix: String?
 
-    mutating func run() async throws {
-        try await InstallCommand(context: context()).run(
+    mutating func run(in context: WorkspaceContext) async throws {
+        try await InstallCommand(context: context).run(
             prefix: prefix,
             controls: taskOptions.controls)
     }
@@ -22,15 +22,15 @@ struct InstallAndroidAddon: AsyncParsableCommand {
         abstract: "Install or deactivate an independently signed Android add-on.",
         subcommands: [Activate.self, Deactivate.self, Uninstall.self])
 
-    struct Activate: AsyncParsableCommand {
+    struct Activate: ColliderWorkspaceCommand {
         @Argument var artifact: String
         @Option(name: .customLong("trust-key")) var trustKey: String?
         @Option(name: .customLong("base-prefix")) var basePrefix: String?
         @Option(name: .customLong("store-root")) var storeRoot: String?
         @Option(name: .customLong("state-root")) var stateRoot: String?
 
-        mutating func run() async throws {
-            let workspace = try context()
+        mutating func run(in context: WorkspaceContext) async throws {
+            let workspace = context
             let resolvedBase =
                 basePrefix.map {
                     URL(resolveWorkspacePath($0, relativeTo: workspace.root))
@@ -53,12 +53,12 @@ struct InstallAndroidAddon: AsyncParsableCommand {
         }
     }
 
-    struct Deactivate: ParsableCommand {
+    struct Deactivate: ColliderWorkspaceCommand {
         @Option(name: .customLong("store-root")) var storeRoot: String?
         @Option(name: .customLong("state-root")) var stateRoot: String?
 
-        mutating func run() throws {
-            let workspace = try context()
+        mutating func run(in context: WorkspaceContext) async throws {
+            let workspace = context
             try AndroidAddonInstallCommand().deactivate(
                 storeRoot: storeRoot.map {
                     URL(resolveWorkspacePath($0, relativeTo: workspace.root))
@@ -69,12 +69,12 @@ struct InstallAndroidAddon: AsyncParsableCommand {
         }
     }
 
-    struct Uninstall: ParsableCommand {
+    struct Uninstall: ColliderWorkspaceCommand {
         @Option(name: .customLong("store-root")) var storeRoot: String?
         @Option(name: .customLong("state-root")) var stateRoot: String?
 
-        mutating func run() throws {
-            let workspace = try context()
+        mutating func run(in context: WorkspaceContext) async throws {
+            let workspace = context
             try AndroidAddonInstallCommand().uninstall(
                 storeRoot: storeRoot.map {
                     URL(resolveWorkspacePath($0, relativeTo: workspace.root))
@@ -99,8 +99,8 @@ struct AndroidRuntimePackageAddon: TaskControlledCommand {
     @Option(name: .customLong("addon-signing-key")) var addonSigningKey: String
     @Option var output: String
 
-    mutating func run() async throws {
-        let workspace = try context()
+    mutating func run(in context: WorkspaceContext) async throws {
+        let workspace = context
         let android = workspace.layout.androidRuntime
         let managedAOSPGeneration = android.appending(".aosp-build/current")
         try await ComponentRegistry(context: workspace).packageAndroidAddon(

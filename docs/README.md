@@ -26,7 +26,6 @@ Execute the implementation plans in this order:
 5. [Collider storage lifecycle](collider-storage-lifecycle-plan.md)
 6. [Collider CLI and terminal UX](collider-cli-ux-plan.md)
 7. [Android application integration](android-application-integration-plan.md)
-8. [Collider engine boundary](collider-engine-boundary-plan.md)
 
 Component implementation plans continue in the dependency order in
 [core/docs/README.md](../core/docs/README.md).

@@ -17,16 +17,16 @@ struct SwiftSDK: AsyncParsableCommand {
             RebuildOptions(controls: taskOptions.controls)
         }
 
-        mutating func run() async throws {
-            try await SwiftSDKCommand(context: context()).rebuild(
+        mutating func run(in context: WorkspaceContext) async throws {
+            try await SwiftSDKCommand(context: context).rebuild(
                 rebuildOptions)
         }
     }
 
-    struct Status: AsyncParsableCommand {
+    struct Status: ColliderWorkspaceCommand {
         @OptionGroup var reportOptions: ReportOptions
-        mutating func run() async throws {
-            try await SwiftSDKStatus(context: context()).run(
+        mutating func run(in context: WorkspaceContext) async throws {
+            try await SwiftSDKStatus(context: context).run(
                 json: reportOptions.json)
         }
     }

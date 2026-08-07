@@ -9,9 +9,8 @@ struct Build: TaskControlledCommand {
     @Argument(help: "all, runtime, swift-sdk, android, browser, or a component name.")
     var component: String?
 
-    mutating func run() async throws {
-        let workspace = try context()
-        try await ComponentRegistry(context: workspace).build(
+    mutating func run(in context: WorkspaceContext) async throws {
+        try await ComponentRegistry(context: context).build(
             selection: component, controls: taskOptions.controls)
     }
 }
