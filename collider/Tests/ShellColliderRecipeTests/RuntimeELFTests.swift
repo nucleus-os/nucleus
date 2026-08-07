@@ -1,5 +1,6 @@
 import ColliderCore
 import Foundation
+import NativeBuilderColliderRecipe
 import Synchronization
 import SystemPackage
 import Testing
@@ -18,8 +19,8 @@ import Testing
     #expect(inspection.needed == ["libvulkan.so.1", "libdrm.so.2"])
 }
 
-@Test func lddOutputRetainsOnlyResolvedAbsolutePaths() {
-    let paths = parseLDDResolvedPaths(
+@Test func lddOutputRetainsResolvedSONAMEsAndAbsolutePaths() {
+    let dependencies = parseLDDResolvedDependencies(
         """
             linux-vdso.so.1 (0x00007fff00000000)
             libswiftCore.so => /toolchain/usr/lib/swift/linux/libswiftCore.so (0x1)
@@ -28,10 +29,34 @@ import Testing
         """)
 
     #expect(
-        paths == [
-            FilePath("/toolchain/usr/lib/swift/linux/libswiftCore.so"),
-            FilePath("/lib64/ld-linux-x86-64.so.2"),
+        dependencies == [
+            ResolvedELFDependency(
+                soname: "libswiftCore.so",
+                path: FilePath(
+                    "/toolchain/usr/lib/swift/linux/libswiftCore.so")),
+            ResolvedELFDependency(
+                soname: "ld-linux-x86-64.so.2",
+                path: FilePath("/lib64/ld-linux-x86-64.so.2")),
         ])
+}
+
+@Test func linuxABIContractRejectsUnknownDependencies() {
+    #expect(NucleusLinuxABI.minimumGlibcVersion == "2.38")
+    #expect(NucleusLinuxABI.owner(ofSONAME: "libswiftCore.so") == .artifact)
+    #expect(NucleusLinuxABI.owner(ofSONAME: "libc++.so.1") == .artifact)
+    #expect(NucleusLinuxABI.owner(ofSONAME: "libvulkan.so.1") == .host)
+    #expect(NucleusLinuxABI.owner(ofSONAME: "libstdc++.so.6") == nil)
+}
+
+@Test func glibcImportsCannotExceedTheLinuxABIBaseline() throws {
+    try validateGlibcImports(
+        "0000 DF *UND* 0000 (GLIBC_2.38) fmod",
+        artifact: "valid")
+    #expect(throws: RuntimeELFFailure.self) {
+        try validateGlibcImports(
+            "0000 DF *UND* 0000 (GLIBC_2.39) future",
+            artifact: "future")
+    }
 }
 
 @Test func dependencyContractsRejectRenderLibrariesAtPrivilegeBoundaries() {
@@ -134,8 +159,13 @@ import Testing
     let bytes = try #require(reportBytes.withLock { $0 })
     let report = try JSONDecoder().decode(RuntimeELFReport.self, from: Data(bytes))
     #expect(report.staged == false)
+    #expect(report.minimumGlibcVersion == "2.38")
     #expect(report.executables.count == 7)
     #expect(report.executables.map(\.name).contains("NucleusCompositor"))
+    #expect(
+        report.executables.first { $0.name == "NucleusCompositor" }?
+            .dependencies.first { $0.soname == "libvulkan.so.1" }?.owner
+            == .host)
 }
 
 @Test func stagingActionCopiesTheDynamicClosureAndRewritesEveryRunpath() async throws {

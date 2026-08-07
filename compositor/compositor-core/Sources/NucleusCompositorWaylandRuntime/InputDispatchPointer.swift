@@ -165,7 +165,7 @@ extension InputDispatch {
             surfaceID: surfaceID, timeMsec: msec(event), surfaceX: sx, surfaceY: sy,
             dx: Double(bitPattern: event.data0), dy: Double(bitPattern: event.data1),
             dxUnaccel: Double(bitPattern: event.data2), dyUnaccel: Double(bitPattern: event.data3))
-        InputLatencyProbe.markDelivery(.pointerMotion)
+        InputLatencyMetrics.markDelivery(.pointerMotion)
     }
 
     package func deliverPointerButton(_ event: WireEventRecord, button: UInt32, down: Bool) {
@@ -185,7 +185,7 @@ extension InputDispatch {
         if target != 0 && !lockBlocks(target) {
             serial = seatDelivery.pointerButton(
                 surfaceID: target, timeMsec: msec(event), button: button, state: down ? 1 : 0)
-            InputLatencyProbe.markDelivery(.pointerButton)
+            InputLatencyMetrics.markDelivery(.pointerButton)
         }
         seatFocus.recordPointerButton(state: down ? 1 : 0, serial: serial, focusedSurfaceID: target)
     }

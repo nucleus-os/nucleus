@@ -2,6 +2,7 @@ import NucleusSkiaGraphiteBridge
 import NucleusTextBackend
 import NucleusTextRenderingTestSupport
 import Testing
+
 @testable import NucleusUI
 
 @MainActor
@@ -56,10 +57,10 @@ struct TextRenderingBridgeTests {
         let handle = try #require(
             layout?.storage?.handle.rawValue)
 
-        let probe =
-            unsafe nucleus.text.testing.TextLayoutBorrowProbe(
+        let barrier =
+            unsafe nucleus.text.testing.TextLayoutBorrowBarrier(
                 handle)
-        let bodyEntered = unsafe probe.waitUntilBodyEntered()
+        let bodyEntered = unsafe barrier.waitUntilBodyEntered()
         #expect(bodyEntered)
 
         layout = nil
@@ -67,10 +68,10 @@ struct TextRenderingBridgeTests {
             !nucleus.text.testing.borrowInvokesBody(
                 handle))
 
-        unsafe probe.allowBodyToReturn()
-        let bodyReturned = unsafe probe.waitUntilBodyCompleted()
-        let borrowSucceeded = unsafe probe.borrowSucceeded()
-        let bodyCompleted = unsafe probe.bodyCompleted()
+        unsafe barrier.allowBodyToReturn()
+        let bodyReturned = unsafe barrier.waitUntilBodyCompleted()
+        let borrowSucceeded = unsafe barrier.borrowSucceeded()
+        let bodyCompleted = unsafe barrier.bodyCompleted()
         #expect(bodyReturned)
         #expect(borrowSucceeded)
         #expect(bodyCompleted)

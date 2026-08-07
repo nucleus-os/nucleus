@@ -1,5 +1,7 @@
 # Linux Distribution Portability Plan
 
+Status: active
+
 ## Invariant
 
 Nucleus produces one Linux runtime artifact for each supported architecture. The
@@ -28,13 +30,22 @@ code paths to this plan.
 ## Current State
 
 The compositor, window manager, shell, and session protocol are Linux-facing and
-contain no essential Ubuntu product architecture. The remaining coupling is in
-the build and deployment system:
+contain no essential Ubuntu product architecture. Collider now declares glibc
+2.38 as the minimum Linux ABI and classifies the supported ELF closure by SONAME
+as either artifact-owned or host-owned. Unknown dependencies fail staging and
+validation.
 
-- the target Swift SDK uses an Ubuntu Noble sysroot;
-- current compositor artifacts import glibc symbols as new as `GLIBC_2.38`;
-- runtime staging treats any dependency resolved below `/lib`, `/lib64`,
-  `/usr/lib`, or `/usr/lib64` as host-owned;
+- the target Swift SDK is published as `nucleus-linux-glibc-2.38.sdk` beneath
+  each architecture triple;
+- Ubuntu Noble packages remain pinned SDK assembly inputs but do not appear in
+  installed SDK paths or metadata;
+- SDK and runtime validation reject glibc imports newer than `GLIBC_2.38`;
+- libc++, libc++abi, libunwind, the Swift runtime, and Nucleus-owned native
+  libraries are artifact-owned;
+- glibc, graphics, input, seat, PAM, and service-manager libraries are
+  host-owned by explicit SONAME;
+- runtime staging uses the ownership contract regardless of the dependency's
+  filesystem location;
 - the only development-package inventory is `compositor/packages/ubuntu.txt`;
 - installation always emits and validates a systemd user unit; and
 - PAM authentication defaults to the host's `login` service when no service is
@@ -45,6 +56,8 @@ Nucleus Linux runtime contract. Filesystem location is also not a valid ownershi
 rule for an ELF dependency.
 
 ## Phase 1: Define the Linux ABI Contract
+
+Status: complete
 
 Declare the minimum supported glibc version and the host-owned ELF SONAME set in
 Collider. The contract covers both arm64 and x86_64 and is identical for every
@@ -64,10 +77,13 @@ Record the required SONAME and ABI expectations for every host-owned library.
 Reject unclassified dynamic dependencies. Remove filesystem-prefix inference from
 runtime dependency ownership.
 
-Gate: Collider can explain the owner of every direct and transitive ELF
-dependency without consulting where the builder happened to install it.
+Gate satisfied: Collider explains the owner of every staged ELF dependency from
+its SONAME without consulting where the builder installed it. The runtime ELF
+report records the minimum glibc ABI and the owner of every direct dependency.
 
 ## Phase 2: Establish a Distribution-Neutral Target SDK
+
+Status: complete
 
 Replace the Ubuntu Noble runtime ABI baseline with a Nucleus Linux SDK whose
 identity states the architecture and minimum Linux ABI rather than the package
@@ -86,9 +102,10 @@ distribution names do not appear in installed SDK paths or artifact identities.
 Collider validates the resulting sysroot rather than assuming that its source
 packages imply the required ABI.
 
-Gate: both architectures build against the new SDK, and no produced executable or
-artifact-owned shared library imports a glibc symbol newer than the declared
-minimum.
+Gate satisfied: both architecture lanes resolve the distribution-neutral SDK
+path, generated metadata contains no distribution identity, and SDK validation
+rejects produced executables or artifact-owned runtime libraries importing a
+glibc symbol newer than the declared minimum.
 
 ## Phase 3: Make Runtime Staging Deterministic
 

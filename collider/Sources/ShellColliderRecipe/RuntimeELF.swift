@@ -1,17 +1,25 @@
 import ColliderCore
 import Foundation
+import NativeBuilderColliderRecipe
 import SystemPackage
 
 public struct RuntimeELFReport: Codable, Hashable, Sendable {
+    public struct Dependency: Codable, Hashable, Sendable {
+        public let soname: String
+        public let owner: NucleusLinuxABI.ELFOwner
+    }
+
     public struct Executable: Codable, Hashable, Sendable {
         public let name: String
         public let path: String
         public let runpath: String
         public let needed: [String]
+        public let dependencies: [Dependency]
     }
 
     public let root: String
     public let staged: Bool
+    public let minimumGlibcVersion: String
     public let executables: [Executable]
 }
 
@@ -127,29 +135,39 @@ package func stageRuntimeELF(
             workingDirectory: prefix,
             environment: environment,
             context: context)
-        for dependency in parseLDDResolvedPaths(output)
-        where !RuntimeELFLayout.isSystemLibrary(dependency) {
-            let name = dependency.lastComponent?.string ?? dependency.string
+        guard !output.contains("not found") else {
+            throw RuntimeELFFailure(
+                "\(artifact) has an unresolved dynamic dependency:\n\(output)")
+        }
+        for dependency in parseLDDResolvedDependencies(output) {
+            guard let owner = NucleusLinuxABI.owner(ofSONAME: dependency.soname)
+            else {
+                throw RuntimeELFFailure(
+                    "unclassified dynamic dependency \(dependency.soname) "
+                        + "resolved at \(dependency.path)")
+            }
+            guard owner == .artifact else { continue }
+            let name = dependency.soname
             let destination = prefix.appending("lib").appending(name)
             if let existing = copiedDependencies[name] {
-                if dependency == destination || existing == dependency {
+                if dependency.path == destination || existing == dependency.path {
                     continue
                 }
                 guard
                     try context.files.contentsEqual(
                         at: existing,
-                        and: dependency)
+                        and: dependency.path)
                 else {
                     throw RuntimeELFFailure(
                         "dynamic dependency basename collision for \(name): "
-                            + "\(existing) and \(dependency)")
+                            + "\(existing) and \(dependency.path)")
                 }
                 continue
             }
-            try requireRegularFile(dependency, files: context.files)
-            try context.files.copy(from: dependency, to: destination)
+            try requireRegularFile(dependency.path, files: context.files)
+            try context.files.copy(from: dependency.path, to: destination)
             try context.files.setPermissions(0o755, for: destination)
-            copiedDependencies[name] = dependency
+            copiedDependencies[name] = dependency.path
             queue.append(destination)
         }
     }
@@ -307,11 +325,18 @@ func validateRuntimeELF(
             environment: environment,
             context: context)
         let inspection = parseReadELFDynamic(dynamic)
+        let symbols = try await run(
+            "readelf",
+            ["--dyn-syms", "--wide", path.string],
+            workingDirectory: root,
+            environment: environment,
+            context: context)
         try validate(
             executable: executable,
             inspection: inspection,
             dynamicMetadata: dynamic,
             staged: staged)
+        try validateGlibcImports(symbols, artifact: executable.name)
         let relocation: String
         do {
             relocation = try await run(
@@ -337,13 +362,25 @@ func validateRuntimeELF(
                 name: executable.name,
                 path: path.string,
                 runpath: inspection.runpath,
-                needed: inspection.needed.sorted()))
+                needed: inspection.needed.sorted(),
+                dependencies: try inspection.needed.sorted().map { soname in
+                    guard let owner = NucleusLinuxABI.owner(ofSONAME: soname)
+                    else {
+                        throw RuntimeELFFailure(
+                            "\(executable.name) has unclassified dynamic "
+                                + "dependency \(soname)")
+                    }
+                    return RuntimeELFReport.Dependency(
+                        soname: soname,
+                        owner: owner)
+                }))
     }
 
     try validateDependencyContracts(inspections)
     let value = RuntimeELFReport(
         root: root.string,
         staged: staged,
+        minimumGlibcVersion: NucleusLinuxABI.minimumGlibcVersion,
         executables: reportExecutables)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -374,16 +411,27 @@ func parseReadELFDynamic(_ output: String) -> RuntimeELFInspection {
     return RuntimeELFInspection(runpath: runpath, needed: needed)
 }
 
-func parseLDDResolvedPaths(_ output: String) -> [FilePath] {
+struct ResolvedELFDependency: Hashable, Sendable {
+    let soname: String
+    let path: FilePath
+}
+
+func parseLDDResolvedDependencies(_ output: String) -> [ResolvedELFDependency] {
     output.split(separator: "\n").compactMap { rawLine in
         let line = rawLine.trimmingCharacters(in: .whitespaces)
         if let arrow = line.range(of: "=> /") {
+            guard let soname = line[..<arrow.lowerBound].split(separator: " ").first
+            else { return nil }
             let suffix = line[arrow.upperBound...]
             let path = "/" + suffix.prefix { !$0.isWhitespace }
-            return FilePath(String(path))
+            return ResolvedELFDependency(
+                soname: String(soname),
+                path: FilePath(String(path)))
         }
         guard line.hasPrefix("/") else { return nil }
-        return FilePath(String(line.prefix { !$0.isWhitespace }))
+        let path = FilePath(String(line.prefix { !$0.isWhitespace }))
+        guard let soname = path.lastComponent?.string else { return nil }
+        return ResolvedELFDependency(soname: soname, path: path)
     }
 }
 
@@ -481,13 +529,6 @@ private enum RuntimeELFLayout {
         ]
     }
 
-    static func isSystemLibrary(_ path: FilePath) -> Bool {
-        let value = path.string
-        return value.hasPrefix("/lib/")
-            || value.hasPrefix("/lib64/")
-            || value.hasPrefix("/usr/lib/")
-            || value.hasPrefix("/usr/lib64/")
-    }
 }
 
 private func validate(
@@ -516,6 +557,11 @@ private func validate(
         throw RuntimeELFFailure(
             "\(executable.name) depends on a first-party shared library")
     }
+    for dependency in inspection.needed.sorted()
+    where NucleusLinuxABI.owner(ofSONAME: dependency) == nil {
+        throw RuntimeELFFailure(
+            "\(executable.name) has unclassified dynamic dependency \(dependency)")
+    }
     if staged {
         let developmentMarkers = [
             "/home/",
@@ -529,6 +575,28 @@ private func validate(
             throw RuntimeELFFailure(
                 "\(executable.name) retains a development path "
                     + "in its dynamic metadata")
+        }
+    }
+}
+
+func validateGlibcImports(_ symbols: String, artifact: String) throws {
+    let maximum = NucleusLinuxABI.minimumGlibcVersion.split(separator: ".").map {
+        Int($0) ?? 0
+    }
+    for line in symbols.split(separator: "\n") where line.contains("*UND*") {
+        for token in line.split(whereSeparator: { $0.isWhitespace }) {
+            guard let marker = token.range(of: "GLIBC_") else { continue }
+            let version = token[marker.upperBound...].prefix {
+                $0.isNumber || $0 == "."
+            }
+            let components = version.split(separator: ".").map { Int($0) ?? 0 }
+            if components.lexicographicallyPrecedes(maximum) || components == maximum {
+                continue
+            }
+            throw RuntimeELFFailure(
+                "\(artifact) imports GLIBC_\(version), newer than the "
+                    + "Nucleus Linux ABI baseline GLIBC_"
+                    + NucleusLinuxABI.minimumGlibcVersion)
         }
     }
 }

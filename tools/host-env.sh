@@ -18,7 +18,7 @@ else
     git -C "$nucleus_workspace_root" ls-files --stage -- swift-sdk/source \
       | awk '$1 == "160000" {
           sub(/^swift-sdk\/source\//, "", $4)
-          print $1, $2, $4
+          if ($4 != "swift-sdk-generator") print $1, $2, $4
         }'
   )"
   if [[ -z "$nucleus_source_index" ]]; then
@@ -34,6 +34,20 @@ else
   nucleus_source_id="${nucleus_source_id:0:24}"
 fi
 export NUCLEUS_SWIFT_SOURCE_ID="$nucleus_source_id"
+if [[ -n "${NUCLEUS_SWIFT_SDK_GENERATOR_SOURCE_ID:-}" ]]; then
+  nucleus_generator_source_id="$NUCLEUS_SWIFT_SDK_GENERATOR_SOURCE_ID"
+else
+  nucleus_generator_source_id="$(
+    git -C "$nucleus_workspace_root" ls-files --stage -- \
+      swift-sdk/source/swift-sdk-generator \
+      | awk '$1 == "160000" { print $2 }'
+  )"
+  if [[ -z "$nucleus_generator_source_id" ]]; then
+    echo "error: the Swift SDK generator gitlink is missing" >&2
+    return 127 2>/dev/null || exit 127
+  fi
+fi
+export NUCLEUS_SWIFT_SDK_GENERATOR_SOURCE_ID="$nucleus_generator_source_id"
 nucleus_platform_id="$nucleus_source_id-linux-amd64"
 if [[ "$(uname -s)" == Darwin ]]; then
   nucleus_swiftc="$(xcrun --find swiftc 2>/dev/null)" || {
@@ -70,4 +84,5 @@ export NUCLEUS_NATIVE_SDK_ROOT
 
 unset nucleus_host_env_source nucleus_workspace_root
 unset nucleus_fnm_environment nucleus_source_index nucleus_source_digest
-unset nucleus_toolchain nucleus_swiftc nucleus_source_id nucleus_platform_id
+unset nucleus_generator_source_id nucleus_toolchain nucleus_swiftc nucleus_source_id
+unset nucleus_platform_id

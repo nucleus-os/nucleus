@@ -313,14 +313,19 @@ public struct TaskDeclaration: Hashable, Sendable {
         recordsActiveArtifact: Bool = false,
         action: AnyColliderAction? = nil
     ) {
+        let swiftArtifactReferences =
+            swiftProducts.flatMap(\.invocation.artifactReferences)
+            + swiftTests.flatMap(\.invocation.artifactReferences)
+        let allArtifactReferences = Self.uniqued(
+            artifactReferences + swiftArtifactReferences)
         self.id = id
         self.component = component
         self.dependencies = Self.uniqued(
             dependencies
-                + artifactReferences.map(\.producer)
+                + allArtifactReferences.map(\.producer)
                 + resultReferences.map(\.producer))
         self.orderingDependencies = orderingDependencies
-        self.artifactReferences = artifactReferences
+        self.artifactReferences = allArtifactReferences
         self.resultReferences = resultReferences
         self.outputSlots = outputSlots
         self.resultSlots = resultSlots
@@ -339,8 +344,8 @@ public struct TaskDeclaration: Hashable, Sendable {
         Self.uniqued(dependencies + orderingDependencies.map(\.producer))
     }
 
-    private static func uniqued(_ values: [TaskID]) -> [TaskID] {
-        var seen: Set<TaskID> = []
+    private static func uniqued<Value: Hashable>(_ values: [Value]) -> [Value] {
+        var seen: Set<Value> = []
         return values.filter { seen.insert($0).inserted }
     }
 

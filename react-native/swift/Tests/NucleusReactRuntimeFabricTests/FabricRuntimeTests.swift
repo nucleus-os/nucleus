@@ -1,13 +1,8 @@
 import Foundation
+import NucleusReactRuntimeCxx
+import Synchronization
 import Testing
-import NucleusReactFabricSmokeC
 
-// Proves the statically-linked full React Native fabric (react_native +
-// react_cxx_platform + yogacore + folly + static Hermes) *runs*, not just links:
-// the smoke entry (in the RN host C++) creates the Hermes runtime, builds the
-// Fabric runtime, evaluates a real Hermes bytecode bundle, and drains the JS
-// queue — all on this thread (the runtime is single-threaded). A broken/ODR-
-// violated static link would crash rather than return 0.
 @MainActor
 @Suite struct FabricRuntimeTests {
     static let repoRoot = URL(fileURLWithPath: #filePath)
@@ -16,9 +11,10 @@ import NucleusReactFabricSmokeC
 
     /// Compile a trivial JS bundle to Hermes bytecode with the built hermesc.
     static func makeTinyBytecode(
-        source: String = "var nucleusFabricProbe = 1 + 1;\n"
+        source: String = "var nucleusFabricValue = 1 + 1;\n"
     ) throws -> String {
-        let tmp = "\(NSTemporaryDirectory())nucleus-rn-fabric-\(getpid())-\(UInt.random(in: 0..<(.max)))"
+        let tmp =
+            "\(NSTemporaryDirectory())nucleus-rn-fabric-\(getpid())-\(UInt.random(in: 0..<(.max)))"
         try FileManager.default.createDirectory(atPath: tmp, withIntermediateDirectories: true)
         let js = "\(tmp)/tiny.js"
         let hbc = "\(tmp)/tiny.hbc"
@@ -30,23 +26,27 @@ import NucleusReactFabricSmokeC
         // hermesc invocation.
         var env = ProcessInfo.processInfo.environment
         if let dir = try libcxxDir() {
-            env["LD_LIBRARY_PATH"] = [dir, env["LD_LIBRARY_PATH"]].compactMap { $0 }.joined(separator: ":")
+            env["LD_LIBRARY_PATH"] = [dir, env["LD_LIBRARY_PATH"]].compactMap { $0 }.joined(
+                separator: ":")
         }
         let result = try SpawnedCommand.run(
             executable: hermesc,
             arguments: ["-emit-binary", "-out", hbc, js],
             environment: env)
         guard result.status == 0 else {
-            throw NSError(domain: "FabricRuntimeTests", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "hermesc failed to emit bytecode"])
+            throw NSError(
+                domain: "FabricRuntimeTests", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "hermesc failed to emit bytecode"])
         }
         return hbc
     }
 
     @Test func staticReactNativeFabricRuns() throws {
         let hbc = try Self.makeTinyBytecode()
-        let rc = hbc.withCString { unsafe nucleus_rn_fabric_smoke($0) }
-        #expect(rc == 0, "static RN fabric smoke failed at step \(rc)")
+        #expect(RuntimeHost.hermesCanCreateRuntime())
+        let host = try RuntimeHost()
+        try host.evaluateBytecode(at: hbc)
+        _ = try host.drainPendingJSCalls()
     }
 
     @Test func staticReactNativeFabricInstallsAndEvaluates() throws {
@@ -55,66 +55,87 @@ import NucleusReactFabricSmokeC
         // real bytecode bundle. Proves the static fabric's surface layer wires up
         // headless, not just the runtime core.
         let hbc = try Self.makeTinyBytecode()
-        let rc = hbc.withCString {
-            unsafe nucleus_rn_fabric_full_smoke($0)
-        }
-        #expect(rc == 0, "full RN fabric smoke failed (rc \(rc))")
+        let host = try RuntimeHost()
+        try host.installFabric()
+        try host.evaluateBytecode(at: hbc)
+        _ = try host.drainPendingJSCalls()
     }
 
     @Test func runtimeFailureCrossesTheCxxBoundary() {
-        let rc = "/definitely-not-a-nucleus-bundle.hbc".withCString {
-            unsafe nucleus_rn_fabric_full_smoke($0)
+        do {
+            let host = try RuntimeHost()
+            try host.installFabric()
+            try host.evaluateBytecode(at: "/definitely-not-a-nucleus-bundle.hbc")
+            Issue.record("missing bytecode unexpectedly evaluated")
+        } catch {
+            #expect(error is RuntimeHostOperationError)
         }
-        #expect(rc == 2, "runtime failure should return through Swift instead of aborting")
     }
 
     @Test func crossThreadJSTimerWorkWakesOncePerPendingBurst() throws {
-        let hbc = try Self.makeTinyBytecode(source:
-            """
-            setTimeout(function () {}, 1);
-            setTimeout(function () {}, 1);
-            """)
-        let result = hbc.withCString {
-            unsafe nucleus_rn_js_work_wake_smoke($0)
+        let hbc = try Self.makeTinyBytecode(
+            source:
+                """
+                setTimeout(function () {}, 1);
+                setTimeout(function () {}, 1);
+                """)
+        let wakes = Mutex(0)
+        let host = try RuntimeHost()
+        try host.setJSWorkWakeHandler {
+            wakes.withLock { $0 += 1 }
         }
-        #expect(result == 0)
-    }
-
-    @Test func mountTransactionsShareOneOrderedDrainPerBurst() {
-        #expect(nucleus_rn_mount_batching_smoke() == 0)
-    }
-
-    @Test func mountRetirementRejectsPriorGenerationsAndReclaimsState() {
-        #expect(nucleus_rn_mount_lifecycle_smoke() == 0)
-    }
-
-    @Test func mountEventsRetainOnlyMutationSpecificPayloads() {
-        #expect(nucleus_rn_mount_event_payload_smoke() == 0)
+        try host.evaluateBytecode(at: hbc)
+        let deadline = ContinuousClock.now + .seconds(2)
+        while wakes.withLock({ $0 }) == 0, ContinuousClock.now < deadline {
+            usleep(1_000)
+        }
+        usleep(20_000)
+        #expect(wakes.withLock { $0 } == 1)
+        #expect(try host.drainPendingJSCalls() > 0)
     }
 
     @Test func jsThreadCommandDeliveryHopsToMainActor() async throws {
-        let hbc = try Self.makeTinyBytecode(source:
-            """
-            global.__turboModuleProxy('NucleusHostCommand')
-              .invoke('activate', '{"window":7}');
-            """)
-        let start = hbc.withCString {
-            unsafe nucleus_rn_command_handler_actor_smoke_start($0)
+        let hbc = try Self.makeTinyBytecode(
+            source:
+                """
+                global.__turboModuleProxy('NucleusHostCommand')
+                  .invoke('activate', '{"window":7}');
+                """)
+        final class Delivery: @unchecked Sendable {
+            @MainActor var value: (String, String)?
         }
-        #expect(start == 0)
-        defer {
-            nucleus_rn_command_handler_actor_smoke_reset()
+        let delivery = Delivery()
+        let host = try RuntimeHost()
+        try host.setCommandHandler { command, arguments in
+            delivery.value = (command, arguments)
         }
-        var status: Int32 = 0
-        for _ in 0..<100 where status == 0 {
+        try host.evaluateBytecode(at: hbc)
+        for _ in 0..<100 where delivery.value == nil {
             await Task.yield()
-            status = nucleus_rn_command_handler_actor_smoke_status()
         }
-        #expect(status == 1)
+        #expect(delivery.value?.0 == "activate")
+        #expect(delivery.value?.1 == #"{"window":7}"#)
     }
 
-    @Test func commandHandlerReplacementAndTeardownBalanceOwnership() {
-        #expect(nucleus_rn_command_handler_ownership_smoke() == 0)
+    @Test func commandHandlerReplacementUsesTheCurrentHandler() async throws {
+        let hbc = try Self.makeTinyBytecode(
+            source:
+                "global.__turboModuleProxy('NucleusHostCommand').invoke('current', '{}');")
+        let firstCalls = Mutex(0)
+        let secondCalls = Mutex(0)
+        let host = try RuntimeHost()
+        try host.setCommandHandler { _, _ in
+            firstCalls.withLock { $0 += 1 }
+        }
+        try host.setCommandHandler { _, _ in
+            secondCalls.withLock { $0 += 1 }
+        }
+        try host.evaluateBytecode(at: hbc)
+        for _ in 0..<100 where secondCalls.withLock({ $0 }) == 0 {
+            await Task.yield()
+        }
+        #expect(firstCalls.withLock { $0 } == 0)
+        #expect(secondCalls.withLock { $0 } == 1)
     }
 
     /// `dirname $(clang++ -print-file-name=libc++.so.1)` — the toolchain libc++.

@@ -5,14 +5,14 @@
 
 namespace nucleus::text::testing {
 
-class TextLayoutBorrowProbe final {
+class TextLayoutBorrowBarrier final {
 public:
-  explicit TextLayoutBorrowProbe(uint64_t handle);
-  ~TextLayoutBorrowProbe();
+  explicit TextLayoutBorrowBarrier(uint64_t handle);
+  ~TextLayoutBorrowBarrier();
 
-  TextLayoutBorrowProbe(const TextLayoutBorrowProbe &) = default;
-  TextLayoutBorrowProbe &operator=(
-      const TextLayoutBorrowProbe &) = default;
+  TextLayoutBorrowBarrier(const TextLayoutBorrowBarrier &) = default;
+  TextLayoutBorrowBarrier &operator=(
+      const TextLayoutBorrowBarrier &) = default;
 
   bool waitUntilBodyEntered() const;
   void allowBodyToReturn() const;

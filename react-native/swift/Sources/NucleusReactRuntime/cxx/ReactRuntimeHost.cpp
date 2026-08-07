@@ -293,10 +293,6 @@ class ReactRuntimeHostImpl final {
     if (jsInvoker_ != nullptr) {
       jsInvoker_->shutdown();
     }
-    if (swiftTextLayoutHandle_ != nullptr) {
-      nucleus::react::releaseSwiftTextLayoutManagerHandle(swiftTextLayoutHandle_);
-      swiftTextLayoutHandle_ = nullptr;
-    }
   }
 
   std::shared_ptr<RuntimeJSCallInvoker> jsInvoker() const { return jsInvoker_; }
@@ -404,15 +400,14 @@ class ReactRuntimeHostImpl final {
       logRuntimeHost("installFabricRuntime skipped existing");
       return;
     }
-    if (swiftTextLayoutHandle_ == nullptr) {
+    if (!textMeasure_) {
       throw std::runtime_error(
-          "installFabricRuntime requires setSwiftTextLayoutManagerHandle first");
+          "installFabricRuntime requires setTextMeasureFunction first");
     }
     logRuntimeHostf("installFabricRuntime begin this=%p runtime=%p", this, runtime_.get());
-    void *textLayoutHandle = swiftTextLayoutHandle_;
-    swiftTextLayoutHandle_ = nullptr;
+    auto textMeasure = std::move(textMeasure_);
     fabric_ = std::make_unique<FabricRuntime>(
-        *runtime_, jsThreadId_, textLayoutHandle);
+        *runtime_, jsThreadId_, std::move(textMeasure));
     if (mountingObserver_ != nullptr) {
       fabric_->setMountingObserver(mountingObserver_);
     }
@@ -485,19 +480,12 @@ class ReactRuntimeHostImpl final {
     displayMetricsState_->fontScale = fontScale > 0.0 ? fontScale : 1.0;
   }
 
-  void setSwiftTextLayoutManagerHandle(void *swiftHandlerRetained) {
+  void setTextMeasureFunction(nucleus::react::TextMeasureFunction measure) {
     if (fabric_ != nullptr) {
-      // Fabric already consumed any prior handle and built its
-      // `TextLayoutManager` from it. Re-keying the context container
-      // mid-flight isn't supported; drop the late handle to keep
-      // ownership balanced.
-      nucleus::react::releaseSwiftTextLayoutManagerHandle(swiftHandlerRetained);
+      // Re-keying the context container after Fabric installation is unsupported.
       return;
     }
-    if (swiftTextLayoutHandle_ != nullptr) {
-      nucleus::react::releaseSwiftTextLayoutManagerHandle(swiftTextLayoutHandle_);
-    }
-    swiftTextLayoutHandle_ = swiftHandlerRetained;
+    textMeasure_ = std::move(measure);
   }
 
  private:
@@ -1171,7 +1159,7 @@ class ReactRuntimeHostImpl final {
     FabricRuntime(
         facebook::jsi::Runtime &runtime,
         std::thread::id jsThreadId,
-        void *swiftTextLayoutManagerHandle)
+        nucleus::react::TextMeasureFunction textMeasure)
         : runtime_(runtime),
           jsThreadId_(jsThreadId),
           contextContainer_(std::make_shared<facebook::react::ContextContainer>()),
@@ -1191,8 +1179,8 @@ class ReactRuntimeHostImpl final {
       contextContainer_->insert(
           facebook::react::TextLayoutManagerKey,
           std::shared_ptr<const facebook::react::TextLayoutManager>(
-              nucleus::react::makeSwiftTextLayoutManagerBridge(
-                  swiftTextLayoutManagerHandle, contextContainer_)));
+              nucleus::react::makeTextLayoutManager(
+                  std::move(textMeasure), contextContainer_)));
 
       facebook::react::RuntimeSchedulerBinding::createAndInstallIfNeeded(
           runtime_,
@@ -2054,10 +2042,7 @@ class ReactRuntimeHostImpl final {
   std::shared_ptr<DisplayMetricsState> displayMetricsState_;
   std::shared_ptr<SourceCodeState> sourceCodeState_;
   std::shared_ptr<AppStateState> appStateState_;
-  // Retained Swift `SwiftTextLayoutManager` handle waiting to be
-  // consumed by `installFabricRuntime()`. Released in the dtor if
-  // Fabric never installs.
-  void *swiftTextLayoutHandle_{nullptr};
+  nucleus::react::TextMeasureFunction textMeasure_;
 };
 
 bool hermesCanCreateRuntime() {
@@ -2341,16 +2326,13 @@ RuntimeHostResult ReactRuntimeHostFacade::setMountingObserver(
   });
 }
 
-RuntimeHostResult ReactRuntimeHostFacade::setSwiftTextLayoutManagerHandle(
-    void *swiftHandlerRetained) {
-  return invokeRuntimeHostEntry([this, swiftHandlerRetained] {
+RuntimeHostResult ReactRuntimeHostFacade::setTextMeasureFunction(
+    TextMeasureFunction measure) {
+  return invokeRuntimeHostEntry([this, measure = std::move(measure)]() mutable {
     if (impl_ == nullptr) {
-      // Don't leak the retained Swift reference if the facade was
-      // moved-from before the call arrived.
-      nucleus::react::releaseSwiftTextLayoutManagerHandle(swiftHandlerRetained);
       throw std::runtime_error("React runtime host facade is moved-from");
     }
-    impl_->setSwiftTextLayoutManagerHandle(swiftHandlerRetained);
+    impl_->setTextMeasureFunction(std::move(measure));
   });
 }
 

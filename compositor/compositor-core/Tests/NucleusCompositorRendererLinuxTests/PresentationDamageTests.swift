@@ -7,7 +7,7 @@ import Testing
 // detection (initial / unchanged / moved / signature / animation), stale
 // retirement, sink routing, and the rect/region math. Hardware-independent.
 @Suite struct PresentationDamageTests {
-    private final class StubProbe: DamageAnimationProbe {
+    private final class StubAnimationState: DamageAnimationState {
         var animatedLayers: Set<UInt64> = []
         func subtreeHasActiveAnimations(_ layerId: UInt64) -> Bool {
             animatedLayers.contains(layerId)
@@ -40,14 +40,15 @@ import Testing
     }
 
     @Test func nativeLayerChangeDetection() {
-        let probe = StubProbe()
+        let animationState = StubAnimationState()
         // Initial → one current rect.
         let state = FrameDamageCache()
         let tracker = DamageTracker()
         var out = DamageAccumulator()
         tracker.beginFrame(state)
         tracker.trackNativeLayerDamage(
-            state, Self.nativeFact(Self.rect(0, 0, 20, 20), sig: 5), DamageSinks(output: out), probe
+            state, Self.nativeFact(Self.rect(0, 0, 20, 20), sig: 5),
+            DamageSinks(output: out), animationState
         )
         #expect(out.rects.count == 1, "native-initial")
         state.commitFrame()
@@ -56,7 +57,8 @@ import Testing
         out = DamageAccumulator()
         tracker.beginFrame(state)
         tracker.trackNativeLayerDamage(
-            state, Self.nativeFact(Self.rect(0, 0, 20, 20), sig: 5), DamageSinks(output: out), probe
+            state, Self.nativeFact(Self.rect(0, 0, 20, 20), sig: 5),
+            DamageSinks(output: out), animationState
         )
         #expect(out.rects.isEmpty, "native-unchanged")
         state.commitFrame()
@@ -65,7 +67,8 @@ import Testing
         out = DamageAccumulator()
         tracker.beginFrame(state)
         tracker.trackNativeLayerDamage(
-            state, Self.nativeFact(Self.rect(5, 5, 20, 20), sig: 5), DamageSinks(output: out), probe
+            state, Self.nativeFact(Self.rect(5, 5, 20, 20), sig: 5),
+            DamageSinks(output: out), animationState
         )
         #expect(out.bounds() == Self.rect(0, 0, 25, 25), "native-moved-bounds")
         #expect(out.overlaps(Self.rect(0, 0, 1, 1)), "native-moved-old-origin")
@@ -76,24 +79,26 @@ import Testing
         out = DamageAccumulator()
         tracker.beginFrame(state)
         tracker.trackNativeLayerDamage(
-            state, Self.nativeFact(Self.rect(5, 5, 20, 20), sig: 9), DamageSinks(output: out), probe
+            state, Self.nativeFact(Self.rect(5, 5, 20, 20), sig: 9),
+            DamageSinks(output: out), animationState
         )
         #expect(out.rects.count == 1, "native-signature")
         state.commitFrame()
 
         // Active animation forces a redraw even when nothing else changed.
-        probe.animatedLayers = [1]
+        animationState.animatedLayers = [1]
         out = DamageAccumulator()
         tracker.beginFrame(state)
         tracker.trackNativeLayerDamage(
-            state, Self.nativeFact(Self.rect(5, 5, 20, 20), sig: 9), DamageSinks(output: out), probe
+            state, Self.nativeFact(Self.rect(5, 5, 20, 20), sig: 9),
+            DamageSinks(output: out), animationState
         )
         #expect(out.rects.count == 1, "native-animation")
-        probe.animatedLayers = []
+        animationState.animatedLayers = []
     }
 
     @Test func remoteHostChangeDetection() {
-        let probe = StubProbe()
+        let animationState = StubAnimationState()
         let state = FrameDamageCache()
         let tracker = DamageTracker()
         func remoteFact(_ r: DamageRect, sig: UInt64) -> RemoteHostDamageFact {
@@ -106,14 +111,16 @@ import Testing
         var out = DamageAccumulator()
         tracker.beginFrame(state)
         tracker.trackRemoteHostDamage(
-            state, remoteFact(Self.rect(0, 0, 50, 50), sig: 1), DamageSinks(output: out), probe)
+            state, remoteFact(Self.rect(0, 0, 50, 50), sig: 1), DamageSinks(output: out),
+            animationState)
         #expect(out.rects.count == 1 && tracker.remoteHostStats.initial == 1, "remote-initial")
         state.commitFrame()
 
         out = DamageAccumulator()
         tracker.beginFrame(state)
         tracker.trackRemoteHostDamage(
-            state, remoteFact(Self.rect(10, 10, 50, 50), sig: 1), DamageSinks(output: out), probe)
+            state, remoteFact(Self.rect(10, 10, 50, 50), sig: 1), DamageSinks(output: out),
+            animationState)
         #expect(out.bounds() == Self.rect(0, 0, 60, 60), "remote-moved-coverage")
         #expect(tracker.remoteHostStats.visibleRectChanged == 1, "remote-moved-stat")
         state.commitFrame()
@@ -121,7 +128,8 @@ import Testing
         out = DamageAccumulator()
         tracker.beginFrame(state)
         tracker.trackRemoteHostDamage(
-            state, remoteFact(Self.rect(10, 10, 50, 50), sig: 1), DamageSinks(output: out), probe)
+            state, remoteFact(Self.rect(10, 10, 50, 50), sig: 1), DamageSinks(output: out),
+            animationState)
         #expect(out.rects.isEmpty && tracker.remoteHostStats.unchanged == 1, "remote-unchanged")
     }
 

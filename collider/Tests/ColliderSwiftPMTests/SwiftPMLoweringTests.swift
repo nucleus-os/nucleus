@@ -192,7 +192,7 @@ private func executeWithSwiftPM(
     #expect(received.suffix(2) == ["--filter", "gpuHeadless_"])
 }
 
-@Test func hostSwiftPMDoesNotReceiveTargetSDKSourceIdentity() async throws {
+@Test func hostSwiftPMDoesNotReceiveTargetSDKSourceIdentities() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-host-swift-environment-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -206,13 +206,15 @@ private func executeWithSwiftPM(
     try Data("// swift-tools-version: 6.4\n".utf8).write(
         to: package.appendingPathComponent("Package.swift"))
 
-    let observed = directory.appendingPathComponent("source-identity")
+    let observedRuntime = directory.appendingPathComponent("runtime-source-identity")
+    let observedGenerator = directory.appendingPathComponent("generator-source-identity")
     let swift = tools.appendingPathComponent("swift")
     let script = """
         #!/bin/sh
         set -eu
         \(fakeSwiftBinPathResponse)
-        printf '%s' "${NUCLEUS_SWIFT_SOURCE_ID-unset}" > "\(observed.path)"
+        printf '%s' "${NUCLEUS_SWIFT_SOURCE_ID-unset}" > "\(observedRuntime.path)"
+        printf '%s' "${NUCLEUS_SWIFT_SDK_GENERATOR_SOURCE_ID-unset}" > "\(observedGenerator.path)"
         mkdir -p "\(scratch.path)"
         """
     try Data(script.utf8).write(to: swift)
@@ -240,6 +242,7 @@ private func executeWithSwiftPM(
                 environment: [
                     "PATH": "\(tools.path):/usr/bin:/bin",
                     "NUCLEUS_SWIFT_SOURCE_ID": "target-sdk-source",
+                    "NUCLEUS_SWIFT_SDK_GENERATOR_SOURCE_ID": "generator-source",
                 ])
         ])
 
@@ -249,7 +252,10 @@ private func executeWithSwiftPM(
         stateRoot: FilePath(directory.appendingPathComponent("state").path))
 
     #expect(
-        try String(contentsOf: observed, encoding: .utf8)
+        try String(contentsOf: observedRuntime, encoding: .utf8)
+            == "unset")
+    #expect(
+        try String(contentsOf: observedGenerator, encoding: .utf8)
             == "unset")
 }
 

@@ -93,19 +93,24 @@ final class JSWorkWakeHandlerBox: Sendable {
         mountConsumer = consumer
         unsafe facade = nucleus.react.ReactRuntimeHostFacade()
         try requireSuccess(unsafe facade.initializationResult())
-        let swiftObserver = SwiftMountingObserver(consumer)
         try requireSuccess(
             unsafe facade.setMountingObserver(
-                nucleus.react.makeSwiftMountingObserverBridge(swiftObserver.toUnsafe())
+                nucleus.react.makeMountingObserver(
+                    .init { mutation in
+                        consumer.didMount(mutation)
+                    },
+                    .init { surfaceID in
+                        consumer.didFinishTransaction(surfaceID: surfaceID)
+                    }
+                )
             ))
-        // Install the Swift text layout manager handle. The bridge
-        // consumes it inside `FabricRuntime`'s ctor (during
-        // `installFabric`) so it can be constructed with the
-        // `ContextContainer` the runtime builds there.
-        let swiftTextManager = SwiftTextLayoutManager(DefaultTextLayoutHandler())
+        let textLayout = DefaultTextLayoutHandler()
         try requireSuccess(
-            unsafe facade.setSwiftTextLayoutManagerHandle(
-                swiftTextManager.toUnsafe()))
+            unsafe facade.setTextMeasureFunction(
+                .init { request in
+                    textLayout.measure(request)
+                }
+            ))
     }
 
     package func evaluateBytecode(at path: String) throws {
@@ -266,22 +271,5 @@ final class JSWorkWakeHandlerBox: Sendable {
 
     nonisolated package static func hermesIntlDateTimeFormatWorks() -> Bool {
         unsafe nucleus.react.ReactRuntimeHostFacade.hermesIntlDateTimeFormatWorks()
-    }
-}
-
-package enum RuntimeCxxInteropSmoke {
-    package static func greeting(for name: String) -> String {
-        let bridge = nucleus.react.HelloBridge(std.string(name))
-        return String(bridge.greet())
-    }
-
-    package static func hermesBytecodeVersionFromFacade() -> UInt32 {
-        UInt32(
-            unsafe nucleus.react.ReactRuntimeHostFacade.hermesBytecodeVersion())
-    }
-
-    package static func newFacadeSurfaceCount() -> UInt32 {
-        let facade = unsafe nucleus.react.ReactRuntimeHostFacade()
-        return UInt32(unsafe facade.surfaceCount())
     }
 }

@@ -119,6 +119,7 @@ let package = Package(
             name: "ShellColliderRecipe",
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
+                "NativeBuilderColliderRecipe",
                 .product(
                     name: "NucleusAndroidRuntimeCore",
                     package: "Nucleus",
@@ -126,7 +127,10 @@ let package = Package(
             ]),
         .target(
             name: "SwiftTargetSDKColliderRecipe",
-            dependencies: [.product(name: "ColliderCore", package: "engine")]),
+            dependencies: [
+                .product(name: "ColliderCore", package: "engine"),
+                "NativeBuilderColliderRecipe",
+            ]),
         .target(
             name: "VulkanColliderRecipe",
             dependencies: [.product(name: "ColliderCore", package: "engine")]),
@@ -228,6 +232,7 @@ let package = Package(
             name: "ShellColliderRecipeTests",
             dependencies: [
                 .product(name: "ColliderCore", package: "engine"),
+                "NativeBuilderColliderRecipe",
                 "ShellColliderRecipe",
             ]),
     ]

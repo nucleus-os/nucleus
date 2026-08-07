@@ -1,4 +1,4 @@
-#include <NucleusTextRenderingTestSupport/TextLayoutBorrowProbe.hpp>
+#include <NucleusTextRenderingTestSupport/TextLayoutBorrowBarrier.hpp>
 
 #include <condition_variable>
 #include <mutex>
@@ -31,7 +31,7 @@ bool conflictingBorrowProvider(
 
 namespace nucleus::text::testing {
 
-struct TextLayoutBorrowProbe::Impl final {
+struct TextLayoutBorrowBarrier::Impl final {
   std::mutex mutex;
   std::condition_variable condition;
   std::thread thread;
@@ -48,7 +48,7 @@ void blockingBorrowBody(
     uintptr_t paragraph,
     void *rawImpl) {
   auto *impl =
-      static_cast<TextLayoutBorrowProbe::Impl *>(rawImpl);
+      static_cast<TextLayoutBorrowBarrier::Impl *>(rawImpl);
   if (paragraph == 0 || impl == nullptr) {
     return;
   }
@@ -71,7 +71,7 @@ void markBorrowBody(
 
 } // namespace
 
-TextLayoutBorrowProbe::TextLayoutBorrowProbe(
+TextLayoutBorrowBarrier::TextLayoutBorrowBarrier(
     uint64_t handle)
     : impl_(std::make_shared<Impl>()) {
   const std::shared_ptr<Impl> impl = impl_;
@@ -88,14 +88,14 @@ TextLayoutBorrowProbe::TextLayoutBorrowProbe(
   });
 }
 
-TextLayoutBorrowProbe::~TextLayoutBorrowProbe() {
+TextLayoutBorrowBarrier::~TextLayoutBorrowBarrier() {
   allowBodyToReturn();
   if (impl_ && impl_->thread.joinable()) {
     impl_->thread.join();
   }
 }
 
-bool TextLayoutBorrowProbe::waitUntilBodyEntered() const {
+bool TextLayoutBorrowBarrier::waitUntilBodyEntered() const {
   if (!impl_) {
     return false;
   }
@@ -109,7 +109,7 @@ bool TextLayoutBorrowProbe::waitUntilBodyEntered() const {
   return impl_->entered;
 }
 
-void TextLayoutBorrowProbe::allowBodyToReturn() const {
+void TextLayoutBorrowBarrier::allowBodyToReturn() const {
   if (!impl_) {
     return;
   }
@@ -120,7 +120,7 @@ void TextLayoutBorrowProbe::allowBodyToReturn() const {
   impl_->condition.notify_all();
 }
 
-bool TextLayoutBorrowProbe::waitUntilBodyCompleted() const {
+bool TextLayoutBorrowBarrier::waitUntilBodyCompleted() const {
   if (!impl_) {
     return false;
   }
@@ -131,7 +131,7 @@ bool TextLayoutBorrowProbe::waitUntilBodyCompleted() const {
   return impl_->completed;
 }
 
-bool TextLayoutBorrowProbe::borrowSucceeded() const {
+bool TextLayoutBorrowBarrier::borrowSucceeded() const {
   if (!impl_) {
     return false;
   }
@@ -139,7 +139,7 @@ bool TextLayoutBorrowProbe::borrowSucceeded() const {
   return impl_->succeeded;
 }
 
-bool TextLayoutBorrowProbe::bodyCompleted() const {
+bool TextLayoutBorrowBarrier::bodyCompleted() const {
   if (!impl_) {
     return false;
   }

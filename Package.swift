@@ -89,7 +89,7 @@ let products: [Product] = [
             "NucleusWindowClientInput",
             "NucleusWindowClientHost",
         ]),
-    .library(name: "nucleus-android", type: .dynamic, targets: ["NucleusAndroidJNI"]),
+    .library(name: "nucleus-android", type: .dynamic, targets: ["NucleusAndroidDeployment"]),
 ]
 let dependencies: [Package.Dependency] = [
     .package(name: "swift-argument-parser", path: "third-party/swift-argument-parser"),
@@ -1224,14 +1224,10 @@ let targets: [Target] = [
                 "-lpthread", "-ldl", "-lm",
             ])
         ]),
-    .systemLibrary(
-        name: "NucleusReactFabricSmokeC",
-        path: "react-native/swiftpm/cmodules/NucleusReactFabricSmokeC"
-    ),
     .testTarget(
         name: "NucleusReactRuntimeFabricTests",
         dependencies: [
-            "NucleusReactFabricSmokeC", "NucleusReactRuntimeCxxBridge",
+            "NucleusReactRuntimeCxxBridge",
             "NucleusReactRuntimeHostCxx", "NucleusReactRuntimeCxx",
             "Nucleus",
             "NucleusApp", "NucleusAppHostBundle", "NucleusLayers", "NucleusRenderHost",
@@ -1244,7 +1240,7 @@ let targets: [Target] = [
     .executableTarget(
         name: "NucleusReactThreadSanitizerHarness",
         dependencies: [
-            "NucleusReactFabricSmokeC", "NucleusReactRuntimeHostCxx", "NucleusReactRuntimeCxx",
+            "NucleusReactRuntimeHostCxx", "NucleusReactRuntimeCxx",
             "Nucleus",
             "NucleusApp", "NucleusAppHostBundle", "NucleusLayers", "NucleusRenderHost",
             "NucleusRenderModel", "NucleusRenderer", "NucleusSkiaGraphiteBridge",
@@ -1255,7 +1251,7 @@ let targets: [Target] = [
     .executableTarget(
         name: "NucleusReactBenchmarks",
         dependencies: [
-            "NucleusReactFabricSmokeC", "NucleusReactRuntimeHostCxx", "NucleusReactRuntimeCxx",
+            "NucleusReactRuntimeHostCxx", "NucleusReactRuntimeCxx",
             "NucleusBenchmarkSupport", "Nucleus", "NucleusApp", "NucleusAppHostBundle",
             "NucleusLayers",
             "NucleusRenderHost", "NucleusRenderModel", "NucleusRenderer",
@@ -1272,12 +1268,12 @@ let targets: [Target] = [
             "NucleusTextBackend",
             "NucleusTextRenderingBridge", "NucleusUI", "NucleusUIEmbedder", "Tracy",
             "NucleusFoundation",
-            "NucleusReactFabricSmokeC", "NucleusReactRuntimeCxxBridge",
+            "NucleusReactRuntimeCxxBridge",
         ], path: "react-native/swift/Sources/NucleusReactRuntimeCxx",
         swiftSettings: reactNativeSwiftSettings),
     .target(
         name: "NucleusReactRuntimeHostCxx",
-        dependencies: ["NucleusReactRuntimeCxx"],
+        dependencies: [],
         path: "react-native/swift/Sources/NucleusReactRuntime/cxx",
         publicHeadersPath: "empty-public",
         cxxSettings: reactNativeHostCxxSettings),
@@ -1622,16 +1618,22 @@ let targets: [Target] = [
             "NucleusAndroidHostLifecycle", "NucleusAndroidCore", "NucleusAndroidC",
             .product(name: "SwiftJava", package: "swift-java"),
         ], path: "core/platform-android/swift-jni", exclude: ["swift-java.config"],
+        plugins: [
+            .plugin(name: "JExtractSwiftPlugin", package: "swift-java")
+        ]),
+    .target(
+        name: "NucleusAndroidDeployment",
+        dependencies: [
+            .target(name: "NucleusAndroidJNI", condition: .when(platforms: [.android]))
+        ],
+        path: "core/platform-android/swift-deployment",
         linkerSettings: [
-            .linkedLibrary("android"),
+            .linkedLibrary("android", .when(platforms: [.android])),
             .unsafeFlags([
                 "-Xlinker", "-soname", "-Xlinker", "libnucleus-android.so", "-Xlinker", "-z",
                 "-Xlinker",
                 "max-page-size=16384",
-            ]),
-        ],
-        plugins: [
-            .plugin(name: "JExtractSwiftPlugin", package: "swift-java")
+            ], .when(platforms: [.android])),
         ]),
 ]
 

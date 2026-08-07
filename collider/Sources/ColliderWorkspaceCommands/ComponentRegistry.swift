@@ -607,7 +607,7 @@ package struct ComponentRegistry {
         let guestTargetSDK =
             guestSDKRoot
             + "/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
-            + resolvedTriple + "/ubuntu-noble.sdk"
+            + resolvedTriple + "/" + NucleusLinuxABI.sdkDirectoryName
         let targetRuntimeLibraryDirectory =
             guestTargetSDK + "/usr/lib/\(target.gnuArchitecture)"
         let nativeCompiler = nativeSDKCompilerConfiguration(
@@ -677,7 +677,11 @@ package struct ComponentRegistry {
                 name: "nucleus-swift-6.4-linux",
                 targetTriple: resolvedTriple),
             execution: execution,
-            toolchainIdentity: toolchainIdentity)
+            toolchainIdentity: toolchainIdentity,
+            swiftExecutable: .path(
+                architecture == .arm64
+                    ? FilePath("/opt/swift/usr/bin/swift")
+                    : FilePath("/opt/swift-x86_64/usr/bin/swift")))
     }
 
     private func androidSwiftPMInvocation(
@@ -730,7 +734,6 @@ package struct ComponentRegistry {
             root.appending("react-native/swiftpm/cmodules/NucleusReactRuntimeCxxBridge"),
             root.appending("react-native/swift/Sources/NucleusReactRuntime/cxx/include"),
             root.appending("core/render-cxx/skia/include"),
-            root.appending("react-native/swiftpm/shims/NucleusReactRuntimeSwift"),
             render.appending("include/skia"),
             render.appending("include/skia/src"),
             render.appending("include/skia/include/third_party/vulkan"),
@@ -800,6 +803,10 @@ package struct ComponentRegistry {
                 $0.isEmpty ? nil : $0
             } ?? "swift-6.4-source"
         let generatorSource = recipeRoot.appending("source/swift-sdk-generator")
+        let generatorSourceID =
+            environment["NUCLEUS_SWIFT_SDK_GENERATOR_SOURCE_ID"].flatMap {
+                $0.isEmpty ? nil : $0
+            } ?? sourceID
         let ndkRoot = try android.ndkRoot(
             environment: environment,
             validate: false,
@@ -826,7 +833,7 @@ package struct ComponentRegistry {
             runtimePreset: runtimePreset,
             sysrootPreparer: sysrootPreparer,
             pkgConfigDirectory: pkgConfigDirectory,
-            generatorSourceID: sourceID)
+            generatorSourceID: generatorSourceID)
         let linuxTargets = try inputs.linuxTargets.map { target in
             let buildID = try swiftTargetRuntimeBuildID(
                 inputs: inputs,

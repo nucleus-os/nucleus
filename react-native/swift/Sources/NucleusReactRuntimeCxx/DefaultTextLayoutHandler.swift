@@ -6,7 +6,7 @@ import NucleusTextCxxBridge
 // backend (`nucleus::text::measureParagraph`) that the legacy C++
 // `NucleusTextLayoutManager` used; the bridge builds the
 // `TextMeasureRequest` from the RN inputs, this handler measures.
-package final class DefaultTextLayoutHandler: TextLayoutManagerHandler, Sendable {
+package final class DefaultTextLayoutHandler: Sendable {
     package init() {}
 
     package func measure(_ request: nucleus.react.TextMeasureRequest)

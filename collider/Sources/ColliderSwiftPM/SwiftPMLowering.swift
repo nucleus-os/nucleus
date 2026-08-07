@@ -322,6 +322,8 @@ public struct SwiftPMLowering: TaskPlanLowering {
         case .host:
             var hostEnvironment = environment
             hostEnvironment.removeValue(forKey: "NUCLEUS_SWIFT_SOURCE_ID")
+            hostEnvironment.removeValue(
+                forKey: "NUCLEUS_SWIFT_SDK_GENERATOR_SOURCE_ID")
             processes = arguments.map {
                 .host(
                     invocation.command(
@@ -343,6 +345,8 @@ public struct SwiftPMLowering: TaskPlanLowering {
         case .host:
             var hostEnvironment = environment
             hostEnvironment.removeValue(forKey: "NUCLEUS_SWIFT_SOURCE_ID")
+            hostEnvironment.removeValue(
+                forKey: "NUCLEUS_SWIFT_SDK_GENERATOR_SOURCE_ID")
             binPathQuery = .host(
                 invocation.command(
                     arguments: ["build", "--show-bin-path"],

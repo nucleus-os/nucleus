@@ -1,5 +1,6 @@
 import ColliderCore
 import Foundation
+import NativeBuilderColliderRecipe
 import SystemPackage
 
 public struct SwiftTargetSDKStoragePaths: Equatable, Sendable {
@@ -888,7 +889,8 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
         var targetTriples: [String: Any] = [:]
         for target in inputs.linuxTargets {
             let triple = target.architecture.triple
-            let sdkRoot = "\(triple)/ubuntu-noble.sdk"
+            let sdkRoot =
+                "\(triple)/\(NucleusLinuxABI.sdkDirectoryName)"
             targetTriples[triple] = [
                 "sdkRootPath": sdkRoot,
                 "swiftResourcesPath": "\(sdkRoot)/usr/lib/swift",
@@ -985,6 +987,8 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
                         linuxBundleID: configuration.inputs.linuxBundleID,
                         androidBundleID: configuration.inputs.androidBundleID,
                         androidAPILevel: configuration.androidAPILevel,
+                        linuxSDKDirectoryName: NucleusLinuxABI.sdkDirectoryName,
+                        minimumGlibcVersion: NucleusLinuxABI.minimumGlibcVersion,
                         executablePaths: executablePaths,
                         environment: environment)))
         return ValidationArtifacts(task: task, executables: executables)
@@ -1307,6 +1311,26 @@ package struct PublishSwiftSDKDiscoveryAction: ColliderAction {
     }
 }
 
+private func linuxTripleSwiftSDKMetadata(triple: String) throws -> [UInt8] {
+    let sdkRoot = NucleusLinuxABI.sdkDirectoryName
+    var data = try JSONSerialization.data(
+        withJSONObject: [
+            "schemaVersion": "4.0",
+            "targetTriples": [
+                triple: [
+                    "sdkRootPath": sdkRoot,
+                    "swiftResourcesPath": "\(sdkRoot)/usr/lib/swift",
+                    "swiftStaticResourcesPath":
+                        "\(sdkRoot)/usr/lib/swift_static",
+                    "toolsetPaths": ["toolset.json"],
+                ]
+            ],
+        ],
+        options: [.prettyPrinted, .sortedKeys])
+    data.append(0x0A)
+    return Array(data)
+}
+
 private struct AssembleSwiftTargetSDKsAction: ColliderAction {
     struct Identity: ColliderActionIdentity {
         let candidate: FilePath
@@ -1470,6 +1494,12 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
             let temporarySDKName = "\(linuxBundleID)-\(target.architecture)"
             let generatedTripleRoot = generatedTarget.appending(
                 "Bundles/\(linuxBundle)/\(temporarySDKName)/\(target.triple)")
+            let generatedTargetRoot = generatedTripleRoot.appending(
+                "ubuntu-noble.sdk")
+            let finalTripleRoot = finalLinuxSDK.appending(target.triple)
+            let finalTargetRoot = finalTripleRoot.appending(
+                NucleusLinuxABI.sdkDirectoryName)
+            try context.files.createDirectory(finalTripleRoot)
             var arguments = [
                 "make-linux-sdk",
                 "--no-host-toolchain",
@@ -1494,16 +1524,24 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
             try await run(
                 executable: .path(FilePath("/usr/bin/ditto")),
                 arguments: [
-                    target.runtimeInstall.appending("usr").string,
-                    generatedTripleRoot.appending("ubuntu-noble.sdk/usr").string,
+                    generatedTargetRoot.string,
+                    finalTargetRoot.string,
                 ],
                 workingDirectory: candidate,
                 context: context)
             try await run(
                 executable: .path(FilePath("/usr/bin/ditto")),
                 arguments: [
-                    generatedTripleRoot.string,
-                    finalLinuxSDK.appending(target.triple).string,
+                    generatedTripleRoot.appending("toolset.json").string,
+                    finalTripleRoot.appending("toolset.json").string,
+                ],
+                workingDirectory: candidate,
+                context: context)
+            try await run(
+                executable: .path(FilePath("/usr/bin/ditto")),
+                arguments: [
+                    target.runtimeInstall.appending("usr").string,
+                    finalTargetRoot.appending("usr").string,
                 ],
                 workingDirectory: candidate,
                 context: context)
@@ -1511,12 +1549,13 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
                 executable: .path(FilePath("/usr/bin/ditto")),
                 arguments: [
                     pkgConfigDirectory.string,
-                    finalLinuxSDK.appending(
-                        "\(target.triple)/ubuntu-noble.sdk/usr/share/pkgconfig"
-                    ).string,
+                    finalTargetRoot.appending("usr/share/pkgconfig").string,
                 ],
                 workingDirectory: candidate,
                 context: context)
+            try context.files.write(
+                try linuxTripleSwiftSDKMetadata(triple: target.triple),
+                to: finalTripleRoot.appending("swift-sdk.json"))
         }
 
         try context.files.write(
@@ -1635,6 +1674,8 @@ private struct ValidateSwiftTargetSDKsAction: ColliderAction {
         let linuxBundleID: String
         let androidBundleID: String
         let androidAPILevel: UInt32
+        let linuxSDKDirectoryName: String
+        let minimumGlibcVersion: String
         let executablePaths: [FilePath]
 
         func encode(into encoder: inout ActionIdentityEncoder) {
@@ -1653,6 +1694,8 @@ private struct ValidateSwiftTargetSDKsAction: ColliderAction {
             encoder.append(
                 tag: 13,
                 string: executablePaths.map(\.string).joined(separator: "\0"))
+            encoder.append(tag: 14, string: linuxSDKDirectoryName)
+            encoder.append(tag: 15, string: minimumGlibcVersion)
         }
     }
 
@@ -1670,6 +1713,8 @@ private struct ValidateSwiftTargetSDKsAction: ColliderAction {
     let linuxBundleID: String
     let androidBundleID: String
     let androidAPILevel: UInt32
+    let linuxSDKDirectoryName: String
+    let minimumGlibcVersion: String
     let executablePaths: [FilePath]
     let environment: [String: String]
 
@@ -1687,6 +1732,8 @@ private struct ValidateSwiftTargetSDKsAction: ColliderAction {
             linuxBundleID: linuxBundleID,
             androidBundleID: androidBundleID,
             androidAPILevel: androidAPILevel,
+            linuxSDKDirectoryName: linuxSDKDirectoryName,
+            minimumGlibcVersion: minimumGlibcVersion,
             executablePaths: executablePaths)
     }
 
@@ -1768,7 +1815,11 @@ private struct ValidateSwiftTargetSDKsAction: ColliderAction {
         }
         try await run(
             executable: .path(validator),
-            arguments: [linuxSDK.string] + executablePaths.map(\.string),
+            arguments: [
+                linuxSDK.string,
+                linuxSDKDirectoryName,
+                minimumGlibcVersion,
+            ] + executablePaths.map(\.string),
             workingDirectory: validationRoot,
             context: context)
     }

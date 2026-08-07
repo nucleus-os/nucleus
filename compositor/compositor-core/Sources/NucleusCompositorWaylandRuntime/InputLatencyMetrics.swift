@@ -1,4 +1,4 @@
-// InputLatencyProbe — per-event input-delivery latency probe (Swift owner).
+// InputLatencyMetrics — per-event input-delivery latency metrics (Swift owner).
 //
 // It measures the libinput-ingress → seat-wire-send latency across the single
 // dispatch choke point, but only for genuine libinput events;
@@ -19,7 +19,7 @@ import NucleusLinuxPrimitives
 private let latencyBucketCount = 32
 
 @MainActor
-enum InputLatencyProbe {
+enum InputLatencyMetrics {
     enum Kind: Int {
         case pointerMotion = 0
         case pointerButton = 1

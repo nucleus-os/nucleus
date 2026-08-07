@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -31,22 +32,13 @@ struct TextMeasureResult {
   float height;
 };
 
-// Wraps a Swift `SwiftTextLayoutManager` instance in a concrete
-// C++ `facebook::react::TextLayoutManager`. `swiftHandlerRetained`
-// must be the result of `SwiftTextLayoutManager.toUnsafe()`.
-//
-// The `contextContainer` argument is forwarded to the
-// `TextLayoutManager` base ctor so existing RN call sites that
-// look it up by key see the same shape they always did.
-std::shared_ptr<facebook::react::TextLayoutManager>
-makeSwiftTextLayoutManagerBridge(
-    void *swiftHandlerRetained,
-    std::shared_ptr<const facebook::react::ContextContainer> contextContainer);
+using TextMeasureFunction =
+    std::function<TextMeasureResult(const TextMeasureRequest &request)>;
 
-// Releases a retained Swift `SwiftTextLayoutManager` handle without
-// constructing a bridge — used by the facade when a second handle is
-// installed before the first was consumed by `FabricRuntime`.
-void releaseSwiftTextLayoutManagerHandle(void *swiftHandlerRetained);
+std::shared_ptr<facebook::react::TextLayoutManager>
+makeTextLayoutManager(
+    TextMeasureFunction measure,
+    std::shared_ptr<const facebook::react::ContextContainer> contextContainer) noexcept;
 
 // Test-only helper. Swift's CxxStdlib import refuses to instantiate
 // `std::vector<nucleus::text::TextRun>` from scratch (un-specialized

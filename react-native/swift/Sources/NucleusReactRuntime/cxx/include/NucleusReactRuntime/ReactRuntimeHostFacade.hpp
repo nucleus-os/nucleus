@@ -81,13 +81,9 @@ class ReactRuntimeHostFacade final {
   unsigned int surfaceCount() const;
   FabricMountReport readFabricMountReport() const;
   RuntimeHostResult setMountingObserver(std::shared_ptr<MountingObserver> observer);
-  // Installs a retained Swift `SwiftTextLayoutManager` handle. The
-  // handle is the result of `SwiftTextLayoutManager.toUnsafe()`;
-  // ownership transfers in. The handle is consumed when
-  // `installFabric()` runs and builds the `ContextContainer` the
-  // text layout manager bridge needs. If called twice before
-  // `installFabric()`, the previous handle is released.
-  RuntimeHostResult setSwiftTextLayoutManagerHandle(void *swiftHandlerRetained);
+  // The closure is consumed when `installFabric()` constructs the React Native
+  // text layout manager with its context container.
+  RuntimeHostResult setTextMeasureFunction(TextMeasureFunction measure);
   // Updates the `DeviceInfo` TurboModule's window/screen metrics.
   // Width/height are logical points (`output px / scale`). Swift
   // calls this from `OverlayReactRuntime` whenever the primary

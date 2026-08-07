@@ -18,19 +18,3 @@ struct Demand: Equatable {
     var sceneFrameRequested: Bool = false
     var continuous: ContinuousDemand
 }
-
-/// One-shot present-probe latch: submit a single debug present probe per session
-/// before real content is published. Mirrors `PresentProbe`.
-struct PresentProbe {
-    var submitted: Bool = false
-
-    /// Whether the probe should be submitted: not yet submitted and the output
-    /// has presentable content. Mirrors `shouldSubmit` over the resolved fact.
-    func shouldSubmit(hasContent: Bool) -> Bool {
-        !submitted && hasContent
-    }
-
-    mutating func markSubmitted() {
-        submitted = true
-    }
-}

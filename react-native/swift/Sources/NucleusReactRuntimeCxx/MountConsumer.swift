@@ -322,8 +322,7 @@ package final class MountSurfaceContext {
     }
 }
 
-// Unified Fabric mount consumer. Implements `MountingObserverHandler`:
-// the bridge buffers each mutation through `didMount`, and on
+// Unified Fabric mount consumer. The bridge buffers each mutation through `didMount`, and on
 // `didFinishTransaction(surfaceID:)` the consumer materializes the
 // batch against the registered surface context. Events that arrive
 // after host surface registration but before a materializer context is
@@ -358,13 +357,25 @@ package struct MountBookkeepingCounts: Sendable, Equatable {
     package var generations: Int
     package var retiredSurfaces: Int
     package var inFlightSurfaces: Int
+
+    package init(
+        queuedBatches: Int,
+        generations: Int,
+        retiredSurfaces: Int,
+        inFlightSurfaces: Int
+    ) {
+        self.queuedBatches = queuedBatches
+        self.generations = generations
+        self.retiredSurfaces = retiredSurfaces
+        self.inFlightSurfaces = inFlightSurfaces
+    }
 }
 
 package typealias MountDrainOperation = @MainActor @Sendable () -> Void
 package typealias MountDrainScheduler =
     @Sendable (@escaping MountDrainOperation) -> Void
 
-package final class MountConsumer: MountingObserverHandler, Sendable {
+package final class MountConsumer: Sendable {
     private struct IncomingState: Sendable {
         var pending: [Int: [MountEvent]] = [:]
         var completedBatches: [CompletedBatch] = []
@@ -400,8 +411,6 @@ package final class MountConsumer: MountingObserverHandler, Sendable {
     package init(scheduleDrain: @escaping MountDrainScheduler) {
         self.scheduleDrain = scheduleDrain
     }
-
-    // MARK: MountingObserverHandler
 
     package func didMount(_ mutation: nucleus.react.MountMutation) {
         enqueue(MountEvent(mutation))
@@ -787,6 +796,13 @@ package struct MountEventColor: Sendable, Equatable {
     package var green: Float
     package var blue: Float
     package var alpha: Float
+
+    package init(red: Float, green: Float, blue: Float, alpha: Float) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.alpha = alpha
+    }
 }
 
 extension nucleus.react.MountMutation {

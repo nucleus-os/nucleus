@@ -1,16 +1,18 @@
 #!/bin/sh
 set -eu
 
-if [ "$#" -ne 5 ]; then
-    echo "usage: $0 <linux-sdk-root> <linux-arm64> <linux-amd64> <android-arm64> <android-amd64>" >&2
+if [ "$#" -ne 7 ]; then
+    echo "usage: $0 <linux-sdk-root> <linux-sdk-directory> <minimum-glibc> <linux-arm64> <linux-amd64> <android-arm64> <android-amd64>" >&2
     exit 64
 fi
 
 linux_sdk_root=$1
-linux_arm64=$2
-linux_amd64=$3
-android_arm64=$4
-android_amd64=$5
+linux_sdk_directory=$2
+minimum_glibc=$3
+linux_arm64=$4
+linux_amd64=$5
+android_arm64=$6
+android_amd64=$7
 llvm_objdump=$(xcrun --find llvm-objdump)
 
 require_file_description() {
@@ -58,10 +60,34 @@ require_libcxx() {
     fi
 }
 
+reject_newer_glibc_imports() {
+    path=$1
+    newer=$(
+        "$llvm_objdump" -T "$path" 2>/dev/null \
+            | awk -v maximum="$minimum_glibc" '
+                $0 ~ /\*UND\*/ && match($0, /GLIBC_[0-9]+\.[0-9]+/) {
+                    version = substr($0, RSTART + 6, RLENGTH - 6)
+                    split(version, found, ".")
+                    split(maximum, allowed, ".")
+                    if (found[1] > allowed[1] \
+                        || (found[1] == allowed[1] && found[2] > allowed[2])) {
+                        print "GLIBC_" version
+                        exit
+                    }
+                }
+            '
+    )
+    if [ -n "$newer" ]; then
+        echo "$path imports $newer, newer than GLIBC_$minimum_glibc" >&2
+        exit 1
+    fi
+}
+
 validate_linux_sdk_runtime() {
     triple=$1
     description_pattern=$2
-    target_root="$linux_sdk_root/swift-linux/$triple/ubuntu-noble.sdk"
+    triple_root="$linux_sdk_root/swift-linux/$triple"
+    target_root="$triple_root/$linux_sdk_directory"
     toolset="$linux_sdk_root/swift-linux/$triple/toolset.json"
     if [ ! -f "$toolset" ]; then
         echo "missing Linux SDK toolset: $toolset" >&2
@@ -87,6 +113,22 @@ PY
         echo "missing Linux SDK target root: $target_root" >&2
         exit 1
     fi
+    /usr/bin/python3 - "$linux_sdk_root/swift-linux/swift-sdk.json" \
+        "$triple_root/swift-sdk.json" "$triple" "$linux_sdk_directory" <<'PY'
+import json
+import sys
+
+root_path, triple_path, triple, sdk_directory = sys.argv[1:]
+for path, key in ((root_path, triple), (triple_path, triple)):
+    with open(path, encoding="utf-8") as stream:
+        metadata = json.load(stream)
+    target = metadata["targetTriples"][key]
+    sdk_root = target["sdkRootPath"]
+    if not sdk_root.endswith(sdk_directory):
+        raise SystemExit(f"Linux SDK metadata has the wrong SDK root: {path}: {sdk_root}")
+    if "ubuntu" in json.dumps(metadata).lower():
+        raise SystemExit(f"Linux SDK metadata exposes its assembly distribution: {path}")
+PY
     if find "$target_root" \
         \( -name 'libstdc++*' -o -name 'libstdcxx*' \) -print -quit \
         | grep -q .; then
@@ -96,7 +138,14 @@ PY
     while IFS= read -r path; do
         description=$(/usr/bin/file "$path")
         case "$description" in
-            *ELF*) reject_libstdcxx "$path" ;;
+            *ELF*)
+                reject_libstdcxx "$path"
+                case "$path" in
+                    */usr/lib/swift/*|*/libc++.so.*|*/libc++abi.so.*|*/libunwind.so.*)
+                        reject_newer_glibc_imports "$path"
+                        ;;
+                esac
+                ;;
         esac
     done <<EOF
 $(find "$target_root" -type f \( -name '*.so' -o -name '*.so.*' -o -perm -111 \) -print)
@@ -141,11 +190,13 @@ require_file_description "$linux_arm64" "ELF 64-bit LSB pie executable, ARM aarc
 require_interpreter "$linux_arm64" "/lib/ld-linux-aarch64.so.1"
 reject_libstdcxx "$linux_arm64"
 require_libcxx "$linux_arm64"
+reject_newer_glibc_imports "$linux_arm64"
 
 require_file_description "$linux_amd64" "ELF 64-bit LSB pie executable, x86-64"
 require_interpreter "$linux_amd64" "/lib64/ld-linux-x86-64.so.2"
 reject_libstdcxx "$linux_amd64"
 require_libcxx "$linux_amd64"
+reject_newer_glibc_imports "$linux_amd64"
 validate_linux_sdk_runtime \
     aarch64-unknown-linux-gnu \
     "ELF 64-bit LSB shared object, ARM aarch64"

@@ -215,6 +215,20 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         self.swiftExecutable = swiftExecutable
     }
 
+    /// Typed artifacts required to execute this invocation. Logical SwiftPM
+    /// requirements retain these producer edges so selection includes every
+    /// prerequisite before the requirements are lowered into physical tasks.
+    public var artifactReferences: [AnyArtifactReference] {
+        var references: [AnyArtifactReference] = []
+        if case .artifact(let compiler) = swiftExecutable {
+            references.append(compiler)
+        }
+        if case .oci(let configuration) = context.execution {
+            references.append(AnyArtifactReference(configuration.image))
+        }
+        return references
+    }
+
     public var identityInput: ArtifactInput {
         .swiftBuildContext(context)
     }
@@ -353,10 +367,22 @@ public struct SwiftPMInvocation: Hashable, Sendable {
             intelBinaryTranslationPolicy: configuration.intelBinaryTranslationPolicy,
             resourceLimits: configuration.resourceLimits,
             containerEnvironment: containerEnvironment,
-            command: configuration.commandPrefix + processorAffinityArguments + ["swift"]
+            command: configuration.commandPrefix + processorAffinityArguments
+                + [ociSwiftExecutable]
                 + commandArguments(arguments),
             environment: environment,
             output: output)
+    }
+
+    private var ociSwiftExecutable: String {
+        switch swiftExecutable {
+        case .named(let name), .operationalNamed(let name):
+            name
+        case .path(let path), .taskOutput(let path):
+            path.string
+        case .artifact(let reference):
+            reference.path.string
+        }
     }
 
     public func ociExecutableExecution(

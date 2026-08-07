@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -93,10 +94,6 @@ struct MountMutation {
 // by a single `didFinishTransaction(surfaceId)` to mark the batch
 // boundary.
 //
-// The concrete subclass `SwiftMountingObserverBridge` (defined in
-// `swift/Sources/NucleusReactRuntime/cxx/SwiftMountingObserverBridge.cpp`)
-// holds a Swift `SwiftMountingObserver` instance through the emitted
-// `NucleusReactRuntimeCxx.h` and forwards both calls to Swift.
 class MountingObserver {
  public:
   virtual ~MountingObserver() = default;
@@ -104,17 +101,11 @@ class MountingObserver {
   virtual void didFinishTransaction(std::int32_t surfaceId) = 0;
 };
 
-// Wraps a Swift `SwiftMountingObserver` instance in a concrete C++
-// `MountingObserver`. `swiftObserverRetained` must be the result of
-// `SwiftMountingObserver.toUnsafe()` (an `Unmanaged.passRetained`
-// pointer); ownership transfers into the returned bridge.
-//
-// Using `void *` keeps this public header free of Swift-emitted
-// types so it stays inside the Swift module's modulemap without
-// creating an import cycle. The bridge `.cpp` `#include`s
-// `<NucleusReactRuntimeCxx.h>` and converts the pointer back to the
-// typed Swift instance via `SwiftMountingObserver::fromUnsafe`.
-std::shared_ptr<MountingObserver> makeSwiftMountingObserverBridge(
-    void *swiftObserverRetained);
+using MountDidMount = std::function<void(const MountMutation &mutation)>;
+using MountDidFinish = std::function<void(std::int32_t surfaceId)>;
+
+std::shared_ptr<MountingObserver> makeMountingObserver(
+    MountDidMount didMount,
+    MountDidFinish didFinish) noexcept;
 
 } // namespace nucleus::react

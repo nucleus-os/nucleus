@@ -155,6 +155,44 @@ private func fixtureReactNativeNodeModules(
         validation: .nonEmptyDirectory)
 }
 
+@Test func linuxBuildLanesUseMatchingCompilerArchitectures() throws {
+    let environment = ["HOME": "/tmp/nucleus-fixture"]
+    let registry = ComponentRegistry(
+        context: WorkspaceContext(
+            root: fixtureRepositoryRoot,
+            environment: environment))
+    let builder = try fixtureNativeBuilder(
+        context: fixtureRepositoryRoot.appending("core/build-container"),
+        imageID: FilePath("/cache/native/image-id"),
+        ccache: FilePath("/cache/native/ccache"),
+        swiftSDKRoot: FilePath("/cache/swift-sdks"),
+        environment: environment)
+
+    let arm64 = try registry.linuxSwiftPMInvocation(
+        architecture: .arm64,
+        builder: builder)
+    let x86_64 = try registry.linuxSwiftPMInvocation(
+        architecture: .x86_64,
+        builder: builder)
+
+    #expect(
+        arm64.swiftExecutable
+            == .path(FilePath("/opt/swift/usr/bin/swift")))
+    #expect(
+        x86_64.swiftExecutable
+            == .path(FilePath("/opt/swift-x86_64/usr/bin/swift")))
+    #expect(
+        NativeLinuxTarget(architecture: .arm64).containerSwiftSDKRoot
+            .hasSuffix(
+                "/aarch64-unknown-linux-gnu/"
+                    + NucleusLinuxABI.sdkDirectoryName))
+    #expect(
+        NativeLinuxTarget(architecture: .x86_64).containerSwiftSDKRoot
+            .hasSuffix(
+                "/x86_64-unknown-linux-gnu/"
+                    + NucleusLinuxABI.sdkDirectoryName))
+}
+
 @Test func reactNativeDependencyInstallRejectsContainerFailure() async throws {
     let root = FilePath("/workspace/react-native")
     let task = try ReactNativeColliderRecipe.installJavaScriptDependencies(

@@ -5,7 +5,7 @@ import Testing
 @Suite
 struct TextLayoutConcurrencyTests {
     @Test func fabricMeasurementRunsConcurrentlyThroughSendableManager() async {
-        let manager = SwiftTextLayoutManager(DefaultTextLayoutHandler())
+        let manager = DefaultTextLayoutHandler()
         let results = await withTaskGroup(
             of: (Float, Float).self,
             returning: [(Float, Float)].self

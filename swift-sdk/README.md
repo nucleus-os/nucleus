@@ -38,8 +38,10 @@ The root gitlinks are the sole source-revision authority. The runtime source
 closure is `libxml2`, `llvm-project`, `swift`, `swift-collections`,
 `swift-corelibs-foundation`, `swift-corelibs-libdispatch`,
 `swift-corelibs-xctest`, `swift-experimental-string-processing`,
-`swift-foundation`, `swift-foundation-icu`, `swift-testing`, and
-`swift-sdk-generator`. Repositories for compiler tooling, IDE services,
+`swift-foundation`, `swift-foundation-icu`, and `swift-testing`. The
+`swift-sdk-generator` gitlink is a separate SDK-assembly input: changing it
+changes the published SDK generation without invalidating either target-runtime
+build. Repositories for compiler tooling, IDE services,
 documentation tools, package management, and unrelated platforms are not SDK
 build inputs. Collider reads the gitlinks from the root index, requires each
 checked-out submodule to be clean and at that commit, and fingerprints those
@@ -86,5 +88,6 @@ fixture, and validator reuse the active immutable generation without rebuilding,
 downloading, assembling, validating, or publishing it again.
 Runtime build products and ccache live outside the source submodules and remain
 reusable when a later source-addressed generation needs work. Runtime task identity
-depends only on the runtime package subset, so changing an SDK-only package rebuilds
-assembly and validation without rebuilding Swift.
+depends only on the runtime source gitlinks. The full SDK generation identity also
+includes the exact `swift-sdk-generator` gitlink, so a generator-only change rebuilds
+assembly and validation while reusing both target runtimes.

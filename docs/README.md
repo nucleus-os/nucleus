@@ -21,10 +21,11 @@ Execute the implementation plans in this order:
 
 1. [Collider architecture simplification](collider-architecture-simplification-plan.md)
 2. [Manifest portability](manifest-portability-plan.md)
-3. [Wayland dispatch isolation](wayland-dispatch-isolation-and-handler-binding-plan.md)
-4. [Collider storage lifecycle](collider-storage-lifecycle-plan.md)
-5. [Collider CLI and terminal UX](collider-cli-ux-plan.md)
-6. [Android application integration](android-application-integration-plan.md)
+3. [Linux distribution portability](linux-distribution-portability-plan.md)
+4. [Wayland dispatch isolation](wayland-dispatch-isolation-and-handler-binding-plan.md)
+5. [Collider storage lifecycle](collider-storage-lifecycle-plan.md)
+6. [Collider CLI and terminal UX](collider-cli-ux-plan.md)
+7. [Android application integration](android-application-integration-plan.md)
 
 Component implementation plans continue in the dependency order in
 [core/docs/README.md](../core/docs/README.md).

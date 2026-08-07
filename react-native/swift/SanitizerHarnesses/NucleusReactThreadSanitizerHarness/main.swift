@@ -1,6 +1,7 @@
-import Foundation // FileHandle and NSString support the subprocess sanitizer harness.
+import Foundation  // FileHandle and NSString support the subprocess sanitizer harness.
 import Glibc
-import NucleusReactFabricSmokeC
+import NucleusReactRuntimeCxx
+import Synchronization
 
 private enum HarnessFailure: Error {
     case process(String)
@@ -15,26 +16,34 @@ enum NucleusReactThreadSanitizerHarness {
         .deletingLastPathComponent()
         .deletingLastPathComponent().path
 
+    @MainActor
     static func main() {
         do {
-            guard nucleus_rn_mount_batching_smoke() == 0,
-                  nucleus_rn_mount_lifecycle_smoke() == 0,
-                  nucleus_rn_mount_event_payload_smoke() == 0,
-                  nucleus_rn_command_handler_ownership_smoke() == 0
-            else {
-                exit(2)
-            }
-
             let bytecode = try makeBytecode()
             defer {
                 try? FileManager.default.removeItem(
                     at: URL(fileURLWithPath: bytecode)
                         .deletingLastPathComponent())
             }
-            let result = bytecode.withCString {
-                unsafe nucleus_rn_js_work_wake_smoke($0)
+            let wakes = Mutex(0)
+            let host = try RuntimeHost()
+            try host.setJSWorkWakeHandler {
+                wakes.withLock { $0 += 1 }
             }
-            exit(result == 0 ? 0 : 3)
+            try host.evaluateBytecode(at: bytecode)
+            let deadline = ContinuousClock.now + .seconds(2)
+            while wakes.withLock({ $0 }) == 0,
+                ContinuousClock.now < deadline
+            {
+                usleep(1_000)
+            }
+            usleep(20_000)
+            guard wakes.withLock({ $0 }) == 1,
+                try host.drainPendingJSCalls() > 0
+            else {
+                exit(3)
+            }
+            exit(0)
         } catch {
             FileHandle.standardError.write(
                 Data("RN TSan harness error: \(error)\n".utf8))
@@ -64,7 +73,8 @@ enum NucleusReactThreadSanitizerHarness {
                 environment["LD_LIBRARY_PATH"],
             ].compactMap { $0 }.joined(separator: ":")
         }
-        let hermesc = root
+        let hermesc =
+            root
             + "/react-native/.rn-build/hermes/bin/hermesc"
         let result = try spawn(
             executable: hermesc,
@@ -112,24 +122,27 @@ enum NucleusReactThreadSanitizerHarness {
 
         var descriptors = [Int32](repeating: -1, count: 2)
         if captureOutput {
-            guard descriptors.withUnsafeMutableBufferPointer({
-                unsafe pipe($0.baseAddress!)
-            }) == 0,
-            unsafe posix_spawn_file_actions_adddup2(
-                &actions, descriptors[1], STDOUT_FILENO) == 0,
-            unsafe posix_spawn_file_actions_addclose(
-                &actions, descriptors[0]) == 0,
-            unsafe posix_spawn_file_actions_addclose(
-                &actions, descriptors[1]) == 0
+            guard
+                descriptors.withUnsafeMutableBufferPointer({
+                    unsafe pipe($0.baseAddress!)
+                }) == 0,
+                unsafe posix_spawn_file_actions_adddup2(
+                    &actions, descriptors[1], STDOUT_FILENO) == 0,
+                unsafe posix_spawn_file_actions_addclose(
+                    &actions, descriptors[0]) == 0,
+                unsafe posix_spawn_file_actions_addclose(
+                    &actions, descriptors[1]) == 0
             else {
                 throw HarnessFailure.process("output pipe setup failed")
             }
         }
 
-        let argv = unsafe ([executable] + arguments).map {
-            $0.withCString { unsafe strdup($0) }
-        } + [nil]
-        let environmentPointers = unsafe environment
+        let argv =
+            unsafe ([executable] + arguments).map {
+                $0.withCString { unsafe strdup($0) }
+            } + [nil]
+        let environmentPointers =
+            unsafe environment
             .map { "\($0.key)=\($0.value)" }
             .sorted()
             .map { value in
@@ -190,6 +203,7 @@ enum NucleusReactThreadSanitizerHarness {
         let signal = waitStatus & 0x7f
         return (
             signal == 0 ? (waitStatus >> 8) & 0xff : 128 + signal,
-            output)
+            output
+        )
     }
 }

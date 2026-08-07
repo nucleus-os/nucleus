@@ -177,7 +177,7 @@ extension InputDispatch {
 
         seatDelivery.keyboardKey(
             surfaceID: target, timeMsec: timeMsec, keycode: keycode, keyState: pressed ? 1 : 0)
-        InputLatencyProbe.markDelivery(.keyboardKey)
+        InputLatencyMetrics.markDelivery(.keyboardKey)
         seatDelivery.keyboardModifiers(
             surfaceID: target, depressed: modsAfter.depressed, latched: modsAfter.latched,
             locked: modsAfter.locked, group: modsAfter.group)

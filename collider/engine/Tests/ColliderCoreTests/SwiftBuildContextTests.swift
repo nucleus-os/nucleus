@@ -261,7 +261,22 @@ private let fixturePackageRoot = FilePath("/workspace")
         execution: .oci(execution))
     let invocation = SwiftPMInvocation(
         context: context,
-        scratchPath: FilePath("/workspace/.nucleus/swiftpm/linux-amd64"))
+        scratchPath: FilePath("/workspace/.nucleus/swiftpm/linux-amd64"),
+        swiftExecutable: .path(
+            FilePath("/opt/swift-x86_64/usr/bin/swift")))
+
+    #expect(invocation.artifactReferences.map(\.path) == [imageID])
+    let logicalTest = TaskBuilder(
+        id: TaskID(rawValue: "fixture.test"),
+        component: ComponentID(rawValue: "fixture")
+    ).build(swiftTests: [
+        invocation.testProduct(
+            package: "fixture",
+            testProduct: "FixtureTests",
+            packageRoot: fixturePackageRoot,
+            environment: [:])
+    ])
+    #expect(logicalTest.dependencies == [TaskID(rawValue: "native.builder")])
 
     let operation = try invocation.ociExecution(
         arguments: ["test"],
@@ -276,7 +291,8 @@ private let fixturePackageRoot = FilePath("/workspace")
     #expect(operation.intelBinaryTranslationPolicy == .required)
     #expect(
         operation.command.starts(with: [
-            "swiftpm", "taskset", "--cpu-list", "0-9", "swift", "test",
+            "swiftpm", "taskset", "--cpu-list", "0-9",
+            "/opt/swift-x86_64/usr/bin/swift", "test",
         ]))
     #expect(operation.containerEnvironment["PATH"] == nil)
     #expect(operation.containerEnvironment["NUCLEUS_NATIVE_SDK_ROOT"] == nil)

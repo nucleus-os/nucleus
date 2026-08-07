@@ -82,7 +82,7 @@ public struct AnyArtifactReference: Hashable, Sendable {
     public let path: FilePath
     package let kind: ArtifactValueKind
 
-    fileprivate init<Value>(_ reference: ArtifactReference<Value>) {
+    package init<Value>(_ reference: ArtifactReference<Value>) {
         producer = reference.producer
         slot = reference.slot
         path = reference.path

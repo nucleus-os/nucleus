@@ -1,12 +1,4 @@
-// Bridge file: C++ holds a Swift `SwiftTextLayoutManager` instance
-// and forwards `facebook::react::TextLayoutManager::measure(...)`
-// virtual calls into Swift. Catalog item 7's production-shape
-// application of the pattern proven by `SwiftMountingObserverBridge.cpp`.
-//
-// `<NucleusReactRuntimeCxx.h>` is only reachable through the
-// umbrella, never from any modulemap-visible header.
-
-#include <NucleusReactRuntime/SwiftCxxUmbrella.hpp>
+#include <NucleusReactRuntime/TextLayoutManager.hpp>
 
 #include <react/renderer/attributedstring/AttributedString.h>
 #include <react/renderer/attributedstring/AttributedStringBox.h>
@@ -115,11 +107,11 @@ class SwiftTextLayoutManagerBridge final
     : public facebook::react::TextLayoutManager {
  public:
   SwiftTextLayoutManagerBridge(
-      NucleusReactRuntimeCxx::SwiftTextLayoutManager swift,
+      TextMeasureFunction measure,
       const std::shared_ptr<const facebook::react::ContextContainer>
           &contextContainer)
       : facebook::react::TextLayoutManager(contextContainer),
-        swiftPart_(std::move(swift)) {}
+        measure_(std::move(measure)) {}
 
   facebook::react::TextMeasurement measure(
       const facebook::react::AttributedStringBox &attributedStringBox,
@@ -132,7 +124,7 @@ class SwiftTextLayoutManagerBridge final
         attributedStringBox, paragraphAttributes, layoutConstraints);
     const auto attachmentCount = request.attachmentCount;
 
-    TextMeasureResult result = swiftPart_.measure(request);
+    TextMeasureResult result = measure_(request);
 
     facebook::react::TextMeasurement::Attachments attachments;
     attachments.reserve(attachmentCount);
@@ -154,19 +146,24 @@ class SwiftTextLayoutManagerBridge final
   }
 
  private:
-  mutable NucleusReactRuntimeCxx::SwiftTextLayoutManager swiftPart_;
+  TextMeasureFunction measure_;
 };
 
 } // namespace
 
 std::shared_ptr<facebook::react::TextLayoutManager>
-makeSwiftTextLayoutManagerBridge(
-    void *swiftHandlerRetained,
-    std::shared_ptr<const facebook::react::ContextContainer> contextContainer) {
-  auto swift = NucleusReactRuntimeCxx::SwiftTextLayoutManager::fromUnsafe(
-      swiftHandlerRetained);
-  return std::make_shared<SwiftTextLayoutManagerBridge>(
-      std::move(swift), contextContainer);
+makeTextLayoutManager(
+    TextMeasureFunction measure,
+    std::shared_ptr<const facebook::react::ContextContainer> contextContainer) noexcept {
+  if (!measure) {
+    return {};
+  }
+  try {
+    return std::make_shared<SwiftTextLayoutManagerBridge>(
+        std::move(measure), contextContainer);
+  } catch (...) {
+    return {};
+  }
 }
 
 TextMeasureRequest makeSingleRunMeasureRequest(
@@ -190,16 +187,6 @@ TextMeasureRequest makeSingleRunMeasureRequest(
   request.maximumWidth = maximumWidth > 0.0f ? maximumWidth : 0.0f;
   request.attachmentCount = 0;
   return request;
-}
-
-void releaseSwiftTextLayoutManagerHandle(void *swiftHandlerRetained) {
-  if (swiftHandlerRetained == nullptr) {
-    return;
-  }
-  // `fromUnsafe` is `takeRetainedValue`; letting the returned value
-  // go out of scope drops the retain.
-  (void)NucleusReactRuntimeCxx::SwiftTextLayoutManager::fromUnsafe(
-      swiftHandlerRetained);
 }
 
 } // namespace nucleus::react

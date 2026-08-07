@@ -43,7 +43,7 @@ package struct NativeLinuxTarget: Hashable, Sendable {
 
     package var containerSwiftSDKRoot: String {
         "/swift-sdk/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
-            + targetTriple + "/ubuntu-noble.sdk"
+            + targetTriple + "/" + NucleusLinuxABI.sdkDirectoryName
     }
 
     package var containerRuntimeLibraryPath: String {

@@ -109,7 +109,7 @@ final class InputDispatch {
     /// Dispatch one event. `location` selects whether the shortcut tap runs.
     func dispatch(_ record: WireEventRecord, location: TapLocation = .hid) -> Result {
         var submitted = record
-        InputLatencyProbe.beginHidEvent()
+        InputLatencyMetrics.beginHidEvent()
         host.runtime?.idle.noteUserInput(
             atMs: Self.monotonicNowNs() / 1_000_000)
 

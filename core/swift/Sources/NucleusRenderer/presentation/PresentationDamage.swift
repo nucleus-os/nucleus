@@ -5,7 +5,7 @@
 // and the rect/region math (clamp, coverage, blur reconciliation).
 //
 // The walk's renderer reads (subtree-animation queries) are abstracted behind
-// `DamageAnimationProbe`; accumulated coverage uses the shared canonical `Region`.
+// `DamageAnimationState`; accumulated coverage uses the shared canonical `Region`.
 
 /// A damage rectangle in device-pixel space. Mirrors `damage.Rect`
 /// (`cg_display.PhysicalRect`).
@@ -205,7 +205,7 @@ struct LayerDamageFacts {
 
 /// Renderer subtree-animation query, abstracted from the damage walk. Mirrors
 /// `composition.render_server.subtreeHasActiveAnimations`.
-protocol DamageAnimationProbe {
+protocol DamageAnimationState {
     func subtreeHasActiveAnimations(_ layerId: UInt64) -> Bool
 }
 
@@ -346,10 +346,14 @@ final class DamageTracker {
 
     func applyLayerFacts(
         _ state: FrameDamageCache, _ facts: LayerDamageFacts, _ sinks: DamageSinks,
-        _ probe: any DamageAnimationProbe
+        _ animationState: any DamageAnimationState
     ) {
-        if let fact = facts.remoteHost { trackRemoteHostDamage(state, fact, sinks, probe) }
-        if let fact = facts.nativeLayer { trackNativeLayerDamage(state, fact, sinks, probe) }
+        if let fact = facts.remoteHost {
+            trackRemoteHostDamage(state, fact, sinks, animationState)
+        }
+        if let fact = facts.nativeLayer {
+            trackNativeLayerDamage(state, fact, sinks, animationState)
+        }
         if let fact = facts.external {
             addRect(sinks, sourceForExternal(fact.source), fact.visibleRect)
         }
@@ -357,7 +361,7 @@ final class DamageTracker {
 
     func trackNativeLayerDamage(
         _ state: FrameDamageCache, _ fact: NativeLayerDamageFact,
-        _ sinks: DamageSinks, _ probe: any DamageAnimationProbe
+        _ sinks: DamageSinks, _ animationState: any DamageAnimationState
     ) {
         if !nativeLayerFrameActive { return }
         let key = NativeLayerKey(outputId: fact.outputId, layerId: fact.layerId)
@@ -378,7 +382,7 @@ final class DamageTracker {
             changed = true
         }
 
-        if probe.subtreeHasActiveAnimations(fact.layerId) { changed = true }
+        if animationState.subtreeHasActiveAnimations(fact.layerId) { changed = true }
 
         if changed && !currentAdded {
             addRect(sinks, .nativeLayer, current.visibleRect)
@@ -388,7 +392,7 @@ final class DamageTracker {
 
     func trackRemoteHostDamage(
         _ state: FrameDamageCache, _ fact: RemoteHostDamageFact,
-        _ sinks: DamageSinks, _ probe: any DamageAnimationProbe
+        _ sinks: DamageSinks, _ animationState: any DamageAnimationState
     ) {
         if !remoteHostFrameActive { return }
         remoteHostStats.seen += 1
@@ -431,7 +435,7 @@ final class DamageTracker {
             changed = true
         }
 
-        if probe.subtreeHasActiveAnimations(current.rootLayerId) {
+        if animationState.subtreeHasActiveAnimations(current.rootLayerId) {
             remoteHostStats.activeSubtreeAnimation += 1
         }
 

@@ -1,7 +1,8 @@
 import Dispatch
-import NucleusReactFabricSmokeC
+import NucleusReactRuntimeCxx
 internal import NucleusUI
 import Synchronization
+import Testing
 
 private final class MountTestDrainScheduler: Sendable {
     private struct State: Sendable {
@@ -54,8 +55,7 @@ private func mountTestContext(
         environment: ReactSurfaceEnvironment())
 }
 
-@c @implementation
-public func nucleus_rn_mount_batching_smoke() -> Int32 {
+func verifyMountTransactionBatching() -> Int32 {
     return MainActor.assumeIsolated { () -> Int32 in
         let uiContext = UIContext(services: .inMemory())
         return uiContext.construct {
@@ -152,8 +152,7 @@ public func nucleus_rn_mount_batching_smoke() -> Int32 {
     }
 }
 
-@c @implementation
-public func nucleus_rn_mount_lifecycle_smoke() -> Int32 {
+func verifyMountLifecycle() -> Int32 {
     return MainActor.assumeIsolated { () -> Int32 in
         let uiContext = UIContext(services: .inMemory())
         return uiContext.construct {
@@ -269,7 +268,7 @@ public func nucleus_rn_mount_lifecycle_smoke() -> Int32 {
 }
 
 @MainActor
-private func mountEventPayloadSmoke() -> Int32 {
+private func verifyMountEventPayload() -> Int32 {
     let scheduler = MountTestDrainScheduler()
     let consumer = MountConsumer(
         scheduleDrain: scheduler.schedule)
@@ -504,14 +503,26 @@ private func mountEventPayloadSmoke() -> Int32 {
     return 0
 }
 
-@c @implementation
-public func nucleus_rn_mount_event_payload_smoke()
-    -> Int32
-{
+func verifyMountEventPayloadRetention() -> Int32 {
     MainActor.assumeIsolated {
         let uiContext = UIContext(services: .inMemory())
         return uiContext.construct {
-            mountEventPayloadSmoke()
+            verifyMountEventPayload()
         }
+    }
+}
+
+@MainActor
+@Suite struct MountConsumerTests {
+    @Test func transactionsShareOneOrderedDrainPerBurst() {
+        #expect(verifyMountTransactionBatching() == 0)
+    }
+
+    @Test func retirementRejectsPriorGenerationsAndReclaimsState() {
+        #expect(verifyMountLifecycle() == 0)
+    }
+
+    @Test func eventsRetainOnlyMutationSpecificPayloads() {
+        #expect(verifyMountEventPayloadRetention() == 0)
     }
 }

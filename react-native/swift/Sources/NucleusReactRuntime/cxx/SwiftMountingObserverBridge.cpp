@@ -1,14 +1,4 @@
-// Bridge file: C++ holds a Swift `SwiftMountingObserver` instance
-// and forwards `MountingObserver::didMount(...)` virtual calls into
-// Swift. This is catalog item 1's production-shape application of
-// the pattern proven by `CxxVirtualOverrideBridge.cpp`.
-//
-// `<NucleusReactRuntimeCxx.h>` is only reachable through the
-// umbrella, not from any modulemap-visible header — including the
-// emitted header through the modulemap would form a cycle where the
-// Swift module imports its own emitted output during compilation.
-
-#include <NucleusReactRuntime/SwiftCxxUmbrella.hpp>
+#include <NucleusReactRuntime/MountingObserver.hpp>
 
 #include <memory>
 #include <utility>
@@ -19,29 +9,36 @@ namespace {
 
 class SwiftMountingObserverBridge final : public MountingObserver {
  public:
-  explicit SwiftMountingObserverBridge(
-      NucleusReactRuntimeCxx::SwiftMountingObserver swift)
-      : swiftPart_(std::move(swift)) {}
+  SwiftMountingObserverBridge(MountDidMount didMount, MountDidFinish didFinish)
+      : didMount_(std::move(didMount)), didFinish_(std::move(didFinish)) {}
 
   void didMount(const MountMutation &mutation) override {
-    swiftPart_.didMount(mutation);
+    didMount_(mutation);
   }
 
   void didFinishTransaction(std::int32_t surfaceId) override {
-    swiftPart_.didFinishTransaction(surfaceId);
+    didFinish_(surfaceId);
   }
 
  private:
-  NucleusReactRuntimeCxx::SwiftMountingObserver swiftPart_;
+  MountDidMount didMount_;
+  MountDidFinish didFinish_;
 };
 
 } // namespace
 
-std::shared_ptr<MountingObserver> makeSwiftMountingObserverBridge(
-    void *swiftObserverRetained) {
-  auto swift = NucleusReactRuntimeCxx::SwiftMountingObserver::fromUnsafe(
-      swiftObserverRetained);
-  return std::make_shared<SwiftMountingObserverBridge>(std::move(swift));
+std::shared_ptr<MountingObserver> makeMountingObserver(
+    MountDidMount didMount,
+    MountDidFinish didFinish) noexcept {
+  if (!didMount || !didFinish) {
+    return {};
+  }
+  try {
+    return std::make_shared<SwiftMountingObserverBridge>(
+        std::move(didMount), std::move(didFinish));
+  } catch (...) {
+    return {};
+  }
 }
 
 } // namespace nucleus::react
