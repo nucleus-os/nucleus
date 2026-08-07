@@ -328,7 +328,7 @@ struct MacOSBuilderDoctor {
                 "install the signed pinned package and provision the persistent login-session service"
         ) {
             guard
-                let health = try? await appleContainerBackendHealth(),
+                let health = try? await context.runtime.ociRuntimeHealth(),
                 let detail = Self.containerSystemDetail(
                     health, contract: contract)
             else { return nil }
@@ -349,7 +349,7 @@ struct MacOSBuilderDoctor {
                 "run container network create --internal \(contract.appleContainer.network)"
         ) {
             guard
-                let network = try? await appleContainerNetwork(
+                let network = try? await context.runtime.ociRuntimeNetwork(
                     named: contract.appleContainer.network),
                 let detail = Self.hostOnlyNetworkDetail(
                     network, contract: contract)
@@ -447,7 +447,7 @@ struct MacOSBuilderDoctor {
     }
 
     static func containerSystemDetail(
-        _ health: AppleContainerBackendHealth,
+        _ health: OCIRuntimeHealth,
         contract: MacOSBuilderContract
     ) -> String? {
         guard
@@ -466,7 +466,7 @@ struct MacOSBuilderDoctor {
     }
 
     static func hostOnlyNetworkDetail(
-        _ network: AppleContainerNetworkState,
+        _ network: OCIRuntimeNetworkState,
         contract: MacOSBuilderContract
     ) -> String? {
         guard

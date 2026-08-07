@@ -1,131 +1,148 @@
 import ColliderCore
+import ColliderRuntime
 import Foundation
 import Logging
 import SystemPackage
 
 #if os(macOS)
 import ContainerAPIClient
+import ContainerBuild
 import ContainerCommands
 import ContainerResource
 import ContainerizationOCI
 #endif
 
-public struct AppleContainerBackendHealth: Sendable {
-    public let appRoot: URL
-    public let installRoot: URL
-    public let apiServerVersion: String
-    public let apiServerCommit: String
-    public let apiServerBuild: String
-    public let apiServerAppName: String
-
-    public init(
-        appRoot: URL,
-        installRoot: URL,
-        apiServerVersion: String,
-        apiServerCommit: String,
-        apiServerBuild: String,
-        apiServerAppName: String
-    ) {
-        self.appRoot = appRoot
-        self.installRoot = installRoot
-        self.apiServerVersion = apiServerVersion
-        self.apiServerCommit = apiServerCommit
-        self.apiServerBuild = apiServerBuild
-        self.apiServerAppName = apiServerAppName
-    }
-}
-
-public struct AppleContainerNetworkState: Equatable, Sendable {
-    public let name: String
-    public let mode: String
-
-    public init(name: String, mode: String) {
-        self.name = name
-        self.mode = mode
-    }
-}
-
-public struct AppleContainerResourceUsage: Codable, Equatable, Sendable {
-    public let active: Int
-    public let reclaimable: UInt64
-    public let sizeInBytes: UInt64
-    public let total: Int
-
-    public init(active: Int, reclaimable: UInt64, sizeInBytes: UInt64, total: Int) {
-        self.active = active
-        self.reclaimable = reclaimable
-        self.sizeInBytes = sizeInBytes
-        self.total = total
-    }
-}
-
-public struct AppleContainerDiskUsage: Codable, Equatable, Sendable {
-    public let containers: AppleContainerResourceUsage
-    public let images: AppleContainerResourceUsage
-    public let volumes: AppleContainerResourceUsage
-
-    public init(
-        containers: AppleContainerResourceUsage,
-        images: AppleContainerResourceUsage,
-        volumes: AppleContainerResourceUsage
-    ) {
-        self.containers = containers
-        self.images = images
-        self.volumes = volumes
-    }
-
-    public var reclaimableBytes: UInt64 {
-        containers.reclaimable &+ images.reclaimable &+ volumes.reclaimable
-    }
-}
-
 #if os(macOS)
-public func appleContainerBackendHealth() async throws
-    -> AppleContainerBackendHealth
-{
-    let health = try await ClientHealthCheck.ping()
-    return AppleContainerBackendHealth(
-        appRoot: health.appRoot,
-        installRoot: health.installRoot,
-        apiServerVersion: health.apiServerVersion,
-        apiServerCommit: health.apiServerCommit,
-        apiServerBuild: health.apiServerBuild,
-        apiServerAppName: health.apiServerAppName)
-}
+enum AppleContainerFailure: Error, CustomStringConvertible {
+    case builderReleaseFailed(operation: String, cleanup: String)
+    case cleanupFailed(name: String, reason: String)
+    case invalidImageDigest
+    case suspensionFailed(name: String, reason: String)
+    case unsupportedTerminalOutput
 
-public func appleContainerNetwork(named name: String) async throws
-    -> AppleContainerNetworkState
-{
-    let network = try await NetworkClient().get(id: name)
-    return AppleContainerNetworkState(
-        name: network.configuration.name,
-        mode: network.configuration.mode.rawValue)
-}
-
-public func appleContainerDiskUsage() async throws -> AppleContainerDiskUsage {
-    let usage = try await ClientDiskUsage.get()
-    func project(_ value: ResourceUsage) -> AppleContainerResourceUsage {
-        AppleContainerResourceUsage(
-            active: value.active,
-            reclaimable: value.reclaimable,
-            sizeInBytes: value.sizeInBytes,
-            total: value.total)
+    var description: String {
+        switch self {
+        case .builderReleaseFailed(let operation, let cleanup):
+            "Apple container image preparation failed (\(operation)) and the "
+                + "ephemeral builder could not be released (\(cleanup))"
+        case .cleanupFailed(let name, let reason):
+            "Apple container cleanup failed for \(name): \(reason)"
+        case .invalidImageDigest:
+            "Apple container image API did not return one OCI digest"
+        case .suspensionFailed(let name, let reason):
+            "Apple container suspension failed for \(name): \(reason)"
+        case .unsupportedTerminalOutput:
+            "Apple container lifecycle execution does not support terminal output"
+        }
     }
-    return AppleContainerDiskUsage(
-        containers: project(usage.containers),
-        images: project(usage.images),
-        volumes: project(usage.volumes))
 }
 
-public func pruneAppleContainerImages() async throws {
-    for image in try await ClientImage.list() {
-        let reference = try ContainerizationOCI.Reference.parse(image.reference)
-        guard reference.tag == nil else { continue }
-        try await ClientImage.delete(
-            reference: image.reference,
-            garbageCollect: false)
+public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
+    public init() {}
+
+    public func prepareImage(
+        _ preparation: OCIImagePreparation
+    ) async throws -> String {
+        try validateRunner()
+        let suspension = AppleContainerSuspension(
+            client: ContainerClient(),
+            name: Builder.builderContainerId)
+        do {
+            let imageID = try await AppleContainerImageBuilder().build(preparation)
+            try await suspension.stopAndVerify()
+            return imageID
+        } catch {
+            let preparationError = error
+            do {
+                try await suspension.stopAndVerify()
+            } catch {
+                throw AppleContainerFailure.builderReleaseFailed(
+                    operation: String(describing: preparationError),
+                    cleanup: String(describing: error))
+            }
+            throw preparationError
+        }
     }
-    _ = try await ClientImage.cleanUpOrphanedBlobs()
+
+    public func execute(
+        _ request: OCIRuntimeExecutionRequest
+    ) async throws -> CommandResult {
+        try validateRunner()
+        let name = appleContainerName(for: request.execution)
+        return try await AppleContainerLifecycle(
+            cancellation: request.cancellation,
+            configuration: request.configuration
+        ).execute(
+            request.execution,
+            name: name,
+            imageReference: request.imageReference,
+            temporaryDirectory: request.temporaryDirectory,
+            output: request.output,
+            logging: request.logging,
+            stage: request.stage)
+    }
+
+    public func health() async throws -> OCIRuntimeHealth {
+        try validateRunner()
+        let health = try await ClientHealthCheck.ping()
+        return OCIRuntimeHealth(
+            appRoot: health.appRoot,
+            installRoot: health.installRoot,
+            apiServerVersion: health.apiServerVersion,
+            apiServerCommit: health.apiServerCommit,
+            apiServerBuild: health.apiServerBuild,
+            apiServerAppName: health.apiServerAppName)
+    }
+
+    public func network(named name: String) async throws
+        -> OCIRuntimeNetworkState
+    {
+        try validateRunner()
+        let network = try await NetworkClient().get(id: name)
+        return OCIRuntimeNetworkState(
+            name: network.configuration.name,
+            mode: network.configuration.mode.rawValue)
+    }
+
+    public func diskUsage() async throws -> OCIRuntimeDiskUsage {
+        try validateRunner()
+        let usage = try await ClientDiskUsage.get()
+        func project(_ value: ResourceUsage) -> OCIRuntimeResourceUsage {
+            OCIRuntimeResourceUsage(
+                active: value.active,
+                reclaimable: value.reclaimable,
+                sizeInBytes: value.sizeInBytes,
+                total: value.total)
+        }
+        return OCIRuntimeDiskUsage(
+            containers: project(usage.containers),
+            images: project(usage.images),
+            volumes: project(usage.volumes))
+    }
+
+    public func pruneImages() async throws {
+        try validateRunner()
+        for image in try await ClientImage.list() {
+            let reference = try ContainerizationOCI.Reference.parse(image.reference)
+            guard reference.tag == nil else { continue }
+            try await ClientImage.delete(
+                reference: image.reference,
+                garbageCollect: false)
+        }
+        _ = try await ClientImage.cleanUpOrphanedBlobs()
+    }
+
+    private func validateRunner() throws {
+        guard RunnerPlatform.current.operatingSystem == .macOS,
+            RunnerPlatform.current.architecture == .arm64
+        else {
+            throw OCIExecutorFailure.unsupportedRunner(.current)
+        }
+    }
+}
+
+func appleContainerName(for execution: OCIExecution) -> String {
+    execution.hostname + "-" + UUID().uuidString.prefix(12).lowercased()
 }
 
 struct AppleContainerLifecycle: Sendable {
@@ -194,7 +211,7 @@ struct AppleContainerLifecycle: Sendable {
                     .deleteAndVerify()
             } catch let cleanupError {
                 await cancellation.unregister(cancellationRegistration)
-                throw OCIExecutorFailure.containerCleanupFailed(
+                throw AppleContainerFailure.cleanupFailed(
                     name: name,
                     reason: String(describing: cleanupError))
             }
@@ -428,7 +445,7 @@ actor AppleContainerCleanup {
             }
             try await ContinuousClock().sleep(for: .milliseconds(100))
         } while ContinuousClock().now < deadline
-        throw OCIExecutorFailure.containerCleanupFailed(
+        throw AppleContainerFailure.cleanupFailed(
             name: name,
             reason: lastError.map(String.init(describing:))
                 ?? "container remained registered after forced deletion")
@@ -481,7 +498,7 @@ actor AppleContainerSuspension {
             }
             try await ContinuousClock().sleep(for: .milliseconds(100))
         } while ContinuousClock().now < deadline
-        throw OCIExecutorFailure.containerSuspensionFailed(
+        throw AppleContainerFailure.suspensionFailed(
             name: name,
             reason: lastError.map(String.init(describing:))
                 ?? "container did not reach the stopped state")
@@ -501,7 +518,7 @@ private final class AppleContainerOutputSession: @unchecked Sendable {
         stage: TaskID?
     ) throws {
         guard output != .terminal else {
-            throw OCIExecutorFailure.unsupportedTerminalOutput
+            throw AppleContainerFailure.unsupportedTerminalOutput
         }
         let file: FilePath? =
             switch output {
@@ -735,25 +752,5 @@ private func collectAppleContainerOutput(
     }
     try await sink.finish()
     return captured
-}
-#else
-public func appleContainerBackendHealth() async throws
-    -> AppleContainerBackendHealth
-{
-    throw OCIExecutorFailure.unsupportedRunner(.current)
-}
-
-public func appleContainerNetwork(named name: String) async throws
-    -> AppleContainerNetworkState
-{
-    throw OCIExecutorFailure.unsupportedRunner(.current)
-}
-
-public func appleContainerDiskUsage() async throws -> AppleContainerDiskUsage {
-    throw OCIExecutorFailure.unsupportedRunner(.current)
-}
-
-public func pruneAppleContainerImages() async throws {
-    throw OCIExecutorFailure.unsupportedRunner(.current)
 }
 #endif

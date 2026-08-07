@@ -5,6 +5,7 @@ import Synchronization
 import SystemPackage
 import Testing
 
+@testable import ColliderAppleContainer
 @testable import ColliderRuntime
 
 @Test func nativeAppleContainerFlagsEnforceTheHermeticBoundary() throws {
@@ -158,6 +159,105 @@ import Testing
     }
 }
 
+@Test func runtimeExecutesOCIThroughTheInjectedBackend() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-oci-backend-\(UUID().uuidString)",
+        isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(
+        at: root,
+        withIntermediateDirectories: true)
+    let context = root.appendingPathComponent("context", isDirectory: true)
+    let output = root.appendingPathComponent("output", isDirectory: true)
+    let temporary = root.appendingPathComponent("temporary", isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: context,
+        withIntermediateDirectories: true)
+    let containerFile = context.appendingPathComponent("Containerfile")
+    try Data(
+        ("FROM debian@sha256:" + String(repeating: "a", count: 64) + "\n").utf8
+    ).write(to: containerFile)
+
+    let backend = RecordingOCIBackend()
+    let configuration = OCIRuntimeConfiguration(
+        externalNetwork: "fixture-external",
+        isolatedNetwork: "fixture-isolated",
+        guestHome: "/home/fixture",
+        managedLabels: ["example.fixture.managed=true"],
+        loggerLabel: "example.fixture")
+    let runtime = ColliderRuntime(
+        downloadCacheRoot: FilePath(root.appendingPathComponent("cache").path),
+        ociConfiguration: configuration,
+        ociBackend: backend)
+    let imageID = root.appendingPathComponent("image-id")
+    let preparation = OCIImagePreparation(
+        executionPlatform: .linuxARM64OCI,
+        context: FilePath(context.path),
+        containerFile: FilePath(containerFile.path),
+        imageID: FilePath(imageID.path),
+        imageName: "localhost/fixture",
+        environment: [:])
+    try await runtime.prepareOCIImage(
+        preparation,
+        stage: TaskID(rawValue: "fixture.prepare"))
+
+    let execution = OCIExecution(
+        executionPlatform: .linuxARM64OCI,
+        artifactTarget: .linuxARM64,
+        imageID: FilePath(imageID.path),
+        hostname: "fixture",
+        workingDirectory: "/src",
+        hostWorkingDirectory: FilePath(root.path),
+        mounts: [
+            OCIMount(
+                source: FilePath(context.path),
+                target: "/src",
+                access: .readOnly),
+            OCIMount(
+                source: FilePath(output.path),
+                target: "/output",
+                access: .readWrite),
+        ],
+        temporaryDirectory: FilePath(temporary.path),
+        networkPolicy: .externalDisabled,
+        userPolicy: .builder,
+        capabilityPolicy: .dropAll,
+        privilegePolicy: .prohibitAcquisition,
+        processFilesystemPolicy: .standard,
+        resourceLimits: .build,
+        containerEnvironment: [:],
+        command: ["true"],
+        environment: [:],
+        output: .captured(limit: 128))
+    let observations = try await runtime.execute(
+        try fixtureOCIExecutionAction(execution),
+        stage: TaskID(rawValue: "fixture.execute"))
+
+    #expect(observations.containerExecutions.count == 1)
+    #expect(observations.containerExecutions.first?.status == 0)
+    #expect(observations.containerExecutions.first?.artifactTarget == .linuxARM64)
+    #expect(await backend.preparation?.imageName == "localhost/fixture")
+    let request = try #require(await backend.request)
+    #expect(request.execution.command == ["true"])
+    #expect(request.configuration == configuration)
+    #expect(request.stage == TaskID(rawValue: "fixture.execute"))
+    #expect(request.temporaryDirectory != nil)
+    #expect(
+        request.temporaryDirectory.map {
+            !FileManager.default.fileExists(atPath: $0.string)
+        } == true)
+    await request.cancellation.interruptAll()
+    #expect(await runtime.cancellation.wasInterrupted())
+
+    #expect(try await runtime.ociRuntimeHealth().apiServerAppName == "fixture")
+    #expect(
+        try await runtime.ociRuntimeNetwork(named: "fixture-network").name
+            == "fixture-network")
+    #expect(try await runtime.ociRuntimeDiskUsage().reclaimableBytes == 6)
+    try await runtime.pruneOCIImages()
+    #expect(await backend.pruned)
+}
+
 @Test func appleContainerCleanupDeletesAndVerifiesTheExactName() async throws {
     let fixture = AppleContainerCleanupFixture(remainingChecks: 0)
     let name = "fixture-cleanup-exact"
@@ -234,35 +334,12 @@ import Testing
     #expect(await fixture.isStopped())
 }
 
-@Test func executorResolutionSeparatesRunnerFromExecutionPlatform() throws {
-    let macOS = try OCIExecutorResolver.resolve(
-        runner: RunnerPlatform(
-            operatingSystem: .macOS,
-            architecture: .arm64),
-        executionPlatform: .linuxAMD64OCI)
-    #expect(macOS.backend == .appleContainer)
-
-    let macOSARM64 = try OCIExecutorResolver.resolve(
-        runner: RunnerPlatform(
-            operatingSystem: .macOS,
-            architecture: .arm64),
-        executionPlatform: .linuxARM64OCI)
-    #expect(macOSARM64.backend == .appleContainer)
-
+@Test func ociPolicyValidationIsBackendIndependent() throws {
+    try validateOCIPlatform(.linuxAMD64OCI)
+    try validateOCIPlatform(.linuxARM64OCI)
     #expect(throws: OCIExecutorFailure.self) {
-        try OCIExecutorResolver.resolve(
-            runner: RunnerPlatform(
-                operatingSystem: .linux,
-                architecture: .arm64),
-            executionPlatform: .linuxARM64OCI)
-    }
-
-    #expect(throws: OCIExecutorFailure.self) {
-        try OCIExecutorResolver.resolve(
-            runner: RunnerPlatform(
-                operatingSystem: .macOS,
-                architecture: .arm64),
-            executionPlatform: ExecutionPlatform(
+        try validateOCIPlatform(
+            ExecutionPlatform(
                 environment: .native,
                 operatingSystem: .linux,
                 architecture: .arm64))
@@ -340,7 +417,6 @@ import Testing
     #expect(buildArguments.contains(preparation.containerFile.string))
     #expect(buildArguments.last == preparation.context.string)
 
-    let executor = AppleContainerExecutor()
     let digest = "sha256:" + String(repeating: "d", count: 64)
     let name = "localhost/nucleus-build:latest"
 
@@ -375,13 +451,13 @@ import Testing
         command: ["ninja", "all"],
         environment: ["PATH": "/usr/bin"],
         output: .logged)
-    let executionName = try executor.containerName(for: execution)
+    let executionName = appleContainerName(for: execution)
     #expect(
         executionName.hasPrefix("fixture-build-")
             && executionName != "fixture-build")
-    let secondExecutionName = try executor.containerName(for: execution)
+    let secondExecutionName = appleContainerName(for: execution)
     #expect(secondExecutionName != executionName)
-    #expect(appleImageReference("\(name)\n\(digest)") == name)
+    #expect(ociImageReference("\(name)\n\(digest)") == name)
 
     let flags = appleContainerFlags(
         execution,
@@ -423,7 +499,7 @@ import Testing
         output: .logged)
     let armFlags = appleContainerFlags(
         armExecution,
-        name: try executor.containerName(for: armExecution),
+        name: appleContainerName(for: armExecution),
         temporaryDirectory: nil)
     #expect(armFlags.management.platform == "linux/arm64")
     #expect(!armFlags.management.rosetta)
@@ -448,7 +524,7 @@ import Testing
         output: .logged)
     let untranslatedFlags = appleContainerFlags(
         untranslatedIntelArtifact,
-        name: try executor.containerName(for: untranslatedIntelArtifact),
+        name: appleContainerName(for: untranslatedIntelArtifact),
         temporaryDirectory: nil)
     #expect(!untranslatedFlags.management.rosetta)
 }
@@ -483,5 +559,57 @@ private actor AppleContainerSuspensionFixture {
 
     func isStopped() -> Bool {
         stopped
+    }
+}
+
+private actor RecordingOCIBackend: OCIRuntimeBackend {
+    private(set) var preparation: OCIImagePreparation?
+    private(set) var request: OCIRuntimeExecutionRequest?
+    private(set) var pruned = false
+
+    func prepareImage(_ preparation: OCIImagePreparation) async throws -> String {
+        self.preparation = preparation
+        return
+            preparation.imageName + "\nsha256:"
+            + String(repeating: "b", count: 64)
+    }
+
+    func execute(
+        _ request: OCIRuntimeExecutionRequest
+    ) async throws -> CommandResult {
+        self.request = request
+        return CommandResult(status: 0, standardOutput: "fixture-output")
+    }
+
+    func health() async throws -> OCIRuntimeHealth {
+        OCIRuntimeHealth(
+            appRoot: URL(fileURLWithPath: "/fixture/app"),
+            installRoot: URL(fileURLWithPath: "/fixture/install"),
+            apiServerVersion: "fixture",
+            apiServerCommit: "fixture",
+            apiServerBuild: "fixture",
+            apiServerAppName: "fixture")
+    }
+
+    func network(named name: String) async throws -> OCIRuntimeNetworkState {
+        OCIRuntimeNetworkState(name: name, mode: "fixture")
+    }
+
+    func diskUsage() async throws -> OCIRuntimeDiskUsage {
+        let usage = { (bytes: UInt64) in
+            OCIRuntimeResourceUsage(
+                active: 0,
+                reclaimable: bytes,
+                sizeInBytes: bytes,
+                total: 1)
+        }
+        return OCIRuntimeDiskUsage(
+            containers: usage(1),
+            images: usage(2),
+            volumes: usage(3))
+    }
+
+    func pruneImages() async throws {
+        pruned = true
     }
 }

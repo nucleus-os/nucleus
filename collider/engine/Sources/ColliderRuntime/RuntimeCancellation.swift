@@ -14,7 +14,7 @@ public actor RuntimeCancellation {
 
     public init() {}
 
-    func register(_ handler: @escaping @Sendable () -> Void) -> UInt64 {
+    package func register(_ handler: @escaping @Sendable () -> Void) -> UInt64 {
         let id = nextID
         nextID &+= 1
         if interrupted {
@@ -25,7 +25,7 @@ public actor RuntimeCancellation {
         return id
     }
 
-    func unregister(_ id: UInt64) { handlers[id] = nil }
+    package func unregister(_ id: UInt64) { handlers[id] = nil }
 
     func registerProcessGroup(_ processGroup: Int32) -> UInt64 {
         let id = nextID

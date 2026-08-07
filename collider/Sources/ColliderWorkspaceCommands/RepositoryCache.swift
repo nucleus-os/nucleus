@@ -21,7 +21,7 @@ struct StorageStatusRecord: Codable, Equatable {
 
 private struct StorageStatusReport: Codable {
     let storage: [StorageStatusRecord]
-    let appleContainer: AppleContainerDiskUsage?
+    let appleContainer: OCIRuntimeDiskUsage?
 }
 
 private struct PruneResult: Codable {
@@ -165,7 +165,7 @@ struct RepositoryCache {
             }
             try await registry.remove(reclaimableRuns)
             if beforeOCI != nil {
-                try await pruneAppleContainerImages()
+                try await context.runtime.pruneOCIImages()
             }
         }
 
@@ -407,8 +407,8 @@ struct RepositoryCache {
         return try APFSStorageInventory.decode(output)
     }
 
-    private func containerDiskUsage() async throws -> AppleContainerDiskUsage? {
-        try? await appleContainerDiskUsage()
+    private func containerDiskUsage() async throws -> OCIRuntimeDiskUsage? {
+        try? await context.runtime.ociRuntimeDiskUsage()
     }
 
     private func storageState(

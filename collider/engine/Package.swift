@@ -5,6 +5,9 @@ let package = Package(
     name: "engine",
     platforms: [.macOS("27")],
     products: [
+        .library(
+            name: "ColliderAppleContainer",
+            targets: ["ColliderAppleContainer"]),
         .library(name: "ColliderCore", targets: ["ColliderCore"]),
         .library(name: "ColliderEngine", targets: ["ColliderEngine"]),
         .library(name: "ColliderPersistence", targets: ["ColliderPersistence"]),
@@ -21,6 +24,22 @@ let package = Package(
         .package(path: "../../third-party/swift-log"),
     ],
     targets: [
+        .target(
+            name: "ColliderAppleContainer",
+            dependencies: [
+                "ColliderCore",
+                "ColliderRuntime",
+                .product(name: "ContainerAPIClient", package: "container"),
+                .product(name: "ContainerBuild", package: "container"),
+                .product(name: "ContainerCommands", package: "container"),
+                .product(name: "ContainerResource", package: "container"),
+                .product(name: "Containerization", package: "containerization"),
+                .product(
+                    name: "ContainerizationOCI",
+                    package: "containerization"),
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "SystemPackage", package: "swift-system"),
+            ]),
         .target(
             name: "ColliderCore",
             dependencies: [
@@ -66,34 +85,9 @@ let package = Package(
                 "ColliderPersistence",
                 "ColliderPlatformC",
                 .product(
-                    name: "ContainerAPIClient",
-                    package: "container",
-                    condition: .when(platforms: [.macOS])),
-                .product(
-                    name: "ContainerBuild",
-                    package: "container",
-                    condition: .when(platforms: [.macOS])),
-                .product(
-                    name: "ContainerCommands",
-                    package: "container",
-                    condition: .when(platforms: [.macOS])),
-                .product(
-                    name: "ContainerResource",
-                    package: "container",
-                    condition: .when(platforms: [.macOS])),
-                .product(
-                    name: "Containerization",
-                    package: "containerization",
-                    condition: .when(platforms: [.macOS])),
-                .product(
-                    name: "ContainerizationOCI",
-                    package: "containerization",
-                    condition: .when(platforms: [.macOS])),
-                .product(
                     name: "Subprocess",
                     package: "swift-subprocess"),
                 .product(name: "Crypto", package: "swift-crypto"),
-                .product(name: "Logging", package: "swift-log"),
                 .product(name: "SystemPackage", package: "swift-system"),
             ]),
         .target(
@@ -102,7 +96,8 @@ let package = Package(
         .testTarget(
             name: "ColliderCoreTests",
             dependencies: [
-                "ColliderCore", "ColliderDownloads", "ColliderEngine",
+                "ColliderAppleContainer", "ColliderCore", "ColliderDownloads",
+                "ColliderEngine",
                 "ColliderPersistence", "ColliderPlanning", "ColliderRuntime",
             ],
             resources: [

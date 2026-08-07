@@ -6,6 +6,7 @@ import SystemPackage
 import Testing
 
 @testable import AndroidRuntimeColliderRecipe
+@testable import ColliderAppleContainer
 @testable import ColliderRuntime
 
 @Test
@@ -51,10 +52,9 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
         readOnlyMounts: [(path("source"), "/src")],
         command: ["/bin/true"],
         containerEnvironment: ["TZ": "UTC"])
-    let executor = AppleContainerExecutor()
     let flags = appleContainerFlags(
         execution,
-        name: try executor.containerName(for: execution),
+        name: appleContainerName(for: execution),
         temporaryDirectory: nil,
         configuration: nucleusOCIRuntimeConfiguration)
 

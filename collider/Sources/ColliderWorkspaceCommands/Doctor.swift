@@ -262,11 +262,11 @@ struct WorkspaceDoctor {
             scope: scope,
             description: "\(backend) OCI executor"
         ) {
-            guard let health = try? await appleContainerBackendHealth(),
+            guard let health = try? await context.runtime.ociRuntimeHealth(),
                 health.apiServerAppName == "container-apiserver"
             else { return nil }
             guard
-                let network = try? await appleContainerNetwork(
+                let network = try? await context.runtime.ociRuntimeNetwork(
                     named: context.ociConfiguration.isolatedNetwork),
                 network.mode == "hostOnly"
             else { return nil }

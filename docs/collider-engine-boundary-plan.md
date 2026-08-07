@@ -52,18 +52,22 @@ The engine modules under `collider/engine/Sources/` already own the reusable
 graph, identity, planning, persistence, download, and execution machinery. The
 Nucleus recipe modules live under `collider/Sources/`.
 
-Phase 1 is complete. Cache namespaces, OCI resource policy, logger labels, and
-SwiftPM container environment projection are explicit configuration supplied by
-the Nucleus application. Nucleus run-directory variables no longer enter task
-environments or engine identity policy. AOSP cache ownership receives its
-resolved cache root from recipe composition.
+Phases 1 and 2 are complete. Cache namespaces, OCI resource policy, logger
+labels, and SwiftPM container environment projection are explicit configuration
+supplied by the Nucleus application. Nucleus run-directory variables no longer
+enter task environments or engine identity policy. AOSP cache ownership receives
+its resolved cache root from recipe composition.
 
-The remaining boundary violations are isolated to phases 2 and 3:
+`ColliderRuntime` owns the semantic `OCIRuntimeBackend` interface, contract
+validation, temporary storage, observations, logging, and cancellation
+coordination. `ColliderAppleContainer` is the sole module that imports Apple's
+container and containerization packages. The Nucleus CLI injects that
+implementation, while runtime tests use a deterministic backend without starting
+a container.
 
-- `ColliderRuntime` directly imports and implements Apple-container operations.
-- `ComponentRegistry` is correctly Nucleus-specific, but reusable planning and
-  execution entry points must accept its assembled catalog without importing
-  recipe modules.
+The remaining boundary violation is isolated to phase 3. `ComponentRegistry` is
+correctly Nucleus-specific, but reusable planning and execution entry points must
+accept its assembled catalog without importing recipe modules.
 
 The Android API level and Android execution-platform cases remain engine data.
 They describe an artifact target rather than Nucleus product identity.
@@ -103,6 +107,8 @@ Nucleus path or environment variable entering an engine module.
 
 ## Phase 2 — Isolate Apple-container integration
 
+Status: complete.
+
 Add a narrow runtime interface for the OCI semantics required by task execution:
 
 - prepare an image;
@@ -133,6 +139,13 @@ Gate: runtime tests exercise OCI planning, execution observations, cancellation,
 and cleanup through the deterministic implementation; the Apple implementation
 passes the existing container integration coverage; and no module other than
 `ColliderAppleContainer` depends on Apple-container packages.
+
+The gate is satisfied. Runtime image preparation and execution flow through an
+injected backend, and runtime-owned health, network, disk-usage, and pruning
+operations delegate through the same instance. Existing Apple flag, image-build,
+cleanup, suspension, and AOSP isolation tests now import
+`ColliderAppleContainer`. The complete engine and Collider test suites pass, and
+only `ColliderAppleContainer` imports Apple container modules.
 
 ## Phase 3 — Make application composition explicit
 

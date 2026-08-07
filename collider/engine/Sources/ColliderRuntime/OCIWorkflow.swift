@@ -3,39 +3,12 @@ import ColliderPersistence
 import Foundation
 import SystemPackage
 
-#if os(macOS)
-import ContainerAPIClient
-import ContainerBuild
-#endif
-
-#if os(macOS)
 extension ColliderRuntime {
     func prepareOCIImage(
         _ preparation: OCIImagePreparation,
         stage: TaskID?
     ) async throws {
-        let suspension = AppleContainerSuspension(
-            client: ContainerClient(),
-            name: Builder.builderContainerId)
-        do {
-            try await prepareOCIImageKeepingBuilder(preparation)
-        } catch {
-            let preparationError = error
-            do {
-                try await suspension.stopAndVerify()
-            } catch {
-                throw OCIExecutorFailure.containerBuilderReleaseFailed(
-                    operation: String(describing: preparationError),
-                    cleanup: String(describing: error))
-            }
-            throw preparationError
-        }
-        try await suspension.stopAndVerify()
-    }
-
-    private func prepareOCIImageKeepingBuilder(
-        _ preparation: OCIImagePreparation
-    ) async throws {
+        try validateOCIPlatform(preparation.executionPlatform)
         let contents = try String(
             contentsOfFile: preparation.containerFile.string,
             encoding: .utf8)
@@ -51,7 +24,7 @@ extension ColliderRuntime {
         try FileManager.default.createDirectory(
             atPath: parent.string,
             withIntermediateDirectories: true)
-        let imageID = try await AppleContainerImageBuilder().build(preparation)
+        let imageID = try await ociBackend.prepareImage(preparation)
         guard validOCIImageDigest(in: imageID) != nil else {
             throw RuntimeFailure.invalidOutput(
                 "OCI executor did not produce a content-addressed builder image ID")
@@ -73,8 +46,7 @@ extension ColliderRuntime {
         _ execution: OCIExecution,
         stage: TaskID?
     ) async throws -> CommandResult {
-        let executor = try OCIExecutorResolver.resolve(
-            executionPlatform: execution.executionPlatform)
+        try validateExecutionPolicies(execution)
         let imageID = try String(
             contentsOfFile: execution.imageID.string,
             encoding: .utf8
@@ -131,47 +103,21 @@ extension ColliderRuntime {
             }
         }
 
-        let name = try executor.containerName(for: execution)
         let output =
             taskOutputPresentation?.output(for: execution.output)
             ?? execution.output
-        return try await AppleContainerLifecycle(
-            cancellation: cancellation,
-            configuration: ociConfiguration
-        ).execute(
-            execution,
-            name: name,
-            imageReference: appleImageReference(imageID),
-            temporaryDirectory: temporaryDirectory,
-            output: output,
-            logging: logging,
-            stage: stage)
+        return try await ociBackend.execute(
+            OCIRuntimeExecutionRequest(
+                execution: execution,
+                imageReference: ociImageReference(imageID),
+                temporaryDirectory: temporaryDirectory,
+                output: output,
+                logging: logging,
+                stage: stage,
+                cancellation: cancellation,
+                configuration: ociConfiguration))
     }
 }
-#else
-extension ColliderRuntime {
-    func prepareOCIImage(
-        _ preparation: OCIImagePreparation,
-        stage: TaskID?
-    ) async throws {
-        throw OCIExecutorFailure.unsupportedRunner(.current)
-    }
-
-    func runOCI(
-        _ execution: OCIExecution,
-        stage: TaskID?
-    ) async throws {
-        throw OCIExecutorFailure.unsupportedRunner(.current)
-    }
-
-    func executeOCI(
-        _ execution: OCIExecution,
-        stage: TaskID?
-    ) async throws -> CommandResult {
-        throw OCIExecutorFailure.unsupportedRunner(.current)
-    }
-}
-#endif
 
 func validOCIImageDigest(in identifier: String) -> String? {
     let digest = identifier.split(whereSeparator: \.isNewline).last.map(String.init)

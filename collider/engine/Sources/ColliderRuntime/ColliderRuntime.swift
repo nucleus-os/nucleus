@@ -63,6 +63,7 @@ public actor ColliderRuntime {
     var taskOutputPresentation: TaskOutputPresentation?
     public let cancellation: RuntimeCancellation
     let ociConfiguration: OCIRuntimeConfiguration
+    let ociBackend: any OCIRuntimeBackend
 
     public init(
         logging: CommandLogging? = nil,
@@ -72,14 +73,16 @@ public actor ColliderRuntime {
             logging: logging,
             cancellation: cancellation,
             downloadCacheRoot: defaultColliderDownloadCacheRoot(),
-            ociConfiguration: .engineDefault)
+            ociConfiguration: .engineDefault,
+            ociBackend: nil)
     }
 
     public init(
         logging: CommandLogging? = nil,
         cancellation: RuntimeCancellation = RuntimeCancellation(),
         downloadCacheRoot: FilePath,
-        ociConfiguration: OCIRuntimeConfiguration
+        ociConfiguration: OCIRuntimeConfiguration,
+        ociBackend: (any OCIRuntimeBackend)? = nil
     ) {
         self.logging = logging
         downloads = ColliderDownloads(cacheRoot: downloadCacheRoot) { progress in
@@ -95,6 +98,25 @@ public actor ColliderRuntime {
         }
         self.cancellation = cancellation
         self.ociConfiguration = ociConfiguration
+        self.ociBackend = ociBackend ?? UnsupportedOCIRuntimeBackend()
+    }
+
+    public func ociRuntimeHealth() async throws -> OCIRuntimeHealth {
+        try await ociBackend.health()
+    }
+
+    public func ociRuntimeNetwork(
+        named name: String
+    ) async throws -> OCIRuntimeNetworkState {
+        try await ociBackend.network(named: name)
+    }
+
+    public func ociRuntimeDiskUsage() async throws -> OCIRuntimeDiskUsage {
+        try await ociBackend.diskUsage()
+    }
+
+    public func pruneOCIImages() async throws {
+        try await ociBackend.pruneImages()
     }
 
     public func execute(_ command: CommandSpec) async throws -> CommandResult {
@@ -855,12 +877,12 @@ private struct StreamResult: Sendable {
     let bytes: [UInt8]
 }
 
-actor CommandOutputSink {
+package actor CommandOutputSink {
     let logging: CommandLogging?
     let stage: TaskID?
     var file: FileDescriptor?
 
-    init(
+    package init(
         logging: CommandLogging?,
         stage: TaskID?,
         file path: FilePath?
@@ -879,7 +901,10 @@ actor CommandOutputSink {
             }
     }
 
-    func write(_ bytes: [UInt8], mirror: FileDescriptor?) async throws {
+    package func write(
+        _ bytes: [UInt8],
+        mirror: FileDescriptor?
+    ) async throws {
         if let logging {
             try await logging.registry.appendLog(bytes, stage: stage, in: logging.run)
         }
@@ -889,7 +914,7 @@ actor CommandOutputSink {
         if let mirror { try mirror.writeAll(bytes) }
     }
 
-    func finish() throws {
+    package func finish() throws {
         guard let file else {
             return
         }

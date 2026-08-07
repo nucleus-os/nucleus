@@ -50,7 +50,7 @@ func macOSBuilderContractSelectsOneImmutableHost() throws {
 @Test
 func macOSBuilderDoctorAcceptsPinnedContainerEvidence() throws {
     let contract = try loadMacOSBuilderContract()
-    let health = AppleContainerBackendHealth(
+    let health = OCIRuntimeHealth(
         appRoot: URL(fileURLWithPath: "/Volumes/NucleusOCI/apple-container/"),
         installRoot: URL(fileURLWithPath: "/usr/local/"),
         apiServerVersion:
@@ -58,7 +58,7 @@ func macOSBuilderDoctorAcceptsPinnedContainerEvidence() throws {
         apiServerCommit: "6e65319fe476ffe8db8ddaf828a537ed36fe2859",
         apiServerBuild: "release",
         apiServerAppName: "container-apiserver")
-    let network = AppleContainerNetworkState(
+    let network = OCIRuntimeNetworkState(
         name: "nucleus-build-internal",
         mode: "hostOnly")
 
@@ -73,7 +73,7 @@ func macOSBuilderDoctorAcceptsPinnedContainerEvidence() throws {
 @Test
 func macOSBuilderDoctorRejectsDriftedContainerEvidence() throws {
     let contract = try loadMacOSBuilderContract()
-    let driftedHealth = AppleContainerBackendHealth(
+    let driftedHealth = OCIRuntimeHealth(
         appRoot: URL(
             fileURLWithPath: "/Users/developer/Library/Application Support/container"),
         installRoot: URL(fileURLWithPath: "/usr/local"),
@@ -81,7 +81,7 @@ func macOSBuilderDoctorRejectsDriftedContainerEvidence() throws {
         apiServerCommit: "wrong",
         apiServerBuild: "release",
         apiServerAppName: "container-apiserver")
-    let routedNetwork = AppleContainerNetworkState(
+    let routedNetwork = OCIRuntimeNetworkState(
         name: "nucleus-build-internal",
         mode: "nat")
 

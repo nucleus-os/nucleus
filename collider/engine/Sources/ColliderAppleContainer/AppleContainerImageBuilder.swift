@@ -1,4 +1,5 @@
 import ColliderCore
+import ColliderRuntime
 import Foundation
 
 #if os(macOS)
@@ -17,7 +18,7 @@ struct AppleContainerImageBuilder: Sendable {
             reference: preparation.imageName,
             containerSystemConfig: configuration)
         guard image.digest.hasPrefix("sha256:"), image.digest.count == 71 else {
-            throw OCIExecutorFailure.invalidAppleImageDigest
+            throw AppleContainerFailure.invalidImageDigest
         }
         return preparation.imageName + "\n" + image.digest
     }

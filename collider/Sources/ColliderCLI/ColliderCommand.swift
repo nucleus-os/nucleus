@@ -6,6 +6,10 @@ import ColliderWorkspaceCommands
 import Foundation
 import SystemPackage
 
+#if os(macOS)
+import ColliderAppleContainer
+#endif
+
 public struct ColliderCommand: AsyncParsableCommand {
     public static let configuration = CommandConfiguration(
         commandName: "collider",
@@ -33,11 +37,17 @@ public struct ColliderCommand: AsyncParsableCommand {
         let cancellation = RuntimeCancellation()
         let logging = CommandLogging(registry: registry, run: run)
         let cacheLayout = nucleusCacheLayout(environment: environment)
+        #if os(macOS)
+        let ociBackend: (any OCIRuntimeBackend)? = AppleContainerRuntimeBackend()
+        #else
+        let ociBackend: (any OCIRuntimeBackend)? = nil
+        #endif
         let runtime = ColliderRuntime(
             logging: logging,
             cancellation: cancellation,
             downloadCacheRoot: cacheLayout.downloads,
-            ociConfiguration: nucleusOCIRuntimeConfiguration)
+            ociConfiguration: nucleusOCIRuntimeConfiguration,
+            ociBackend: ociBackend)
         let signals = RuntimeSignalHandlers(cancellation: cancellation)
         setActiveCommandRuntime(
             logging: logging,

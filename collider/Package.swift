@@ -20,6 +20,10 @@ let package = Package(
             name: "ColliderCLI",
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(
+                    name: "ColliderAppleContainer",
+                    package: "engine",
+                    condition: .when(platforms: [.macOS])),
                 .product(name: "ColliderCore", package: "engine"),
                 .product(name: "ColliderPersistence", package: "engine"),
                 .product(name: "ColliderRuntime", package: "engine"),
@@ -169,6 +173,10 @@ let package = Package(
                 "AndroidRuntimeColliderRecipe",
                 "ChromiumColliderRecipe",
                 "CompositorColliderRecipe",
+                .product(
+                    name: "ColliderAppleContainer",
+                    package: "engine",
+                    condition: .when(platforms: [.macOS])),
                 .product(name: "ColliderCore", package: "engine"),
                 .product(name: "ColliderEngine", package: "engine"),
                 .product(name: "ColliderPersistence", package: "engine"),
