@@ -20,8 +20,16 @@ public struct ColliderCommand: AsyncParsableCommand {
     public init() {}
 
     public static func execute(arguments: [String]) async throws {
+        let processEnvironment = ProcessInfo.processInfo.environment
+        try validateColliderEntrypoint(environment: processEnvironment)
         let command = try parseAsRoot(arguments)
-        var environment = ProcessInfo.processInfo.environment
+        guard var workspaceCommand = command as? any ColliderWorkspaceCommand else {
+            var informationalCommand = command
+            try informationalCommand.run()
+            throw WorkspaceFailure.message(
+                "parsed Collider command did not exit or accept application composition")
+        }
+        var environment = processEnvironment
         let workspace = try resolveWorkspaceRoot(environment: environment)
         environment = nucleusWorkspaceEnvironment(
             root: workspace,
@@ -68,11 +76,6 @@ public struct ColliderCommand: AsyncParsableCommand {
             application.signals.cancel()
         }
         do {
-            guard var workspaceCommand = command as? any ColliderWorkspaceCommand
-            else {
-                throw WorkspaceFailure.message(
-                    "parsed Collider leaf does not accept application composition")
-            }
             try await workspaceCommand.run(in: application.workspace)
             await application.runtime.shutdown()
             try await application.registry.finish(application.run, status: .succeeded)
@@ -96,6 +99,15 @@ public struct ColliderCommand: AsyncParsableCommand {
                 status: status)
             throw error
         }
+    }
+}
+
+func validateColliderEntrypoint(environment: [String: String]) throws {
+    let entrypoint = environment["COLLIDER_ENTRYPOINT"]
+    guard entrypoint == "workspace-launcher" || entrypoint == "setup-bootstrap" else {
+        throw WorkspaceFailure.message(
+            "direct Collider executable invocation is unsupported; "
+                + "run the installed 'collider' command")
     }
 }
 

@@ -29,6 +29,17 @@ func commandFailuresPreserveRunFinalizationSemantics() {
 }
 
 @Test
+func executableRequiresTheWorkspaceLauncher() throws {
+    #expect(throws: (any Error).self) {
+        try validateColliderEntrypoint(environment: [:])
+    }
+    try validateColliderEntrypoint(
+        environment: ["COLLIDER_ENTRYPOINT": "workspace-launcher"])
+    try validateColliderEntrypoint(
+        environment: ["COLLIDER_ENTRYPOINT": "setup-bootstrap"])
+}
+
+@Test
 func rootGrammarRejectsRetiredAndUnsupportedBrowserOperations() {
     for arguments in [
         ["toolchain", "status"],

@@ -707,8 +707,9 @@ runtime outcomes, not declaration or source shape.
 
 Final verification gate:
 
-- Source `tools/host-env.sh`, build the complete checkout through Collider, and
-  run all affected Swift and Android integration tests.
+- Use the installed `collider` command to build the complete checkout and run
+  all affected Swift and Android integration tests; its workspace launcher owns
+  host-environment derivation and release-executable refresh.
 - Boot a clean generated Android data image and pass every phase's behavioral
   gate without manual setup.
 - Boot the non-Android product composition and demonstrate identical native

@@ -162,6 +162,32 @@ import Testing
     #expect(reusedCache.fileMissCount == 1)
 }
 
+@Test func planningDigestCacheRewritesUnrecognizedFileFormat() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-incompatible-digest-cache-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(
+        at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let cacheURL = directory.appendingPathComponent("digests.json")
+    let sourceURL = directory.appendingPathComponent("source.swift")
+    try Data(#"{"invalid-entry":{"digest":"unused"}}"#.utf8).write(
+        to: cacheURL)
+    try Data("let value = 1\n".utf8).write(to: sourceURL)
+
+    let cache = PlanningArtifactDigestCache(
+        persistentFile: FilePath(cacheURL.path))
+    _ = try cache.digest(file: FilePath(sourceURL.path))
+    try cache.persist()
+
+    let object = try #require(
+        JSONSerialization.jsonObject(with: Data(contentsOf: cacheURL))
+            as? [String: Any])
+    let files = try #require(object["files"] as? [String: Any])
+    #expect(files.count == 1)
+    #expect(files[sourceURL.path] != nil)
+    #expect(object["invalid-entry"] == nil)
+}
+
 @Test func sourceCheckoutDigestUsesGitTreesAcrossCheckoutLocations() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-source-checkout-placement-\(UUID().uuidString)")

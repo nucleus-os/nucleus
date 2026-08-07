@@ -91,6 +91,34 @@ package struct TaskControls: Sendable {
                             + timing.task.rawValue)
                 }
             }
+            let slowestContainers = report.containerExecutionTimings.sorted {
+                if $0.timings.totalDurationNanoseconds
+                    == $1.timings.totalDurationNanoseconds
+                {
+                    if $0.task == $1.task {
+                        return $0.executionIndex < $1.executionIndex
+                    }
+                    return $0.task.rawValue < $1.task.rawValue
+                }
+                return $0.timings.totalDurationNanoseconds
+                    > $1.timings.totalDurationNanoseconds
+            }.prefix(5)
+            if !slowestContainers.isEmpty {
+                print("slowest container executions")
+                for execution in slowestContainers {
+                    let timings = execution.timings
+                    let setup =
+                        timings.configurationDurationNanoseconds
+                        &+ timings.creationDurationNanoseconds
+                        &+ timings.bootstrapDurationNanoseconds
+                    print(
+                        "  \(formatDuration(timings.totalDurationNanoseconds))  "
+                            + "process \(formatDuration(timings.processDurationNanoseconds)), "
+                            + "setup \(formatDuration(setup)), "
+                            + "cleanup \(formatDuration(timings.cleanupDurationNanoseconds))  "
+                            + "\(execution.task.rawValue)#\(execution.executionIndex + 1)")
+                }
+            }
         }
     }
 }

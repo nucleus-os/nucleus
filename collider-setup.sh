@@ -67,14 +67,14 @@ if ! toolchain_present; then
   echo "collider-setup: building collider with the bootstrap compiler..." >&2
   "$root/tools/configure-swiftpm-mirrors.sh"
   swift build --package-path "$pkg" -c release >&2
-  "$bin" swift-sdk rebuild
+  COLLIDER_ENTRYPOINT=setup-bootstrap "$bin" swift-sdk rebuild
 fi
 
-# 2. Build the optimized collider binary with the native host compiler.
-source "$host_env"
-"$root/tools/configure-swiftpm-mirrors.sh"
+# 2. Build the optimized collider binary with the native host compiler. The
+#    workspace launcher also records the exact source/toolchain fingerprint it
+#    built so the first installed invocation starts current.
 echo "collider-setup: building collider (release)..." >&2
-swift build --package-path "$pkg" -c release >&2
+COLLIDER_REFRESH_ONLY=1 "$root/tools/collider-launcher.sh"
 
 # 3. Install / repair the `collider` launcher on PATH.
 install_launcher() {
@@ -85,9 +85,8 @@ install_launcher() {
   local desired
   IFS= read -r -d '' desired <<'LAUNCHER' || true
 #!/usr/bin/env bash
-# collider launcher — installed by collider-setup.sh. Discovers the Nucleus
-# clone from the current directory, keeps the optimized binary current, and runs
-# it. Works only inside a clone; for first-run setup use ./collider-setup.sh.
+# collider workspace shim — installed by collider-setup.sh. The implementation
+# lives in the active checkout so every clone supplies its current launcher.
 set -euo pipefail
 
 dir="$PWD"
@@ -105,48 +104,7 @@ if [[ -z "$root" ]]; then
 fi
 
 export NUCLEUS_WORKSPACE_ROOT="$root"
-host_env="$root/tools/host-env.sh"
-if ! ( source "$host_env" ) >/dev/null 2>&1; then
-  echo "collider: the native host compiler is unavailable; run $root/collider-setup.sh" >&2
-  exit 1
-fi
-source "$host_env"
-
-pkg="$root/collider"
-bin="$pkg/.build/release/collider"
-"$root/tools/configure-swiftpm-mirrors.sh"
-
-# Build inputs: the collider package and every *ColliderRecipe target. The
-# binary's mtime is the fingerprint; rebuild only when an input is newer.
-input_roots=(
-  "$pkg/Package.swift"
-  "$pkg/Sources"
-  "$pkg/engine"
-  "$root/tools/configure-swiftpm-mirrors.sh"
-)
-while IFS= read -r recipe; do
-  input_roots+=("$recipe")
-done < <(find "$root" -maxdepth 5 -type d -name '*ColliderRecipe' \
-  -not -path '*/.build/*' 2>/dev/null)
-existing=()
-for path in "${input_roots[@]}"; do
-  [[ -e "$path" ]] && existing+=("$path")
-done
-
-collider_is_current() {
-  [[ -x "$bin" ]] || return 1
-  local newer
-  newer="$(find -L "${existing[@]}" -type f \
-    -newer "$bin" \
-    -not -path '*/.build/*' -print -quit 2>/dev/null)"
-  [[ -z "$newer" ]]
-}
-
-if collider_is_current; then
-  exec "$bin" "$@"
-fi
-swift build --package-path "$pkg" -c release >&2
-exec "$bin" "$@"
+exec "$root/tools/collider-launcher.sh" "$@"
 LAUNCHER
   desired="${desired%$'\n'}"
 

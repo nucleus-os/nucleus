@@ -46,8 +46,12 @@ cd nucleus
 ./collider-setup.sh
 ```
 
-Setup does not build workspace artifacts. Thereafter run Collider from any
-directory inside the clone; each command materializes its own prerequisite graph:
+Setup does not build workspace artifacts. Thereafter the installed `collider`
+command is the only supported entrypoint. It derives the host environment and
+uses SwiftPM to refresh the release executable whenever the active checkout's
+Git/toolchain source fingerprint changes, so no shell environment script or
+manual Collider rebuild is required. Run it from any directory inside the
+clone; each command materializes its own prerequisite graph:
 
 ```sh
 collider doctor

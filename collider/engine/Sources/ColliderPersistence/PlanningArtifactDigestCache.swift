@@ -6,6 +6,10 @@ import SystemPackage
 /// Mutation is confined to one synchronous planning operation; callers persist
 /// the updated index only after planning has produced a complete plan.
 package final class PlanningArtifactDigestCache: @unchecked Sendable {
+    private struct CacheFile: Codable {
+        let files: [String: FileEntry]
+    }
+
     private struct FileSignature: Codable, Equatable {
         let device: DeviceID
         let inode: Inode
@@ -48,17 +52,30 @@ package final class PlanningArtifactDigestCache: @unchecked Sendable {
 
     package init(persistentFile: FilePath? = nil) {
         self.persistentFile = persistentFile
-        guard let persistentFile,
+        guard let persistentFile else {
+            files = [:]
+            return
+        }
+        guard
             let data = try? Data(
-                contentsOf: URL(fileURLWithPath: persistentFile.string)),
-            let decoded = try? JSONDecoder().decode(
-                [String: FileEntry].self,
-                from: data)
+                contentsOf: URL(fileURLWithPath: persistentFile.string))
         else {
             files = [:]
             return
         }
-        files = decoded
+        guard
+            let decoded = try? JSONDecoder().decode(
+                CacheFile.self,
+                from: data)
+        else {
+            // Digest metadata is a disposable optimization. Unrecognized or
+            // corrupted cache contents are replaced instead of becoming a
+            // compatibility contract for planning.
+            files = [:]
+            persistentStateChanged = true
+            return
+        }
+        files = decoded.files
     }
 
     package func digest(
@@ -147,7 +164,7 @@ package final class PlanningArtifactDigestCache: @unchecked Sendable {
 
     package func persist() throws {
         guard persistentStateChanged, let persistentFile else { return }
-        try DurableFile.writeJSON(files, to: persistentFile)
+        try DurableFile.writeJSON(CacheFile(files: files), to: persistentFile)
         persistentStateChanged = false
     }
 }

@@ -412,7 +412,7 @@ struct MacOSBuilderDoctor {
             scope: scope,
             description: "declared Collider cache and SDK roots",
             remediation:
-                "source tools/host-env.sh; it resolves macOS storage from \(MacOSBuilderContract.relativePath)"
+                "run the installed 'collider' command; its launcher resolves macOS storage from \(MacOSBuilderContract.relativePath)"
         ) {
             guard
                 normalizedPath(context.environment["XDG_CACHE_HOME"] ?? "")

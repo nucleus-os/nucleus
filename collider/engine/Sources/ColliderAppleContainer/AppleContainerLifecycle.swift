@@ -66,7 +66,7 @@ public struct AppleContainerRuntimeBackend: OCIRuntimeBackend {
 
     public func execute(
         _ request: OCIRuntimeExecutionRequest
-    ) async throws -> CommandResult {
+    ) async throws -> OCIRuntimeExecutionOutcome {
         try validateRunner()
         let name = appleContainerName(for: request.execution)
         return try await AppleContainerLifecycle(
@@ -168,7 +168,8 @@ struct AppleContainerLifecycle: Sendable {
         output: CommandSpec.Output,
         logging: CommandLogging?,
         stage: TaskID?
-    ) async throws -> CommandResult {
+    ) async throws -> OCIRuntimeExecutionOutcome {
+        let lifecycleStart = ContinuousClock().now
         let interruptionCleanup = AppleContainerCleanup(client: client, name: name)
         let operation = Task {
             try await executeCreatedContainer(
@@ -187,7 +188,7 @@ struct AppleContainerLifecycle: Sendable {
             }
         }
         do {
-            let result = try await withTaskCancellationHandler {
+            let created = try await withTaskCancellationHandler {
                 try await operation.value
             } onCancel: {
                 operation.cancel()
@@ -199,10 +200,24 @@ struct AppleContainerLifecycle: Sendable {
             if await cancellation.wasInterrupted() {
                 throw CancellationError()
             }
-            try await AppleContainerCleanup(client: client, name: name)
-                .deleteAndVerify()
+            let cleanupStart = ContinuousClock().now
+            try await AppleContainerCleanup(client: client, name: name).deleteAndVerify()
+            let cleanupDuration = elapsedNanoseconds(since: cleanupStart)
             await cancellation.unregister(cancellationRegistration)
-            return result
+            return OCIRuntimeExecutionOutcome(
+                result: created.result,
+                timings: OCIExecutionTimings(
+                    configurationDurationNanoseconds:
+                        created.configurationDurationNanoseconds,
+                    creationDurationNanoseconds:
+                        created.creationDurationNanoseconds,
+                    bootstrapDurationNanoseconds:
+                        created.bootstrapDurationNanoseconds,
+                    processDurationNanoseconds:
+                        created.processDurationNanoseconds,
+                    cleanupDurationNanoseconds: cleanupDuration,
+                    totalDurationNanoseconds: elapsedNanoseconds(
+                        since: lifecycleStart)))
         } catch {
             operation.cancel()
             _ = try? await operation.value
@@ -228,7 +243,8 @@ struct AppleContainerLifecycle: Sendable {
         output: CommandSpec.Output,
         logging: CommandLogging?,
         stage: TaskID?
-    ) async throws -> CommandResult {
+    ) async throws -> CreatedContainerExecution {
+        let configurationStart = ContinuousClock().now
         let flags = appleContainerFlags(
             execution,
             name: name,
@@ -250,14 +266,18 @@ struct AppleContainerLifecycle: Sendable {
             log: Logger(label: configuration.loggerLabel) { _ in
                 SwiftLogNoOpLogHandler()
             })
+        let configurationDuration = elapsedNanoseconds(since: configurationStart)
 
         try Task.checkCancellation()
+        let creationStart = ContinuousClock().now
         try await client.create(
             configuration: configuration,
             options: .default,
             kernel: kernel,
             initImage: initImage)
+        let creationDuration = elapsedNanoseconds(since: creationStart)
 
+        let bootstrapStart = ContinuousClock().now
         let outputSession = try AppleContainerOutputSession(
             output: output,
             logging: logging,
@@ -268,14 +288,31 @@ struct AppleContainerLifecycle: Sendable {
                 stdio: outputSession.stdio)
             try await process.start()
             try outputSession.closeWriters()
+            let bootstrapDuration = elapsedNanoseconds(since: bootstrapStart)
+            let processStart = ContinuousClock().now
             let status = try await process.wait()
-            return try await outputSession.finish(status: status)
+            let result = try await outputSession.finish(status: status)
+            return CreatedContainerExecution(
+                result: result,
+                configurationDurationNanoseconds: configurationDuration,
+                creationDurationNanoseconds: creationDuration,
+                bootstrapDurationNanoseconds: bootstrapDuration,
+                processDurationNanoseconds: elapsedNanoseconds(
+                    since: processStart))
         } catch {
             try? outputSession.closeWriters()
             await outputSession.cancel()
             throw error
         }
     }
+}
+
+private struct CreatedContainerExecution: Sendable {
+    let result: CommandResult
+    let configurationDurationNanoseconds: UInt64
+    let creationDurationNanoseconds: UInt64
+    let bootstrapDurationNanoseconds: UInt64
+    let processDurationNanoseconds: UInt64
 }
 
 struct AppleContainerFlags {

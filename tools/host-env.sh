@@ -11,41 +11,33 @@ nucleus_workspace_root="$(cd "$(dirname "$nucleus_host_env_source")/.." && pwd)"
 source "$nucleus_workspace_root/tools/host-platform-env.sh"
 
 nucleus_toolchain=""
-if [[ -n "${NUCLEUS_SWIFT_SOURCE_ID:-}" ]]; then
-  nucleus_source_id="$NUCLEUS_SWIFT_SOURCE_ID"
-else
-  nucleus_source_index="$(
-    git -C "$nucleus_workspace_root" ls-files --stage -- swift-sdk/source \
-      | awk '$1 == "160000" {
-          sub(/^swift-sdk\/source\//, "", $4)
-          if ($4 != "swift-sdk-generator") print $1, $2, $4
-        }'
-  )"
-  if [[ -z "$nucleus_source_index" ]]; then
-    echo "error: the Swift source gitlink graph is missing" >&2
-    return 127 2>/dev/null || exit 127
-  fi
-  if command -v sha256sum >/dev/null 2>&1; then
-    nucleus_source_digest="$(printf '%s\n' "$nucleus_source_index" | sha256sum)"
-  else
-    nucleus_source_digest="$(printf '%s\n' "$nucleus_source_index" | shasum -a 256)"
-  fi
-  nucleus_source_id="${nucleus_source_digest%% *}"
-  nucleus_source_id="${nucleus_source_id:0:24}"
+nucleus_source_index="$(
+  git -C "$nucleus_workspace_root" ls-files --stage -- swift-sdk/source \
+    | awk '$1 == "160000" {
+        sub(/^swift-sdk\/source\//, "", $4)
+        if ($4 != "swift-sdk-generator") print $1, $2, $4
+      }'
+)"
+if [[ -z "$nucleus_source_index" ]]; then
+  echo "error: the Swift source gitlink graph is missing" >&2
+  return 127 2>/dev/null || exit 127
 fi
-export NUCLEUS_SWIFT_SOURCE_ID="$nucleus_source_id"
-if [[ -n "${NUCLEUS_SWIFT_SDK_GENERATOR_SOURCE_ID:-}" ]]; then
-  nucleus_generator_source_id="$NUCLEUS_SWIFT_SDK_GENERATOR_SOURCE_ID"
+if command -v sha256sum >/dev/null 2>&1; then
+  nucleus_source_digest="$(printf '%s\n' "$nucleus_source_index" | sha256sum)"
 else
-  nucleus_generator_source_id="$(
-    git -C "$nucleus_workspace_root" ls-files --stage -- \
-      swift-sdk/source/swift-sdk-generator \
-      | awk '$1 == "160000" { print $2 }'
-  )"
-  if [[ -z "$nucleus_generator_source_id" ]]; then
-    echo "error: the Swift SDK generator gitlink is missing" >&2
-    return 127 2>/dev/null || exit 127
-  fi
+  nucleus_source_digest="$(printf '%s\n' "$nucleus_source_index" | shasum -a 256)"
+fi
+nucleus_source_id="${nucleus_source_digest%% *}"
+nucleus_source_id="${nucleus_source_id:0:24}"
+export NUCLEUS_SWIFT_SOURCE_ID="$nucleus_source_id"
+nucleus_generator_source_id="$(
+  git -C "$nucleus_workspace_root" ls-files --stage -- \
+    swift-sdk/source/swift-sdk-generator \
+    | awk '$1 == "160000" { print $2 }'
+)"
+if [[ -z "$nucleus_generator_source_id" ]]; then
+  echo "error: the Swift SDK generator gitlink is missing" >&2
+  return 127 2>/dev/null || exit 127
 fi
 export NUCLEUS_SWIFT_SDK_GENERATOR_SOURCE_ID="$nucleus_generator_source_id"
 nucleus_platform_id="$nucleus_source_id-linux-amd64"

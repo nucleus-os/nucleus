@@ -52,6 +52,7 @@ public struct TaskExecutionReport: Codable, Sendable {
     public let plan: [TaskPlanEntry]
     public let executed: [TaskID]
     public let taskTimings: [TaskExecutionTiming]
+    public let containerExecutionTimings: [TaskContainerExecutionTiming]
     public let planningDurationNanoseconds: UInt64
     public let selectedInputHashingDurationNanoseconds: UInt64
     public let swiftPMInvocationCount: Int
@@ -63,6 +64,7 @@ public struct TaskExecutionReport: Codable, Sendable {
         plan: [TaskPlanEntry],
         executed: [TaskID],
         taskTimings: [TaskExecutionTiming],
+        containerExecutionTimings: [TaskContainerExecutionTiming],
         planningDurationNanoseconds: UInt64,
         selectedInputHashingDurationNanoseconds: UInt64,
         swiftPMInvocationCount: Int,
@@ -73,6 +75,7 @@ public struct TaskExecutionReport: Codable, Sendable {
         self.plan = plan
         self.executed = executed
         self.taskTimings = taskTimings
+        self.containerExecutionTimings = containerExecutionTimings
         self.planningDurationNanoseconds = planningDurationNanoseconds
         self.selectedInputHashingDurationNanoseconds =
             selectedInputHashingDurationNanoseconds
@@ -93,6 +96,22 @@ public struct TaskExecutionTiming: Codable, Sendable {
     }
 }
 
+public struct TaskContainerExecutionTiming: Codable, Sendable {
+    public let task: TaskID
+    public let executionIndex: Int
+    public let timings: OCIExecutionTimings
+
+    public init(
+        task: TaskID,
+        executionIndex: Int,
+        timings: OCIExecutionTimings
+    ) {
+        self.task = task
+        self.executionIndex = executionIndex
+        self.timings = timings
+    }
+}
+
 private enum ScheduledTask: Hashable, Sendable {
     case swiftBuild(Int)
     case declared(Int)
@@ -108,7 +127,9 @@ private struct ScheduledTaskExecution: Sendable {
 
 private struct ScheduledTaskResult: Sendable {
     let scheduledTask: ScheduledTask
+    let task: TaskID
     let durationNanoseconds: UInt64
+    let observations: TaskExecutionObservations
 }
 
 private func canSchedule(
@@ -216,6 +237,7 @@ extension ColliderRuntime {
                 plan: reportedPlan,
                 executed: [],
                 taskTimings: [],
+                containerExecutionTimings: [],
                 planningDurationNanoseconds: planningDurationNanoseconds,
                 selectedInputHashingDurationNanoseconds:
                     selectedInputHashingDurationNanoseconds,
@@ -261,6 +283,7 @@ extension ColliderRuntime {
         var pendingTasks = ordered.indices.filter { !plan[$0].isClean }
         var executed: [TaskID] = []
         var taskTimings: [TaskExecutionTiming] = []
+        var containerExecutionTimings: [TaskContainerExecutionTiming] = []
         var running: [ScheduledTask: TaskExecutionLane] = [:]
         var runningClaims: [ScheduledTask: [PlannedTaskClaim]] = [:]
         var readySince: [ScheduledTask: ContinuousClock.Instant] = [:]
@@ -348,7 +371,7 @@ extension ColliderRuntime {
                         let taskStart = ContinuousClock().now
                         if let attribution = execution.swiftBuildAttribution {
                             do {
-                                try await self.executePlannedTask(
+                                let observations = try await self.executePlannedTask(
                                     execution.task,
                                     plan: execution.plan,
                                     stateRoot: stateRoot,
@@ -359,15 +382,17 @@ extension ColliderRuntime {
                                     recordsActiveArtifact: false)
                                 return ScheduledTaskResult(
                                     scheduledTask: execution.scheduledTask,
+                                    task: execution.task.id,
                                     durationNanoseconds: elapsedNanoseconds(
-                                        since: taskStart))
+                                        since: taskStart),
+                                    observations: observations)
                             } catch {
                                 throw RuntimeFailure.swiftBuildFailed(
                                     attribution: attribution,
                                     reason: String(describing: error))
                             }
                         } else {
-                            try await self.executePlannedTask(
+                            let observations = try await self.executePlannedTask(
                                 execution.task,
                                 plan: execution.plan,
                                 stateRoot: stateRoot,
@@ -378,8 +403,10 @@ extension ColliderRuntime {
                                 recordsActiveArtifact: execution.recordsActiveArtifact)
                             return ScheduledTaskResult(
                                 scheduledTask: execution.scheduledTask,
+                                task: execution.task.id,
                                 durationNanoseconds: elapsedNanoseconds(
-                                    since: taskStart))
+                                    since: taskStart),
+                                observations: observations)
                         }
                     }
                 }
@@ -423,6 +450,14 @@ extension ColliderRuntime {
                     TaskExecutionTiming(
                         task: taskID,
                         durationNanoseconds: finished.durationNanoseconds))
+                for (index, observation) in finished.observations.containerExecutions.enumerated() {
+                    guard let timings = observation.timings else { continue }
+                    containerExecutionTimings.append(
+                        TaskContainerExecutionTiming(
+                            task: finished.task,
+                            executionIndex: index,
+                            timings: timings))
+                }
             }
         }
 
@@ -441,6 +476,7 @@ extension ColliderRuntime {
             plan: reportedPlan,
             executed: executed,
             taskTimings: taskTimings,
+            containerExecutionTimings: containerExecutionTimings,
             planningDurationNanoseconds: planningDurationNanoseconds,
             selectedInputHashingDurationNanoseconds:
                 selectedInputHashingDurationNanoseconds,
@@ -459,7 +495,7 @@ extension ColliderRuntime {
         eventRegistry: RunRegistry?,
         options: TaskExecutionOptions,
         recordsActiveArtifact: Bool
-    ) async throws {
+    ) async throws -> TaskExecutionObservations {
         let taskStart = ContinuousClock().now
         let heldLocks = try await acquireTaskLocks(
             task.locks,
@@ -511,6 +547,7 @@ extension ColliderRuntime {
                     task: task.id,
                     in: eventRun)
             }
+            return observations
         } catch {
             if let eventRun, let eventRegistry {
                 try? await eventRegistry.recordTaskDuration(

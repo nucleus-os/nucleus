@@ -203,7 +203,14 @@ import Testing
                         processFilesystemPolicy: .standard,
                         intelBinaryTranslationPolicy: .required,
                         resourceLimits: .parallelBuild,
-                        status: 0)
+                        status: 0,
+                        timings: OCIExecutionTimings(
+                            configurationDurationNanoseconds: 1,
+                            creationDurationNanoseconds: 2,
+                            bootstrapDurationNanoseconds: 3,
+                            processDurationNanoseconds: 4,
+                            cleanupDurationNanoseconds: 5,
+                            totalDurationNanoseconds: 15))
                 ]))
     ]
     manifest.resumedAt = ["2026-07-22T00:00:00.5Z"]
@@ -238,6 +245,9 @@ import Testing
     #expect(
         decodedTask.observations?.containerExecutions.first?
             .intelBinaryTranslationPolicy == .required)
+    #expect(
+        decodedTask.observations?.containerExecutions.first?.timings?
+            .totalDurationNanoseconds == 15)
     #expect(decoded.resumedAt == manifest.resumedAt)
     #expect(decoded.resumeCount == manifest.resumeCount)
 }

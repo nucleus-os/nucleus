@@ -80,6 +80,7 @@ public struct ColliderEngine: Sendable {
         try FileManager.default.createDirectory(
             atPath: stateRoot.string,
             withIntermediateDirectories: true)
+        let planningStart = ContinuousClock().now
         let state = try TaskStateStore(root: stateRoot).snapshot()
         let planningInputs = PlanningInputProvider(
             digestIndex: stateRoot.appending("artifact-digests.json"))
@@ -96,11 +97,10 @@ public struct ColliderEngine: Sendable {
             semanticToolIdentity: planningInputs.semanticToolIdentity,
             taskState: state.lookup,
             validateOutputs: outputValidator.validate)
-        let planningStart = ContinuousClock().now
         let plan = try planning(services)
-        let planningDuration = elapsedNanoseconds(since: planningStart)
         let hashingDuration = planningInputs.hashingDurationNanoseconds
         try planningInputs.persistDigestIndex()
+        let planningDuration = elapsedNanoseconds(since: planningStart)
         return try await runtime.execute(
             plan: plan,
             stateRoot: stateRoot,

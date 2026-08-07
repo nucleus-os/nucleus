@@ -20,6 +20,39 @@ public enum TaskRunOutcome: String, Codable, Sendable {
     case executed
 }
 
+public struct OCIExecutionTimings: Codable, Hashable, Sendable {
+    public let configurationDurationNanoseconds: UInt64
+    public let creationDurationNanoseconds: UInt64
+    public let bootstrapDurationNanoseconds: UInt64
+    public let processDurationNanoseconds: UInt64
+    public let cleanupDurationNanoseconds: UInt64
+    public let totalDurationNanoseconds: UInt64
+
+    public init(
+        configurationDurationNanoseconds: UInt64,
+        creationDurationNanoseconds: UInt64,
+        bootstrapDurationNanoseconds: UInt64,
+        processDurationNanoseconds: UInt64,
+        cleanupDurationNanoseconds: UInt64,
+        totalDurationNanoseconds: UInt64
+    ) {
+        self.configurationDurationNanoseconds = configurationDurationNanoseconds
+        self.creationDurationNanoseconds = creationDurationNanoseconds
+        self.bootstrapDurationNanoseconds = bootstrapDurationNanoseconds
+        self.processDurationNanoseconds = processDurationNanoseconds
+        self.cleanupDurationNanoseconds = cleanupDurationNanoseconds
+        self.totalDurationNanoseconds = totalDurationNanoseconds
+    }
+
+    public static let zero = Self(
+        configurationDurationNanoseconds: 0,
+        creationDurationNanoseconds: 0,
+        bootstrapDurationNanoseconds: 0,
+        processDurationNanoseconds: 0,
+        cleanupDurationNanoseconds: 0,
+        totalDurationNanoseconds: 0)
+}
+
 public struct OCIExecutionObservation: Codable, Hashable, Sendable {
     public let imageDigest: ArtifactDigest
     public let executionPlatform: ExecutionPlatform
@@ -32,6 +65,7 @@ public struct OCIExecutionObservation: Codable, Hashable, Sendable {
     public let intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy
     public let resourceLimits: OCIResourceLimits
     public let status: Int32
+    public let timings: OCIExecutionTimings?
 
     public init(
         imageDigest: ArtifactDigest,
@@ -44,7 +78,8 @@ public struct OCIExecutionObservation: Codable, Hashable, Sendable {
         processFilesystemPolicy: OCIProcessFilesystemPolicy,
         intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy,
         resourceLimits: OCIResourceLimits,
-        status: Int32
+        status: Int32,
+        timings: OCIExecutionTimings? = nil
     ) {
         self.imageDigest = imageDigest
         self.executionPlatform = executionPlatform
@@ -57,6 +92,7 @@ public struct OCIExecutionObservation: Codable, Hashable, Sendable {
         self.intelBinaryTranslationPolicy = intelBinaryTranslationPolicy
         self.resourceLimits = resourceLimits
         self.status = status
+        self.timings = timings
     }
 }
 

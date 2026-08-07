@@ -133,4 +133,10 @@ libc++, and validation rejects `libstdc++` and `GLIBCXX` dependencies.
 
 ## Verification boundary
 
-Agent-runnable verification uses Collider and direct host tests after sourcing `tools/host-env.sh`. Hardware qualification, device installation, compositor launch, and interactive sessions remain explicit user-run handoffs. Current execution plans and their dependency order are indexed in [README.md](README.md).
+Agent-runnable verification uses the installed `collider` command, whose
+workspace launcher derives the host environment and refreshes its release
+executable when the active checkout's Git/toolchain source fingerprint changes.
+Hardware qualification, device
+installation, compositor launch, and interactive sessions remain explicit
+user-run handoffs. Current execution plans and their dependency order are
+indexed in [README.md](README.md).

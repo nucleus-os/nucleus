@@ -37,15 +37,15 @@ extension ColliderRuntime {
         stage: TaskID?
     ) async throws {
         let result = try await executeOCI(execution, stage: stage)
-        guard result.status == 0 else {
-            throw RuntimeFailure.commandFailed(status: result.status)
+        guard result.result.status == 0 else {
+            throw RuntimeFailure.commandFailed(status: result.result.status)
         }
     }
 
     func executeOCI(
         _ execution: OCIExecution,
         stage: TaskID?
-    ) async throws -> CommandResult {
+    ) async throws -> OCIRuntimeExecutionOutcome {
         try validateExecutionPolicies(execution)
         let imageID = try String(
             contentsOfFile: execution.imageID.string,

@@ -157,7 +157,8 @@ public actor ColliderRuntime {
                     try await self.prepareOCIImage(preparation, stage: stage)
                 },
                 run: { execution in
-                    let result = try await self.executeOCI(execution, stage: stage)
+                    let outcome = try await self.executeOCI(execution, stage: stage)
+                    let result = outcome.result
                     let imageIdentifier = try String(
                         contentsOfFile: execution.imageID.string,
                         encoding: .utf8)
@@ -186,7 +187,8 @@ public actor ColliderRuntime {
                                 intelBinaryTranslationPolicy:
                                     execution.intelBinaryTranslationPolicy,
                                 resourceLimits: execution.resourceLimits,
-                                status: result.status))
+                                status: result.status,
+                                timings: outcome.timings))
                     }
                     return result
                 })

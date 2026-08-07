@@ -237,6 +237,7 @@ import Testing
     #expect(observations.containerExecutions.count == 1)
     #expect(observations.containerExecutions.first?.status == 0)
     #expect(observations.containerExecutions.first?.artifactTarget == .linuxARM64)
+    #expect(observations.containerExecutions.first?.timings == .zero)
     #expect(await backend.preparation?.imageName == "localhost/fixture")
     let request = try #require(await backend.request)
     #expect(request.execution.command == ["true"])
@@ -661,9 +662,11 @@ private actor RecordingOCIBackend: OCIRuntimeBackend {
 
     func execute(
         _ request: OCIRuntimeExecutionRequest
-    ) async throws -> CommandResult {
+    ) async throws -> OCIRuntimeExecutionOutcome {
         self.request = request
-        return CommandResult(status: 0, standardOutput: "fixture-output")
+        return OCIRuntimeExecutionOutcome(
+            result: CommandResult(status: 0, standardOutput: "fixture-output"),
+            timings: .zero)
     }
 
     func health() async throws -> OCIRuntimeHealth {

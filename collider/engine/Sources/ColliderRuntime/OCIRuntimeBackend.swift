@@ -107,9 +107,21 @@ public struct OCIRuntimeExecutionRequest: Sendable {
     }
 }
 
+public struct OCIRuntimeExecutionOutcome: Sendable {
+    public let result: CommandResult
+    public let timings: OCIExecutionTimings
+
+    public init(result: CommandResult, timings: OCIExecutionTimings) {
+        self.result = result
+        self.timings = timings
+    }
+}
+
 public protocol OCIRuntimeBackend: Sendable {
     func prepareImage(_ preparation: OCIImagePreparation) async throws -> String
-    func execute(_ request: OCIRuntimeExecutionRequest) async throws -> CommandResult
+    func execute(
+        _ request: OCIRuntimeExecutionRequest
+    ) async throws -> OCIRuntimeExecutionOutcome
     func health() async throws -> OCIRuntimeHealth
     func network(named name: String) async throws -> OCIRuntimeNetworkState
     func diskUsage() async throws -> OCIRuntimeDiskUsage
@@ -139,7 +151,9 @@ struct UnsupportedOCIRuntimeBackend: OCIRuntimeBackend {
         throw OCIExecutorFailure.unsupportedRunner(.current)
     }
 
-    func execute(_ request: OCIRuntimeExecutionRequest) async throws -> CommandResult {
+    func execute(
+        _ request: OCIRuntimeExecutionRequest
+    ) async throws -> OCIRuntimeExecutionOutcome {
         throw OCIExecutorFailure.unsupportedRunner(.current)
     }
 }
