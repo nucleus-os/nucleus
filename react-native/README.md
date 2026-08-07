@@ -1,18 +1,27 @@
 # Nucleus React Native
 
-`react-native/` owns the React Native platform targets inside the root SwiftPM package: Hermes, Fabric, JSI integration, TurboModules, and the bridge from RN commits into the Nucleus render/UI core.
+`react-native/` owns the complete React Native platform: the first-party Bun workspace and its JavaScript packages, Hermes, Fabric, JSI integration, TurboModules, and the bridge from RN commits into the Nucleus render/UI core.
+
+The Bun workspace lives at this directory root. Its packages are `@nucleus-os/app`,
+`@nucleus-os/window`, and `@nucleus-os/metro-resolver`; its dependency graph is
+locked by `bun.lock`. The exact published React Native package under
+`node_modules/react-native` supplies the JavaScript runtime, generated TypeScript
+declarations, codegen scripts, ReactCommon, and generated FBReactNativeSpec
+sources. The matching canonical React Native gitlink supplies only
+`ReactCxxPlatform`, which the npm package omits. The separate Hermes checkout
+remains the source of the engine Nucleus compiles.
 
 It consumes the render SDK owned by `core/` and owns `rn` within each
 per-target native SDK root, such as
 `~/.cache/nucleus/nucleus-native-sdk/linux-arm64/rn`. Generated and native
 outputs remain under `react-native/.rn-build` and `react-native/.cxx-build`;
-the vendored React Native tree stays unmodified.
+the React Native gitlink is an unmodified source-only input, not a JavaScript
+dependency workspace.
 
 Provision and verify from the repository root:
 
 ```sh
 collider bootstrap rn
-collider generate rn-spec
 collider build rn
 collider test rn
 ```

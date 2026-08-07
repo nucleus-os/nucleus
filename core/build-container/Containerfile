@@ -196,8 +196,7 @@ RUN curl --fail --location --output /tmp/cmake.tar.gz \
     && /opt/cmake/bin/cmake --version \
         | grep --fixed-strings 'cmake version 3.30.2'
 
-ENV COREPACK_HOME=/opt/corepack \
-    PATH=/opt/node/bin:/opt/cmake/bin:/opt/swift/usr/bin:/usr/lib/ccache:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV PATH=/opt/bun/bin:/opt/node/bin:/opt/cmake/bin:/opt/swift/usr/bin:/usr/lib/ccache:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN curl --fail --location --output /tmp/node.tar.xz \
         https://nodejs.org/dist/v26.6.0/node-v26.6.0-linux-arm64.tar.xz \
@@ -207,10 +206,17 @@ RUN curl --fail --location --output /tmp/node.tar.xz \
     && tar --extract --xz --file /tmp/node.tar.xz \
         --directory /opt/node --strip-components=1 \
     && rm -f /tmp/node.tar.xz \
-    && install --directory --mode=0755 /opt/corepack \
-    && /opt/node/bin/npm install --global corepack@0.35.0 \
-    && /opt/node/bin/corepack prepare yarn@1.22.22 --activate \
     && /opt/node/bin/node --version | grep --fixed-strings 'v26.6.0'
+
+RUN curl --fail --location --output /tmp/bun.zip \
+        https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-aarch64.zip \
+    && echo 'a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b  /tmp/bun.zip' \
+        | sha256sum --check --strict \
+    && unzip /tmp/bun.zip -d /tmp/bun \
+    && install --directory --mode=0755 /opt/bun/bin \
+    && install --mode=0755 /tmp/bun/bun-linux-aarch64/bun /opt/bun/bin/bun \
+    && rm -rf /tmp/bun /tmp/bun.zip \
+    && /opt/bun/bin/bun --version | grep --fixed-strings '1.3.14'
 
 # Ubuntu 24.04's packaged loader only advertises Vulkan 1.3. Build the Khronos
 # loader matching Nucleus's vendored Vulkan 1.4.350 headers for both Linux
@@ -314,12 +320,10 @@ WORKDIR /src
 ENV ANDROID_NDK_HOME=/opt/android-ndk-r30-beta2 \
     CCACHE_COMPILERCHECK=content \
     CCACHE_DIR=/ccache \
-    COREPACK_ENABLE_NETWORK=0 \
-    COREPACK_HOME=/opt/corepack \
     HOME=/home/nucleus-build \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    PATH=/opt/node/bin:/opt/cmake/bin:/opt/swift/usr/bin:/usr/lib/ccache:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PATH=/opt/bun/bin:/opt/node/bin:/opt/cmake/bin:/opt/swift/usr/bin:/usr/lib/ccache:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     TZ=UTC
 
 ENTRYPOINT ["/usr/local/bin/nucleus-build"]

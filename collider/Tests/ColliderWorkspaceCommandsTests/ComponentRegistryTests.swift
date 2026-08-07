@@ -155,7 +155,7 @@ private func fixtureReactNativeNodeModules(
         component: ComponentID(rawValue: "rn"))
     return try producer.output(
         "node-modules",
-        path: root.appending("third-party/react-native/node_modules"),
+        path: root.appending("node_modules"),
         validation: .nonEmptyDirectory)
 }
 
@@ -738,7 +738,7 @@ private func fixtureReactNativeNodeModules(
     }
 }
 
-@Test func migratedGeneratorsInvokeComponentToolsWithoutCommandPlugins() async throws {
+@Test func vulkanGeneratorInvokesItsToolWithoutACommandPlugin() throws {
     let root = FilePath("/workspace")
     let environment = ["PATH": "/usr/bin"]
     let swiftPM = SwiftPMInvocation(
@@ -774,31 +774,6 @@ private func fixtureReactNativeNodeModules(
         return
     }
 
-    let reactNative = try ReactNativeColliderRecipe.generate(
-        root: root.appending("react-native"),
-        environment: environment,
-        dependencies: fixtureReactNativeNodeModules(
-            root: root.appending("react-native")),
-        builder: try fixtureNativeBuilder(
-            context: root.appending("core/build-container"),
-            imageID: FilePath("/cache/native/image-id"),
-            ccache: FilePath("/cache/native/ccache"),
-            swiftSDKRoot: FilePath("/cache/swift-sdks"),
-            environment: environment)
-    ).task
-    guard let reactNativeCommand = try await ociExecutions(in: reactNative.action).first else {
-        Issue.record("React Native generation must be a typed OCI command")
-        return
-    }
-    #expect(
-        reactNativeCommand.command == [
-            "javascript",
-            "/opt/node/bin/node",
-            "/workspace/react-native/tools/generate-rn-spec.js",
-        ])
-    #expect(
-        reactNativeCommand.workingDirectory
-            == "/workspace/react-native/third-party/react-native")
 }
 
 @Test func waylandGenerationIsOneColliderOwnedAction() async throws {
@@ -985,16 +960,12 @@ private func fixtureReactNativeNodeModules(
         root: reactNativeRoot,
         environment: environment
     ).active
-    let generated = try ReactNativeColliderRecipe.generate(
-        root: reactNativeRoot,
-        environment: environment,
-        dependencies: fixtureReactNativeNodeModules(root: reactNativeRoot),
-        builder: builder
-    ).spec
+    let dependencies = try fixtureReactNativeNodeModules(root: reactNativeRoot)
     let armHermes = try ReactNativeColliderRecipe.buildHermes(
         root: reactNativeRoot,
         environment: environment,
         target: arm64,
+        dependencies: dependencies,
         skiaExternalSources: skiaSources.externalSources,
         icuLibrary: fixtureICULibrary(arm64, root: coreRoot),
         builder: builder)
@@ -1002,6 +973,7 @@ private func fixtureReactNativeNodeModules(
         root: reactNativeRoot,
         environment: environment,
         target: x8664,
+        dependencies: dependencies,
         skiaExternalSources: skiaSources.externalSources,
         icuLibrary: fixtureICULibrary(x8664, root: coreRoot),
         builder: builder)
@@ -1039,8 +1011,8 @@ private func fixtureReactNativeNodeModules(
                 root: reactNativeRoot,
                 environment: environment,
                 target: arm64,
+                dependencies: dependencies,
                 boost: boost,
-                generated: generated,
                 hermes: armHermes,
                 support: armSupport,
                 builder: builder
@@ -1049,8 +1021,8 @@ private func fixtureReactNativeNodeModules(
                 root: reactNativeRoot,
                 environment: environment,
                 target: x8664,
+                dependencies: dependencies,
                 boost: boost,
-                generated: generated,
                 hermes: x86Hermes,
                 support: x86Support,
                 builder: builder
@@ -1087,16 +1059,12 @@ private func fixtureReactNativeNodeModules(
         root: root,
         environment: environment
     ).active
-    let generated = try ReactNativeColliderRecipe.generate(
-        root: root,
-        environment: environment,
-        dependencies: fixtureReactNativeNodeModules(root: root),
-        builder: builder
-    ).spec
+    let dependencies = try fixtureReactNativeNodeModules(root: root)
     let hermes = try ReactNativeColliderRecipe.buildHermes(
         root: root,
         environment: environment,
         target: target,
+        dependencies: dependencies,
         skiaExternalSources: fixtureSkiaExternalSources(),
         icuLibrary: fixtureICULibrary(target),
         builder: builder)
@@ -1106,8 +1074,8 @@ private func fixtureReactNativeNodeModules(
         root: root,
         environment: environment,
         target: target,
+        dependencies: dependencies,
         boost: boost,
-        generated: generated,
         hermes: hermes,
         support: support,
         builder: builder)
@@ -1138,9 +1106,9 @@ private func fixtureReactNativeNodeModules(
         Set(runtime.task.dependencies) == [
             TaskID(rawValue: "native.builder"),
             TaskID(rawValue: "rn.support.linux-arm64"),
-            TaskID(rawValue: "rn.generate"),
             TaskID(rawValue: "rn.boost"),
             TaskID(rawValue: "rn.hermes.linux-arm64"),
+            TaskID(rawValue: "rn.javascript-dependencies"),
             TaskID(rawValue: "swift-sdk.activate-target-sdks"),
         ])
 }
@@ -1158,6 +1126,7 @@ private func fixtureReactNativeNodeModules(
         root: root,
         environment: environment,
         target: NativeLinuxTarget(architecture: .x86_64),
+        dependencies: fixtureReactNativeNodeModules(root: root),
         skiaExternalSources: fixtureSkiaExternalSources(),
         icuLibrary: fixtureICULibrary(
             NativeLinuxTarget(architecture: .x86_64)),
@@ -1177,14 +1146,11 @@ private func fixtureReactNativeNodeModules(
     #expect(configure.command.contains("cmake"))
     #expect(
         configure.command.contains(
-            "-DJSI_DIR=/src/react-native/packages/react-native/ReactCommon/jsi"
+            "-DJSI_DIR=/react-native/ReactCommon/jsi"
         ))
     #expect(
-        task.inputs.contains(
-            .sourceCheckout(
-                root.appending(
-                    "third-party/react-native/packages/react-native/ReactCommon/jsi"
-                ))))
+        task.dependencies.contains(
+            TaskID(rawValue: "rn.javascript-dependencies")))
     #expect(build.command.contains("ninja"))
     #expect(merge.command.contains("/tools/merge-static-archives.sh"))
     #expect(executions.allSatisfy { $0.executionPlatform == .linuxARM64OCI })
@@ -1301,16 +1267,12 @@ private func fixtureReactNativeNodeModules(
         root: root,
         environment: environment
     ).active
-    let generated = try ReactNativeColliderRecipe.generate(
-        root: root,
-        environment: environment,
-        dependencies: fixtureReactNativeNodeModules(root: root),
-        builder: builder
-    ).spec
+    let dependencies = try fixtureReactNativeNodeModules(root: root)
     let hermes = try ReactNativeColliderRecipe.buildHermes(
         root: root,
         environment: environment,
         target: target,
+        dependencies: dependencies,
         skiaExternalSources: fixtureSkiaExternalSources(),
         icuLibrary: fixtureICULibrary(target),
         builder: builder)
@@ -1323,8 +1285,8 @@ private func fixtureReactNativeNodeModules(
         root: root,
         environment: environment,
         target: target,
+        dependencies: dependencies,
         boost: boost,
-        generated: generated,
         hermes: hermes,
         support: support,
         builder: builder)
@@ -1332,12 +1294,14 @@ private func fixtureReactNativeNodeModules(
         root: root,
         sdkRoot: sdkRoot,
         target: target,
+        dependencies: dependencies,
         runtime: runtime)
     let native = nativeArtifacts.task
 
     #expect(
         Set(native.dependencies) == [
-            TaskID(rawValue: "rn.cxx.linux-x86_64")
+            TaskID(rawValue: "rn.cxx.linux-x86_64"),
+            TaskID(rawValue: "rn.javascript-dependencies"),
         ])
     #expect(
         native.outputs.allSatisfy {

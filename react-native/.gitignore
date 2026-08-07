@@ -1,7 +1,0 @@
-.build/
-.swiftpm/
-*.o
-.rn-build/
-.cxx-build/
-third-party/.boost-generations/
-third-party/boost

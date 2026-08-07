@@ -1,0 +1,11 @@
+build/
+.rn-build/
+.cxx-build/
+target/
+dist/
+tmp/
+third-party/
+**/node_modules/
+pnpm-lock.yaml
+# Ignore Nucleus React Native shim files that use non-standard JS syntax (e.g., TS `as const`)
+**/*.nucleus.js

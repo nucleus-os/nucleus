@@ -14,11 +14,6 @@ package struct BoostArtifacts: Sendable {
     package let active: ArtifactReference<PathArtifact>
 }
 
-package struct GeneratedReactNativeSources: Sendable {
-    package let task: TaskDeclaration
-    package let spec: ArtifactReference<DirectoryArtifact>
-}
-
 package struct JavaScriptDependencyArtifacts: Sendable {
     package let task: TaskDeclaration
     package let nodeModules: ArtifactReference<DirectoryArtifact>
@@ -74,15 +69,10 @@ public enum ReactNativeColliderRecipe {
             root: root,
             environment: context.environment,
             builder: native.builder)
-        let generation = try generate(
-            root: root,
-            environment: context.environment,
-            dependencies: javascript.nodeModules,
-            builder: native.builder)
         let boost = try provisionBoost(
             root: root,
             environment: context.environment)
-        var tasks = [javascript.task, generation.task] + boost.tasks
+        var tasks = [javascript.task] + boost.tasks
         var bootstrapRoots: Set<TaskID> = []
         var nativeSDKs: [NativeLinuxTarget: ArtifactReferenceSet] = [:]
         for architecture in PlatformArchitecture.allCases {
@@ -94,6 +84,7 @@ public enum ReactNativeColliderRecipe {
                 root: root,
                 environment: context.environment,
                 target: target,
+                dependencies: javascript.nodeModules,
                 skiaExternalSources: skiaExternalSources,
                 icuLibrary: icuLibrary,
                 builder: native.builder)
@@ -106,8 +97,8 @@ public enum ReactNativeColliderRecipe {
                 root: root,
                 environment: context.environment,
                 target: target,
+                dependencies: javascript.nodeModules,
                 boost: boost.active,
-                generated: generation.spec,
                 hermes: hermes,
                 support: support,
                 builder: native.builder)
@@ -115,6 +106,7 @@ public enum ReactNativeColliderRecipe {
                 root: root,
                 sdkRoot: native.nativeSDK(for: target),
                 target: target,
+                dependencies: javascript.nodeModules,
                 runtime: cxx)
             tasks += [hermes.task, support.task, cxx.task, sdk.task]
             bootstrapRoots.insert(sdk.task.id)
@@ -124,8 +116,7 @@ public enum ReactNativeColliderRecipe {
             descriptor: descriptor,
             tasks: tasks,
             entrypoints: [
-                ComponentEntrypoint(id: .bootstrap, roots: bootstrapRoots),
-                ComponentEntrypoint(id: .generate, roots: [generation.task.id]),
+                ComponentEntrypoint(id: .bootstrap, roots: bootstrapRoots)
             ])
         return PreparedComponent(
             component: component,
@@ -137,14 +128,9 @@ public enum ReactNativeColliderRecipe {
         environment: [String: String],
         builder: NativeOCIConfiguration
     ) throws -> JavaScriptDependencyArtifacts {
-        let checkout = root.appending("third-party/react-native")
-        let packageManifest = checkout.appending("package.json")
-        let reactNativeManifest = checkout.appending(
-            "packages/react-native/package.json")
-        let lockfile = checkout.appending("yarn.lock")
-        let active = checkout.appending("node_modules")
-        let candidate = checkout.appending(".node_modules.candidate")
-        let previous = checkout.appending(".node_modules.previous")
+        let packageManifest = root.appending("package.json")
+        let lockfile = root.appending("bun.lock")
+        let active = root.appending("node_modules")
         var task = TaskBuilder(
             id: TaskID(rawValue: "rn.javascript-dependencies"),
             component: ComponentID(rawValue: "rn"))
@@ -158,29 +144,18 @@ public enum ReactNativeColliderRecipe {
             builder: builder,
             networkPolicy: .externalEnabled,
             command: [
-                "/opt/node/bin/corepack", "yarn", "install", "--frozen-lockfile",
-                "--network-concurrency", "4",
-                "--network-timeout", "600000",
-                "--modules-folder", candidate.string,
+                "/opt/bun/bin/bun", "install", "--frozen-lockfile", "--no-save",
             ],
             environment: environment)
         let declaration = task.build(
             inputs: [
                 .file(lockfile),
                 .file(packageManifest),
-                .file(reactNativeManifest),
             ],
-            locks: [.checkout("rn-javascript")],
+            locks: [.checkout("rn-javascript-dependencies")],
             action:
                 try AnyColliderAction(
-                    InstallReactNativeJavaScriptDependenciesAction(
-                        execution: execution,
-                        candidate: candidate,
-                        previous: previous,
-                        active: active,
-                        packageManifest: packageManifest,
-                        reactNativeManifest: reactNativeManifest,
-                        lockfile: lockfile)))
+                    RunReactNativeJavaScriptAction(execution: execution)))
         return JavaScriptDependencyArtifacts(
             task: declaration,
             nodeModules: nodeModules)
@@ -264,53 +239,18 @@ public enum ReactNativeColliderRecipe {
             active: activeArtifact)
     }
 
-    package static func generate(
-        root: FilePath,
-        environment: [String: String],
-        dependencies: ArtifactReference<DirectoryArtifact>,
-        builder: NativeOCIConfiguration
-    ) throws -> GeneratedReactNativeSources {
-        var taskBuilder = TaskBuilder(
-            id: TaskID(rawValue: "rn.generate"),
-            component: ComponentID(rawValue: "rn"))
-        taskBuilder.consume(builder.image)
-        taskBuilder.consume(dependencies)
-        let spec: ArtifactReference<DirectoryArtifact> = try taskBuilder.output(
-            "fb-react-native-spec",
-            path: root.appending(".rn-build/generated/FBReactNativeSpec"),
-            validation: .nonEmptyDirectory)
-        let task = taskBuilder.build(
-            inputs: [
-                .file(root.appending("tools/generate-rn-spec.js")),
-                .sourceCheckout(
-                    root.appending(
-                        "third-party/react-native/packages/react-native-codegen")),
-            ],
-            locks: [.checkout("rn")],
-            action: try javascriptAction(
-                root: root,
-                builder: builder,
-                networkPolicy: .externalDisabled,
-                command: [
-                    "/opt/node/bin/node",
-                    root.appending("tools/generate-rn-spec.js").string,
-                ],
-                environment: environment)
-        )
-        return GeneratedReactNativeSources(task: task, spec: spec)
-    }
-
     package static func buildHermes(
         root: FilePath,
         environment: [String: String],
         target: NativeLinuxTarget,
+        dependencies: ArtifactReference<DirectoryArtifact>,
         skiaExternalSources: ArtifactReference<DirectoryArtifact>,
         icuLibrary: ArtifactReference<FileArtifact>,
         builder: NativeOCIConfiguration
     ) throws -> HermesArtifacts {
         let source = root.appending("third-party/hermes")
         let reactNativeJSI = root.appending(
-            "third-party/react-native/packages/react-native/ReactCommon/jsi")
+            "node_modules/react-native/ReactCommon/jsi")
         let build = root.appending(".rn-build/\(target.identifier)/hermes")
         let combined = build.appending("libhermes_lean_combined.a")
         let hermesc = build.appending("bin/hermesc")
@@ -324,6 +264,7 @@ public enum ReactNativeColliderRecipe {
             component: ComponentID(rawValue: "rn"))
         taskBuilder.consume(builder.image)
         taskBuilder.consume(builder.swiftSDK)
+        taskBuilder.consume(dependencies)
         taskBuilder.consume(skiaExternalSources)
         taskBuilder.consume(icuLibrary)
         let combinedArtifact: ArtifactReference<FileArtifact> = try taskBuilder.output(
@@ -337,7 +278,6 @@ public enum ReactNativeColliderRecipe {
         let task = taskBuilder.build(
             inputs: [
                 .sourceCheckout(source),
-                .sourceCheckout(reactNativeJSI),
                 .file(root.appending("../tools/merge-static-archives.sh")),
             ],
             locks: [.checkout("rn-native-\(target.identifier)")],
@@ -355,7 +295,7 @@ public enum ReactNativeColliderRecipe {
                                 "-DHERMES_BUILD_APPLE_FRAMEWORK=OFF",
                                 "-DHERMES_ENABLE_DEBUGGER=OFF",
                                 "-DHERMES_ENABLE_INTL=ON",
-                                "-DJSI_DIR=\(nativePath(reactNativeJSI, "/src/react-native/packages/react-native/ReactCommon/jsi"))",
+                                "-DJSI_DIR=\(nativePath(reactNativeJSI, "/react-native/ReactCommon/jsi"))",
                                 "-DICU_FOUND=ON",
                                 "-DICU_INCLUDE_DIRS=/icu/common;/icu/i18n",
                                 "-DICU_LIBRARIES=/icu/lib/libicu.a",
@@ -502,8 +442,8 @@ public enum ReactNativeColliderRecipe {
         root: FilePath,
         environment: [String: String],
         target: NativeLinuxTarget,
+        dependencies: ArtifactReference<DirectoryArtifact>,
         boost: ArtifactReference<PathArtifact>,
-        generated: ArtifactReference<DirectoryArtifact>,
         hermes: HermesArtifacts,
         support: SupportLibraryArtifacts,
         builder: NativeOCIConfiguration
@@ -512,14 +452,16 @@ public enum ReactNativeColliderRecipe {
         let glogBuild = buildRoot.appending("glog")
         let nativeBuild = buildRoot.appending("reactnative")
         let reactNative = root.appending(
-            "third-party/react-native/packages/react-native")
+            "node_modules/react-native")
+        let reactCxxPlatform = root.appending(
+            "third-party/react-native/packages/react-native/ReactCxxPlatform")
         var taskBuilder = TaskBuilder(
             id: TaskID(rawValue: "rn.cxx.\(target.identifier)"),
             component: ComponentID(rawValue: "rn"))
         taskBuilder.consume(builder.image)
         taskBuilder.consume(builder.swiftSDK)
+        taskBuilder.consume(dependencies)
         taskBuilder.consume(boost)
-        taskBuilder.consume(generated)
         for library in hermes.libraries + support.libraries {
             taskBuilder.consume(library)
         }
@@ -546,7 +488,7 @@ public enum ReactNativeColliderRecipe {
                 .sourceCheckout(root.appending("third-party/folly")),
                 .sourceCheckout(root.appending("third-party/fast_float")),
                 .sourceCheckout(root.appending("third-party/hermes")),
-                .sourceCheckout(reactNative.appending("ReactCommon")),
+                .sourceCheckout(root.appending("third-party/react-native")),
                 .sourceCheckout(root.appending("../core/swiftpm/cmake/reactnative")),
             ],
             locks: [.checkout("rn-native-\(target.identifier)")],
@@ -588,9 +530,10 @@ public enum ReactNativeColliderRecipe {
                                 "-DDOUBLE_CONVERSION_SOURCE_DIR=/src/double-conversion/src",
                                 "-DFMT_INC=\(nativePath(root.appending("third-party/fmt/include"), "/src/fmt/include"))",
                                 "-DFAST_FLOAT_INC=\(nativePath(root.appending("third-party/fast_float/include"), "/src/fast_float/include"))",
-                                "-DJSI_DIR=\(nativePath(reactNative.appending("ReactCommon/jsi"), "/src/react-native/packages/react-native/ReactCommon/jsi"))",
-                                "-DRN_ROOT=\(nativePath(reactNative, "/src/react-native/packages/react-native"))",
-                                "-DRN_CODEGEN_ROOT=\(nativePath(generated.path.removingLastComponent(), "/generated"))",
+                                "-DJSI_DIR=\(nativePath(reactNative.appending("ReactCommon/jsi"), "/react-native/ReactCommon/jsi"))",
+                                "-DRN_ROOT=\(nativePath(reactNative, "/react-native"))",
+                                "-DRCXXP_ROOT=\(nativePath(reactCxxPlatform, "/src/react-native/packages/react-native/ReactCxxPlatform"))",
+                                "-DRN_CODEGEN_ROOT=/react-native/React/FBReactNativeSpec",
                                 "-DHERMES_DIR=\(nativePath(root.appending("third-party/hermes"), "/src/hermes"))",
                             ],
                             root: root,
@@ -617,6 +560,7 @@ public enum ReactNativeColliderRecipe {
         root: FilePath,
         sdkRoot: FilePath,
         target: NativeLinuxTarget,
+        dependencies: ArtifactReference<DirectoryArtifact>,
         runtime: CxxRuntimeArtifacts
     ) throws -> NativeSDKArtifacts {
         let buildRoot = root.appending(".rn-build/\(target.identifier)")
@@ -630,7 +574,11 @@ public enum ReactNativeColliderRecipe {
             ),
             ("include/glog", root.appending("third-party/glog")),
             ("include/glog-gen", buildRoot.appending("glog")),
-            ("include/rn-codegen", root.appending(".rn-build/generated")),
+            (
+                "include/rn-codegen",
+                root.appending(
+                    "node_modules/react-native/React/FBReactNativeSpec")
+            ),
             ("include/fmt", root.appending("third-party/fmt")),
             ("include/fast_float", root.appending("third-party/fast_float")),
             (
@@ -639,7 +587,12 @@ public enum ReactNativeColliderRecipe {
             ),
             (
                 "include/react-native",
-                root.appending("third-party/react-native")
+                root.appending("node_modules/react-native")
+            ),
+            (
+                "include/react-cxx-platform",
+                root.appending(
+                    "third-party/react-native/packages/react-native/ReactCxxPlatform")
             ),
             ("lib/rn", buildRoot),
             (
@@ -659,6 +612,7 @@ public enum ReactNativeColliderRecipe {
         for output in runtime.outputs {
             builder.consume(output)
         }
+        builder.consume(dependencies)
         var outputs = ArtifactReferenceSet()
         for (name, _) in links {
             let output: ArtifactReference<PathArtifact> = try builder.output(
@@ -835,23 +789,6 @@ private enum BoostProvisioningFailure: Error {
     case commandFailed(Int32)
 }
 
-private func javascriptAction(
-    root: FilePath,
-    builder: NativeOCIConfiguration,
-    networkPolicy: OCINetworkPolicy,
-    command: [String],
-    environment: [String: String]
-) throws -> AnyColliderAction {
-    try AnyColliderAction(
-        RunReactNativeJavaScriptAction(
-            execution: javascriptExecution(
-                root: root,
-                builder: builder,
-                networkPolicy: networkPolicy,
-                command: command,
-                environment: environment)))
-}
-
 private func javascriptExecution(
     root: FilePath,
     builder: NativeOCIConfiguration,
@@ -864,7 +801,7 @@ private func javascriptExecution(
         artifactTarget: .linuxARM64,
         imageID: builder.imageID,
         hostname: "react-native-javascript",
-        workingDirectory: root.appending("third-party/react-native").string,
+        workingDirectory: root.string,
         hostWorkingDirectory: root,
         mounts: [
             OCIMount(source: root, target: root.string, access: .readWrite)
@@ -878,7 +815,7 @@ private func javascriptExecution(
         containerEnvironment: [
             "HOME": "/home/nucleus-build",
             "PATH":
-                "/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "/opt/bun/bin:/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         ],
         command: ["javascript"] + command,
         environment: environment,
@@ -1018,6 +955,10 @@ private func nativeContainerOperation(
                 target: "/src",
                 access: .readOnly),
             OCIMount(
+                source: root.appending("node_modules/react-native"),
+                target: "/react-native",
+                access: .readOnly),
+            OCIMount(
                 source: root.appending(".rn-build/dependencies"),
                 target: "/dependencies",
                 access: .readOnly),
@@ -1080,149 +1021,6 @@ private struct RunReactNativeJavaScriptAction: ColliderAction {
 
     func execute(in context: ActionContext) async throws {
         try await context.containers.run(execution)
-    }
-}
-
-private struct InstallReactNativeJavaScriptDependenciesAction: ColliderAction {
-    struct Identity: ColliderActionIdentity {
-        let execution: OCIExecution
-        let candidate: FilePath
-        let previous: FilePath
-        let active: FilePath
-        let packageManifest: FilePath
-        let reactNativeManifest: FilePath
-        let lockfile: FilePath
-
-        func encode(into encoder: inout ActionIdentityEncoder) {
-            encoder.append(
-                tag: 1,
-                nested: OCIExecutionActionIdentity(execution))
-            encoder.append(tag: 2, string: candidate.string)
-            encoder.append(tag: 3, string: previous.string)
-            encoder.append(tag: 4, string: active.string)
-            encoder.append(tag: 5, string: packageManifest.string)
-            encoder.append(tag: 6, string: reactNativeManifest.string)
-            encoder.append(tag: 7, string: lockfile.string)
-        }
-    }
-
-    static let kind: ActionKind = "rn.install-javascript-dependencies"
-
-    let execution: OCIExecution
-    let candidate: FilePath
-    let previous: FilePath
-    let active: FilePath
-    let packageManifest: FilePath
-    let reactNativeManifest: FilePath
-    let lockfile: FilePath
-
-    var identity: Identity {
-        Identity(
-            execution: execution,
-            candidate: candidate,
-            previous: previous,
-            active: active,
-            packageManifest: packageManifest,
-            reactNativeManifest: reactNativeManifest,
-            lockfile: lockfile)
-    }
-
-    var requirements: ActionRequirements {
-        ociActionRequirements(execution: execution)
-    }
-
-    var environment: [String: String] { execution.environment }
-
-    func execute(in context: ActionContext) async throws {
-        try recoverInterruptedPublication(using: context.files)
-        try context.files.remove(candidate)
-        do {
-            try await context.containers.run(execution)
-            try validateCandidate(using: context.files)
-            try publishCandidate(using: context.files)
-        } catch {
-            try? context.files.remove(candidate)
-            throw error
-        }
-    }
-
-    private func recoverInterruptedPublication(
-        using files: ActionFileSystem
-    ) throws {
-        guard try files.metadataWithoutFollowingSymlinks(for: previous) != nil else {
-            return
-        }
-        if try files.metadataWithoutFollowingSymlinks(for: active) == nil {
-            try files.move(from: previous, to: active)
-        } else {
-            try files.remove(previous)
-        }
-    }
-
-    private func publishCandidate(using files: ActionFileSystem) throws {
-        let hadActive = try files.metadataWithoutFollowingSymlinks(for: active) != nil
-        if hadActive {
-            try files.move(from: active, to: previous)
-        }
-        do {
-            try files.move(from: candidate, to: active)
-        } catch {
-            if hadActive {
-                try? files.move(from: previous, to: active)
-            }
-            throw error
-        }
-        try? files.remove(previous)
-    }
-
-    private func validateCandidate(using files: ActionFileSystem) throws {
-        let requested = try JSONDecoder().decode(
-            ReactNativePackageManifest.self,
-            from: Data(try files.read(reactNativeManifest)))
-        guard let expectedHermes = requested.dependencies?["hermes-compiler"] else {
-            throw JavaScriptDependencyFailure.missingHermesRequirement
-        }
-        let installedHermesManifest = candidate.appending(
-            "hermes-compiler/package.json")
-        let installed = try JSONDecoder().decode(
-            InstalledJavaScriptPackage.self,
-            from: Data(try files.read(installedHermesManifest)))
-        guard installed.version == expectedHermes else {
-            throw JavaScriptDependencyFailure.wrongHermesVersion(
-                expected: expectedHermes,
-                actual: installed.version)
-        }
-        let codegenManifest = candidate.appending(
-            "@react-native/codegen/package.json")
-        guard try files.metadata(for: codegenManifest)?.type == .regular else {
-            throw JavaScriptDependencyFailure.missingCodegen
-        }
-    }
-
-}
-
-private struct ReactNativePackageManifest: Decodable {
-    let dependencies: [String: String]?
-}
-
-private struct InstalledJavaScriptPackage: Decodable {
-    let version: String
-}
-
-private enum JavaScriptDependencyFailure: Error, CustomStringConvertible {
-    case missingHermesRequirement
-    case wrongHermesVersion(expected: String, actual: String)
-    case missingCodegen
-
-    var description: String {
-        switch self {
-        case .missingHermesRequirement:
-            "React Native does not declare a Hermes compiler dependency"
-        case .wrongHermesVersion(let expected, let actual):
-            "installed Hermes compiler version \(actual) does not match \(expected)"
-        case .missingCodegen:
-            "React Native codegen was not installed"
-        }
     }
 }
 

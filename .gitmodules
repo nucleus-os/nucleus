@@ -34,7 +34,7 @@
 	url = https://github.com/fastfloat/fast_float
 [submodule "react-native/third-party/react-native"]
 	path = react-native/third-party/react-native
-	url = https://github.com/nucleus-os/react-native.git
+	url = https://github.com/react/react-native.git
 [submodule "react-native/third-party/double-conversion"]
 	path = react-native/third-party/double-conversion
 	url = https://github.com/google/double-conversion

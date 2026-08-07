@@ -12,9 +12,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Dep roots passed via -D (absolute):
 #   FOLLY_DIR FAST_FLOAT_INC FMT_INC DOUBLE_CONVERSION_SOURCE_DIR GLOG_INC GLOG_SRC_INC
-#   BOOST_INC JSI_DIR RN_ROOT HERMES_DIR
+#   BOOST_INC JSI_DIR RN_ROOT RCXXP_ROOT HERMES_DIR
 set(RC ${RN_ROOT}/ReactCommon)
-set(RCXXP ${RN_ROOT}/ReactCxxPlatform)
+set(RCXXP ${RCXXP_ROOT})
 
 # Folly includes double-conversion headers as <double-conversion/header.h>, while
 # upstream stores them directly in src/. Keep that compatibility layout inside

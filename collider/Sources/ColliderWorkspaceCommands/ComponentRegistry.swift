@@ -363,7 +363,7 @@ package struct ComponentRegistry {
         ]
         if includeLinuxOperations { bootstrapSpellings.append("tracy") }
         expose(.bootstrap, to: bootstrapSpellings)
-        expose(.generate, to: ["react-native", "rn", "vulkan", "wayland"])
+        expose(.generate, to: ["vulkan", "wayland"])
         expose(.install, to: ["browser", "chromium"])
         if includeLinuxOperations { expose(.install, to: ["shell"]) }
         expose(BenchmarkEntrypoints.run, to: ["benchmark"])
@@ -730,7 +730,7 @@ package struct ComponentRegistry {
         let root = context.layout.root
         let render = nativeSDK.appending("render")
         let rn = nativeSDK.appending("rn")
-        let reactNative = rn.appending("include/react-native/packages/react-native")
+        let reactNative = rn.appending("include/react-native")
         let reactCommon = reactNative.appending("ReactCommon")
         let icu = root.appending(
             "core/third-party/skia/third_party/externals/icu/source")
@@ -766,7 +766,7 @@ package struct ComponentRegistry {
             rn.appending("include/rn-codegen/FBReactNativeSpec"),
             reactNative,
             reactNative.appending("React"),
-            reactNative.appending("ReactCxxPlatform"),
+            rn.appending("include/react-cxx-platform"),
             reactCommon,
             reactCommon.appending("callinvoker"),
             reactCommon.appending("jsiexecutor"),

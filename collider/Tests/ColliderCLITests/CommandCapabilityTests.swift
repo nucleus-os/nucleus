@@ -9,7 +9,6 @@ private let taskControlledLeaves: [[String]] = [
     ["bootstrap"],
     ["build"],
     ["test"],
-    ["generate", "rn-spec"],
     ["generate", "vulkan"],
     ["generate", "wayland"],
     ["swift-sdk", "rebuild"],

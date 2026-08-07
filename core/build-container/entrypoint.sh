@@ -6,8 +6,8 @@ case "${1:-}" in
     shift
     ;;
   javascript)
-    if [[ ! -f package.json || ! -f yarn.lock ]]; then
-      echo "error: working directory is not the React Native checkout root" >&2
+    if [[ ! -f package.json || ! -f bun.lock ]]; then
+      echo "error: working directory is not the Nucleus React Native workspace" >&2
       exit 64
     fi
     shift
@@ -59,7 +59,7 @@ case "${1:-}" in
       echo "error: /ccache is not the writable compiler cache" >&2
       exit 64
     fi
-    if [[ ! -d /src/react-native/packages/react-native/ReactCommon \
+    if [[ ! -d /react-native/ReactCommon \
         || ! -d /core-cmake ]]; then
       echo "error: React Native builder inputs are incomplete" >&2
       exit 64
