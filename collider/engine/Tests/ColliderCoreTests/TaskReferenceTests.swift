@@ -52,6 +52,34 @@ private func inertActionFileSystem() -> ActionFileSystem {
     #expect(try forward.encodedBytes() != differentType.encodedBytes())
 }
 
+@Test func ociResourceLimitsDoNotInvalidateActionResults() throws {
+    func identity(resourceLimits: OCIResourceLimits) throws -> [UInt8] {
+        let execution = OCIExecution(
+            executionPlatform: .linuxARM64OCI,
+            artifactTarget: .linuxARM64,
+            imageID: FilePath("/fixture/image-id"),
+            hostname: "fixture",
+            workingDirectory: "/workspace",
+            hostWorkingDirectory: FilePath("/fixture"),
+            mounts: [],
+            networkPolicy: .externalDisabled,
+            userPolicy: .builder,
+            capabilityPolicy: .dropAll,
+            privilegePolicy: .prohibitAcquisition,
+            processFilesystemPolicy: .standard,
+            resourceLimits: resourceLimits,
+            containerEnvironment: [:],
+            command: ["build"],
+            environment: [:],
+            output: .logged)
+        var encoder = ActionIdentityEncoder()
+        OCIExecutionActionIdentity(execution).encode(into: &encoder)
+        return try encoder.encodedBytes()
+    }
+
+    #expect(try identity(resourceLimits: .build) == identity(resourceLimits: .parallelBuild))
+}
+
 @Test func ociExecutionPipelineRejectsANonzeroCommandStatus() async throws {
     let execution = OCIExecution(
         executionPlatform: .linuxARM64OCI,

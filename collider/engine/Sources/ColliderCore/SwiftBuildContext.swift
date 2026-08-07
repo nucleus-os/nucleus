@@ -41,6 +41,7 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
     public let intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy
     public let resourceLimits: OCIResourceLimits
     public let containerEnvironment: [String: String]
+    public let environmentProjection: EnvironmentProjection
     public let commandPrefix: [String]
 
     public init(
@@ -55,6 +56,7 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
         intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy = .disabled,
         resourceLimits: OCIResourceLimits = .build,
         containerEnvironment: [String: String] = [:],
+        environmentProjection: EnvironmentProjection = .none,
         commandPrefix: [String] = ["swiftpm"]
     ) {
         precondition(executionPlatform == .linuxARM64OCI)
@@ -69,17 +71,44 @@ public struct SwiftPMOCIExecution: Hashable, Sendable {
         self.intelBinaryTranslationPolicy = intelBinaryTranslationPolicy
         self.resourceLimits = resourceLimits
         self.containerEnvironment = containerEnvironment
+        self.environmentProjection = environmentProjection
         self.commandPrefix = commandPrefix
     }
 
     public var imageID: FilePath { image.path }
 }
 
+public struct EnvironmentProjection: Hashable, Sendable {
+    public let names: Set<String>
+    public let prefixes: Set<String>
+    public let excludedNames: Set<String>
+
+    public init(
+        names: Set<String> = [],
+        prefixes: Set<String> = [],
+        excludedNames: Set<String> = []
+    ) {
+        self.names = names
+        self.prefixes = prefixes
+        self.excludedNames = excludedNames
+    }
+
+    public static let none = EnvironmentProjection()
+
+    public func project(_ environment: [String: String]) -> [String: String] {
+        environment.filter { name, _ in
+            !excludedNames.contains(name)
+                && (names.contains(name)
+                    || prefixes.contains(where: name.hasPrefix))
+        }
+    }
+}
+
 /// The complete SwiftPM invocation context. `identityBytes` contains only the
 /// settings that determine whether compilation artifacts may be reused.
 public struct SwiftBuildContext: Hashable, Sendable {
     public static let defaultMaximumParallelism: UInt32 = 10
-    public static let concurrentOCIMaximumParallelism: UInt32 = 8
+    public static let concurrentOCIMaximumParallelism: UInt32 = 12
 
     public let packageRoot: FilePath
     public let configuration: SwiftBuildConfiguration
@@ -342,11 +371,8 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         guard case .oci(let configuration) = context.execution else {
             throw SwiftPMInvocationExecutionFailure.requiresOCIContext
         }
-        var containerEnvironment: [String: String] = [:]
-        for (name, value) in environment
-        where containerEnvironmentVariable(name) {
-            containerEnvironment[name] = value
-        }
+        var containerEnvironment = configuration.environmentProjection.project(
+            environment)
         containerEnvironment.merge(
             configuration.containerEnvironment,
             uniquingKeysWith: { _, configured in configured })
@@ -409,11 +435,8 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         environment: [String: String],
         configuration: SwiftPMOCIExecution
     ) -> OCIExecution {
-        var containerEnvironment: [String: String] = [:]
-        for (name, value) in environment
-        where containerEnvironmentVariable(name) {
-            containerEnvironment[name] = value
-        }
+        var containerEnvironment = configuration.environmentProjection.project(
+            environment)
         containerEnvironment.merge(
             configuration.containerEnvironment,
             uniquingKeysWith: { _, configured in configured })
@@ -576,16 +599,6 @@ public struct SwiftTestRequirement: Hashable, Sendable {
     public var qualifiedProduct: String {
         "\(package):\(testProduct)"
     }
-}
-
-private func containerEnvironmentVariable(_ name: String) -> Bool {
-    if name == "NUCLEUS_NATIVE_SDK_ROOT" {
-        return false
-    }
-    return name.hasPrefix("NUCLEUS_")
-        || name.hasPrefix("SWIFTPM_")
-        || name.hasPrefix("CCACHE_")
-        || ["LANG", "LC_ALL", "TZ", "TERM"].contains(name)
 }
 
 private func append(

@@ -23,18 +23,66 @@ public struct CommandLogging: Sendable {
     }
 }
 
+public struct OCIRuntimeConfiguration: Hashable, Sendable {
+    public let externalNetwork: String
+    public let isolatedNetwork: String
+    public let guestHome: String
+    public let managedLabels: [String]
+    public let loggerLabel: String
+
+    public init(
+        externalNetwork: String,
+        isolatedNetwork: String,
+        guestHome: String,
+        managedLabels: [String],
+        loggerLabel: String
+    ) {
+        precondition(!externalNetwork.isEmpty)
+        precondition(!isolatedNetwork.isEmpty)
+        precondition(guestHome.hasPrefix("/"))
+        precondition(!managedLabels.isEmpty)
+        precondition(!loggerLabel.isEmpty)
+        self.externalNetwork = externalNetwork
+        self.isolatedNetwork = isolatedNetwork
+        self.guestHome = guestHome
+        self.managedLabels = managedLabels
+        self.loggerLabel = loggerLabel
+    }
+
+    public static let engineDefault = OCIRuntimeConfiguration(
+        externalNetwork: "default",
+        isolatedNetwork: "collider-internal",
+        guestHome: "/home/collider",
+        managedLabels: ["dev.collider.managed=true"],
+        loggerLabel: "dev.collider.apple-container")
+}
+
 public actor ColliderRuntime {
     let logging: CommandLogging?
     let downloads: ColliderDownloads
     var taskOutputPresentation: TaskOutputPresentation?
     public let cancellation: RuntimeCancellation
+    let ociConfiguration: OCIRuntimeConfiguration
 
     public init(
         logging: CommandLogging? = nil,
         cancellation: RuntimeCancellation = RuntimeCancellation()
     ) {
+        self.init(
+            logging: logging,
+            cancellation: cancellation,
+            downloadCacheRoot: defaultColliderDownloadCacheRoot(),
+            ociConfiguration: .engineDefault)
+    }
+
+    public init(
+        logging: CommandLogging? = nil,
+        cancellation: RuntimeCancellation = RuntimeCancellation(),
+        downloadCacheRoot: FilePath,
+        ociConfiguration: OCIRuntimeConfiguration
+    ) {
         self.logging = logging
-        downloads = ColliderDownloads { progress in
+        downloads = ColliderDownloads(cacheRoot: downloadCacheRoot) { progress in
             guard let logging else { return }
             let expected = progress.expectedBytes.map(String.init) ?? "unknown"
             Task {
@@ -46,6 +94,7 @@ public actor ColliderRuntime {
             }
         }
         self.cancellation = cancellation
+        self.ociConfiguration = ociConfiguration
     }
 
     public func execute(_ command: CommandSpec) async throws -> CommandResult {
@@ -637,6 +686,12 @@ public actor ColliderRuntime {
         try await sink.finish()
         return commandResult
     }
+}
+
+private func defaultColliderDownloadCacheRoot() -> FilePath {
+    FilePath(
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("collider/downloads", isDirectory: true).path)
 }
 
 enum TaskOutputPresentation: Sendable {

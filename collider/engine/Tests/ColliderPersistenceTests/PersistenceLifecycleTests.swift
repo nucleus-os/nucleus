@@ -85,7 +85,7 @@ import Testing
     #expect(FileManager.default.fileExists(atPath: unrelated.path))
 }
 
-@Test func generationPublicationCutsOverAndReusesIdenticalGeneration() throws {
+@Test func generationPublicationCutsOverAndReusesExistingGenerationKey() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-generation-cutover-\(UUID().uuidString)")
     let candidate = directory.appendingPathComponent("candidate")
@@ -109,12 +109,17 @@ import Testing
 
     try FileManager.default.createDirectory(
         at: candidate, withIntermediateDirectories: true)
-    try Data("artifact".utf8).write(to: candidate.appendingPathComponent("payload"))
+    try Data("redundant rebuild".utf8).write(
+        to: candidate.appendingPathComponent("payload"))
     try GenerationPublisher.publish(
         candidate: FilePath(candidate.path),
         generation: FilePath(generation.path),
         active: FilePath(active.path))
     #expect(!FileManager.default.fileExists(atPath: candidate.path))
+    #expect(
+        try String(
+            contentsOf: generation.appendingPathComponent("payload"),
+            encoding: .utf8) == "artifact")
 }
 
 @Test func interruptedPublicationPreservesACompleteOldOrNewGeneration() throws {

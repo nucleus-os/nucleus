@@ -43,14 +43,14 @@ import Testing
         temporaryDirectory: FilePath("/var/nucleus/temporary"))
     try flags.management.validate()
 
-    #expect(flags.management.networks == [OCIBackendContract.appleOfflineNetwork])
+    #expect(flags.management.networks == ["collider-internal"])
     #expect(flags.management.platform == "linux/arm64")
     #expect(flags.management.dnsDisabled)
     #expect(flags.management.capDrop == ["ALL"])
     #expect(flags.management.readOnly)
     #expect(flags.management.rosetta)
     #expect(flags.management.name == "fixture-builder-id")
-    #expect(flags.management.tmpFs == ["/home/nucleus-build"])
+    #expect(flags.management.tmpFs == ["/home/collider"])
     #expect(flags.process.uid == 1000)
     #expect(flags.process.gid == 1000)
     #expect(flags.process.env == ["BUILD_MODE=fixture"])
@@ -71,6 +71,47 @@ import Testing
     #expect(
         flags.management.mounts.contains(
             "type=bind,source=/var/nucleus/temporary,target=/tmp"))
+
+    let alternateConfiguration = OCIRuntimeConfiguration(
+        externalNetwork: "alternate-external",
+        isolatedNetwork: "alternate-isolated",
+        guestHome: "/home/alternate",
+        managedLabels: ["example.alternate.managed=true"],
+        loggerLabel: "example.alternate.container")
+    let alternateFlags = appleContainerFlags(
+        execution,
+        name: "alternate-builder-id",
+        temporaryDirectory: nil,
+        configuration: alternateConfiguration)
+    #expect(alternateFlags.management.networks == ["alternate-isolated"])
+    #expect(alternateFlags.management.labels == ["example.alternate.managed=true"])
+    #expect(alternateFlags.management.tmpFs.contains("/home/alternate"))
+    #expect(alternateFlags.management.networks != flags.management.networks)
+
+    let externalExecution = OCIExecution(
+        executionPlatform: .linuxARM64OCI,
+        artifactTarget: .linuxARM64,
+        imageID: FilePath("/var/nucleus/image-id"),
+        hostname: "fixture-download",
+        workingDirectory: "/src",
+        hostWorkingDirectory: FilePath("/var/nucleus"),
+        mounts: [],
+        networkPolicy: .externalEnabled,
+        userPolicy: .builder,
+        capabilityPolicy: .dropAll,
+        privilegePolicy: .prohibitAcquisition,
+        processFilesystemPolicy: .standard,
+        resourceLimits: .parallelBuild,
+        containerEnvironment: [:],
+        command: ["download"],
+        environment: [:],
+        output: .logged)
+    let externalFlags = appleContainerFlags(
+        externalExecution,
+        name: "fixture-download-id",
+        temporaryDirectory: nil)
+    #expect(externalFlags.management.networks == ["default"])
+    #expect(!externalFlags.management.dnsDisabled)
 }
 
 @Test func ociExecutionRejectsDuplicateMountTargets() async throws {
@@ -347,12 +388,12 @@ import Testing
         name: executionName,
         temporaryDirectory: nil)
     #expect(flags.management.rosetta)
-    #expect(flags.management.networks == [OCIBackendContract.appleOfflineNetwork])
+    #expect(flags.management.networks == ["collider-internal"])
     #expect(flags.management.dnsDisabled)
     #expect(flags.management.capDrop == ["ALL"])
     #expect(flags.management.readOnly)
     #expect(flags.management.tmpFs.contains("/tmp"))
-    #expect(flags.management.tmpFs.contains("/home/nucleus-build"))
+    #expect(flags.management.tmpFs.contains("/home/collider"))
     #expect(flags.resource.cpus == 16)
     #expect(flags.resource.memory == String(88 * 1_024 * 1_024 * 1_024))
     #expect(

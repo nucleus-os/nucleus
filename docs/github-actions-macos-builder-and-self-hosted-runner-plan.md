@@ -10,8 +10,8 @@ operating systems never enter a Nucleus build identity.
 
 Linux host tools execute in separate digest-selected `linux/arm64` OCI images
 through Apple `container`; those tools cross-compile Linux/amd64 artifacts.
-Tasks that must execute a declared x86_64 configure probe, test product, or
-pinned x86_64-only Android NDK host utility explicitly require macOS 27 Intel
+Tasks that must execute a declared x86_64 configure probe or pinned x86_64-only
+Android NDK host utility explicitly require macOS 27 Intel
 binary translation inside that ARM64 guest. Translation is an execution policy
 on the task, never a different builder image or artifact target.
 macOS products compile natively as `macOS/arm64`. The persistent development machine never produces a candidate or
@@ -105,11 +105,11 @@ The Linux architecture lanes now build concurrently in separate resource and
 lock domains. Both boot the same `linux/arm64` builder image. The arm64 lane
 executes only arm64 Linux processes. The x86_64 lane cross-compiles its products
 and explicitly enables macOS 27 Intel binary translation only when a task must
-execute an x86_64 configure probe, test product, or pinned x86_64-only Android
-NDK host utility. Loader and headless Vulkan tests run for both artifact
-architectures. Translated results are development confidence evidence; they are
-never native Linux x86_64, kernel, performance, GPU, DRM, or release
-qualification evidence.
+execute an x86_64 configure probe or pinned x86_64-only Android NDK host
+utility. Both production architecture graphs compile and link, but the Swift,
+loader, and headless Vulkan test graph exists and executes only on native
+Linux/arm64. Intel translation is never treated as native Linux x86_64, kernel,
+performance, GPU, DRM, or release qualification evidence.
 
 Apple `container` does not restore its dynamically bootstrapped launchd
 registration after reboot. Its API server and helpers are launch agents that
@@ -179,17 +179,18 @@ OCI executor. Nucleus does not add a second source-built Swift pipeline.
 Every Apple-container machine boots Linux/arm64. Compilation and ordinary Linux
 host tools execute natively as arm64. A task sets Intel binary translation to
 `required` only when its declared command must execute an x86_64 configure
-probe, test product, or pinned x86_64-only Android NDK host utility. The Apple
+probe or pinned x86_64-only Android NDK host utility. The Apple
 backend then enables macOS 27's integrated translation facility for that task;
 there is no separately installed Rosetta runtime, QEMU executor, or amd64 VM.
 
-Translated x86_64 execution is a bounded confidence lane. It proves that an
-x86_64 ELF product loads, links against its architecture-matched libc++ and
-Vulkan userspace, and passes architecture-neutral behavior under translation.
-It does not prove native CPU behavior, kernel behavior, sandbox performance,
-io_uring performance, physical GPU behavior, DRM, GBM, DMA-BUF, explicit sync,
-scanout, or release fitness. Real x86_64 and physical GPU/DRM workers remain the
-only authorities for those qualification records.
+Translated x86_64 execution is limited to build inputs that have no native
+arm64 equivalent, such as admitted configure helpers and pinned Android host
+utilities. It proves only that the required tool can execute far enough to
+produce its declared output. It does not qualify a Nucleus x86_64 product or
+prove native CPU behavior, kernel behavior, sandbox performance, io_uring,
+physical GPU behavior, DRM, GBM, DMA-BUF, explicit sync, scanout, or release
+fitness. Real x86_64 and physical GPU/DRM workers remain the only authorities
+for those qualification records.
 
 ## Phase 1: Close the Public-Repository Trust Boundary
 
@@ -873,8 +874,8 @@ Run acceptance in this order:
 23. verify all selected source repositories and submodules remain clean;
 24. verify every build output exists only in a declared writable root;
 25. verify every x86_64 process executed on the Mac was declared with required
-    Intel translation and was limited to an admitted configure probe, test
-    product, or pinned host utility; also verify no task used an undeclared host
+    Intel translation and was limited to an admitted configure probe or pinned
+    host utility; also verify no task used an undeclared host
     compiler, host package, mutable tag, network fallback, writable source mount,
     or developer-specific path;
 26. verify the current Ubuntu development computer can be unavailable for the

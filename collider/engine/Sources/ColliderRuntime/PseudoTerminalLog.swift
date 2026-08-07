@@ -25,7 +25,10 @@ public final class PseudoTerminalLog: @unchecked Sendable {
     private let slave: Int32
     private let output: Int32
 
-    public init(output path: FilePath) throws {
+    public init(
+        output path: FilePath,
+        queueLabel: String = "dev.collider.pseudo-terminal-log"
+    ) throws {
         var slavePathBytes = [CChar](repeating: 0, count: 4_096)
         var slave = Int32(-1)
         let master = unsafe collider_open_raw_pseudo_terminal(
@@ -62,7 +65,7 @@ public final class PseudoTerminalLog: @unchecked Sendable {
         self.output = output.rawValue
         completion.enter()
         DispatchQueue(
-            label: "org.nucleus.collider.pseudo-terminal-log",
+            label: queueLabel,
             qos: .utility
         ).async { [self] in
             drain()

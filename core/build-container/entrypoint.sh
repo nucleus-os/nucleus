@@ -59,8 +59,7 @@ case "${1:-}" in
       echo "error: /ccache is not the writable compiler cache" >&2
       exit 64
     fi
-    if [[ ! -f /src/README.md \
-        || ! -d /src/third-party/react-native/packages/react-native/ReactCommon \
+    if [[ ! -d /src/react-native/packages/react-native/ReactCommon \
         || ! -d /core-cmake ]]; then
       echo "error: React Native builder inputs are incomplete" >&2
       exit 64

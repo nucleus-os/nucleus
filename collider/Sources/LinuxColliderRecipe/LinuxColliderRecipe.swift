@@ -51,9 +51,11 @@ public enum LinuxColliderRecipe: ColliderComponent {
                 swiftPM: try context.swiftPM(.linux(architecture)),
                 targetArtifacts: try native.artifacts(for: target))
             buildRoots.insert(LinuxTaskIDs.build(architecture))
-            testRoots.insert(LinuxTaskIDs.test(architecture))
-            loaderRoots.insert(LinuxTaskIDs.testLoader(architecture))
-            headlessRoots.insert(LinuxTaskIDs.testGPUHeadless(architecture))
+            if architecture == .arm64 {
+                testRoots.insert(LinuxTaskIDs.test(architecture))
+                loaderRoots.insert(LinuxTaskIDs.testLoader(architecture))
+                headlessRoots.insert(LinuxTaskIDs.testGPUHeadless(architecture))
+            }
         }
         return try ComponentDefinition(
             descriptor: descriptor,
@@ -84,13 +86,30 @@ public enum LinuxColliderRecipe: ColliderComponent {
             product: "NucleusSessionSupervisor",
             packageRoot: root,
             environment: environment)
+        let sharedInputs: [ArtifactInput] = [
+            swiftPM.identityInput
+        ]
+        var buildBuilder = TaskBuilder(
+            id: buildID,
+            component: ComponentID(rawValue: "linux"))
+        buildBuilder.consume(targetArtifacts)
+        let build = buildBuilder.build(
+            swiftProducts: [buildRequirement],
+            inputs: sharedInputs,
+            postconditions: [swiftPM.postcondition],
+            locks: [.checkout("linux-\(name)")],
+            assessmentPolicy: .incremental)
+        guard architecture == .arm64 else { return [build] }
+
         let testRequirement = swiftPM.testProduct(
             package: "nucleus",
             testProduct: "NucleusLinuxPlatformPackageTests",
             packageRoot: root,
             environment: environment,
             arguments: [
-                "--no-parallel", "--skip",
+                "--parallel", "--num-workers",
+                String(SwiftBuildContext.concurrentOCIMaximumParallelism),
+                "--skip",
                 "gpu(DRM|Loader|Headless)_",
             ])
         let loaderRequirement = swiftPM.testProduct(
@@ -105,19 +124,6 @@ public enum LinuxColliderRecipe: ColliderComponent {
             packageRoot: root,
             environment: environment,
             arguments: ["--filter", "gpuHeadless_"])
-        let sharedInputs: [ArtifactInput] = [
-            swiftPM.identityInput
-        ]
-        var buildBuilder = TaskBuilder(
-            id: buildID,
-            component: ComponentID(rawValue: "linux"))
-        buildBuilder.consume(targetArtifacts)
-        let build = buildBuilder.build(
-            swiftProducts: [buildRequirement],
-            inputs: sharedInputs,
-            postconditions: [swiftPM.postcondition],
-            locks: [.checkout("linux-\(name)")],
-            assessmentPolicy: .incremental)
         return [
             build,
             TaskDeclaration(

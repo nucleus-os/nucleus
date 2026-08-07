@@ -175,6 +175,17 @@ private func fixtureReactNativeNodeModules(
         architecture: .x86_64,
         builder: builder)
 
+    guard case .oci(let armExecution) = arm64.context.execution,
+        case .oci(let x86Execution) = x86_64.context.execution
+    else {
+        Issue.record("Linux SwiftPM builds must execute in OCI")
+        return
+    }
+    let armWritable = armExecution.mounts.filter { $0.access == .readWrite }
+        .map(\.source)
+    let x86Writable = x86Execution.mounts.filter { $0.access == .readWrite }
+        .map(\.source)
+
     #expect(
         arm64.swiftExecutable
             == .path(FilePath("/opt/swift/usr/bin/swift")))
@@ -191,6 +202,18 @@ private func fixtureReactNativeNodeModules(
             .hasSuffix(
                 "/x86_64-unknown-linux-gnu/"
                     + NucleusLinuxABI.sdkDirectoryName))
+    #expect(
+        armExecution.mounts.contains(
+            OCIMount(
+                source: fixtureRepositoryRoot,
+                target: fixtureRepositoryRoot.string,
+                access: .readOnly)))
+    #expect(armWritable.contains { arm64.scratchPath.isContained(in: $0) })
+    #expect(x86Writable.contains { x86_64.scratchPath.isContained(in: $0) })
+    #expect(
+        armWritable.allSatisfy { armPath in
+            x86Writable.allSatisfy { !$0.overlaps(armPath) }
+        })
 }
 
 @Test func reactNativeDependencyInstallRejectsContainerFailure() async throws {
@@ -267,18 +290,34 @@ private func fixtureReactNativeNodeModules(
         ]) == FilePath(ndk.path))
 }
 
-@Test func runtimeTestSelectionsUseBothLinuxArchitectureLanes() throws {
+@Test func runtimeTestSelectionsUseNativeARM64LinuxLane() throws {
     let root = try #require(
         discoverWorkspaceRoot(from: FileManager.default.currentDirectoryPath))
     let registry = ComponentRegistry(
         context: WorkspaceContext(
             root: root,
             environment: [:]))
+    let catalog = try registry.componentCatalog()
+    let nativeTest = try #require(
+        catalog.tasks.first { $0.id == TaskID(rawValue: "linux.arm64.test") })
+    let nativeTestRequirement = try #require(nativeTest.swiftTests.first)
+    #expect(
+        nativeTestRequirement.arguments == [
+            "--parallel", "--num-workers", "12", "--skip",
+            "gpu(DRM|Loader|Headless)_",
+        ])
+    #expect(nativeTestRequirement.invocation.context.maximumParallelism == 12)
+    if case .oci(let execution) = nativeTestRequirement.invocation.context.execution {
+        #expect(execution.resourceLimits == .parallelBuild)
+        #expect(execution.resourceLimits.cpuCount == 12)
+    } else {
+        Issue.record("native Linux tests must execute in the ARM64 OCI builder")
+    }
     let all = try selectedTestTasks(in: registry, selection: nil).map(\.rawValue)
 
     #expect(
         all == [
-            "linux.arm64.test", "linux.x86_64.test",
+            "linux.arm64.test",
             "test.release-gate.collection",
             "test.release-gate.compositor-transition",
             "test.release-gate.foundation-lifecycle",
@@ -288,23 +327,23 @@ private func fixtureReactNativeNodeModules(
         ])
     #expect(
         try selectedTestTasks(in: registry, selection: "config").map(\.rawValue) == [
-            "linux.arm64.test", "linux.x86_64.test",
+            "linux.arm64.test"
         ])
     #expect(
         try selectedTestTasks(in: registry, selection: "ipc").map(\.rawValue) == [
-            "linux.arm64.test", "linux.x86_64.test",
+            "linux.arm64.test"
         ])
     #expect(
         try selectedTestTasks(in: registry, selection: "compositor").map(\.rawValue) == [
-            "linux.arm64.test", "linux.x86_64.test",
+            "linux.arm64.test"
         ])
     #expect(
         try selectedTestTasks(in: registry, selection: "loader").map(\.rawValue) == [
-            "linux.arm64.test-loader", "linux.x86_64.test-loader",
+            "linux.arm64.test-loader"
         ])
     #expect(
         try selectedTestTasks(in: registry, selection: "gpu-headless").map(\.rawValue) == [
-            "linux.arm64.test-gpu-headless", "linux.x86_64.test-gpu-headless",
+            "linux.arm64.test-gpu-headless"
         ])
     #expect(
         try selectedTestTasks(in: registry, selection: "gpu-drm").map(\.rawValue) == [
@@ -488,6 +527,25 @@ private func fixtureReactNativeNodeModules(
     #expect(
         context.taskEnvironment["CCACHE_SLOPPINESS"]
             == "include_file_ctime,include_file_mtime,locale")
+}
+
+@Test func workspacePolicyOwnsCacheNamespaceAndRunEnvironment() {
+    let context = WorkspaceContext(
+        root: FilePath("/workspace"),
+        environment: [
+            "HOME": "/home/fixture",
+            "XDG_CACHE_HOME": "/cache",
+            "NUCLEUS_RUN_DIR": "/runs/current",
+            "NUCLEUS_RUN_LOG": "/runs/current/run.log",
+        ])
+
+    #expect(context.cacheRoot == FilePath("/cache"))
+    #expect(
+        nucleusCacheLayout(environment: context.environment).downloads
+            == FilePath("/cache/nucleus/downloads"))
+    #expect(context.taskEnvironment["NUCLEUS_RUN_DIR"] == nil)
+    #expect(context.taskEnvironment["NUCLEUS_RUN_LOG"] == nil)
+    #expect(context.environment["NUCLEUS_RUN_DIR"] == "/runs/current")
 }
 
 @Test func workspaceEnvironmentRetainsEveryPackageBuildDescription() {
@@ -877,15 +935,17 @@ private func fixtureReactNativeNodeModules(
             })
         #expect(
             executions.allSatisfy {
-                $0.mounts.filter { $0.access == .readWrite }
-                    .map(\.target).sorted() == ["/build", "/ccache"]
+                let writableTargets = $0.mounts.filter { $0.access == .readWrite }
+                    .map(\.target)
+                return writableTargets.contains("/ccache")
+                    && writableTargets.contains("/build")
             })
         #expect(executions[0].command.contains("/src/bin/gn"))
         #expect(executions[1].command.contains("ninja"))
     }
 }
 
-@Test func nativeArchitectureBuildsHaveIndependentLocks() throws {
+@Test func nativeArchitectureBuildsHaveIndependentWritableState() async throws {
     let coreRoot = fixtureRepositoryRoot.appending("core")
     let reactNativeRoot = FilePath("/workspace/react-native")
     let environment = [
@@ -983,6 +1043,16 @@ private func fixtureReactNativeNodeModules(
 
     for (armTask, x86Task) in architecturePairs {
         #expect(Set(armTask.locks).isDisjoint(with: Set(x86Task.locks)))
+        let armWritable = try await ociExecutions(in: armTask.action).flatMap {
+            $0.mounts.filter { $0.access == .readWrite }.map(\.source)
+        }
+        let x86Writable = try await ociExecutions(in: x86Task.action).flatMap {
+            $0.mounts.filter { $0.access == .readWrite }.map(\.source)
+        }
+        #expect(
+            armWritable.allSatisfy { armPath in
+                x86Writable.allSatisfy { !$0.overlaps(armPath) }
+            })
     }
 }
 
@@ -1037,12 +1107,12 @@ private func fixtureReactNativeNodeModules(
                 $0.command.first == "react-native"
                     && $0.mounts.contains(
                         OCIMount(
-                            source: root,
+                            source: root.appending("third-party"),
                             target: "/src",
                             access: .readOnly))
                     && $0.mounts.contains(
                         OCIMount(
-                            source: root.appending(".rn-build"),
+                            source: root.appending(".rn-build/linux-arm64"),
                             target: "/build",
                             access: .readWrite))
             })
@@ -1090,7 +1160,7 @@ private func fixtureReactNativeNodeModules(
     #expect(configure.command.contains("cmake"))
     #expect(
         configure.command.contains(
-            "-DJSI_DIR=/src/third-party/react-native/packages/react-native/ReactCommon/jsi"
+            "-DJSI_DIR=/src/react-native/packages/react-native/ReactCommon/jsi"
         ))
     #expect(
         task.inputs.contains(
@@ -1269,6 +1339,7 @@ private func fixtureReactNativeNodeModules(
             workspace.appendingPathComponent(
                 "android-runtime"
             ).path),
+        cacheRoot: FilePath("/cache"),
         environment: ["PATH": "/usr/bin"]
     ).tasks
     let pipelineIDs = tasks.map(\.id.rawValue).filter {

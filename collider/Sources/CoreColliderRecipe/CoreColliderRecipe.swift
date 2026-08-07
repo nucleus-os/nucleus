@@ -304,6 +304,7 @@ public enum CoreColliderRecipe: ColliderComponent {
             buildDirectory: root.appending(".skia-build/\(target.identifier)"),
             gnArguments: linuxGNArguments(target),
             mode: "linux",
+            cacheNamespace: target.identifier,
             artifactTarget: target.artifactTarget,
             intelBinaryTranslationPolicy: target.intelBinaryTranslationPolicy,
             containerEnvironment: targetEnvironment(target),
@@ -333,6 +334,7 @@ public enum CoreColliderRecipe: ColliderComponent {
                 "skia_use_fontconfig=false",
             ] + commonGNArguments,
             mode: "android",
+            cacheNamespace: "android-arm64",
             artifactTarget: .androidARM64(apiLevel: minimumAndroidAPI),
             intelBinaryTranslationPolicy: .required,
             containerEnvironment: [:],
@@ -1203,6 +1205,7 @@ private func skiaTask(
     buildDirectory: FilePath,
     gnArguments: [String],
     mode: String,
+    cacheNamespace: String,
     artifactTarget: ArtifactTarget,
     intelBinaryTranslationPolicy: OCIIntelBinaryTranslationPolicy,
     containerEnvironment: [String: String],
@@ -1211,18 +1214,18 @@ private func skiaTask(
     builder: NativeOCIConfiguration
 ) throws -> CoreColliderRecipe.SkiaBuildArtifacts {
     let skia = root.appending("third-party/skia")
-    let containerBuildDirectory = "/build/\(buildDirectory.lastComponent!)"
+    let containerBuildDirectory = "/build"
     let mounts = [
         OCIMount(
             source: skia,
             target: "/src",
             access: .readOnly),
         OCIMount(
-            source: root.appending(".skia-build"),
-            target: "/build",
+            source: buildDirectory,
+            target: containerBuildDirectory,
             access: .readWrite),
         OCIMount(
-            source: builder.ccache,
+            source: builder.ccache.appending(cacheNamespace),
             target: "/ccache",
             access: .readWrite),
         OCIMount(

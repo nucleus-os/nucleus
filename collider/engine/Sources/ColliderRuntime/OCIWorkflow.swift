@@ -92,7 +92,7 @@ extension ColliderRuntime {
                 "invalid OCI execution contract")
         }
 
-        var targets: Set<String> = ["/tmp", "/home/nucleus-build"]
+        var targets: Set<String> = ["/tmp", ociConfiguration.guestHome]
         for mount in execution.mounts {
             guard mount.target.hasPrefix("/"),
                 !mount.target.contains(".."),
@@ -135,7 +135,10 @@ extension ColliderRuntime {
         let output =
             taskOutputPresentation?.output(for: execution.output)
             ?? execution.output
-        return try await AppleContainerLifecycle(cancellation: cancellation).execute(
+        return try await AppleContainerLifecycle(
+            cancellation: cancellation,
+            configuration: ociConfiguration
+        ).execute(
             execution,
             name: name,
             imageReference: appleImageReference(imageID),

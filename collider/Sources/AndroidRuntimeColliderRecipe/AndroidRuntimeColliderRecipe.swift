@@ -108,6 +108,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         let root = context.componentRoot(descriptor)
         let aosp = try aospImageTasks(
             root: root,
+            cacheRoot: context.cacheRoot,
             environment: context.environment)
         var tasks = aosp.tasks
         var gfxstreamRoots: Set<TaskID> = []
@@ -264,6 +265,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
 
     package static func aospImageTasks(
         root: FilePath,
+        cacheRoot: FilePath,
         environment: [String: String]
     ) throws -> AOSPImageArtifacts {
         let source = try aospSourceArtifacts(
@@ -277,6 +279,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             environment: environment)
         let product = try aospProductImageTasks(
             root: root,
+            cacheRoot: cacheRoot,
             environment: environment,
             launcher: source.launcher,
             sourceProvenance: source.provenance,
@@ -450,6 +453,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
 
     private static func aospProductImageTasks(
         root: FilePath,
+        cacheRoot: FilePath,
         environment: [String: String],
         launcher: ArtifactReference<FileArtifact>,
         sourceProvenance: ArtifactReference<JSONArtifact>,
@@ -465,7 +469,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
         let signingIdentity = root.appending(
             ".aosp-signing/local-development")
         let aospBuildRoot = root.appending(".aosp-build")
-        let ccacheDirectory = aospCCacheDirectory(environment: environment)
+        let ccacheDirectory = cacheRoot.appending("nucleus/aosp-ccache")
         let productIdentity = Array(
             [
                 lock.product,
@@ -721,13 +725,6 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             activeGeneration: activeGeneration)
     }
 
-    private static func aospCCacheDirectory(
-        environment: [String: String]
-    ) -> FilePath {
-        ColliderCacheLayout(environment: environment).root
-            .appending("nucleus/aosp-ccache")
-    }
-
     private static func loadAOSPSourceLock(
         root: FilePath
     ) throws -> AOSPSourceLock {
@@ -920,7 +917,7 @@ private func gfxstreamExecution(
                 target: "/build-support",
                 access: .readOnly),
             OCIMount(
-                source: builder.ccache,
+                source: builder.ccache(for: target),
                 target: "/ccache",
                 access: .readWrite),
             OCIMount(

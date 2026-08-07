@@ -391,10 +391,9 @@ public struct OCIExecutionActionIdentity: ColliderActionIdentity {
         encoder.append(tag: 18, string: execution.privilegePolicy.rawValue)
         encoder.append(tag: 19, string: execution.processFilesystemPolicy.rawValue)
         encoder.append(tag: 20, string: execution.intelBinaryTranslationPolicy.rawValue)
-        encoder.append(tag: 21, integer: UInt64(execution.resourceLimits.cpuCount ?? 0))
-        encoder.append(tag: 22, integer: execution.resourceLimits.memoryBytes ?? 0)
-        encoder.append(tag: 23, integer: UInt64(execution.resourceLimits.processCount))
-        encoder.append(tag: 24, integer: UInt64(execution.resourceLimits.openFileCount))
+
+        // Resource limits schedule an execution but cannot change its declared
+        // result. Tuning them must not invalidate otherwise clean artifacts.
 
         var containerEnvironment = CanonicalDigestEncoder(
             identityPathMap: encoder.identityPathMap)

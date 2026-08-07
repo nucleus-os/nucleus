@@ -250,7 +250,10 @@ private let fixturePackageRoot = FilePath("/workspace")
                 access: .readWrite)
         ],
         intelBinaryTranslationPolicy: .required,
-        containerEnvironment: ["HOME": "/home/nucleus-build"])
+        containerEnvironment: ["HOME": "/home/fixture"],
+        environmentProjection: EnvironmentProjection(
+            prefixes: ["PROJECT_"],
+            excludedNames: ["PROJECT_PRIVATE"]))
     let context = SwiftBuildContext(
         packageRoot: fixturePackageRoot,
         configuration: .debug,
@@ -283,7 +286,8 @@ private let fixturePackageRoot = FilePath("/workspace")
         workingDirectory: fixturePackageRoot,
         environment: [
             "PATH": "/host/bin",
-            "NUCLEUS_NATIVE_SDK_ROOT": "/cache/native-sdk",
+            "PROJECT_MODE": "debug",
+            "PROJECT_PRIVATE": "secret",
         ])
 
     #expect(operation.executionPlatform == .linuxARM64OCI)
@@ -295,7 +299,8 @@ private let fixturePackageRoot = FilePath("/workspace")
             "/opt/swift-x86_64/usr/bin/swift", "test",
         ]))
     #expect(operation.containerEnvironment["PATH"] == nil)
-    #expect(operation.containerEnvironment["NUCLEUS_NATIVE_SDK_ROOT"] == nil)
+    #expect(operation.containerEnvironment["PROJECT_MODE"] == "debug")
+    #expect(operation.containerEnvironment["PROJECT_PRIVATE"] == nil)
     let product = invocation.product(
         package: "fixture",
         product: "Fixture",

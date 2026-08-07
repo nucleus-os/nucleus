@@ -21,11 +21,14 @@ package struct WorkspaceLayout: Sendable {
     package var androidPersistentState: FilePath { runtimeState.appending("android-state") }
     var locks: FilePath { state.appending("locks") }
     package var work: FilePath { state.appending("work") }
-    func swiftScratch(for context: SwiftBuildContext) -> FilePath {
+    func swiftScratch(
+        for context: SwiftBuildContext,
+        under scratchRoot: FilePath? = nil
+    ) -> FilePath {
         let identity = ArtifactHasher.digest(bytes: context.identityBytes)
             .description
             .replacingOccurrences(of: ":", with: "-")
-        return state.appending("swiftpm")
+        return (scratchRoot ?? state.appending("swiftpm"))
             .appending(context.sanitizer ?? "unsanitized")
             .appending(identity)
     }

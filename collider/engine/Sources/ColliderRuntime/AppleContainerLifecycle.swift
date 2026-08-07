@@ -131,13 +131,16 @@ public func pruneAppleContainerImages() async throws {
 struct AppleContainerLifecycle: Sendable {
     private let client: ContainerClient
     private let cancellation: RuntimeCancellation
+    private let configuration: OCIRuntimeConfiguration
 
     init(
         client: ContainerClient = ContainerClient(),
-        cancellation: RuntimeCancellation
+        cancellation: RuntimeCancellation,
+        configuration: OCIRuntimeConfiguration
     ) {
         self.client = client
         self.cancellation = cancellation
+        self.configuration = configuration
     }
 
     func execute(
@@ -212,7 +215,8 @@ struct AppleContainerLifecycle: Sendable {
         let flags = appleContainerFlags(
             execution,
             name: name,
-            temporaryDirectory: temporaryDirectory)
+            temporaryDirectory: temporaryDirectory,
+            configuration: configuration)
         try flags.management.validate()
         let systemConfiguration = try await Application.loadContainerSystemConfig()
         let (configuration, kernel, initImage) = try await Utility.containerConfigFromFlags(
@@ -226,7 +230,7 @@ struct AppleContainerLifecycle: Sendable {
             imageFetch: Flags.ImageFetch(maxConcurrentDownloads: 3),
             containerSystemConfig: systemConfiguration,
             progressUpdate: { _ in },
-            log: Logger(label: "dev.nucleus.collider.apple-container") { _ in
+            log: Logger(label: configuration.loggerLabel) { _ in
                 SwiftLogNoOpLogHandler()
             })
 
@@ -266,7 +270,8 @@ struct AppleContainerFlags {
 func appleContainerFlags(
     _ execution: OCIExecution,
     name: String,
-    temporaryDirectory: FilePath?
+    temporaryDirectory: FilePath?,
+    configuration: OCIRuntimeConfiguration = .engineDefault
 ) -> AppleContainerFlags {
     var mounts = execution.mounts.map { mount in
         var value =
@@ -276,7 +281,7 @@ func appleContainerFlags(
         }
         return value
     }
-    var temporaryFilesystems = ["/home/nucleus-build"]
+    var temporaryFilesystems = [configuration.guestHome]
     if let temporaryDirectory {
         mounts.append(
             "type=bind,source=\(temporaryDirectory),target=/tmp")
@@ -314,12 +319,15 @@ func appleContainerFlags(
         initImage: nil,
         kernel: nil,
         kernelArgs: [],
-        labels: ["dev.nucleus.collider.managed=true"],
+        labels: configuration.managedLabels,
         maskedPaths: [],
         mounts: mounts,
         name: name,
-        networks: execution.networkPolicy == .externalDisabled
-            ? [OCIBackendContract.appleOfflineNetwork] : [],
+        networks: [
+            execution.networkPolicy == .externalDisabled
+                ? configuration.isolatedNetwork
+                : configuration.externalNetwork
+        ],
         os: "linux",
         platform: "linux/arm64",
         publishPorts: [],

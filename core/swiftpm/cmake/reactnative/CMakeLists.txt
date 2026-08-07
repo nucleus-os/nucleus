@@ -11,10 +11,25 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Dep roots passed via -D (absolute):
-#   FOLLY_DIR FAST_FLOAT_INC FMT_INC DOUBLE_CONVERSION_INC GLOG_INC GLOG_SRC_INC
+#   FOLLY_DIR FAST_FLOAT_INC FMT_INC DOUBLE_CONVERSION_SOURCE_DIR GLOG_INC GLOG_SRC_INC
 #   BOOST_INC JSI_DIR RN_ROOT HERMES_DIR
 set(RC ${RN_ROOT}/ReactCommon)
 set(RCXXP ${RN_ROOT}/ReactCxxPlatform)
+
+# Folly includes double-conversion headers as <double-conversion/header.h>, while
+# upstream stores them directly in src/. Keep that compatibility layout inside
+# this target's isolated build root instead of adding a nested container mount.
+set(DOUBLE_CONVERSION_INC ${CMAKE_BINARY_DIR}/include)
+file(MAKE_DIRECTORY ${DOUBLE_CONVERSION_INC})
+file(REMOVE ${DOUBLE_CONVERSION_INC}/double-conversion)
+execute_process(
+    COMMAND ${CMAKE_COMMAND} -E create_symlink
+        ${DOUBLE_CONVERSION_SOURCE_DIR}
+        ${DOUBLE_CONVERSION_INC}/double-conversion
+    RESULT_VARIABLE DOUBLE_CONVERSION_LINK_RESULT)
+if(NOT DOUBLE_CONVERSION_LINK_RESULT EQUAL 0)
+    message(FATAL_ERROR "failed to create the double-conversion include layout")
+endif()
 
 # Shared defines (react_native.zig rn_flags + the stable_deps_rn folly/Hermes set).
 # FOLLY_MOBILE=0 (the host value — RN's =1 is Apple-only) so folly's ABI matches

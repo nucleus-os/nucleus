@@ -62,8 +62,46 @@ package struct TaskControls: Sendable {
                         + executionCoordinateSummary(entry.coordinates)
                         + "  \(entry.explanation)")
             }
+        } else if !quiet {
+            let skipped = report.plan.count(where: \.isClean)
+            print("completed  \(report.taskTimings.count) executed, \(skipped) skipped")
+            print(
+                "planning  \(formatDuration(report.planningDurationNanoseconds))"
+                    + " (input hashing "
+                    + "\(formatDuration(report.selectedInputHashingDurationNanoseconds)))")
+            print("SwiftPM invocations  \(report.swiftPMInvocationCount)")
+            print("execution  \(formatDuration(report.executionDurationNanoseconds))")
+            print(
+                "critical path  "
+                    + "\(formatDuration(report.criticalPathDurationNanoseconds))")
+            print(
+                "scheduling wait  "
+                    + "\(formatDuration(report.schedulingWaitDurationNanoseconds))")
+            let slowest = report.taskTimings.sorted {
+                if $0.durationNanoseconds == $1.durationNanoseconds {
+                    return $0.task.rawValue < $1.task.rawValue
+                }
+                return $0.durationNanoseconds > $1.durationNanoseconds
+            }.prefix(5)
+            if !slowest.isEmpty {
+                print("slowest tasks")
+                for timing in slowest {
+                    print(
+                        "  \(formatDuration(timing.durationNanoseconds))  "
+                            + timing.task.rawValue)
+                }
+            }
         }
     }
+}
+
+private func formatDuration(_ nanoseconds: UInt64) -> String {
+    let milliseconds = nanoseconds / 1_000_000
+    if milliseconds < 1_000 {
+        return "\(milliseconds) ms"
+    }
+    let tenths = milliseconds / 100
+    return "\(tenths / 10).\(tenths % 10) s"
 }
 
 private func executionCoordinateSummary(

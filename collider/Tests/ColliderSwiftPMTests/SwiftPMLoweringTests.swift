@@ -124,7 +124,7 @@ private func executeWithSwiftPM(
 
     #expect(lowered.count == 1)
     #expect(lowered[0].task.dependencies == [compilerTask.id])
-    #expect(lowered[0].prerequisites == [])
+    #expect(lowered[0].prerequisites == [compilerTask.id])
     #expect(lowered[0].task.artifactReferences.count == 1)
     #expect(!lowered[0].task.inputs.contains(.tool(compiler.executable)))
 }

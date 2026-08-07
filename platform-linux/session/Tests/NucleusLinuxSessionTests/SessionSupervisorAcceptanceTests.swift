@@ -6,7 +6,7 @@ import NucleusIPCTransport
 import NucleusSessionProtocol
 import Testing
 
-private struct SupervisorFixture {
+private final class SupervisorFixture {
     let directory: URL
     let supervisor: URL
     let configService: URL
@@ -16,6 +16,7 @@ private struct SupervisorFixture {
     let statusFile: URL
     let configuration: SessionConfiguration
     let sessionID: String
+    private var supervisorProcess: Process?
 
     init(configuration: SessionConfiguration = .defaults) throws {
         let products = URL(fileURLWithPath: CommandLine.arguments[0])
@@ -101,6 +102,7 @@ private struct SupervisorFixture {
         process.standardOutput = logHandle
         process.standardError = logHandle
         try process.run()
+        supervisorProcess = process
         return process
     }
 
@@ -118,6 +120,7 @@ private struct SupervisorFixture {
         let path = path(name).path
         for _ in 0..<iterations {
             if FileManager.default.fileExists(atPath: path) { return true }
+            if supervisorProcess?.isRunning == false { return false }
             usleep(10_000)
         }
         return false

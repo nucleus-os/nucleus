@@ -95,6 +95,9 @@ package struct NativeOCIConfiguration: Sendable {
     package var image: ArtifactReference<FileArtifact> { base.image }
     package var imageID: FilePath { base.imageID }
     package var ccache: FilePath { base.ccache }
+    package func ccache(for target: NativeLinuxTarget) -> FilePath {
+        base.ccache.appending(target.identifier)
+    }
     package var swiftSDKRoot: FilePath { swiftSDK.path }
     package var environment: [String: String] { base.environment }
 }

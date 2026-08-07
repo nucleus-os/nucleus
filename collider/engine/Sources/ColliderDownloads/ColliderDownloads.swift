@@ -36,10 +36,10 @@ public actor ColliderDownloads {
     private let session: URLSession
 
     public init(
-        cacheRoot: FilePath? = nil,
+        cacheRoot: FilePath,
         progress: @escaping @Sendable (DownloadProgress) -> Void = { _ in }
     ) {
-        self.cacheRoot = cacheRoot ?? Self.defaultCacheRoot()
+        self.cacheRoot = cacheRoot
         let delegate = DownloadDelegate(progress: progress)
         self.delegate = delegate
         session = URLSession(
@@ -449,11 +449,6 @@ public actor ColliderDownloads {
             transfer: directory.appending("transfer-\(UUID().uuidString)"))
     }
 
-    private static func defaultCacheRoot() -> FilePath {
-        ColliderCacheLayout(
-            environment: ProcessInfo.processInfo.environment
-        ).downloads
-    }
 }
 
 private final class DownloadLock {

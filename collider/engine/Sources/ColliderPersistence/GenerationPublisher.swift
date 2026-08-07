@@ -36,12 +36,6 @@ public enum GenerationPublisher {
         }
 
         if FileManager.default.fileExists(atPath: generation.string) {
-            let candidateDigest = try ArtifactHasher.digest(tree: candidate)
-            let generationDigest = try ArtifactHasher.digest(tree: generation)
-            guard candidateDigest == generationDigest
-            else {
-                throw GenerationPublicationFailure.generationConflict(generation)
-            }
             try FileManager.default.removeItem(atPath: candidate.string)
             try activate(
                 generation: generation, active: active, after: boundary)
@@ -151,15 +145,12 @@ enum GenerationPublicationBoundary: CaseIterable {
 
 public enum GenerationPublicationFailure: Error, CustomStringConvertible {
     case differentFilesystems
-    case generationConflict(FilePath)
     case invalidCandidate(FilePath)
 
     public var description: String {
         switch self {
         case .differentFilesystems:
             "generation candidates must be assembled beside the immutable generation"
-        case .generationConflict(let path):
-            "immutable generation already exists with different contents at \(path)"
         case .invalidCandidate(let path):
             "generation candidate is not a directory at \(path)"
         }

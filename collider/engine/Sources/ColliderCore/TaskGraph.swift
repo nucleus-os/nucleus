@@ -162,9 +162,8 @@ public enum OCIProcessFilesystemPolicy: String, Codable, Hashable, Sendable {
 }
 
 /// Controls whether the ARM Linux guest may execute Intel Linux binaries.
-/// This is independent of the OCI image architecture: Nucleus always boots an
-/// ARM64 Linux image on Apple silicon and enables translation only for tasks
-/// that execute x86_64 artifacts.
+/// This is independent of the OCI image architecture: an ARM64 Linux runner can
+/// enable translation only for tasks that execute x86_64 artifacts.
 public enum OCIIntelBinaryTranslationPolicy: String, Codable, Hashable, Sendable {
     case disabled
     case required
@@ -195,7 +194,7 @@ public struct OCIResourceLimits: Codable, Hashable, Sendable {
         openFileCount: 131_072)
 
     public static let parallelBuild = OCIResourceLimits(
-        cpuCount: 8,
+        cpuCount: 12,
         memoryBytes: 56 * 1_024 * 1_024 * 1_024,
         processCount: 16_384,
         openFileCount: 65_536)

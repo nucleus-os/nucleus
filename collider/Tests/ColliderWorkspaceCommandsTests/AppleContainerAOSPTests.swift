@@ -1,5 +1,6 @@
 #if os(macOS)
 import ColliderCore
+import ColliderWorkspaceCommands
 import Foundation
 import SystemPackage
 import Testing
@@ -54,13 +55,16 @@ func aospContainerInvocationHasTheRequiredIsolationBoundary() throws {
     let flags = appleContainerFlags(
         execution,
         name: try executor.containerName(for: execution),
-        temporaryDirectory: nil)
+        temporaryDirectory: nil,
+        configuration: nucleusOCIRuntimeConfiguration)
 
     #expect(execution.executionPlatform == .linuxARM64OCI)
     #expect(execution.intelBinaryTranslationPolicy == .required)
     #expect(execution.artifactTarget == .androidX86_64(apiLevel: 37))
     #expect(execution.processFilesystemPolicy == .unmasked)
-    #expect(flags.management.networks == [OCIBackendContract.appleOfflineNetwork])
+    #expect(
+        flags.management.networks
+            == [nucleusOCIRuntimeConfiguration.isolatedNetwork])
     #expect(flags.management.capDrop == ["ALL"])
     #expect(flags.management.readOnly)
     #expect(flags.management.tmpFs.contains("/tmp"))

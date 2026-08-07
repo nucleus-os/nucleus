@@ -602,8 +602,10 @@ package struct ComponentRegistry {
             "nucleus-linux-build-\(sourceID)-\(architecture.rawValue)"
         let nativeSDK = context.nativeSDKRoot(for: target)
         let waylandSDK = nativeSDK.appending("wayland")
-        let swiftPMUserRoot = root.appending(
-            ".nucleus/swiftpm-user/\(target.identifier)")
+        let swiftPMRoot = context.cacheRoot.appending(
+            "nucleus/swiftpm/\(target.identifier)")
+        let swiftPMUserRoot = context.cacheRoot.appending(
+            "nucleus/swiftpm-user/\(target.identifier)")
         let guestTargetSDK =
             guestSDKRoot
             + "/nucleus-swift-6.4-linux.artifactbundle/swift-linux/"
@@ -622,9 +624,16 @@ package struct ComponentRegistry {
                 hostname: "nucleus-linux-\(architecture.rawValue)",
                 hostWorkingDirectory: root,
                 mounts: [
-                    OCIMount(source: root, target: root.string, access: .readWrite),
+                    OCIMount(source: root, target: root.string, access: .readOnly),
+                    OCIMount(
+                        source: swiftPMRoot,
+                        target: swiftPMRoot.string,
+                        access: .readWrite),
                     OCIMount(source: nativeSDK, target: nativeSDK.string, access: .readOnly),
-                    OCIMount(source: builder.ccache, target: "/ccache", access: .readWrite),
+                    OCIMount(
+                        source: builder.ccache(for: target),
+                        target: "/ccache",
+                        access: .readWrite),
                     OCIMount(
                         source: swiftPMUserRoot.appending("cache"),
                         target: "/home/nucleus-build/.cache",
@@ -658,7 +667,8 @@ package struct ComponentRegistry {
                     "PKG_CONFIG_SYSROOT_DIR": guestTargetSDK,
                     "VK_DRIVER_FILES": "/usr/share/vulkan/icd.d/lvp_icd.json",
                     "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json",
-                ]))
+                ],
+                environmentProjection: nucleusSwiftPMEnvironmentProjection))
         return try context.swiftPMInvocation(
             configuration: configuration,
             sanitizer: sanitizer,
@@ -678,6 +688,7 @@ package struct ComponentRegistry {
                 targetTriple: resolvedTriple),
             execution: execution,
             toolchainIdentity: toolchainIdentity,
+            scratchRoot: swiftPMRoot,
             swiftExecutable: .path(
                 architecture == .arm64
                     ? FilePath("/opt/swift/usr/bin/swift")

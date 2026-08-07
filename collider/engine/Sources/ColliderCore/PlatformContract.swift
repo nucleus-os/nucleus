@@ -122,10 +122,6 @@ public enum ExecutionBackend: String, Codable, Hashable, Sendable {
     case native
 }
 
-public enum OCIBackendContract {
-    public static let appleOfflineNetwork = "nucleus-build-internal"
-}
-
 private let currentOperatingSystem: PlatformOperatingSystem = {
     #if os(macOS)
     .macOS

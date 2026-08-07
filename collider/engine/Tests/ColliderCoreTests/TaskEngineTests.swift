@@ -124,6 +124,8 @@ private struct FailAfterWriteAction: ColliderAction {
     let maximumActive = await probe.maximum()
 
     #expect(report.executed == tasks.map(\.id))
+    #expect(Set(report.taskTimings.map(\.task)) == Set(tasks.map(\.id)))
+    #expect(report.taskTimings.allSatisfy { $0.durationNanoseconds > 0 })
     #expect(maximumActive == 2)
 }
 
@@ -703,7 +705,7 @@ private struct FailAfterWriteAction: ColliderAction {
             atPath: link.path) == "swift-driver")
 }
 
-@Test func taskIdentityIgnoresPerRunLoggingDestinations() async throws {
+@Test func taskIdentityIncludesActionEnvironment() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-engine-run-environment-\(UUID().uuidString)")
     try FileManager.default.createDirectory(
@@ -741,8 +743,8 @@ private struct FailAfterWriteAction: ColliderAction {
     let second = try task(runDirectory: "/runs/second")
     let report = try await ColliderEngine(runtime: runtime).execute(
         graph: TaskGraph([second]), selected: [second.id], stateRoot: state)
-    #expect(report.executed.isEmpty)
-    #expect(report.plan[0].isClean)
+    #expect(report.executed == [second.id])
+    #expect(!report.plan[0].isClean)
 }
 
 @Test func outputContractChangesInvalidatePriorTaskState() async throws {

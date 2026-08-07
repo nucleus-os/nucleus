@@ -79,6 +79,7 @@ extension WorkspaceContext {
         target: SwiftBuildTarget? = nil,
         execution: SwiftPMExecution = .host,
         toolchainIdentity: String? = nil,
+        scratchRoot: FilePath? = nil,
         swiftExecutable: CommandSpec.Executable = .named("swift")
     ) throws -> SwiftPMInvocation {
         let packageRoot = layout.root
@@ -125,7 +126,7 @@ extension WorkspaceContext {
             execution: execution)
         let invocation = SwiftPMInvocation(
             context: context,
-            scratchPath: layout.swiftScratch(for: context),
+            scratchPath: layout.swiftScratch(for: context, under: scratchRoot),
             swiftExecutable: swiftExecutable)
         let isDefaultContext =
             configuration == .debug

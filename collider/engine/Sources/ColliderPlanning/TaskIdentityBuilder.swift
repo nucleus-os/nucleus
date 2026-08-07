@@ -357,7 +357,7 @@ private struct TaskIdentityResolutions {
 private func artifactEnvironment(
     _ environment: [String: String]
 ) -> [(key: String, value: String)] {
-    let volatile = Set(["NUCLEUS_RUN_DIR", "NUCLEUS_RUN_LOG", "TERM", "PATH"])
+    let volatile = Set(["TERM", "PATH"])
     return
         environment
         .filter { !volatile.contains($0.key) }

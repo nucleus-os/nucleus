@@ -19,7 +19,9 @@ package final class ColliderAndroidKernelLog:
     package var slavePath: String { log.slavePath }
 
     package init(output: URL) throws {
-        log = try PseudoTerminalLog(output: FilePath(output))
+        log = try PseudoTerminalLog(
+            output: FilePath(output),
+            queueLabel: "dev.nucleus.collider.pseudo-terminal-log")
     }
 
     package func checkHealth() throws {

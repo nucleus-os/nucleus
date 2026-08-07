@@ -156,9 +156,11 @@ unchanged incremental checkout.
 
 ## Phase 6 — Run every destination
 
-Run the same real Swift test products for Linux/arm64 and Linux/x86_64. Compile
-and link Android/arm64 and Android/x86_64, and run the generated Swift-to-C++
-bridge tests from clean scratch. Retain producer-owned artifact checks for
+Build and link the production Swift graph for Linux/arm64 and Linux/x86_64. Run
+the Swift test graph once on native Linux/arm64; translated x86_64 execution is
+not a kernel qualification environment. Compile and link Android/arm64 and
+Android/x86_64, and run the generated Swift-to-C++ bridge tests from clean
+scratch. Retain producer-owned artifact checks for
 provenance, relocation, exported symbols, and the libc++ closure because those
 properties are not guaranteed by successful compilation alone.
 

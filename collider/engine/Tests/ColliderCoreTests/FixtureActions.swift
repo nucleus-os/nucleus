@@ -14,7 +14,7 @@ struct FixtureCommandAction: ColliderAction {
             }
             encoder.append(tag: 3, bytes: arguments.bytes)
             var environment = CanonicalDigestEncoder()
-            let volatile = Set(["PATH", "NUCLEUS_RUN_DIR", "NUCLEUS_RUN_LOG", "TERM"])
+            let volatile = Set(["PATH", "TERM"])
             for (name, value) in command.environment.filter({
                 !volatile.contains($0.key)
             }).sorted(by: { $0.key < $1.key }) {

@@ -267,7 +267,7 @@ struct WorkspaceDoctor {
             else { return nil }
             guard
                 let network = try? await appleContainerNetwork(
-                    named: OCIBackendContract.appleOfflineNetwork),
+                    named: context.ociConfiguration.isolatedNetwork),
                 network.mode == "hostOnly"
             else { return nil }
             return "\(runner.operatingSystem.rawValue)/"

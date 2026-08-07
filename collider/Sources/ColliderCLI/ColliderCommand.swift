@@ -32,9 +32,12 @@ public struct ColliderCommand: AsyncParsableCommand {
             }
         let cancellation = RuntimeCancellation()
         let logging = CommandLogging(registry: registry, run: run)
+        let cacheLayout = nucleusCacheLayout(environment: environment)
         let runtime = ColliderRuntime(
             logging: logging,
-            cancellation: cancellation)
+            cancellation: cancellation,
+            downloadCacheRoot: cacheLayout.downloads,
+            ociConfiguration: nucleusOCIRuntimeConfiguration)
         let signals = RuntimeSignalHandlers(cancellation: cancellation)
         setActiveCommandRuntime(
             logging: logging,

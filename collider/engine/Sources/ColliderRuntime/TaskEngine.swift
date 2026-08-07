@@ -51,6 +51,7 @@ public struct TaskLaneLimits: Hashable, Sendable {
 public struct TaskExecutionReport: Codable, Sendable {
     public let plan: [TaskPlanEntry]
     public let executed: [TaskID]
+    public let taskTimings: [TaskExecutionTiming]
     public let planningDurationNanoseconds: UInt64
     public let selectedInputHashingDurationNanoseconds: UInt64
     public let swiftPMInvocationCount: Int
@@ -61,6 +62,7 @@ public struct TaskExecutionReport: Codable, Sendable {
     public init(
         plan: [TaskPlanEntry],
         executed: [TaskID],
+        taskTimings: [TaskExecutionTiming],
         planningDurationNanoseconds: UInt64,
         selectedInputHashingDurationNanoseconds: UInt64,
         swiftPMInvocationCount: Int,
@@ -70,6 +72,7 @@ public struct TaskExecutionReport: Codable, Sendable {
     ) {
         self.plan = plan
         self.executed = executed
+        self.taskTimings = taskTimings
         self.planningDurationNanoseconds = planningDurationNanoseconds
         self.selectedInputHashingDurationNanoseconds =
             selectedInputHashingDurationNanoseconds
@@ -77,6 +80,16 @@ public struct TaskExecutionReport: Codable, Sendable {
         self.executionDurationNanoseconds = executionDurationNanoseconds
         self.criticalPathDurationNanoseconds = criticalPathDurationNanoseconds
         self.schedulingWaitDurationNanoseconds = schedulingWaitDurationNanoseconds
+    }
+}
+
+public struct TaskExecutionTiming: Codable, Sendable {
+    public let task: TaskID
+    public let durationNanoseconds: UInt64
+
+    public init(task: TaskID, durationNanoseconds: UInt64) {
+        self.task = task
+        self.durationNanoseconds = durationNanoseconds
     }
 }
 
@@ -202,6 +215,7 @@ extension ColliderRuntime {
             return TaskExecutionReport(
                 plan: reportedPlan,
                 executed: [],
+                taskTimings: [],
                 planningDurationNanoseconds: planningDurationNanoseconds,
                 selectedInputHashingDurationNanoseconds:
                     selectedInputHashingDurationNanoseconds,
@@ -246,6 +260,7 @@ extension ColliderRuntime {
         }
         var pendingTasks = ordered.indices.filter { !plan[$0].isClean }
         var executed: [TaskID] = []
+        var taskTimings: [TaskExecutionTiming] = []
         var running: [ScheduledTask: TaskExecutionLane] = [:]
         var runningClaims: [ScheduledTask: [PlannedTaskClaim]] = [:]
         var readySince: [ScheduledTask: ContinuousClock.Instant] = [:]
@@ -404,6 +419,10 @@ extension ColliderRuntime {
                         criticalPathByTask[$0]
                     }.max() ?? 0
                 criticalPathByTask[taskID] = dependencyPath &+ finished.durationNanoseconds
+                taskTimings.append(
+                    TaskExecutionTiming(
+                        task: taskID,
+                        durationNanoseconds: finished.durationNanoseconds))
             }
         }
 
@@ -421,6 +440,7 @@ extension ColliderRuntime {
         return TaskExecutionReport(
             plan: reportedPlan,
             executed: executed,
+            taskTimings: taskTimings,
             planningDurationNanoseconds: planningDurationNanoseconds,
             selectedInputHashingDurationNanoseconds:
                 selectedInputHashingDurationNanoseconds,
