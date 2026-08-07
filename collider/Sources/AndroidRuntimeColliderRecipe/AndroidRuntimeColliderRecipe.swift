@@ -430,7 +430,7 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             validation: .regularFile)
         let task = builder.build(
             inputs: [
-                .tree(context)
+                .sourceCheckout(context)
             ],
             locks: [.checkout("android-runtime-aosp-builder-image")],
             action:
@@ -555,13 +555,13 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .value(
                     name: "aosp-product-identity",
                     bytes: productIdentity),
-                .tree(
+                .sourceCheckout(
                     root.appending(
                         "aosp/device/nucleus/nucleus_x86_64")),
-                .tree(
+                .sourceCheckout(
                     root.removingLastComponent().appending(
                         "ipc/transport/Sources/NucleusIPCTransportC")),
-                .tree(
+                .sourceCheckout(
                     root.appending(
                         "aosp/packages/apps/NucleusRuntimeBridge")),
                 .tool(.named("python3")),
@@ -665,10 +665,10 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
                 .value(
                     name: "aosp-product-identity",
                     bytes: productIdentity),
-                .tree(
+                .sourceCheckout(
                     root.appending(
                         "aosp/device/nucleus/nucleus_x86_64")),
-                .tree(
+                .sourceCheckout(
                     root.removingLastComponent().appending(
                         "ipc/transport/Sources/NucleusIPCTransportC")),
                 .tool(.named("openssl")),
@@ -776,8 +776,8 @@ public enum AndroidRuntimeColliderRecipe: ColliderComponent {
             validation: .regularFile)
         let declaration = task.build(
             inputs: [
-                .tree(hostSource),
-                .tree(guestSource),
+                .sourceCheckout(hostSource),
+                .sourceCheckout(guestSource),
             ] + (target.architecture == .x86_64 ? [.file(crossFile)] : []),
             locks: [
                 .checkout("android-runtime-gfxstream-\(target.identifier)")

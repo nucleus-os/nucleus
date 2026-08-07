@@ -24,7 +24,7 @@ public enum NucleusLinuxABI {
         "libxml2.so.2",
     ]
 
-    private static let hostOwnedSONames: Set<String> = [
+    package static let hostOwnedSONames: Set<String> = [
         "ld-linux-aarch64.so.1",
         "ld-linux-x86-64.so.2",
         "libc.so.6",

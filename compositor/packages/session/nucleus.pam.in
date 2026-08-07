@@ -1,0 +1,5 @@
+#%PAM-1.0
+# Distribution packaging installs this as /etc/pam.d/nucleus after replacing
+# the two stack names with the distribution's ordinary local-login stacks.
+auth include @authentication-stack@
+account include @account-stack@

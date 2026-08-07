@@ -298,7 +298,7 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         case .oci:
             inputs = [
                 .file(context.packageRoot.appending("Package.swift")),
-                .optionalTree(
+                .optionalSourceCheckout(
                     packageRoot.appending("Sources"),
                     fallback: Array("no-sources-directory".utf8)),
             ]
@@ -329,10 +329,10 @@ public struct SwiftPMInvocation: Hashable, Sendable {
         case .oci:
             inputs = [
                 .file(context.packageRoot.appending("Package.swift")),
-                .optionalTree(
+                .optionalSourceCheckout(
                     packageRoot.appending("Sources"),
                     fallback: Array("no-sources-directory".utf8)),
-                .optionalTree(
+                .optionalSourceCheckout(
                     packageRoot.appending("Tests"),
                     fallback: Array("no-tests-directory".utf8)),
             ]

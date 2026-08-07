@@ -587,7 +587,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             path: configuration.runtimeBuilderImageID,
             validation: .regularFile)
         let task = builder.build(
-            inputs: [.tree(configuration.runtimeBuilderContext)],
+            inputs: [.sourceCheckout(configuration.runtimeBuilderContext)],
             locks: [.checkout("swift-linux-runtime-builder-image")],
             assessmentPolicy: .incremental,
             action:
@@ -762,7 +762,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             validation: .executableFile)
         let task = builder.build(
             inputs: [
-                .tree(configuration.generatorSource),
+                .sourceCheckout(configuration.generatorSource),
                 .file(configuration.swiftExecutable),
             ],
             locks: [
@@ -839,7 +839,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             inputs: [
                 .file(configuration.inputsFile),
                 .file(configuration.ndkRoot.appending("source.properties")),
-                .tree(configuration.pkgConfigDirectory),
+                .sourceCheckout(configuration.pkgConfigDirectory),
             ],
             locks: [
                 .shared(configuration.generatorScratch.appending(".collider.lock"))
@@ -969,7 +969,7 @@ public enum SwiftTargetSDKColliderRecipe: ColliderComponent {
             }
         let task = builder.build(
             inputs: [
-                .tree(configuration.validationFixture),
+                .sourceCheckout(configuration.validationFixture),
                 .file(configuration.validator),
             ],
             action:

@@ -18,6 +18,7 @@
 
 import NucleusShellAuthWire
 import NucleusShellPamC
+
 #if canImport(Glibc)
 import Glibc
 #endif
@@ -48,62 +49,63 @@ final class ConversationState {
 /// Anything else is refused rather than guessed at: an unrecognized message
 /// style means the module wants something this helper was not designed to
 /// provide, and inventing an answer could satisfy a prompt it should not.
-let conversation: @convention(c) (
-    Int32,
-    UnsafeMutablePointer<UnsafePointer<pam_message>?>?,
-    UnsafeMutablePointer<UnsafeMutablePointer<pam_response>?>?,
-    UnsafeMutableRawPointer?
-) -> Int32 = { count, messages, responses, appdata in
-    guard count > 0 else {
-        return Int32(PAM_CONV_ERR)
-    }
-    guard let messages = unsafe messages,
-          let responses = unsafe responses,
-          let appdata = unsafe appdata
-    else {
-        return Int32(PAM_CONV_ERR)
-    }
-    let state = unsafe Unmanaged<ConversationState>
-        .fromOpaque(appdata)
-        .takeUnretainedValue()
-    guard let replies = unsafe nucleus_pam_alloc_responses(count) else {
-        return Int32(PAM_BUF_ERR)
-    }
-
-    for index in 0..<Int(count) {
-        guard let message = unsafe messages[index] else {
-            unsafe nucleus_pam_free_responses(replies, count)
+let conversation:
+    @convention(c) (
+        Int32,
+        UnsafeMutablePointer<UnsafePointer<pam_message>?>?,
+        UnsafeMutablePointer<UnsafeMutablePointer<pam_response>?>?,
+        UnsafeMutableRawPointer?
+    ) -> Int32 = { count, messages, responses, appdata in
+        guard count > 0 else {
             return Int32(PAM_CONV_ERR)
         }
-
-        switch unsafe message.pointee.msg_style {
-        case Int32(PAM_PROMPT_ECHO_OFF):
-            let ok = state.password.withUnsafeBufferPointer { buffer in
-                unsafe nucleus_pam_set_response(
-                    replies, Int32(index), buffer.baseAddress)
-            }
-            if ok != 0 {
-                unsafe nucleus_pam_free_responses(replies, count)
-                return Int32(PAM_BUF_ERR)
-            }
-        case Int32(PAM_PROMPT_ECHO_ON):
-            if unsafe nucleus_pam_set_response(
-                replies, Int32(index), "") != 0
-            {
-                unsafe nucleus_pam_free_responses(replies, count)
-                return Int32(PAM_BUF_ERR)
-            }
-        case Int32(PAM_ERROR_MSG), Int32(PAM_TEXT_INFO):
-            break
-        default:
-            unsafe nucleus_pam_free_responses(replies, count)
+        guard let messages = unsafe messages,
+            let responses = unsafe responses,
+            let appdata = unsafe appdata
+        else {
             return Int32(PAM_CONV_ERR)
         }
-    }
+        let state = unsafe Unmanaged<ConversationState>
+            .fromOpaque(appdata)
+            .takeUnretainedValue()
+        guard let replies = unsafe nucleus_pam_alloc_responses(count) else {
+            return Int32(PAM_BUF_ERR)
+        }
 
-    unsafe responses.pointee = replies
-    return Int32(PAM_SUCCESS)
-}
+        for index in 0..<Int(count) {
+            guard let message = unsafe messages[index] else {
+                unsafe nucleus_pam_free_responses(replies, count)
+                return Int32(PAM_CONV_ERR)
+            }
+
+            switch unsafe message.pointee.msg_style {
+            case Int32(PAM_PROMPT_ECHO_OFF):
+                let ok = state.password.withUnsafeBufferPointer { buffer in
+                    unsafe nucleus_pam_set_response(
+                        replies, Int32(index), buffer.baseAddress)
+                }
+                if ok != 0 {
+                    unsafe nucleus_pam_free_responses(replies, count)
+                    return Int32(PAM_BUF_ERR)
+                }
+            case Int32(PAM_PROMPT_ECHO_ON):
+                if unsafe nucleus_pam_set_response(
+                    replies, Int32(index), "") != 0
+                {
+                    unsafe nucleus_pam_free_responses(replies, count)
+                    return Int32(PAM_BUF_ERR)
+                }
+            case Int32(PAM_ERROR_MSG), Int32(PAM_TEXT_INFO):
+                break
+            default:
+                unsafe nucleus_pam_free_responses(replies, count)
+                return Int32(PAM_CONV_ERR)
+            }
+        }
+
+        unsafe responses.pointee = replies
+        return Int32(PAM_SUCCESS)
+    }
 
 func respond(_ outcome: PamHelperWire.Outcome, _ message: String) -> Never {
     var buffer: [UInt8] = [outcome.rawValue]
@@ -119,17 +121,24 @@ func respond(_ outcome: PamHelperWire.Outcome, _ message: String) -> Never {
 
 // MARK: - Request
 
-guard let serviceLength = PamHelperWire.readLength(
+guard
+    let serviceLength = PamHelperWire.readLength(
         from: 0, limit: PamHelperWire.maximumServiceBytes),
-      let serviceBytes = PamHelperWire.readExactly(serviceLength, from: 0),
-      let passwordLength = PamHelperWire.readLength(
+    let serviceBytes = PamHelperWire.readExactly(serviceLength, from: 0),
+    let passwordLength = PamHelperWire.readLength(
         from: 0, limit: PamHelperWire.maximumPasswordBytes),
-      var passwordBytes = PamHelperWire.readExactly(passwordLength, from: 0)
+    var passwordBytes = PamHelperWire.readExactly(passwordLength, from: 0)
 else {
     respond(.unavailable, "Malformed authentication request")
 }
 
 let service = String(decoding: serviceBytes, as: UTF8.self)
+guard !service.isEmpty else {
+    passwordBytes.withUnsafeMutableBytes {
+        unsafe nucleus_pam_scrub($0.baseAddress, $0.count)
+    }
+    respond(.unavailable, "PAM service name is empty")
+}
 let state = ConversationState(password: passwordBytes)
 // The intermediate copy goes now; `state` owns the only one left.
 passwordBytes.withUnsafeMutableBytes {
@@ -138,9 +147,11 @@ passwordBytes.withUnsafeMutableBytes {
 passwordBytes = []
 
 var usernameBuffer = [CChar](repeating: 0, count: 256)
-guard usernameBuffer.withUnsafeMutableBufferPointer({
-    unsafe nucleus_pam_current_username($0.baseAddress, $0.count) == 0
-}) else {
+guard
+    usernameBuffer.withUnsafeMutableBufferPointer({
+        unsafe nucleus_pam_current_username($0.baseAddress, $0.count) == 0
+    })
+else {
     state.scrub()
     respond(.unavailable, "Could not determine the current user")
 }
@@ -157,8 +168,7 @@ var conv = unsafe pam_conv(
     conv: conversation,
     appdata_ptr: Unmanaged.passUnretained(state).toOpaque())
 
-let startResult = unsafe pam_start(
-    service.isEmpty ? "login" : service, username, &conv, &handle)
+let startResult = unsafe pam_start(service, username, &conv, &handle)
 guard startResult == PAM_SUCCESS else {
     state.scrub()
     respond(.unavailable, "Could not start authentication")
@@ -197,7 +207,7 @@ if result == PAM_SUCCESS {
 // the user should not be told their credentials are bad for it.
 switch result {
 case PAM_AUTH_ERR, PAM_USER_UNKNOWN, PAM_CRED_INSUFFICIENT, PAM_MAXTRIES,
-     PAM_PERM_DENIED, PAM_ACCT_EXPIRED, PAM_NEW_AUTHTOK_REQD:
+    PAM_PERM_DENIED, PAM_ACCT_EXPIRED, PAM_NEW_AUTHTOK_REQD:
     respond(.rejected, description)
 default:
     respond(.unavailable, description)

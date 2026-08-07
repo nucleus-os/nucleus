@@ -47,9 +47,11 @@ validation.
 - runtime staging uses the ownership contract regardless of the dependency's
   filesystem location;
 - the only development-package inventory is `compositor/packages/ubuntu.txt`;
-- installation always emits and validates a systemd user unit; and
-- PAM authentication defaults to the host's `login` service when no service is
-  supplied.
+- installation emits a common host-integration payload containing the systemd
+  user unit, Wayland session entry, PAM adapter template, and machine-readable
+  host requirements; and
+- PAM authentication requires the dedicated `nucleus` service without a
+  fallback.
 
 The Ubuntu package closure is a build input, not a valid definition of the
 Nucleus Linux runtime contract. Filesystem location is also not a valid ownership
@@ -109,6 +111,8 @@ glibc symbol newer than the declared minimum.
 
 ## Phase 3: Make Runtime Staging Deterministic
 
+Status: complete
+
 Change runtime staging to follow the ownership contract from Phase 1.
 
 Collider copies every artifact-owned transitive dependency into the staged
@@ -125,7 +129,17 @@ not embed builder paths, target-SDK paths, container paths, or distribution name
 Gate: rebuilding the same source and inputs in independently provisioned builders
 produces the same runtime dependency closure.
 
+Gate satisfied: runtime staging classifies every dependency by the Phase 1
+SONAME contract, copies the entire artifact-owned transitive closure regardless
+of its source path, leaves host-owned libraries external, rejects unclassified
+and colliding dependencies, rewrites origin-relative runpaths, and validates the
+resulting ELF closure. Focused staging tests exercise closure copying, runpath
+rewriting, collision rejection, ABI enforcement, and privilege-boundary
+dependency restrictions.
+
 ## Phase 4: Separate Runtime Layout from Host Integration
+
+Status: complete
 
 Keep the relocatable generation-based runtime layout as the only installed
 product layout. Move host integration outputs into an explicit installation
@@ -137,7 +151,7 @@ The common payload owns:
 - session launch scripts;
 - the systemd user-unit template;
 - desktop and compositor session entries;
-- D-Bus service and activation files;
+- the private D-Bus session requirement;
 - the dedicated Nucleus PAM service template; and
 - machine-readable host capability requirements.
 
@@ -149,8 +163,21 @@ Replace the fallback to the generic `login` PAM service with a required `nucleus
 PAM service. Distribution integration installs an appropriate policy for that
 service; the shell and helper do not infer a substitute.
 
+Nucleus configuration and control services remain direct children of the native
+session supervisor. They are not D-Bus-activated services, so the payload does
+not install a second activation authority for them.
+
 Gate: the common installation payload can be placed under an arbitrary absolute
 prefix and validated without Ubuntu package metadata.
+
+Gate satisfied: the generation-based runtime now carries its session launcher,
+session validator, systemd user unit, Wayland session entry, distribution-owned
+PAM policy template, and machine-readable host requirements. Unit and desktop
+templates resolve through the stable active prefix and pass arbitrary-prefix
+coverage. The host requirements derive their glibc and ELF library contract from
+the same source as runtime staging and contain no distribution identity. The
+shell defaults to the `nucleus` PAM service, and both the shell and helper reject
+an empty service instead of falling back to `login`.
 
 ## Phase 5: Add Distribution Packaging Adapters
 
@@ -163,7 +190,7 @@ Each adapter performs only these responsibilities:
 
 - declare package-manager dependencies for host-owned capabilities;
 - install or reference the common Nucleus runtime payload;
-- install systemd, D-Bus, desktop-session, and PAM integration files in the
+- install systemd, desktop-session, and PAM integration files in the
   distribution's standard locations;
 - establish the required seat and device-access policy; and
 - remove those integration files cleanly when the package is removed.

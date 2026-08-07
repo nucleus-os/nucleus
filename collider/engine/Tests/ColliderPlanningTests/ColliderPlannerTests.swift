@@ -56,7 +56,8 @@ import Testing
             treeReads.withLock { $0 += 1 }
             return digest
         },
-        optionalTreeDigest: { _ in nil },
+        digestSourceCheckout: { _ in digest },
+        optionalSourceCheckoutDigest: { _ in nil },
         semanticToolIdentity: { _, _ in
             ToolIdentitySnapshot(path: FilePath("/fixture/tool"), digest: digest)
         },
@@ -255,7 +256,8 @@ private func deterministicServices(digest: ArtifactDigest) -> TaskPlanningServic
         digestBytes: { _ in digest },
         digestFile: { _ in digest },
         digestTree: { _ in digest },
-        optionalTreeDigest: { _ in nil },
+        digestSourceCheckout: { _ in digest },
+        optionalSourceCheckoutDigest: { _ in nil },
         semanticToolIdentity: { _, _ in
             ToolIdentitySnapshot(path: FilePath("/fixture/tool"), digest: digest)
         },
@@ -272,7 +274,8 @@ private func deterministicHashingServices(
         digestBytes: { ArtifactDigest.sha256(Data($0)) },
         digestFile: { _ in digest },
         digestTree: { _ in digest },
-        optionalTreeDigest: { _ in nil },
+        digestSourceCheckout: { _ in digest },
+        optionalSourceCheckoutDigest: { _ in nil },
         semanticToolIdentity: { _, _ in
             ToolIdentitySnapshot(path: FilePath("/fixture/tool"), digest: digest)
         },

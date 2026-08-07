@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Nucleus
+Comment=Nucleus compositor session
+Exec=@bindir@/nucleus-session
+TryExec=@bindir@/NucleusCompositor
+Type=Application
+DesktopNames=Nucleus

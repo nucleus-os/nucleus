@@ -8,9 +8,12 @@ public enum ArtifactInput: Hashable, Sendable {
     case swiftBuildContext(SwiftBuildContext)
     case file(FilePath)
     case tree(FilePath)
-    /// Hashes a source tree when checked out and otherwise uses the repository
-    /// gitlink identity so a fresh checkout can still plan its source-sync task.
-    case optionalTree(FilePath, fallback: [UInt8])
+    /// Identifies Git-owned source from its committed tree plus the scoped
+    /// working-copy overlay. Ignored files are not source inputs.
+    case sourceCheckout(FilePath)
+    /// Uses source-checkout identity when the path exists and the supplied
+    /// fallback when that source directory is absent.
+    case optionalSourceCheckout(FilePath, fallback: [UInt8])
     case tool(CommandSpec.Executable)
 }
 

@@ -53,7 +53,7 @@ public enum VulkanColliderRecipe: ColliderComponent {
                     ])
             ],
             inputs: [
-                .tree(root.appending("Tools/VulkanGen")),
+                .sourceCheckout(root.appending("Tools/VulkanGen")),
                 swiftPM.identityInput,
             ],
             locks: [.checkout("vulkan")])

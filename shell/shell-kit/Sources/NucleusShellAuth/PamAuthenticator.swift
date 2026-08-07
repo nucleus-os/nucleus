@@ -20,7 +20,7 @@ package final class PamAuthenticator: LockAuthenticator {
         package var fileDescriptor: Int32
     }
 
-    package var service: String = "login"
+    package var service: String = "nucleus"
     private let helperPath: String
     private let pollSetDidChange: @MainActor () -> Void
     private let attemptTimeoutNanoseconds: UInt64
@@ -81,6 +81,10 @@ package final class PamAuthenticator: LockAuthenticator {
             return
         }
         let serviceBytes = Array(service.utf8)
+        guard !serviceBytes.isEmpty else {
+            completion(.unavailable("PAM service name is empty"))
+            return
+        }
         guard serviceBytes.count <= PamHelperWire.maximumServiceBytes else {
             completion(.unavailable("PAM service name is too long"))
             return

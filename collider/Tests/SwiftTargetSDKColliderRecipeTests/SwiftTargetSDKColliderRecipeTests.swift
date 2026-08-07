@@ -152,7 +152,9 @@ import Testing
     #expect(
         assemblyAction.kind
             == ActionKind(rawValue: "swift-sdk.assemble-target-sdks"))
-    #expect(assembly.inputs.contains(.tree(configuration.pkgConfigDirectory)))
+    #expect(
+        assembly.inputs.contains(
+            .sourceCheckout(configuration.pkgConfigDirectory)))
     #expect(
         assemblyAction.requirements.effects.contains(
             ActionEffect(.read, scope: .input(configuration.pkgConfigDirectory))))

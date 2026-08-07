@@ -12,6 +12,22 @@ struct PamAuthenticatorTests {
         var value: LockAuthenticationOutcome?
     }
 
+    @Test func dedicatedNucleusPAMServiceIsTheDefault() {
+        let authenticator = PamAuthenticator(helperPath: fixturePath())
+        #expect(authenticator.service == "nucleus")
+    }
+
+    @Test func emptyPAMServiceFailsBeforeSpawningTheHelper() {
+        let authenticator = PamAuthenticator(helperPath: "/missing-helper")
+        authenticator.service = ""
+        var outcome: LockAuthenticationOutcome?
+        authenticator.authenticate(password: SecureBytes(utf8: "secret")) {
+            outcome = $0
+        }
+        #expect(outcome.map(unavailable) == true)
+        #expect(authenticator.pollDescriptors.isEmpty)
+    }
+
     @Test func responseAndExitOrdersCompleteExactlyOnce() {
         #expect(run(service: "accepted") == .accepted)
         #expect(unavailable(run(service: "exit-first")))

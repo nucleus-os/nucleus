@@ -112,7 +112,15 @@ struct InstallRuntimeAction: ColliderAction {
         try context.files.createDirectory(generationsRoot)
         let candidate = generationsRoot.appending(".candidate-runtime")
         try context.files.remove(candidate)
-        for directory in ["bin", "lib", "libexec", "share/nucleus"] {
+        for directory in [
+            "bin",
+            "lib",
+            "libexec",
+            "share/nucleus",
+            "share/nucleus/host-integration/pam",
+            "share/systemd/user",
+            "share/wayland-sessions",
+        ] {
             try context.files.createDirectory(candidate.appending(directory))
         }
         var published = false
@@ -126,7 +134,7 @@ struct InstallRuntimeAction: ColliderAction {
             environment: environment,
             productSet: .baseRuntime,
             context: context)
-        try await installSessionFiles(candidate: candidate, context: context)
+        try await installHostIntegration(candidate: candidate, context: context)
         try context.files.write(
             Array(buildMetadata.utf8),
             to: candidate.appending("share/nucleus/runtime-build.txt"))
@@ -163,32 +171,32 @@ struct InstallRuntimeAction: ColliderAction {
                 ]))
     }
 
-    private func installSessionFiles(
+    private func installHostIntegration(
         candidate: FilePath,
         context: ActionContext
     ) async throws {
+        var source: [String: [UInt8]] = [:]
+        for name in RuntimeHostIntegration.sourceFiles {
+            source[name] = try context.files.read(sessionPackage.appending(name))
+        }
         for name in ["nucleus-session", "nucleus-session-validate"] {
-            let source = sessionPackage.appending(name)
             try await requireSuccess(
                 CommandSpec(
                     executable: .named("bash"),
-                    arguments: ["-n", source.string],
+                    arguments: ["-n", sessionPackage.appending(name).string],
                     workingDirectory: sessionPackage,
                     environment: environment),
                 context: context)
-            let destination = candidate.appending("bin").appending(name)
-            try context.files.copy(from: source, to: destination)
-            try context.files.setPermissions(0o755, for: destination)
         }
 
-        let template = String(
-            decoding: try context.files.read(
-                sessionPackage.appending("nucleus@.service")),
-            as: UTF8.self)
+        guard let unitBytes = source["nucleus@.service"] else {
+            throw RuntimeInstallFailure("missing nucleus@.service source")
+        }
+        let unitTemplate = String(decoding: unitBytes, as: UTF8.self)
         let unit = candidate.appending("share/systemd/user/nucleus@.service")
-        let validation = template.replacing(
-            "@bindir@",
-            with: candidate.appending("bin").string)
+        let validation = RuntimeHostIntegration.render(
+            unitTemplate,
+            activePrefix: candidate)
         try context.files.write(Array(validation.utf8), to: unit)
         try await requireSuccess(
             CommandSpec(
@@ -199,10 +207,18 @@ struct InstallRuntimeAction: ColliderAction {
                 workingDirectory: candidate,
                 environment: environment),
             context: context)
-        let published = template.replacing(
-            "@bindir@",
-            with: prefix.appending("bin").string)
-        try context.files.write(Array(published.utf8), to: unit)
+
+        for file in try RuntimeHostIntegration.payload(
+            source: source,
+            activePrefix: prefix,
+            architecture: RunnerPlatform.current.architecture)
+        {
+            let destination = candidate.appending(file.path)
+            try context.files.write(file.bytes, to: destination)
+            if file.executable {
+                try context.files.setPermissions(0o755, for: destination)
+            }
+        }
     }
 
     private func installTrustRoot(
@@ -250,6 +266,18 @@ struct InstallRuntimeAction: ColliderAction {
             else {
                 throw RuntimeInstallFailure(
                     "runtime candidate is missing executable \(path)")
+            }
+        }
+        for path in [
+            "bin/nucleus-session-validate",
+            "share/systemd/user/nucleus@.service",
+            "share/wayland-sessions/nucleus.desktop",
+            "share/nucleus/host-integration/pam/nucleus.pam.in",
+            "share/nucleus/host-requirements.json",
+        ] {
+            guard try files.metadata(for: candidate.appending(path))?.type == .regular else {
+                throw RuntimeInstallFailure(
+                    "runtime candidate is missing host integration file \(path)")
             }
         }
     }

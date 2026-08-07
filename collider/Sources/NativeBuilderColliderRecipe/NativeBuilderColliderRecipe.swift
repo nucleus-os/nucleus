@@ -31,7 +31,7 @@ public enum NativeBuilderColliderRecipe {
             validation: .regularFile)
         let task = builder.build(
             inputs: [
-                .tree(context)
+                .sourceCheckout(context)
             ],
             postconditions: [
                 PathPostcondition(

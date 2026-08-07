@@ -245,7 +245,7 @@ public enum ChromiumColliderRecipe: ColliderComponent {
             validation: .regularFile)
         let builderTask = imageBuilder.build(
             inputs: [
-                .tree(builderContext)
+                .sourceCheckout(builderContext)
             ],
             locks: [.shared(cache.appending("locks/builder.lock"))],
             action:

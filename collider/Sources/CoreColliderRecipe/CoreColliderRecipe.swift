@@ -394,9 +394,9 @@ public enum CoreColliderRecipe: ColliderComponent {
                     ])
             ],
             inputs: [
-                .tree(package.appending("c")),
-                .tree(package.appending("swift-core")),
-                .tree(package.appending("swift-jni")),
+                .sourceCheckout(package.appending("c")),
+                .sourceCheckout(package.appending("swift-core")),
+                .sourceCheckout(package.appending("swift-jni")),
                 swiftPM.identityInput,
             ],
             postconditions: [
@@ -470,8 +470,8 @@ public enum CoreColliderRecipe: ColliderComponent {
                 .file(android.appending("settings.gradle.kts")),
                 .file(android.appending("build.gradle.kts")),
                 .file(android.appending("gradle/libs.versions.toml")),
-                .tree(android.appending("nucleus/src")),
-                .tree(android.appending("smoke-app/src")),
+                .sourceCheckout(android.appending("nucleus/src")),
+                .sourceCheckout(android.appending("smoke-app/src")),
                 .tool(.path(android.appending("gradlew"))),
             ],
             locks: [.checkout("core-android-gradle")],

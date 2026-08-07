@@ -161,3 +161,134 @@ import Testing
     #expect(changed != first)
     #expect(reusedCache.fileMissCount == 1)
 }
+
+@Test func sourceCheckoutDigestUsesGitTreesAcrossCheckoutLocations() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-source-checkout-placement-\(UUID().uuidString)")
+    let first = directory.appendingPathComponent("first")
+    let second = directory.appendingPathComponent("second")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    for repository in [first, second] {
+        try initializeGitRepository(repository)
+        let sources = repository.appendingPathComponent("Sources")
+        try FileManager.default.createDirectory(
+            at: sources,
+            withIntermediateDirectories: true)
+        try Data("let value = 1\n".utf8).write(
+            to: sources.appendingPathComponent("Value.swift"))
+        try Data("Sources/*.ignored\n".utf8).write(
+            to: repository.appendingPathComponent(".gitignore"))
+        try commitAll(repository)
+    }
+
+    #expect(
+        try sourceCheckoutDigest(first.appendingPathComponent("Sources"))
+            == sourceCheckoutDigest(second.appendingPathComponent("Sources")))
+}
+
+@Test func sourceCheckoutDigestTracksScopedWorkingCopyContents() throws {
+    let repository = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-source-checkout-dirty-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: repository) }
+    try initializeGitRepository(repository)
+    let sources = repository.appendingPathComponent("Sources")
+    let other = repository.appendingPathComponent("Other")
+    try FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+    let tracked = sources.appendingPathComponent("Value.swift")
+    try Data("let value = 1\n".utf8).write(to: tracked)
+    try Data("outside\n".utf8).write(to: other.appendingPathComponent("value"))
+    try Data("Sources/*.ignored\n".utf8).write(
+        to: repository.appendingPathComponent(".gitignore"))
+    try commitAll(repository)
+    let baseline = try sourceCheckoutDigest(sources)
+
+    try Data("changed outside\n".utf8).write(
+        to: other.appendingPathComponent("value"))
+    #expect(try sourceCheckoutDigest(sources) == baseline)
+
+    try Data("ignored\n".utf8).write(
+        to: sources.appendingPathComponent("cache.ignored"))
+    #expect(try sourceCheckoutDigest(sources) == baseline)
+
+    let untracked = sources.appendingPathComponent("New.swift")
+    try Data("let added = true\n".utf8).write(to: untracked)
+    #expect(try sourceCheckoutDigest(sources) != baseline)
+    try FileManager.default.removeItem(at: untracked)
+
+    try Data("let value = 2\n".utf8).write(to: tracked)
+    #expect(try sourceCheckoutDigest(sources) != baseline)
+    try Data("let value = 1\n".utf8).write(to: tracked)
+    #expect(try sourceCheckoutDigest(sources) == baseline)
+
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755],
+        ofItemAtPath: tracked.path)
+    #expect(try sourceCheckoutDigest(sources) != baseline)
+}
+
+@Test func sourceCheckoutDigestIncludesDirtyNestedSubmodules() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-source-checkout-submodule-\(UUID().uuidString)")
+    let child = directory.appendingPathComponent("child")
+    let parent = directory.appendingPathComponent("parent")
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    try initializeGitRepository(child)
+    try Data("first\n".utf8).write(to: child.appendingPathComponent("value"))
+    try commitAll(child)
+    try initializeGitRepository(parent)
+    try runGit(
+        at: parent,
+        arguments: [
+            "-c", "protocol.file.allow=always", "submodule", "add", "--quiet",
+            child.path, "Dependency",
+        ])
+    try commitAll(parent)
+    let baseline = try sourceCheckoutDigest(parent)
+
+    try Data("second\n".utf8).write(
+        to: parent.appendingPathComponent("Dependency/value"))
+    #expect(try sourceCheckoutDigest(parent) != baseline)
+}
+
+private func sourceCheckoutDigest(_ url: URL) throws -> ArtifactDigest {
+    try PlanningArtifactDigestCache().digest(
+        sourceCheckout: FilePath(url.path))
+}
+
+private func initializeGitRepository(_ repository: URL) throws {
+    try FileManager.default.createDirectory(
+        at: repository,
+        withIntermediateDirectories: true)
+    try runGit(at: repository, arguments: ["init", "--quiet"])
+    try runGit(
+        at: repository,
+        arguments: ["config", "user.name", "Collider Tests"])
+    try runGit(
+        at: repository,
+        arguments: ["config", "user.email", "collider@example.invalid"])
+}
+
+private func commitAll(_ repository: URL) throws {
+    try runGit(at: repository, arguments: ["add", "--all"])
+    try runGit(
+        at: repository,
+        arguments: ["commit", "--quiet", "--message", "fixture"])
+}
+
+private func runGit(at repository: URL, arguments: [String]) throws {
+    let process = Process()
+    let output = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.currentDirectoryURL = repository
+    process.arguments = arguments
+    process.standardOutput = output
+    process.standardError = output
+    try process.run()
+    _ = output.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else {
+        throw CocoaError(.fileWriteUnknown)
+    }
+}

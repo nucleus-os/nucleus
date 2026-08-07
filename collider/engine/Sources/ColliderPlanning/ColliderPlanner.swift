@@ -256,42 +256,34 @@ public struct ColliderPlanner {
     }
 
     private func validateCompleteGraph(_ tasks: [TaskDeclaration]) throws {
-        var owners: [(normalized: FilePath, task: TaskID)] = []
+        var outputs = GraphOutputPathIndex()
+        var outputOrdinal = 0
         for task in tasks {
             for output in task.outputs {
-                let normalized = output.path.lexicallyNormalized()
-                for owner in owners
-                where task.id != owner.task
-                    && normalized.overlaps(owner.normalized)
+                if let owner = outputs.insert(
+                    output.path,
+                    owner: task.id,
+                    ordinal: outputOrdinal)
                 {
                     throw ColliderPlanningFailure.overlappingOutput(
-                        first: owner.task,
+                        first: owner,
                         second: task.id,
                         path: output.path)
                 }
-                owners.append((normalized, task.id))
+                outputOrdinal += 1
             }
         }
 
-        let outputs = tasks.flatMap { task in
-            task.outputs.map {
-                (
-                    producer: task.id,
-                    normalized: $0.path.lexicallyNormalized()
-                )
-            }
-        }
         for task in tasks {
             for input in task.inputs {
                 guard let path = rawInputPath(input) else { continue }
-                let normalized = path.lexicallyNormalized()
-                if let output = outputs.first(where: {
-                    $0.producer != task.id
-                        && normalized.isContained(in: $0.normalized)
-                }) {
+                if let producer = outputs.firstProducer(
+                    containing: path,
+                    excluding: task.id)
+                {
                     throw ColliderPlanningFailure.rawGeneratedOutputConsumption(
                         consumer: task.id,
-                        producer: output.producer,
+                        producer: producer,
                         path: path)
                 }
             }
@@ -320,7 +312,8 @@ public struct ColliderPlanner {
 
     private func rawInputPath(_ input: ArtifactInput) -> FilePath? {
         switch input {
-        case .file(let path), .tree(let path), .optionalTree(let path, _):
+        case .file(let path), .tree(let path), .sourceCheckout(let path),
+            .optionalSourceCheckout(let path, _):
             path
         case .tool(.taskOutput(let path)), .tool(.path(let path)):
             path

@@ -149,7 +149,8 @@ public struct TaskPlanningServices {
     public let digestBytes: ([UInt8]) -> ArtifactDigest
     public let digestFile: (FilePath) throws -> ArtifactDigest
     public let digestTree: (FilePath) throws -> ArtifactDigest
-    public let optionalTreeDigest: (FilePath) throws -> ArtifactDigest?
+    public let digestSourceCheckout: (FilePath) throws -> ArtifactDigest
+    public let optionalSourceCheckoutDigest: (FilePath) throws -> ArtifactDigest?
     public let semanticToolIdentity:
         (CommandSpec.Executable, [String: String]) throws -> ToolIdentitySnapshot
     public let taskState: (TaskID) -> PlanningTaskState
@@ -161,7 +162,8 @@ public struct TaskPlanningServices {
         digestBytes: @escaping ([UInt8]) -> ArtifactDigest,
         digestFile: @escaping (FilePath) throws -> ArtifactDigest,
         digestTree: @escaping (FilePath) throws -> ArtifactDigest,
-        optionalTreeDigest: @escaping (FilePath) throws -> ArtifactDigest?,
+        digestSourceCheckout: @escaping (FilePath) throws -> ArtifactDigest,
+        optionalSourceCheckoutDigest: @escaping (FilePath) throws -> ArtifactDigest?,
         semanticToolIdentity:
             @escaping (CommandSpec.Executable, [String: String]) throws -> ToolIdentitySnapshot,
         taskState: @escaping (TaskID) -> PlanningTaskState,
@@ -172,7 +174,8 @@ public struct TaskPlanningServices {
         self.digestBytes = digestBytes
         self.digestFile = digestFile
         self.digestTree = digestTree
-        self.optionalTreeDigest = optionalTreeDigest
+        self.digestSourceCheckout = digestSourceCheckout
+        self.optionalSourceCheckoutDigest = optionalSourceCheckoutDigest
         self.semanticToolIdentity = semanticToolIdentity
         self.taskState = taskState
         self.validateOutputs = validateOutputs

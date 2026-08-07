@@ -282,7 +282,9 @@ public enum ReactNativeColliderRecipe {
         let task = taskBuilder.build(
             inputs: [
                 .file(root.appending("tools/generate-rn-spec.js")),
-                .tree(root.appending("third-party/react-native/packages/react-native-codegen")),
+                .sourceCheckout(
+                    root.appending(
+                        "third-party/react-native/packages/react-native-codegen")),
             ],
             locks: [.checkout("rn")],
             action: try javascriptAction(
@@ -334,8 +336,8 @@ public enum ReactNativeColliderRecipe {
             validation: .executableFile)
         let task = taskBuilder.build(
             inputs: [
-                .tree(source),
-                .tree(reactNativeJSI),
+                .sourceCheckout(source),
+                .sourceCheckout(reactNativeJSI),
                 .file(root.appending("../tools/merge-static-archives.sh")),
             ],
             locks: [.checkout("rn-native-\(target.identifier)")],
@@ -441,8 +443,8 @@ public enum ReactNativeColliderRecipe {
             validation: .regularFile)
         let task = taskBuilder.build(
             inputs: [
-                .tree(root.appending("third-party/fmt")),
-                .tree(
+                .sourceCheckout(root.appending("third-party/fmt")),
+                .sourceCheckout(
                     root.appending(
                         "third-party/double-conversion")),
             ],
@@ -540,12 +542,12 @@ public enum ReactNativeColliderRecipe {
         }
         let task = taskBuilder.build(
             inputs: [
-                .tree(root.appending("third-party/glog")),
-                .tree(root.appending("third-party/folly")),
-                .tree(root.appending("third-party/fast_float")),
-                .tree(root.appending("third-party/hermes")),
-                .tree(reactNative.appending("ReactCommon")),
-                .tree(root.appending("../core/swiftpm/cmake/reactnative")),
+                .sourceCheckout(root.appending("third-party/glog")),
+                .sourceCheckout(root.appending("third-party/folly")),
+                .sourceCheckout(root.appending("third-party/fast_float")),
+                .sourceCheckout(root.appending("third-party/hermes")),
+                .sourceCheckout(reactNative.appending("ReactCommon")),
+                .sourceCheckout(root.appending("../core/swiftpm/cmake/reactnative")),
             ],
             locks: [.checkout("rn-native-\(target.identifier)")],
             action:

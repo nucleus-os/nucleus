@@ -103,7 +103,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
             .removingLastComponent() ?? sdk
         let targetSDKMount = target.architecture == .arm64 ? "/native-wayland" : "/sdk"
         var inputs: [ArtifactInput] = [
-            .tree(source)
+            .sourceCheckout(source)
         ]
         if target.architecture == .x86_64 {
             guard nativeScanner != nil else {
@@ -298,7 +298,7 @@ public enum WaylandColliderRecipe: ColliderComponent {
         }
         let generationTask = task.build(
             inputs: [
-                .tree(root.appending("Protocols")),
+                .sourceCheckout(root.appending("Protocols")),
                 .file(waylandXML),
             ],
             locks: [.checkout("wayland")],

@@ -1181,7 +1181,7 @@ private func fixtureReactNativeNodeModules(
         ))
     #expect(
         task.inputs.contains(
-            .tree(
+            .sourceCheckout(
                 root.appending(
                     "third-party/react-native/packages/react-native/ReactCommon/jsi"
                 ))))

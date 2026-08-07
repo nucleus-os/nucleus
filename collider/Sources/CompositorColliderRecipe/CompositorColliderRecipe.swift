@@ -68,8 +68,8 @@ private func testTask(
         dependencies: dependencies,
         swiftTests: [testRequirement],
         inputs: [
-            .tree(root.appending("Sources")),
-            .tree(root.appending("Tests")),
+            .sourceCheckout(root.appending("Sources")),
+            .sourceCheckout(root.appending("Tests")),
             swiftPM.identityInput,
         ],
         postconditions: [swiftPM.postcondition],

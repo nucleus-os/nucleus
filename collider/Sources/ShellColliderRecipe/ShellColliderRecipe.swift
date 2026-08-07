@@ -90,15 +90,12 @@ public enum ShellColliderRecipe: ColliderComponent {
                         validation: .executableFile)
                 ])
         }
-        var inputs: [ArtifactInput] = [
-            configuration.swiftPM.identityInput,
-            .file(configuration.sessionPackage.appending("nucleus-session")),
-            .file(
-                configuration.sessionPackage.appending(
-                    "nucleus-session-validate")),
-            .file(configuration.sessionPackage.appending("nucleus@.service")),
-            .file(configuration.kernelContract),
-        ]
+        var inputs: [ArtifactInput] = [configuration.swiftPM.identityInput]
+        inputs.append(
+            contentsOf: RuntimeHostIntegration.sourceFiles.map {
+                .file(configuration.sessionPackage.appending($0))
+            })
+        inputs.append(.file(configuration.kernelContract))
         if let trustKey = configuration.trustKey {
             inputs.append(.file(trustKey))
         }
@@ -142,7 +139,7 @@ public enum ShellColliderRecipe: ColliderComponent {
             validation: .executableFile)
         return builder.build(
             inputs: [
-                .tree(source),
+                .sourceCheckout(source),
                 .tool(.named("cmake")),
             ],
             locks: [.checkout("shell-tracy-receivers")],
