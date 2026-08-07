@@ -19,12 +19,11 @@ Architecture and contract documents describe the current system. An implementati
 
 Execute the implementation plans in this order:
 
-1. [Manifest portability](manifest-portability-plan.md)
-2. [Linux distribution portability](linux-distribution-portability-plan.md)
-3. [Wayland dispatch isolation](wayland-dispatch-isolation-and-handler-binding-plan.md)
-4. [Collider storage lifecycle](collider-storage-lifecycle-plan.md)
-5. [Collider CLI and terminal UX](collider-cli-ux-plan.md)
-6. [Android application integration](android-application-integration-plan.md)
+1. [Linux distribution portability](linux-distribution-portability-plan.md)
+2. [Wayland dispatch isolation](wayland-dispatch-isolation-and-handler-binding-plan.md)
+3. [Collider storage lifecycle](collider-storage-lifecycle-plan.md)
+4. [Collider CLI and terminal UX](collider-cli-ux-plan.md)
+5. [Android application integration](android-application-integration-plan.md)
 
 Component implementation plans continue in the dependency order in
 [core/docs/README.md](../core/docs/README.md).
@@ -38,6 +37,10 @@ implementation inputs are available:
 4. [Android container security](android-container-security-qualification-plan.md)
 5. [Chromium and CEF products](chromium-cef-product-qualification-plan.md)
 6. [Nucleus Browser](nucleus-browser-qualification-plan.md)
+
+## Completed plans awaiting architecture consolidation
+
+- [Manifest portability](manifest-portability-plan.md)
 
 ## Deferred product plans
 

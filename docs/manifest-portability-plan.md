@@ -1,6 +1,6 @@
 # Manifest portability plan
 
-Status: active.
+Status: complete.
 
 ## Invariant
 
@@ -141,6 +141,8 @@ isolated HOME, and only the selected Swift executable on PATH.
 
 ## Phase 5 — Linearize fresh-clone bootstrap
 
+Status: complete.
+
 Build Collider natively with Xcode, publish the Swift target SDK generation,
 bootstrap native SDK artifacts, then build and test the runtime graph. Collider
 and `collider/engine` remain separate tooling packages; neither depends on
@@ -154,7 +156,14 @@ Gate: `./collider-setup.sh`, `collider doctor`, `collider bootstrap`, `collider
 build`, and `collider test` pass from a recursive fresh clone and from an
 unchanged incremental checkout.
 
+Gate satisfied. The ordinary setup, doctor, bootstrap, build, and test commands
+form the only provisioning and verification workflow. They resolve the complete
+dependency graph from a recursive clone and preserve artifact reuse in an
+unchanged checkout without a parallel qualification path.
+
 ## Phase 6 — Run every destination
+
+Status: complete.
 
 Build and link the production Swift graph for Linux/arm64 and Linux/x86_64. Run
 the Swift test graph once on native Linux/arm64; translated x86_64 execution is
@@ -166,3 +175,18 @@ properties are not guaranteed by successful compilation alone.
 
 Gate: every runtime compilation consumes only its declared immutable SDK and no
 supported workflow requires `source tools/host-env.sh` before SwiftPM planning.
+
+Gate satisfied. Linux/arm64 and Linux/x86_64 compile and link against their
+declared Swift and native SDKs, the runtime test graph executes on native
+Linux/arm64, and the Android bridge builds from its declared target artifacts.
+The installed `collider` command derives the host environment, so supported
+workflows do not require callers to source `tools/host-env.sh`.
+
+## Completion state
+
+Manifest evaluation is destination-independent and free of environment access,
+process execution, and absolute host paths. SwiftPM owns one unconditional
+package graph, while Collider owns every compiler, SDK, target, scratch, native
+dependency, and execution choice. The normal build workflows exercise that
+boundary directly; no portability-specific compatibility or qualification layer
+remains.
