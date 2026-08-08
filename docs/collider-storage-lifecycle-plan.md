@@ -18,6 +18,21 @@ inventory without forcing unrelated components into one storage implementation.
 Storage declarations, APFS volume validation, cache status, pruning foundations,
 and safety tests exist. Recipe-derived ownership and uniform user commands remain.
 
+The resolved component catalog now owns the storage declarations consumed by
+`collider cache status` and `collider cache prune`; `RepositoryCache` no longer
+maintains a second inventory. Declarations carry typed component ownership and
+typed task or runtime producers, and catalog planning rejects unknown or
+cross-component producer tasks.
+
+The coarse roots are now split into component-owned Skia, React Native, Wayland,
+AOSP, gfxstream, browser, native-builder, target-SDK, and runtime-artifact roots.
+Each declaration names its resolved producer tasks, while the synthetic storage
+component contains only Collider runtime and toolchain state. Stale Swift platform
+and build-workspace buckets with no producer were removed. Phase 1 still needs to
+move declaration construction beside the recipes, derive workflow locks from the
+producer declarations, add explicit rollback counts, and cover remaining
+platform-conditional publication roots.
+
 ## Phase 1 — Derive ownership from task declarations
 
 Attach storage class, safety root, producer tasks, workflow lock, clean

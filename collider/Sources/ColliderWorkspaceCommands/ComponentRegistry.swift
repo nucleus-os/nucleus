@@ -170,8 +170,9 @@ package struct ComponentRegistry {
             CompositorColliderRecipe.self,
             VulkanColliderRecipe.self,
         ]
-        let components =
+        let componentsWithoutStorage =
             [
+                try ColliderStorageComponent.makeComponent(in: context),
                 nativeBuilder.component, swiftTargetSDK.component,
                 coreArtifacts.component,
                 androidRuntime.component, reactNativeArtifacts.component,
@@ -180,6 +181,9 @@ package struct ComponentRegistry {
             + (try componentTypes.map {
                 try $0.makeComponent(in: recipeContext)
             })
+        let components = try componentsWithoutStorage.map {
+            try attachingStorageOwnership(to: $0)
+        }
         let core = CoreColliderRecipe.descriptor.id
         let wayland = WaylandColliderRecipe.descriptor.id
         let reactNative = ReactNativeColliderRecipe.descriptor.id
@@ -336,7 +340,7 @@ package struct ComponentRegistry {
                             entrypoint: .bootstrap)
                     ]))
         }
-        return ComponentCatalog(
+        let catalog = ComponentCatalog(
             components: components,
             groups: [
                 ComponentSelectionGroup(name: "all", components: runtime),
@@ -347,6 +351,14 @@ package struct ComponentRegistry {
                 includeLinuxOperations: hostAugmentation.exposesLinuxOperations,
                 includeAndroidAddon:
                     hostAugmentation.androidAddonConfiguration != nil))
+        try StorageCatalog.validate(
+            catalog.storage,
+            forbiddenRemovalRoots: [
+                FilePath("/"), context.root,
+                context.cacheRoot.appending("nucleus"),
+                FilePath(FileManager.default.homeDirectoryForCurrentUser),
+            ])
+        return catalog
     }
 
     private func publicEntrypoints(

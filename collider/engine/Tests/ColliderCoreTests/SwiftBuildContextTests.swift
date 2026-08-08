@@ -196,7 +196,7 @@ private let fixturePackageRoot = FilePath("/workspace")
     #expect(amd64Invocation.productsDirectory == scratch.appending(".collider/products"))
 }
 
-@Test func hostProductsUseColliderOwnedBinPathLink() {
+@Test func hostProductsUseColliderOwnedPathsAndDeclaredSourceInputs() {
     let scratch = FilePath("/workspace/.nucleus/swiftpm/host")
     let invocation = SwiftPMInvocation(
         context: SwiftBuildContext(
@@ -212,20 +212,24 @@ private let fixturePackageRoot = FilePath("/workspace")
     #expect(
         invocation.executable("Fixture")
             == scratch.appending(".collider/products/Fixture"))
+    let expectedSourceInputs: [ArtifactInput] = [
+        .file(fixturePackageRoot.appending("Package.swift")),
+        .tree(fixturePackageRoot),
+    ]
     #expect(
         invocation.product(
             package: "fixture",
             product: "Fixture",
             packageRoot: fixturePackageRoot,
             environment: [:]
-        ).inputs.isEmpty)
+        ).inputs == expectedSourceInputs)
     #expect(
         invocation.testProduct(
             package: "fixture",
             testProduct: "FixtureTests",
             packageRoot: fixturePackageRoot,
             environment: [:]
-        ).inputs.isEmpty)
+        ).inputs == expectedSourceInputs)
 }
 
 @Test func swiftPMOCIExecutionKeepsGuestArchitectureSeparateFromArtifactArchitecture() throws {

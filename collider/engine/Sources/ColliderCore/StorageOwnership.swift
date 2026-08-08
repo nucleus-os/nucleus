@@ -21,9 +21,15 @@ public enum StorageCleanupPolicy: String, Codable, Hashable, Sendable {
     case automaticRetention
 }
 
+public enum StorageProducer: Hashable, Sendable {
+    case task(TaskID)
+    case runtime(String)
+}
+
 public struct StorageDeclaration: Hashable, Sendable {
     public let id: String
-    public let owner: String
+    public let owner: ComponentID
+    public let producers: Set<StorageProducer>
     public let storageClass: StorageClass
     public let root: FilePath
     public let safetyRoot: FilePath
@@ -34,7 +40,8 @@ public struct StorageDeclaration: Hashable, Sendable {
 
     public init(
         id: String,
-        owner: String,
+        owner: ComponentID,
+        producers: Set<StorageProducer>,
         storageClass: StorageClass,
         root: FilePath,
         safetyRoot: FilePath,
@@ -45,6 +52,7 @@ public struct StorageDeclaration: Hashable, Sendable {
     ) {
         self.id = id
         self.owner = owner
+        self.producers = producers
         self.storageClass = storageClass
         self.root = root
         self.safetyRoot = safetyRoot
@@ -70,9 +78,13 @@ public enum StorageCatalog {
                     "storage declaration identifiers must be nonempty and unique: \(declaration.id)"
                 )
             }
-            guard !declaration.owner.isEmpty else {
+            guard !declaration.owner.rawValue.isEmpty else {
                 throw StorageCatalogFailure.invalid(
                     "storage declaration owner is empty: \(declaration.id)")
+            }
+            guard !declaration.producers.isEmpty else {
+                throw StorageCatalogFailure.invalid(
+                    "storage declaration has no producer: \(declaration.id)")
             }
             let root = declaration.root.normalizedForComparison()
             let safetyRoot = declaration.safetyRoot.normalizedForComparison()
@@ -115,6 +127,28 @@ public enum StorageCatalog {
                 {
                     throw StorageCatalogFailure.invalid(
                         "removable storage declarations overlap: \(left.0.id), \(right.0.id)")
+                }
+            }
+        }
+    }
+
+    public static func validateProducers(
+        _ declarations: [StorageDeclaration],
+        tasks: [TaskDeclaration]
+    ) throws {
+        let tasksByID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
+        for declaration in declarations {
+            for producer in declaration.producers {
+                guard case .task(let taskID) = producer else { continue }
+                guard let task = tasksByID[taskID] else {
+                    throw StorageCatalogFailure.invalid(
+                        "storage declaration names unknown producer task: \(declaration.id), \(taskID)"
+                    )
+                }
+                guard task.component == declaration.owner else {
+                    throw StorageCatalogFailure.invalid(
+                        "storage producer belongs to another component: \(declaration.id), \(taskID)"
+                    )
                 }
             }
         }

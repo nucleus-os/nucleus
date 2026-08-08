@@ -1,3 +1,4 @@
+import ColliderCore
 import ColliderRuntime
 import Foundation
 import SystemPackage
@@ -48,7 +49,25 @@ import Testing
         ],
         runtime: ColliderRuntime())
 
-    try await RepositoryCache(context: context).prune(
+    let storage = [
+        StorageDeclaration(
+            id: "swift-target-sdk-generations",
+            owner: ComponentID(rawValue: "fixture"),
+            producers: [.runtime("fixture")],
+            storageClass: .generation,
+            root: FilePath(generations.path),
+            safetyRoot: FilePath(generations.deletingLastPathComponent().path),
+            cleanupPolicy: .explicitPrune,
+            workflowLock: FilePath(
+                cache.appendingPathComponent("nucleus/swift-target-sdks/rebuild.lock").path),
+            activeGenerationLink: FilePath(
+                cache.appendingPathComponent("nucleus/swift-target-sdks/current").path),
+            retention: "fixture")
+    ]
+    try await RepositoryCache(
+        context: context,
+        storageDeclarations: storage
+    ).prune(
         keepingRuns: 0,
         dryRun: false,
         json: true)

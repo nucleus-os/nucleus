@@ -72,6 +72,34 @@ func explicitHostCatalogAugmentationAloneControlsLinuxOperationExposure() throws
         hostAugmentation: .linux(
             shellConfiguration: shellConfiguration))
 
+    #expect(
+        Set(withoutLinuxOperations.storage.map(\.id)) == [
+            "android-aosp-build", "android-aosp-ccache", "android-gfxstream-build-linux-arm64",
+            "android-gfxstream-build-linux-x86_64", "android-sdk",
+            "browser-build-and-publications", "checkout-state", "core-render-sdk-android-arm64",
+            "core-render-sdk-linux-arm64", "core-render-sdk-linux-x86_64", "core-skia-build",
+            "downloads", "host-compiler-cache", "linux-runtime-artifacts",
+            "native-builder-ccache", "native-builder-metadata", "rn-javascript-cache",
+            "rn-native-build", "rn-node-modules", "rn-sdk-linux-arm64", "rn-sdk-linux-x86_64",
+            "run-records", "swift-package-cache", "swift-runtime-build",
+            "swift-runtime-builder-metadata", "swift-runtime-ccache", "swift-sdk-generator-build",
+            "swift-target-sdk-generations", "swiftpm-builds", "swiftpm-tool-builds",
+            "wayland-build-linux-arm64", "wayland-build-linux-x86_64",
+            "wayland-sdk-linux-arm64", "wayland-sdk-linux-x86_64",
+        ])
+    #expect(withoutLinuxOperations.storage.allSatisfy { !$0.producers.isEmpty })
+    let storageOwners = Dictionary(
+        uniqueKeysWithValues: withoutLinuxOperations.storage.map { ($0.id, $0.owner.rawValue) })
+    #expect(storageOwners["checkout-state"] == ColliderStorageComponent.descriptor.id.rawValue)
+    #expect(storageOwners["native-builder-metadata"] == "native")
+    #expect(storageOwners["swift-target-sdk-generations"] == "swift-sdk")
+    #expect(storageOwners["core-skia-build"] == "core")
+    #expect(storageOwners["rn-native-build"] == "rn")
+    #expect(storageOwners["wayland-build-linux-arm64"] == "wayland")
+    #expect(storageOwners["android-aosp-build"] == "android-runtime")
+    #expect(storageOwners["linux-runtime-artifacts"] == "linux")
+    #expect(storageOwners["browser-build-and-publications"] == "browser")
+
     let shellInstall = ComponentEntrypointRequest(
         spelling: "shell",
         entrypoint: .install)

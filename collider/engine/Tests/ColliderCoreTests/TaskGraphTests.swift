@@ -47,7 +47,8 @@ import Testing
     let declarations = [
         StorageDeclaration(
             id: "state",
-            owner: "runtime",
+            owner: ComponentID(rawValue: "runtime"),
+            producers: [.runtime("fixture")],
             storageClass: .incremental,
             root: state,
             safetyRoot: workspace,
@@ -55,7 +56,8 @@ import Testing
             retention: "checkout state"),
         StorageDeclaration(
             id: "runs",
-            owner: "runtime",
+            owner: ComponentID(rawValue: "runtime"),
+            producers: [.runtime("fixture")],
             storageClass: .runRecord,
             root: state.appending("runs"),
             safetyRoot: state,
@@ -76,7 +78,8 @@ import Testing
             [
                 StorageDeclaration(
                     id: "cache",
-                    owner: "runtime",
+                    owner: ComponentID(rawValue: "runtime"),
+                    producers: [.runtime("fixture")],
                     storageClass: .cache,
                     root: cache,
                     safetyRoot: cache,
@@ -91,7 +94,8 @@ import Testing
             [
                 StorageDeclaration(
                     id: "parent",
-                    owner: "first",
+                    owner: ComponentID(rawValue: "first"),
+                    producers: [.runtime("fixture")],
                     storageClass: .cache,
                     root: cache.appending("generated"),
                     safetyRoot: cache,
@@ -100,7 +104,8 @@ import Testing
                     retention: "fixture"),
                 StorageDeclaration(
                     id: "child",
-                    owner: "second",
+                    owner: ComponentID(rawValue: "second"),
+                    producers: [.runtime("fixture")],
                     storageClass: .generation,
                     root: cache.appending("generated/candidates"),
                     safetyRoot: cache,
@@ -109,6 +114,30 @@ import Testing
                     retention: "fixture"),
             ],
             forbiddenRemovalRoots: [cache])
+    }
+}
+
+@Test func storageCatalogRejectsUnknownAndForeignTaskProducers() {
+    let declaration = StorageDeclaration(
+        id: "build",
+        owner: ComponentID(rawValue: "core"),
+        producers: [.task(TaskID(rawValue: "core.build"))],
+        storageClass: .incremental,
+        root: FilePath("/cache/core"),
+        safetyRoot: FilePath("/cache"),
+        cleanupPolicy: .protected,
+        retention: "fixture")
+    #expect(throws: StorageCatalogFailure.self) {
+        try StorageCatalog.validateProducers([declaration], tasks: [])
+    }
+    #expect(throws: StorageCatalogFailure.self) {
+        try StorageCatalog.validateProducers(
+            [declaration],
+            tasks: [
+                TaskDeclaration(
+                    id: TaskID(rawValue: "core.build"),
+                    component: ComponentID(rawValue: "other"))
+            ])
     }
 }
 

@@ -48,11 +48,13 @@ public struct ComponentDefinition: Sendable {
     public let descriptor: ComponentDescriptor
     public let tasks: [TaskDeclaration]
     public let entrypoints: [ComponentEntrypointID: ComponentEntrypoint]
+    public let storage: [StorageDeclaration]
 
     public init(
         descriptor: ComponentDescriptor,
         tasks: [TaskDeclaration],
-        entrypoints: [ComponentEntrypoint]
+        entrypoints: [ComponentEntrypoint],
+        storage: [StorageDeclaration] = []
     ) throws {
         var tasksByID: [TaskID: TaskDeclaration] = [:]
         for task in tasks {
@@ -83,10 +85,27 @@ public struct ComponentDefinition: Sendable {
                     task: root)
             }
         }
+        for declaration in storage where declaration.owner != descriptor.id {
+            throw ComponentDefinitionFailure.foreignStorage(
+                component: descriptor.id,
+                storage: declaration.id,
+                owner: declaration.owner)
+        }
 
         self.descriptor = descriptor
         self.tasks = tasks
         self.entrypoints = entrypointsByID
+        self.storage = storage
+    }
+
+    public func addingStorage(
+        _ declarations: [StorageDeclaration]
+    ) throws -> ComponentDefinition {
+        try ComponentDefinition(
+            descriptor: descriptor,
+            tasks: tasks,
+            entrypoints: Array(entrypoints.values),
+            storage: storage + declarations)
     }
 }
 
@@ -282,6 +301,10 @@ public struct ComponentCatalog: Sendable {
     public var tasks: [TaskDeclaration] {
         components.flatMap(\.tasks)
     }
+
+    public var storage: [StorageDeclaration] {
+        components.flatMap(\.storage)
+    }
 }
 
 public enum ComponentDefinitionFailure: Error, CustomStringConvertible, Sendable {
@@ -290,6 +313,7 @@ public enum ComponentDefinitionFailure: Error, CustomStringConvertible, Sendable
     case duplicateEntrypoint(ComponentEntrypointID)
     case emptyEntrypoint(ComponentEntrypointID)
     case unknownEntrypointRoot(entrypoint: ComponentEntrypointID, task: TaskID)
+    case foreignStorage(component: ComponentID, storage: String, owner: ComponentID)
 
     public var description: String {
         switch self {
@@ -303,6 +327,8 @@ public enum ComponentDefinitionFailure: Error, CustomStringConvertible, Sendable
             "component entrypoint '\(entrypoint)' has no roots"
         case .unknownEntrypointRoot(let entrypoint, let task):
             "component entrypoint '\(entrypoint)' names unknown root task '\(task)'"
+        case .foreignStorage(let component, let storage, let owner):
+            "component '\(component)' contains storage '\(storage)' owned by '\(owner)'"
         }
     }
 }

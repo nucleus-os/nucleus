@@ -36,9 +36,11 @@ private struct PruneResult: Codable {
 
 struct RepositoryCache {
     let context: WorkspaceContext
+    let storageDeclarations: [StorageDeclaration]
 
     func status(json: Bool) async throws {
-        let declarations = try storageDeclarations()
+        try validateStorageDeclarations()
+        let declarations = storageDeclarations
         let runs = await runReclamation(
             keeping: RunRegistry.defaultRetainedRunCount)
         let sdkCandidates = try swiftSDKCandidates()
@@ -58,7 +60,7 @@ struct RepositoryCache {
             }
             return StorageStatusRecord(
                 id: declaration.id,
-                owner: declaration.owner,
+                owner: declaration.owner.rawValue,
                 storageClass: declaration.storageClass,
                 path: declaration.root.string,
                 allocatedBytes: allocated,
@@ -116,7 +118,7 @@ struct RepositoryCache {
         dryRun: Bool,
         json: Bool
     ) async throws {
-        _ = try storageDeclarations()
+        try validateStorageDeclarations()
         let pruneLock: ColliderFileLock? =
             if dryRun {
                 nil
@@ -193,162 +195,14 @@ struct RepositoryCache {
             json: json)
     }
 
-    private func storageDeclarations() throws -> [StorageDeclaration] {
-        let root = context.root
-        let state = context.layout.state
-        let cache = context.cacheRoot.appending("nucleus")
-        let sdkPaths = SwiftTargetSDKStoragePaths(cacheRoot: context.cacheRoot)
-        let declarations = [
-            StorageDeclaration(
-                id: "checkout-state",
-                owner: "collider-runtime",
-                storageClass: .incremental,
-                root: state,
-                safetyRoot: root,
-                cleanupPolicy: .protected,
-                retention: "task state and workflow locks remain with the checkout"),
-            StorageDeclaration(
-                id: "run-records",
-                owner: "collider-runtime",
-                storageClass: .runRecord,
-                root: context.layout.runs,
-                safetyRoot: state,
-                cleanupPolicy: .automaticRetention,
-                workflowLock: context.layout.locks.appending(
-                    "cache-prune.lock"),
-                retention:
-                    "running records, the 20 newest terminal records, and the newest failed record are retained"
-            ),
-            StorageDeclaration(
-                id: "downloads",
-                owner: "collider-downloads",
-                storageClass: .download,
-                root: cache.appending("downloads"),
-                safetyRoot: cache,
-                cleanupPolicy: .protected,
-                retention:
-                    "pinned downloads remain until graph-aware pruning proves them unreferenced"),
-            StorageDeclaration(
-                id: "native-sdk",
-                owner: "native-sdk-publishers",
-                storageClass: .published,
-                root: context.nativeSDKRoot.removingLastComponent(),
-                safetyRoot: context.nativeSDKRoot.removingLastComponent(),
-                cleanupPolicy: .protected,
-                retention: "validated per-target SDKs remain published"),
-            StorageDeclaration(
-                id: "swift-target-sdk-generations",
-                owner: "swift-target-sdk",
-                storageClass: .generation,
-                root: sdkPaths.artifactRoot.appending("generations"),
-                safetyRoot: sdkPaths.artifactRoot,
-                cleanupPolicy: .explicitPrune,
-                workflowLock: sdkPaths.rebuildLock,
-                activeGenerationLink: sdkPaths.artifactRoot.appending("current"),
-                retention:
-                    "the active immutable generation is protected; abandoned candidates and inactive generations are prunable"
-            ),
-            StorageDeclaration(
-                id: "swift-platforms",
-                owner: "swift-platform-runtime",
-                storageClass: .generation,
-                root: cache.appending("swift-platforms"),
-                safetyRoot: cache,
-                cleanupPolicy: .protected,
-                retention: "active runtime generations remain until graph-aware retention lands"),
-            StorageDeclaration(
-                id: "swift-build-workspaces",
-                owner: "swift-platform-runtime",
-                storageClass: .incremental,
-                root: cache.appending("swift-build-workspaces"),
-                safetyRoot: cache,
-                cleanupPolicy: .explicitClean,
-                workflowLock: context.layout.locks.appending(
-                    "swift-build-workspaces.lock"),
-                retention:
-                    "architecture-specific runtime build trees remain reusable until explicit clean"
-            ),
-            StorageDeclaration(
-                id: "builder-metadata",
-                owner: "collider-recipes",
-                storageClass: .cache,
-                root: cache.appending("build-containers"),
-                safetyRoot: cache,
-                cleanupPolicy: .explicitClean,
-                workflowLock: context.layout.locks.appending(
-                    "builder-metadata.lock"),
-                retention: "builder image identities remain reusable until explicit clean"),
-            StorageDeclaration(
-                id: "incremental-builds",
-                owner: "collider-recipes",
-                storageClass: .incremental,
-                root: cache.appending("build"),
-                safetyRoot: cache,
-                cleanupPolicy: .explicitClean,
-                workflowLock: context.layout.locks.appending(
-                    "incremental-builds.lock"),
-                retention: "reused until an explicit component clean"),
-            StorageDeclaration(
-                id: "compiler-caches",
-                owner: "collider-recipes",
-                storageClass: .cache,
-                root: cache.appending("ccache"),
-                safetyRoot: cache,
-                cleanupPolicy: .explicitClean,
-                workflowLock: context.layout.locks.appending(
-                    "compiler-caches.lock"),
-                retention: "reused until an explicit component clean"),
-            StorageDeclaration(
-                id: "host-compiler-cache",
-                owner: "collider-recipes",
-                storageClass: .cache,
-                root: cache.appending("host-ccache"),
-                safetyRoot: cache,
-                cleanupPolicy: .explicitClean,
-                workflowLock: context.layout.locks.appending(
-                    "host-compiler-cache.lock"),
-                retention: "host compiler results remain reusable until explicit clean"),
-            StorageDeclaration(
-                id: "swift-package-cache",
-                owner: "collider-swiftpm",
-                storageClass: .cache,
-                root: cache.appending("swiftpm-user"),
-                safetyRoot: cache,
-                cleanupPolicy: .explicitClean,
-                workflowLock: context.layout.locks.appending(
-                    "swift-package-cache.lock"),
-                retention: "locked Swift package sources remain reusable until explicit clean"),
-            StorageDeclaration(
-                id: "javascript-package-cache",
-                owner: "collider-javascript",
-                storageClass: .cache,
-                root: cache.appending("bun"),
-                safetyRoot: cache,
-                cleanupPolicy: .explicitClean,
-                workflowLock: context.layout.locks.appending(
-                    "javascript-package-cache.lock"),
-                retention: "locked JavaScript package archives remain reusable until explicit clean"
-            ),
-            StorageDeclaration(
-                id: "android-sdk",
-                owner: "android-toolchain",
-                storageClass: .published,
-                root: FilePath(
-                    context.environment["ANDROID_SDK_ROOT"]
-                        ?? context.cacheRoot.appending("android-sdk").string),
-                safetyRoot: FilePath(
-                    context.environment["ANDROID_SDK_ROOT"]
-                        ?? context.cacheRoot.appending("android-sdk").string),
-                cleanupPolicy: .protected,
-                retention: "the pinned Android SDK remains provisioned"),
-        ]
+    private func validateStorageDeclarations() throws {
         try StorageCatalog.validate(
-            declarations,
+            storageDeclarations,
             forbiddenRemovalRoots: [
-                FilePath("/"), root, cache,
+                FilePath("/"), context.root,
+                context.cacheRoot.appending("nucleus"),
                 FilePath(FileManager.default.homeDirectoryForCurrentUser),
             ])
-        return declarations
     }
 
     private func swiftSDKCandidates() throws -> [URL] {

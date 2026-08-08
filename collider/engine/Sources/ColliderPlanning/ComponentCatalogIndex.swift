@@ -33,6 +33,7 @@ struct ComponentCatalogIndex {
             allTasks += component.tasks
         }
         _ = try TaskGraph(allTasks)
+        try StorageCatalog.validateProducers(catalog.storage, tasks: allTasks)
 
         var groupsByName: [String: ComponentSelectionGroup] = [:]
         for group in catalog.groups {
