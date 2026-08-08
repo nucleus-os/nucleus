@@ -594,9 +594,15 @@ extension ColliderRuntime {
                     elapsedNanoseconds(since: taskStart),
                     task: task.id,
                     in: eventRun)
-                try? await eventRegistry.record(
-                    .task(.failed(task: task.id, failure: failure)),
-                    in: eventRun)
+                if error is CancellationError {
+                    try? await eventRegistry.record(
+                        .task(.cancelled(task.id)),
+                        in: eventRun)
+                } else {
+                    try? await eventRegistry.record(
+                        .task(.failed(task: task.id, failure: failure)),
+                        in: eventRun)
+                }
             }
             if error is CancellationError { throw error }
             throw failure

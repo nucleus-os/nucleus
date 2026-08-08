@@ -47,14 +47,33 @@ public actor RuntimeCancellation {
             if kill(-processGroup, number) != 0 { failures[processGroup] = errno }
         }
         return SignalForwardingResult(
+            signal: number,
             attemptedProcessGroups: processGroups.count,
             failures: failures)
         #else
         _ = number
         return SignalForwardingResult(
+            signal: number,
             attemptedProcessGroups: 0,
             failures: [:])
         #endif
+    }
+
+    /// The first interruption asks every child and registered runtime resource
+    /// to shut down normally. A subsequent interruption escalates active native
+    /// process groups to SIGKILL while using the same registered cleanup path
+    /// for resources such as containers.
+    @discardableResult
+    public func handleInterruption(signal number: Int32) -> SignalForwardingResult {
+        #if !os(Windows)
+        let forwarded = forward(signal: interrupted ? SIGKILL : number)
+        #else
+        let forwarded = forward(signal: number)
+        #endif
+        interrupted = true
+        interruptionSignal = interruptionSignal ?? number
+        cancelAll()
+        return forwarded
     }
 
     public func cancelAll() {
@@ -73,6 +92,7 @@ public actor RuntimeCancellation {
 }
 
 public struct SignalForwardingResult: Sendable {
+    public let signal: Int32
     public let attemptedProcessGroups: Int
     public let failures: [Int32: Int32]
 }
@@ -88,10 +108,7 @@ public final class RuntimeSignalHandlers: @unchecked Sendable {
                 signal: number,
                 queue: .global(qos: .userInitiated))
             source.setEventHandler {
-                Task {
-                    await cancellation.forward(signal: number)
-                    await cancellation.interruptAll(signal: number)
-                }
+                Task { await cancellation.handleInterruption(signal: number) }
             }
             source.resume()
             sources.append(source)

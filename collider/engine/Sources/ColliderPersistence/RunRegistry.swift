@@ -516,7 +516,7 @@ public actor RunRegistry {
             payload
         case .task(let event):
             switch event {
-            case .started, .succeeded:
+            case .started, .succeeded, .cancelled:
                 payload
             case .skipped(let task, let explanation):
                 .task(
@@ -708,7 +708,9 @@ private func safeName(_ value: String) -> String {
 }
 
 private func timestamp() -> String {
-    ISO8601DateFormatter().string(from: Date())
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.string(from: Date())
 }
 
 private func runIdentifier() -> String {

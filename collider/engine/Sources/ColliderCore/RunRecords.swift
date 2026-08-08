@@ -215,11 +215,12 @@ public enum TaskEvent: Codable, Hashable, Sendable {
     case started(TaskID)
     case skipped(task: TaskID, explanation: String)
     case succeeded(TaskID)
+    case cancelled(TaskID)
     case failed(task: TaskID, failure: ExecutionFailure)
 
     public var task: TaskID {
         switch self {
-        case .started(let task), .succeeded(let task): task
+        case .started(let task), .succeeded(let task), .cancelled(let task): task
         case .skipped(let task, _), .failed(let task, _): task
         }
     }
@@ -394,6 +395,7 @@ public enum ReducedTaskState: Codable, Hashable, Sendable {
     case running
     case skipped(explanation: String)
     case succeeded
+    case cancelled
     case failed(ExecutionFailure)
 }
 
@@ -459,6 +461,7 @@ public struct RunEventReducer: Sendable {
             case .skipped(let task, let explanation):
                 state.tasks[task] = .skipped(explanation: explanation)
             case .succeeded(let task): state.tasks[task] = .succeeded
+            case .cancelled(let task): state.tasks[task] = .cancelled
             case .failed(let task, let failure):
                 state.tasks[task] = .failed(failure)
                 state.failedTask = task

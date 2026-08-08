@@ -35,6 +35,11 @@ public struct ColliderCommand: AsyncParsableCommand {
             throw WorkspaceFailure.message(
                 "parsed Collider command did not exit or accept application composition")
         }
+        let taskCommand = workspaceCommand as? any TaskControlledCommand
+        let suppressTerminalSummary = taskCommand?.taskOptions.dryRun == true
+        let suppressHumanSummary =
+            taskCommand?.taskOptions.quiet == true
+            && taskCommand?.outputOptions.format == .text
         let console = CommandConsole.process(
             options: workspaceCommand.outputOptions,
             environment: processEnvironment,
@@ -100,6 +105,13 @@ public struct ColliderCommand: AsyncParsableCommand {
             await application.runtime.shutdown()
             if let run = application.run {
                 try await application.registry.finish(run, status: .succeeded)
+                if !suppressTerminalSummary {
+                    try await reportTerminalSummary(
+                        run: run,
+                        application: application,
+                        console: console,
+                        suppressHumanSummary: suppressHumanSummary)
+                }
             }
         } catch let cleanExit as CleanExit {
             await application.runtime.shutdown()
@@ -107,6 +119,13 @@ public struct ColliderCommand: AsyncParsableCommand {
                 try? await application.registry.finish(
                     run,
                     status: .succeeded)
+                if !suppressTerminalSummary {
+                    try? await reportTerminalSummary(
+                        run: run,
+                        application: application,
+                        console: console,
+                        suppressHumanSummary: suppressHumanSummary)
+                }
             }
             throw cleanExit
         } catch {
@@ -117,9 +136,11 @@ public struct ColliderCommand: AsyncParsableCommand {
             let failure =
                 (error as? ExecutionFailure)
                 ?? ExecutionFailure(reason: String(describing: error))
+            let contextualFailure = failure.addingContext(
+                logPath: application.run?.directory.appending("run.log").string)
             if let run = application.run {
                 try? await application.registry.appendLog(
-                    Array("Error: \(failure)\n".utf8),
+                    Array("Error: \(contextualFailure)\n".utf8),
                     in: run)
             }
             let status = commandFailureStatus(
@@ -136,12 +157,42 @@ public struct ColliderCommand: AsyncParsableCommand {
             if let run = application.run {
                 try? await application.registry.finish(
                     run,
-                    status: status)
+                    status: status,
+                    failedTask: status == .failed ? contextualFailure.task : nil)
             }
-            try? console.failure(failure)
-            throw ExitCode.failure
+            try? console.failure(contextualFailure)
+            if let run = application.run {
+                if !suppressTerminalSummary {
+                    try? await reportTerminalSummary(
+                        run: run,
+                        application: application,
+                        console: console,
+                        suppressHumanSummary: suppressHumanSummary)
+                }
+            }
+            throw commandExitCode(
+                status: status,
+                interruptionSignal: interruptionSignal)
         }
     }
+}
+
+private func reportTerminalSummary(
+    run: RunHandle,
+    application: ColliderApplicationComposition,
+    console: CommandConsole,
+    suppressHumanSummary: Bool
+) async throws {
+    let snapshot = try await application.registry.recordedRun(run.id)
+    let observed = try await application.registry.reducedEvents(in: snapshot)
+    let summary = RunTerminalSummary(
+        snapshot: snapshot,
+        observedState: observed)
+    if suppressHumanSummary { return }
+    try console.report(
+        summary,
+        text: summary.text,
+        humanDestination: .standardError)
 }
 
 func validateColliderEntrypoint(environment: [String: String]) throws {
@@ -177,4 +228,12 @@ func commandFailureStatus(
         return .interrupted
     }
     return .failed
+}
+
+func commandExitCode(
+    status: RunStatus,
+    interruptionSignal: Int32?
+) -> ExitCode {
+    guard status == .interrupted else { return .failure }
+    return ExitCode(128 + (interruptionSignal ?? SIGINT))
 }

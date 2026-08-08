@@ -29,6 +29,19 @@ func commandFailuresPreserveRunFinalizationSemantics() {
 }
 
 @Test
+func interruptedCommandsReturnTheConventionalSignalExitStatus() {
+    #expect(
+        commandExitCode(status: .interrupted, interruptionSignal: 2).rawValue
+            == 130)
+    #expect(
+        commandExitCode(status: .interrupted, interruptionSignal: 15).rawValue
+            == 143)
+    #expect(
+        commandExitCode(status: .failed, interruptionSignal: nil)
+            == .failure)
+}
+
+@Test
 func executableRequiresTheWorkspaceLauncher() throws {
     #expect(throws: (any Error).self) {
         try validateColliderEntrypoint(environment: [:])

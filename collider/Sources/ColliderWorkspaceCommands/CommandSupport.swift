@@ -157,8 +157,9 @@ extension WorkspaceContext {
         return invocation
     }
 
-    /// Build the task graph, execute the selected tasks against the repository
-    /// task-state root, render the report, and return it.
+    /// Build the task graph and execute the selected tasks against the
+    /// repository task-state root. Dry runs render their plan immediately;
+    /// executed runs are summarized once after the run record is finalized.
     @discardableResult
     package func execute(
         catalog: ComponentCatalog,
@@ -179,7 +180,9 @@ extension WorkspaceContext {
             workflowLocks: [sdkRebuildLock],
             lowerings: [SwiftPMLowering()],
             options: controls.executionOptions)
-        try controls.render(report, console: console)
+        if controls.dryRun {
+            try controls.renderDryRun(report, console: console)
+        }
         return report
     }
 }

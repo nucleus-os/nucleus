@@ -121,6 +121,17 @@ import Testing
     #expect(FileManager.default.fileExists(atPath: marker.path))
 }
 
+@Test func repeatedInterruptionEscalatesNativeProcessGroups() async {
+    let cancellation = RuntimeCancellation()
+
+    let graceful = await cancellation.handleInterruption(signal: 15)
+    let forced = await cancellation.handleInterruption(signal: 15)
+
+    #expect(graceful.signal == 15)
+    #expect(forced.signal == 9)
+    #expect(await cancellation.receivedInterruptionSignal() == 15)
+}
+
 @Test func runtimeUsesOnlyTheDeclaredChildEnvironment() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-environment-\(UUID().uuidString)")

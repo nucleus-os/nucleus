@@ -19,7 +19,7 @@ plan.
 Typed planning, resource-aware scheduling, records, cancellation-aware process
 teardown, artifact reuse, and cache diagnostics already exist.
 
-Phases 1 through 4 are complete. `ColliderCLI` resolves one output policy from every
+Phases 1 through 5 are complete. `ColliderCLI` resolves one output policy from every
 leaf and injects one console into the workspace context. Command implementations
 return typed reports to that console instead of writing process-global output.
 Machine reports use stdout; human diagnostics and task summaries use stderr;
@@ -128,21 +128,36 @@ packaging controls are specific to that deployment boundary.
 Gate: parser enums advertise only valid combinations, usage failures return one
 consistent status, and command-equivalence tests cover every replaced spelling.
 
-## Phase 5 — Finish signal handling and summaries
+## Phase 5 — Finish signal handling and summaries (complete)
 
 Route graceful and forced whole-run signal handling through the existing runtime
 teardown path. Do not add a cross-process control socket, branch cancellation,
 or resumability until a real user workflow demonstrates that artifact reuse,
 rerunning the command, and ordinary process signals are insufficient.
 
-Render one final summary from actual task outcomes: clean, restored, executed,
-failed, cancelled, and elapsed time. Show slow executed tasks without inventing
+Render one final summary from actual task outcomes: clean, executed, failed,
+cancelled, and elapsed time. Show slow tasks without inventing
 percent completion for opaque build tools.
+
+Complete. The first interruption forwards its signal to every active native
+process group and invokes the existing cancellation registrations used by native
+and container actions. A subsequent interruption escalates active native process
+groups to `SIGKILL` while invoking the same idempotent cleanup path. Signaled runs
+return `128 + signal`, persist the interruption and terminal status, and retain
+the failed task only for genuine failures. Cancellation is a distinct task event,
+not a synthetic failure.
+
+Executed commands render one terminal summary derived from the finalized run
+manifest and reduced event stream. The summary reports clean, executed, failed,
+and cancelled task counts, wall-clock duration, planning and execution metrics,
+slow tasks, and slow container executions. Dry runs retain their resolved-plan
+report and do not emit a second summary. There is no restored-task category
+because artifact reuse is represented by a clean task.
 
 Gate: signals, explicit cancellation, child process groups, records, terminal
 state, and exit statuses agree for native and container actions.
 
-## Phase 6 — Qualify the noninteractive contract
+## Phase 6 — Verify the noninteractive contract
 
 Run parser, console, reducer, record, log, JSON, signal, and CI-redirection tests
 across successful, failed, cancelled, and interrupted operations.
