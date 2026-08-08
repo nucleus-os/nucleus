@@ -31,6 +31,43 @@ public struct RecordedRun: Hashable, Sendable {
     }
 }
 
+public struct RecordedRunSnapshot: Sendable {
+    public let run: RecordedRun
+    public let manifest: RunManifest
+
+    public init(run: RecordedRun, manifest: RunManifest) {
+        self.run = run
+        self.manifest = manifest
+    }
+}
+
+public struct RecordedRunLog: Hashable, Sendable {
+    public enum Kind: String, Hashable, Sendable {
+        case run
+        case stage
+    }
+
+    public let kind: Kind
+    public let task: TaskID?
+    public let relativePath: String
+    public let path: FilePath
+    public let byteCount: UInt64
+
+    public init(
+        kind: Kind,
+        task: TaskID?,
+        relativePath: String,
+        path: FilePath,
+        byteCount: UInt64
+    ) {
+        self.kind = kind
+        self.task = task
+        self.relativePath = relativePath
+        self.path = path
+        self.byteCount = byteCount
+    }
+}
+
 public actor RunRegistry {
     public static let defaultRetainedRunCount = 20
 
@@ -53,11 +90,7 @@ public actor RunRegistry {
         try replaceLatest(runID: id, runs: runs)
         sequences[id] = 0
         let handle = RunHandle(id: id, directory: directory)
-        try append(
-            ColliderEvent(
-                sequence: nextSequence(id), timestamp: timestamp(),
-                kind: .runStarted, runID: id),
-            to: handle)
+        try append(.runStarted(resumed: false), to: handle)
         return handle
     }
 
@@ -79,14 +112,7 @@ public actor RunRegistry {
         let handle = RunHandle(id: id, directory: directory)
         sequences[id] = existingEventCount(handle)
         try replaceLatest(runID: id, runs: root.appending("runs"))
-        try append(
-            ColliderEvent(
-                sequence: nextSequence(id),
-                timestamp: timestamp(),
-                kind: .runStarted,
-                runID: id,
-                message: "resumed"),
-            to: handle)
+        try append(.runStarted(resumed: true), to: handle)
         return handle
     }
 
@@ -124,22 +150,13 @@ public actor RunRegistry {
     }
 
     public func record(
-        kind: ColliderEvent.Kind,
-        task: TaskID? = nil,
-        message: String? = nil,
+        _ payload: RunEvent.Payload,
         in run: RunHandle
     ) throws {
-        if kind == .taskFailed, let task {
+        if case .task(.failed(let task, _)) = payload {
             try updateManifest(run) { $0.failedTask = task }
         }
-        try append(
-            ColliderEvent(
-                sequence: nextSequence(run.id), timestamp: timestamp(),
-                kind: kind,
-                runID: run.id,
-                task: task,
-                message: message.map(CredentialScrubber.text)),
-            to: run)
+        try append(scrubbed(payload), to: run)
     }
 
     public func recordTaskDuration(
@@ -234,6 +251,9 @@ public actor RunRegistry {
         in run: RunHandle
     ) throws {
         try updateManifest(run) { $0.activeArtifacts[name] = digest }
+        try record(
+            .artifact(ArtifactEvent(name: name, digest: digest)),
+            in: run)
     }
 
     public func finish(
@@ -249,8 +269,15 @@ public actor RunRegistry {
         manifest.failedTask = failedTask
         manifest.finishedAt = timestamp()
         try writeJSON(manifest, to: manifestPath)
-        try record(kind: .runFinished, task: failedTask, message: status.rawValue, in: run)
+        try record(
+            .terminal(TerminalRunEvent(status: status, failedTask: failedTask)),
+            in: run)
         try remove(reclaimableRuns(keeping: retainingRuns))
+    }
+
+    public func stageLogPath(for task: TaskID, in run: RunHandle) -> FilePath {
+        run.directory.appending("stages")
+            .appending(safeName(task.rawValue) + ".log")
     }
 
     /// Captured task output arrives in whatever chunks the task writes, and the
@@ -270,6 +297,122 @@ public actor RunRegistry {
                     .appending(safeName(stage.rawValue) + ".log"),
                 synchronized: false)
         }
+    }
+
+    public func recordedRuns(limit: Int? = nil) throws -> [RecordedRunSnapshot] {
+        let runs = root.appending("runs")
+        let snapshots =
+            ((try? FileManager.default.contentsOfDirectory(
+                at: URL(fileURLWithPath: runs.string),
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles])) ?? [])
+            .compactMap { url -> RecordedRunSnapshot? in
+                guard
+                    let data = try? Data(
+                        contentsOf: url.appendingPathComponent("manifest.json")),
+                    let manifest = try? JSONDecoder().decode(
+                        RunManifest.self, from: data)
+                else { return nil }
+                return RecordedRunSnapshot(
+                    run: RecordedRun(
+                        id: manifest.runID,
+                        directory: FilePath(url.path)),
+                    manifest: manifest)
+            }
+            .sorted {
+                if $0.manifest.startedAt != $1.manifest.startedAt {
+                    return $0.manifest.startedAt > $1.manifest.startedAt
+                }
+                return $0.run.id.rawValue > $1.run.id.rawValue
+            }
+        guard let limit else { return snapshots }
+        return Array(snapshots.prefix(max(0, limit)))
+    }
+
+    public func recordedRun(
+        _ id: RunID? = nil,
+        preferRunning: Bool = false
+    ) throws -> RecordedRunSnapshot {
+        let runs = try recordedRuns()
+        if let id {
+            guard let run = runs.first(where: { $0.run.id == id }) else {
+                throw RunRegistryFailure.unknownRun(id)
+            }
+            return run
+        }
+        if preferRunning, let running = runs.first(where: { $0.manifest.status == .running }) {
+            return running
+        }
+        guard let latest = runs.first else { throw RunRegistryFailure.noRuns }
+        return latest
+    }
+
+    public func logs(in snapshot: RecordedRunSnapshot) throws -> [RecordedRunLog] {
+        let manager = FileManager.default
+        var tasksByPath: [String: TaskID] = [:]
+        for taskName in snapshot.manifest.tasks.map({ Array($0.keys) }) ?? [] {
+            let task = TaskID(rawValue: taskName)
+            tasksByPath["stages/\(safeName(taskName)).log"] = task
+        }
+        var paths: [(RecordedRunLog.Kind, String)] = []
+        let runLog = snapshot.run.directory.appending("run.log")
+        if manager.fileExists(atPath: runLog.string) {
+            paths.append((.run, "run.log"))
+        }
+        let stages = snapshot.run.directory.appending("stages")
+        let stageNames =
+            (try? manager.contentsOfDirectory(atPath: stages.string)) ?? []
+        paths +=
+            stageNames
+            .filter { $0.hasSuffix(".log") }
+            .sorted()
+            .map { (.stage, "stages/\($0)") }
+        return try paths.map { kind, relativePath in
+            let path = snapshot.run.directory.appending(relativePath)
+            let attributes = try manager.attributesOfItem(atPath: path.string)
+            return RecordedRunLog(
+                kind: kind,
+                task: tasksByPath[relativePath],
+                relativePath: relativePath,
+                path: path,
+                byteCount: (attributes[.size] as? NSNumber)?.uint64Value ?? 0)
+        }
+    }
+
+    public func reducedEvents(
+        in snapshot: RecordedRunSnapshot,
+        maximumEventBytes: Int = 1_048_576
+    ) throws -> ReducedRunState {
+        let path = snapshot.run.directory.appending("events.jsonl")
+        guard FileManager.default.fileExists(atPath: path.string) else {
+            return ReducedRunState()
+        }
+        let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: path.string))
+        defer { try? handle.close() }
+        var reducer = RunEventReducer()
+        var pending = Data()
+        while let chunk = try handle.read(upToCount: 65_536), !chunk.isEmpty {
+            pending.append(chunk)
+            while let newline = pending.firstIndex(of: 0x0a) {
+                let line = pending[..<newline]
+                pending.removeSubrange(...newline)
+                guard !line.isEmpty else { continue }
+                guard line.count <= maximumEventBytes else {
+                    throw RunRegistryFailure.eventTooLarge(snapshot.run.id)
+                }
+                do {
+                    try reducer.consume(
+                        JSONDecoder().decode(RunEvent.self, from: Data(line)))
+                } catch {
+                    throw RunRegistryFailure.invalidEvent(
+                        snapshot.run.id, String(describing: error))
+                }
+            }
+            guard pending.count <= maximumEventBytes else {
+                throw RunRegistryFailure.eventTooLarge(snapshot.run.id)
+            }
+        }
+        return reducer.state
     }
 
     /// Terminal run history the registry may reclaim, oldest first. The newest
@@ -322,12 +465,6 @@ public actor RunRegistry {
         }
     }
 
-    private func nextSequence(_ id: RunID) -> UInt64 {
-        let value = sequences[id, default: 0]
-        sequences[id] = value + 1
-        return value
-    }
-
     private func existingEventCount(_ run: RunHandle) -> UInt64 {
         guard
             let data = try? Data(
@@ -352,10 +489,101 @@ public actor RunRegistry {
         try writeJSON(manifest, to: path)
     }
 
-    private func append(_ event: ColliderEvent, to run: RunHandle) throws {
+    private func append(_ event: RunEvent, to run: RunHandle) throws {
         var data = try JSONEncoder.stable.encode(event)
         data.append(0x0a)
-        try appendBytes(Array(data), to: run.directory.appending("events.jsonl"))
+        try appendBytes(
+            Array(data),
+            to: run.directory.appending("events.jsonl"),
+            synchronized: false)
+    }
+
+    private func append(_ payload: RunEvent.Payload, to run: RunHandle) throws {
+        let sequence = sequences[run.id, default: 0]
+        try append(
+            RunEvent(
+                sequence: sequence,
+                timestamp: timestamp(),
+                runID: run.id,
+                payload: payload),
+            to: run)
+        sequences[run.id] = sequence + 1
+    }
+
+    private func scrubbed(_ payload: RunEvent.Payload) -> RunEvent.Payload {
+        switch payload {
+        case .runStarted, .download, .artifact, .terminal:
+            payload
+        case .task(let event):
+            switch event {
+            case .started, .succeeded:
+                payload
+            case .skipped(let task, let explanation):
+                .task(
+                    .skipped(
+                        task: task,
+                        explanation: CredentialScrubber.text(explanation)))
+            case .failed(let task, let failure):
+                .task(.failed(task: task, failure: scrubbed(failure)))
+            }
+        case .operation(let event):
+            switch event {
+            case .started(let context):
+                .operation(.started(scrubbed(context)))
+            case .finished(let result):
+                .operation(
+                    .finished(
+                        OperationResult(
+                            context: scrubbed(result.context),
+                            status: result.status,
+                            signal: result.signal,
+                            timedOut: result.timedOut)))
+            case .failed(let failure):
+                .operation(.failed(scrubbed(failure)))
+            }
+        case .wait(let event):
+            switch event {
+            case .started(let task, let resource):
+                .wait(
+                    .started(
+                        task: task,
+                        resource: CredentialScrubber.text(resource)))
+            case .finished(let task, let resource):
+                .wait(
+                    .finished(
+                        task: task,
+                        resource: CredentialScrubber.text(resource)))
+            }
+        case .interruption(let event):
+            .interruption(
+                InterruptionEvent(
+                    signal: event.signal,
+                    reason: CredentialScrubber.text(event.reason)))
+        }
+    }
+
+    private func scrubbed(_ context: OperationContext) -> OperationContext {
+        let command = CredentialScrubber.command(context.command)
+        return OperationContext(
+            task: context.task,
+            operation: CredentialScrubber.text(context.operation),
+            command: command,
+            invocation: CredentialScrubber.renderedCommand(command),
+            workingDirectory: CredentialScrubber.text(context.workingDirectory),
+            logPath: context.logPath.map(CredentialScrubber.text))
+    }
+
+    private func scrubbed(_ failure: ExecutionFailure) -> ExecutionFailure {
+        ExecutionFailure(
+            task: failure.task,
+            operation: failure.operation,
+            command: failure.command,
+            status: failure.status,
+            signal: failure.signal,
+            invocation: failure.invocation,
+            workingDirectory: failure.workingDirectory,
+            logPath: failure.logPath,
+            reason: failure.reason)
     }
 
     private func replaceLatest(runID: RunID, runs: FilePath) throws {
@@ -380,12 +608,24 @@ public actor RunRegistry {
 }
 
 public enum RunRegistryFailure: Error, CustomStringConvertible, Sendable {
+    case noRuns
+    case unknownRun(RunID)
+    case invalidEvent(RunID, String)
+    case eventTooLarge(RunID)
     case notResumable(RunID, RunStatus)
     case resumptionIdentityChanged(RunID)
     case unplannedTaskMetadata(TaskID)
 
     public var description: String {
         switch self {
+        case .noRuns:
+            "no Collider runs have been recorded"
+        case .unknownRun(let id):
+            "unknown Collider run '\(id)'"
+        case .invalidEvent(let id, let reason):
+            "run '\(id)' contains an invalid event: \(reason)"
+        case .eventTooLarge(let id):
+            "run '\(id)' contains an event larger than the inspection limit"
         case .notResumable(let id, let status):
             "run '\(id)' has status '\(status.rawValue)' and cannot be resumed"
         case .resumptionIdentityChanged(let id):

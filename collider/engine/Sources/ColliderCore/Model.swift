@@ -161,13 +161,53 @@ public struct CommandSpec: Hashable, Sendable {
 
 public struct CommandResult: Hashable, Sendable {
     public let status: Int32
+    public let signal: Int32?
     public let standardOutput: String
     public let timedOut: Bool
+    package let executionContext: OperationContext?
 
-    public init(status: Int32, standardOutput: String = "", timedOut: Bool = false) {
+    public init(
+        status: Int32,
+        signal: Int32? = nil,
+        standardOutput: String = "",
+        timedOut: Bool = false,
+        executionContext: OperationContext? = nil
+    ) {
         self.status = status
+        self.signal = signal
         self.standardOutput = standardOutput
         self.timedOut = timedOut
+        self.executionContext = executionContext
+    }
+
+    package func recordingExecutionContext(_ context: OperationContext) -> CommandResult {
+        CommandResult(
+            status: status,
+            signal: signal,
+            standardOutput: standardOutput,
+            timedOut: timedOut,
+            executionContext: context)
+    }
+
+    public var succeeded: Bool { status == 0 && !timedOut }
+
+    public func executionFailure(reason: String) -> ExecutionFailure {
+        ExecutionFailure(
+            task: executionContext?.task,
+            operation: executionContext?.operation,
+            command: executionContext?.command,
+            status: status,
+            signal: signal,
+            invocation: executionContext?.invocation,
+            workingDirectory: executionContext?.workingDirectory,
+            logPath: executionContext?.logPath,
+            reason: timedOut ? "\(reason): timed out" : reason)
+    }
+
+    public func requireSuccess(reason: String) throws {
+        guard succeeded else {
+            throw executionFailure(reason: reason)
+        }
     }
 }
 

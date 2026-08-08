@@ -132,12 +132,8 @@ private struct GenerateVulkanBindingsAction: ColliderAction {
                 arguments: [registry.string, output.string, "1"],
                 workingDirectory: workingDirectory,
                 environment: environment))
-        guard result.status == 0 else {
-            throw VulkanGenerationFailure.commandFailed(result.status)
+        guard result.succeeded else {
+            throw result.executionFailure(reason: "Vulkan binding generation failed")
         }
     }
-}
-
-private enum VulkanGenerationFailure: Error {
-    case commandFailed(Int32)
 }

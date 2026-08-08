@@ -821,8 +821,8 @@ private struct ProvisionBoostAction: ColliderAction {
                 ],
                 workingDirectory: workingDirectory,
                 environment: environment))
-        guard result.status == 0 else {
-            throw BoostProvisioningFailure.commandFailed(result.status)
+        guard result.succeeded else {
+            throw result.executionFailure(reason: "Boost provisioning failed")
         }
         try context.files.replaceSymlink(
             at: candidate.appending("boost"),
@@ -832,10 +832,6 @@ private struct ProvisionBoostAction: ColliderAction {
             generation: generation,
             active: active)
     }
-}
-
-private enum BoostProvisioningFailure: Error {
-    case commandFailed(Int32)
 }
 
 private let boostVersion = "1.84.0"
@@ -1074,14 +1070,11 @@ private struct InstallReactNativeJavaScriptDependenciesAction: ColliderAction {
                 ],
                 workingDirectory: root,
                 environment: environment))
-        guard result.status == 0 else {
-            throw JavaScriptDependencyInstallFailure.commandFailed(result.status)
+        guard result.succeeded else {
+            throw result.executionFailure(
+                reason: "JavaScript dependency installation failed")
         }
     }
-}
-
-private enum JavaScriptDependencyInstallFailure: Error {
-    case commandFailed(Int32)
 }
 
 private struct RunReactNativeNativeBuildAction: ColliderAction {

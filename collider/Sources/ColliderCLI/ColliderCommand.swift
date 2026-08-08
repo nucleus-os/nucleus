@@ -49,17 +49,24 @@ public struct ColliderCommand: AsyncParsableCommand {
         let layout = WorkspaceLayout(root: workspace)
         let registry = RunRegistry(root: layout.state)
         let requestedRunID = requestedRunID(for: command)
-        let run =
-            if let requestedRunID {
-                try await registry.resume(requestedRunID)
-            } else {
-                try await registry.begin(
-                    command: [CommandLine.arguments[0]] + arguments)
-            }
+        let run: RunHandle?
+        if workspaceCommand.recordsRun {
+            run =
+                if let requestedRunID {
+                    try await registry.resume(requestedRunID)
+                } else {
+                    try await registry.begin(
+                        command: [CommandLine.arguments[0]] + arguments)
+                }
+        } else {
+            run = nil
+        }
         let cancellation = RuntimeCancellation()
-        let logging = CommandLogging(registry: registry, run: run)
-        environment["NUCLEUS_RUN_DIR"] = run.directory.string
-        environment["NUCLEUS_RUN_LOG"] = run.directory.appending("run.log").string
+        let logging = run.map { CommandLogging(registry: registry, run: $0) }
+        if let run {
+            environment["NUCLEUS_RUN_DIR"] = run.directory.string
+            environment["NUCLEUS_RUN_LOG"] = run.directory.appending("run.log").string
+        }
         let cacheLayout = nucleusCacheLayout(environment: environment)
         #if os(macOS)
         let ociBackend: (any OCIRuntimeBackend)? = AppleContainerRuntimeBackend()
@@ -91,26 +98,47 @@ public struct ColliderCommand: AsyncParsableCommand {
         do {
             try await workspaceCommand.run(in: application.workspace)
             await application.runtime.shutdown()
-            try await application.registry.finish(application.run, status: .succeeded)
+            if let run = application.run {
+                try await application.registry.finish(run, status: .succeeded)
+            }
         } catch let cleanExit as CleanExit {
             await application.runtime.shutdown()
-            try? await application.registry.finish(
-                application.run,
-                status: .succeeded)
+            if let run = application.run {
+                try? await application.registry.finish(
+                    run,
+                    status: .succeeded)
+            }
             throw cleanExit
         } catch {
             await application.runtime.shutdown()
             let wasInterrupted = await application.cancellation.wasInterrupted()
-            try? await application.registry.appendLog(
-                Array("Error: \(error)\n".utf8),
-                in: application.run)
+            let interruptionSignal =
+                await application.cancellation.receivedInterruptionSignal()
+            let failure =
+                (error as? ExecutionFailure)
+                ?? ExecutionFailure(reason: String(describing: error))
+            if let run = application.run {
+                try? await application.registry.appendLog(
+                    Array("Error: \(failure)\n".utf8),
+                    in: run)
+            }
             let status = commandFailureStatus(
                 error,
                 wasInterrupted: wasInterrupted)
-            try? await application.registry.finish(
-                application.run,
-                status: status)
-            try? console.failure(error)
+            if status == .interrupted, let run = application.run {
+                try? await application.registry.record(
+                    .interruption(
+                        InterruptionEvent(
+                            signal: interruptionSignal,
+                            reason: "run interrupted")),
+                    in: run)
+            }
+            if let run = application.run {
+                try? await application.registry.finish(
+                    run,
+                    status: status)
+            }
+            try? console.failure(failure)
             throw ExitCode.failure
         }
     }
@@ -127,8 +155,8 @@ func validateColliderEntrypoint(environment: [String: String]) throws {
 
 private struct ColliderApplicationComposition {
     let registry: RunRegistry
-    let run: RunHandle
-    let logging: CommandLogging
+    let run: RunHandle?
+    let logging: CommandLogging?
     let cancellation: RuntimeCancellation
     let runtime: ColliderRuntime
     let workspace: WorkspaceContext

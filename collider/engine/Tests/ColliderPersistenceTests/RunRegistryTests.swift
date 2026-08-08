@@ -12,7 +12,8 @@ import Testing
     let registry = RunRegistry(root: FilePath(directory.path))
     let run = try await registry.begin(command: ["collider", "doctor"])
     try await registry.record(
-        kind: .taskStarted, task: TaskID(rawValue: "doctor.host"), in: run)
+        .task(.started(TaskID(rawValue: "doctor.host"))),
+        in: run)
     try await registry.appendLog(Array("diagnostic\n".utf8), in: run)
     try await registry.recordExecutionMetrics(
         criticalPathDurationNanoseconds: 123,
@@ -38,6 +39,12 @@ import Testing
             directory
             .appendingPathComponent("runs/\(run.id.rawValue)/events.jsonl"), encoding: .utf8)
     #expect(events.split(separator: "\n").count == 3)
+    let decoded = try events.split(separator: "\n").map {
+        try JSONDecoder().decode(RunEvent.self, from: Data($0.utf8))
+    }
+    let reduced = try RunEventReducer.reduce(decoded)
+    #expect(reduced.status == .succeeded)
+    #expect(reduced.tasks[TaskID(rawValue: "doctor.host")] == .running)
 }
 
 @Test func runRegistryPersistsOneUnifiedRecordPerPlannedTask() async throws {
@@ -72,6 +79,58 @@ import Testing
     #expect(record.outcome == .executed)
     #expect(record.durationNanoseconds == 88)
     #expect(record.observations == nil)
+}
+
+@Test func runInspectionReadsCanonicalRecordsLogsAndAnIncompleteEventTail() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-inspection-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let registry = RunRegistry(root: FilePath(directory.path))
+    let run = try await registry.begin(command: ["collider", "build", "fixture"])
+    let task = TaskID(rawValue: "fixture.build")
+    try await registry.recordPlan(
+        [
+            TaskPlanEntry(
+                task: task,
+                identity: ArtifactDigest(bytes: [UInt8](repeating: 4, count: 32)),
+                isClean: false,
+                explanation: "fixture",
+                coordinates: nil)
+        ],
+        in: run)
+    try await registry.record(.task(.started(task)), in: run)
+    try await registry.appendLog(Array("run output\n".utf8), in: run)
+    try await registry.appendLog(Array("stage output\n".utf8), stage: task, in: run)
+
+    let snapshots = try await registry.recordedRuns(limit: 1)
+    let snapshot = try #require(snapshots.first)
+    #expect(snapshot.manifest.runID == run.id)
+    let logs = try await registry.logs(in: snapshot)
+    #expect(logs.map(\.relativePath) == ["run.log", "stages/fixture-build.log"])
+    #expect(logs.last?.task == task)
+
+    let eventsPath = run.directory.appending("events.jsonl")
+    let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: eventsPath.string))
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data(#"{"sequence":2"#.utf8))
+    try handle.close()
+
+    let observed = try await registry.reducedEvents(in: snapshot)
+    #expect(observed.status == .running)
+    #expect(observed.tasks[task] == .running)
+}
+
+@Test func runInspectionBoundsIndividualEventMemory() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-inspection-bound-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let registry = RunRegistry(root: FilePath(directory.path))
+    _ = try await registry.begin(command: ["collider", "fixture"])
+    let snapshot = try await registry.recordedRun()
+
+    await #expect(throws: RunRegistryFailure.self) {
+        try await registry.reducedEvents(in: snapshot, maximumEventBytes: 8)
+    }
 }
 
 @Test func runRetentionPreservesActiveRecentAndNewestFailedRuns() async throws {
@@ -316,8 +375,11 @@ func unfinishedRunResumptionReusesOnlyMatchingCleanTaskIdentities(
         ],
         in: run)
     try await registry.record(
-        kind: .taskFailed,
-        message: "Authorization: Bearer event-secret",
+        .task(
+            .failed(
+                task: task,
+                failure: ExecutionFailure(
+                    reason: "Authorization: Bearer event-secret"))),
         in: run)
     try await registry.appendLog(
         Array("Cookie: session=log-secret\n".utf8),

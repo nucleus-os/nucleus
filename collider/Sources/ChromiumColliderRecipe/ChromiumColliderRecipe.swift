@@ -843,8 +843,8 @@ package struct PrepareChromiumDepotToolsAction: ColliderAction {
             arguments,
             workingDirectory: workingDirectory,
             context: context)
-        guard result.status == 0 else {
-            throw ChromiumDepotToolsFailure.gitFailed(arguments, result.status)
+        guard result.succeeded else {
+            throw result.executionFailure(reason: "depot_tools git command failed")
         }
     }
 
@@ -864,7 +864,6 @@ package struct PrepareChromiumDepotToolsAction: ColliderAction {
 }
 
 private enum ChromiumDepotToolsFailure: Error {
-    case gitFailed([String], Int32)
     case nonGitCheckout(FilePath)
     case trackedModifications(FilePath)
     case wrongCommit(expected: String, actual: String)
@@ -953,14 +952,10 @@ private struct BootstrapChromiumDepotToolsAction: ColliderAction {
                 arguments: [],
                 workingDirectory: repository,
                 environment: environment))
-        guard result.status == 0 else {
-            throw ChromiumBootstrapFailure.commandFailed(result.status)
+        guard result.succeeded else {
+            throw result.executionFailure(reason: "Chromium bootstrap failed")
         }
     }
-}
-
-private enum ChromiumBootstrapFailure: Error {
-    case commandFailed(Int32)
 }
 
 private func chromiumBuildExecution(

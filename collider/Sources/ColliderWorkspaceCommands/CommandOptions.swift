@@ -75,14 +75,23 @@ package protocol OutputConfiguredCommand {
 }
 
 package protocol ColliderWorkspaceCommand: AsyncParsableCommand, OutputConfiguredCommand {
+    var recordsRun: Bool { get }
     mutating func run(in context: WorkspaceContext) async throws
 }
 
 extension ColliderWorkspaceCommand {
+    package var recordsRun: Bool { true }
+
     package mutating func run() async throws {
         throw WorkspaceFailure.message(
             "Collider command execution requires application composition")
     }
+}
+
+package protocol ColliderInspectionCommand: ColliderWorkspaceCommand {}
+
+extension ColliderInspectionCommand {
+    package var recordsRun: Bool { false }
 }
 
 package protocol TaskControlledCommand: ColliderWorkspaceCommand, ResumableRun {

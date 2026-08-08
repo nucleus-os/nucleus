@@ -690,10 +690,9 @@ private func run(
             workingDirectory: workingDirectory,
             environment: environment,
             output: .combined(limit: 64 * 1024 * 1024)))
-    guard result.status == 0 else {
-        throw RuntimeELFFailure(
-            "\(executable) failed with status \(result.status):\n"
-                + result.standardOutput)
+    guard result.succeeded else {
+        throw result.executionFailure(
+            reason: "\(executable) failed:\n" + result.standardOutput)
     }
     return result.standardOutput
 }

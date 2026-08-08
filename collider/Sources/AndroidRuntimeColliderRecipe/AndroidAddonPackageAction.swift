@@ -483,9 +483,9 @@ struct PackageAndroidAddonAction: ColliderAction {
         context: ActionContext
     ) async throws {
         let result = try await context.commands.execute(command)
-        guard result.status == 0 else {
-            throw AndroidAddonPackageFailure(
-                "command failed with status \(result.status): \(result.standardOutput)")
+        guard result.succeeded else {
+            throw result.executionFailure(
+                reason: "Android add-on packaging command failed: \(result.standardOutput)")
         }
     }
 }

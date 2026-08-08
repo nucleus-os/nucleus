@@ -670,8 +670,8 @@ private struct ValidateAndroidHostAction: ColliderAction {
                     workingDirectory: library.removingLastComponent(),
                     environment: environment,
                     output: .captured(limit: 64 * 1_024 * 1_024)))
-            guard result.status == 0 else {
-                throw AndroidHostValidationFailure.commandFailed(result.status)
+            guard result.succeeded else {
+                throw result.executionFailure(reason: "Android host validation failed")
             }
             return result.standardOutput
         }
@@ -728,7 +728,6 @@ private struct ValidateAndroidHostAction: ColliderAction {
 }
 
 private enum AndroidHostValidationFailure: Error {
-    case commandFailed(Int32)
     case invalidOutput(String)
 }
 
@@ -882,14 +881,10 @@ private struct VerifyAndroidProjectAction: ColliderAction {
                 ],
                 workingDirectory: project,
                 environment: environment))
-        guard result.status == 0 else {
-            throw AndroidProjectVerificationFailure.commandFailed(result.status)
+        guard result.succeeded else {
+            throw result.executionFailure(reason: "Android project verification failed")
         }
     }
-}
-
-private enum AndroidProjectVerificationFailure: Error {
-    case commandFailed(Int32)
 }
 
 package struct SkiaGitDependency: Hashable, Sendable {
@@ -1051,8 +1046,8 @@ private struct MaterializeSkiaDependenciesAction: ColliderAction {
             arguments,
             workingDirectory: workingDirectory,
             context: context)
-        guard result.status == 0 else {
-            throw SkiaDependencyFailure.gitFailed(arguments, result.status)
+        guard result.succeeded else {
+            throw result.executionFailure(reason: "Skia dependency git command failed")
         }
     }
 
@@ -1149,8 +1144,8 @@ private struct InstallSkiaGNAction: ColliderAction {
     func execute(in context: ActionContext) async throws {
         try context.files.createDirectory(executable.removingLastComponent())
         let result = try await context.containers.execute(execution)
-        guard result.status == 0 else {
-            throw SkiaDependencyFailure.unzipFailed(result.status)
+        guard result.succeeded else {
+            throw result.executionFailure(reason: "Skia dependency extraction failed")
         }
     }
 }
@@ -1161,8 +1156,6 @@ private enum SkiaDependencyFailure: Error {
     case disabled(FilePath)
     case trackedModifications(String)
     case wrongCommit(String, expected: String, actual: String)
-    case gitFailed([String], Int32)
-    case unzipFailed(Int32)
 }
 
 private let ninjaTargets = ["skia", "skshaper", "skparagraph", "skunicode", "svg"]

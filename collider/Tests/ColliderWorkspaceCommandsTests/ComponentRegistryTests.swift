@@ -67,6 +67,41 @@ private func selectedTestTasks(
     return try ColliderPlanner().selectedTasks(in: catalog, requests: requests)
 }
 
+@Test
+func normalizedRootVerbsResolveTheRetiredDomainOperations() throws {
+    let context = WorkspaceContext(
+        root: fixtureRepositoryRoot,
+        environment: [:],
+        runtime: ColliderRuntime())
+    let catalog = try ComponentRegistry(context: context).componentCatalog(
+        hostAugmentation: HostCatalogAugmentation.none)
+
+    #expect(
+        try selectedTasks(in: catalog, entrypoint: .build, selection: "android-native")
+            == selectedTasks(
+                in: catalog,
+                entrypoint: CoreEntrypoints.androidNative,
+                selection: CoreColliderRecipe.descriptor.canonicalName))
+    #expect(
+        try selectedTasks(in: catalog, entrypoint: .testDefault, selection: "android")
+            == selectedTasks(
+                in: catalog,
+                entrypoint: CoreEntrypoints.androidVerify,
+                selection: CoreColliderRecipe.descriptor.canonicalName))
+    #expect(
+        try selectedTasks(in: catalog, entrypoint: .bootstrap, selection: "android-source")
+            == selectedTasks(
+                in: catalog,
+                entrypoint: ComponentEntrypointID(rawValue: "aosp.source"),
+                selection: AndroidRuntimeColliderRecipe.descriptor.canonicalName))
+    #expect(
+        try selectedTasks(in: catalog, entrypoint: .build, selection: "android-image")
+            == selectedTasks(
+                in: catalog,
+                entrypoint: ComponentEntrypointID(rawValue: "aosp.image"),
+                selection: AndroidRuntimeColliderRecipe.descriptor.canonicalName))
+}
+
 @Test func storageOwnershipRelocatesBetweenDefaultAndAPFSCacheRoots() throws {
     let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-storage-relocation-\(UUID().uuidString)", isDirectory: true)

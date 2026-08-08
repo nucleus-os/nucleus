@@ -6,20 +6,17 @@ package enum WorkspaceCommandSet {
         Bootstrap.self,
         Build.self,
         Test.self,
-    ]
-
-    package static let rootBetweenGroups: [ParsableCommand.Type] = [
-        SwiftSDK.self,
-        Android.self,
+        Check.self,
+        Generate.self,
     ]
 
     package static let rootSuffix: [ParsableCommand.Type] = [
-        Browser.self,
-        Generate.self,
-        Sanitize.self,
         Benchmark.self,
         Clean.self,
         Cache.self,
+        Tasks.self,
+        Graph.self,
+        Runs.self,
         Logs.self,
         Status.self,
     ]
@@ -28,9 +25,4 @@ package enum WorkspaceCommandSet {
         InstallBrowser.self
     ]
 
-    package static let androidRuntime: [ParsableCommand.Type] = [
-        AndroidRuntimeSourceLock.self,
-        AndroidRuntimeSource.self,
-        AndroidRuntimeImage.self,
-    ]
 }

@@ -40,14 +40,73 @@ func executableRequiresTheWorkspaceLauncher() throws {
 }
 
 @Test
-func rootGrammarRejectsRetiredAndUnsupportedBrowserOperations() {
+func rootGrammarRejectsEveryReplacedNamespace() {
     for arguments in [
         ["toolchain", "status"],
+        ["swift-sdk", "rebuild"],
+        ["swift-sdk", "status"],
+        ["android", "build"],
+        ["android", "native"],
+        ["android", "verify"],
+        ["android-runtime", "source-lock"],
+        ["android-runtime", "source"],
+        ["android-runtime", "image"],
+        ["browser", "doctor"],
+        ["browser", "bootstrap"],
+        ["browser", "build"],
+        ["browser", "test"],
         ["browser", "build", "cef"],
         ["browser", "package-only"],
+        ["generate", "vulkan", "vulkan"],
+        ["sanitize"],
     ] {
         #expect(throws: (any Error).self) {
             try ColliderCommand.parseAsRoot(arguments)
         }
     }
+}
+
+@Test
+func everyRetiredOperationHasOneNormalizedSpelling() throws {
+    let replacements = [
+        ["build", "swift-sdk", "--rebuild"],
+        ["status", "swift-sdk"],
+        ["build", "android"],
+        ["build", "android-native"],
+        ["test", "android"],
+        ["check", "android-source-lock"],
+        ["bootstrap", "android-source"],
+        ["build", "android-image"],
+        ["doctor", "browser"],
+        ["bootstrap", "browser"],
+        ["build", "browser"],
+        ["test", "browser"],
+        ["check", "sanitizers"],
+    ]
+    for arguments in replacements {
+        _ = try ColliderCommand.parseAsRoot(arguments)
+    }
+}
+
+@Test
+func inspectionCommandsDoNotCreateRunRecords() throws {
+    for arguments in [
+        ["status"],
+        ["status", "swift-sdk"],
+        ["runs", "list"],
+        ["runs", "show"],
+        ["logs", "list"],
+        ["logs", "path"],
+        ["logs", "tail"],
+        ["tasks"],
+        ["graph", "build", "all"],
+        ["cache", "status"],
+    ] {
+        let parsed = try ColliderCommand.parseAsRoot(arguments)
+        let command = try #require(parsed as? any ColliderWorkspaceCommand)
+        #expect(!command.recordsRun)
+    }
+    let build = try ColliderCommand.parseAsRoot(["build", "core"])
+    let buildCommand = try #require(build as? any ColliderWorkspaceCommand)
+    #expect(buildCommand.recordsRun)
 }

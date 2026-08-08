@@ -53,7 +53,7 @@ toolchain_present() { ( source "$host_env" ) >/dev/null 2>&1; }
 
 # 1. Provision the generated Linux toolchain when setup itself runs on Linux.
 #    macOS builds Collider and native products with the selected Xcode toolchain;
-#    `collider swift-sdk rebuild` separately creates Linux/Android artifacts in
+#    `collider build swift-sdk --rebuild` separately creates Linux/Android artifacts in
 #    the pinned native Linux/arm64 builder image.
 if ! toolchain_present; then
   if [[ "$(uname -s)" == Darwin ]]; then

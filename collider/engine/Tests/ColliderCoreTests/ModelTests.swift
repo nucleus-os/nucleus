@@ -1,10 +1,75 @@
-import Testing
-@testable import ColliderCore
 import Foundation
+import Testing
+
+@testable import ColliderCore
+
+@Test func runEventReducerReconstructsTerminalTaskState() throws {
+    let runID = RunID(rawValue: "fixture")
+    let clean = TaskID(rawValue: "fixture.clean")
+    let failed = TaskID(rawValue: "fixture.failed")
+    let failure = ExecutionFailure(
+        task: failed,
+        operation: "swift build",
+        command: ["swift", "build"],
+        status: 1,
+        invocation: "swift build",
+        workingDirectory: "/workspace",
+        logPath: "/runs/fixture/stages/fixture-failed.log",
+        reason: "child command failed")
+    let events = [
+        RunEvent(
+            sequence: 0,
+            timestamp: "2026-08-08T00:00:00Z",
+            runID: runID,
+            payload: .runStarted(resumed: false)),
+        RunEvent(
+            sequence: 1,
+            timestamp: "2026-08-08T00:00:01Z",
+            runID: runID,
+            payload: .task(.skipped(task: clean, explanation: "inputs unchanged"))),
+        RunEvent(
+            sequence: 2,
+            timestamp: "2026-08-08T00:00:02Z",
+            runID: runID,
+            payload: .task(.started(failed))),
+        RunEvent(
+            sequence: 3,
+            timestamp: "2026-08-08T00:00:03Z",
+            runID: runID,
+            payload: .task(.failed(task: failed, failure: failure))),
+        RunEvent(
+            sequence: 4,
+            timestamp: "2026-08-08T00:00:04Z",
+            runID: runID,
+            payload: .terminal(
+                TerminalRunEvent(status: .failed, failedTask: failed))),
+    ]
+
+    let state = try RunEventReducer.reduce(events)
+
+    #expect(state.runID == runID)
+    #expect(state.status == .failed)
+    #expect(state.tasks[clean] == .skipped(explanation: "inputs unchanged"))
+    #expect(state.tasks[failed] == .failed(failure))
+    #expect(state.failedTask == failed)
+}
+
+@Test func runEventReducerRejectsSequenceGaps() {
+    let event = RunEvent(
+        sequence: 1,
+        timestamp: "2026-08-08T00:00:00Z",
+        runID: RunID(rawValue: "fixture"),
+        payload: .runStarted(resumed: false))
+
+    #expect(throws: RunEventReductionFailure.self) {
+        try RunEventReducer.reduce([event])
+    }
+}
 
 @Test func artifactDigestHasAnAlgorithmLabel() {
-    #expect(ArtifactDigest(bytes: [0, 1, 254, 255]).description
-        == "sha256:0001feff")
+    #expect(
+        ArtifactDigest(bytes: [0, 1, 254, 255]).description
+            == "sha256:0001feff")
 }
 
 @Test func artifactDigestParsesOnlyCompleteLowercaseSHA256() {

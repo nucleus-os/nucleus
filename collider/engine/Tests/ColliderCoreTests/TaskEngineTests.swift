@@ -440,7 +440,7 @@ private struct FailAfterWriteAction: ColliderAction {
         outputs: [OutputDeclaration(path: output, validation: .regularFile)],
         action: try AnyColliderAction(FailAfterWriteAction(output: output)))
 
-    await #expect(throws: RuntimeFailure.self) {
+    await #expect(throws: ExecutionFailure.self) {
         _ = try await ColliderEngine(runtime: ColliderRuntime()).execute(
             graph: TaskGraph([task]),
             selected: [task.id],

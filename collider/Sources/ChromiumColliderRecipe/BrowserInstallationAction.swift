@@ -381,7 +381,7 @@ package struct InstallBrowserAction: ColliderAction {
                 workingDirectory: normalizedPrefix,
                 environment: installation.environment,
                 output: .captured(limit: 64 * 1_024)))
-        guard result.status == 0 else { return false }
+        guard result.succeeded else { return false }
         let lines = result.standardOutput.split(whereSeparator: \.isNewline)
         return lines.count == 2
             && lines[0] == "0:0:755"
@@ -399,8 +399,8 @@ package struct InstallBrowserAction: ColliderAction {
                 arguments: arguments,
                 workingDirectory: normalizedPrefix,
                 environment: installation.environment))
-        guard result.status == 0 else {
-            throw BrowserInstallationActionFailure.commandFailed(result.status)
+        guard result.succeeded else {
+            throw result.executionFailure(reason: "browser installation command failed")
         }
     }
 
@@ -435,13 +435,10 @@ private struct BrowserInstallManifest: Codable {
 }
 
 private enum BrowserInstallationActionFailure: Error, CustomStringConvertible {
-    case commandFailed(Int32)
     case invalidOutput(String)
 
     var description: String {
         switch self {
-        case .commandFailed(let status):
-            "browser installation command failed with status \(status)"
         case .invalidOutput(let message):
             message
         }

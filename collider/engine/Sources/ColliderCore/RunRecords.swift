@@ -8,7 +8,7 @@ public struct RunID: RawRepresentable, Hashable, Codable, Sendable,
     public var description: String { rawValue }
 }
 
-public enum RunStatus: String, Codable, Sendable {
+public enum RunStatus: String, Codable, Hashable, Sendable {
     case running
     case succeeded
     case failed
@@ -181,37 +181,301 @@ public struct TaskStateRecord: Codable, Sendable {
     }
 }
 
-public struct ColliderEvent: Codable, Sendable {
-    public enum Kind: String, Codable, Sendable {
-        case runStarted
-        case taskStarted
-        case taskSkipped
-        case taskSucceeded
-        case taskFailed
-        case runFinished
-        case downloadProgress
-    }
-
+public struct RunEvent: Codable, Hashable, Sendable {
     public let sequence: UInt64
     public let timestamp: String
-    public let kind: Kind
     public let runID: RunID
-    public let task: TaskID?
-    public let message: String?
+    public let payload: Payload
 
     public init(
         sequence: UInt64,
         timestamp: String,
-        kind: Kind,
         runID: RunID,
-        task: TaskID? = nil,
-        message: String? = nil
+        payload: Payload
     ) {
         self.sequence = sequence
         self.timestamp = timestamp
-        self.kind = kind
         self.runID = runID
+        self.payload = payload
+    }
+
+    public enum Payload: Codable, Hashable, Sendable {
+        case runStarted(resumed: Bool)
+        case task(TaskEvent)
+        case operation(OperationEvent)
+        case download(DownloadEvent)
+        case wait(WaitEvent)
+        case artifact(ArtifactEvent)
+        case interruption(InterruptionEvent)
+        case terminal(TerminalRunEvent)
+    }
+}
+
+public enum TaskEvent: Codable, Hashable, Sendable {
+    case started(TaskID)
+    case skipped(task: TaskID, explanation: String)
+    case succeeded(TaskID)
+    case failed(task: TaskID, failure: ExecutionFailure)
+
+    public var task: TaskID {
+        switch self {
+        case .started(let task), .succeeded(let task): task
+        case .skipped(let task, _), .failed(let task, _): task
+        }
+    }
+}
+
+public enum OperationEvent: Codable, Hashable, Sendable {
+    case started(OperationContext)
+    case finished(OperationResult)
+    case failed(ExecutionFailure)
+}
+
+public struct OperationContext: Codable, Hashable, Sendable {
+    public let task: TaskID?
+    public let operation: String
+    public let command: [String]
+    public let invocation: String
+    public let workingDirectory: String
+    public let logPath: String?
+
+    public init(
+        task: TaskID?,
+        operation: String,
+        command: [String],
+        invocation: String,
+        workingDirectory: String,
+        logPath: String?
+    ) {
         self.task = task
-        self.message = message
+        self.operation = operation
+        self.command = command
+        self.invocation = invocation
+        self.workingDirectory = workingDirectory
+        self.logPath = logPath
+    }
+}
+
+public struct OperationResult: Codable, Hashable, Sendable {
+    public let context: OperationContext
+    public let status: Int32
+    public let signal: Int32?
+    public let timedOut: Bool
+
+    public init(
+        context: OperationContext,
+        status: Int32,
+        signal: Int32?,
+        timedOut: Bool
+    ) {
+        self.context = context
+        self.status = status
+        self.signal = signal
+        self.timedOut = timedOut
+    }
+}
+
+public struct DownloadEvent: Codable, Hashable, Sendable {
+    public let digest: ArtifactDigest
+    public let receivedBytes: Int64
+    public let expectedBytes: Int64?
+
+    public init(
+        digest: ArtifactDigest,
+        receivedBytes: Int64,
+        expectedBytes: Int64?
+    ) {
+        self.digest = digest
+        self.receivedBytes = receivedBytes
+        self.expectedBytes = expectedBytes
+    }
+}
+
+public enum WaitEvent: Codable, Hashable, Sendable {
+    case started(task: TaskID?, resource: String)
+    case finished(task: TaskID?, resource: String)
+}
+
+public struct ArtifactEvent: Codable, Hashable, Sendable {
+    public let name: String
+    public let digest: ArtifactDigest
+
+    public init(name: String, digest: ArtifactDigest) {
+        self.name = name
+        self.digest = digest
+    }
+}
+
+public struct InterruptionEvent: Codable, Hashable, Sendable {
+    public let signal: Int32?
+    public let reason: String
+
+    public init(signal: Int32? = nil, reason: String) {
+        self.signal = signal
+        self.reason = reason
+    }
+}
+
+public struct TerminalRunEvent: Codable, Hashable, Sendable {
+    public let status: RunStatus
+    public let failedTask: TaskID?
+
+    public init(status: RunStatus, failedTask: TaskID? = nil) {
+        self.status = status
+        self.failedTask = failedTask
+    }
+}
+
+public struct ExecutionFailure: Error, Codable, Hashable, Sendable,
+    CustomStringConvertible
+{
+    public let task: TaskID?
+    public let operation: String?
+    public let command: [String]?
+    public let status: Int32?
+    public let signal: Int32?
+    public let invocation: String?
+    public let workingDirectory: String?
+    public let logPath: String?
+    public let reason: String
+
+    public init(
+        task: TaskID? = nil,
+        operation: String? = nil,
+        command: [String]? = nil,
+        status: Int32? = nil,
+        signal: Int32? = nil,
+        invocation: String? = nil,
+        workingDirectory: String? = nil,
+        logPath: String? = nil,
+        reason: String
+    ) {
+        self.task = task
+        self.operation = operation.map(CredentialScrubber.text)
+        self.command = command.map(CredentialScrubber.command)
+        self.status = status
+        self.signal = signal
+        self.invocation = invocation.map(CredentialScrubber.text)
+        self.workingDirectory = workingDirectory.map(CredentialScrubber.text)
+        self.logPath = logPath.map(CredentialScrubber.text)
+        self.reason = CredentialScrubber.text(reason)
+    }
+
+    public var description: String {
+        var result = reason
+        if let task { result += "\n  task: \(task.rawValue)" }
+        if let operation { result += "\n  operation: \(operation)" }
+        if let invocation { result += "\n  command: \(invocation)" }
+        if let status { result += "\n  status: \(status)" }
+        if let signal { result += "\n  signal: \(signal)" }
+        if let workingDirectory { result += "\n  directory: \(workingDirectory)" }
+        if let logPath { result += "\n  log: \(logPath)" }
+        return result
+    }
+
+    public func addingContext(
+        task: TaskID? = nil,
+        logPath: String? = nil
+    ) -> ExecutionFailure {
+        ExecutionFailure(
+            task: self.task ?? task,
+            operation: operation,
+            command: command,
+            status: status,
+            signal: signal,
+            invocation: invocation,
+            workingDirectory: workingDirectory,
+            logPath: self.logPath ?? logPath,
+            reason: reason)
+    }
+}
+
+public enum ReducedTaskState: Codable, Hashable, Sendable {
+    case running
+    case skipped(explanation: String)
+    case succeeded
+    case failed(ExecutionFailure)
+}
+
+public struct ReducedRunState: Codable, Hashable, Sendable {
+    public fileprivate(set) var runID: RunID?
+    public fileprivate(set) var status: RunStatus?
+    public fileprivate(set) var resumeCount: Int
+    public fileprivate(set) var tasks: [TaskID: ReducedTaskState]
+    public fileprivate(set) var failedTask: TaskID?
+
+    public init() {
+        runID = nil
+        status = nil
+        resumeCount = 0
+        tasks = [:]
+        failedTask = nil
+    }
+}
+
+public enum RunEventReductionFailure: Error, Hashable, Sendable,
+    CustomStringConvertible
+{
+    case unexpectedSequence(expected: UInt64, actual: UInt64)
+    case mixedRuns(expected: RunID, actual: RunID)
+
+    public var description: String {
+        switch self {
+        case .unexpectedSequence(let expected, let actual):
+            "expected run event sequence \(expected), found \(actual)"
+        case .mixedRuns(let expected, let actual):
+            "expected run '\(expected)', found event for '\(actual)'"
+        }
+    }
+}
+
+public struct RunEventReducer: Sendable {
+    public private(set) var state = ReducedRunState()
+    private var nextSequence: UInt64 = 0
+
+    public init() {}
+
+    public mutating func consume(_ event: RunEvent) throws {
+        guard event.sequence == nextSequence else {
+            throw RunEventReductionFailure.unexpectedSequence(
+                expected: nextSequence,
+                actual: event.sequence)
+        }
+        if let runID = state.runID, runID != event.runID {
+            throw RunEventReductionFailure.mixedRuns(
+                expected: runID,
+                actual: event.runID)
+        }
+        state.runID = event.runID
+        nextSequence += 1
+        switch event.payload {
+        case .runStarted(let resumed):
+            state.status = .running
+            state.failedTask = nil
+            if resumed { state.resumeCount += 1 }
+        case .task(let taskEvent):
+            switch taskEvent {
+            case .started(let task): state.tasks[task] = .running
+            case .skipped(let task, let explanation):
+                state.tasks[task] = .skipped(explanation: explanation)
+            case .succeeded(let task): state.tasks[task] = .succeeded
+            case .failed(let task, let failure):
+                state.tasks[task] = .failed(failure)
+                state.failedTask = task
+            }
+        case .interruption:
+            state.status = .interrupted
+        case .terminal(let terminal):
+            state.status = terminal.status
+            state.failedTask = terminal.failedTask ?? state.failedTask
+        case .operation, .download, .wait, .artifact:
+            break
+        }
+    }
+
+    public static func reduce(_ events: some Sequence<RunEvent>) throws -> ReducedRunState {
+        var reducer = RunEventReducer()
+        for event in events { try reducer.consume(event) }
+        return reducer.state
     }
 }

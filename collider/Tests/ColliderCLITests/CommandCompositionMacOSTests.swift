@@ -8,23 +8,15 @@ import Testing
 @Test
 func macOSCommandCompositionContainsOnlyWorkspaceOperations() {
     let expectedRoot: [ParsableCommand.Type] = [
-        Doctor.self, Bootstrap.self, Build.self, Test.self,
-        Install.self, SwiftSDK.self, Android.self, AndroidRuntime.self,
-        Browser.self, Generate.self, Sanitize.self, Benchmark.self,
-        Clean.self, Cache.self, Logs.self, Status.self,
+        Doctor.self, Bootstrap.self, Build.self, Test.self, Check.self, Generate.self,
+        Install.self, Benchmark.self,
+        Clean.self, Cache.self, Tasks.self, Graph.self, Runs.self, Logs.self,
+        Status.self,
     ]
     let expectedInstall: [ParsableCommand.Type] = [InstallBrowser.self]
-    let expectedAndroidRuntime: [ParsableCommand.Type] = [
-        AndroidRuntimeSourceLock.self,
-        AndroidRuntimeSource.self,
-        AndroidRuntimeImage.self,
-    ]
 
     #expect(commandTypes(ColliderCommand.configuration.subcommands) == commandTypes(expectedRoot))
     #expect(commandTypes(Install.configuration.subcommands) == commandTypes(expectedInstall))
-    #expect(
-        commandTypes(AndroidRuntime.configuration.subcommands)
-            == commandTypes(expectedAndroidRuntime))
 }
 
 private func commandTypes(

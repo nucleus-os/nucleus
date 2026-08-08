@@ -641,11 +641,11 @@ private struct AOSPSourceWorkflow {
                 workingDirectory: preparation.source,
                 environment: preparation.environment,
                 output: output))
-        guard result.status == 0 else {
+        guard result.succeeded else {
             let detail = result.standardOutput.trimmingCharacters(
                 in: .whitespacesAndNewlines)
-            throw AOSPSourceWorkflowFailure.invalidOutput(
-                "Repo \(arguments.first ?? "command") failed"
+            throw result.executionFailure(
+                reason: "Repo \(arguments.first ?? "command") failed"
                     + (detail.isEmpty ? "" : ": \(detail)"))
         }
         return result.standardOutput
@@ -760,9 +760,9 @@ private struct AOSPSourceWorkflow {
                 workingDirectory: directory,
                 environment: environment,
                 output: .captured(limit: 32 * 1_024 * 1_024)))
-        guard result.status == 0 else {
-            throw AOSPSourceWorkflowFailure.invalidOutput(
-                "\(arguments.first ?? "command") failed: "
+        guard result.succeeded else {
+            throw result.executionFailure(
+                reason: "\(arguments.first ?? "command") failed: "
                     + result.standardOutput.trimmingCharacters(
                         in: .whitespacesAndNewlines))
         }

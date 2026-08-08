@@ -14,7 +14,8 @@ public enum CredentialScrubber {
                 redactNext = false
                 return "<redacted>"
             }
-            let normalized = argument
+            let normalized =
+                argument
                 .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
                 .lowercased()
             if sensitiveNames.contains(normalized) {
@@ -23,6 +24,10 @@ public enum CredentialScrubber {
             }
             return text(argument)
         }
+    }
+
+    public static func renderedCommand(_ arguments: [String]) -> String {
+        command(arguments).map(shellQuoted).joined(separator: " ")
     }
 
     public static func text(_ value: String) -> String {
@@ -47,8 +52,9 @@ public enum CredentialScrubber {
     }
 
     public static func url(_ value: URL) -> URL {
-        guard var components = URLComponents(
-            url: value, resolvingAgainstBaseURL: false)
+        guard
+            var components = URLComponents(
+                url: value, resolvingAgainstBaseURL: false)
         else { return value }
         if components.user != nil { components.user = "<redacted>" }
         if components.password != nil { components.password = "<redacted>" }
@@ -70,9 +76,17 @@ public enum CredentialScrubber {
             omittingEmptySubsequences: false
         ).map { field in
             guard let candidate = URL(string: String(field)),
-                  candidate.scheme != nil
+                candidate.scheme != nil
             else { return String(field) }
             return url(candidate).absoluteString
         }.joined(separator: " ")
+    }
+
+    private static func shellQuoted(_ value: String) -> String {
+        guard !value.isEmpty else { return "''" }
+        let safe = CharacterSet.alphanumerics.union(
+            CharacterSet(charactersIn: "_@%+=:,./-"))
+        if value.unicodeScalars.allSatisfy({ safe.contains($0) }) { return value }
+        return "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }

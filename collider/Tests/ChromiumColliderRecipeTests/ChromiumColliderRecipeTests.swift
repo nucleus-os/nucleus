@@ -96,8 +96,8 @@ private func fixtureGit(
                     ?? "/usr/bin:/bin"
             ],
             output: .combined(limit: 1_024 * 1_024)))
-    guard result.status == 0 else {
-        throw RuntimeFailure.commandFailed(status: result.status)
+    guard result.succeeded else {
+        throw result.executionFailure(reason: "fixture command failed")
     }
     return result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
 }

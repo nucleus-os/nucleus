@@ -11,8 +11,9 @@ func colliderCommandSubcommands() -> [ParsableCommand.Type] {
     commands.append(contentsOf: LinuxOperationCommandSet.root)
     #endif
     commands.append(Install.self)
-    commands.append(contentsOf: WorkspaceCommandSet.rootBetweenGroups)
+    #if os(Linux)
     commands.append(AndroidRuntime.self)
+    #endif
     commands.append(contentsOf: WorkspaceCommandSet.rootSuffix)
     return commands
 }
@@ -40,7 +41,7 @@ package struct AndroidRuntime: AsyncParsableCommand {
         subcommands: androidRuntimeSubcommands())
 
     private static func androidRuntimeSubcommands() -> [ParsableCommand.Type] {
-        var commands = WorkspaceCommandSet.androidRuntime
+        var commands: [ParsableCommand.Type] = []
         #if os(Linux)
         commands.append(contentsOf: LinuxOperationCommandSet.androidRuntime)
         #endif

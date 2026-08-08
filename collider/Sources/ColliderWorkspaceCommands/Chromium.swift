@@ -1,30 +1,14 @@
-import ArgumentParser
 import ChromiumColliderRecipe
 import ColliderCore
 import ColliderRuntime
 
-enum ChromiumOperation: String, CaseIterable, ExpressibleByArgument {
-    case doctor
-    case bootstrap
-    case build
-    case test
-    case install
-}
-
-struct ChromiumCommand {
+struct BrowserInstallCommand {
     let context: WorkspaceContext
 
     func run(
-        _ operation: ChromiumOperation,
         controls: TaskControls = TaskControls(),
         installPrefix: String? = nil
     ) async throws {
-        if operation == .doctor {
-            try await WorkspaceDoctor(context: context).run(
-                scope: .browser,
-                dryRun: controls.dryRun)
-            return
-        }
         if !controls.dryRun {
             try await WorkspaceDoctor(context: context).run(
                 scope: .browser,
@@ -37,19 +21,11 @@ struct ChromiumCommand {
         }
         let catalog = try ComponentRegistry(context: context).componentCatalog(
             environment: environment)
-        let entrypoint =
-            switch operation {
-            case .doctor: preconditionFailure("doctor handled by capability registry")
-            case .bootstrap: ComponentEntrypointID.bootstrap
-            case .build: ComponentEntrypointID.build
-            case .test: ComponentEntrypointID.testDefault
-            case .install: ComponentEntrypointID.install
-            }
         try await context.execute(
             catalog: catalog,
             requests: [
                 ComponentEntrypointRequest(
-                    entrypoint: entrypoint,
+                    entrypoint: .install,
                     selection: ChromiumColliderRecipe.descriptor.canonicalName)
             ],
             controls: controls)

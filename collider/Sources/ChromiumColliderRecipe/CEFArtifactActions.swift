@@ -327,8 +327,8 @@ private func requireCEFContainerSuccess(
             temporaryDirectory: temporaryDirectory,
             command: command,
             environment: environment))
-    guard result.status == 0 else {
-        throw CEFArtifactActionFailure.commandFailed(result.status)
+    guard result.succeeded else {
+        throw result.executionFailure(reason: "CEF artifact command failed")
     }
 }
 
@@ -342,13 +342,10 @@ private func cefEnvironment(_ assembly: CEFArtifactAssembly) -> [String: String]
 }
 
 private enum CEFArtifactActionFailure: Error, CustomStringConvertible {
-    case commandFailed(Int32)
     case invalidOutput(String)
 
     var description: String {
         switch self {
-        case .commandFailed(let status):
-            "CEF artifact command failed with status \(status)"
         case .invalidOutput(let message):
             message
         }

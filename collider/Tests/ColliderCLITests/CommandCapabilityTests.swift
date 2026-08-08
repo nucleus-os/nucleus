@@ -9,40 +9,37 @@ private let taskControlledLeaves: [[String]] = [
     ["bootstrap"],
     ["build"],
     ["test"],
+    ["check", "sanitizers"],
+    ["check", "address-sanitizer"],
+    ["check", "undefined-behavior-sanitizer"],
+    ["check", "thread-sanitizer"],
+    ["check", "android-source-lock"],
     ["generate", "vulkan"],
-    ["generate", "wayland"],
-    ["swift-sdk", "rebuild"],
-    ["android", "build"],
-    ["android", "native"],
-    ["android", "verify"],
-    ["android-runtime", "source-lock"],
-    ["android-runtime", "source"],
-    ["android-runtime", "image"],
-    ["browser", "bootstrap"],
-    ["browser", "build"],
-    ["browser", "test"],
     ["install", "browser"],
-    ["sanitize"],
     ["benchmark"],
 ]
 
 private let reportLeaves: [[String]] = [
     ["status"],
+    ["status", "swift-sdk"],
     ["logs", "list"],
+    ["logs", "path"],
+    ["runs", "list"],
+    ["runs", "show"],
+    ["tasks"],
+    ["graph", "build", "all"],
     ["cache", "status"],
-    ["swift-sdk", "status"],
 ]
 
 private let diagnosticLeaves: [[String]] = [
     ["doctor"],
-    ["browser", "doctor"],
+    ["doctor", "browser"],
     ["clean", "core"],
     ["cache", "prune"],
 ]
 
 private let controlFreeLeaves: [[String]] = [
-    ["logs", "show"],
-    ["logs", "tail"],
+    ["logs", "tail"]
 ]
 
 @Test
@@ -104,7 +101,7 @@ func quietAndVerboseTaskOutputAreMutuallyExclusive() {
 
 @Test
 func nonTaskLeavesExposeOnlyTheirDeclaredControls() throws {
-    for path in reportLeaves + controlFreeLeaves {
+    for path in reportLeaves {
         let parsed = try ColliderCommand.parseAsRoot(
             path + ["--format", "json", "--color", "always", "--progress", "never"])
         let command = try #require(parsed as? any OutputConfiguredCommand)
@@ -114,6 +111,21 @@ func nonTaskLeavesExposeOnlyTheirDeclaredControls() throws {
         awaitRejects(
             path,
             options: [
+                "--dry-run",
+                "--rebuild",
+                "--verbose",
+                "--quiet",
+                "--run-id", "not-supported",
+            ])
+    }
+
+    for path in controlFreeLeaves {
+        _ = try ColliderCommand.parseAsRoot(
+            path + ["--format", "text", "--color", "always", "--progress", "never"])
+        awaitRejects(
+            path,
+            options: [
+                "--format", "json",
                 "--dry-run",
                 "--rebuild",
                 "--verbose",
@@ -143,7 +155,7 @@ func nonTaskLeavesExposeOnlyTheirDeclaredControls() throws {
 }
 
 @Test
-func installationAndBrowserHelpExposeOneBrowserInstallLeaf() throws {
+func installationHelpExposesTheOnlyBrowserNamespace() throws {
     _ = try ColliderCommand.parseAsRoot(["install", "browser"])
     #expect(throws: (any Error).self) {
         try ColliderCommand.parseAsRoot(["browser", "install"])
@@ -151,10 +163,7 @@ func installationAndBrowserHelpExposeOneBrowserInstallLeaf() throws {
 
     let installHelp = ColliderCommand.message(
         for: CleanExit.helpRequest(Install.self))
-    let browserHelp = ColliderCommand.message(
-        for: CleanExit.helpRequest(Browser.self))
     #expect(installHelp.contains("browser"))
-    #expect(!browserHelp.contains("install"))
 }
 
 private func awaitRejects(_ path: [String], options: [String]) {

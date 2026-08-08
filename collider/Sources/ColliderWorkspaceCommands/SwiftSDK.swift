@@ -11,14 +11,6 @@ import SystemPackage
 import Darwin
 #endif
 
-struct RebuildOptions {
-    var controls: TaskControls
-
-    init(controls: TaskControls = TaskControls()) {
-        self.controls = controls
-    }
-}
-
 func swiftTargetSDKArtifactID(
     inputsFile: FilePath,
     validationFixture: FilePath,
@@ -162,33 +154,6 @@ struct SwiftSDKStatus {
     }
 }
 
-struct SwiftSDKCommand {
-    let context: WorkspaceContext
-
-    func rebuild(_ options: RebuildOptions) async throws {
-        #if !os(macOS)
-        throw WorkspaceFailure.message(
-            "Swift target SDK generation requires the macOS arm64 builder")
-        #else
-        #if !arch(arm64)
-        throw WorkspaceFailure.message(
-            "Swift target SDK generation requires native macOS arm64")
-        #endif
-        let registry = ComponentRegistry(context: context)
-        let catalog = try registry.componentCatalog(
-            forceSwiftSDKGeneration: true)
-        try await context.execute(
-            catalog: catalog,
-            requests: [
-                ComponentEntrypointRequest(
-                    entrypoint: .build,
-                    selection: SwiftTargetSDKColliderRecipe.descriptor.canonicalName)
-            ],
-            controls: options.controls)
-        #endif
-    }
-}
-
 private func selectedXcodeIdentity(
     context: WorkspaceContext
 ) async throws -> String {
@@ -213,9 +178,9 @@ private func commandOutput(
             output: .combined(limit: 64 * 1_024)))
     let text = result.standardOutput
         .trimmingCharacters(in: .whitespacesAndNewlines)
-    guard result.status == 0 else {
-        throw WorkspaceFailure.message(
-            "\(executable.lastComponent?.string ?? executable.string) failed: \(text)")
+    guard result.succeeded else {
+        throw result.executionFailure(
+            reason: "\(executable.lastComponent?.string ?? executable.string) failed: \(text)")
     }
     return text
 }

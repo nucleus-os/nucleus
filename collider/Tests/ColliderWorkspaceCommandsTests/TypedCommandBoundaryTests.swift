@@ -3,33 +3,35 @@ import Testing
 @testable import ColliderWorkspaceCommands
 
 @Test
-func androidLeavesConstructOneOpinionatedOperationPerEntrypoint() throws {
-    let build = try Android.Build.parse(["--dry-run"])
-    #expect(build.operation == .build)
+func androidTargetsUseTheSharedBuildAndTestVerbs() throws {
+    let build = try Build.parse(["android", "--dry-run"])
+    #expect(build.component == "android")
     #expect(build.taskOptions.dryRun)
 
-    let native = try Android.Native.parse([])
-    #expect(native.operation == .native)
+    let native = try Build.parse(["android-native"])
+    #expect(native.component == "android-native")
 
-    let verify = try Android.Verify.parse([])
-    #expect(verify.operation == .verify)
+    let verify = try Test.parse(["android"])
+    #expect(verify.component == "android")
 
     #expect(throws: (any Error).self) {
-        try Android.Build.parse(["--", "--stacktrace"])
+        try Build.parse(["android", "--", "--stacktrace"])
     }
     #expect(throws: (any Error).self) {
-        try Android.Verify.parse(["/tmp/libNucleusAndroid.so"])
+        try Test.parse(["android", "/tmp/libNucleusAndroid.so"])
     }
 }
 
 @Test
 func swiftSDKRebuildAlwaysBuildsTheCompleteTargetSet() throws {
-    _ = try SwiftSDK.Rebuild.parse([])
+    let command = try Build.parse(["swift-sdk", "--rebuild"])
+    #expect(command.component == "swift-sdk")
+    #expect(command.taskOptions.rebuild)
     #expect(throws: (any Error).self) {
-        try SwiftSDK.Rebuild.parse(["--arch", "aarch64"])
+        try Build.parse(["swift-sdk", "--arch", "aarch64"])
     }
     #expect(throws: (any Error).self) {
-        try SwiftSDK.Rebuild.parse(["--reconfigure"])
+        try Build.parse(["swift-sdk", "--reconfigure"])
     }
 }
 
@@ -37,14 +39,14 @@ func swiftSDKRebuildAlwaysBuildsTheCompleteTargetSet() throws {
 func boundedCommandValuesRejectUnknownSpellingsDuringParsing() {
     for arguments in [
         ["doctor", "unknown"],
-        ["sanitize", "memory"],
+        ["check", "memory-sanitizer"],
     ] {
         #expect(throws: (any Error).self) {
             switch arguments.first {
             case "doctor":
                 _ = try Doctor.parse(Array(arguments.dropFirst()))
-            case "sanitize":
-                _ = try Sanitize.parse(Array(arguments.dropFirst()))
+            case "check":
+                _ = try Check.parse(Array(arguments.dropFirst()))
             default:
                 Issue.record("unexpected command fixture")
             }

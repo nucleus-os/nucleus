@@ -13,7 +13,7 @@ repository root:
 collider bootstrap core
 collider build core
 collider test core
-collider android native
+collider build android-native
 ```
 
 Important directories:

@@ -62,6 +62,7 @@ let package = Package(
                 .product(name: "ColliderCore", package: "engine"),
                 .product(name: "ColliderEngine", package: "engine"),
                 .product(name: "ColliderPersistence", package: "engine"),
+                .product(name: "ColliderPlanning", package: "engine"),
                 .product(name: "ColliderRuntime", package: "engine"),
                 "ColliderSwiftPM",
                 "AndroidRuntimeColliderRecipe",

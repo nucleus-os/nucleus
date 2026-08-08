@@ -299,7 +299,31 @@ package struct ComponentRegistry {
                 destinations: [
                     ComponentEntrypointReference(
                         component: core,
-                        entrypoint: CoreEntrypoints.androidBuild)
+                        entrypoint: CoreEntrypoints.androidVerify)
+                ]),
+            ComponentEntrypointRoute(
+                spelling: "android-native",
+                requestedEntrypoint: .build,
+                destinations: [
+                    ComponentEntrypointReference(
+                        component: core,
+                        entrypoint: CoreEntrypoints.androidNative)
+                ]),
+            ComponentEntrypointRoute(
+                spelling: "android-source",
+                requestedEntrypoint: .bootstrap,
+                destinations: [
+                    ComponentEntrypointReference(
+                        component: AndroidRuntimeColliderRecipe.descriptor.id,
+                        entrypoint: ComponentEntrypointID(rawValue: "aosp.source"))
+                ]),
+            ComponentEntrypointRoute(
+                spelling: "android-image",
+                requestedEntrypoint: .build,
+                destinations: [
+                    ComponentEntrypointReference(
+                        component: AndroidRuntimeColliderRecipe.descriptor.id,
+                        entrypoint: ComponentEntrypointID(rawValue: "aosp.image"))
                 ]),
             ComponentEntrypointRoute(
                 spelling: "gpu-headless",
@@ -382,7 +406,11 @@ package struct ComponentRegistry {
         ]
         expose(
             .build,
-            to: runtimeSpellings + ["android", "browser", "chromium", "linux-runtime"])
+            to: runtimeSpellings
+                + [
+                    "android", "android-native", "android-image", "browser",
+                    "chromium", "linux-runtime",
+                ])
         expose(
             .testDefault,
             to: runtimeSpellings
@@ -393,7 +421,7 @@ package struct ComponentRegistry {
         var bootstrapSpellings = [
             "all", "runtime", "linux", "native-builder", "core",
             "react-native", "rn", "wayland", "android-runtime",
-            "compositor", "shell", "browser", "chromium",
+            "android-source", "compositor", "shell", "browser", "chromium",
         ]
         if includeLinuxOperations { bootstrapSpellings.append("tracy") }
         expose(.bootstrap, to: bootstrapSpellings)
@@ -428,7 +456,11 @@ package struct ComponentRegistry {
         selection: String?,
         controls: TaskControls
     ) async throws {
-        let catalog = try componentCatalog()
+        try await checkBrowserPrerequisites(selection: selection, controls: controls)
+        let catalog = try componentCatalog(
+            forceSwiftSDKGeneration:
+                selection == SwiftTargetSDKColliderRecipe.descriptor.canonicalName
+                && controls.rebuild)
         try await context.execute(
             catalog: catalog,
             requests: [
@@ -443,6 +475,7 @@ package struct ComponentRegistry {
         selection: String?,
         controls: TaskControls
     ) async throws {
+        try await checkBrowserPrerequisites(selection: selection, controls: controls)
         let catalog = try componentCatalog()
         try await context.execute(
             catalog: catalog,
@@ -458,6 +491,7 @@ package struct ComponentRegistry {
         selection: String?,
         controls: TaskControls
     ) async throws {
+        try await checkBrowserPrerequisites(selection: selection, controls: controls)
         let catalog = try componentCatalog()
         var requests = [
             ComponentEntrypointRequest(
@@ -556,6 +590,19 @@ package struct ComponentRegistry {
                 ComponentEntrypointRequest(entrypoint: .build, selection: "linux")
             ],
             controls: TaskControls())
+    }
+
+    private func checkBrowserPrerequisites(
+        selection: String?,
+        controls: TaskControls
+    ) async throws {
+        guard !controls.dryRun,
+            selection == "browser" || selection == "chromium"
+        else { return }
+        try await WorkspaceDoctor(context: context).run(
+            scope: .browser,
+            dryRun: false,
+            quiet: true)
     }
 
     package func shellRuntimeInstallConfiguration(

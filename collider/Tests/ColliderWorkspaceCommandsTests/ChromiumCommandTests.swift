@@ -8,11 +8,11 @@ import Testing
 
 @Test
 func chromiumCommandHasOneOpinionatedOperationSurface() throws {
-    #expect(!(try Browser.Bootstrap.parse([])).taskOptions.dryRun)
+    #expect((try Bootstrap.parse(["browser"])).component == "browser")
     #expect(
-        try Browser.Build.parse(["--dry-run"]).taskOptions.dryRun)
+        try Build.parse(["browser", "--dry-run"]).taskOptions.dryRun)
     #expect(
-        try Browser.Test.parse(["--verbose"]).taskOptions.verbose)
+        try Test.parse(["browser", "--verbose"]).taskOptions.verbose)
     #expect(
         try InstallBrowser.parse(["--prefix", "/browser"]).prefix
             == "/browser")

@@ -22,10 +22,10 @@ selected `depot_tools` commit is part of the same source identity.
 Use the workspace entry point:
 
 ```sh
-collider browser doctor
-collider browser bootstrap
-collider browser build
-collider browser test
+collider doctor browser
+collider bootstrap browser
+collider build browser
+collider test browser
 ```
 
 Collider materializes one locked source generation shared with Nucleus Browser.

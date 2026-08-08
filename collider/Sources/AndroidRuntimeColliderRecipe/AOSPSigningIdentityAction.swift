@@ -220,12 +220,13 @@ struct AOSPSigningIdentityWorkflow {
                 workingDirectory: directory,
                 environment: environment,
                 output: .captured(limit: 32 * 1_024 * 1_024)))
-        guard result.status == 0 else {
+        guard result.succeeded else {
             let detail = result.standardOutput.trimmingCharacters(
                 in: .whitespacesAndNewlines)
-            throw AOSPSigningIdentityFailure.commandFailed(
-                arguments.first ?? "openssl",
-                detail)
+            throw result.executionFailure(
+                reason: detail.isEmpty
+                    ? "AOSP signing identity command failed"
+                    : "AOSP signing identity command failed: \(detail)")
         }
     }
 }
@@ -254,7 +255,6 @@ private enum AOSPSigningIdentityFailure: Error, CustomStringConvertible {
     case missingKeyMaterial(FilePath)
     case changedCertificate(FilePath)
     case keyMismatch(String)
-    case commandFailed(String, String)
 
     var description: String {
         switch self {
@@ -266,8 +266,6 @@ private enum AOSPSigningIdentityFailure: Error, CustomStringConvertible {
             "AOSP signing certificate digest changed: \(path)"
         case .keyMismatch(let alias):
             "AOSP signing certificate does not match its private key: \(alias)"
-        case .commandFailed(let command, let detail):
-            "\(command) failed" + (detail.isEmpty ? "" : ": \(detail)")
         }
     }
 }

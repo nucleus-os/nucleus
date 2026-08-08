@@ -117,7 +117,7 @@ collider test
 Build and verify the signed Android image inputs:
 
 ```sh
-collider android-runtime image
+collider build android-image
 ```
 
 On the matching Linux release architecture, build the add-on host executables,

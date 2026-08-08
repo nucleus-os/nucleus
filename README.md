@@ -27,7 +27,7 @@ uses the matching official Swift.org Linux compiler as a bootstrap compiler.
 Nucleus does not build the Swift compiler, Swift driver, LLVM, Clang, SwiftPM,
 SourceKit-LSP, DocC, or another host toolchain.
 
-`collider swift-sdk rebuild` builds only the Linux target-side Swift standard
+`collider build swift-sdk --rebuild` builds only the Linux target-side Swift standard
 library and overlays, Dispatch, Foundation, XCTest, and Swift Testing. It builds
 those products natively for Linux/arm64 and cross-builds them for Linux/amd64 in
 the same arm64 container, then publishes both architectures in one Swift SDK.
@@ -65,8 +65,8 @@ Focused workflows include:
 ```sh
 collider bootstrap core
 collider bootstrap rn
-collider android build
-collider android-runtime image
+collider build android
+collider build android-image
 collider install session
 ```
 

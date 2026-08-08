@@ -8,7 +8,7 @@ struct Cache: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Inspect and explicitly reclaim Collider-owned generated storage.",
         subcommands: [Status.self, Prune.self])
-    struct Status: ColliderWorkspaceCommand {
+    struct Status: ColliderInspectionCommand {
         static let configuration = CommandConfiguration(
             abstract:
                 "Report ownership, retention, allocation, and reclaimability for declared storage.")

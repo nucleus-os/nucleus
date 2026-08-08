@@ -1,3 +1,4 @@
+import ColliderCore
 import Foundation
 import Testing
 
@@ -143,6 +144,34 @@ private struct FixtureReport: Codable, Equatable {
     #expect(standardError.text.contains("\u{001B}[31m"))
     #expect(standardError.text.contains("token=<redacted>"))
     #expect(!standardError.text.contains("token=secret"))
+}
+
+@Test func structuredFailureRenderingUsesFieldsWithoutParsingItsDescription() throws {
+    let standardError = ConsoleCapture()
+    let console = CommandConsole(
+        color: .never,
+        standardOutput: { _ in },
+        standardError: standardError.write)
+    let failure = ExecutionFailure(
+        task: TaskID(rawValue: "fixture.build"),
+        operation: "swift build",
+        command: ["swift", "build"],
+        status: 137,
+        signal: 9,
+        invocation: "swift build",
+        workingDirectory: "/workspace with spaces",
+        logPath: "/runs/fixture/stages/fixture-build.log",
+        reason: "child command failed")
+
+    try console.failure(failure)
+
+    #expect(standardError.text.contains("task: fixture.build"))
+    #expect(standardError.text.contains("operation: swift build"))
+    #expect(standardError.text.contains("command: swift build"))
+    #expect(standardError.text.contains("status: 137"))
+    #expect(standardError.text.contains("signal: 9"))
+    #expect(standardError.text.contains("directory: '/workspace with spaces'"))
+    #expect(standardError.text.contains("log: /runs/fixture/stages/fixture-build.log"))
 }
 
 private struct FixtureFailure: Error, CustomStringConvertible {

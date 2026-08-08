@@ -4,10 +4,10 @@ The Chromium build has one supported public entry point and one production
 configuration:
 
 ```sh
-collider browser doctor
-collider browser bootstrap
-collider browser build
-collider browser test
+collider doctor browser
+collider bootstrap browser
+collider build browser
+collider test browser
 collider install browser
 ```
 

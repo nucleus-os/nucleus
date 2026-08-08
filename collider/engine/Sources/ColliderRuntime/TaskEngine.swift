@@ -192,6 +192,7 @@ extension ColliderRuntime {
             Array(locks),
             stateRoot: stateRoot,
             run: nil,
+            registry: nil,
             purpose: purpose,
             cancellation: cancellation)
         defer { withExtendedLifetime(heldLocks) {} }
@@ -226,6 +227,7 @@ extension ColliderRuntime {
                 workflowLocks,
                 stateRoot: stateRoot,
                 run: eventRun,
+                registry: eventRegistry,
                 purpose: "workflow",
                 cancellation: cancellation)
         }
@@ -266,16 +268,18 @@ extension ColliderRuntime {
         if let eventRun, let eventRegistry {
             for entry in swiftBuildPlans where entry.isClean {
                 try await eventRegistry.record(
-                    kind: .taskSkipped,
-                    task: entry.task,
-                    message: entry.explanation,
+                    .task(
+                        .skipped(
+                            task: entry.task,
+                            explanation: entry.explanation)),
                     in: eventRun)
             }
             for entry in plan where entry.isClean {
                 try await eventRegistry.record(
-                    kind: .taskSkipped,
-                    task: entry.task,
-                    message: entry.explanation,
+                    .task(
+                        .skipped(
+                            task: entry.task,
+                            explanation: entry.explanation)),
                     in: eventRun)
             }
         }
@@ -403,6 +407,9 @@ extension ColliderRuntime {
                                         since: taskStart),
                                     observations: observations)
                             } catch {
+                                if let failure = error as? ExecutionFailure {
+                                    throw failure
+                                }
                                 throw RuntimeFailure.swiftBuildFailed(
                                     attribution: attribution,
                                     reason: String(describing: error))
@@ -517,14 +524,14 @@ extension ColliderRuntime {
             task.locks,
             stateRoot: stateRoot,
             run: eventRun,
+            registry: eventRegistry,
             task: task.id,
             purpose: "task",
             cancellation: cancellation)
         defer { withExtendedLifetime(heldLocks) {} }
         if let eventRun, let eventRegistry {
             try await eventRegistry.record(
-                kind: .taskStarted,
-                task: task.id,
+                .task(.started(task.id)),
                 in: eventRun)
         }
         do {
@@ -559,24 +566,40 @@ extension ColliderRuntime {
                         in: eventRun)
                 }
                 try await eventRegistry.record(
-                    kind: .taskSucceeded,
-                    task: task.id,
+                    .task(.succeeded(task.id)),
                     in: eventRun)
             }
             return observations
         } catch {
+            let logPath: String?
+            if let eventRegistry, let eventRun {
+                logPath = await eventRegistry.stageLogPath(
+                    for: task.id,
+                    in: eventRun
+                ).string
+            } else {
+                logPath = nil
+            }
+            let failure =
+                if let structured = error as? ExecutionFailure {
+                    structured.addingContext(task: task.id, logPath: logPath)
+                } else {
+                    ExecutionFailure(
+                        task: task.id,
+                        logPath: logPath,
+                        reason: String(describing: error))
+                }
             if let eventRun, let eventRegistry {
                 try? await eventRegistry.recordTaskDuration(
                     elapsedNanoseconds(since: taskStart),
                     task: task.id,
                     in: eventRun)
                 try? await eventRegistry.record(
-                    kind: .taskFailed,
-                    task: task.id,
-                    message: String(describing: error),
+                    .task(.failed(task: task.id, failure: failure)),
                     in: eventRun)
             }
-            throw error
+            if error is CancellationError { throw error }
+            throw failure
         }
     }
 
@@ -609,7 +632,6 @@ private func rendered(_ command: CommandSpec) -> String {
 }
 
 public enum RuntimeFailure: Error, CustomStringConvertible, Sendable {
-    case commandFailed(status: Int32)
     case invalidEnvironmentKey(String)
     case invalidEnvironmentValue(key: String)
     case invalidOutput(String)
@@ -619,7 +641,6 @@ public enum RuntimeFailure: Error, CustomStringConvertible, Sendable {
 
     public var description: String {
         switch self {
-        case .commandFailed(let status): "child command failed with status \(status)"
         case .invalidEnvironmentKey(let key): "invalid environment key: \(key)"
         case .invalidEnvironmentValue(let key):
             "environment value for \(key) contains a null byte"
@@ -644,6 +665,7 @@ private func acquireTaskLocks(
     _ locks: [TaskLock],
     stateRoot: FilePath,
     run: RunHandle?,
+    registry: RunRegistry?,
     task: TaskID? = nil,
     purpose: String,
     cancellation: RuntimeCancellation
@@ -661,6 +683,7 @@ private func acquireTaskLocks(
             path = sharedPath
             detail = "shared mutation"
         }
+        var recordedWait = false
         while true {
             try Task.checkCancellation()
             if await cancellation.wasInterrupted() { throw CancellationError() }
@@ -673,8 +696,19 @@ private func acquireTaskLocks(
                         owner: LockOwner(
                             run: run?.id.rawValue,
                             task: task?.rawValue)))
+                if recordedWait, let run, let registry {
+                    try? await registry.record(
+                        .wait(.finished(task: task, resource: detail)),
+                        in: run)
+                }
                 break
             } catch RuntimeLockFailure.alreadyOwned {
+                if !recordedWait, let run, let registry {
+                    recordedWait = true
+                    try? await registry.record(
+                        .wait(.started(task: task, resource: detail)),
+                        in: run)
+                }
                 try await ContinuousClock().sleep(for: .milliseconds(100))
             }
         }

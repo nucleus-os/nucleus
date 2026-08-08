@@ -504,11 +504,8 @@ package struct PrepareChromiumSourceAction: ColliderAction {
                 workingDirectory: repository,
                 environment: environment,
                 output: .captured(limit: 4 * 1_024 * 1_024)))
-        guard result.status == 0 else {
-            throw ChromiumSourceActionFailure.commandFailed(
-                executable: "git",
-                arguments: arguments,
-                status: result.status)
+        guard result.succeeded else {
+            throw result.executionFailure(reason: "git command failed")
         }
         return result.standardOutput.trimmingCharacters(
             in: .whitespacesAndNewlines)
@@ -541,11 +538,8 @@ package struct PrepareChromiumSourceAction: ColliderAction {
                 arguments: arguments,
                 workingDirectory: directory,
                 environment: environment))
-        guard result.status == 0 else {
-            throw ChromiumSourceActionFailure.commandFailed(
-                executable: String(describing: executable),
-                arguments: arguments,
-                status: result.status)
+        guard result.succeeded else {
+            throw result.executionFailure(reason: "Chromium source command failed")
         }
     }
 
@@ -643,16 +637,10 @@ private struct ChromiumSourceFileIdentity: Codable, Equatable {
 }
 
 private enum ChromiumSourceActionFailure: Error, CustomStringConvertible {
-    case commandFailed(
-        executable: String,
-        arguments: [String],
-        status: Int32)
     case invalidOutput(String)
 
     var description: String {
         switch self {
-        case .commandFailed(let executable, let arguments, let status):
-            "\(executable) \(arguments.joined(separator: " ")) failed with status \(status)"
         case .invalidOutput(let message):
             message
         }

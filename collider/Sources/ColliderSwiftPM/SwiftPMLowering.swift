@@ -616,8 +616,8 @@ private struct SwiftPMAction: ColliderAction {
             case .oci(let execution):
                 result = try await context.containers.execute(execution)
             }
-            guard result.status == 0 else {
-                throw SwiftPMLoweringFailure.commandFailed(result.status)
+            guard result.succeeded else {
+                throw result.executionFailure(reason: "Swift package command failed")
             }
             if index == identity.processes.indices.last {
                 try publishProductsDirectory(
@@ -722,8 +722,8 @@ private struct SwiftPMDependencyMaterializationAction: ColliderAction {
 
     func execute(in context: ActionContext) async throws {
         let result = try await context.commands.execute(command)
-        guard result.status == 0 else {
-            throw SwiftPMLoweringFailure.commandFailed(result.status)
+        guard result.succeeded else {
+            throw result.executionFailure(reason: "Swift package command failed")
         }
         try context.files.createDirectory(marker.removingLastComponent())
         try context.files.write(Array("resolved\n".utf8), to: marker)
@@ -735,7 +735,6 @@ public enum SwiftPMLoweringFailure: Error, CustomStringConvertible, Sendable {
     case incompatibleTestContexts
     case emptyInvocation
     case invalidDependencyMaterialization
-    case commandFailed(Int32)
     case invalidBinPath(String)
 
     public var description: String {
@@ -748,8 +747,6 @@ public enum SwiftPMLoweringFailure: Error, CustomStringConvertible, Sendable {
             "SwiftPM lowering produced an empty physical invocation"
         case .invalidDependencyMaterialization:
             "SwiftPM dependency materialization requires an OCI invocation with a lockfile"
-        case .commandFailed(let status):
-            "SwiftPM command failed with status \(status)"
         case .invalidBinPath(let value):
             "SwiftPM returned an invalid binary output path: \(value)"
         }

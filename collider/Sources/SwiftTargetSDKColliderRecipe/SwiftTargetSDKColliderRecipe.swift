@@ -1743,8 +1743,8 @@ private struct AssembleSwiftTargetSDKsAction: ColliderAction {
                 workingDirectory: workingDirectory,
                 environment: environment,
                 output: .logged))
-        guard result.status == 0 else {
-            throw SwiftSDKAssemblyFailure.commandFailed(result.status)
+        guard result.succeeded else {
+            throw result.executionFailure(reason: "Swift SDK assembly failed")
         }
     }
 }
@@ -1805,8 +1805,8 @@ private struct BuildSwiftSDKGeneratorAction: ColliderAction {
                 workingDirectory: source,
                 environment: environment,
                 output: .logged))
-        guard result.status == 0 else {
-            throw SwiftSDKGeneratorBuildFailure.commandFailed(result.status)
+        guard result.succeeded else {
+            throw result.executionFailure(reason: "Swift SDK generator build failed")
         }
     }
 }
@@ -1925,8 +1925,8 @@ private struct ValidateSwiftTargetSDKConsumerAction: ColliderAction {
                 workingDirectory: workingDirectory,
                 environment: environment,
                 output: .logged))
-        guard result.status == 0 else {
-            throw SwiftSDKValidationFailure.commandFailed(result.status)
+        guard result.succeeded else {
+            throw result.executionFailure(reason: "Swift SDK validation failed")
         }
     }
 
@@ -1942,8 +1942,8 @@ private struct ValidateSwiftTargetSDKConsumerAction: ColliderAction {
                 workingDirectory: fixture,
                 environment: environment,
                 output: .captured(limit: 64 * 1_024)))
-        guard result.status == 0 else {
-            throw SwiftSDKValidationFailure.commandFailed(result.status)
+        guard result.succeeded else {
+            throw result.executionFailure(reason: "Swift SDK validation failed")
         }
         let value = result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
         let path = FilePath(value).lexicallyNormalized()
@@ -2032,8 +2032,8 @@ private struct ValidateSwiftTargetSDKArtifactsAction: ColliderAction {
                 workingDirectory: validationRoot,
                 environment: environment,
                 output: .logged))
-        guard result.status == 0 else {
-            throw SwiftSDKValidationFailure.commandFailed(result.status)
+        guard result.succeeded else {
+            throw result.executionFailure(reason: "Swift SDK validation failed")
         }
         try context.files.write(Array("validated\n".utf8), to: marker)
     }
@@ -2100,25 +2100,12 @@ private struct PrepareLinuxSysrootAction: ColliderAction {
                 workingDirectory: workingDirectory,
                 environment: environment,
                 output: .logged))
-        guard result.status == 0 else {
-            throw LinuxSysrootPreparationFailure.commandFailed(result.status)
+        guard result.succeeded else {
+            throw result.executionFailure(reason: "Linux sysroot preparation failed")
         }
     }
 }
 
-private enum SwiftSDKGeneratorBuildFailure: Error {
-    case commandFailed(Int32)
-}
-
 private enum SwiftSDKValidationFailure: Error {
-    case commandFailed(Int32)
     case invalidBinPath(String)
-}
-
-private enum SwiftSDKAssemblyFailure: Error {
-    case commandFailed(Int32)
-}
-
-private enum LinuxSysrootPreparationFailure: Error {
-    case commandFailed(Int32)
 }

@@ -92,9 +92,9 @@ struct AssembleAOSPProductImagesAction: ColliderAction {
                 ],
                 workingDirectory: "/build",
                 output: .combined(limit: 4 * 1_024 * 1_024)))
-        guard extraction.status == 0 else {
-            throw AOSPProductAssemblyFailure.commandFailed(
-                "unzip", extraction.status)
+        guard extraction.succeeded else {
+            throw extraction.executionFailure(
+                reason: "AOSP product image extraction failed")
         }
 
         let sparseImageTool = hostTools.appending("simg2img")
@@ -228,15 +228,12 @@ func aospProductContainerToolEnvironment() -> [String: String] {
 }
 
 private enum AOSPProductAssemblyFailure: Error, CustomStringConvertible {
-    case commandFailed(String, Int32)
     case missingExecutable(FilePath)
     case missingFile(FilePath)
     case shortImage(FilePath)
 
     var description: String {
         switch self {
-        case .commandFailed(let command, let status):
-            "\(command) failed with status \(status)"
         case .missingExecutable(let path):
             "required AOSP host executable is missing: \(path)"
         case .missingFile(let path):

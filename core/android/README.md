@@ -7,13 +7,13 @@ SwiftPM cross-compiles the native host from `core/platform-android`; AGP owns Ko
 Build and verify without launching a device:
 
 ```sh
-collider android build
+collider build android
 ```
 
 Build only the native Swift artifact with:
 
 ```sh
-collider android native
+collider build android-native
 ```
 
 `dev.nucleus.android.NucleusView` owns the Android view lifecycle and forwards surface, configuration, input, and frame callbacks to the Swift host. `AndroidRenderEngine` and `AndroidVulkanPresenter` own the Vulkan presentation path; no Zig or software-framebuffer implementation remains.

@@ -305,9 +305,7 @@ public struct ActionContainerExecutor: Sendable {
 
     public func run(_ execution: OCIExecution) async throws {
         let result = try await execute(execution)
-        guard result.status == 0 else {
-            throw ActionContainerExecutorFailure.commandFailed(result.status)
-        }
+        try result.requireSuccess(reason: "container command failed")
     }
 
     public func execute(_ execution: OCIExecution) async throws -> CommandResult {
@@ -317,14 +315,11 @@ public struct ActionContainerExecutor: Sendable {
 
 public enum ActionContainerExecutorFailure: Error, CustomStringConvertible, Sendable {
     case unavailable
-    case commandFailed(Int32)
 
     public var description: String {
         switch self {
         case .unavailable:
             "container execution is unavailable"
-        case .commandFailed(let status):
-            "container command failed with status \(status)"
         }
     }
 }
@@ -436,7 +431,6 @@ public enum OCIExecutionPipelineFailure: Error, CustomStringConvertible, Sendabl
     case mixedExecutionPlatforms
     case mixedArtifactTargets
     case mixedEnvironments
-    case commandFailed(index: Int, status: Int32)
 
     public var description: String {
         switch self {
@@ -448,8 +442,6 @@ public enum OCIExecutionPipelineFailure: Error, CustomStringConvertible, Sendabl
             "all OCI executions in one action must produce the same artifact target"
         case .mixedEnvironments:
             "all OCI executions in one action must use the same host environment"
-        case .commandFailed(let index, let status):
-            "OCI pipeline command \(index) failed with status \(status)"
         }
     }
 }
@@ -505,11 +497,8 @@ public struct OCIExecutionPipeline: Sendable {
         for (index, execution) in executions.enumerated() {
             try context.cancellation.check()
             let result = try await context.containers.execute(execution)
-            guard result.status == 0 else {
-                throw OCIExecutionPipelineFailure.commandFailed(
-                    index: index,
-                    status: result.status)
-            }
+            try result.requireSuccess(
+                reason: "OCI pipeline command \(index) failed")
         }
     }
 }

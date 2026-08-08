@@ -144,7 +144,7 @@ import Testing
 }
 
 @Test func runtimeRejectsInvalidEnvironmentKeys() async {
-    await #expect(throws: RuntimeFailure.self) {
+    await #expect(throws: ExecutionFailure.self) {
         try await ColliderRuntime().execute(
             CommandSpec(
                 executable: .named("true"),
@@ -270,7 +270,7 @@ import Testing
     try FileManager.default.createDirectory(
         at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
-    await #expect(throws: RuntimeFailure.self) {
+    await #expect(throws: ExecutionFailure.self) {
         try await ColliderRuntime().execute(
             CommandSpec(
                 executable: .named("sh"),

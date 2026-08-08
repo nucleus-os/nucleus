@@ -76,8 +76,8 @@ Validation inspects every ELF SDK artifact for forbidden `libstdc++` and
 Run from any directory in the clone:
 
 ```sh
-collider swift-sdk rebuild
-collider swift-sdk status
+collider build swift-sdk --rebuild
+collider status swift-sdk
 ```
 
 The active generation lives under

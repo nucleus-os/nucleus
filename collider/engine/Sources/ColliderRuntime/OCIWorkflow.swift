@@ -37,14 +37,13 @@ extension ColliderRuntime {
         stage: TaskID?
     ) async throws {
         let result = try await executeOCI(execution, stage: stage)
-        guard result.result.status == 0 else {
-            throw RuntimeFailure.commandFailed(status: result.result.status)
-        }
+        try result.result.requireSuccess(reason: "container command failed")
     }
 
     func executeOCI(
         _ execution: OCIExecution,
-        stage: TaskID?
+        stage: TaskID?,
+        operationName: String? = nil
     ) async throws -> OCIRuntimeExecutionOutcome {
         try validateExecutionPolicies(execution)
         let imageID = try String(
@@ -106,16 +105,76 @@ extension ColliderRuntime {
         let output =
             taskOutputPresentation?.output(for: execution.output)
             ?? execution.output
-        return try await ociBackend.execute(
-            OCIRuntimeExecutionRequest(
-                execution: execution,
-                imageReference: ociImageReference(imageID),
-                temporaryDirectory: temporaryDirectory,
-                output: output,
-                logging: logging,
-                stage: stage,
-                cancellation: cancellation,
-                configuration: ociConfiguration))
+        let command = CredentialScrubber.command(execution.command)
+        let logPath: String?
+        if let logging, let stage {
+            logPath = await logging.registry.stageLogPath(
+                for: stage,
+                in: logging.run
+            ).string
+        } else {
+            logPath = nil
+        }
+        let context = OperationContext(
+            task: stage,
+            operation: operationName ?? "container command",
+            command: command,
+            invocation: CredentialScrubber.renderedCommand(command),
+            workingDirectory: execution.workingDirectory,
+            logPath: logPath)
+        if let logging {
+            try? await logging.registry.record(
+                .operation(.started(context)),
+                in: logging.run)
+        }
+        let request = OCIRuntimeExecutionRequest(
+            execution: execution,
+            imageReference: ociImageReference(imageID),
+            temporaryDirectory: temporaryDirectory,
+            output: output,
+            logging: logging,
+            stage: stage,
+            cancellation: cancellation,
+            configuration: ociConfiguration)
+        do {
+            let outcome = try await ociBackend.execute(request)
+            let result = outcome.result.recordingExecutionContext(context)
+            if let logging {
+                try? await logging.registry.record(
+                    .operation(
+                        .finished(
+                            OperationResult(
+                                context: context,
+                                status: result.status,
+                                signal: result.signal,
+                                timedOut: result.timedOut))),
+                    in: logging.run)
+            }
+            return OCIRuntimeExecutionOutcome(
+                result: result,
+                timings: outcome.timings)
+        } catch {
+            let failure =
+                if let structured = error as? ExecutionFailure {
+                    structured.addingContext(task: stage, logPath: logPath)
+                } else {
+                    ExecutionFailure(
+                        task: stage,
+                        operation: context.operation,
+                        command: command,
+                        invocation: context.invocation,
+                        workingDirectory: context.workingDirectory,
+                        logPath: logPath,
+                        reason: String(describing: error))
+                }
+            if let logging {
+                try? await logging.registry.record(
+                    .operation(.failed(failure)),
+                    in: logging.run)
+            }
+            if error is CancellationError { throw error }
+            throw failure
+        }
     }
 }
 

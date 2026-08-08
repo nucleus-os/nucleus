@@ -107,9 +107,11 @@ private func inertActionFileSystem() -> ActionFileSystem {
         containers: ActionContainerExecutor(
             run: { _ in CommandResult(status: 7) }))
 
-    await #expect(throws: OCIExecutionPipelineFailure.self) {
+    let failure = await #expect(throws: ExecutionFailure.self) {
         try await pipeline.execute(in: context)
     }
+    #expect(failure?.status == 7)
+    #expect(failure?.reason == "OCI pipeline command 0 failed")
 }
 
 @Test func containerRunRejectsNonzeroWhileExecuteReturnsTheResult() async throws {
@@ -133,9 +135,11 @@ private func inertActionFileSystem() -> ActionFileSystem {
     let executor = ActionContainerExecutor(
         run: { _ in CommandResult(status: 19) })
 
-    await #expect(throws: ActionContainerExecutorFailure.self) {
+    let failure = await #expect(throws: ExecutionFailure.self) {
         try await executor.run(execution)
     }
+    #expect(failure?.status == 19)
+    #expect(failure?.reason == "container command failed")
     let result = try await executor.execute(execution)
     #expect(result.status == 19)
 }

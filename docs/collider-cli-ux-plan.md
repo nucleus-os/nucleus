@@ -19,12 +19,15 @@ plan.
 Typed planning, resource-aware scheduling, records, cancellation-aware process
 teardown, artifact reuse, and cache diagnostics already exist.
 
-Phase 1 is complete. `ColliderCLI` resolves one output policy from every leaf and
-injects one console into the workspace context. Command implementations return
-typed reports to that console instead of writing process-global output. Machine
-reports use stdout; human diagnostics and task summaries use stderr; terminal-owned
-children retain their descriptors. The former leaf-specific `--json` flags are
-replaced by uniform `--format`, `--color`, and `--progress` options.
+Phases 1 through 4 are complete. `ColliderCLI` resolves one output policy from every
+leaf and injects one console into the workspace context. Command implementations
+return typed reports to that console instead of writing process-global output.
+Machine reports use stdout; human diagnostics and task summaries use stderr;
+terminal-owned children retain their descriptors. The former leaf-specific
+`--json` flags are replaced by uniform `--format`, `--color`, and `--progress`
+options. Task and graph inventory, run records, logs, cache state, and active-run
+status are read-only inspection commands that do not create run records of their
+own.
 
 ## Phase 1 — Centralize output policy (complete)
 
@@ -45,7 +48,7 @@ terminal progress restoration, append-only redirected progress, sorted JSON,
 credential scrubbing, and shell-safe command/path rendering. Execution failure
 blocks pass through the same console before Collider exits with a bare status.
 
-## Phase 2 — Type execution events and failures
+## Phase 2 — Type execution events and failures (complete)
 
 Replace string-only progress messages with an internal `RunEvent` payload for
 run, task, operation, download, wait, artifact, interruption, and terminal
@@ -59,7 +62,15 @@ directory, and log path in structured execution failures.
 Gate: one reducer reconstructs final run/task state from recorded events, and
 failure rendering requires no parsing of display strings.
 
-## Phase 3 — Expose graph and record inspection
+Complete. `RunEvent` records typed run, task, child-operation, download, lock-wait,
+artifact, interruption, and terminal payloads under one monotonically sequenced
+stream. The reducer reconstructs terminal run and task state and rejects sequence
+gaps or mixed runs. Complete child output remains in the streaming stage-log path;
+events contain lifecycle state, never compiler output. `ExecutionFailure` carries
+scrubbed task, operation, command, status, signal, invocation, working directory,
+and log-path fields, and the console renders those fields directly.
+
+## Phase 3 — Expose graph and record inspection (complete)
 
 Implement stable text and JSON reports for task inventory, planned graphs, run
 list/show, log list/path/tail, cache status, and the active run summary. Read the
@@ -69,7 +80,16 @@ do not add a daemon or external observer protocol.
 Gate: commands inspect active and historical runs with bounded memory while a
 concurrent build continues writing its records.
 
-## Phase 4 — Normalize command grammar
+Complete. `tasks` and `graph` render the canonical component catalog and planned
+task graph. `runs list/show`, `logs list/path/tail`, `cache status`, and `status`
+render canonical run manifests, typed reduced event state, and stage-log
+inventory without creating inspection runs. Event reduction streams JSONL with
+a per-event memory bound, tolerates an incomplete concurrently written tail, and
+never loads compiler logs into structured reports. Log tailing is the explicit
+raw-text boundary; JSON mode reports paths and metadata instead of embedding log
+contents.
+
+## Phase 4 — Normalize command grammar (complete)
 
 Use repository-wide verbs for shared operations:
 
@@ -77,21 +97,33 @@ Use repository-wide verbs for shared operations:
 collider doctor [scope]
 collider bootstrap [target]
 collider build [target]
-collider test [target] [--lane lane]
+collider test [target]
 collider check <target>
 collider generate <target>
 collider install <target>
+collider benchmark
+collider clean <target>
 collider runs <list|show>
 collider tasks [filters]
 collider graph <operation> [target]
 collider logs <list|path|tail>
 collider cache <status|prune>
+collider status [repository|swift-sdk]
 collider run [session options]
-collider qualify <target>
 ```
 
 Keep genuinely domain-specific runtime control beneath its domain. Delete old
 aliases and single-child namespaces in the same change as their callers.
+
+Complete. Shared operations now use only the repository-wide root verbs. Browser
+doctor, bootstrap, build, and test operations; Android build, native build, test,
+source bootstrap, source-lock check, and image build operations; Swift SDK build
+and status operations; sanitizer checks; and Vulkan and Wayland generation all
+resolve through that grammar. The former `browser`, `android`, `swift-sdk`, and
+`sanitize` command namespaces were deleted rather than retained as aliases. There
+is no synthetic qualification command. The Linux-only
+`android-runtime package-addon` command remains nested because its signing and
+packaging controls are specific to that deployment boundary.
 
 Gate: parser enums advertise only valid combinations, usage failures return one
 consistent status, and command-equivalence tests cover every replaced spelling.

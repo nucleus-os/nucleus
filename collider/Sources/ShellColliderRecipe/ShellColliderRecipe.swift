@@ -292,13 +292,10 @@ private struct BuildTracyReceiversAction: ColliderAction {
                 arguments: arguments,
                 workingDirectory: workingDirectory,
                 environment: environment))
-        guard result.status == 0 else {
-            throw TracyReceiverBuildFailure.commandFailed(result.status)
+        guard result.succeeded else {
+            throw result.executionFailure(reason: "Tracy receiver build failed")
         }
     }
 }
 
-private enum TracyReceiverBuildFailure: Error {
-    case commandFailed(Int32)
-}
 #endif

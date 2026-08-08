@@ -107,11 +107,11 @@ private struct AOSPProductCompileWorkflow {
             ],
             in: build.source,
             output: .logged)
-        guard clean.status == 0 else {
+        guard clean.succeeded else {
             let detail = clean.standardOutput.trimmingCharacters(
                 in: .whitespacesAndNewlines)
-            throw failure(
-                "AOSP Repo project worktrees are not clean"
+            throw clean.executionFailure(
+                reason: "AOSP Repo project worktrees are not clean"
                     + (detail.isEmpty ? "" : ": \(detail)"))
         }
         let manifest =
@@ -406,8 +406,9 @@ private struct AOSPProductCompileWorkflow {
             arguments,
             in: directory,
             output: .captured(limit: 32 * 1_024 * 1_024))
-        guard result.status == 0 else {
-            throw failure("\(arguments.first ?? "command") failed")
+        guard result.succeeded else {
+            throw result.executionFailure(
+                reason: "\(arguments.first ?? "command") failed")
         }
         return result.standardOutput.trimmingCharacters(
             in: .whitespacesAndNewlines)

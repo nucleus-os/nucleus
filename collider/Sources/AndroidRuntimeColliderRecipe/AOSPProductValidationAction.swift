@@ -443,11 +443,11 @@ private struct AOSPProductValidationWorkflow {
             arguments,
             in: directory,
             environment: environment)
-        guard result.status == 0 else {
+        guard result.succeeded else {
             let detail = result.standardOutput.trimmingCharacters(
                 in: .whitespacesAndNewlines)
-            throw failure(
-                "\(arguments.first ?? "command") failed"
+            throw result.executionFailure(
+                reason: "\(arguments.first ?? "command") failed"
                     + (detail.isEmpty ? "" : ": \(detail)"))
         }
     }
@@ -463,8 +463,9 @@ private struct AOSPProductValidationWorkflow {
             arguments,
             in: directory,
             environment: environment)
-        guard result.status == 0 else {
-            throw failure("\(arguments.first ?? "command") failed")
+        guard result.succeeded else {
+            throw result.executionFailure(
+                reason: "\(arguments.first ?? "command") failed")
         }
         return result.standardOutput.trimmingCharacters(
             in: .whitespacesAndNewlines)

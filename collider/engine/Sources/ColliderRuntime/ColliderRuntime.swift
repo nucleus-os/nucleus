@@ -82,12 +82,13 @@ public actor ColliderRuntime {
         self.logging = logging
         downloads = ColliderDownloads(cacheRoot: downloadCacheRoot) { progress in
             guard let logging else { return }
-            let expected = progress.expectedBytes.map(String.init) ?? "unknown"
             Task {
                 try? await logging.registry.record(
-                    kind: .downloadProgress,
-                    message:
-                        "\(progress.digest) \(progress.receivedBytes)/\(expected)",
+                    .download(
+                        DownloadEvent(
+                            digest: progress.digest,
+                            receivedBytes: progress.receivedBytes,
+                            expectedBytes: progress.expectedBytes)),
                     in: logging.run)
             }
         }
@@ -115,7 +116,7 @@ public actor ColliderRuntime {
     }
 
     public func execute(_ command: CommandSpec) async throws -> CommandResult {
-        try await execute(command, stage: nil, onStarted: nil)
+        try await execute(command, stage: nil, operationName: nil, onStarted: nil)
     }
 
     public func execute<Action: ColliderAction>(
@@ -142,7 +143,10 @@ public actor ColliderRuntime {
                     in: logging.run)
             },
             commands: ActionCommandExecutor { command in
-                try await self.execute(command, stage: stage)
+                try await self.execute(
+                    command,
+                    stage: stage,
+                    operationName: action.kind.rawValue)
             },
             downloads: ActionDownloader { specification, path in
                 try await self.downloads.download(specification, to: path)
@@ -152,7 +156,10 @@ public actor ColliderRuntime {
                     try await self.prepareOCIImage(preparation, stage: stage)
                 },
                 run: { execution in
-                    let outcome = try await self.executeOCI(execution, stage: stage)
+                    let outcome = try await self.executeOCI(
+                        execution,
+                        stage: stage,
+                        operationName: action.kind.rawValue)
                     let result = outcome.result
                     let imageIdentifier = try String(
                         contentsOfFile: execution.imageID.string,
@@ -205,8 +212,18 @@ public actor ColliderRuntime {
     public func execute(
         _ command: CommandSpec,
         stage: TaskID?,
+        operationName: String? = nil,
         onStarted: (@Sendable (Int32) async -> Void)? = nil
     ) async throws -> CommandResult {
+        let context = await operationContext(
+            for: command,
+            stage: stage,
+            operationName: operationName)
+        if let logging {
+            try? await logging.registry.record(
+                .operation(.started(context)),
+                in: logging.run)
+        }
         let process = CommandProcessCancellation()
         let operation = Task {
             try await self.executeRegistered(
@@ -235,9 +252,20 @@ public actor ColliderRuntime {
                 try await operation.value
             } onCancel: {
                 beginShutdown()
-            }
+            }.recordingExecutionContext(context)
             try Task.checkCancellation()
             await cancellation.unregister(registration)
+            if let logging {
+                try? await logging.registry.record(
+                    .operation(
+                        .finished(
+                            OperationResult(
+                                context: context,
+                                status: result.status,
+                                signal: result.signal,
+                                timedOut: result.timedOut))),
+                    in: logging.run)
+            }
             return result
         } catch {
             beginShutdown()
@@ -245,8 +273,60 @@ public actor ColliderRuntime {
                 await task.value
             }
             await cancellation.unregister(registration)
-            throw error
+            let failure = executionFailure(
+                error,
+                context: context)
+            if let logging {
+                try? await logging.registry.record(
+                    .operation(.failed(failure)),
+                    in: logging.run)
+            }
+            if error is CancellationError { throw error }
+            throw failure
         }
+    }
+
+    private func operationContext(
+        for command: CommandSpec,
+        stage: TaskID?,
+        operationName: String?
+    ) async -> OperationContext {
+        let arguments = commandArguments(command)
+        let logPath: String?
+        if let logging, let stage {
+            logPath = await logging.registry.stageLogPath(
+                for: stage,
+                in: logging.run
+            ).string
+        } else {
+            logPath = nil
+        }
+        return OperationContext(
+            task: stage,
+            operation: operationName ?? arguments.first ?? "command",
+            command: CredentialScrubber.command(arguments),
+            invocation: CredentialScrubber.renderedCommand(arguments),
+            workingDirectory: command.workingDirectory.string,
+            logPath: logPath)
+    }
+
+    private func executionFailure(
+        _ error: any Error,
+        context: OperationContext
+    ) -> ExecutionFailure {
+        if let failure = error as? ExecutionFailure {
+            return failure.addingContext(
+                task: context.task,
+                logPath: context.logPath)
+        }
+        return ExecutionFailure(
+            task: context.task,
+            operation: context.operation,
+            command: context.command,
+            invocation: context.invocation,
+            workingDirectory: context.workingDirectory,
+            logPath: context.logPath,
+            reason: String(describing: error))
     }
 
     public nonisolated func actionFileSystem() -> ActionFileSystem {
@@ -548,7 +628,9 @@ public actor ColliderRuntime {
                     processGroup: false)
                 await onStarted?(execution.processIdentifier.value)
             }
-            return CommandResult(status: statusCode(result.terminationStatus))
+            return CommandResult(
+                status: statusCode(result.terminationStatus),
+                signal: signalCode(result.terminationStatus))
         }
 
         return try await executeStreaming(
@@ -618,6 +700,7 @@ public actor ColliderRuntime {
                 }
                 commandResult = CommandResult(
                     status: statusCode(result.terminationStatus),
+                    signal: signalCode(result.terminationStatus),
                     standardOutput: String(decoding: result.closureResult, as: UTF8.self))
             case .inherited, .logged, .file, .captured:
                 let captureLimit: Int? =
@@ -682,6 +765,7 @@ public actor ColliderRuntime {
                 }
                 commandResult = CommandResult(
                     status: statusCode(result.terminationStatus),
+                    signal: signalCode(result.terminationStatus),
                     standardOutput: String(decoding: result.closureResult, as: UTF8.self))
             case .terminal:
                 preconditionFailure("terminal commands are executed with inherited descriptors")
@@ -699,6 +783,17 @@ private func defaultColliderDownloadCacheRoot() -> FilePath {
     FilePath(
         FileManager.default.temporaryDirectory
             .appendingPathComponent("collider/downloads", isDirectory: true).path)
+}
+
+private func commandArguments(_ command: CommandSpec) -> [String] {
+    let executable =
+        switch command.executable {
+        case .named(let name), .operationalNamed(let name): name
+        case .path(let path): path.string
+        case .artifact(let reference): reference.path.string
+        case .taskOutput(let path): path.string
+        }
+    return [executable] + command.arguments
 }
 
 enum TaskOutputPresentation: Sendable {
@@ -943,6 +1038,15 @@ private func statusCode(_ status: TerminationStatus) -> Int32 {
     case .exited(let code): code
     #if !os(Windows)
     case .signaled(let signal): 128 + signal
+    #endif
+    }
+}
+
+private func signalCode(_ status: TerminationStatus) -> Int32? {
+    switch status {
+    case .exited: nil
+    #if !os(Windows)
+    case .signaled(let signal): signal
     #endif
     }
 }

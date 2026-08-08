@@ -136,7 +136,28 @@ package final class CommandConsole: @unchecked Sendable {
     }
 
     package func failure(_ error: any Error) throws {
-        let message = "error: \(CredentialScrubber.text(String(describing: error)))"
+        if let failure = error as? ExecutionFailure {
+            try self.failure(failure)
+            return
+        }
+        try failure(
+            ExecutionFailure(reason: String(describing: error)))
+    }
+
+    package func failure(_ failure: ExecutionFailure) throws {
+        var lines = ["error: \(failure.reason)"]
+        if let task = failure.task { lines.append("  task: \(task.rawValue)") }
+        if let operation = failure.operation { lines.append("  operation: \(operation)") }
+        if let invocation = failure.invocation { lines.append("  command: \(invocation)") }
+        if let status = failure.status { lines.append("  status: \(status)") }
+        if let signal = failure.signal { lines.append("  signal: \(signal)") }
+        if let directory = failure.workingDirectory {
+            lines.append("  directory: \(Self.render(path: directory))")
+        }
+        if let logPath = failure.logPath {
+            lines.append("  log: \(Self.render(path: logPath))")
+        }
+        let message = CredentialScrubber.text(lines.joined(separator: "\n"))
         if colorEnabled {
             try human("\u{001B}[31m\(message)\u{001B}[0m", destination: .standardError)
         } else {
@@ -167,7 +188,7 @@ package final class CommandConsole: @unchecked Sendable {
     }
 
     package static func render(command: [String]) -> String {
-        CredentialScrubber.command(command).map(shellQuoted).joined(separator: " ")
+        CredentialScrubber.renderedCommand(command)
     }
 
     package static func render(path: String) -> String {

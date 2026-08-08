@@ -11,6 +11,7 @@ public actor RuntimeCancellation {
     private var handlers: [UInt64: @Sendable () -> Void] = [:]
     private var processGroups: [UInt64: Int32] = [:]
     private var interrupted = false
+    private var interruptionSignal: Int32?
 
     public init() {}
 
@@ -60,12 +61,15 @@ public actor RuntimeCancellation {
         for handler in handlers.values { handler() }
     }
 
-    public func interruptAll() {
+    public func interruptAll(signal: Int32? = nil) {
         interrupted = true
+        interruptionSignal = interruptionSignal ?? signal
         cancelAll()
     }
 
     public func wasInterrupted() -> Bool { interrupted }
+
+    public func receivedInterruptionSignal() -> Int32? { interruptionSignal }
 }
 
 public struct SignalForwardingResult: Sendable {
@@ -86,7 +90,7 @@ public final class RuntimeSignalHandlers: @unchecked Sendable {
             source.setEventHandler {
                 Task {
                     await cancellation.forward(signal: number)
-                    await cancellation.interruptAll()
+                    await cancellation.interruptAll(signal: number)
                 }
             }
             source.resume()

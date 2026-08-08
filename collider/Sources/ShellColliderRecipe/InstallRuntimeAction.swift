@@ -429,9 +429,9 @@ package struct InstallRuntimeAction: ColliderAction {
         context: ActionContext
     ) async throws {
         let result = try await context.commands.execute(command)
-        guard result.status == 0 else {
-            throw RuntimeInstallFailure(
-                "command failed with status \(result.status): \(result.standardOutput)")
+        guard result.succeeded else {
+            throw result.executionFailure(
+                reason: "runtime installation command failed: \(result.standardOutput)")
         }
     }
 }
