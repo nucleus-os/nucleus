@@ -24,6 +24,20 @@ private let fixtureRepositoryRoot = FilePath(
         .deletingLastPathComponent()
         .deletingLastPathComponent().path)
 
+private struct RelocatableStorageSignature: Equatable {
+    let id: String
+    let owner: String
+    let producers: [String]
+    let storageClass: StorageClass
+    let root: String
+    let safetyRoot: String
+    let cleanupPolicy: StorageCleanupPolicy
+    let activeGenerationLink: String?
+    let rollbackGenerationCount: UInt32?
+    let interruptedCandidateNaming: String?
+    let retention: String
+}
+
 private func selectedTasks(
     in catalog: ComponentCatalog,
     entrypoint: ComponentEntrypointID,
@@ -51,6 +65,78 @@ private func selectedTestTasks(
                 entrypoint: ReleaseGateEntrypoints.test))
     }
     return try ColliderPlanner().selectedTasks(in: catalog, requests: requests)
+}
+
+@Test func storageOwnershipRelocatesBetweenDefaultAndAPFSCacheRoots() throws {
+    let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-storage-relocation-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    let home = temporary.appendingPathComponent("home", isDirectory: true)
+    let apfsCache = temporary.appendingPathComponent(
+        "Volumes/NucleusCache", isDirectory: true)
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: apfsCache, withIntermediateDirectories: true)
+    let defaultContext = WorkspaceContext(
+        root: fixtureRepositoryRoot,
+        environment: ["HOME": home.path],
+        runtime: ColliderRuntime())
+    let apfsContext = WorkspaceContext(
+        root: fixtureRepositoryRoot,
+        environment: [
+            "HOME": home.path,
+            "XDG_CACHE_HOME": apfsCache.path,
+        ],
+        runtime: ColliderRuntime())
+    let defaultCatalog = try ComponentRegistry(context: defaultContext).componentCatalog(
+        hostAugmentation: HostCatalogAugmentation.none)
+    let apfsCatalog = try ComponentRegistry(context: apfsContext).componentCatalog(
+        hostAugmentation: HostCatalogAugmentation.none)
+
+    #expect(
+        storageSignatures(defaultCatalog.storage, context: defaultContext)
+            == storageSignatures(apfsCatalog.storage, context: apfsContext))
+    #expect(defaultContext.cacheRoot == FilePath(home.appendingPathComponent(".cache").path))
+    #expect(apfsContext.cacheRoot == FilePath(apfsCache.path))
+}
+
+private func storageSignatures(
+    _ declarations: [StorageDeclaration],
+    context: WorkspaceContext
+) -> [RelocatableStorageSignature] {
+    declarations.map { declaration in
+        RelocatableStorageSignature(
+            id: declaration.id,
+            owner: declaration.owner.rawValue,
+            producers: declaration.producers.map { producer in
+                switch producer {
+                case .task(let task): "task:\(task.rawValue)"
+                case .runtime(let runtime): "runtime:\(runtime)"
+                }
+            }.sorted(),
+            storageClass: declaration.storageClass,
+            root: storageCoordinate(declaration.root, context: context),
+            safetyRoot: storageCoordinate(declaration.safetyRoot, context: context),
+            cleanupPolicy: declaration.cleanupPolicy,
+            activeGenerationLink: declaration.activeGenerationLink.map {
+                storageCoordinate($0, context: context)
+            },
+            rollbackGenerationCount: declaration.rollbackGenerationCount,
+            interruptedCandidateNaming: declaration.interruptedCandidateNaming?.rawValue,
+            retention: declaration.retention)
+    }.sorted { $0.id < $1.id }
+}
+
+private func storageCoordinate(
+    _ path: FilePath,
+    context: WorkspaceContext
+) -> String {
+    if let relative = path.relativeSubpath(from: context.cacheRoot) {
+        return "$CACHE/\(relative)"
+    }
+    if let relative = path.relativeSubpath(from: context.root) {
+        return "$WORKSPACE/\(relative)"
+    }
+    return path.string
 }
 
 @Test

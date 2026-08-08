@@ -99,6 +99,49 @@ import Testing
             atPath: generations.appendingPathComponent(names[2]).path))
 }
 
+@Test func retainedRollbackGenerationCanBeReactivatedAtomically() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-generation-rollback-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let generations = directory.appendingPathComponent("generations")
+    let previous = generations.appendingPathComponent("111111111111111111111111")
+    let currentGeneration = generations.appendingPathComponent("222222222222222222222222")
+    for (index, generation) in [previous, currentGeneration].enumerated() {
+        try FileManager.default.createDirectory(
+            at: generation, withIntermediateDirectories: true)
+        try Data("generation-\(index)".utf8).write(
+            to: generation.appendingPathComponent("payload"))
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: Double(index))],
+            ofItemAtPath: generation.path)
+    }
+    let active = directory.appendingPathComponent("current")
+    try FileManager.default.createSymbolicLink(
+        atPath: active.path,
+        withDestinationPath: "generations/\(currentGeneration.lastPathComponent)")
+    let retention = DirectoryRetentionPlan(
+        safetyRoot: FilePath(directory.path),
+        rules: [
+            DirectoryRetentionRule(
+                root: FilePath(generations.path),
+                current: FilePath(active.path),
+                retain: 1,
+                naming: .contentIdentity)
+        ])
+
+    try DirectoryLifecycle.prune(retention)
+    try DirectoryLifecycle.activate(
+        target: "generations/\(previous.lastPathComponent)",
+        link: FilePath(active.path))
+    try DirectoryLifecycle.prune(retention)
+
+    #expect(
+        try FileManager.default.destinationOfSymbolicLink(atPath: active.path)
+            == "generations/\(previous.lastPathComponent)")
+    #expect(FileManager.default.fileExists(atPath: previous.path))
+    #expect(FileManager.default.fileExists(atPath: currentGeneration.path))
+}
+
 @Test func directoryRetentionRemovesOnlyOwnedCandidateDirectories() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-candidate-retention-\(UUID().uuidString)")

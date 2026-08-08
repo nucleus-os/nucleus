@@ -106,9 +106,45 @@ inputs to a fictional aggregate host-capacity model. The runtime emits
 structured run records and validates declared outputs before recording
 successful task state. Actions
 cannot construct nested execution graphs or bypass the runtime's process,
-container, lock, record, or artifact ownership. Content-addressed downloads live
-only in the `ColliderDownloads` cache; Collider does not snapshot generated or
-extracted outputs into a second cache.
+container, lock, record, or artifact ownership. The download manager keeps only
+resumable transfer state in `ColliderDownloads`; after verification, recipes move
+the bytes into their component-owned destinations. Collider does not snapshot
+generated or extracted outputs into a second cache.
+
+## Storage ownership and lifecycle
+
+The resolved component catalog is Collider's sole generated-storage inventory.
+Each declaration identifies its component owner, task or runtime producers,
+storage class, safety root, cleanup policy, active-generation link, inactive
+rollback count, and candidate naming convention. Catalog validation rejects
+removable storage that overlaps source or identity data, lies outside its safety
+root, or lacks the producer locks needed to mutate it.
+
+Source and identity data are never cleanup candidates. Incremental build roots
+remain until `collider clean <component>` explicitly removes the selected
+component's declared roots. Run records use bounded retention. Only declarations
+with an explicit prune policy participate in `collider cache prune`; ordinary
+build and test operations perform only bounded candidate and generation
+retention cleanup.
+
+Publication validates a complete candidate before installing an immutable
+generation and atomically replacing its activation symlink. Retention preserves
+the active generation and the declaration's exact number of inactive rollback
+generations. Rolling back is the same atomic activation operation pointed at a
+retained generation. Interrupted publication never exposes partial output.
+
+`clean` and `cache prune` derive their mutation locks from the resolved producer
+tasks and acquire them through the task runtime. Runtime-owned removable state
+without a shared lock is invalid. These are kernel file locks, so task
+cancellation or process death releases ownership without a stale lease or manual
+repair. Status is observational and tolerates entries disappearing during a
+concurrent prune.
+
+The default user cache and the dedicated APFS cache use identical declarations
+and lifecycle semantics; only their resolved storage root differs. The macOS
+builder contract relocates cache, OCI, and log storage onto their configured APFS
+volumes without creating a second ownership model. `collider cache status`
+reports the resolved inventory and volume state.
 
 Run terminalization retains the newest 20 terminal records and the newest failed
 record in addition, while never treating an active run as reclaimable. Explicit

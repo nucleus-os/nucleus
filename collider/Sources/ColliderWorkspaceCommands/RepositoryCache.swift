@@ -123,9 +123,9 @@ struct RepositoryCache {
                         try allocatedSize(of: pruneTargets(for: declaration))
                     )
                 })
-        let apfs = try await apfsVolumes()
-        let ociUsage = try await containerDiskUsage()
         let contract = try? MacOSBuilderContract.load(root: context.root)
+        let apfs = contract == nil ? [:] : try await apfsVolumes()
+        let ociUsage = try await containerDiskUsage()
         var records = try declarations.map { declaration in
             let allocated = try allocatedSize(
                 URL(fileURLWithPath: declaration.root.string))
@@ -519,11 +519,25 @@ private func allocatedSize(_ root: URL) throws -> UInt64 {
     else { return 0 }
     var total: UInt64 = 0
     for case let url as URL in enumerator {
-        let values = try url.resourceValues(forKeys: Set(keys))
+        let values: URLResourceValues
+        do {
+            values = try url.resourceValues(forKeys: Set(keys))
+        } catch  where isMissingFile(error) {
+            continue
+        }
         guard values.isRegularFile == true else { continue }
         total &+= UInt64(values.fileAllocatedSize ?? values.fileSize ?? 0)
     }
     return total
+}
+
+private func isMissingFile(_ error: any Error) -> Bool {
+    let error = error as NSError
+    return
+        (error.domain == NSCocoaErrorDomain
+        && (error.code == NSFileNoSuchFileError || error.code == NSFileReadNoSuchFileError))
+        || (error.domain == NSPOSIXErrorDomain
+            && error.code == Int(POSIXErrorCode.ENOENT.rawValue))
 }
 
 private func formatted(_ bytes: UInt64) -> String {

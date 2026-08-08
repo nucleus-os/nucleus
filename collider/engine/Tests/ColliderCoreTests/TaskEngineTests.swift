@@ -383,6 +383,50 @@ private struct FailAfterWriteAction: ColliderAction {
     #expect(!FileManager.default.fileExists(atPath: output.string))
 }
 
+@Test func cancellingALockOwningTaskReleasesItsKernelLock() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-engine-held-lock-cancellation-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = FilePath(directory.path)
+    let lockPath = root.appending("shared.lock")
+    let task = TaskDeclaration(
+        id: TaskID(rawValue: "fixture.held-lock-cancellation"),
+        component: ComponentID(rawValue: "fixture"),
+        locks: [.shared(lockPath)],
+        assessmentPolicy: .always,
+        action: try fixtureCommandAction(
+            CommandSpec(
+                executable: .named("sh"),
+                arguments: ["-c", "sleep 30"],
+                workingDirectory: root,
+                environment: ["PATH": "/usr/bin:/bin"],
+                output: .captured(limit: 1_024))))
+    let cancellation = RuntimeCancellation()
+    let execution = Task {
+        try await ColliderEngine(
+            runtime: ColliderRuntime(cancellation: cancellation)
+        ).execute(
+            graph: TaskGraph([task]),
+            selected: [task.id],
+            stateRoot: root.appending("state"))
+    }
+    let ownerRecord = FilePath(lockPath.string + ".owner")
+    for _ in 0..<100 where !FileManager.default.fileExists(atPath: ownerRecord.string) {
+        try await ContinuousClock().sleep(for: .milliseconds(10))
+    }
+    #expect(FileManager.default.fileExists(atPath: ownerRecord.string))
+    await cancellation.interruptAll()
+
+    await #expect(throws: (any Error).self) {
+        _ = try await execution.value
+    }
+    let replacement = try ColliderFileLock(
+        path: lockPath,
+        purpose: "replacement after cancellation",
+        waitForExistingOwner: false)
+    withExtendedLifetime(replacement) {}
+}
+
 @Test func failedTaskNeverPublishesSuccessfulTaskState() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "collider-engine-failed-state-\(UUID().uuidString)")

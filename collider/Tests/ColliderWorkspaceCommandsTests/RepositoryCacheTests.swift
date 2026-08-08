@@ -178,6 +178,79 @@ import Testing
     #expect(FileManager.default.fileExists(atPath: unrelated.path))
 }
 
+@Test func repositoryStatusToleratesConcurrentGenerationPruning() async throws {
+    let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-concurrent-status-workspace-\(UUID().uuidString)", isDirectory: true)
+    let cacheRoot = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "collider-concurrent-status-cache-\(UUID().uuidString)", isDirectory: true)
+    defer {
+        try? FileManager.default.removeItem(at: workspace)
+        try? FileManager.default.removeItem(at: cacheRoot)
+    }
+    try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+    let artifactRoot = cacheRoot.appendingPathComponent("artifacts", isDirectory: true)
+    let generations = artifactRoot.appendingPathComponent("generations", isDirectory: true)
+    try FileManager.default.createDirectory(at: generations, withIntermediateDirectories: true)
+    let active = generations.appendingPathComponent("aaaaaaaaaaaaaaaaaaaaaaaa")
+    try FileManager.default.createDirectory(at: active, withIntermediateDirectories: true)
+    try Data("active".utf8).write(to: active.appendingPathComponent("payload"))
+    for index in 0..<64 {
+        let suffix = String(index + 1, radix: 16)
+        let name = String(repeating: "0", count: 24 - suffix.count) + suffix
+        let generation = generations.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: generation, withIntermediateDirectories: true)
+        try Data(repeating: UInt8(index), count: 4_096).write(
+            to: generation.appendingPathComponent("payload"))
+    }
+    let current = artifactRoot.appendingPathComponent("current")
+    try FileManager.default.createSymbolicLink(
+        atPath: current.path,
+        withDestinationPath: "generations/\(active.lastPathComponent)")
+    let owner = ComponentID(rawValue: "fixture")
+    let declaration = StorageDeclaration(
+        id: "fixture-generations",
+        owner: owner,
+        producers: [.runtime("fixture")],
+        storageClass: .generation,
+        root: FilePath(generations.path),
+        safetyRoot: FilePath(artifactRoot.path),
+        cleanupPolicy: .explicitPrune,
+        activeGenerationLink: FilePath(current.path),
+        rollbackGenerationCount: 0,
+        retention: "fixture")
+    let catalog = ComponentCatalog(
+        components: [
+            try ComponentDefinition(
+                descriptor: ComponentDescriptor(
+                    id: owner,
+                    canonicalName: "fixture",
+                    directoryName: "fixture"),
+                tasks: [],
+                entrypoints: [],
+                storage: [declaration])
+        ],
+        publicEntrypoints: [])
+    let context = WorkspaceContext(
+        root: FilePath(workspace.path),
+        environment: [
+            "HOME": workspace.path,
+            "XDG_CACHE_HOME": cacheRoot.path,
+        ],
+        runtime: ColliderRuntime())
+    let repository = RepositoryCache(context: context, catalog: catalog)
+
+    async let status: Void = repository.status(json: true)
+    async let prune: Void = repository.prune(
+        keepingRuns: 0,
+        dryRun: false,
+        json: true)
+    _ = try await (status, prune)
+
+    #expect(FileManager.default.fileExists(atPath: active.path))
+    let remaining = try FileManager.default.contentsOfDirectory(atPath: generations.path)
+    #expect(remaining == [active.lastPathComponent])
+}
+
 @Test func apfsInventoryRejectsAmbiguousNamesWithoutLosingUniqueVolumes() throws {
     let plist = """
         <?xml version="1.0" encoding="UTF-8"?>
