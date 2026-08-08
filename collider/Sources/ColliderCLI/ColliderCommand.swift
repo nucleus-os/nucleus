@@ -6,6 +6,12 @@ import ColliderWorkspaceCommands
 import Foundation
 import SystemPackage
 
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
+#endif
+
 #if os(macOS)
 import ColliderAppleContainer
 #endif
@@ -29,6 +35,12 @@ public struct ColliderCommand: AsyncParsableCommand {
             throw WorkspaceFailure.message(
                 "parsed Collider command did not exit or accept application composition")
         }
+        let console = CommandConsole.process(
+            options: workspaceCommand.outputOptions,
+            environment: processEnvironment,
+            standardOutputIsTerminal: isatty(STDOUT_FILENO) == 1,
+            standardErrorIsTerminal: isatty(STDERR_FILENO) == 1)
+        defer { try? console.finishProgress() }
         var environment = processEnvironment
         let workspace = try resolveWorkspaceRoot(environment: environment)
         environment = nucleusWorkspaceEnvironment(
@@ -70,7 +82,8 @@ public struct ColliderCommand: AsyncParsableCommand {
             workspace: WorkspaceContext(
                 root: workspace,
                 environment: environment,
-                runtime: runtime),
+                runtime: runtime,
+                console: console),
             signals: signals)
         defer {
             application.signals.cancel()
@@ -97,7 +110,8 @@ public struct ColliderCommand: AsyncParsableCommand {
             try? await application.registry.finish(
                 application.run,
                 status: status)
-            throw error
+            try? console.failure(error)
+            throw ExitCode.failure
         }
     }
 }

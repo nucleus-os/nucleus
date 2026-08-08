@@ -82,8 +82,7 @@ import Testing
         catalog: catalog
     ).prune(
         keepingRuns: 0,
-        dryRun: false,
-        json: true)
+        dryRun: false)
 
     #expect(!FileManager.default.fileExists(atPath: candidate.path))
     #expect(FileManager.default.fileExists(atPath: active.path))
@@ -169,10 +168,10 @@ import Testing
             components: [fixture, other],
             publicEntrypoints: []))
 
-    try await cache.clean(component: "alias", dryRun: true, json: true)
+    try await cache.clean(component: "alias", dryRun: true)
     #expect(FileManager.default.fileExists(atPath: cleanable.path))
 
-    try await cache.clean(component: "fixture", dryRun: false, json: true)
+    try await cache.clean(component: "fixture", dryRun: false)
     #expect(!FileManager.default.fileExists(atPath: cleanable.path))
     #expect(FileManager.default.fileExists(atPath: protected.path))
     #expect(FileManager.default.fileExists(atPath: unrelated.path))
@@ -239,11 +238,10 @@ import Testing
         runtime: ColliderRuntime())
     let repository = RepositoryCache(context: context, catalog: catalog)
 
-    async let status: Void = repository.status(json: true)
+    async let status: Void = repository.status()
     async let prune: Void = repository.prune(
         keepingRuns: 0,
-        dryRun: false,
-        json: true)
+        dryRun: false)
     _ = try await (status, prune)
 
     #expect(FileManager.default.fileExists(atPath: active.path))

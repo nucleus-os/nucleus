@@ -99,7 +99,7 @@ private struct SwiftSDKStatusRecord: Codable {
 struct SwiftSDKStatus {
     let context: WorkspaceContext
 
-    func run(json: Bool) async throws {
+    func run() async throws {
         let paths = SwiftTargetSDKStoragePaths(cacheRoot: context.cacheRoot)
         let activeLink = paths.artifactRoot.appending("current")
         let active = resolvedSymlink(activeLink)
@@ -144,25 +144,21 @@ struct SwiftSDKStatus {
             hostSwiftVersion: hostSwiftVersion,
             swiftSDKs: sdkNames,
             generations: generations)
-        if json {
-            print(
-                String(
-                    decoding: try JSONEncoder.sorted.encode(record),
-                    as: UTF8.self))
-            return
-        }
-        print("cache root: \(record.cacheRoot)")
-        print("artifact root: \(record.artifactRoot)")
-        print("Xcode: \(record.xcodeIdentity)")
-        print("active: \(record.activeGeneration ?? "none")")
-        print("host Swift: \(record.hostSwiftExecutable ?? "missing")")
+        var lines = [
+            "cache root: \(CommandConsole.render(path: record.cacheRoot))",
+            "artifact root: \(CommandConsole.render(path: record.artifactRoot))",
+            "Xcode: \(record.xcodeIdentity)",
+            "active: \(record.activeGeneration ?? "none")",
+            "host Swift: \(record.hostSwiftExecutable.map(CommandConsole.render(path:)) ?? "missing")",
+        ]
         if let version = record.hostSwiftVersion {
-            print(version)
+            lines.append(version)
         }
-        print(
+        lines.append(
             "Swift SDKs: \(record.swiftSDKs.isEmpty ? "none" : record.swiftSDKs.joined(separator: ", "))"
         )
-        print("generations: \(record.generations.count)")
+        lines.append("generations: \(record.generations.count)")
+        try context.console.report(record, text: lines.joined(separator: "\n"))
     }
 }
 

@@ -24,10 +24,9 @@ struct SwiftSDK: AsyncParsableCommand {
     }
 
     struct Status: ColliderWorkspaceCommand {
-        @OptionGroup var reportOptions: ReportOptions
+        @OptionGroup var outputOptions: CommandOutputOptions
         mutating func run(in context: WorkspaceContext) async throws {
-            try await SwiftSDKStatus(context: context).run(
-                json: reportOptions.json)
+            try await SwiftSDKStatus(context: context).run()
         }
     }
 }

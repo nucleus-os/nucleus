@@ -9,8 +9,7 @@ struct Doctor: ColliderWorkspaceCommand {
         abstract: "Report missing tools and repository prerequisites.")
     @Flag(help: "Print the resolved checks without executing them.")
     var dryRun = false
-    @Flag(help: "Emit stable machine-readable records.")
-    var json = false
+    @OptionGroup var outputOptions: CommandOutputOptions
     @Argument(
         help:
             "Prerequisite group: all, runtime, swift-sdk, android, browser, or ci-macos-builder.")
@@ -19,7 +18,6 @@ struct Doctor: ColliderWorkspaceCommand {
     mutating func run(in context: WorkspaceContext) async throws {
         try await WorkspaceDoctor(context: context).run(
             scope: scope,
-            dryRun: dryRun,
-            json: json)
+            dryRun: dryRun)
     }
 }

@@ -55,7 +55,7 @@ private func awaitRejectsTaskControls(_ path: [String]) {
         ["--rebuild"],
         ["--verbose"],
         ["--quiet"],
-        ["--json"],
+        ["--format", "json"],
         ["--run-id", "not-supported"],
     ] {
         #expect(throws: (any Error).self) {

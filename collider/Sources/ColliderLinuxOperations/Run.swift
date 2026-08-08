@@ -191,7 +191,8 @@ struct RunCommand {
                     "--leak-check=no",
                     installation.compositor.path,
                 ] + options.compositorArguments
-            print("valgrind log: \(log.path)")
+            try context.console.diagnostic(
+                "valgrind log: \(CommandConsole.render(path: log.path))")
         } else {
             compositorCommand =
                 [installation.compositor.path]
@@ -296,7 +297,7 @@ struct RunCommand {
         environment: [String: String]
     ) async throws {
         if let seconds = options.seconds {
-            print(
+            try context.console.diagnostic(
                 "run duration: \(seconds) second"
                     + "\(seconds == 1 ? "" : "s")")
         }

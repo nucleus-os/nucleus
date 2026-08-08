@@ -38,6 +38,7 @@ package struct WorkspaceContext: Sendable {
     package let cacheRoot: FilePath
     package let nativeSDKRoot: FilePath
     package let runtime: ColliderRuntime
+    package let console: CommandConsole
     package let ociConfiguration: OCIRuntimeConfiguration
     let swiftPackageGraphs: SwiftPackageGraphResolver
 
@@ -45,6 +46,7 @@ package struct WorkspaceContext: Sendable {
         root: FilePath,
         environment: [String: String],
         runtime: ColliderRuntime,
+        console: CommandConsole = .processDefault,
         ociConfiguration: OCIRuntimeConfiguration = nucleusOCIRuntimeConfiguration
     ) {
         self.root = root
@@ -62,6 +64,7 @@ package struct WorkspaceContext: Sendable {
         self.cacheRoot = resolvedCacheRoot
         self.nativeSDKRoot = resolvedNativeSDKRoot
         self.runtime = runtime
+        self.console = console
         self.ociConfiguration = ociConfiguration
         swiftPackageGraphs = SwiftPackageGraphResolver(
             cacheRoot: root.appending(".nucleus/swift-package-graphs"),

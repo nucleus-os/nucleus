@@ -22,15 +22,13 @@ struct ChromiumCommand {
         if operation == .doctor {
             try await WorkspaceDoctor(context: context).run(
                 scope: .browser,
-                dryRun: controls.dryRun,
-                json: controls.json)
+                dryRun: controls.dryRun)
             return
         }
         if !controls.dryRun {
             try await WorkspaceDoctor(context: context).run(
                 scope: .browser,
                 dryRun: false,
-                json: false,
                 quiet: true)
         }
         var environment = context.taskEnvironment

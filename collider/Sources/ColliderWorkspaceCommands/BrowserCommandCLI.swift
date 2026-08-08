@@ -11,13 +11,12 @@ struct Browser: AsyncParsableCommand {
     struct Doctor: ColliderWorkspaceCommand {
         @Flag(help: "Print the resolved browser checks without executing them.")
         var dryRun = false
-        @Flag(help: "Emit stable machine-readable records.")
-        var json = false
+        @OptionGroup var outputOptions: CommandOutputOptions
 
         mutating func run(in context: WorkspaceContext) async throws {
             try await ChromiumCommand(context: context).run(
                 .doctor,
-                controls: TaskControls(dryRun: dryRun, json: json))
+                controls: TaskControls(dryRun: dryRun, format: outputOptions.format))
         }
     }
     struct Bootstrap: BrowserTaskLeaf {

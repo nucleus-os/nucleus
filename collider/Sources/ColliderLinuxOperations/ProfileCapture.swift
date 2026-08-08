@@ -91,7 +91,8 @@ struct ProfileCapture {
                 stage: TaskID(rawValue: "profile.capture")
             ) { captureProcess in
                 try await captureProcess.waitUntilReady()
-                print("profile dir: \(runDirectory.path)")
+                try context.console.diagnostic(
+                    "profile dir: \(CommandConsole.render(path: runDirectory.path))")
                 let compositorExited = try await waitForCapture(
                     captureProcess,
                     compositor: session)
@@ -142,7 +143,8 @@ struct ProfileCapture {
                         + "likely failed during bring-up; see \(compositorLog.path) "
                         + "and \(captureLog.path)")
             }
-            print("profile captured: \(capture.path)")
+            try context.console.diagnostic(
+                "profile captured: \(CommandConsole.render(path: capture.path))")
         }
     }
 

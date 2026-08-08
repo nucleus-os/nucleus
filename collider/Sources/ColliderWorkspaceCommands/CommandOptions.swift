@@ -4,6 +4,23 @@ import ColliderRuntime
 import Foundation
 import SystemPackage
 
+extension ConsoleOutputFormat: ExpressibleByArgument {}
+extension ConsoleColorPolicy: ExpressibleByArgument {}
+extension ConsoleProgressPolicy: ExpressibleByArgument {}
+
+package struct CommandOutputOptions: ParsableArguments, Sendable {
+    @Option(help: "Output format.")
+    package var format: ConsoleOutputFormat = .text
+
+    @Option(help: "Color policy for human output.")
+    package var color: ConsoleColorPolicy = .auto
+
+    @Option(help: "Progress rendering policy.")
+    package var progress: ConsoleProgressPolicy = .auto
+
+    package init() {}
+}
+
 package struct RunIDArgument: ExpressibleByArgument, Equatable, Sendable {
     package let value: RunID
 
@@ -14,6 +31,8 @@ package struct RunIDArgument: ExpressibleByArgument, Equatable, Sendable {
 }
 
 package struct TaskControlOptions: ParsableArguments {
+    @OptionGroup package var outputOptions: CommandOutputOptions
+
     @Flag(help: "Print the resolved task graph without executing it.")
     package var dryRun = false
 
@@ -25,9 +44,6 @@ package struct TaskControlOptions: ParsableArguments {
 
     @Flag(help: "Keep task output in the durable run log without streaming it.")
     package var quiet = false
-
-    @Flag(help: "Emit stable machine-readable records.")
-    package var json = false
 
     @Option(name: .customLong("run-id"), help: "Resume an interrupted run.")
     package var runID: RunIDArgument?
@@ -46,7 +62,7 @@ package struct TaskControlOptions: ParsableArguments {
             rebuild: rebuild,
             verbose: verbose,
             quiet: quiet,
-            json: json)
+            format: outputOptions.format)
     }
 }
 
@@ -54,7 +70,11 @@ package protocol ResumableRun {
     var requestedRunID: RunID? { get }
 }
 
-package protocol ColliderWorkspaceCommand: AsyncParsableCommand {
+package protocol OutputConfiguredCommand {
+    var outputOptions: CommandOutputOptions { get }
+}
+
+package protocol ColliderWorkspaceCommand: AsyncParsableCommand, OutputConfiguredCommand {
     mutating func run(in context: WorkspaceContext) async throws
 }
 
@@ -71,13 +91,9 @@ package protocol TaskControlledCommand: ColliderWorkspaceCommand, ResumableRun {
 
 extension TaskControlledCommand {
     package var requestedRunID: RunID? { taskOptions.runID?.value }
+    package var outputOptions: CommandOutputOptions { taskOptions.outputOptions }
 }
 
 package func requestedRunID(for command: any ParsableCommand) -> RunID? {
     (command as? any ResumableRun)?.requestedRunID
-}
-
-struct ReportOptions: ParsableArguments {
-    @Flag(help: "Emit stable machine-readable records.")
-    var json = false
 }

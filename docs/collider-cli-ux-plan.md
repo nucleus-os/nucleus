@@ -19,7 +19,14 @@ plan.
 Typed planning, resource-aware scheduling, records, cancellation-aware process
 teardown, artifact reuse, and cache diagnostics already exist.
 
-## Phase 1 — Centralize output policy
+Phase 1 is complete. `ColliderCLI` resolves one output policy from every leaf and
+injects one console into the workspace context. Command implementations return
+typed reports to that console instead of writing process-global output. Machine
+reports use stdout; human diagnostics and task summaries use stderr; terminal-owned
+children retain their descriptors. The former leaf-specific `--json` flags are
+replaced by uniform `--format`, `--color`, and `--progress` options.
+
+## Phase 1 — Centralize output policy (complete)
 
 Add one injected console in `ColliderCLI` for human stdout/stderr,
 terminal-capability detection, color, append-only CI output, progress rendering,
@@ -32,6 +39,11 @@ auto|always|never`. JSON commands emit one value and no human text on stdout.
 
 Gate: descriptor fixtures prove stdout/stderr separation, no cursor control in
 redirected output, terminal restoration after signals, and credential scrubbing.
+
+Complete. The console owns terminal capability detection, `NO_COLOR`, dynamic
+terminal progress restoration, append-only redirected progress, sorted JSON,
+credential scrubbing, and shell-safe command/path rendering. Execution failure
+blocks pass through the same console before Collider exits with a bare status.
 
 ## Phase 2 — Type execution events and failures
 

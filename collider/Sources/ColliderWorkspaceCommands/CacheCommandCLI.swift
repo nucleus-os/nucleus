@@ -12,14 +12,13 @@ struct Cache: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             abstract:
                 "Report ownership, retention, allocation, and reclaimability for declared storage.")
-        @OptionGroup var reportOptions: ReportOptions
+        @OptionGroup var outputOptions: CommandOutputOptions
         mutating func run(in context: WorkspaceContext) async throws {
             let catalog = try ComponentRegistry(context: context).componentCatalog()
             try await RepositoryCache(
                 context: context,
                 catalog: catalog
-            ).status(
-                json: reportOptions.json)
+            ).status()
         }
     }
     struct Prune: ColliderWorkspaceCommand {
@@ -29,8 +28,7 @@ struct Cache: AsyncParsableCommand {
         )
         @Flag(help: "Print removals without applying them.")
         var dryRun = false
-        @Flag(help: "Emit stable machine-readable records.")
-        var json = false
+        @OptionGroup var outputOptions: CommandOutputOptions
         @Option(name: .customLong("keep-runs"), help: "Number of recent completed runs to retain.")
         var keepRuns = 20
 
@@ -45,8 +43,7 @@ struct Cache: AsyncParsableCommand {
                 catalog: catalog
             ).prune(
                 keepingRuns: keepRuns,
-                dryRun: dryRun,
-                json: json)
+                dryRun: dryRun)
         }
     }
 }

@@ -8,6 +8,7 @@ import SystemPackage
 struct Run: ColliderWorkspaceCommand {
     static let configuration = CommandConfiguration(
         abstract: "Build, install, and launch a compositor session.")
+    @OptionGroup var outputOptions: CommandOutputOptions
     @OptionGroup var options: RunOptions
 
     mutating func validate() throws {

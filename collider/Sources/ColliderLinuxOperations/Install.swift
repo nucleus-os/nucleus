@@ -67,7 +67,8 @@ struct InstallCommand {
             selection: RuntimeBuildSelection(),
             controls: controls)
         if !controls.dryRun {
-            print("installed session runtime → \(prefix.path)")
+            try context.console.diagnostic(
+                "installed session runtime → \(CommandConsole.render(path: prefix.path))")
         }
     }
 

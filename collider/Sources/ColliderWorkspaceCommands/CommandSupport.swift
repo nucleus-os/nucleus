@@ -179,7 +179,7 @@ extension WorkspaceContext {
             workflowLocks: [sdkRebuildLock],
             lowerings: [SwiftPMLowering()],
             options: controls.executionOptions)
-        try controls.render(report)
+        try controls.render(report, console: console)
         return report
     }
 }

@@ -54,8 +54,7 @@ struct RepositoryCache {
 
     func clean(
         component selection: String,
-        dryRun: Bool,
-        json: Bool
+        dryRun: Bool
     ) async throws {
         try validateStorageDeclarations()
         guard
@@ -95,7 +94,7 @@ struct RepositoryCache {
             targets: targets,
             reclaimedBytes: targets.reduce(0) { $0 &+ $1.allocatedBytes },
             dryRun: dryRun)
-        try emit(result, json: json)
+        try emit(result)
         guard !dryRun else { return }
         try await context.runtime.withTaskLocks(
             locks,
@@ -108,7 +107,7 @@ struct RepositoryCache {
         }
     }
 
-    func status(json: Bool) async throws {
+    func status() async throws {
         try validateStorageDeclarations()
         let declarations = storageDeclarations
         let runs = await runReclamation(
@@ -189,13 +188,12 @@ struct RepositoryCache {
         let report = StorageStatusReport(
             storage: records,
             appleContainer: ociUsage)
-        try emit(report, json: json)
+        try emit(report)
     }
 
     func prune(
         keepingRuns keepCount: Int,
-        dryRun: Bool,
-        json: Bool
+        dryRun: Bool
     ) async throws {
         try validateStorageDeclarations()
         let pruneLock: ColliderFileLock? =
@@ -269,8 +267,7 @@ struct RepositoryCache {
                 reclaimedBytes: reclaimed,
                 appleContainerImagesPruned: !dryRun && beforeOCI != nil,
                 appleContainerReclaimableBytes: beforeOCI?.reclaimableBytes ?? 0,
-                dryRun: dryRun),
-            json: json)
+                dryRun: dryRun))
     }
 
     private func validateStorageDeclarations() throws {
@@ -433,11 +430,8 @@ struct RepositoryCache {
         return allocatedBytes == 0 ? "missing" : "reusable"
     }
 
-    private func emit(_ report: StorageStatusReport, json: Bool) throws {
-        if json {
-            print(String(decoding: try JSONEncoder.sorted.encode(report), as: UTF8.self))
-            return
-        }
+    private func emit(_ report: StorageStatusReport) throws {
+        var lines: [String] = []
         for entry in report.storage {
             let capacity =
                 entry.quotaBytes.map {
@@ -447,57 +441,54 @@ struct RepositoryCache {
                 entry.reclaimableBytes > 0
                 ? ", \(formatted(entry.reclaimableBytes)) reclaimable"
                 : ""
-            print(
+            lines.append(
                 "\(entry.id): \(entry.state), \(formatted(entry.allocatedBytes))\(capacity)\(reclaimable)"
             )
-            print(
+            lines.append(
                 "  \(entry.storageClass.rawValue) · \(entry.owner) · \(entry.cleanupPolicy.rawValue)"
             )
-            print("  \(entry.path)")
-            print("  \(entry.retention)")
+            lines.append("  \(entry.path)")
+            lines.append("  \(entry.retention)")
         }
         if let usage = report.appleContainer {
-            print(
+            lines.append(
                 "apple-container: \(formatted(usage.images.sizeInBytes)) images, "
                     + "\(formatted(usage.containers.sizeInBytes)) containers, "
                     + "\(formatted(usage.reclaimableBytes)) reclaimable")
         }
+        try context.console.report(report, text: lines.joined(separator: "\n"))
     }
 
-    private func emit(_ result: PruneResult, json: Bool) throws {
-        if json {
-            print(String(decoding: try JSONEncoder.sorted.encode(result), as: UTF8.self))
-            return
-        }
+    private func emit(_ result: PruneResult) throws {
         let action = result.dryRun ? "would remove" : "removed"
-        print(
+        var lines = [
             "cache prune: \(action) \(result.removedRuns.count) run(s), "
                 + "\(result.targets.count) declared storage target(s), "
-                + formatted(result.reclaimedBytes))
-        for run in result.removedRuns { print("  run \(run)") }
+                + formatted(result.reclaimedBytes)
+        ]
+        for run in result.removedRuns { lines.append("  run \(run)") }
         for target in result.targets {
-            print("  \(target.id): \(target.path)")
+            lines.append("  \(target.id): \(target.path)")
         }
         if result.appleContainerReclaimableBytes > 0 {
             let verb = result.dryRun ? "reports" : "reported before dangling-image pruning"
-            print(
+            lines.append(
                 "  Apple Container \(verb) "
                     + "\(formatted(result.appleContainerReclaimableBytes)) reclaimable")
         }
+        try context.console.report(result, text: lines.joined(separator: "\n"))
     }
 
-    private func emit(_ result: CleanResult, json: Bool) throws {
-        if json {
-            print(String(decoding: try JSONEncoder.sorted.encode(result), as: UTF8.self))
-            return
-        }
+    private func emit(_ result: CleanResult) throws {
         let action = result.dryRun ? "would remove" : "removing"
-        print(
+        var lines = [
             "clean \(result.component): \(action) \(result.targets.count) declared root(s), "
-                + formatted(result.reclaimedBytes))
+                + formatted(result.reclaimedBytes)
+        ]
         for target in result.targets {
-            print("  \(target.id): \(target.path)")
+            lines.append("  \(target.id): \(target.path)")
         }
+        try context.console.report(result, text: lines.joined(separator: "\n"))
     }
 }
 

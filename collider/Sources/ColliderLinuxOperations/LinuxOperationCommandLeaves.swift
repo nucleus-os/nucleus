@@ -23,6 +23,7 @@ struct InstallAndroidAddon: AsyncParsableCommand {
         subcommands: [Activate.self, Deactivate.self, Uninstall.self])
 
     struct Activate: ColliderWorkspaceCommand {
+        @OptionGroup var outputOptions: CommandOutputOptions
         @Argument var artifact: String
         @Option(name: .customLong("trust-key")) var trustKey: String?
         @Option(name: .customLong("base-prefix")) var basePrefix: String?
@@ -54,6 +55,7 @@ struct InstallAndroidAddon: AsyncParsableCommand {
     }
 
     struct Deactivate: ColliderWorkspaceCommand {
+        @OptionGroup var outputOptions: CommandOutputOptions
         @Option(name: .customLong("store-root")) var storeRoot: String?
         @Option(name: .customLong("state-root")) var stateRoot: String?
 
@@ -70,6 +72,7 @@ struct InstallAndroidAddon: AsyncParsableCommand {
     }
 
     struct Uninstall: ColliderWorkspaceCommand {
+        @OptionGroup var outputOptions: CommandOutputOptions
         @Option(name: .customLong("store-root")) var storeRoot: String?
         @Option(name: .customLong("state-root")) var stateRoot: String?
 

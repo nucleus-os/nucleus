@@ -125,7 +125,6 @@ func ciMacOSBuilderDoctorScopeDryRunsWithoutHostMutation() async throws {
     ).run(
         scope: .ciMacOSBuilder,
         dryRun: true,
-        json: false,
         quiet: true)
 }
 

@@ -10,14 +10,12 @@ struct Clean: ColliderWorkspaceCommand {
     @Flag(help: "Print exact resolved removals without applying them.")
     var dryRun = false
 
-    @Flag(help: "Emit stable machine-readable records.")
-    var json = false
+    @OptionGroup var outputOptions: CommandOutputOptions
 
     mutating func run(in context: WorkspaceContext) async throws {
         let catalog = try ComponentRegistry(context: context).componentCatalog()
         try await RepositoryCache(context: context, catalog: catalog).clean(
             component: component,
-            dryRun: dryRun,
-            json: json)
+            dryRun: dryRun)
     }
 }

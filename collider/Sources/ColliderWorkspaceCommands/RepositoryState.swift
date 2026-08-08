@@ -9,6 +9,11 @@ struct RepositoryRun: Codable {
     let failedTask: String?
 }
 
+private struct RepositoryLogEntry: Codable {
+    let path: String
+    let contents: String
+}
+
 struct RepositoryState {
     let context: WorkspaceContext
 
@@ -48,34 +53,29 @@ struct RepositoryState {
         return value
     }
 
-    func printStatus(json: Bool) throws {
+    func printStatus() throws {
         guard let (_, run) = try runs().first else {
-            print(json ? #"{"status":"idle"}"# : "status: idle")
+            try context.console.report(
+                IdleRepositoryStatus(status: "idle"),
+                text: "status: idle")
             return
         }
-        if json {
-            let data = try JSONEncoder.sorted.encode(run)
-            print(String(decoding: data, as: UTF8.self))
-        } else {
-            print("run: \(run.runID)")
-            print("status: \(run.status)")
-            print("command: \(run.command.joined(separator: " "))")
-            if let failedTask = run.failedTask { print("failed task: \(failedTask)") }
-        }
+        var lines = [
+            "run: \(run.runID)",
+            "status: \(run.status)",
+            "command: \(CommandConsole.render(command: run.command))",
+        ]
+        if let failedTask = run.failedTask { lines.append("failed task: \(failedTask)") }
+        try context.console.report(run, text: lines.joined(separator: "\n"))
     }
 
-    func list(kind: String?, json: Bool) throws {
+    func list(kind: String?) throws {
         let values = try runs(kind: kind)
-        if json {
-            let data = try JSONEncoder.sorted.encode(values.map(\.1))
-            print(String(decoding: data, as: UTF8.self))
-        } else {
-            for (_, run) in values {
-                print(
-                    "\(run.runID)\t\(run.status)\t\(domain(of: run))\t\(run.command.dropFirst().joined(separator: " "))"
-                )
-            }
-        }
+        let text = values.map { _, run in
+            "\(run.runID)\t\(run.status)\t\(domain(of: run))\t"
+                + CommandConsole.render(command: Array(run.command.dropFirst()))
+        }.joined(separator: "\n")
+        try context.console.report(values.map(\.1), text: text)
     }
 
     func show(_ runID: String?, kind: String?) throws {
@@ -85,18 +85,22 @@ struct RepositoryState {
             throw WorkspaceFailure.message(
                 "run has no retained logs: \(directory.path)")
         }
-        for log in logs {
+        let entries = try logs.map { log in
+            RepositoryLogEntry(
+                path: relativePath(of: log, in: directory),
+                contents: try String(contentsOf: log, encoding: .utf8))
+        }
+        var text = ""
+        for entry in entries {
             if logs.count > 1 {
-                print(
-                    "==> \(relativePath(of: log, in: directory)) <==")
+                text += "==> \(entry.path) <==\n"
             }
-            print(
-                try String(contentsOf: log, encoding: .utf8),
-                terminator: "")
+            text += entry.contents
             if logs.count > 1 {
-                print("")
+                text += "\n"
             }
         }
+        try context.console.report(entries, text: text)
     }
 
     func tail(_ runID: String?, kind: String?) async throws {
@@ -158,4 +162,8 @@ struct RepositoryState {
         default: "runtime"
         }
     }
+}
+
+private struct IdleRepositoryStatus: Codable {
+    let status: String
 }

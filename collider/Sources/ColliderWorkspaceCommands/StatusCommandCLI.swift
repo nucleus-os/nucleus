@@ -5,9 +5,8 @@ import Foundation
 import SystemPackage
 
 struct Status: ColliderWorkspaceCommand {
-    @OptionGroup var reportOptions: ReportOptions
+    @OptionGroup var outputOptions: CommandOutputOptions
     mutating func run(in context: WorkspaceContext) async throws {
-        try RepositoryState(context: context).printStatus(
-            json: reportOptions.json)
+        try RepositoryState(context: context).printStatus()
     }
 }

@@ -15,20 +15,20 @@ package struct TaskControls: Sendable {
     var rebuild = false
     var verbose = false
     var quiet = false
-    var json = false
+    var format: ConsoleOutputFormat = .text
 
     package init(
         dryRun: Bool = false,
         rebuild: Bool = false,
         verbose: Bool = false,
         quiet: Bool = false,
-        json: Bool = false
+        format: ConsoleOutputFormat = .text
     ) {
         self.dryRun = dryRun
         self.rebuild = rebuild
         self.verbose = verbose
         self.quiet = quiet
-        self.json = json
+        self.format = format
     }
 
     var executionOptions: TaskExecutionOptions {
@@ -37,46 +37,45 @@ package struct TaskControls: Sendable {
             rebuildSelected: rebuild,
             verbose: verbose,
             quiet: quiet,
-            machineReadable: json)
+            machineReadable: format == .json)
     }
 
-    func render(_ report: TaskExecutionReport) throws {
-        if json {
-            print(String(decoding: try JSONEncoder.sorted.encode(report), as: UTF8.self))
-        } else if dryRun {
+    func render(_ report: TaskExecutionReport, console: CommandConsole) throws {
+        let text: String
+        if dryRun {
             let planningMicroseconds = report.planningDurationNanoseconds / 1_000
             let fractionalMilliseconds = String(planningMicroseconds % 1_000)
             let paddedFraction =
                 String(
                     repeating: "0",
                     count: 3 - fractionalMilliseconds.count) + fractionalMilliseconds
-            print("planning  \(planningMicroseconds / 1_000).\(paddedFraction) ms")
-            print(
+            var lines = ["planning  \(planningMicroseconds / 1_000).\(paddedFraction) ms"]
+            lines.append(
                 "input hashing  "
                     + "\(report.selectedInputHashingDurationNanoseconds / 1_000) us")
-            print("SwiftPM invocations  \(report.swiftPMInvocationCount)")
+            lines.append("SwiftPM invocations  \(report.swiftPMInvocationCount)")
             for entry in report.plan {
                 let state = entry.isClean ? "clean" : "dirty"
-                print(
+                lines.append(
                     "\(state)  \(entry.task.rawValue)"
                         + executionCoordinateSummary(entry.coordinates)
                         + "  \(entry.explanation)")
             }
-        } else if !quiet {
+            text = lines.joined(separator: "\n")
+        } else {
             let skipped = report.plan.count(where: \.isClean)
-            print("completed  \(report.taskTimings.count) executed, \(skipped) skipped")
-            print(
+            var lines = [
+                "completed  \(report.taskTimings.count) executed, \(skipped) skipped",
                 "planning  \(formatDuration(report.planningDurationNanoseconds))"
                     + " (input hashing "
-                    + "\(formatDuration(report.selectedInputHashingDurationNanoseconds)))")
-            print("SwiftPM invocations  \(report.swiftPMInvocationCount)")
-            print("execution  \(formatDuration(report.executionDurationNanoseconds))")
-            print(
+                    + "\(formatDuration(report.selectedInputHashingDurationNanoseconds)))",
+                "SwiftPM invocations  \(report.swiftPMInvocationCount)",
+                "execution  \(formatDuration(report.executionDurationNanoseconds))",
                 "critical path  "
-                    + "\(formatDuration(report.criticalPathDurationNanoseconds))")
-            print(
+                    + "\(formatDuration(report.criticalPathDurationNanoseconds))",
                 "scheduling wait  "
-                    + "\(formatDuration(report.schedulingWaitDurationNanoseconds))")
+                    + "\(formatDuration(report.schedulingWaitDurationNanoseconds))",
+            ]
             let slowest = report.taskTimings.sorted {
                 if $0.durationNanoseconds == $1.durationNanoseconds {
                     return $0.task.rawValue < $1.task.rawValue
@@ -84,9 +83,9 @@ package struct TaskControls: Sendable {
                 return $0.durationNanoseconds > $1.durationNanoseconds
             }.prefix(5)
             if !slowest.isEmpty {
-                print("slowest tasks")
+                lines.append("slowest tasks")
                 for timing in slowest {
-                    print(
+                    lines.append(
                         "  \(formatDuration(timing.durationNanoseconds))  "
                             + timing.task.rawValue)
                 }
@@ -104,14 +103,14 @@ package struct TaskControls: Sendable {
                     > $1.timings.totalDurationNanoseconds
             }.prefix(5)
             if !slowestContainers.isEmpty {
-                print("slowest container executions")
+                lines.append("slowest container executions")
                 for execution in slowestContainers {
                     let timings = execution.timings
                     let setup =
                         timings.configurationDurationNanoseconds
                         &+ timings.creationDurationNanoseconds
                         &+ timings.bootstrapDurationNanoseconds
-                    print(
+                    lines.append(
                         "  \(formatDuration(timings.totalDurationNanoseconds))  "
                             + "process \(formatDuration(timings.processDurationNanoseconds)), "
                             + "setup \(formatDuration(setup)), "
@@ -119,7 +118,10 @@ package struct TaskControls: Sendable {
                             + "\(execution.task.rawValue)#\(execution.executionIndex + 1)")
                 }
             }
+            text = lines.joined(separator: "\n")
         }
+        if quiet && format == .text { return }
+        try console.report(report, text: text, humanDestination: .standardError)
     }
 }
 

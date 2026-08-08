@@ -63,7 +63,6 @@ struct WorkspaceDoctor {
     func run(
         scope: DoctorScope,
         dryRun: Bool,
-        json: Bool,
         quiet: Bool = false
     ) async throws {
         let prerequisites = selectedPrerequisites(scope: scope)
@@ -95,11 +94,8 @@ struct WorkspaceDoctor {
         if quiet {
             // Callers that compose doctor with a machine-readable task report
             // still use the same prerequisite registry without a second payload.
-        } else if json {
-            print(
-                String(
-                    decoding: try JSONEncoder.sorted.encode(report), as: UTF8.self))
         } else {
+            var lines: [String] = []
             for check in checks {
                 let marker =
                     switch check.status {
@@ -107,16 +103,17 @@ struct WorkspaceDoctor {
                     case .passed: "ok"
                     case .failed: "MISSING"
                     }
-                print(
+                lines.append(
                     "  \(marker.padding(toLength: 7, withPad: " ", startingAt: 0))  \(check.description)"
                         + (check.detail.map { ": \($0)" } ?? ""))
             }
             if report.success {
-                print(
+                lines.append(
                     dryRun
                         ? "doctor: \(scope) prerequisite plan resolved"
                         : "doctor: \(scope) host contract satisfied")
             }
+            try context.console.report(report, text: lines.joined(separator: "\n"))
         }
         guard report.success else {
             let failures = checks.filter { $0.status == .failed }

@@ -13,7 +13,7 @@ private let completeTaskControls = [
     "--dry-run",
     "--rebuild",
     "--verbose",
-    "--json",
+    "--format", "json",
     "--run-id", "linux-operation-capability-test",
 ]
 
@@ -53,7 +53,7 @@ private func assertCompleteTaskControls(_ options: TaskControlOptions) {
     #expect(options.rebuild)
     #expect(options.verbose)
     #expect(!options.quiet)
-    #expect(options.json)
+    #expect(options.outputOptions.format == .json)
     #expect(
         options.runID?.value
             == RunID(rawValue: "linux-operation-capability-test"))

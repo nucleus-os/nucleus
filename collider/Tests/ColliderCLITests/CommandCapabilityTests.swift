@@ -53,7 +53,9 @@ func everyTaskControlledLeafParsesTheCompleteControlSet() throws {
                 "--dry-run",
                 "--rebuild",
                 "--verbose",
-                "--json",
+                "--format", "json",
+                "--color", "never",
+                "--progress", "never",
                 "--run-id", "run-capability-test",
             ])
         let command = try #require(parsed as? any TaskControlledCommand)
@@ -61,7 +63,9 @@ func everyTaskControlledLeafParsesTheCompleteControlSet() throws {
         #expect(command.taskOptions.rebuild)
         #expect(command.taskOptions.verbose)
         #expect(!command.taskOptions.quiet)
-        #expect(command.taskOptions.json)
+        #expect(command.outputOptions.format == .json)
+        #expect(command.outputOptions.color == .never)
+        #expect(command.outputOptions.progress == .never)
         #expect(
             command.taskOptions.runID?.value
                 == RunID(rawValue: "run-capability-test"))
@@ -100,8 +104,13 @@ func quietAndVerboseTaskOutputAreMutuallyExclusive() {
 
 @Test
 func nonTaskLeavesExposeOnlyTheirDeclaredControls() throws {
-    for path in reportLeaves {
-        _ = try ColliderCommand.parseAsRoot(path + ["--json"])
+    for path in reportLeaves + controlFreeLeaves {
+        let parsed = try ColliderCommand.parseAsRoot(
+            path + ["--format", "json", "--color", "always", "--progress", "never"])
+        let command = try #require(parsed as? any OutputConfiguredCommand)
+        #expect(command.outputOptions.format == .json)
+        #expect(command.outputOptions.color == .always)
+        #expect(command.outputOptions.progress == .never)
         awaitRejects(
             path,
             options: [
@@ -115,7 +124,7 @@ func nonTaskLeavesExposeOnlyTheirDeclaredControls() throws {
 
     for path in diagnosticLeaves {
         _ = try ColliderCommand.parseAsRoot(
-            path + ["--dry-run", "--json"])
+            path + ["--dry-run", "--format", "json"])
         awaitRejects(
             path,
             options: [
@@ -126,17 +135,10 @@ func nonTaskLeavesExposeOnlyTheirDeclaredControls() throws {
             ])
     }
 
-    for path in controlFreeLeaves {
-        awaitRejects(
-            path,
-            options: [
-                "--dry-run",
-                "--rebuild",
-                "--verbose",
-                "--quiet",
-                "--json",
-                "--run-id", "not-supported",
-            ])
+    for path in taskControlledLeaves + reportLeaves + diagnosticLeaves + controlFreeLeaves {
+        #expect(throws: (any Error).self) {
+            try ColliderCommand.parseAsRoot(path + ["--json"])
+        }
     }
 }
 
@@ -167,7 +169,7 @@ private func optionInvocations(_ options: [String]) -> [[String]] {
     var result: [[String]] = []
     var index = options.startIndex
     while index < options.endIndex {
-        if options[index] == "--run-id" {
+        if ["--run-id", "--format", "--color", "--progress"].contains(options[index]) {
             result.append([options[index], options[index + 1]])
             index += 2
         } else {
